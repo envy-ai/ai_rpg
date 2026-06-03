@@ -5555,6 +5555,7 @@ body.dark .thing-toggle-hint {
   flex: 1;
   gap: 0;
   align-items: stretch;
+  min-width: 0;
   min-height: 0;
 }
 

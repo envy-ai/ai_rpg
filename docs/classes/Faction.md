@@ -39,3 +39,4 @@ Represents a faction with goals, tags, relations to other factions, assets, and 
 ## Notes
 - Relations are normalized and validated against `allied|neutral|hostile|rival` and require notes.
 - `reputationTiers` are sorted by threshold ascending.
+- Chat mutation tool `upsertFactionFields({ operation, faction?, fields })` creates real `Faction` instances for new factions, inserts them into the active factions map, and directly updates existing instances through validated field/value pairs. The tool rejects duplicate create/rename names and requires relation keys to reference existing faction ids.

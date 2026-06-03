@@ -7,6 +7,7 @@ const {
 } = require('./scene_summary_index.js');
 const MysteryBox = require('./MysteryBox.js');
 const MysteryThread = require('./MysteryThread.js');
+const Faction = require('./Faction.js');
 
 const MORE_INFO_MAX_MATCHES = 50;
 const CACHED_CHECK_TOOL_CALL_NOTE = 'You already made this tool call. Do not re-run tool calls for the same checks that you made in earlier drafts.';
@@ -114,6 +115,9 @@ const UPDATE_OBJECT_TYPE_ALIASES = Object.freeze({
     effect: 'statusEffect',
     statusEffect: 'statusEffect'
 });
+const UPSERT_FACTION_OPERATION_VALUES = Object.freeze(['create', 'update']);
+const UPSERT_FACTION_DEFAULT_RELATION_STATUS = 'neutral';
+const UPSERT_FACTION_DEFAULT_RELATION_NOTES = 'No explicit relationship provided.';
 const UPDATE_OBJECT_FIELD_NAMES_BY_TYPE = Object.freeze({
     character: UPDATE_CHARACTER_FIELD_NAMES,
     thing: Object.freeze([
@@ -1221,6 +1225,33 @@ const CHAT_TOOL_DEFINITIONS = Object.freeze([
                     }
                 },
                 required: ['objectType', 'object', 'fields'],
+                additionalProperties: false
+            }
+        }
+    },
+    {
+        type: 'function',
+        function: {
+            name: 'upsertFactionFields',
+            description: `Create a new faction or directly update allowed persisted fields on an existing faction. Provide individual field/value pairs in fields. For create, fields.name is required and must not duplicate an existing faction name. For update, faction is required and resolves by id or name. Allowed fields: ${UPDATE_OBJECT_FIELD_NAMES_BY_TYPE.faction.join(', ')}.`,
+            parameters: {
+                type: 'object',
+                properties: {
+                    operation: {
+                        type: 'string',
+                        enum: UPSERT_FACTION_OPERATION_VALUES,
+                        description: 'Use create for a new faction, or update for an existing faction.'
+                    },
+                    faction: {
+                        type: 'string',
+                        description: 'Required for update: faction ID or exact faction name. Omit for create.'
+                    },
+                    fields: {
+                        type: 'object',
+                        description: 'Object of allowed faction field names to new values, such as { "name": "...", "goals": ["..."], "relations": { "faction_1": { "status": "rival", "notes": "..." } } }.'
+                    }
+                },
+                required: ['operation', 'fields'],
                 additionalProperties: false
             }
         }
@@ -5877,6 +5908,412 @@ const createChatToolRuntime = ({
         return operations;
     };
 
+    const getFactionMapForUpsert = (functionName) => {
+        const factionMap = getFactions();
+        if (!(factionMap instanceof Map)) {
+            throw new Error(`${functionName} requires getFactions to return a Map.`);
+        }
+        return factionMap;
+    };
+
+    const normalizeUpsertFactionOperation = (value, { functionName } = {}) => {
+        const operation = normalizeRequiredString(value, { functionName, fieldName: 'operation' }).toLowerCase();
+        if (!UPSERT_FACTION_OPERATION_VALUES.includes(operation)) {
+            throw new ToolVisibleError(
+                `${functionName} "operation" must be one of: ${UPSERT_FACTION_OPERATION_VALUES.join(', ')}.`,
+                { code: 'invalid_arguments' }
+            );
+        }
+        return operation;
+    };
+
+    const findFactionByNameForUpsert = (name, factionMap) => {
+        const normalizedName = toTrimmedString(name).toLowerCase();
+        if (!normalizedName) {
+            return null;
+        }
+        if (factionMap instanceof Map) {
+            for (const faction of factionMap.values()) {
+                if (toTrimmedString(faction?.name).toLowerCase() === normalizedName) {
+                    return faction;
+                }
+            }
+        }
+        return typeof Faction?.getByName === 'function'
+            ? Faction.getByName(name)
+            : null;
+    };
+
+    const assertFactionNameAvailableForUpsert = (name, {
+        functionName,
+        factionMap,
+        currentId = null
+    } = {}) => {
+        const existing = findFactionByNameForUpsert(name, factionMap);
+        const existingId = getRecordId(existing);
+        if (existing && (!currentId || existingId !== currentId)) {
+            throw new ToolVisibleError(
+                `${functionName} cannot use duplicate faction name "${name}".`,
+                {
+                    code: 'duplicate_faction_name',
+                    candidates: [buildUpdateObjectCandidate(makeUpdateObjectTarget({
+                        objectType: 'faction',
+                        record: existing
+                    }))]
+                }
+            );
+        }
+    };
+
+    const normalizeUpsertFactionStringList = (value, { functionName, fieldName } = {}) => {
+        const entries = Array.isArray(value)
+            ? value
+            : (typeof value === 'string' ? value.split(/\r?\n/) : null);
+        if (!entries) {
+            throw new ToolVisibleError(
+                `${functionName} "${fieldName}" must be an array of strings or newline-delimited string.`,
+                { code: 'invalid_arguments' }
+            );
+        }
+        const normalized = [];
+        for (const [index, entry] of entries.entries()) {
+            if (typeof entry !== 'string') {
+                throw new ToolVisibleError(
+                    `${functionName} "${fieldName}[${index}]" must be a string.`,
+                    { code: 'invalid_arguments' }
+                );
+            }
+            const trimmed = entry.trim();
+            if (trimmed) {
+                normalized.push(trimmed);
+            }
+        }
+        return normalized;
+    };
+
+    const normalizeOptionalUpsertFactionText = (value, { functionName, fieldName } = {}) => {
+        if (value === null || value === undefined) {
+            return null;
+        }
+        if (typeof value !== 'string') {
+            throw new ToolVisibleError(
+                `${functionName} "${fieldName}" must be a non-empty string or null.`,
+                { code: 'invalid_arguments' }
+            );
+        }
+        const trimmed = value.trim();
+        if (!trimmed) {
+            throw new ToolVisibleError(
+                `${functionName} "${fieldName}" must be a non-empty string or null.`,
+                { code: 'invalid_arguments' }
+            );
+        }
+        return trimmed;
+    };
+
+    const normalizeUpsertFactionHomeRegionName = (value, { functionName, fieldName } = {}) => {
+        if (value === null || value === undefined) {
+            return null;
+        }
+        if (typeof value !== 'string' || !value.trim()) {
+            throw new ToolVisibleError(
+                `${functionName} "${fieldName}" must be a non-empty string or null.`,
+                { code: 'invalid_arguments' }
+            );
+        }
+        return value.trim();
+    };
+
+    const normalizeUpsertFactionAssets = (value, { functionName, fieldName } = {}) => {
+        if (!Array.isArray(value)) {
+            throw new ToolVisibleError(
+                `${functionName} "${fieldName}" must be an array.`,
+                { code: 'invalid_arguments' }
+            );
+        }
+        return value.map((asset, index) => {
+            if (typeof asset === 'string') {
+                const name = asset.trim();
+                if (!name) {
+                    throw new ToolVisibleError(
+                        `${functionName} "${fieldName}[${index}]" must not be blank.`,
+                        { code: 'invalid_arguments' }
+                    );
+                }
+                return { name };
+            }
+            if (!isPlainObject(asset)) {
+                throw new ToolVisibleError(
+                    `${functionName} "${fieldName}[${index}]" must be an object or string.`,
+                    { code: 'invalid_arguments' }
+                );
+            }
+            const name = normalizeRequiredString(asset.name, {
+                functionName,
+                fieldName: `${fieldName}[${index}].name`
+            });
+            return {
+                ...asset,
+                name
+            };
+        });
+    };
+
+    const normalizeUpsertFactionReputationTiers = (value, { functionName, fieldName } = {}) => {
+        if (!Array.isArray(value)) {
+            throw new ToolVisibleError(
+                `${functionName} "${fieldName}" must be an array.`,
+                { code: 'invalid_arguments' }
+            );
+        }
+        return value.map((tier, index) => {
+            if (!isPlainObject(tier)) {
+                throw new ToolVisibleError(
+                    `${functionName} "${fieldName}[${index}]" must be an object.`,
+                    { code: 'invalid_arguments' }
+                );
+            }
+            const threshold = Number(tier.threshold);
+            if (!Number.isFinite(threshold)) {
+                throw new ToolVisibleError(
+                    `${functionName} "${fieldName}[${index}].threshold" must be a finite number.`,
+                    { code: 'invalid_arguments' }
+                );
+            }
+            const label = tier.label === null || tier.label === undefined
+                ? ''
+                : normalizeCharacterFieldString(tier.label, {
+                    functionName,
+                    fieldName: `${fieldName}[${index}].label`
+                }).trim();
+            return {
+                threshold,
+                label,
+                perks: normalizeUpsertFactionStringList(tier.perks || [], {
+                    functionName,
+                    fieldName: `${fieldName}[${index}].perks`
+                }),
+                penalties: normalizeUpsertFactionStringList(tier.penalties || [], {
+                    functionName,
+                    fieldName: `${fieldName}[${index}].penalties`
+                })
+            };
+        });
+    };
+
+    const normalizeUpsertFactionRelations = (value, {
+        functionName,
+        fieldName,
+        factionMap,
+        currentId = null
+    } = {}) => {
+        if (!isPlainObject(value)) {
+            throw new ToolVisibleError(
+                `${functionName} "${fieldName}" must be an object keyed by faction id.`,
+                { code: 'invalid_arguments' }
+            );
+        }
+        const validStatuses = new Set(['allied', 'neutral', 'hostile', 'rival']);
+        const normalized = {};
+        for (const [rawTargetId, rawRelation] of Object.entries(value)) {
+            const targetId = normalizeRequiredString(rawTargetId, {
+                functionName,
+                fieldName: `${fieldName} key`
+            });
+            if (currentId && targetId === currentId) {
+                throw new ToolVisibleError(
+                    `${functionName} "${fieldName}" cannot reference the faction itself.`,
+                    { code: 'invalid_faction_relation' }
+                );
+            }
+            if (!(factionMap instanceof Map) || !factionMap.has(targetId)) {
+                throw new ToolVisibleError(
+                    `${functionName} "${fieldName}" references unknown faction id "${targetId}".`,
+                    { code: 'invalid_faction_relation' }
+                );
+            }
+            if (!isPlainObject(rawRelation)) {
+                throw new ToolVisibleError(
+                    `${functionName} "${fieldName}.${targetId}" must be an object with status and notes.`,
+                    { code: 'invalid_faction_relation' }
+                );
+            }
+            const status = (toTrimmedString(rawRelation.status) || UPSERT_FACTION_DEFAULT_RELATION_STATUS).toLowerCase();
+            if (!validStatuses.has(status)) {
+                throw new ToolVisibleError(
+                    `${functionName} "${fieldName}.${targetId}.status" must be allied, neutral, hostile, or rival.`,
+                    { code: 'invalid_faction_relation' }
+                );
+            }
+            const notes = toTrimmedString(rawRelation.notes) || UPSERT_FACTION_DEFAULT_RELATION_NOTES;
+            normalized[targetId] = { status, notes };
+        }
+        return normalized;
+    };
+
+    const normalizeUpsertFactionFields = (fieldsObject, {
+        functionName,
+        operation,
+        factionMap,
+        target = null
+    } = {}) => {
+        if (!isPlainObject(fieldsObject)) {
+            throw new ToolVisibleError(
+                `${functionName} requires "fields" to be an object.`,
+                { code: 'invalid_arguments' }
+            );
+        }
+        const fieldEntries = Object.entries(fieldsObject);
+        if (!fieldEntries.length) {
+            throw new ToolVisibleError(
+                `${functionName} requires at least one faction field.`,
+                { code: 'invalid_arguments' }
+            );
+        }
+        const allowedFields = UPDATE_OBJECT_FIELD_NAMES_BY_TYPE.faction;
+        const allowedFieldSet = new Set(allowedFields);
+        for (const [fieldName] of fieldEntries) {
+            if (!allowedFieldSet.has(fieldName)) {
+                throw new ToolVisibleError(
+                    `${functionName} cannot update field "${fieldName}" on faction. Allowed fields: ${allowedFields.join(', ')}.`,
+                    {
+                        code: 'unsupported_field',
+                        details: { objectType: 'faction', fieldName }
+                    }
+                );
+            }
+        }
+        if (operation === 'create' && !Object.prototype.hasOwnProperty.call(fieldsObject, 'name')) {
+            throw new ToolVisibleError(
+                `${functionName} create requires "fields.name".`,
+                { code: 'invalid_arguments' }
+            );
+        }
+
+        const currentId = getRecordId(target?.record || target) || null;
+        const normalized = {};
+        for (const [fieldName, rawValue] of fieldEntries) {
+            if (fieldName === 'name') {
+                normalized.name = normalizeRequiredString(rawValue, { functionName, fieldName });
+            } else if (fieldName === 'description' || fieldName === 'shortDescription') {
+                normalized[fieldName] = normalizeOptionalUpsertFactionText(rawValue, { functionName, fieldName });
+            } else if (fieldName === 'homeRegionName') {
+                normalized.homeRegionName = normalizeUpsertFactionHomeRegionName(rawValue, { functionName, fieldName });
+            } else if (fieldName === 'tags' || fieldName === 'goals') {
+                normalized[fieldName] = normalizeUpsertFactionStringList(rawValue, { functionName, fieldName });
+            } else if (fieldName === 'relations') {
+                normalized.relations = normalizeUpsertFactionRelations(rawValue, {
+                    functionName,
+                    fieldName,
+                    factionMap,
+                    currentId
+                });
+            } else if (fieldName === 'assets') {
+                normalized.assets = normalizeUpsertFactionAssets(rawValue, { functionName, fieldName });
+            } else if (fieldName === 'reputationTiers') {
+                normalized.reputationTiers = normalizeUpsertFactionReputationTiers(rawValue, { functionName, fieldName });
+            }
+        }
+        return normalized;
+    };
+
+    const buildUpsertFactionResult = ({ operation, faction, updatedFields }) => {
+        const factionId = getRecordId(faction);
+        const factionName = getRecordName(faction);
+        const lines = [
+            '<upsertFactionFieldsResult>',
+            '  <status>success</status>',
+            `  <operation>${xmlEscapeText(operation)}</operation>`,
+            ...renderXmlNode('faction', {
+                id: factionId,
+                name: factionName
+            }, 1),
+            ...renderXmlNode('updatedFields', updatedFields, 1),
+            '</upsertFactionFieldsResult>'
+        ];
+        return {
+            content: lines.join('\n'),
+            metadata: {
+                status: 'success',
+                operation,
+                factionId,
+                factionName,
+                updatedFields
+            }
+        };
+    };
+
+    const executeUpsertFactionFieldsTool = ({
+        operation,
+        faction,
+        fields
+    } = {}) => {
+        const functionName = 'upsertFactionFields';
+        const normalizedOperation = normalizeUpsertFactionOperation(operation, { functionName });
+        const factionMap = getFactionMapForUpsert(functionName);
+
+        if (normalizedOperation === 'create') {
+            if (toTrimmedString(faction)) {
+                throw new ToolVisibleError(
+                    `${functionName} create does not accept "faction"; put the faction name in fields.name.`,
+                    { code: 'invalid_arguments' }
+                );
+            }
+            const normalizedFields = normalizeUpsertFactionFields(fields, {
+                functionName,
+                operation: normalizedOperation,
+                factionMap
+            });
+            assertFactionNameAvailableForUpsert(normalizedFields.name, {
+                functionName,
+                factionMap
+            });
+            let createdFaction = null;
+            try {
+                createdFaction = new Faction(normalizedFields);
+            } catch (error) {
+                throw new ToolVisibleError(
+                    `Failed to create faction "${normalizedFields.name}": ${error?.message || error}`,
+                    { code: 'field_update_failed' }
+                );
+            }
+            factionMap.set(createdFaction.id, createdFaction);
+            return buildUpsertFactionResult({
+                operation: normalizedOperation,
+                faction: createdFaction,
+                updatedFields: Object.keys(normalizedFields)
+            });
+        }
+
+        const target = resolveUpdateObjectTarget('faction', faction, { functionName });
+        const normalizedFields = normalizeUpsertFactionFields(fields, {
+            functionName,
+            operation: normalizedOperation,
+            factionMap,
+            target
+        });
+        if (Object.prototype.hasOwnProperty.call(normalizedFields, 'name')) {
+            assertFactionNameAvailableForUpsert(normalizedFields.name, {
+                functionName,
+                factionMap,
+                currentId: getRecordId(target.record)
+            });
+        }
+        try {
+            target.record.update(normalizedFields);
+        } catch (error) {
+            throw new ToolVisibleError(
+                `Failed to update faction "${target.name || target.id || faction}": ${error?.message || error}`,
+                { code: 'field_update_failed' }
+            );
+        }
+        return buildUpsertFactionResult({
+            operation: normalizedOperation,
+            faction: target.record,
+            updatedFields: Object.keys(normalizedFields)
+        });
+    };
+
     const executeUpdateObjectFieldsTool = ({
         objectType,
         object,
@@ -8929,6 +9366,8 @@ const createChatToolRuntime = ({
                 toolResult = executeUpdateCharacterFieldsTool(argumentsObject);
             } else if (toolCall.functionName === 'updateObjectFields') {
                 toolResult = executeUpdateObjectFieldsTool(argumentsObject);
+            } else if (toolCall.functionName === 'upsertFactionFields') {
+                toolResult = executeUpsertFactionFieldsTool(argumentsObject);
             } else if (toolCall.functionName === 'alterLocation') {
                 toolResult = executeAlterLocationTool(argumentsObject);
             } else if (toolCall.functionName === 'resolveAttack') {

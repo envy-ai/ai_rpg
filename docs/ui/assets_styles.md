@@ -21,6 +21,7 @@
   - The main Adventure layout uses a flush `.chat-wrapper` with no inter-column gap.
   - The Adventure-tab `.chat-sidebar` outer panel also keeps only the bottom-right corner rounded.
   - Desktop Adventure layout exposes slim `.adventure-resize-handle` separators for the location and player/party columns. They use `col-resize`, highlight on hover/focus/drag, disable text selection while dragging, and are hidden in the stacked narrow layout.
+  - The nested `.chat-wrapper` sets `min-width: 0` so wide chat descendants do not make the middle chat column exceed the width left by the resized side panels.
   - On narrow/mobile layouts, the Adventure stack now clears the desktop fixed-height/inner-scroll chain (`.main-content` / `.tab-panels` / `#tab-adventure` / `.adventure-content` / `.chat-wrapper`) so `.location-block > .container` and `.chat-sidebar` grow with content instead of keeping redundant inner vertical scrollbars.
   - Compact thing-list popovers now promote their owning `.thing-list-panel` with a temporary `.thing-list-panel--popover-open` stacking class so location item/scenery text cannot paint above an open filter or sort popup.
   - Open item context menus use the `.entity-context-menu--floating` body-level positioning class while open, so Scenery menus can paint above the Things section and modal inventory/crafting menus are not clipped by scroll containers; the floating menu width shrinks to the widest visible option instead of keeping the legacy minimum width.

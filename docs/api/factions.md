@@ -61,6 +61,20 @@ Response:
 Notes:
 - Faction name `"None"` is reserved and cannot be set.
 
+## Chat tool: `upsertFactionFields`
+Generic prompt and scheduled-event tool loops can create or update factions through `upsertFactionFields({ operation, faction?, fields })`.
+
+Request:
+- `operation`: `create` or `update`.
+- `faction`: required for `update`; accepts faction id or exact faction name.
+- `fields`: individual field/value pairs. Supported fields are `name`, `shortDescription`, `description`, `tags`, `goals`, `homeRegionName`, `assets`, `relations`, and `reputationTiers`.
+
+Behavior:
+- `create` requires `fields.name`, rejects duplicate names, creates a real persisted `Faction` instance, and inserts it into the active factions map.
+- `update` resolves by id/name, returns an ambiguity `<toolError>` when needed, and rejects duplicate renames before mutation.
+- `relations` must be keyed by existing faction ids. Relation `status` defaults to `neutral` when omitted, and `notes` defaults to `No explicit relationship provided.` when omitted.
+- Unlike `POST /api/factions`, this tool does not run inbound relation generation. Reciprocal relations from existing factions toward a newly created faction must be supplied explicitly with another tool call when desired.
+
 ## DELETE /api/factions/:id
 Delete a faction, remove relations pointing to it, and clear affiliations/standings.
 
