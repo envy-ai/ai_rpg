@@ -78,3 +78,33 @@ test('SceneSummaries edit rejects invalid display numbers and empty summaries', 
         /summary/i
     );
 });
+
+test('SceneSummaries anchors generated coverage to the requested summarized range start', () => {
+    const sceneSummaries = new SceneSummaries();
+    sceneSummaries.addSummaryResult({
+        summarizedRange: { start: 1, end: 5 },
+        entryIndexMap: [
+            { entryId: 'entry-1', index: 1 },
+            { entryId: 'entry-2', index: 2 },
+            { entryId: 'entry-3', index: 3 },
+            { entryId: 'entry-4', index: 4 },
+            { entryId: 'entry-5', index: 5 }
+        ],
+        scenes: [
+            {
+                startIndex: 2,
+                endIndex: 5,
+                startEntryId: 'entry-2',
+                endEntryId: 'entry-5',
+                summary: 'The model skipped the first prompt entry as setup.'
+            }
+        ]
+    });
+
+    const scenes = sceneSummaries.getScenesInOrder();
+    assert.equal(scenes.length, 1);
+    assert.equal(scenes[0].startIndex, 1);
+    assert.equal(scenes[0].startEntryId, 'entry-1');
+    assert.equal(scenes[0].endIndex, 5);
+    assert.equal(sceneSummaries.getFirstUnsummarizedIndex(5), null);
+});

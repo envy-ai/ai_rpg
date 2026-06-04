@@ -33,6 +33,7 @@ class SceneSummaries {
             const normalized = this.#normalizeScene(scene);
             normalizedScenes.push(normalized);
         }
+        this.#anchorScenesToSummarizedRange(normalizedScenes, summaryResult.summarizedRange);
 
         let replacementStart = normalizedScenes[0].startIndex;
         let replacementEnd = normalizedScenes[0].endIndex;
@@ -185,6 +186,46 @@ class SceneSummaries {
         const gapStart = gaps[0].start;
         const gapEnd = gaps[gaps.length - 1].end;
         return { start: gapStart, end: gapEnd };
+    }
+
+    #anchorScenesToSummarizedRange(normalizedScenes, summarizedRange) {
+        if (!summarizedRange) {
+            return;
+        }
+        if (!Array.isArray(normalizedScenes) || normalizedScenes.length === 0) {
+            throw new Error('Scene summary result must include scenes before anchoring coverage.');
+        }
+
+        const start = Number(summarizedRange.start);
+        const end = Number(summarizedRange.end);
+        if (!Number.isInteger(start) || start <= 0) {
+            throw new Error('Scene summary summarizedRange is missing a valid start.');
+        }
+        if (!Number.isInteger(end) || end < start) {
+            throw new Error('Scene summary summarizedRange is missing a valid end.');
+        }
+
+        const ordered = normalizedScenes.slice().sort((a, b) => a.startIndex - b.startIndex);
+        const firstScene = ordered[0];
+        const lastScene = ordered[ordered.length - 1];
+
+        if (start < firstScene.startIndex) {
+            const startEntryId = this.#entryIdForIndex(start);
+            if (!startEntryId) {
+                throw new Error(`Scene summary entryIndexMap is missing entry ID for summarized range start ${start}.`);
+            }
+            firstScene.startIndex = start;
+            firstScene.startEntryId = startEntryId;
+        }
+
+        if (end > lastScene.endIndex) {
+            const endEntryId = this.#entryIdForIndex(end);
+            if (!endEntryId) {
+                throw new Error(`Scene summary entryIndexMap is missing entry ID for summarized range end ${end}.`);
+            }
+            lastScene.endIndex = end;
+            lastScene.endEntryId = endEntryId;
+        }
     }
 
     getScenes() {
@@ -385,6 +426,15 @@ class SceneSummaries {
                 this._entryIdToNpcNames.delete(entryId);
             }
         }
+    }
+
+    #entryIdForIndex(targetIndex) {
+        for (const [entryId, index] of this._entryIdToIndex.entries()) {
+            if (index === targetIndex) {
+                return entryId;
+            }
+        }
+        return null;
     }
 
     #normalizeScene(scene) {

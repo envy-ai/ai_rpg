@@ -12,6 +12,7 @@ Stores and manages scene summaries extracted from chat history. Tracks scene ran
 ## Instance API
 - `clear()`: resets all stored data.
 - `addSummaryResult(summaryResult)`: validates and merges a summary payload (scenes + entryIndexMap), replacing any existing scenes that overlap the incoming summarized range.
+  - When a generated result includes `summarizedRange`, stored scene bounds are anchored to that requested range if the model's first/last returned scene starts after or ends before the covered entries. This prevents model-skipped setup/artifact entries from becoming permanent coverage gaps that retrigger automatic scene summarization every turn.
 - `containsEntry(entryId)`: checks if an entry index falls within any scene range.
 - `getFirstUnsummarizedIndex(totalEntries)`: returns the first gap index or null if all summarized.
 - `deleteSummariesOverlappingRange(startIndex, endIndex)`: removes overlapping scenes and returns the gap range needing resummarization.
