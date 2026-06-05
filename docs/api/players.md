@@ -118,6 +118,8 @@ Response:
 - 200: `{ success: true, message, members }` (`members` is an array of ids)
 - 400/404/500 with `{ success: false, error }`
 
+Generic and scheduled chat prompts can use `updatePartyMembers({ add?, remove? })` for validated multi-member party changes. It accepts arrays of NPC ids, exact names, or aliases; validates the whole request before mutation; lets added NPCs come from any location; and places removed NPCs at the current player location.
+
 ## POST /api/player/move
 Move the current player to a connected location.
 

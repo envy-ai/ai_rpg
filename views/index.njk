@@ -348,6 +348,14 @@
                                                 <span class="chat-player-action-icon" aria-hidden="true">👁️</span>
                                                 <span class="chat-player-action-label">View</span>
                                             </button>
+                                            <button type="button" class="chat-player-action-button" id="chatPlayerAbilitiesButton" disabled>
+                                                <span class="chat-player-action-icon" aria-hidden="true">◆</span>
+                                                <span class="chat-player-action-label">Abilities</span>
+                                            </button>
+                                            <button type="button" class="chat-player-action-button" id="chatPlayerSkillsButton" disabled>
+                                                <span class="chat-player-action-icon" aria-hidden="true">✦</span>
+                                                <span class="chat-player-action-label">Skills</span>
+                                            </button>
                                             <button type="button" class="chat-player-action-button" id="chatPlayerInventoryButton" disabled>
                                                 <span class="chat-player-action-icon" aria-hidden="true">🎒</span>
                                                 <span class="chat-player-action-label">Inventory</span>
@@ -1592,6 +1600,34 @@
                 <button type="button" class="btn btn-secondary" id="barterCurrencyConfirmCancelBtn">Cancel Trade</button>
                 <button type="button" class="btn btn-primary" id="barterCurrencyConfirmAcceptBtn">Accept Anyway</button>
             </footer>
+        </div>
+    </div>
+    <div id="playerAbilitiesModal" class="modal player-abilities-modal" role="dialog" aria-modal="false" aria-hidden="true" hidden>
+        <div class="modal__dialog">
+            <header class="modal__header">
+                <h2 id="playerAbilitiesModalTitle">Abilities</h2>
+                <button type="button" class="modal__close" id="playerAbilitiesCloseBtn" aria-label="Close abilities">
+                    <span aria-hidden="true">X</span>
+                </button>
+            </header>
+            <div class="modal__body player-abilities-body">
+                <div id="playerAbilitiesGrid" class="npc-view-ability-cards player-abilities-grid" role="list"></div>
+                <div id="playerAbilitiesEmpty" class="player-abilities-empty">No abilities available.</div>
+            </div>
+        </div>
+    </div>
+    <div id="playerSkillsModal" class="modal player-skills-modal" role="dialog" aria-modal="false" aria-hidden="true" hidden>
+        <div class="modal__dialog">
+            <header class="modal__header">
+                <h2 id="playerSkillsModalTitle">Skills</h2>
+                <button type="button" class="modal__close" id="playerSkillsCloseBtn" aria-label="Close skills">
+                    <span aria-hidden="true">X</span>
+                </button>
+            </header>
+            <div class="modal__body player-skills-body">
+                <div id="playerSkillsGrid" class="skills-grid player-skills-grid" role="list"></div>
+                <div id="playerSkillsEmpty" class="player-skills-empty">No skills available.</div>
+            </div>
         </div>
     </div>
     <div id="npcViewModal" class="modal npc-view-modal" role="dialog" aria-modal="true" aria-hidden="true" hidden>
@@ -4723,6 +4759,8 @@
             healthBarFill: document.getElementById('chatPlayerHealthBarFill'),
             needBars: document.getElementById('chatPlayerNeedBars'),
             viewButton: document.getElementById('chatPlayerViewButton'),
+            abilitiesButton: document.getElementById('chatPlayerAbilitiesButton'),
+            skillsButton: document.getElementById('chatPlayerSkillsButton'),
             inventoryButton: document.getElementById('chatPlayerInventoryButton'),
             name: document.getElementById('chatPlayerName'),
             archetype: document.getElementById('chatPlayerArchetype'),
@@ -4755,6 +4793,257 @@
             }
             updateChatPlayerPanel(data.player);
             return getLatestPlayerData() || data.player;
+        }
+
+        function getPlayerAbilityEntriesForModal(player = {}) {
+            return Array.isArray(player?.abilities)
+                ? player.abilities
+                    .filter(Boolean)
+                    .map(ability => {
+                        const name = typeof ability?.name === 'string' && ability.name.trim()
+                            ? ability.name.trim()
+                            : '';
+                        const typeText = typeof ability?.type === 'string' && ability.type.trim()
+                            ? ability.type.trim()
+                            : 'Passive';
+                        const description = typeof ability?.shortDescription === 'string' && ability.shortDescription.trim()
+                            ? ability.shortDescription.trim()
+                            : (typeof ability?.description === 'string' && ability.description.trim()
+                                ? ability.description.trim()
+                                : (typeof ability?.text === 'string' && ability.text.trim()
+                                    ? ability.text.trim()
+                                    : 'No description provided.'));
+                        return {
+                            name,
+                            typeText,
+                            typeKey: normalizeAbilityTypeKey(typeText),
+                            level: Number(ability?.level),
+                            description
+                        };
+                    })
+                    .filter(entry => entry.name)
+                    .sort((left, right) => left.name.localeCompare(right.name))
+                : [];
+        }
+
+        function getPlayerSkillEntriesForModal(player = {}) {
+            const values = resolveNpcViewSkillValues(player);
+            return Object.entries(values)
+                .map(([name, rank]) => {
+                    const trimmedName = typeof name === 'string' ? name.trim() : '';
+                    const numericRank = Number(rank);
+                    return {
+                        name: trimmedName,
+                        rank: Number.isFinite(numericRank) ? numericRank : 1
+                    };
+                })
+                .filter(entry => entry.name)
+                .sort((left, right) => {
+                    const rankDelta = left.rank - right.rank;
+                    if (rankDelta !== 0) {
+                        return rankDelta;
+                    }
+                    return left.name.localeCompare(right.name);
+                });
+        }
+
+        function insertTextIntoChatInputAtCursor(text) {
+            const messageInput = document.getElementById('messageInput');
+            const insertText = typeof text === 'string' ? text : '';
+            if (!messageInput) {
+                throw new Error('Chat input is unavailable.');
+            }
+            if (!insertText) {
+                throw new Error('No skill text was provided for insertion.');
+            }
+
+            const value = typeof messageInput.value === 'string' ? messageInput.value : '';
+            const start = Number.isFinite(messageInput.selectionStart) ? messageInput.selectionStart : value.length;
+            const end = Number.isFinite(messageInput.selectionEnd) ? messageInput.selectionEnd : start;
+            messageInput.focus();
+
+            if (typeof messageInput.setRangeText === 'function') {
+                messageInput.setRangeText(insertText, start, end, 'end');
+            } else {
+                messageInput.value = `${value.slice(0, start)}${insertText}${value.slice(end)}`;
+                const nextCursorPosition = start + insertText.length;
+                if (typeof messageInput.setSelectionRange === 'function') {
+                    messageInput.setSelectionRange(nextCursorPosition, nextCursorPosition);
+                }
+            }
+
+            messageInput.dispatchEvent(new Event('input', { bubbles: true }));
+            return true;
+        }
+
+        function renderPlayerAbilitiesModalAbilities(player = {}) {
+            if (!playerAbilitiesGrid || !playerAbilitiesEmpty) {
+                throw new Error('Player abilities modal list elements are unavailable.');
+            }
+
+            const entries = getPlayerAbilityEntriesForModal(player);
+            playerAbilitiesGrid.innerHTML = '';
+
+            if (!entries.length) {
+                playerAbilitiesEmpty.removeAttribute('hidden');
+                playerAbilitiesGrid.setAttribute('hidden', '');
+                return;
+            }
+
+            playerAbilitiesEmpty.setAttribute('hidden', '');
+            playerAbilitiesGrid.removeAttribute('hidden');
+            entries.forEach(({ name: abilityName, typeKey, level, description: descriptionText }) => {
+                const card = document.createElement('button');
+                card.type = 'button';
+                card.className = 'npc-view-ability-card player-abilities-card';
+                card.classList.add(`ability-type-${typeKey}`);
+                card.setAttribute('role', 'listitem');
+                card.setAttribute('aria-label', `Insert ${abilityName}`);
+
+                const header = document.createElement('div');
+                header.className = 'npc-view-ability-card-header';
+
+                const nameEl = document.createElement('span');
+                nameEl.className = 'npc-view-ability-card-name ability-type-text';
+                applyAbilityTypeClass(nameEl, 'ability-type-text', typeKey);
+                nameEl.textContent = abilityName;
+
+                const meta = document.createElement('span');
+                meta.className = 'npc-view-ability-card-meta';
+
+                const typeLabel = document.createElement('span');
+                typeLabel.className = 'ability-type-label ability-type-text';
+                applyAbilityTypeClass(typeLabel, 'ability-type-text', typeKey);
+                typeLabel.textContent = formatAbilityTypeLabel(typeKey);
+                meta.appendChild(typeLabel);
+
+                if (Number.isFinite(level)) {
+                    meta.appendChild(document.createTextNode(` • Level ${level}`));
+                }
+
+                header.appendChild(nameEl);
+                header.appendChild(meta);
+
+                const description = document.createElement('p');
+                description.className = 'npc-view-ability-card-description';
+                description.textContent = descriptionText;
+
+                card.appendChild(header);
+                card.appendChild(description);
+                card.addEventListener('click', () => {
+                    insertTextIntoChatInputAtCursor(`[${abilityName}]`);
+                });
+
+                playerAbilitiesGrid.appendChild(card);
+            });
+        }
+
+        function showPlayerAbilitiesModal(player = {}) {
+            if (!playerAbilitiesModal) {
+                throw new Error('Player abilities modal is unavailable.');
+            }
+
+            const name = typeof player?.name === 'string' && player.name.trim()
+                ? player.name.trim()
+                : 'Player';
+            if (playerAbilitiesModalTitle) {
+                playerAbilitiesModalTitle.textContent = `${name} · Abilities`;
+            }
+
+            renderPlayerAbilitiesModalAbilities(player);
+            playerAbilitiesModal.removeAttribute('hidden');
+            playerAbilitiesModal.setAttribute('aria-hidden', 'false');
+        }
+
+        function closePlayerAbilitiesModal({ refocusInput = false } = {}) {
+            if (!playerAbilitiesModal) {
+                return;
+            }
+            playerAbilitiesModal.setAttribute('aria-hidden', 'true');
+            playerAbilitiesModal.setAttribute('hidden', '');
+            if (refocusInput) {
+                document.getElementById('messageInput')?.focus();
+            }
+        }
+
+        function renderPlayerSkillsModalSkills(player = {}) {
+            if (!playerSkillsGrid || !playerSkillsEmpty) {
+                throw new Error('Player skills modal list elements are unavailable.');
+            }
+
+            const entries = getPlayerSkillEntriesForModal(player);
+            playerSkillsGrid.innerHTML = '';
+
+            if (!entries.length) {
+                playerSkillsEmpty.removeAttribute('hidden');
+                return;
+            }
+
+            playerSkillsEmpty.setAttribute('hidden', '');
+            entries.forEach(({ name, rank }) => {
+                const card = document.createElement('button');
+                card.type = 'button';
+                card.className = 'skill-card player-skills-card';
+                card.dataset.skillName = name;
+                card.setAttribute('aria-label', `Insert ${name}`);
+
+                const header = document.createElement('div');
+                header.className = 'skill-header';
+
+                const nameEl = document.createElement('span');
+                nameEl.className = 'skill-name';
+                nameEl.textContent = name;
+                header.appendChild(nameEl);
+
+                const valueRow = document.createElement('div');
+                valueRow.className = 'skill-value';
+
+                const valueLabel = document.createElement('span');
+                valueLabel.textContent = 'Rank: ';
+
+                const valueSpan = document.createElement('span');
+                valueSpan.className = 'skill-rank';
+                valueSpan.dataset.skillName = name;
+                valueSpan.textContent = String(rank);
+
+                valueRow.appendChild(valueLabel);
+                valueRow.appendChild(valueSpan);
+                card.appendChild(header);
+                card.appendChild(valueRow);
+                card.addEventListener('click', () => {
+                    insertTextIntoChatInputAtCursor(`[${name}]`);
+                });
+
+                playerSkillsGrid.appendChild(card);
+            });
+        }
+
+        function showPlayerSkillsModal(player = {}) {
+            if (!playerSkillsModal) {
+                throw new Error('Player skills modal is unavailable.');
+            }
+
+            const name = typeof player?.name === 'string' && player.name.trim()
+                ? player.name.trim()
+                : 'Player';
+            if (playerSkillsModalTitle) {
+                playerSkillsModalTitle.textContent = `${name} · Skills`;
+            }
+
+            renderPlayerSkillsModalSkills(player);
+            playerSkillsModal.removeAttribute('hidden');
+            playerSkillsModal.setAttribute('aria-hidden', 'false');
+        }
+
+        function closePlayerSkillsModal({ refocusInput = false } = {}) {
+            if (!playerSkillsModal) {
+                return;
+            }
+            playerSkillsModal.setAttribute('aria-hidden', 'true');
+            playerSkillsModal.setAttribute('hidden', '');
+            if (refocusInput) {
+                document.getElementById('messageInput')?.focus();
+            }
         }
 
         function normalizeAbilityNameKey(value) {
@@ -5385,6 +5674,42 @@
             });
         }
 
+        if (chatSidebarElements.abilitiesButton) {
+            chatSidebarElements.abilitiesButton.addEventListener('click', async () => {
+                try {
+                    chatSidebarElements.abilitiesButton.disabled = true;
+                    const playerData = await fetchLatestPlayerDataForModal();
+                    if (!playerData || typeof showPlayerAbilitiesModal !== 'function') {
+                        throw new Error('Player abilities modal is not available.');
+                    }
+                    showPlayerAbilitiesModal(playerData);
+                } catch (error) {
+                    console.warn('Failed to open player abilities modal:', error);
+                    alert(`Failed to open player abilities: ${error?.message || error}`);
+                } finally {
+                    chatSidebarElements.abilitiesButton.disabled = false;
+                }
+            });
+        }
+
+        if (chatSidebarElements.skillsButton) {
+            chatSidebarElements.skillsButton.addEventListener('click', async () => {
+                try {
+                    chatSidebarElements.skillsButton.disabled = true;
+                    const playerData = await fetchLatestPlayerDataForModal();
+                    if (!playerData || typeof showPlayerSkillsModal !== 'function') {
+                        throw new Error('Player skills modal is not available.');
+                    }
+                    showPlayerSkillsModal(playerData);
+                } catch (error) {
+                    console.warn('Failed to open player skills modal:', error);
+                    alert(`Failed to open player skills: ${error?.message || error}`);
+                } finally {
+                    chatSidebarElements.skillsButton.disabled = false;
+                }
+            });
+        }
+
         if (chatSidebarElements.inventoryButton) {
             chatSidebarElements.inventoryButton.addEventListener('click', async () => {
                 try {
@@ -5402,6 +5727,52 @@
                 }
             });
         }
+
+        document.addEventListener('keydown', (event) => {
+            if (!event || typeof event.key !== 'string') {
+                return;
+            }
+            if (event.defaultPrevented || event.ctrlKey || event.metaKey || event.altKey) {
+                return;
+            }
+            if (event.key.toLowerCase() !== 'a') {
+                return;
+            }
+            const activeElement = document.activeElement;
+            const isTypingContext = activeElement instanceof HTMLElement
+                && (activeElement.closest('input, textarea, select, [contenteditable="true"]')
+                    || activeElement.classList.contains('chat-edit-modal__textarea'));
+            if (isTypingContext || (playerAbilitiesModal && !playerAbilitiesModal.hasAttribute('hidden'))) {
+                return;
+            }
+            if (chatSidebarElements.abilitiesButton && !chatSidebarElements.abilitiesButton.disabled) {
+                event.preventDefault();
+                chatSidebarElements.abilitiesButton.click();
+            }
+        });
+
+        document.addEventListener('keydown', (event) => {
+            if (!event || typeof event.key !== 'string') {
+                return;
+            }
+            if (event.defaultPrevented || event.ctrlKey || event.metaKey || event.altKey) {
+                return;
+            }
+            if (event.key.toLowerCase() !== 's') {
+                return;
+            }
+            const activeElement = document.activeElement;
+            const isTypingContext = activeElement instanceof HTMLElement
+                && (activeElement.closest('input, textarea, select, [contenteditable="true"]')
+                    || activeElement.classList.contains('chat-edit-modal__textarea'));
+            if (isTypingContext || (playerSkillsModal && !playerSkillsModal.hasAttribute('hidden'))) {
+                return;
+            }
+            if (chatSidebarElements.skillsButton && !chatSidebarElements.skillsButton.disabled) {
+                event.preventDefault();
+                chatSidebarElements.skillsButton.click();
+            }
+        });
 
         function updateChatPlayerPanel(player = {}) {
             if (!chatSidebarElements.card) {
@@ -5527,6 +5898,12 @@
 
             if (chatSidebarElements.viewButton) {
                 chatSidebarElements.viewButton.disabled = !data || !data.id;
+            }
+            if (chatSidebarElements.abilitiesButton) {
+                chatSidebarElements.abilitiesButton.disabled = !data || !data.id;
+            }
+            if (chatSidebarElements.skillsButton) {
+                chatSidebarElements.skillsButton.disabled = !data || !data.id;
             }
             if (chatSidebarElements.inventoryButton) {
                 chatSidebarElements.inventoryButton.disabled = !data || !data.id;
@@ -8999,6 +9376,16 @@
         const npcEditModal = document.getElementById('npcEditModal');
         const npcInventoryModal = document.getElementById('npcInventoryModal');
         const npcInventoryModalTitle = document.getElementById('npcInventoryModalTitle');
+        const playerAbilitiesModal = document.getElementById('playerAbilitiesModal');
+        const playerAbilitiesModalTitle = document.getElementById('playerAbilitiesModalTitle');
+        const playerAbilitiesGrid = document.getElementById('playerAbilitiesGrid');
+        const playerAbilitiesEmpty = document.getElementById('playerAbilitiesEmpty');
+        const playerAbilitiesCloseBtn = document.getElementById('playerAbilitiesCloseBtn');
+        const playerSkillsModal = document.getElementById('playerSkillsModal');
+        const playerSkillsModalTitle = document.getElementById('playerSkillsModalTitle');
+        const playerSkillsGrid = document.getElementById('playerSkillsGrid');
+        const playerSkillsEmpty = document.getElementById('playerSkillsEmpty');
+        const playerSkillsCloseBtn = document.getElementById('playerSkillsCloseBtn');
         const npcViewModal = document.getElementById('npcViewModal');
         const npcModalBackdrop = document.getElementById('npcModalBackdrop');
         const npcDispositionModal = document.getElementById('npcDispositionModal');
@@ -19316,6 +19703,18 @@
             });
         }
 
+        if (playerAbilitiesCloseBtn) {
+            playerAbilitiesCloseBtn.addEventListener('click', () => {
+                closePlayerAbilitiesModal({ refocusInput: true });
+            });
+        }
+
+        if (playerSkillsCloseBtn) {
+            playerSkillsCloseBtn.addEventListener('click', () => {
+                closePlayerSkillsModal({ refocusInput: true });
+            });
+        }
+
         if (npcViewAllocationSaveBtn) {
             npcViewAllocationSaveBtn.addEventListener('click', async () => {
                 await submitNpcViewAllocationChanges();
@@ -19420,6 +19819,22 @@
             npcViewModal.addEventListener('click', (event) => {
                 if (event.target === npcViewModal) {
                     closeNpcViewModal();
+                }
+            });
+        }
+
+        if (playerAbilitiesModal) {
+            playerAbilitiesModal.addEventListener('click', (event) => {
+                if (event.target === playerAbilitiesModal) {
+                    closePlayerAbilitiesModal({ refocusInput: true });
+                }
+            });
+        }
+
+        if (playerSkillsModal) {
+            playerSkillsModal.addEventListener('click', (event) => {
+                if (event.target === playerSkillsModal) {
+                    closePlayerSkillsModal({ refocusInput: true });
                 }
             });
         }
@@ -26123,6 +26538,18 @@
                 if (thingEditModal && !thingEditModal.hasAttribute('hidden')) {
                     event.preventDefault();
                     closeThingEditModal();
+                    return;
+                }
+
+                if (playerAbilitiesModal && !playerAbilitiesModal.hasAttribute('hidden')) {
+                    event.preventDefault();
+                    closePlayerAbilitiesModal({ refocusInput: true });
+                    return;
+                }
+
+                if (playerSkillsModal && !playerSkillsModal.hasAttribute('hidden')) {
+                    event.preventDefault();
+                    closePlayerSkillsModal({ refocusInput: true });
                     return;
                 }
 

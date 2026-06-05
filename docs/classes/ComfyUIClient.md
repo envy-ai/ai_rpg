@@ -19,5 +19,6 @@ Client for a ComfyUI server. Queues workflows, polls status, uploads img2img inp
 
 ## Notes
 - `queuePrompt` and `getHistory` catch and return errors instead of throwing.
+- `queuePrompt` submits the API prompt graph with `prompt`, `client_id`, and `prompt_id`; it does not include ComfyUI UI workflow metadata under `extra_data.extra_pnginfo.workflow`. Templates that use `SaveImageWithMetaData` should use plain output formats such as `png`, `jpg`, or `webp` unless the request payload is extended to provide that workflow metadata. The extension's `*_with_json` formats expect that metadata when writing the sidecar workflow JSON.
 - `uploadInputImage` raises explicit errors for missing files, missing browser-compatible `FormData`/`Blob` globals, or failed ComfyUI upload responses.
 - `saveImage` ensures output directory exists.

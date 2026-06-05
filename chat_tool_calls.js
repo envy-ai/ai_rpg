@@ -1259,6 +1259,30 @@ const CHAT_TOOL_DEFINITIONS = Object.freeze([
     {
         type: 'function',
         function: {
+            name: 'updatePartyMembers',
+            description: 'Add and/or remove multiple NPCs from the current player party in one mutation. Added characters may be at any location and become off-location party members; removed characters stay at the current player location. Generic/scheduled mutation tool only.',
+            parameters: {
+                type: 'object',
+                minProperties: 1,
+                properties: {
+                    add: {
+                        type: 'array',
+                        items: { type: 'string' },
+                        description: 'NPC ids, exact names, or aliases to add to the party. Omit when only removing characters.'
+                    },
+                    remove: {
+                        type: 'array',
+                        items: { type: 'string' },
+                        description: 'NPC ids, exact names, or aliases to remove from the party. Removed NPCs are placed at the current player location.'
+                    }
+                },
+                additionalProperties: false
+            }
+        }
+    },
+    {
+        type: 'function',
+        function: {
             name: 'alterLocation',
             description: 'Alter an existing location by ID or name using the existing alter_location event flow.',
             parameters: {
@@ -3281,6 +3305,155 @@ const createChatToolRuntime = ({
         }
 
         return matches[0];
+    };
+
+    const describePartyMemberCandidate = (character) => ({
+        ...describeCharacterCandidate(character),
+        isNPC: isNpcEntity(character),
+        isInPlayerParty: Boolean(character?.isInPlayerParty)
+    });
+
+    const resolvePartyMemberReference = (rawQuery, { fieldName = 'character' } = {}) => {
+        const query = toTrimmedString(rawQuery);
+        if (!query) {
+            throw new ToolVisibleError(`A non-empty "${fieldName}" is required.`, {
+                code: 'invalid_arguments'
+            });
+        }
+
+        const allCharacters = getAllCharacters();
+        const idMatch = allCharacters.find(character => toTrimmedString(character?.id) === query) || null;
+        if (idMatch) {
+            return idMatch;
+        }
+
+        const lowerQuery = query.toLowerCase();
+        const exactMatches = allCharacters.filter(character => {
+            if (toTrimmedString(character?.name).toLowerCase() === lowerQuery) {
+                return true;
+            }
+            return npcAliasesForMatching(character).some(alias => alias.toLowerCase() === lowerQuery);
+        });
+        const includesMatches = allCharacters.filter(character => {
+            if (toTrimmedString(character?.name).toLowerCase().includes(lowerQuery)) {
+                return true;
+            }
+            return npcAliasesForMatching(character).some(alias => alias.toLowerCase().includes(lowerQuery));
+        });
+        const matches = exactMatches.length ? exactMatches : includesMatches;
+
+        if (!matches.length) {
+            throw new ToolVisibleError(
+                `No ${fieldName} matches "${query}".`,
+                { code: 'character_not_found' }
+            );
+        }
+
+        if (matches.length > 1) {
+            throw new ToolVisibleError(
+                `Multiple ${fieldName} matches found for "${query}". Call updatePartyMembers again with the exact id from one candidate.`,
+                {
+                    code: 'ambiguous_character',
+                    candidates: matches
+                        .map(describePartyMemberCandidate)
+                        .sort(candidateSort)
+                }
+            );
+        }
+
+        return matches[0];
+    };
+
+    const normalizePartyMemberReferenceList = (value, { functionName, fieldName } = {}) => {
+        if (value === undefined) {
+            return [];
+        }
+        if (!Array.isArray(value)) {
+            throw new ToolVisibleError(
+                `${functionName} "${fieldName}" must be an array of character ids, names, or aliases when provided.`,
+                { code: 'invalid_arguments' }
+            );
+        }
+        return value.map((entry, index) => normalizeRequiredString(entry, {
+            functionName,
+            fieldName: `${fieldName}[${index}]`
+        }));
+    };
+
+    const getCurrentPartyMemberIdSet = (currentPlayer, { functionName } = {}) => {
+        if (!currentPlayer || typeof currentPlayer.getPartyMembers !== 'function') {
+            throw new ToolVisibleError(
+                `${functionName} requires the current player to support getPartyMembers().`,
+                { code: 'tool_unavailable' }
+            );
+        }
+        const rawMembers = currentPlayer.getPartyMembers();
+        const membersArray = Array.isArray(rawMembers)
+            ? rawMembers
+            : (rawMembers instanceof Set ? Array.from(rawMembers) : null);
+        if (!membersArray) {
+            throw new ToolVisibleError(
+                `${functionName} getPartyMembers() must return an array or Set.`,
+                { code: 'invalid_party_state' }
+            );
+        }
+        return new Set(membersArray
+            .map(member => (typeof member === 'string' ? member : toTrimmedString(member?.id)))
+            .map(memberId => toTrimmedString(memberId))
+            .filter(Boolean));
+    };
+
+    const getCurrentPlayerLocationForPartyTool = (currentPlayer, { functionName } = {}) => {
+        let location = currentPlayer?.currentLocationObject || null;
+        if (!location) {
+            const locationId = toTrimmedString(currentPlayer?.currentLocation)
+                || toTrimmedString(currentPlayer?.locationId)
+                || toTrimmedString(typeof currentPlayer?.location === 'string'
+                    ? currentPlayer.location
+                    : currentPlayer?.location?.id);
+            location = getLocationByIdLoose(locationId);
+        }
+        if (!location) {
+            throw new ToolVisibleError(
+                `${functionName} cannot remove party members because the current player location is unknown.`,
+                { code: 'missing_current_location' }
+            );
+        }
+        if (typeof location.addNpcId !== 'function') {
+            throw new ToolVisibleError(
+                `${functionName} cannot remove party members because current location "${location.name || location.id}" cannot register NPC ids.`,
+                { code: 'invalid_location_state' }
+            );
+        }
+        return location;
+    };
+
+    const resolvePartyMemberTargets = (queries, { functionName, fieldName } = {}) => {
+        return queries.map((query) => {
+            const character = resolvePartyMemberReference(query, { fieldName });
+            const id = toTrimmedString(character?.id);
+            if (!id) {
+                throw new ToolVisibleError(
+                    `${functionName} resolved "${query}" to a character without an id.`,
+                    { code: 'invalid_party_target' }
+                );
+            }
+            if (!isNpcEntity(character)) {
+                throw new ToolVisibleError(
+                    `${functionName} can only change NPC party membership; "${character?.name || query}" is not an NPC.`,
+                    {
+                        code: 'invalid_party_target',
+                        candidates: [describePartyMemberCandidate(character)]
+                    }
+                );
+            }
+            return {
+                query,
+                id,
+                character,
+                beforeLocation: describeLocationSummary(character.currentLocation || character.locationId || null)
+            };
+        });
     };
 
     const resolveThingReference = (rawQuery, { fieldName = 'thing' } = {}) => {
@@ -6312,6 +6485,196 @@ const createChatToolRuntime = ({
             faction: target.record,
             updatedFields: Object.keys(normalizedFields)
         });
+    };
+
+    const executeUpdatePartyMembersTool = ({
+        add = undefined,
+        remove = undefined
+    } = {}) => {
+        const functionName = 'updatePartyMembers';
+        const currentPlayer = getCurrentPlayer();
+        if (!currentPlayer) {
+            throw new ToolVisibleError(
+                `${functionName} requires a current player.`,
+                { code: 'missing_current_player' }
+            );
+        }
+
+        const addQueries = normalizePartyMemberReferenceList(add, {
+            functionName,
+            fieldName: 'add'
+        });
+        const removeQueries = normalizePartyMemberReferenceList(remove, {
+            functionName,
+            fieldName: 'remove'
+        });
+        if (!addQueries.length && !removeQueries.length) {
+            throw new ToolVisibleError(
+                `${functionName} requires at least one character in "add" or "remove".`,
+                { code: 'invalid_arguments' }
+            );
+        }
+
+        if (addQueries.length && typeof currentPlayer.addPartyMember !== 'function') {
+            throw new ToolVisibleError(
+                `${functionName} cannot add party members because the current player does not support addPartyMember().`,
+                { code: 'tool_unavailable' }
+            );
+        }
+        if (removeQueries.length && typeof currentPlayer.removePartyMember !== 'function') {
+            throw new ToolVisibleError(
+                `${functionName} cannot remove party members because the current player does not support removePartyMember().`,
+                { code: 'tool_unavailable' }
+            );
+        }
+
+        const addTargets = resolvePartyMemberTargets(addQueries, {
+            functionName,
+            fieldName: 'add'
+        });
+        const removeTargets = resolvePartyMemberTargets(removeQueries, {
+            functionName,
+            fieldName: 'remove'
+        });
+
+        const assertUniqueTargets = (targets, fieldName) => {
+            const seen = new Map();
+            for (const target of targets) {
+                if (seen.has(target.id)) {
+                    throw new ToolVisibleError(
+                        `${functionName} received duplicate ${fieldName} target "${target.character?.name || target.id}".`,
+                        {
+                            code: 'duplicate_party_target',
+                            candidates: [describePartyMemberCandidate(target.character)]
+                        }
+                    );
+                }
+                seen.set(target.id, target);
+            }
+            return seen;
+        };
+        const addTargetMap = assertUniqueTargets(addTargets, 'add');
+        const removeTargetMap = assertUniqueTargets(removeTargets, 'remove');
+        for (const [targetId, target] of addTargetMap.entries()) {
+            if (removeTargetMap.has(targetId)) {
+                throw new ToolVisibleError(
+                    `${functionName} cannot both add and remove "${target.character?.name || targetId}" in the same call.`,
+                    {
+                        code: 'conflicting_party_operation',
+                        candidates: [describePartyMemberCandidate(target.character)]
+                    }
+                );
+            }
+        }
+
+        const partyMemberIdsBefore = getCurrentPartyMemberIdSet(currentPlayer, { functionName });
+        for (const target of addTargets) {
+            if (partyMemberIdsBefore.has(target.id)) {
+                throw new ToolVisibleError(
+                    `${functionName} cannot add "${target.character?.name || target.id}" because they are already in the party.`,
+                    {
+                        code: 'already_in_party',
+                        candidates: [describePartyMemberCandidate(target.character)]
+                    }
+                );
+            }
+        }
+        for (const target of removeTargets) {
+            if (!partyMemberIdsBefore.has(target.id)) {
+                throw new ToolVisibleError(
+                    `${functionName} cannot remove "${target.character?.name || target.id}" because they are not in the party.`,
+                    {
+                        code: 'not_in_party',
+                        candidates: [describePartyMemberCandidate(target.character)]
+                    }
+                );
+            }
+        }
+
+        const currentLocation = removeTargets.length
+            ? getCurrentPlayerLocationForPartyTool(currentPlayer, { functionName })
+            : null;
+        const added = [];
+        const removed = [];
+
+        for (const target of addTargets) {
+            const changed = currentPlayer.addPartyMember(target.id);
+            if (!changed) {
+                throw new ToolVisibleError(
+                    `${functionName} failed to add "${target.character?.name || target.id}" to the party after validation.`,
+                    { code: 'party_update_failed' }
+                );
+            }
+            const afterLocation = describeLocationSummary(target.character.currentLocation || target.character.locationId || null);
+            if (afterLocation.locationId) {
+                throw new ToolVisibleError(
+                    `${functionName} added "${target.character?.name || target.id}" but they still have location "${afterLocation.locationName || afterLocation.locationId}".`,
+                    { code: 'party_update_failed' }
+                );
+            }
+            added.push({
+                id: target.id,
+                name: toTrimmedString(target.character?.name) || target.id,
+                previousLocationId: target.beforeLocation.locationId,
+                previousLocationName: target.beforeLocation.locationName,
+                currentLocationId: afterLocation.locationId,
+                currentLocationName: afterLocation.locationName
+            });
+        }
+
+        for (const target of removeTargets) {
+            const changed = currentPlayer.removePartyMember(target.id);
+            if (!changed) {
+                throw new ToolVisibleError(
+                    `${functionName} failed to remove "${target.character?.name || target.id}" from the party after validation.`,
+                    { code: 'party_update_failed' }
+                );
+            }
+            const afterLocation = describeLocationSummary(target.character.currentLocation || target.character.locationId || null);
+            if (currentLocation?.id && afterLocation.locationId !== currentLocation.id) {
+                throw new ToolVisibleError(
+                    `${functionName} removed "${target.character?.name || target.id}" but did not place them at the current location "${currentLocation.name || currentLocation.id}".`,
+                    { code: 'party_update_failed' }
+                );
+            }
+            removed.push({
+                id: target.id,
+                name: toTrimmedString(target.character?.name) || target.id,
+                previousLocationId: target.beforeLocation.locationId,
+                previousLocationName: target.beforeLocation.locationName,
+                currentLocationId: afterLocation.locationId,
+                currentLocationName: afterLocation.locationName
+            });
+        }
+
+        const partyMemberIdsAfter = Array.from(getCurrentPartyMemberIdSet(currentPlayer, { functionName })).sort();
+        const currentPlayerLocation = describeLocationSummary(currentPlayer.currentLocation || currentPlayer.locationId || null);
+        const lines = [
+            '<updatePartyMembersResult>',
+            '  <status>success</status>',
+            ...renderXmlNode('currentPlayer', {
+                id: toTrimmedString(currentPlayer.id) || null,
+                name: toTrimmedString(currentPlayer.name) || null,
+                locationId: currentPlayerLocation.locationId,
+                locationName: currentPlayerLocation.locationName
+            }, 1),
+            ...renderXmlNode('added', added, 1, { count: added.length }),
+            ...renderXmlNode('removed', removed, 1, { count: removed.length }),
+            ...renderXmlNode('partyMemberIds', partyMemberIdsAfter, 1, { count: partyMemberIdsAfter.length }),
+            '</updatePartyMembersResult>'
+        ];
+
+        return {
+            content: lines.join('\n'),
+            metadata: {
+                status: 'success',
+                added,
+                removed,
+                partyMemberIds: partyMemberIdsAfter,
+                currentPlayerId: toTrimmedString(currentPlayer.id) || null,
+                currentLocationId: currentPlayerLocation.locationId
+            }
+        };
     };
 
     const executeUpdateObjectFieldsTool = ({
@@ -9368,6 +9731,8 @@ const createChatToolRuntime = ({
                 toolResult = executeUpdateObjectFieldsTool(argumentsObject);
             } else if (toolCall.functionName === 'upsertFactionFields') {
                 toolResult = executeUpsertFactionFieldsTool(argumentsObject);
+            } else if (toolCall.functionName === 'updatePartyMembers') {
+                toolResult = executeUpdatePartyMembersTool(argumentsObject);
             } else if (toolCall.functionName === 'alterLocation') {
                 toolResult = executeAlterLocationTool(argumentsObject);
             } else if (toolCall.functionName === 'resolveAttack') {

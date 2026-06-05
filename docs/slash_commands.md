@@ -28,6 +28,7 @@ Slash Commands Quick Guide
   - `interaction.adjustWorldTimeByMinutes(minutes, { source? })` is available when the command needs to move the world clock through the shared minute-based time path; positive values use normal forward advancement, apply elapsed per-minute need/status processing, refresh current player/location panels client-side, and process due arrivals, while negative values perform a raw rewind without undoing previously processed time-based side effects.
   - `interaction.requestClientRefresh({ locationRefreshRequested? })` lets a slash command request the invoking chat tab to run its normal player/location reload path after the command completes.
   - `interaction.backfillRegionExitTravelTimes({ region?, regionId?, force? })` is available when the command needs to prompt-fill missing exit `travelTimeMinutes` for an existing region through the shared logged AI path; `force: true` regenerates populated values and rewrites both directions of a bidirectional pair from the first prompted side.
+  - `interaction.generatePlayerImage(player, { force?, clientId? })` is available when a command needs to queue shared player/NPC portrait generation. Commands should use this helper instead of building image jobs directly so portrait prompt batching, force-regeneration cleanup, de-dupe, job tracking, and realtime subscription behavior remain centralized.
   - `interaction.parseThingsXml(xml, options?)` is available in slash-command context for XML item/scenery parsing.
   - `interaction.thingRegistry` exposes the live server `things` map for commands that create/import `Thing` instances.
   - `interaction.reply(payload)` collects responses; payload shape: `{ content?: string, ephemeral?: boolean, action?: { type: 'request_file_upload', title?, description?, accept?, multiple?, uploadMessage?, submitLabel?, cancelLabel? } }`.
@@ -43,6 +44,9 @@ Slash Commands Quick Guide
 
 - Scheduled events
   - `/scheduled` lists pending `ScheduledEvent` records as readable markdown, using a numbered list with per-event fields so long event text wraps cleanly.
+
+- Party portrait regeneration
+  - `/regen_party_images` queues forced portrait regeneration for each current party NPC, excludes the player character, reports skipped/failed entries, and reuses the shared portrait generator so compatible LLM portrait-prompt requests can use `imagegen.prompt_batching`.
 
 - Best practices
   - Fail loudly with clear errors (throw or reply with `ephemeral: true`).

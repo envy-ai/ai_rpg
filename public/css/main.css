@@ -10242,6 +10242,82 @@ body.modal-open {
     white-space: normal;
   }
 }
+.player-abilities-modal .modal__dialog {
+  max-width: 760px;
+}
+
+.player-abilities-body {
+  display: grid;
+  gap: 16px;
+  padding: 20px;
+}
+
+.player-abilities-grid {
+  margin-top: 0;
+}
+
+.player-abilities-card {
+  width: 100%;
+  appearance: none;
+  font: inherit;
+  cursor: pointer;
+}
+
+.player-abilities-card:hover,
+.player-abilities-card:focus-visible {
+  outline: none;
+  border-color: rgba(125, 211, 252, 0.62);
+  background: linear-gradient(160deg, rgba(14, 116, 144, 0.32), rgba(30, 41, 59, 0.68));
+}
+
+.player-abilities-empty {
+  color: rgba(203, 213, 225, 0.78);
+  font-size: 0.9rem;
+}
+
+.player-abilities-empty[hidden] {
+  display: none;
+}
+
+.player-skills-modal .modal__dialog {
+  max-width: 640px;
+}
+
+.player-skills-body {
+  display: grid;
+  gap: 16px;
+  padding: 20px;
+}
+
+.player-skills-grid {
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  margin-top: 0;
+}
+
+.player-skills-card {
+  width: 100%;
+  appearance: none;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.player-skills-card:hover,
+.player-skills-card:focus-visible {
+  outline: none;
+  border-color: rgba(125, 211, 252, 0.62);
+  background: rgba(14, 116, 144, 0.2);
+}
+
+.player-skills-empty {
+  color: rgba(203, 213, 225, 0.78);
+  font-size: 0.9rem;
+}
+
+.player-skills-empty[hidden] {
+  display: none;
+}
+
 .npc-view-modal .modal__dialog {
   max-width: 760px;
 }

@@ -789,6 +789,27 @@ Rules:
 - When `false`, regular prose prompts get `resolveAttack`, `resolveSkillCheck`, and `resolveOpposedSkillCheck` tools and resolve attacks/checks inside the prose tool loop.
 - When `true`, regular player/NPC prose prompts do not receive those mechanical check tools. Player actions run the legacy `attack_precheck`/`attack_check` and player-action plausibility prompt before prose generation; NPC turns run their existing action-plan plausibility prompt and legacy attack check before NPC prose generation.
 
+## NPC turn gates
+
+`npc_turns` controls ordinary post-player NPC turns outside combat. `combat_npc_turns` controls post-player NPC turns while `Globals.isInCombat()` is true.
+
+```yaml
+npc_turns:
+  enabled: false
+  maxNpcsToAct: 1
+  npcTurnFrequency: 0.3
+combat_npc_turns:
+  enabled: true
+  maxFriendlyNpcsToAct: 1
+  maxHostileNpcsToAct: 1
+  npcTurnFrequency: 1
+```
+
+Rules:
+- The two enabled flags are independent. Disabling `npc_turns.enabled` does not disable combat NPC turns when `combat_npc_turns.enabled` is true.
+- In combat, friendly and hostile NPC actor limits and turn frequency come from `combat_npc_turns`.
+- Outside combat, actor limits and frequency come from `npc_turns`.
+
 ## Tool-call chat debugging
 
 `debug_tool_calls` controls whether prose-prompt tool calls are mirrored into the visible chat history while the prompt is still running.

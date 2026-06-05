@@ -24150,7 +24150,7 @@ module.exports = function registerApiRoutes(scope) {
                         let skipNpcTurns = Boolean(isForcedEventAction);
                         const skipRandomEvents = Boolean(isForcedEventAction);
 
-                        const takeNpcTurns = Globals.config.npc_turns?.enabled !== false;
+                        let takeNpcTurns = Globals.config.npc_turns?.enabled !== false;
 
                         let maxNpcsToAct = Number.isInteger(Globals.config.npc_turns?.maxNpcsToAct) && Globals.config.npc_turns.maxNpcsToAct > 0
                             ? Globals.config.npc_turns.maxNpcsToAct
@@ -24161,7 +24161,8 @@ module.exports = function registerApiRoutes(scope) {
                         let npcTurnFrequency = typeof Globals.config.npc_turns?.npcTurnFrequency === 'number' && Globals.config.npc_turns.npcTurnFrequency >= 0 && Globals.config.npc_turns.npcTurnFrequency <= 1 ? Globals.config.npc_turns.npcTurnFrequency : 1;
 
                         if (Globals.isInCombat()) {
-                            if (Globals.config.combat_npc_turns?.enabled === false) {
+                            takeNpcTurns = Globals.config.combat_npc_turns?.enabled !== false;
+                            if (!takeNpcTurns) {
                                 console.log('Combat NPC turns are disabled in configuration.');
                                 skipNpcTurns = true;
                             } else {
@@ -45294,6 +45295,9 @@ module.exports = function registerApiRoutes(scope) {
                 },
                 generateSkillsByNames: typeof generateSkillsByNames === 'function'
                     ? generateSkillsByNames
+                    : null,
+                generatePlayerImage: typeof generatePlayerImage === 'function'
+                    ? generatePlayerImage
                     : null,
                 getActiveSettingSnapshot: typeof getActiveSettingSnapshot === 'function'
                     ? getActiveSettingSnapshot
