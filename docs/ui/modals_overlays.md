@@ -34,6 +34,11 @@ Most modals live in `views/index.njk` and are wired up by the inline script or `
 - Implemented in `public/js/chat.js`; the modal reads selected file text client-side and posts it to `/api/slash-command/upload`.
 - Intended for slash commands that need user-supplied files without hardcoding per-command upload UI.
 
+## Entity image upload
+
+- `#entityImageUploadModal`: reusable image upload modal opened from `Upload Image` context menu actions on locations, things, NPCs, and the player. It accepts PNG, JPEG, WebP, and GIF files, previews the selected file, posts its data URL to `/api/images/upload`, and replaces the target entity's current `imageId` with the returned upload image.
+- Location uploads clear client-side weather/lighting variant display cache for that location so old display variants do not continue to cover the newly uploaded base image.
+
 ## Empty action confirmation
 
 - `#emptyActionConfirmModal`: opened when the user submits the chat input with no text.
@@ -111,7 +116,7 @@ Most modals live in `views/index.njk` and are wired up by the inline script or `
 
 ## Crafting / processing
 
-- `#craftingModal`: drag-and-drop crafting UI for craft/process and `Modify Location`; craft and process show an available-items/scenery picker that combines active player inventory with current-location items and scenery plus item contents inside current-location containers, including contents of scenery containers while nested container contents remain item-only. `Modify Location` still uses optional selected player-inventory materials/tools. Craft, process, and location modification submits may run with no selected slot inputs when the player is relying on the station, location, abilities, or notes. Ctrl/Cmd+Enter in the notes textarea triggers the primary prose submit button.
+- `#craftingModal`: drag-and-drop crafting UI for craft/process and `Modify Location`; craft and process show an available-items/scenery picker that combines active player inventory with current-location items and scenery plus item contents inside current-location containers, including contents of scenery containers while nested container contents remain item-only. `Modify Location` still uses optional selected player-inventory materials/tools. Craft, process, and location modification submits may run with no selected slot inputs when the player is relying on the station, location, abilities, or notes. Dragging an equipped player item into a slot asks whether to unequip it now, then assigns the item only after the normal unequip request succeeds. Ctrl/Cmd+Enter in the notes textarea triggers the primary prose submit button.
 - `#salvageIntentModal`: optional prompt before salvage; salvage and harvest still require exactly one target item. Ctrl/Cmd+Enter in the intent textarea triggers the primary prose submit button.
 
 ## Save/load

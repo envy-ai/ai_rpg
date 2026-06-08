@@ -799,6 +799,43 @@ class Utils {
       .join('\n');
   }
 
+  static #extractXmlErrorPosition(error) {
+    const message = typeof error?.message === 'string' ? error.message : '';
+    const match = message.match(/\bposition\s+(\d+)\b/i);
+    if (!match) {
+      return null;
+    }
+
+    const position = Number(match[1]);
+    return Number.isInteger(position) && position >= 0 ? position : null;
+  }
+
+  static #formatXmlParseFailureContext(xmlContent, error, {
+    contextRadius = 240,
+    fallbackLimit = 500
+  } = {}) {
+    const text = typeof xmlContent === 'string' ? xmlContent : String(xmlContent ?? '');
+    const position = Utils.#extractXmlErrorPosition(error);
+    if (position !== null) {
+      const start = Math.max(0, position - contextRadius);
+      const end = Math.min(text.length, position + contextRadius);
+      const prefix = start > 0 ? '...' : '';
+      const suffix = end < text.length ? '...' : '';
+      return `length=${text.length}, position=${position}, excerpt=${JSON.stringify(prefix + text.slice(start, end) + suffix)}`;
+    }
+
+    const excerpt = text.length > fallbackLimit
+      ? `${text.slice(0, fallbackLimit)}...`
+      : text;
+    return `length=${text.length}, excerpt=${JSON.stringify(excerpt)}`;
+  }
+
+  static #warnXmlParseFailure(xmlContent, error, { strict = false } = {}) {
+    const mode = strict ? 'strict XML parse failure' : 'XML parse failure';
+    const message = typeof error?.message === 'string' ? error.message : String(error);
+    console.warn(`${mode}: ${message}; ${Utils.#formatXmlParseFailureContext(xmlContent, error)}`);
+  }
+
   static #normalizeXmlWithCheerio(input) {
     if (input === null || input === undefined) {
       return '';
@@ -856,7 +893,7 @@ class Utils {
     try {
       return parser.parseFromString(normalized, mimeType || 'text/xml');
     } catch (error) {
-      console.log('XML Content:', normalized);
+      Utils.#warnXmlParseFailure(normalized, error);
       throw new Error(`Failed to parse XML content: ${error.message}`);
     }
   }
@@ -890,7 +927,7 @@ class Utils {
       return document;
     } catch (error) {
       const diagnostics = this.#buildXmlParseDiagnostics(errorEntries);
-      console.log('XML Content:', normalized);
+      Utils.#warnXmlParseFailure(normalized, error, { strict: true });
       if (diagnostics) {
         throw new Error(`Failed to parse XML content strictly:\n${diagnostics}`);
       }

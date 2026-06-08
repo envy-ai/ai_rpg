@@ -2,6 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 
 const Utils = require('../Utils.js');
+const Globals = require('../Globals.js');
 
 test('parseXmlDocumentStrict parses well-formed XML', () => {
     const doc = Utils.parseXmlDocumentStrict('<root><child>ok</child></root>', 'text/xml');
@@ -17,6 +18,59 @@ test('parseXmlDocumentStrict reports malformed XML diagnostics', () => {
         ),
         /Opening and ending tag mismatch|Failed to parse XML content strictly/
     );
+});
+
+test('parseXmlDocument does not dump full XML content when parsing fails', () => {
+    const previousConfig = Globals.config;
+    const originalLog = console.log;
+    const originalWarn = console.warn;
+    const captured = [];
+    const largePayload = 'x'.repeat(5000);
+
+    try {
+        Globals.config = { ...(previousConfig || {}), strictXMLParsing: false };
+        console.log = (...args) => captured.push(args.join(' '));
+        console.warn = (...args) => captured.push(args.join(' '));
+
+        assert.throws(
+            () => Utils.parseXmlDocument(`<root><![CDATA ${largePayload}</root>`, 'text/xml'),
+            /Invalid CDATA/
+        );
+    } finally {
+        console.log = originalLog;
+        console.warn = originalWarn;
+        Globals.config = previousConfig;
+    }
+
+    const output = captured.join('\n');
+    assert.doesNotMatch(output, /XML Content:\s*<root/);
+    assert.equal(output.includes(largePayload), false);
+    assert.match(output, /XML parse failure/i);
+});
+
+test('parseXmlDocumentStrict does not dump full XML content when parsing fails', () => {
+    const originalLog = console.log;
+    const originalWarn = console.warn;
+    const captured = [];
+    const largePayload = 'x'.repeat(5000);
+
+    try {
+        console.log = (...args) => captured.push(args.join(' '));
+        console.warn = (...args) => captured.push(args.join(' '));
+
+        assert.throws(
+            () => Utils.parseXmlDocumentStrict(`<root><child>${largePayload}</root>`, 'text/xml'),
+            /Failed to parse XML content strictly/
+        );
+    } finally {
+        console.log = originalLog;
+        console.warn = originalWarn;
+    }
+
+    const output = captured.join('\n');
+    assert.doesNotMatch(output, /XML Content:\s*<root/);
+    assert.equal(output.includes(largePayload), false);
+    assert.match(output, /XML parse failure/i);
 });
 
 test('extractXmlNodeContent preserves CDATA text without CDATA markers', () => {

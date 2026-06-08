@@ -23,6 +23,15 @@ regexes:
   - pattern: '/[Aa] beat\./'
     name: "Avoid repetitive use of 'a beat' in prose, because if you use it in prose, every character must immediately shit themselves in horrifying, graphic detail. Best just to change/remove it, because no one wants that."
     ppm: 0
+  - pattern: "/made a sound/"
+    name: made a sound
+    ppm: 1
+  - pattern: "/jaw (worked|set)/"
+    name: jaw worked/set
+    ppm: 0
+  - pattern: "/nothing like/"
+    name: nothing like
+    ppm: 300
 slopwords:
   # Custom ones first:
   singing: default
@@ -35,6 +44,7 @@ slopwords:
   transactions: default
   anchoring: default
   amber: default
+  mischief: default
   ozone: 0
   Elara: 0
   Aris: 0

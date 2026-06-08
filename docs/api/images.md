@@ -49,6 +49,23 @@ Notes:
 - When a variant generation job actually runs, the server logs the final rendered image-edit prompt to the app console before rendering/submitting the ComfyUI workflow. The default `flux2_klein_edit.json.njk` workflow also sends that same rendered prompt through a `Text to Console` node labeled `Final Prompt`, so it appears in the ComfyUI console during execution.
 - After an edited variant image is saved, the server inspects the source and edited image files and prints a console warning if the edited dimensions differ from the source dimensions.
 
+## POST /api/images/upload
+Upload an image and replace the current image for an entity.
+
+Request:
+- Body: `{ entityType: 'location'|'thing'|'item'|'scenery'|'npc'|'player', entityId: string, imageDataUrl: string }`
+
+Response:
+- 200: `{ success: true, entityType, entityId, imageId, image, location? | thing? | npc? | player?, message }`
+- 400: `{ success: false, error }`
+
+Notes:
+- Supported upload MIME types are PNG, JPEG, WebP, and GIF.
+- The server validates that the decoded bytes match the declared PNG, JPEG, WebP, or GIF signature; SVG uploads are rejected.
+- Uploaded images are stored in `public/generated-images/` using an extension that matches the submitted MIME type.
+- For locations, the uploaded image replaces the base `location.imageId` and clears cached weather/lighting image variants so stale variants do not display over the new base image.
+- `thing`, `item`, and `scenery` all target known `Thing` records. `npc` and `player` target known character records, with type validation so NPC uploads cannot target the player and player uploads cannot target NPCs.
+
 ## POST /api/generate-image
 Legacy custom image generation endpoint.
 

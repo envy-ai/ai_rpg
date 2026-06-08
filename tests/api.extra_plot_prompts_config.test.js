@@ -2,6 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('fs');
 const vm = require('vm');
+const { DOMParser } = require('@xmldom/xmldom');
 
 function loadExtraPlotPromptHelpers({
     config = {},
@@ -9,7 +10,8 @@ function loadExtraPlotPromptHelpers({
     plotSummaryTurnCounter = 0,
     plotSummaryRunOnNextEligibleTurn = false,
     plotExpanderTurnCounter = 0,
-    offscreenNpcActivityState = null
+    offscreenNpcActivityState = null,
+    chatHistory = []
 } = {}) {
     const source = fs.readFileSync(require.resolve('../api.js'), 'utf8');
     const start = source.indexOf('        function normalizeNpcNameKey(value) {');
@@ -78,6 +80,46 @@ this.shouldRunPlotExpanderThisTurn = shouldRunPlotExpanderThisTurn;`,
     };
 }
 
+function loadCollectNpcLastMention({ chatHistory = [] } = {}) {
+    const source = fs.readFileSync(require.resolve('../api.js'), 'utf8');
+    const helperStart = source.indexOf('        function isXmlCompatibleCodePoint(codePoint) {');
+    const collectStart = source.indexOf('        function collectNpcLastMention(name) {');
+    const start = helperStart >= 0 ? helperStart : collectStart;
+    const end = source.indexOf('\n        function collectOffscreenNpcCandidates', collectStart);
+    if (collectStart < 0 || end < 0) {
+        throw new Error('Unable to locate collectNpcLastMention in api.js');
+    }
+
+    const context = {
+        chatHistory
+    };
+
+    vm.createContext(context);
+    vm.runInContext(
+        `${source.slice(start, end)}
+this.collectNpcLastMention = collectNpcLastMention;`,
+        context
+    );
+
+    return context.collectNpcLastMention;
+}
+
+function hasUnpairedSurrogate(value) {
+    for (let index = 0; index < value.length; index += 1) {
+        const code = value.charCodeAt(index);
+        if (code >= 0xD800 && code <= 0xDBFF) {
+            const next = value.charCodeAt(index + 1);
+            if (!(next >= 0xDC00 && next <= 0xDFFF)) {
+                return true;
+            }
+            index += 1;
+        } else if (code >= 0xDC00 && code <= 0xDFFF) {
+            return true;
+        }
+    }
+    return false;
+}
+
 test('extra_plot_prompts defaults all supported prompt categories to enabled when omitted', () => {
     const { resolveExtraPlotPromptSettings } = loadExtraPlotPromptHelpers();
 
@@ -91,6 +133,33 @@ test('extra_plot_prompts defaults all supported prompt categories to enabled whe
             'offscreen-npc-activity-weekly': true
         }
     );
+});
+
+test('offscreen NPC last mention preview does not split surrogate pairs', () => {
+    const content = `${'wolf '}${'a'.repeat(214)}🧸 trailing text`;
+    const collectNpcLastMention = loadCollectNpcLastMention({
+        chatHistory: [
+            {
+                content,
+                timestamp: '2026-06-08T00:00:00.000Z'
+            }
+        ]
+    });
+
+    const mention = collectNpcLastMention('wolf');
+
+    assert.ok(mention);
+    assert.equal(hasUnpairedSurrogate(mention.preview), false);
+    assert.match(mention.preview, /🧸\.\.\.$/);
+    assert.doesNotThrow(() => {
+        new DOMParser({
+            onError(level, message) {
+                if (level === 'fatalError') {
+                    throw new Error(message);
+                }
+            }
+        }).parseFromString(`<root><![CDATA[${mention.preview}]]></root>`, 'text/xml');
+    });
 });
 
 test('extra_plot_prompts rejects non-boolean values', () => {

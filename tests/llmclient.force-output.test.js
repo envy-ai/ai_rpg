@@ -135,6 +135,47 @@ test('LLMClient.chatCompletion marks per-attempt error logs when another retry w
     }
 });
 
+test('LLMClient.writeLogFile preserves retry metadata on errors with custom toJSON', { concurrency: false }, () => {
+    const originalBaseDir = Globals.baseDir;
+    const tmpRoot = path.resolve(__dirname, '..', 'tmp');
+    fs.mkdirSync(tmpRoot, { recursive: true });
+    const tempBaseDir = fs.mkdtempSync(path.join(tmpRoot, 'llmclient-error-json-'));
+
+    const error = new Error('Synthetic streamed timeout.');
+    error.name = 'AggregateError';
+    error.code = 'ETIMEDOUT';
+    error.attemptNumber = 2;
+    error.maxAttempts = 7;
+    error.willRetry = true;
+    error.toJSON = () => ({
+        message: error.message,
+        name: error.name,
+        code: error.code,
+        config: {
+            responseType: 'stream'
+        }
+    });
+
+    Globals.baseDir = tempBaseDir;
+
+    try {
+        const filePath = LLMClient.writeLogFile({
+            prefix: 'chatCompletionError',
+            metadataLabel: 'events-xml',
+            error,
+            payload: ''
+        });
+
+        const content = fs.readFileSync(filePath, 'utf8');
+        assert.match(content, /"code":"ETIMEDOUT"/);
+        assert.match(content, /"attemptNumber":2/);
+        assert.match(content, /"maxAttempts":7/);
+        assert.match(content, /"willRetry":true/);
+    } finally {
+        Globals.baseDir = originalBaseDir;
+    }
+});
+
 test('LLMClient.chatCompletion uses forceOutput string without network call', async () => {
     const originalAxiosPost = axios.post;
     const originalConfig = Globals.config;

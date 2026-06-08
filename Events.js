@@ -2849,45 +2849,28 @@ class Events {
             return null;
         }
 
-        const promptEnv = this._deps.promptEnv;
-        const parseXMLTemplate = this._deps.parseXMLTemplate;
-        const prepareBasePromptContext = this._deps.prepareBasePromptContext;
-        const findRegionByLocationId = this._deps.findRegionByLocationId;
-
-        const baseContext = await prepareBasePromptContext();
-        if (
-            typeof recentTextOverride === "string" &&
-            recentTextOverride.trim()
-        ) {
-            const supplementalLine = `[Storyteller] ${recentTextOverride.trim()}`;
-            const existingRecentHistory =
-                typeof baseContext.recentGameHistory === "string"
-                    ? baseContext.recentGameHistory.trim()
-                    : "";
-            baseContext.recentGameHistory = existingRecentHistory
-                ? `${existingRecentHistory}\n${supplementalLine}`
-                : supplementalLine;
-        }
-
         // Build a stable quest list for prompt rendering using the player's canonical quest order.
         let currentQuestPromptList = [];
         const player = this.currentPlayer;
-        if (
-            player &&
-            Array.isArray(player.currentQuests) &&
-            typeof player.getQuestByIndex === "function"
-        ) {
+        if (player && Array.isArray(player.currentQuests)) {
             const activeQuests = Quest.filterActiveQuests(player.currentQuests, {
                 includePaused: false,
             });
+            if (activeQuests.length && typeof player.getQuestByIndex !== "function") {
+                throw new Error(
+                    "Quest checks require player.getQuestByIndex to resolve active quest prompt indices.",
+                );
+            }
             const questIndexMap = new Map();
-            for (let idx = 0; ; idx += 1) {
-                const quest = player.getQuestByIndex(idx);
-                if (!quest) {
-                    break;
+            if (activeQuests.length) {
+                for (let idx = 0; ; idx += 1) {
+                    const quest = player.getQuestByIndex(idx);
+                    if (!quest) {
+                        break;
+                    }
+                    const questId = quest.id || `quest_${idx}`;
+                    questIndexMap.set(questId, idx + 1); // store as 1-based to match prompt expectations
                 }
-                const questId = quest.id || `quest_${idx}`;
-                questIndexMap.set(questId, idx + 1); // store as 1-based to match prompt expectations
             }
 
             currentQuestPromptList = activeQuests
@@ -2920,6 +2903,31 @@ class Events {
                     `Failed to resolve prompt indices for quests: ${labels}`,
                 );
             }
+        }
+
+        if (!currentQuestPromptList.length) {
+            console.info("Quest checks skipped: no active quests.");
+            return null;
+        }
+
+        const promptEnv = this._deps.promptEnv;
+        const parseXMLTemplate = this._deps.parseXMLTemplate;
+        const prepareBasePromptContext = this._deps.prepareBasePromptContext;
+        const findRegionByLocationId = this._deps.findRegionByLocationId;
+
+        const baseContext = await prepareBasePromptContext();
+        if (
+            typeof recentTextOverride === "string" &&
+            recentTextOverride.trim()
+        ) {
+            const supplementalLine = `[Storyteller] ${recentTextOverride.trim()}`;
+            const existingRecentHistory =
+                typeof baseContext.recentGameHistory === "string"
+                    ? baseContext.recentGameHistory.trim()
+                    : "";
+            baseContext.recentGameHistory = existingRecentHistory
+                ? `${existingRecentHistory}\n${supplementalLine}`
+                : supplementalLine;
         }
 
         const renderedQuestCheck = promptEnv.render("base-context.xml.njk", {

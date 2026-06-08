@@ -12402,8 +12402,47 @@ function sanitizeXmlTemplateCdataSections(xmlContent) {
     );
 }
 
+function logXMLTemplateParseFailure(xmlContent, error, {
+    prefix = 'prompt_parse_error',
+    metadataLabel = 'xml_template',
+    output = 'stdout'
+} = {}) {
+    if (typeof LLMClient === 'undefined' || typeof LLMClient.logPrompt !== 'function') {
+        return;
+    }
+
+    const resolvedPrefix = typeof prefix === 'string' && prefix.trim()
+        ? prefix.trim()
+        : 'prompt_parse_error';
+    const resolvedMetadataLabel = typeof metadataLabel === 'string' && metadataLabel.trim()
+        ? metadataLabel.trim()
+        : 'xml_template';
+    const renderedTemplate = xmlContent === undefined || xmlContent === null
+        ? ''
+        : String(xmlContent);
+    const errorDetails = error?.stack || error?.message || String(error);
+
+    LLMClient.logPrompt({
+        prefix: resolvedPrefix,
+        metadataLabel: resolvedMetadataLabel,
+        response: '',
+        sections: [
+            {
+                title: 'XML Parse Error',
+                content: errorDetails
+            },
+            {
+                title: 'Rendered XML Template',
+                content: renderedTemplate
+            }
+        ],
+        output
+    });
+}
+
 // Function to parse XML template and extract prompts
-function parseXMLTemplate(xmlContent) {
+function parseXMLTemplate(xmlContent, logOptions) {
+    logOptions = logOptions || {};
     try {
         if (xmlContent === undefined || xmlContent === null) {
             throw new Error('XML template content is empty');
@@ -12466,6 +12505,7 @@ function parseXMLTemplate(xmlContent) {
 
         return result;
     } catch (error) {
+        logXMLTemplateParseFailure(xmlContent, error, logOptions);
         console.error('Error parsing XML template:', error);
         throw error;
     }

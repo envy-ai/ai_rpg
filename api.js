@@ -105,6 +105,93 @@ const CHECK_RESULT_CHAT_TOOL_NAMES = new Set([
     'resolveOpposedPlausibilityCheck'
 ]);
 
+const UPLOADED_ENTITY_IMAGE_TYPES = new Map([
+    ['image/png', { extension: 'png', label: 'PNG' }],
+    ['image/jpeg', { extension: 'jpg', label: 'JPEG' }],
+    ['image/jpg', { extension: 'jpg', label: 'JPEG' }],
+    ['image/webp', { extension: 'webp', label: 'WebP' }],
+    ['image/gif', { extension: 'gif', label: 'GIF' }]
+]);
+
+function parseUploadedEntityImageDataUrl(dataUrl) {
+    if (typeof dataUrl !== 'string' || !dataUrl.trim()) {
+        throw new Error('Image data URL is required.');
+    }
+
+    const match = dataUrl.match(/^data:(image\/[a-z0-9.+-]+);base64,([\s\S]+)$/i);
+    if (!match) {
+        throw new Error('Image data URL is invalid.');
+    }
+
+    const mimeType = match[1].toLowerCase();
+    const typeInfo = UPLOADED_ENTITY_IMAGE_TYPES.get(mimeType);
+    if (!typeInfo) {
+        throw new Error('Unsupported image type. Supported upload MIME types are PNG, JPEG, WebP, and GIF.');
+    }
+
+    const base64Payload = match[2];
+    if (!base64Payload || !base64Payload.trim()) {
+        throw new Error('Image data URL payload is missing.');
+    }
+
+    const normalizedPayload = base64Payload.replace(/\s+/g, '');
+    if (!/^[A-Za-z0-9+/]+={0,2}$/.test(normalizedPayload)) {
+        throw new Error('Image data URL payload is not valid base64.');
+    }
+    if (normalizedPayload.length % 4 !== 0) {
+        throw new Error('Image data URL payload is not valid base64.');
+    }
+
+    const buffer = Buffer.from(normalizedPayload, 'base64');
+    if (!buffer.length) {
+        throw new Error('Image data URL payload is empty.');
+    }
+    const normalizedMimeType = mimeType === 'image/jpg' ? 'image/jpeg' : mimeType;
+    if (!uploadedEntityImageMatchesMimeType(buffer, normalizedMimeType)) {
+        throw new Error(`${typeInfo.label} upload bytes do not match the declared image type.`);
+    }
+
+    return {
+        mimeType: normalizedMimeType,
+        extension: typeInfo.extension,
+        buffer
+    };
+}
+
+function uploadedEntityImageMatchesMimeType(buffer, mimeType) {
+    if (!Buffer.isBuffer(buffer) || !buffer.length) {
+        return false;
+    }
+
+    switch (mimeType) {
+        case 'image/png':
+            return buffer.length >= 8
+                && buffer[0] === 0x89
+                && buffer[1] === 0x50
+                && buffer[2] === 0x4e
+                && buffer[3] === 0x47
+                && buffer[4] === 0x0d
+                && buffer[5] === 0x0a
+                && buffer[6] === 0x1a
+                && buffer[7] === 0x0a;
+        case 'image/jpeg':
+            return buffer.length >= 3
+                && buffer[0] === 0xff
+                && buffer[1] === 0xd8
+                && buffer[2] === 0xff;
+        case 'image/webp':
+            return buffer.length >= 12
+                && buffer.subarray(0, 4).toString('ascii') === 'RIFF'
+                && buffer.subarray(8, 12).toString('ascii') === 'WEBP';
+        case 'image/gif': {
+            const signature = buffer.length >= 6 ? buffer.subarray(0, 6).toString('ascii') : '';
+            return signature === 'GIF87a' || signature === 'GIF89a';
+        }
+        default:
+            return false;
+    }
+}
+
 function isSkillCheckChatToolName(value) {
     return typeof value === 'string' && SKILL_CHECK_CHAT_TOOL_NAMES.has(value);
 }
@@ -6956,6 +7043,37 @@ module.exports = function registerApiRoutes(scope) {
             };
         }
 
+        function isXmlCompatibleCodePoint(codePoint) {
+            return codePoint === 0x9
+                || codePoint === 0xA
+                || codePoint === 0xD
+                || (codePoint >= 0x20 && codePoint <= 0xD7FF)
+                || (codePoint >= 0xE000 && codePoint <= 0xFFFD)
+                || (codePoint >= 0x10000 && codePoint <= 0x10FFFF);
+        }
+
+        function normalizePromptXmlText(value) {
+            const text = typeof value === 'string' ? value : String(value ?? '');
+            let normalized = '';
+            for (let index = 0; index < text.length;) {
+                const codePoint = text.codePointAt(index);
+                const width = codePoint > 0xFFFF ? 2 : 1;
+                normalized += isXmlCompatibleCodePoint(codePoint)
+                    ? String.fromCodePoint(codePoint)
+                    : '\uFFFD';
+                index += width;
+            }
+            return normalized;
+        }
+
+        function buildOffscreenNpcLastMentionPreview(previewSource) {
+            const normalized = normalizePromptXmlText(previewSource);
+            const characters = Array.from(normalized);
+            return characters.length > 220
+                ? `${characters.slice(0, 220).join('')}...`
+                : normalized;
+        }
+
         function collectNpcLastMention(name) {
             if (typeof name !== 'string' || !name.trim()) {
                 return null;
@@ -6982,9 +7100,7 @@ module.exports = function registerApiRoutes(scope) {
                     continue;
                 }
                 const previewSource = content || summary;
-                const preview = previewSource.length > 220
-                    ? `${previewSource.slice(0, 220)}...`
-                    : previewSource;
+                const preview = buildOffscreenNpcLastMentionPreview(previewSource);
                 return {
                     index,
                     timestamp: entry.timestamp || null,
@@ -7269,6 +7385,9 @@ module.exports = function registerApiRoutes(scope) {
                 const promptType = mode === 'weekly'
                     ? 'offscreen-npc-activity-weekly'
                     : 'offscreen-npc-activity-daily';
+                const metadataLabel = mode === 'weekly'
+                    ? 'offscreen_npc_activity_weekly'
+                    : 'offscreen_npc_activity_daily';
                 const renderedTemplate = promptEnv.render('base-context.xml.njk', {
                     ...baseContext,
                     promptType,
@@ -7279,14 +7398,14 @@ module.exports = function registerApiRoutes(scope) {
                         ? 'over the past week'
                         : 'since they were last mentioned'
                 });
-                const parsedTemplate = parseXMLTemplate(renderedTemplate);
+                const parsedTemplate = parseXMLTemplate(renderedTemplate, {
+                    prefix: 'prompt_parse_error',
+                    metadataLabel
+                });
                 if (!parsedTemplate?.systemPrompt || !parsedTemplate?.generationPrompt) {
                     throw new Error('Offscreen NPC activity prompt template is missing prompts.');
                 }
 
-                const metadataLabel = mode === 'weekly'
-                    ? 'offscreen_npc_activity_weekly'
-                    : 'offscreen_npc_activity_daily';
                 const requestOptions = {
                     messages: [
                         { role: 'system', content: parsedTemplate.systemPrompt },
@@ -46115,6 +46234,143 @@ module.exports = function registerApiRoutes(scope) {
             });
         });
 
+        function saveUploadedEntityImage({ imageDataUrl, entityType, entityId }) {
+            const parsedImage = parseUploadedEntityImageDataUrl(imageDataUrl);
+            const imageId = generateImageId();
+            const imagesDir = path.join(resolveBaseDirectory(), 'public', 'generated-images');
+            if (!fs.existsSync(imagesDir)) {
+                fs.mkdirSync(imagesDir, { recursive: true });
+            }
+
+            const filename = `${imageId}.${parsedImage.extension}`;
+            const filepath = path.join(imagesDir, filename);
+            fs.writeFileSync(filepath, parsedImage.buffer);
+
+            const imageEntry = {
+                imageId,
+                filename,
+                url: `/generated-images/${filename}`,
+                size: parsedImage.buffer.length,
+                mimeType: parsedImage.mimeType
+            };
+            const metadata = {
+                id: imageId,
+                prompt: `${entityType}_upload`,
+                negative_prompt: '',
+                width: null,
+                height: null,
+                seed: null,
+                createdAt: new Date().toISOString(),
+                images: [imageEntry],
+                source: 'upload',
+                upload: {
+                    entityType,
+                    entityId,
+                    mimeType: parsedImage.mimeType
+                }
+            };
+            generatedImages.set(imageId, metadata);
+            return { imageId, metadata };
+        }
+
+        function resolveEntityImageUploadTarget(rawEntityType, rawEntityId) {
+            const entityType = typeof rawEntityType === 'string' ? rawEntityType.trim().toLowerCase() : '';
+            const entityId = typeof rawEntityId === 'string' ? rawEntityId.trim() : '';
+            if (!entityType) {
+                throw new Error('Entity type is required.');
+            }
+            if (!entityId) {
+                throw new Error('Entity ID is required.');
+            }
+
+            switch (entityType) {
+                case 'location': {
+                    const entity = gameLocations.get(entityId) || Location.get(entityId);
+                    if (!entity) {
+                        throw new Error(`Location '${entityId}' was not found.`);
+                    }
+                    return { entityType, entity, responseKey: 'location' };
+                }
+                case 'thing':
+                case 'item':
+                case 'scenery': {
+                    const entity = things.get(entityId) || (typeof Thing.getById === 'function' ? Thing.getById(entityId) : null);
+                    if (!entity) {
+                        throw new Error(`Thing '${entityId}' was not found.`);
+                    }
+                    return { entityType: 'thing', entity, responseKey: 'thing' };
+                }
+                case 'npc':
+                case 'player': {
+                    const entity = players.get(entityId)
+                        || (currentPlayer?.id === entityId ? currentPlayer : null);
+                    if (!entity) {
+                        throw new Error(`Character '${entityId}' was not found.`);
+                    }
+                    if (entityType === 'npc' && !entity.isNPC) {
+                        throw new Error(`Character '${entityId}' is not an NPC.`);
+                    }
+                    if (entityType === 'player' && entity.isNPC) {
+                        throw new Error(`Character '${entityId}' is not the player.`);
+                    }
+                    return { entityType, entity, responseKey: entityType };
+                }
+                default:
+                    throw new Error("Entity type must be one of: location, thing, item, scenery, npc, player.");
+            }
+        }
+
+        app.post('/api/images/upload', (req, res) => {
+            try {
+                const { entityType: rawEntityType, entityId: rawEntityId, imageDataUrl } = req.body || {};
+                const { entityType, entity, responseKey } = resolveEntityImageUploadTarget(rawEntityType, rawEntityId);
+                const savedImage = saveUploadedEntityImage({
+                    imageDataUrl,
+                    entityType,
+                    entityId: entity.id
+                });
+
+                entity.imageId = savedImage.imageId;
+
+                if (entityType === 'location') {
+                    if (pendingLocationImages && typeof pendingLocationImages.delete === 'function') {
+                        pendingLocationImages.delete(entity.id);
+                    }
+                    if (typeof clearLocationImageVariants === 'function') {
+                        clearLocationImageVariants(entity);
+                    }
+                }
+
+                let entityPayload = null;
+                if (responseKey === 'location') {
+                    entityPayload = typeof buildLocationResponse === 'function'
+                        ? buildLocationResponse(entity)
+                        : (typeof entity.toJSON === 'function' ? entity.toJSON() : entity);
+                } else if (responseKey === 'thing') {
+                    entityPayload = typeof entity.toJSON === 'function' ? entity.toJSON() : entity;
+                } else {
+                    entityPayload = typeof serializeNpcForClient === 'function'
+                        ? serializeNpcForClient(entity)
+                        : (typeof entity.toJSON === 'function' ? entity.toJSON() : entity);
+                }
+
+                res.json({
+                    success: true,
+                    entityType,
+                    entityId: entity.id,
+                    imageId: savedImage.imageId,
+                    image: savedImage.metadata,
+                    [responseKey]: entityPayload,
+                    message: 'Image uploaded successfully.'
+                });
+            } catch (error) {
+                res.status(400).json({
+                    success: false,
+                    error: error.message || 'Failed to upload image.'
+                });
+            }
+        });
+
         const GENERATED_IMAGE_FILE_EXTENSIONS = ['.png', '.jpg', '.jpeg', '.webp', '.gif'];
 
         function normalizeGeneratedImageIdForLookup(rawImageId) {
@@ -46272,3 +46528,4 @@ module.exports.buildBarterCurrencySettlement = buildBarterCurrencySettlement;
 module.exports.sanitizeBarterPricingXmlForParsing = sanitizeBarterPricingXmlForParsing;
 module.exports.shouldIncludePlayerActionForEventChecks = shouldIncludePlayerActionForEventChecks;
 module.exports.extractRegisteredThingBlueprintFields = extractRegisteredThingBlueprintFields;
+module.exports.parseUploadedEntityImageDataUrl = parseUploadedEntityImageDataUrl;

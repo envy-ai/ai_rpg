@@ -77,6 +77,7 @@
                                             <button type="button" class="entity-context-menu-item location-image-menu-item" id="locationSetLastSeenButton">Set Last Seen</button>
                                             <button type="button" class="entity-context-menu-item location-image-menu-item" id="locationSummonNpcButton">Summon NPC</button>
                                             <button type="button" class="entity-context-menu-item location-image-menu-item" id="locationSummonThingButton">Summon Item/Scenery</button>
+                                            <button type="button" class="entity-context-menu-item location-image-menu-item" id="locationImageUploadButton">Upload Image</button>
                                             <button type="button" class="entity-context-menu-item location-image-menu-item" id="locationImageRegenerateButton">Regenerate Image</button>
                                         </div>
                                     </div>
@@ -424,6 +425,7 @@
                     <button type="button" class="entity-context-menu-item location-image-menu-item" id="mapLocationMenuSetLastSeenButton">Set Last Seen</button>
                     <button type="button" class="entity-context-menu-item location-image-menu-item" id="mapLocationMenuSummonNpcButton">Summon NPC</button>
                     <button type="button" class="entity-context-menu-item location-image-menu-item" id="mapLocationMenuSummonThingButton">Summon Item/Scenery</button>
+                    <button type="button" class="entity-context-menu-item location-image-menu-item" id="mapLocationMenuUploadImageButton">Upload Image</button>
                     <button type="button" class="entity-context-menu-item location-image-menu-item" id="mapLocationMenuRegenerateImageButton">Regenerate Image</button>
                     <button type="button" class="entity-context-menu-item location-image-menu-item" id="mapLocationMenuDeleteButton">Delete Location</button>
                 </div>
@@ -1061,6 +1063,35 @@
                     <button type="button" class="btn btn-primary" id="slashUploadSubmitBtn">Upload</button>
                 </div>
             </footer>
+        </div>
+    </div>
+
+    <div id="entityImageUploadModal" class="modal" role="dialog" aria-modal="true" aria-labelledby="entityImageUploadTitle" aria-hidden="true" hidden>
+        <div class="modal__dialog">
+            <header class="modal__header">
+                <h2 id="entityImageUploadTitle">Upload Image</h2>
+                <button type="button" class="modal__close" id="entityImageUploadCloseBtn" aria-label="Close image upload dialog">
+                    <span aria-hidden="true">X</span>
+                </button>
+            </header>
+            <form id="entityImageUploadForm">
+                <div class="modal__body">
+                    <p id="entityImageUploadDescription" class="modal__instruction">Choose an image to replace the current image.</p>
+                    <div class="form-group">
+                        <label for="entityImageUploadFile">Select Image</label>
+                        <input type="file" id="entityImageUploadFile" accept="image/png,image/jpeg,image/webp,image/gif">
+                        <span class="help-text">PNG, JPEG, WebP, and GIF images are supported.</span>
+                    </div>
+                    <div class="entity-image-upload-preview" id="entityImageUploadPreview" hidden></div>
+                    <p id="entityImageUploadStatus" class="entity-image-upload-status" hidden></p>
+                </div>
+                <footer class="modal__footer">
+                    <div class="button-group">
+                        <button type="button" class="btn btn-secondary" id="entityImageUploadCancelBtn">Cancel</button>
+                        <button type="submit" class="btn btn-primary" id="entityImageUploadSubmitBtn">Upload</button>
+                    </div>
+                </footer>
+            </form>
         </div>
     </div>
 
@@ -8111,6 +8142,12 @@
             editButton.textContent = 'Edit';
             menu.appendChild(editButton);
 
+            const uploadImageButton = document.createElement('button');
+            uploadImageButton.type = 'button';
+            uploadImageButton.className = 'entity-context-menu-item thing-card-menu-item';
+            uploadImageButton.textContent = 'Upload Image';
+            menu.appendChild(uploadImageButton);
+
             const canOpenContainer = resolveThingBooleanFlag(thing, 'isContainer');
             let openContainerButton = null;
             if (canOpenContainer) {
@@ -8239,6 +8276,12 @@
                 } catch (error) {
                     console.warn('Failed to open thing editor:', error);
                 }
+            });
+
+            uploadImageButton.addEventListener('click', (event) => {
+                event.stopPropagation();
+                closeThingContextMenu();
+                openThingImageUploadModal(thingDataCache.get(thing.id) || thing);
             });
 
             if (openContainerButton) {
@@ -9732,6 +9775,7 @@
         const locationSetLastSeenButton = document.getElementById('locationSetLastSeenButton');
         const locationSummonNpcButton = document.getElementById('locationSummonNpcButton');
         const locationSummonThingButton = document.getElementById('locationSummonThingButton');
+        const locationImageUploadButton = document.getElementById('locationImageUploadButton');
         const locationImageRegenerateButton = document.getElementById('locationImageRegenerateButton');
         const mapLocationContextMenu = document.getElementById('mapLocationContextMenu');
         const worldMapReloadButton = document.getElementById('worldMapReloadButton');
@@ -9744,8 +9788,19 @@
         const mapLocationMenuSetLastSeenButton = document.getElementById('mapLocationMenuSetLastSeenButton');
         const mapLocationMenuSummonNpcButton = document.getElementById('mapLocationMenuSummonNpcButton');
         const mapLocationMenuSummonThingButton = document.getElementById('mapLocationMenuSummonThingButton');
+        const mapLocationMenuUploadImageButton = document.getElementById('mapLocationMenuUploadImageButton');
         const mapLocationMenuRegenerateImageButton = document.getElementById('mapLocationMenuRegenerateImageButton');
         const mapLocationMenuDeleteButton = document.getElementById('mapLocationMenuDeleteButton');
+        const entityImageUploadModal = document.getElementById('entityImageUploadModal');
+        const entityImageUploadForm = document.getElementById('entityImageUploadForm');
+        const entityImageUploadTitle = document.getElementById('entityImageUploadTitle');
+        const entityImageUploadDescription = document.getElementById('entityImageUploadDescription');
+        const entityImageUploadFile = document.getElementById('entityImageUploadFile');
+        const entityImageUploadPreview = document.getElementById('entityImageUploadPreview');
+        const entityImageUploadStatus = document.getElementById('entityImageUploadStatus');
+        const entityImageUploadSubmitBtn = document.getElementById('entityImageUploadSubmitBtn');
+        const entityImageUploadCancelBtn = document.getElementById('entityImageUploadCancelBtn');
+        const entityImageUploadCloseBtn = document.getElementById('entityImageUploadCloseBtn');
         const setLastSeenModal = document.getElementById('setLastSeenModal');
         const setLastSeenForm = document.getElementById('setLastSeenForm');
         const setLastSeenLocationName = document.getElementById('setLastSeenLocationName');
@@ -10227,6 +10282,11 @@
         const setLastSeenModalState = {
             locationId: null,
             locationLabel: ''
+        };
+        let entityImageUploadState = {
+            entityType: '',
+            entityId: '',
+            entityName: ''
         };
         let setLastSeenSubmitting = false;
 
@@ -17356,6 +17416,268 @@
                 };
                 image.onerror = () => reject(new Error(`${labelText} image could not be loaded.`));
                 image.src = dataUrl;
+            });
+        }
+
+        const ENTITY_IMAGE_UPLOAD_MIME_TYPES = new Set(['image/png', 'image/jpeg', 'image/webp', 'image/gif']);
+
+        function readFileAsDataUrl(file, label = 'File') {
+            return new Promise((resolve, reject) => {
+                const labelText = label || 'File';
+                if (!file) {
+                    reject(new Error(`${labelText} is required.`));
+                    return;
+                }
+                if (!ENTITY_IMAGE_UPLOAD_MIME_TYPES.has(file.type)) {
+                    reject(new Error('Supported upload MIME types are PNG, JPEG, WebP, and GIF.'));
+                    return;
+                }
+                const reader = new FileReader();
+                reader.onload = () => {
+                    if (typeof reader.result === 'string') {
+                        resolve(reader.result);
+                        return;
+                    }
+                    reject(new Error(`${labelText} could not be read.`));
+                };
+                reader.onerror = () => reject(new Error(`${labelText} could not be read.`));
+                reader.readAsDataURL(file);
+            });
+        }
+
+        function setEntityImageUploadStatus(message = '', type = null) {
+            if (!entityImageUploadStatus) {
+                return;
+            }
+            entityImageUploadStatus.textContent = message || '';
+            entityImageUploadStatus.classList.remove('is-error', 'is-success');
+            if (type === 'error') {
+                entityImageUploadStatus.classList.add('is-error');
+            } else if (type === 'success') {
+                entityImageUploadStatus.classList.add('is-success');
+            }
+            if (message) {
+                entityImageUploadStatus.removeAttribute('hidden');
+            } else {
+                entityImageUploadStatus.setAttribute('hidden', '');
+            }
+        }
+
+        function setEntityImageUploadControlsEnabled(enabled) {
+            const isEnabled = enabled !== false;
+            if (entityImageUploadFile) {
+                entityImageUploadFile.disabled = !isEnabled;
+            }
+            if (entityImageUploadSubmitBtn) {
+                entityImageUploadSubmitBtn.disabled = !isEnabled;
+            }
+            if (entityImageUploadCancelBtn) {
+                entityImageUploadCancelBtn.disabled = !isEnabled;
+            }
+            if (entityImageUploadCloseBtn) {
+                entityImageUploadCloseBtn.disabled = !isEnabled;
+            }
+        }
+
+        function clearEntityImageUploadPreview() {
+            if (entityImageUploadPreview) {
+                entityImageUploadPreview.innerHTML = '';
+                entityImageUploadPreview.setAttribute('hidden', '');
+            }
+        }
+
+        function updateEntityImageUploadPreview(file) {
+            clearEntityImageUploadPreview();
+            if (!file || !entityImageUploadPreview || !ENTITY_IMAGE_UPLOAD_MIME_TYPES.has(file.type)) {
+                return;
+            }
+            const previewUrl = URL.createObjectURL(file);
+            const img = document.createElement('img');
+            img.src = previewUrl;
+            img.alt = file.name || 'Selected image preview';
+            img.addEventListener('load', () => URL.revokeObjectURL(previewUrl), { once: true });
+            img.addEventListener('error', () => URL.revokeObjectURL(previewUrl), { once: true });
+            entityImageUploadPreview.appendChild(img);
+            entityImageUploadPreview.removeAttribute('hidden');
+        }
+
+        function closeEntityImageUploadModal() {
+            if (!entityImageUploadModal) {
+                return;
+            }
+            entityImageUploadModal.setAttribute('hidden', '');
+            entityImageUploadModal.setAttribute('aria-hidden', 'true');
+            entityImageUploadState = { entityType: '', entityId: '', entityName: '' };
+            if (entityImageUploadFile) {
+                entityImageUploadFile.value = '';
+            }
+            clearEntityImageUploadPreview();
+            setEntityImageUploadStatus('');
+            setEntityImageUploadControlsEnabled(true);
+            const anyOpenModal = document.querySelector('.modal[aria-hidden="false"]');
+            if (!anyOpenModal) {
+                document.body.classList.remove('modal-open');
+            }
+        }
+
+        function openEntityImageUploadModal({ entityType, entityId, entityName }) {
+            const normalizedEntityType = typeof entityType === 'string' ? entityType.trim().toLowerCase() : '';
+            const normalizedEntityId = typeof entityId === 'string' ? entityId.trim() : '';
+            if (!entityImageUploadModal || !normalizedEntityType || !normalizedEntityId) {
+                throw new Error('Image upload target is missing.');
+            }
+
+            const name = typeof entityName === 'string' && entityName.trim()
+                ? entityName.trim()
+                : normalizedEntityId;
+            entityImageUploadState = {
+                entityType: normalizedEntityType,
+                entityId: normalizedEntityId,
+                entityName: name
+            };
+
+            if (entityImageUploadTitle) {
+                entityImageUploadTitle.textContent = `Upload Image`;
+            }
+            if (entityImageUploadDescription) {
+                entityImageUploadDescription.textContent = `Choose an image to replace the current image for ${name}.`;
+            }
+            if (entityImageUploadFile) {
+                entityImageUploadFile.value = '';
+            }
+            clearEntityImageUploadPreview();
+            setEntityImageUploadStatus('');
+            setEntityImageUploadControlsEnabled(true);
+            entityImageUploadModal.removeAttribute('hidden');
+            entityImageUploadModal.setAttribute('aria-hidden', 'false');
+            document.body.classList.add('modal-open');
+            scrollModalToTop(entityImageUploadModal);
+            entityImageUploadFile?.focus?.();
+        }
+
+        function applyUploadedEntityImageResult(data = {}) {
+            const entityType = data.entityType || entityImageUploadState.entityType;
+            const entityId = data.entityId || entityImageUploadState.entityId;
+            const imageId = data.imageId || null;
+            if (!entityType || !entityId || !imageId) {
+                throw new Error('Image upload response did not include the updated image.');
+            }
+
+            let altText = entityImageUploadState.entityName || 'Uploaded image';
+            if (entityType === 'location' && data.location) {
+                altText = data.location.name || altText;
+                if (lastRenderedLocation?.id === entityId) {
+                    lastRenderedLocation = JSON.parse(JSON.stringify(data.location));
+                    window.lastRenderedLocation = JSON.parse(JSON.stringify(data.location));
+                    forgetLocationVariantDisplay(locationVariantDisplayCache, entityId);
+                    updateAdventureBackground(getGeneratedImageUrl(imageId));
+                }
+                if (locationMenuContextOverride?.id === entityId) {
+                    locationMenuContextOverride = JSON.parse(JSON.stringify(data.location));
+                }
+            } else if (entityType === 'thing' && data.thing) {
+                altText = data.thing.name || altText;
+                thingDataCache.set(entityId, cloneThingRecord(data.thing) || { ...data.thing });
+                updateLocationThingReference(entityId, (entry) => {
+                    entry.imageId = imageId;
+                    delete entry.imageJobId;
+                    delete entry.pendingImageJobId;
+                });
+            } else if ((entityType === 'npc' || entityType === 'player') && (data.npc || data.player)) {
+                const actor = data.npc || data.player;
+                altText = actor.name || altText;
+                const npcDataCache = window.currentNpcData instanceof Map ? window.currentNpcData : null;
+                if (npcDataCache) {
+                    npcDataCache.set(entityId, cloneActorRecord(actor) || { ...actor });
+                }
+                if (entityType === 'player') {
+                    window.currentPlayerData = cloneActorRecord(actor) || { ...(window.currentPlayerData || {}), imageId };
+                    try {
+                        updateChatPlayerPanel(window.currentPlayerData);
+                    } catch (_) {}
+                }
+            }
+
+            return renderEntityImages(entityType, entityId, {
+                imageId,
+                force: false,
+                altText
+            });
+        }
+
+        async function submitEntityImageUpload(event) {
+            if (event) {
+                event.preventDefault();
+            }
+            const file = entityImageUploadFile?.files?.[0] || null;
+            if (!file) {
+                setEntityImageUploadStatus('Choose an image to upload.', 'error');
+                return;
+            }
+
+            setEntityImageUploadControlsEnabled(false);
+            setEntityImageUploadStatus('Uploading image...', null);
+            try {
+                const imageDataUrl = await readFileAsDataUrl(file, 'Image upload');
+                const response = await fetch('/api/images/upload', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        entityType: entityImageUploadState.entityType,
+                        entityId: entityImageUploadState.entityId,
+                        imageDataUrl
+                    })
+                });
+                const data = await response.json().catch(() => ({}));
+                if (!response.ok || !data?.success) {
+                    throw new Error(data?.error || `HTTP ${response.status}`);
+                }
+                await applyUploadedEntityImageResult(data);
+                setEntityImageUploadStatus('Image uploaded.', 'success');
+                closeEntityImageUploadModal();
+            } catch (error) {
+                console.warn('Failed to upload entity image:', error);
+                setEntityImageUploadStatus(`Failed to upload image: ${error?.message || 'Unknown error'}`, 'error');
+            } finally {
+                setEntityImageUploadControlsEnabled(true);
+            }
+        }
+
+        function openLocationImageUploadModal() {
+            const targetLocation = getLocationMenuContext();
+            if (!targetLocation || !targetLocation.id) {
+                alert('No location is currently loaded.');
+                clearLocationMenuContext();
+                return;
+            }
+            openEntityImageUploadModal({
+                entityType: 'location',
+                entityId: String(targetLocation.id),
+                entityName: targetLocation.name || 'Location'
+            });
+        }
+
+        function openThingImageUploadModal(thing) {
+            if (!thing || !thing.id) {
+                alert('No item or scenery object is available.');
+                return;
+            }
+            openEntityImageUploadModal({
+                entityType: 'thing',
+                entityId: String(thing.id),
+                entityName: thing.name || 'Thing'
+            });
+        }
+
+        function openCharacterImageUploadModal(npc) {
+            if (!npc || !npc.id) {
+                alert('No character is available.');
+                return;
+            }
+            openEntityImageUploadModal({
+                entityType: npc.isNPC ? 'npc' : 'player',
+                entityId: String(npc.id),
+                entityName: npc.name || 'Character'
             });
         }
 
@@ -25139,6 +25461,41 @@
             return true;
         }
 
+        async function assignDraggedItemToCraftingSlot(slotIndex, thingId) {
+            if (!craftingInventoryLookup.has(thingId)) {
+                return false;
+            }
+            if (isItemIdAssignedToAnySlot(thingId)) {
+                return false;
+            }
+
+            const sourceThing = craftingInventoryLookup.get(thingId);
+            if (Boolean(sourceThing?.isEquipped || sourceThing?.equippedSlot)) {
+                const itemName = typeof sourceThing?.name === 'string' && sourceThing.name.trim()
+                    ? sourceThing.name.trim()
+                    : 'This item';
+                if (!confirm(`${itemName} must be uneuquipped first. Unequip it now?`)) {
+                    return false;
+                }
+
+                const playerId = typeof window.currentPlayerData?.id === 'string'
+                    ? window.currentPlayerData.id
+                    : '';
+                if (!playerId) {
+                    alert(`No active player is available to unequip ${itemName}.`);
+                    return false;
+                }
+
+                try {
+                    await setNpcItemEquipped(playerId, sourceThing, false);
+                } catch (_) {
+                    return false;
+                }
+            }
+
+            return assignItemToCraftingSlot(slotIndex, thingId);
+        }
+
         function clearCraftingSlot(slotIndex) {
             if (!craftingSlotAssignments.has(slotIndex)) {
                 return;
@@ -25250,7 +25607,7 @@
             event.currentTarget?.classList.remove('crafting-slot--hover');
         }
 
-        function handleCraftingSlotDrop(event) {
+        async function handleCraftingSlotDrop(event) {
             event.preventDefault();
             const slotElement = event.currentTarget;
             slotElement?.classList.remove('crafting-slot--hover');
@@ -25264,7 +25621,7 @@
             if (!thingId) {
                 return;
             }
-            assignItemToCraftingSlot(slotIndex, thingId);
+            await assignDraggedItemToCraftingSlot(slotIndex, thingId);
         }
 
         function buildCraftingPayload({ noProse = false } = {}) {
@@ -27327,6 +27684,12 @@
                 viewButton.textContent = 'View';
                 menu.appendChild(viewButton);
 
+                const characterUploadImageButton = document.createElement('button');
+                characterUploadImageButton.type = 'button';
+                characterUploadImageButton.className = 'entity-context-menu-item npc-card-menu-item';
+                characterUploadImageButton.textContent = 'Upload Image';
+                menu.appendChild(characterUploadImageButton);
+
                 let regenerateImageButton = null;
                 const canRegeneratePortrait = npc && npc.imageId;
                 if (canRegeneratePortrait) {
@@ -27470,6 +27833,12 @@
                     closeNpcContextMenu();
                     const latestNpc = npcDataCache.get(npc.id) || npc;
                     showNpcViewModal(latestNpc);
+                });
+
+                characterUploadImageButton.addEventListener('click', (event) => {
+                    event.stopPropagation();
+                    closeNpcContextMenu();
+                    openCharacterImageUploadModal(npcDataCache.get(npc.id) || npc);
                 });
 
                 editButton.addEventListener('click', (event) => {
@@ -32580,11 +32949,47 @@
             });
         }
 
+        if (locationImageUploadButton) {
+            locationImageUploadButton.addEventListener('click', (event) => {
+                event.stopPropagation();
+                closeLocationImageMenu({ preserveContext: true });
+                openLocationImageUploadModal();
+            });
+        }
+
         if (locationImageRegenerateButton) {
             locationImageRegenerateButton.addEventListener('click', async (event) => {
                 event.stopPropagation();
                 closeLocationImageMenu({ preserveContext: true });
                 await regenerateLocationImage();
+            });
+        }
+
+        if (entityImageUploadFile) {
+            entityImageUploadFile.addEventListener('change', () => {
+                const file = entityImageUploadFile.files?.[0] || null;
+                updateEntityImageUploadPreview(file);
+                setEntityImageUploadStatus('');
+            });
+        }
+
+        if (entityImageUploadForm) {
+            entityImageUploadForm.addEventListener('submit', submitEntityImageUpload);
+        }
+
+        if (entityImageUploadCancelBtn) {
+            entityImageUploadCancelBtn.addEventListener('click', () => closeEntityImageUploadModal());
+        }
+
+        if (entityImageUploadCloseBtn) {
+            entityImageUploadCloseBtn.addEventListener('click', () => closeEntityImageUploadModal());
+        }
+
+        if (entityImageUploadModal) {
+            entityImageUploadModal.addEventListener('click', (event) => {
+                if (event.target === entityImageUploadModal) {
+                    closeEntityImageUploadModal();
+                }
             });
         }
 
@@ -32655,6 +33060,14 @@
                 event.stopPropagation();
                 closeMapLocationContextMenu({ preserveContext: true });
                 await openSummonThingModal();
+            });
+        }
+
+        if (mapLocationMenuUploadImageButton) {
+            mapLocationMenuUploadImageButton.addEventListener('click', (event) => {
+                event.stopPropagation();
+                closeMapLocationContextMenu({ preserveContext: true });
+                openLocationImageUploadModal();
             });
         }
 

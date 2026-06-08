@@ -27,6 +27,7 @@ Collection of static utility helpers used across the server: set math, text simi
 - Game-state serialization writes `Globals.getPlotAnalysis()` into `metadata.plotAnalysis`, and hydration restores that value through `Globals.setPlotAnalysis(...)`.
 - `parseXmlDocument(xmlContent, mimeType)` with cheerio-based normalization for malformed XML.
 - `parseXmlDocumentStrict(xmlContent, mimeType)` for strict XML parsing with collected syntax diagnostics; malformed XML throws with parser-reported line/column details instead of being normalized.
+- XML parse failures log a bounded diagnostic with the error message, input length, parser position when available, and a short excerpt instead of dumping the full XML/prompt payload to the console.
 
 ## Game Balance Helpers
 - `getMinimumUnmitigatedWeaponDamage(rarity, level)` (uses rarity definitions from `Thing` and `Globals.config.baseWeaponDamage`).
@@ -55,7 +56,7 @@ Collection of static utility helpers used across the server: set math, text simi
 
 ## Private Helpers (Selected)
 - K-gram internals: `#normalizeKgramTokens`, `#buildKgramSet`, `#containsSubgram`.
-- XML internals: `#getDomParserInstance`, `#normalizeXmlWithCheerio`.
+- XML internals: `#getDomParserInstance`, `#normalizeXmlWithCheerio`, and bounded parse-failure diagnostics.
 - Lazy module getters: `#getLocationModule`, `#getLocationExitModule`, `#getRegionModule`, `#getThingModule`, `#getPlayerModule`, `#getSkillModule`, `#getMysteryBoxModule`, `#getMysteryThreadModule`, `#getScheduledEventModule`.
 
 ## Notes

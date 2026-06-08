@@ -1599,7 +1599,7 @@ class LLMClient {
                 dataToWrite = JSON.stringify(payload ?? '', null, 2);
             }
 
-            error = JSON.stringify(error);
+            error = LLMClient.#serializeErrorForLog(error);
             if (error) {
                 dataToWrite = `Error Details:\n${error}\n\nPayload:\n${dataToWrite}`;
             }
@@ -1615,6 +1615,64 @@ class LLMClient {
             console.warn(`${onFailureMessage}: ${error.message}`);
             return null;
         }
+    }
+
+    static #serializeErrorForLog(error) {
+        if (!error) {
+            return '';
+        }
+        if (typeof error !== 'object') {
+            return JSON.stringify(error);
+        }
+
+        let details = {};
+        if (typeof error.toJSON === 'function') {
+            try {
+                const jsonDetails = error.toJSON();
+                if (jsonDetails && typeof jsonDetails === 'object') {
+                    details = { ...jsonDetails };
+                }
+            } catch (_) {
+                details = {};
+            }
+        }
+
+        if (!Object.keys(details).length) {
+            for (const key of Object.keys(error)) {
+                details[key] = error[key];
+            }
+        }
+
+        for (const key of ['message', 'name', 'stack', 'code', 'status']) {
+            if (error[key] !== undefined && details[key] === undefined) {
+                details[key] = error[key];
+            }
+        }
+
+        for (const key of ['attemptNumber', 'maxAttempts', 'willRetry']) {
+            if (error[key] !== undefined) {
+                details[key] = error[key];
+            }
+        }
+
+        if (Array.isArray(error.errors) && details.errors === undefined) {
+            details.errors = error.errors.map((entry) => {
+                if (!entry || typeof entry !== 'object') {
+                    return { message: String(entry) };
+                }
+                return {
+                    name: entry.name,
+                    message: entry.message,
+                    code: entry.code,
+                    errno: entry.errno,
+                    syscall: entry.syscall,
+                    address: entry.address,
+                    port: entry.port
+                };
+            });
+        }
+
+        return JSON.stringify(details);
     }
 
     static #formatMessageContent(content) {

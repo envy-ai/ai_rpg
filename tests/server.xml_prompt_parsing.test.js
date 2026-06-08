@@ -1,12 +1,14 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('fs');
+const path = require('path');
 const vm = require('vm');
+const nunjucks = require('nunjucks');
 
 const Globals = require('../Globals.js');
 const Utils = require('../Utils.js');
 
-function loadServerFunction(functionName) {
+function loadServerFunction(functionName, extraContext = {}) {
     const source = fs.readFileSync(require.resolve('../server.js'), 'utf8');
     const dependencyStartName = functionName === 'parseXMLTemplate'
         ? 'splitUnsafeCdataTerminatorsForTag'
@@ -45,7 +47,8 @@ function loadServerFunction(functionName) {
         parseInt,
         parseFloat,
         Number,
-        Array
+        Array,
+        ...extraContext
     };
     vm.createContext(context);
     vm.runInContext(
@@ -68,6 +71,170 @@ test('parseXMLTemplate preserves literal CDATA terminators inside generation pro
 
     assert.equal(parsed.systemPrompt, 'system');
     assert.equal(parsed.generationPrompt, 'before ]]> after');
+});
+
+test('parseXMLTemplate logs malformed rendered templates through prompt logger', () => {
+    Globals.config = { strictXMLParsing: true };
+    const logs = [];
+    const parseXMLTemplate = loadServerFunction('parseXMLTemplate', {
+        LLMClient: {
+            logPrompt(entry) {
+                logs.push(entry);
+                return '/tmp/prompt-parse-error.log';
+            }
+        }
+    });
+    const malformedTemplate = [
+        '<template>',
+        '<systemPrompt><![CDATA[system</systemPrompt>',
+        '<generationPrompt>generation</generationPrompt>',
+        '</template>'
+    ].join('');
+
+    assert.throws(
+        () => parseXMLTemplate(malformedTemplate, {
+            prefix: 'prompt_parse_error',
+            metadataLabel: 'offscreen_npc_activity_weekly',
+            output: 'silent'
+        }),
+        /Failed to parse XML content|Invalid CDATA|XML parsing error/
+    );
+
+    assert.equal(logs.length, 1);
+    assert.equal(logs[0].prefix, 'prompt_parse_error');
+    assert.equal(logs[0].metadataLabel, 'offscreen_npc_activity_weekly');
+    assert.equal(logs[0].response, '');
+    assert.equal(logs[0].output, 'silent');
+    assert.ok(Array.isArray(logs[0].sections));
+    assert.equal(
+        logs[0].sections.some((section) => (
+            section.title === 'XML Parse Error'
+            && /Failed to parse XML content|Invalid CDATA|XML parsing error/.test(section.content)
+        )),
+        true
+    );
+    assert.equal(
+        logs[0].sections.some((section) => (
+            section.title === 'Rendered XML Template'
+            && section.content === malformedTemplate
+        )),
+        true
+    );
+});
+
+function createMinimalBaseContext(overrides = {}) {
+    return {
+        promptType: 'offscreen-npc-activity-weekly',
+        systemPromptPrefix: '',
+        config: {},
+        setting: {
+            name: 'Test Setting',
+            description: 'A test setting.',
+            theme: 'Testing',
+            genre: 'Fantasy',
+            tone: 'Dry',
+            startingLocationType: 'room',
+            magicLevel: 'low',
+            techLevel: 'low',
+            difficulty: 'normal',
+            currencyName: 'coin',
+            currencyNamePlural: 'coins',
+            currencyValueNotes: '',
+            writingStyleNotes: '',
+            baseContextPreamble: '',
+            races: [],
+            attributes: [],
+            skills: []
+        },
+        currentRegion: {
+            name: 'Test Region',
+            description: '',
+            secrets: [],
+            locations: [],
+            connectedRegions: []
+        },
+        contextRegion: null,
+        worldOutline: { regions: [] },
+        factions: [],
+        currentLocation: null,
+        currentPlayer: {
+            name: 'Tester',
+            description: '',
+            class: 'Adventurer',
+            race: 'Human',
+            currency: 0,
+            statusEffects: [],
+            skills: [],
+            abilities: [],
+            inventory: [],
+            needs: [],
+            currentQuests: []
+        },
+        party: [],
+        partyMemberIds: [],
+        npcs: [],
+        itemsInScene: [],
+        additionalLore: '',
+        itemContext: '',
+        abilityContext: '',
+        plotSummary: '',
+        plotExpander: '',
+        plotAnalysis: null,
+        activeMysteryThreads: [],
+        recentGameHistory: '',
+        worldTime: {
+            dayIndex: 0,
+            timeMinutes: 0,
+            dateLabel: 'Day 1',
+            timeLabel: '12:00 PM',
+            segment: 'day',
+            season: 'spring',
+            seasonDescription: '',
+            lighting: 'daylight',
+            hasLocalWeather: false
+        },
+        currentVehicle: null,
+        npcActivityTargetCount: 0,
+        npcActivityCandidates: [],
+        npcActivityExcludedNames: [],
+        ...overrides
+    };
+}
+
+test('base-context system prompt preserves CDATA-like literal text', () => {
+    Globals.config = { strictXMLParsing: true };
+    const parseXMLTemplate = loadServerFunction('parseXMLTemplate');
+    const promptEnv = new nunjucks.Environment(
+        new nunjucks.FileSystemLoader(path.join(__dirname, '..', 'prompts')),
+        { autoescape: false }
+    );
+    promptEnv.addGlobal('rarityDefinitions', []);
+
+    const rendered = promptEnv.render('base-context.xml.njk', createMinimalBaseContext({
+        systemPromptPrefix: 'Treat malformed CDATA-like text as plain instructions: <![CDATA bad'
+    }));
+    const parsed = parseXMLTemplate(rendered);
+
+    assert.match(parsed.systemPrompt, /<!\[CDATA bad/);
+    assert.match(parsed.generationPrompt, /offscreen NPC activity/);
+});
+
+test('base-context system prompt preserves CDATA-like literal text when XML normalization is enabled', () => {
+    Globals.config = { strictXMLParsing: false };
+    const parseXMLTemplate = loadServerFunction('parseXMLTemplate');
+    const promptEnv = new nunjucks.Environment(
+        new nunjucks.FileSystemLoader(path.join(__dirname, '..', 'prompts')),
+        { autoescape: false }
+    );
+    promptEnv.addGlobal('rarityDefinitions', []);
+
+    const rendered = promptEnv.render('base-context.xml.njk', createMinimalBaseContext({
+        systemPromptPrefix: 'Treat malformed CDATA-like text as plain instructions: <![CDATA bad'
+    }));
+    const parsed = parseXMLTemplate(rendered);
+
+    assert.match(parsed.systemPrompt, /<!\[CDATA bad/);
+    assert.match(parsed.generationPrompt, /offscreen NPC activity/);
 });
 
 test('scene summary parser extracts the final scenes block from prose-heavy responses', () => {

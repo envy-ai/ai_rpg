@@ -2791,6 +2791,34 @@ p:not(:last-child) {
   color: #bae6fd;
 }
 
+.entity-image-upload-preview {
+  display: flex;
+  justify-content: center;
+  margin-top: 0.75rem;
+}
+
+.entity-image-upload-preview img {
+  display: block;
+  max-width: min(100%, 320px);
+  max-height: 240px;
+  object-fit: contain;
+  border: 1px solid rgba(255, 255, 255, 0.24);
+  background: rgba(0, 0, 0, 0.28);
+}
+
+.entity-image-upload-status {
+  margin: 0.75rem 0 0;
+  color: #e5e7eb;
+}
+
+.entity-image-upload-status.is-error {
+  color: #fecaca;
+}
+
+.entity-image-upload-status.is-success {
+  color: #bbf7d0;
+}
+
 .load-game-mismatch-list {
   display: flex;
   flex-direction: column;

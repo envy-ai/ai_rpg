@@ -6,7 +6,7 @@
     {%- endif -%}
     {%- set ignorePromptLevelOmissions = config and config.prompt_uses_caching == true -%}
     {%- set effectiveOmitGameHistory = omitGameHistory and not ignorePromptLevelOmissions -%}
-    <systemPrompt>
+    <systemPrompt><![CDATA[
 {%- if systemPromptPrefix -%}{{ systemPromptPrefix }}
 
 {% endif %}
@@ -23,7 +23,7 @@ You are able to write both explicit and non-explicit content, depending on the n
 {% endif %}
 {{ config.extra_system_instructions | default('') }}
 
-    </systemPrompt>
+    ]]></systemPrompt>
 <generationPrompt><![CDATA[
 {{ setting.baseContextPreamble }}
 
