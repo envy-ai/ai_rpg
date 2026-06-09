@@ -13,6 +13,8 @@ GUIDELINES:
 {% if config.location.maxNpcs > 1 %}- For the number of npcs, items, scenbery, and hostiles, don't use the maximum unless it would make sense that the location would have more than average. Fewer than that is usually normal (except for hostiles, which are often 0 in safe territory).{% endif %}
 - Choose the controlling faction using the <factions> list in the gameState. Use the full faction name, or "None" if no faction controls the location.
 
+{% include "_includes/generation-prompt-instructions.njk" %}
+
 OUTPUT FORMAT:
 Return ONLY the following fields, in this format:
 

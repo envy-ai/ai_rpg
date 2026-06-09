@@ -6,14 +6,17 @@ const ModExtensionRegistry = require('../ModExtensionRegistry.js');
 const ModLoader = require('../ModLoader.js');
 const { getChatToolDefinitions } = require('../chat_tool_calls.js');
 
-function createModulesScope(registry) {
+function createModulesScope(registry, options = {}) {
     const loader = new ModLoader(path.join(__dirname, '..'), { config: { mods: { modules: { enabled: true } } } });
     const scopeBase = {
         modExtensionRegistry: registry,
+        things: options.things || new Map(),
         getCurrentPlayer: () => null,
         getActiveSettingSnapshot: () => ({
             modSettings: {
                 modules: {
+                    displayLabel: 'Modules',
+                    itemLabel: 'Module',
                     slotTypes: [
                         { id: 'core', label: 'Core', description: 'Main module socket.' },
                         { id: 'edge', label: 'Edge', description: 'Secondary socket.' }
@@ -167,6 +170,30 @@ test('bundled modules mod registers settings, Thing fields, badges, actions, too
     assert.equal(registry.getActorStatusContributors().length, 1);
     assert.equal(registry.getBaseContextContributors().length, 1);
     assert.equal(registry.getThingTargetStatusEffectContributors().length, 1);
+    assert.equal(registry.collectGenerationPromptInstructions('item', {}).length, 0);
+});
+
+test('modules mod adds item generation guidance when module items lag modular items', () => {
+    const registry = new ModExtensionRegistry();
+    const modulesMod = require('../mods/modules/mod.js');
+    const things = new Map([
+        ['sword_1', item({ id: 'sword_1', name: 'Socketed Sword', moduleSlots: [{ type: 'core' }] })],
+        ['armor_1', item({ id: 'armor_1', name: 'Socketed Armor', moduleSlots: [{ type: 'edge' }] })],
+        ['core_1', item({ id: 'core_1', name: 'Core Crystal', moduleType: 'core' })],
+        ['edge_1', item({ id: 'edge_1', name: 'Edge Crystal', moduleType: 'edge' })],
+        ['edge_2', item({ id: 'edge_2', name: 'Second Edge Crystal', moduleType: 'edge' })]
+    ]);
+
+    modulesMod.register(createModulesScope(registry, { things }));
+
+    const [instruction] = registry.collectGenerationPromptInstructions('item', {});
+    assert.equal(
+        instruction.text,
+        'There are currently 2 modular items and only 3 modules. There should be at least 4 modules. If generating items, make at least one of them a module to help close that gap.'
+    );
+
+    things.set('core_2', item({ id: 'core_2', name: 'Second Core Crystal', moduleType: 'core' }));
+    assert.deepEqual(registry.collectGenerationPromptInstructions('item', {}), []);
 });
 
 test('modules createThing schema describes module slot object shape', () => {
@@ -253,6 +280,65 @@ test('module action can install a loose location module into an inventory base i
     assert.equal(location.thingIds.includes(crystal.id), false);
     assert.equal(result.actor, actor);
     assert.equal(result.location, location);
+});
+
+test('module action installs one item from a loose location module stack', () => {
+    const registry = new ModExtensionRegistry();
+    const modulesMod = require('../mods/modules/mod.js');
+
+    modulesMod.register(createModulesScope(registry));
+
+    const sword = item({
+        id: 'sword_1',
+        name: 'Socketed Sword',
+        slot: 'weapon',
+        moduleSlots: [{ type: 'core' }]
+    });
+    const crystalStack = item({
+        id: 'crystal_stack_1',
+        name: 'Loose Core Crystal',
+        moduleType: 'core',
+        count: 3,
+        metadata: { locationId: 'loc_1' }
+    });
+    const actor = actorWith([sword]);
+    const allThings = [sword, crystalStack];
+    const location = locationWith([crystalStack], allThings);
+    const things = new Map([
+        [sword.id, sword],
+        [crystalStack.id, crystalStack]
+    ]);
+    const action = registry.getThingContextActionRecord('modules:install-module');
+
+    const result = action.handler({
+        thing: sword,
+        actor,
+        currentPlayer: actor,
+        requestBody: {
+            context: 'player-inventory',
+            baseItemId: sword.id,
+            baseItemSource: 'inventory',
+            moduleItemId: crystalStack.id,
+            moduleItemSource: 'location',
+            locationId: location.id,
+            slotType: 'core'
+        },
+        things,
+        locations: new Map([[location.id, location]])
+    });
+
+    const installedModuleId = sword.installedModuleIds[0];
+    const installedModule = things.get(installedModuleId);
+    assert.equal(crystalStack.count, 2);
+    assert.notEqual(installedModule.id, crystalStack.id);
+    assert.deepEqual(sword.installedModuleIds, [installedModule.id]);
+    assert.equal(installedModule.moduleInstalledOnItemId, sword.id);
+    assert.equal(installedModule.count, 1);
+    assert.ok(actor.hasInventoryItem(installedModule.id));
+    assert.ok(location.thingIds.includes(crystalStack.id));
+    assert.equal(location.thingIds.includes(installedModule.id), false);
+    assert.equal(things.get(installedModule.id), installedModule);
+    assert.equal(result.metadata.moduleItemId, installedModule.id);
 });
 
 test('module action can install an inventory module into a loose location base item', () => {

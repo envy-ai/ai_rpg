@@ -1,7 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 
-const ItemModuleSystem = require('../modding/ItemModuleSystem.js');
+const ItemModuleSystem = require('../mods/modules/ItemModuleSystem.js');
 
 function actorWith(items) {
     return {
@@ -10,6 +10,16 @@ function actorWith(items) {
         inventory: items,
         getInventoryItems() {
             return this.inventory;
+        },
+        hasInventoryItem(id) {
+            return this.inventory.some(entry => entry?.id === id);
+        },
+        addInventoryItem(thing) {
+            if (!thing?.id || this.hasInventoryItem(thing.id)) {
+                return false;
+            }
+            this.inventory.push(thing);
+            return true;
         },
         withHealthRatioPreserved(mutator) {
             mutator();
@@ -115,6 +125,37 @@ test('installing and removing a module updates both the base item and backlink',
     assert.equal(crystal.moduleInstalledOnItemId, null);
 });
 
+test('installing a stacked module splits and installs one item from the stack', () => {
+    const system = createSystem();
+    const slotTypes = system.normalizeSlotTypes([{ id: 'core', label: 'Core' }]);
+    const sword = item({
+        id: 'sword_1',
+        name: 'Resonant Sword',
+        slot: 'weapon',
+        moduleSlots: [{ type: 'core' }]
+    });
+    const crystalStack = item({
+        id: 'crystal_stack_1',
+        name: 'Stacked Core Crystal',
+        moduleType: 'core',
+        count: 3
+    });
+    const actor = actorWith([sword, crystalStack]);
+
+    const installed = system.install({ actor, baseItem: sword, moduleItem: crystalStack, slotTypes });
+
+    assert.equal(crystalStack.count, 2);
+    assert.notEqual(installed.moduleItem, crystalStack);
+    assert.notEqual(installed.moduleItem.id, crystalStack.id);
+    assert.equal(installed.moduleItem.name, crystalStack.name);
+    assert.equal(installed.moduleItem.moduleType, 'core');
+    assert.equal(installed.moduleItem.count, 1);
+    assert.equal(installed.moduleItem.moduleInstalledOnItemId, sword.id);
+    assert.deepEqual(sword.installedModuleIds, [installed.moduleItem.id]);
+    assert.ok(actor.hasInventoryItem(crystalStack.id));
+    assert.ok(actor.hasInventoryItem(installed.moduleItem.id));
+});
+
 test('effective mechanics add installed module bonuses and status effects to the base item', () => {
     const system = createSystem();
     const slotTypes = system.normalizeSlotTypes([{ id: 'core', label: 'Core' }]);
@@ -151,7 +192,7 @@ test('effective mechanics add installed module bonuses and status effects to the
     assert.equal(system.getAttributeModifierContributions(actor, 'strength'), 2);
 });
 
-test('install rejects wrong slot type, stacked modules, and missing inventory ownership', () => {
+test('install rejects wrong slot type and missing inventory ownership', () => {
     const system = createSystem();
     const slotTypes = system.normalizeSlotTypes([{ id: 'core', label: 'Core' }]);
     const sword = item({
@@ -174,7 +215,7 @@ test('install rejects wrong slot type, stacked modules, and missing inventory ow
     const actor = actorWith([sword, stacked]);
 
     assert.throws(() => system.install({ actor, baseItem: sword, moduleItem: edgeModule, slotTypes }), /inventory/i);
-    assert.throws(() => system.install({ actor, baseItem: sword, moduleItem: stacked, slotTypes }), /stacked/i);
+    assert.doesNotThrow(() => system.install({ actor, baseItem: sword, moduleItem: stacked, slotTypes }));
 
     actor.inventory.push(edgeModule);
     assert.throws(() => system.install({ actor, baseItem: sword, moduleItem: edgeModule, slotTypes }), /unknown module type/i);

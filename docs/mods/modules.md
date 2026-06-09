@@ -15,6 +15,10 @@
 
 These fields are registered first-class Thing extension fields and are available in item XML prompts/parsing, `createThing`, `updateObjectFields`, and the item editor. Prompt/tool descriptions list the active configured slot types. `moduleSlots` also supplies a structured `createThing` schema requiring only the `type` key, and seeded array values render into item XML as JSON instead of JavaScript object strings.
 
+## Generation Guidance
+- The mod registers a dynamic item-generation prompt instruction. Each item-generation prompt counts persisted Things with non-empty `moduleSlots` as modular items and persisted Things with a meaningful `moduleType` as module items, including installed modules because they remain real Things.
+- If there are fewer than two module items per modular item, the prompt receives guidance naming the current gap and asking the generator to make at least one generated item use the active module item label, such as `Module`, `Crystal`, `Mod`, or `Materia`.
+
 ## UI
 - Module-compatible base item cards show the `modular.svg` badge in the upper-left image corner with an upper-right occupied/total slot count, such as `1/3`.
 - Module item cards show the `module.svg` badge in the upper-left image corner.
@@ -32,3 +36,4 @@ These fields are registered first-class Thing extension fields and are available
 - Module target status effects are added through a Thing target-status-effect contributor during attack handling.
 - Inventory sync removes stale installed-module references when items leave an actor inventory.
 - Installed modules remain raw Things held by the same holder as their base item: actor inventory for inventory-held base items, or the loose location item set for location-held base items. Installing across holders transfers the module to the base item's holder before linking it, so saves keep the module record and backlinks intact; display and trade surfaces filter installed modules out instead of deleting them.
+- Installing a stacked loose module splits off one single-count module Thing and links that copy to the base item. The remaining stack count is reduced by one and stays in its original holder unless the selected single module copy is transferred to the base item's holder for installation.

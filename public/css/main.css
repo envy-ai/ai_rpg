@@ -3872,8 +3872,8 @@ button.thing-action-icon:hover, button.thing-action-icon:focus-visible {
   top: 0;
   right: 0;
   display: block;
-  width: 25%;
-  height: 25%;
+  width: 62.5%;
+  height: 62.5%;
   background: #ff4444;
   filter: drop-shadow(0 0 1px rgba(0, 0, 0, 0.9));
   pointer-events: none;

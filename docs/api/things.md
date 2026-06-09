@@ -47,7 +47,7 @@ Response:
 Notes:
 - The route looks up the action live from `ModExtensionRegistry` and calls its handler with the Thing, owner actor when resolvable, current player, runtime maps, and request context.
 - Mod handlers are authoritative and should throw explicit errors for invalid owners, incompatible items, duplicate state, or unsupported contexts.
-- The clicked `thingId` remains required for generic routing. Action-specific fields are passed through as `requestBody`; the bundled modules mod uses `baseItemId`, `moduleItemId`, `slotType`, `baseItemSource`, and `moduleItemSource` to install inventory or loose-location modules, and removes modules from the visible base item by reading its `installedModuleIds` plus the selected `moduleItemId`.
+- The clicked `thingId` remains required for generic routing. Action-specific fields are passed through as `requestBody`; the bundled modules mod uses `baseItemId`, `moduleItemId`, `slotType`, `baseItemSource`, and `moduleItemSource` to install inventory or loose-location modules, splitting one module off a selected stack when needed, and removes modules from the visible base item by reading its `installedModuleIds` plus the selected `moduleItemId`.
 
 ## PUT /api/things/:id
 Update a thing.

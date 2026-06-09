@@ -15,6 +15,8 @@
 
 <task>Generate a single thing (item or scenery) that's appropriate to the current setting, location and region. Strictly keep already filled in fields as they are, and fill in the rest of the fields in a way that makes sense with the existing ones.  Return it in this format:</task>
 
+{% include "_includes/generation-prompt-instructions.njk" %}
+
 {% if thingSeed.notes %}Additional instructions from the user:
 {{ thingSeed.notes }}
 {% endif %}

@@ -15,6 +15,8 @@
 
 <task>Generate the contents of the container "{{ container.name }}" appropriate to the container, setting, current location and current region. Strictly keep the name and count fields as they are, and fill in the rest of the fields in a way that makes sense with the existing ones. Return them in this format:</task>
 
+{% include "_includes/generation-prompt-instructions.njk" %}
+
 <items>
 {% for content in container.containerContents %}
 {% set thingSeed = content %}

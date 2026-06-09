@@ -32,7 +32,7 @@ Implement the `modules` bundled mod from `docs/superpowers/specs/2026-05-26-modu
    - Thing cards omit installed module strips; tooltips/lightboxes render installed module detail sections with module icons beside module names.
    - Context action execution can pass module/base ids selected by a picker.
 
-4. Implement `modding/ItemModuleSystem.js`.
+4. Implement `mods/modules/ItemModuleSystem.js`.
    - Normalize slot types.
    - Resolve actor inventory items by id/name.
    - Validate base/module item rules.

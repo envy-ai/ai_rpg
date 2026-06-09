@@ -27478,8 +27478,7 @@
             if (!locationId || typeof window.travelToAdjacentLocationFromMap !== 'function') {
                 return;
             }
-            window.activateTab?.('adventure');
-            const travelResult = window.travelToAdjacentLocationFromMap(locationId, { focusAdventureTab: false });
+            const travelResult = window.travelToAdjacentLocationFromMap(locationId);
             if (travelResult && typeof travelResult.then === 'function') {
                 travelResult.catch(error => {
                     console.warn('Favorite location travel failed:', error);
@@ -35105,6 +35104,49 @@
                 return null;
             }
 
+            async function fetchMapFastTravelPreview(destinationId) {
+                const normalizedDestinationId = typeof destinationId === 'string' ? destinationId.trim() : '';
+                if (!normalizedDestinationId) {
+                    throw new Error('Destination location is required for travel preview.');
+                }
+
+                const params = new URLSearchParams({ destinationId: normalizedDestinationId });
+                const response = await fetch(`/api/player/fast-travel-preview?${params.toString()}`, {
+                    cache: 'no-store'
+                });
+                const result = await response.json().catch(() => ({}));
+                if (!response.ok || !result?.success) {
+                    throw new Error(result?.error || `Travel preview failed with status ${response.status}`);
+                }
+
+                const travelTimeMinutes = Number(result.travelTimeMinutes);
+                if (!Number.isFinite(travelTimeMinutes) || !Number.isInteger(travelTimeMinutes) || travelTimeMinutes < 0) {
+                    throw new Error('Travel preview returned an invalid travel time.');
+                }
+
+                return {
+                    ...result,
+                    travelTimeMinutes
+                };
+            }
+
+            function formatMapFastTravelConfirmationDuration(travelTimeMinutes) {
+                const totalMinutes = Number(travelTimeMinutes);
+                if (!Number.isFinite(totalMinutes) || !Number.isInteger(totalMinutes) || totalMinutes < 0) {
+                    throw new Error('Travel time must be a non-negative integer minute value.');
+                }
+
+                const hours = Math.floor(totalMinutes / 60);
+                const minutes = totalMinutes % 60;
+                return `${hours} ${hours === 1 ? 'hour' : 'hours'}, ${minutes} ${minutes === 1 ? 'minute' : 'minutes'}`;
+            }
+
+            function confirmMapFastTravel(destinationName, travelTimeMinutes) {
+                const resolvedDestinationName = (destinationName && destinationName.toString().trim()) || 'the destination';
+                const travelTimeText = formatMapFastTravelConfirmationDuration(travelTimeMinutes);
+                return confirm(`Travel to ${resolvedDestinationName} will take ${travelTimeText}. Confirm?`);
+            }
+
             async function travelToAdjacentLocationFromMap(destinationId, { focusAdventureTab = true } = {}) {
                 if (!destinationId) {
                     return false;
@@ -35113,9 +35155,6 @@
                     return false;
                 }
                 if (lastRenderedLocation?.id === destinationId) {
-                    if (focusAdventureTab && typeof window.activateTab === 'function') {
-                        window.activateTab('adventure');
-                    }
                     return false;
                 }
 
@@ -35158,7 +35197,6 @@
                     return false;
                 }
 
-                const message = `${playerName} traveled to ${destinationName} in ${destinationRegionName}.`;
                 let overlayVisible = false;
                 const showMoveOverlay = () => {
                     if (!overlayVisible) {
@@ -35168,6 +35206,18 @@
                 };
 
                 try {
+                    const travelPreview = await fetchMapFastTravelPreview(destinationId);
+                    if (travelPreview?.destination?.name) {
+                        destinationName = travelPreview.destination.name;
+                    }
+                    if (travelPreview?.destination?.regionName) {
+                        destinationRegionName = travelPreview.destination.regionName;
+                    }
+                    if (!confirmMapFastTravel(destinationName, travelPreview.travelTimeMinutes)) {
+                        return false;
+                    }
+
+                    const message = `${playerName} traveled to ${destinationName} in ${destinationRegionName}.`;
                     showMoveOverlay();
 
                     if (window.AIRPG_CHAT && typeof window.AIRPG_CHAT.dispatchAutomatedMessage === 'function') {

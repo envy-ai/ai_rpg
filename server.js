@@ -13230,6 +13230,13 @@ async function generateItemsByNames({
             thingGeneratorPromptFields: getThingGeneratorPromptFields(),
             additionalLore: formattedLorebook
         };
+        const collectItemGenerationInstructions = (extraContext = {}) => getModGenerationPromptInstructions('item', {
+            ...promptTemplateBase,
+            location: resolvedLocation,
+            region: resolvedRegion,
+            owner,
+            ...extraContext
+        });
 
         const created = [];
 
@@ -13264,7 +13271,11 @@ async function generateItemsByNames({
             try {
                 const renderedTemplate = promptEnv.render('base-context.xml.njk', {
                     ...promptTemplateBase,
-                    thingSeed
+                    thingSeed,
+                    modGenerationPromptInstructions: collectItemGenerationInstructions({
+                        requestedName,
+                        thingSeed
+                    })
                 });
 
                 const parsedTemplate = parseXMLTemplate(renderedTemplate);
@@ -13544,7 +13555,7 @@ async function generateContainerContentsForThing({
         ? baseContext.gearSlots
         : getGearSlotNames();
 
-    const renderedTemplate = promptEnv.render('base-context.xml.njk', {
+    const renderContext = {
         ...baseContext,
         promptType: 'thing-generator-contents',
         equipmentSlots: equipmentSlotTypes,
@@ -13559,7 +13570,13 @@ async function generateContainerContentsForThing({
             shortDescription: container.shortDescription || '',
             containerContents: pendingContents
         }
+    };
+    renderContext.modGenerationPromptInstructions = getModGenerationPromptInstructions('item', {
+        ...renderContext,
+        location: resolvedLocation,
+        region: resolvedRegion
     });
+    const renderedTemplate = promptEnv.render('base-context.xml.njk', renderContext);
     const parsedTemplate = parseXMLTemplate(renderedTemplate);
     if (!parsedTemplate?.systemPrompt || !parsedTemplate?.generationPrompt) {
         throw new Error('Container contents generation template missing prompts.');
@@ -16179,7 +16196,7 @@ async function renderInventoryPrompt(context = {}) {
             };
         };
 
-        return promptEnv.render(templateName, {
+        const renderContext = {
             ...baseContext,
             promptType: 'inventory-generator',
             contextRegion: buildRegionContext(),
@@ -16202,7 +16219,9 @@ async function renderInventoryPrompt(context = {}) {
                 : {},
             thingGeneratorPromptFields: getThingGeneratorPromptFields(),
             thingSeed: {}
-        });
+        };
+        renderContext.modGenerationPromptInstructions = getModGenerationPromptInstructions('item', renderContext);
+        return promptEnv.render(templateName, renderContext);
     } catch (error) {
         console.error('Error rendering inventory template:', error);
         return null;
@@ -20304,6 +20323,27 @@ function getThingGeneratorPromptFields() {
     return getRegisteredThingEntityFields({ exposeToGeneratorPrompt: true });
 }
 
+function getModGenerationPromptInstructions(generationType, context = {}) {
+    const registry = Globals.modExtensionRegistry || modExtensionRegistry || null;
+    if (!registry || typeof registry.collectGenerationPromptInstructions !== 'function') {
+        return [];
+    }
+    const activeSetting = context.setting || context.currentSetting || getActiveSettingSnapshot();
+    return registry.collectGenerationPromptInstructions(generationType, {
+        ...context,
+        setting: activeSetting,
+        currentSetting: activeSetting,
+        currentPlayer,
+        currentLocation: context.currentLocation || Globals.location || null,
+        currentRegion: context.currentRegion || Globals.region || null,
+        things,
+        players,
+        regions,
+        gameLocations,
+        Globals
+    });
+}
+
 function getThingXmlParserFields() {
     return getRegisteredThingEntityFields({ exposeToXmlParser: true });
 }
@@ -21526,6 +21566,12 @@ function renderLocationThingsPrompt(context = {}) {
             recentThings: collectRecentThings(),
             lorebookEntries: context.lorebookEntries || []
         };
+        templatePayload.modGenerationPromptInstructions = getModGenerationPromptInstructions('item', {
+            ...templatePayload,
+            promptType: 'location-generator-things',
+            location: safeLocation,
+            region: safeRegion
+        });
 
         const rendered = promptEnv.render(templateName, templatePayload);
         return parseXMLTemplate(rendered);
@@ -25521,6 +25567,7 @@ async function renderLocationGeneratorPrompt(options = {}) {
             additionalLore: additionalLore,
             hasImage: Boolean(options.hasImage)
         };
+        payload.modGenerationPromptInstructions = getModGenerationPromptInstructions('location', payload);
 
         const renderedTemplate = promptEnv.render('base-context.xml.njk', payload);
         const parsedXML = parseXMLTemplate(renderedTemplate);
@@ -25751,6 +25798,7 @@ async function renderRegionGeneratorPrompt(options = {}) {
             additionalLore: additionalLore,
             hasImage: Boolean(options.hasImage)
         };
+        payload.modGenerationPromptInstructions = getModGenerationPromptInstructions('region', payload);
 
         const renderedTemplate = promptEnv.render('base-context.xml.njk', payload);
         const parsedXML = parseXMLTemplate(renderedTemplate);

@@ -23,8 +23,8 @@ regexes:
   - pattern: '/[Aa] beat\./'
     name: "Avoid repetitive use of 'a beat' in prose, because if you use it in prose, every character must immediately shit themselves in horrifying, graphic detail. Best just to change/remove it, because no one wants that."
     ppm: 0
-  - pattern: "/made a sound/"
-    name: made a sound
+  - pattern: "/made a (sound|noise)/"
+    name: made a noise/sound
     ppm: 1
   - pattern: "/jaw (worked|set)/"
     name: jaw worked/set

@@ -15,6 +15,7 @@ class ModExtensionRegistry {
     #thingImageBadges = new Map();
     #thingContextActions = new Map();
     #playerActionPromptSteps = new Map();
+    #generationPromptInstructions = new Map();
     #startupValidators = [];
 
     static #thingReservedFieldNames = new Set([
@@ -498,6 +499,37 @@ class ModExtensionRegistry {
         return numeric;
     }
 
+    static #normalizeGenerationType(value, fieldName = 'generationType') {
+        const normalized = ModExtensionRegistry.#normalizeString(value, fieldName).toLowerCase();
+        const allowed = new Set(['item', 'location', 'region']);
+        if (!allowed.has(normalized)) {
+            throw new Error(`${fieldName} must be one of: item, location, region.`);
+        }
+        return normalized;
+    }
+
+    static #normalizeGenerationTypes({ generationType, generationTypes } = {}) {
+        const rawEntries = generationTypes === undefined || generationTypes === null || generationTypes === ''
+            ? [generationType]
+            : (Array.isArray(generationTypes) ? generationTypes : [generationTypes]);
+        if (!rawEntries.length) {
+            throw new Error('Generation prompt instruction requires generationType or generationTypes.');
+        }
+        const seen = new Set();
+        const normalized = [];
+        rawEntries.forEach((entry, index) => {
+            const generation = ModExtensionRegistry.#normalizeGenerationType(
+                entry,
+                `generationTypes[${index}]`
+            );
+            if (!seen.has(generation)) {
+                seen.add(generation);
+                normalized.push(generation);
+            }
+        });
+        return normalized;
+    }
+
     static #getPlayerActionPromptStepNumbering(step) {
         switch (step) {
             case 1:
@@ -539,6 +571,7 @@ class ModExtensionRegistry {
         this.#thingImageBadges.clear();
         this.#thingContextActions.clear();
         this.#playerActionPromptSteps.clear();
+        this.#generationPromptInstructions.clear();
         this.#startupValidators = [];
     }
 
@@ -784,6 +817,85 @@ class ModExtensionRegistry {
                 order: record.order
                 };
             });
+    }
+
+    registerGenerationPromptInstruction({
+        modName,
+        id,
+        generationType = undefined,
+        generationTypes = undefined,
+        text = '',
+        textProvider = undefined,
+        order = null
+    } = {}) {
+        const normalizedModName = ModExtensionRegistry.#normalizeModName(modName);
+        const normalizedId = ModExtensionRegistry.#normalizeIdentifier(id, 'generation prompt instruction id');
+        const fullId = `${normalizedModName}:${normalizedId}`;
+        if (this.#generationPromptInstructions.has(fullId)) {
+            throw new Error(`Generation prompt instruction "${fullId}" is already registered.`);
+        }
+        const normalizedGenerationTypes = ModExtensionRegistry.#normalizeGenerationTypes({
+            generationType,
+            generationTypes
+        });
+        const normalizedText = typeof text === 'string' ? text.trim() : '';
+        if (textProvider !== undefined && textProvider !== null && typeof textProvider !== 'function') {
+            throw new Error(`Generation prompt instruction "${fullId}" textProvider must be a function when provided.`);
+        }
+        if (!normalizedText && typeof textProvider !== 'function') {
+            throw new Error(`Generation prompt instruction "${fullId}" requires text or textProvider.`);
+        }
+        const sequence = this.#generationPromptInstructions.size + 1;
+        const numericOrder = order === null || order === undefined || order === ''
+            ? sequence
+            : Number(order);
+        if (!Number.isFinite(numericOrder)) {
+            throw new Error(`Generation prompt instruction "${fullId}" order must be a finite number.`);
+        }
+        this.#generationPromptInstructions.set(fullId, {
+            modName: normalizedModName,
+            id: normalizedId,
+            fullId,
+            generationTypes: normalizedGenerationTypes,
+            text: normalizedText,
+            textProvider: textProvider || null,
+            order: numericOrder,
+            sequence
+        });
+    }
+
+    collectGenerationPromptInstructions(generationType, context = {}) {
+        const normalizedGenerationType = ModExtensionRegistry.#normalizeGenerationType(generationType);
+        return Array.from(this.#generationPromptInstructions.values())
+            .filter(record => record.generationTypes.includes(normalizedGenerationType))
+            .sort((a, b) => (a.order - b.order) || (a.sequence - b.sequence) || a.fullId.localeCompare(b.fullId))
+            .map((record) => {
+                const rawText = record.textProvider
+                    ? record.textProvider({
+                        ...(context || {}),
+                        generationType: normalizedGenerationType
+                    })
+                    : record.text;
+                if (rawText === null || rawText === undefined) {
+                    return null;
+                }
+                if (typeof rawText !== 'string') {
+                    throw new Error(`Generation prompt instruction "${record.fullId}" textProvider must return a string.`);
+                }
+                const instructionText = rawText.trim();
+                if (!instructionText) {
+                    return null;
+                }
+                return {
+                    modName: record.modName,
+                    id: record.id,
+                    fullId: record.fullId,
+                    generationTypes: [...record.generationTypes],
+                    text: instructionText,
+                    order: record.order
+                };
+            })
+            .filter(Boolean);
     }
 
     collectBaseContextContributions(context) {

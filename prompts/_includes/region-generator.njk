@@ -51,6 +51,9 @@ Guidelines:
 
 * Furniture and workstations are not locations. These should be mentioned in the description, but will be generated as scenery later. For example, a "blacksmith's forge" is not a location, but a "blacksmith's workshop" is.
 * Choose the controlling faction using the <factions> list in the gameState. Use the full faction name, or "None" if no faction controls the region or location.
+
+{% include "_includes/generation-prompt-instructions.njk" %}
+
 {% if stubHasAuthoritativeControllingFaction %}
 
 IMPORTANT: This stub already has an authoritative region controlling faction:

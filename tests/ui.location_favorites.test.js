@@ -77,8 +77,10 @@ test('Favorites use a dedicated API route and reuse map travel behavior', () => 
     assert.match(viewSource, /\/api\/locations\/\$\{encodeURIComponent\(locationId\)\}\/favorite/);
     assert.match(viewSource, /function renderFavoriteLocations/);
     assert.match(viewSource, /function travelToFavoriteLocation/);
-    assert.match(viewSource, /window\.travelToAdjacentLocationFromMap\(locationId,\s*\{\s*focusAdventureTab:\s*false\s*\}\)/);
-    assert.match(viewSource, /window\.activateTab\?\.\('adventure'\)/);
+    assert.ok(
+        viewSource.includes('window.travelToAdjacentLocationFromMap(locationId);'),
+        'favorites should invoke the shared map travel helper with its default confirmed navigation behavior'
+    );
 });
 
 test('Favorite location cards include computed shortest-route travel times', () => {

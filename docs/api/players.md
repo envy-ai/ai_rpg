@@ -120,6 +120,23 @@ Response:
 
 Generic and scheduled chat prompts can use `updatePartyMembers({ add?, remove? })` for validated multi-member party changes. It accepts arrays of NPC ids, exact names, or aliases; validates the whole request before mutation; lets added NPCs come from any location; and places removed NPCs at the current player location.
 
+## GET /api/player/fast-travel-preview
+Preview map fast-travel timing for the current player without moving the player or advancing time.
+
+Request:
+- Query: `destinationId` (required location id)
+
+Response:
+- 200: `{ success: true, origin: { id, name, regionName }, destination: { id, name, regionName }, travelTimeMinutes }`
+- 400: `{ success: false, error }` (missing destination or current location)
+- 404: `{ success: false, error }` (missing player, origin, or destination)
+- 500: `{ success: false, error }`
+
+Notes:
+- The route calls the same `resolveFastTravelTimeForTraversal({ sourceLocation, destinationLocation })` helper used by map fast-travel mutation, which wraps `Location.findShortestTravelTimeMinutes(...)`.
+- If no route exists, the preview returns `travelTimeMinutes: 0`, matching the existing map fast-travel behavior.
+- The route is read-only and does not log travel, change tabs, move characters, run arrival prompts, or advance world time.
+
 ## POST /api/player/move
 Move the current player to a connected location.
 

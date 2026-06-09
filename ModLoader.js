@@ -271,6 +271,16 @@ class ModLoader {
                 });
             },
 
+            registerGenerationPromptInstruction: (options = {}) => {
+                if (!modExtensionRegistry || typeof modExtensionRegistry.registerGenerationPromptInstruction !== 'function') {
+                    throw new Error(`Mod "${modName}" cannot register generation prompt instructions because no ModExtensionRegistry is available.`);
+                }
+                return modExtensionRegistry.registerGenerationPromptInstruction({
+                    ...options,
+                    modName
+                });
+            },
+
             registerActorStatusContributor: (contributor) => {
                 if (!modExtensionRegistry || typeof modExtensionRegistry.registerActorStatusContributor !== 'function') {
                     throw new Error(`Mod "${modName}" cannot register actor status contributors because no ModExtensionRegistry is available.`);

@@ -31,6 +31,12 @@ Mods can now add behavior through the shared `ModExtensionRegistry` instead of o
 - `text` is rendered as the body of the step. The server assigns labels automatically per stage: step `1` starts at `1g`, then `1h`, and step `3` starts at `3k`, then `3l`.
 - `order` is optional. When omitted, steps keep registration order; when provided, it controls sorting before automatic numbering.
 
+## Generation Prompt Instructions
+- Mods can call `scope.registerGenerationPromptInstruction({ id, generationType, generationTypes, text, textProvider, order? })` to add instructional text to item, location, and/or region generation prompts.
+- `generationType` accepts one of `item`, `location`, or `region`; use `generationTypes` for a list. Item instructions render in single-item, container-content, inventory, and location item/scenery generation prompts. Location and region instructions render in their respective generator prompts.
+- Use `text` for static guidance or `textProvider(context)` for dynamic guidance. Providers are evaluated when the prompt is rendered, receive the current prompt context plus shared maps such as `things`, and may return an empty string to omit the instruction for that run. Non-string provider results fail loudly.
+- The `id` is scoped to the registering mod; duplicate ids for the same mod fail loudly. `order` is optional and controls sorting before registration order.
+
 ## Entity Fields
 - Mods can call `scope.registerEntityField(...)` to add first-class mod-owned fields to core entities. The first supported `entityType` is `thing`.
 - Registered Thing fields persist as top-level `Thing` JSON, are available through `thing.getExtensionField(fieldName)` / `thing.setExtensionField(fieldName, value)`, and are also installed as direct instance accessors when possible.
@@ -62,13 +68,12 @@ Mods can now add behavior through the shared `ModExtensionRegistry` instead of o
 ## Bundled Generic Helpers
 - `modding/ActorAttachmentSystem.js` implements inventory-backed actor attachments. Installed entries store item ids under `actor.modState[namespace].slots[slotName]`; items remain in inventory.
 - `modding/ActorActivatableSystem.js` implements learned actor records that can be activated by spending a need-bar resource through a formula.
-- `modding/ItemModuleSystem.js` implements item-to-item module installation. Base items store installed module ids, module items store a backlink, and installed modules contribute additive attribute/status/target effects only while the base item is equipped.
 
 ## Bundled Mods
 - `mods/implants` registers the first-class Thing field `implantSlot`, exposes it in generated item XML and the item edit modal, clears normal `Thing.slot` when an implant slot is present, adds `Install implant` / `Uninstall implant` context-menu actions, adds an `Implants` world-profile tab, `equipImplant` / `unequipImplant`, `<implantEquipped>` / `<implantUnequipped>`, actor status sections, inventory sync, attribute bonuses, equipper status effects, and a top-left badge for implant-compatible items. Compatible items require `Thing.implantSlot`; `Thing.slot` remains normal gear only.
 - Because item tooltips render stored attribute bonuses and equipper status effects without requiring a normal equipment slot, implant-compatible items expose their mechanical fields in the same tooltip sections as slot-based gear.
 - The implants tab has editable `displayLabel`, `itemLabel`, and `badgeImagePath` settings, plus an apply-preset select backed by `mods/implants/presets.yaml`. The default `implants` preset uses item label `Implant` and `microchip.svg`; the `tattoo` preset uses item label `Tattoo Design` and `image.svg`.
-- `mods/modules` registers first-class module fields, item tooltip/lightbox module details with small module icons, `module.svg` installable-module badges, `modular.svg` modular-item badges, `installModule` / `removeModule`, `<moduleInstalled>` / `<moduleRemoved>`, a configurable `Modules` world-profile tab, inventory sync, attribute modifiers, equipper status effects, and attack target status effects. The tab's slot-type list is configurable and may contain one or many positive entries.
+- `mods/modules` owns `mods/modules/ItemModuleSystem.js` for item-to-item module installation. Base items store installed module ids, module items store a backlink, and installed modules contribute additive attribute/status/target effects only while the base item is equipped. The mod registers first-class module fields, item tooltip/lightbox module details with small module icons, `module.svg` installable-module badges, `modular.svg` modular-item badges, `installModule` / `removeModule`, `<moduleInstalled>` / `<moduleRemoved>`, a configurable `Modules` world-profile tab, inventory sync, attribute modifiers, equipper status effects, and attack target status effects. The tab's slot-type list is configurable and may contain one or many positive entries.
 - `mods/spells` adds a `Spells` world-profile tab, `generateSpell` / `castSpell`, `<spellLearned>` / `<spellCast>`, a mana need-bar overlay, spell actor status sections, and per-world spell settings under `modSettings.spells`.
 
 ## Spell Cost Formula

@@ -211,6 +211,71 @@ test('ModExtensionRegistry registers and numbers player-action prompt steps for 
     );
 });
 
+test('ModExtensionRegistry collects generation prompt instructions dynamically by generation type', () => {
+    const registry = new ModExtensionRegistry();
+
+    registry.registerGenerationPromptInstruction({
+        modName: 'modules',
+        id: 'module-balance',
+        generationType: 'item',
+        order: 20,
+        textProvider: context => context.includeModuleGuidance
+            ? `Make one ${context.moduleLabel}.`
+            : ''
+    });
+    registry.registerGenerationPromptInstruction({
+        modName: 'regions',
+        id: 'regional-tone',
+        generationTypes: ['location', 'region'],
+        order: 10,
+        text: 'Keep generated places consistent with the current region.'
+    });
+
+    assert.deepEqual(registry.collectGenerationPromptInstructions('item', {
+        includeModuleGuidance: true,
+        moduleLabel: 'Crystal'
+    }), [{
+        modName: 'modules',
+        id: 'module-balance',
+        fullId: 'modules:module-balance',
+        generationTypes: ['item'],
+        text: 'Make one Crystal.',
+        order: 20
+    }]);
+    assert.deepEqual(registry.collectGenerationPromptInstructions('item', {
+        includeModuleGuidance: false,
+        moduleLabel: 'Crystal'
+    }), []);
+    assert.deepEqual(
+        registry.collectGenerationPromptInstructions('region', {}).map(entry => entry.text),
+        ['Keep generated places consistent with the current region.']
+    );
+    assert.throws(
+        () => registry.registerGenerationPromptInstruction({
+            modName: 'modules',
+            id: 'module-balance',
+            generationType: 'item',
+            text: 'Duplicate.'
+        }),
+        /Generation prompt instruction "modules:module-balance" is already registered/
+    );
+});
+
+test('generation prompt instruction include renders registered instruction text', () => {
+    const promptEnv = createPromptEnv();
+    const rendered = promptEnv.render('_includes/generation-prompt-instructions.njk', {
+        modGenerationPromptInstructions: [
+            {
+                fullId: 'modules:module-balance',
+                text: 'Make at least one Module.'
+            }
+        ]
+    });
+
+    assert.match(rendered, /Additional mod generation instructions:/);
+    assert.match(rendered, /- Make at least one Module\./);
+});
+
 test('player-action prompt renders mod-registered steps at stages 1 and 3', () => {
     const promptEnv = createPromptEnv();
     const rendered = promptEnv.render('_includes/player-action.njk', {

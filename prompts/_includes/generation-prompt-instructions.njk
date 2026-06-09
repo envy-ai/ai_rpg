@@ -1,0 +1,7 @@
+{% set instructions = modGenerationPromptInstructions | default([], true) %}
+{% if instructions and instructions.length %}
+Additional mod generation instructions:
+{% for instruction in instructions %}- {{ instruction.text }}
+{% endfor %}
+
+{% endif %}

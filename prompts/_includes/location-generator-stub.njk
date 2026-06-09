@@ -40,8 +40,10 @@ GUIDELINES:
 - The number of NPCs and hostiles should reflect the type of location as well as the current region. For instance, an upscale tavern might have 3-4 NPCs and 0 hostiles, while a seedy tavern may have 2 NPCs and 2 hostiles, and so on. A a deserted cave might have 0 NPCs and 1-3 hostiles. The player's residence should typically have 0 NPCs and 0 hostiles. An abandoned structure region might have 1 or 2 NPCs distributed among all locations, so consider the region when choosing these numbers. Conversly, a bustling city region might have many NPCs distributed among its locations, with crowded places having 4.
 - Note that if a location is called an "Exterior" (such as "Abandoned Factory Exterior" or "Bob's Bakery Exterior"), it is outdoors, outside of the building or structure named. Typically the interior of the building is a separate location or region connected to the exterior.
 - Choose the controlling faction using the <factions> list in the gameState. Use the full faction name, or "None" if no faction controls the location.
-{% if stubHasAny -%}
 
+{% include "_includes/generation-prompt-instructions.njk" %}
+
+{% if stubHasAny -%}
 IMPORTANT: The fields shown in <stub> are authoritative. Do not include them in your output. Only fill in missing fields not listed in <stub>.
 {% endif -%}
 

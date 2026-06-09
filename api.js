@@ -34836,6 +34836,104 @@ module.exports = function registerApiRoutes(scope) {
             }
         });
 
+        // Preview player fast-travel timing without moving the player.
+        app.get('/api/player/fast-travel-preview', (req, res) => {
+            try {
+                if (!currentPlayer) {
+                    return res.status(404).json({
+                        success: false,
+                        error: 'No current player found'
+                    });
+                }
+
+                const destinationId = typeof req.query?.destinationId === 'string'
+                    ? req.query.destinationId.trim()
+                    : '';
+                if (!destinationId) {
+                    return res.status(400).json({
+                        success: false,
+                        error: 'destinationId is required.'
+                    });
+                }
+
+                const sourceLocationId = typeof currentPlayer.currentLocation === 'string'
+                    ? currentPlayer.currentLocation.trim()
+                    : '';
+                if (!sourceLocationId) {
+                    return res.status(400).json({
+                        success: false,
+                        error: 'Current player location is unavailable.'
+                    });
+                }
+
+                const resolveLocationById = (locationId) => {
+                    if (!locationId) {
+                        return null;
+                    }
+                    if (gameLocations instanceof Map && gameLocations.has(locationId)) {
+                        return gameLocations.get(locationId) || null;
+                    }
+                    try {
+                        return Location.get(locationId) || null;
+                    } catch (_) {
+                        return null;
+                    }
+                };
+
+                const resolveLocationRegionName = (location) => {
+                    const regionId = location?.regionId || location?.stubMetadata?.regionId || null;
+                    if (!regionId || !(regions instanceof Map)) {
+                        return null;
+                    }
+                    const region = regions.get(regionId);
+                    const rawName = typeof region?.name === 'string' ? region.name.trim() : '';
+                    return rawName || null;
+                };
+
+                const sourceLocation = resolveLocationById(sourceLocationId);
+                if (!sourceLocation) {
+                    return res.status(404).json({
+                        success: false,
+                        error: `Current location '${sourceLocationId}' not found.`
+                    });
+                }
+
+                const destinationLocation = resolveLocationById(destinationId);
+                if (!destinationLocation) {
+                    return res.status(404).json({
+                        success: false,
+                        error: `Destination location '${destinationId}' not found.`
+                    });
+                }
+
+                const fastTravelTimeMinutes = resolveFastTravelTimeForTraversal({
+                    sourceLocation,
+                    destinationLocation
+                });
+
+                res.json({
+                    success: true,
+                    origin: {
+                        id: sourceLocation.id,
+                        name: sourceLocation.name || sourceLocation.id,
+                        regionName: resolveLocationRegionName(sourceLocation)
+                    },
+                    destination: {
+                        id: destinationLocation.id,
+                        name: destinationLocation.name || destinationLocation.id,
+                        regionName: resolveLocationRegionName(destinationLocation)
+                    },
+                    travelTimeMinutes: fastTravelTimeMinutes
+                });
+            } catch (error) {
+                console.error('Error previewing player fast travel:', error);
+                res.status(500).json({
+                    success: false,
+                    error: error.message || 'Failed to preview fast travel.'
+                });
+            }
+        });
+
         // Move player to a connected location
         app.post('/api/player/move', async (req, res) => {
             let releasePlayerMoveLock = null;

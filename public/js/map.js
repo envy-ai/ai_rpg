@@ -656,8 +656,7 @@ function renderMap(region, options = {}) {
       return;
     }
     if (typeof window.travelToAdjacentLocationFromMap === 'function') {
-      focusAdventureTabForMapTravel();
-      window.travelToAdjacentLocationFromMap(locationId, { focusAdventureTab: false });
+      window.travelToAdjacentLocationFromMap(locationId);
     }
   });
 

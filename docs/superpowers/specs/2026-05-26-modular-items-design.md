@@ -178,7 +178,7 @@ New mod files:
 
 Shared helper:
 
-- `modding/ItemModuleSystem.js`: item-to-item install/remove/list/sync/effective-mechanics helper. It is generic enough to unit test but scoped to this feature.
+- `mods/modules/ItemModuleSystem.js`: item-to-item install/remove/list/sync/effective-mechanics helper. It is generic enough to unit test but scoped to this feature.
 
 Core touch points:
 

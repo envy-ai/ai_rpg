@@ -132,7 +132,7 @@ Loaded on the chat page:
   black shadow to show occupied/total slots such as `1/3`.
 - Built-in container badges can render `.entity-image-badge__lock` when the Thing has
   `requiresCheckToOpen`; the lock uses `assets/material-icons/misc/lock.svg` as a CSS mask,
-  `#ff4444` fill, and `25%` badge-relative sizing in the badge's upper-right corner.
+  `#ff4444` fill, and `62.5%` badge-relative sizing in the badge's upper-right corner.
 - Inventory, location item/scenery sections, and the crafting inventory now share the same
   inventory-style thing-card DOM builder in `views/index.njk`, with shared control/popup
   classes in `public/css/main.scss` such as `.thing-list-panel`, `.thing-list-panel__header`,

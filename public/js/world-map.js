@@ -707,8 +707,7 @@
         return;
       }
       try {
-        ensureAdventureTabFocus();
-        const travelResult = window.travelToAdjacentLocationFromMap(locationId, { focusAdventureTab: false });
+        const travelResult = window.travelToAdjacentLocationFromMap(locationId);
         handleWorldMapTravelResult(travelResult);
       } catch (error) {
         console.warn('Failed to initiate travel from world map:', error);
