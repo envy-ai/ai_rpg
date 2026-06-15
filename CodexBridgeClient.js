@@ -956,6 +956,14 @@ class CodexBridgeClient {
             if (!aiConfig.model) {
                 errors.push('AI model not specified');
             }
+            if (
+                aiConfig.reasoning_effort !== undefined
+                && aiConfig.reasoning_effort !== null
+                && aiConfig.reasoning_effort !== ''
+                && typeof aiConfig.reasoning_effort !== 'string'
+            ) {
+                errors.push('AI reasoning_effort must be a string when provided');
+            }
             return errors;
         }
 

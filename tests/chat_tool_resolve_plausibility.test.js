@@ -204,6 +204,53 @@ test('resolveSkillCheck returns outcome content and action resolution metadata',
     assert.equal(toolMessage.content, 'major success');
 });
 
+test('resolveSkillCheck can request and inject a forced die roll', async () => {
+    const capturedMessagesByRound = [];
+    const forcedRollRequests = [];
+    let capturedDieRollOverride = null;
+    const actionResolution = {
+        label: 'success',
+        degree: 'success',
+        success: true,
+        roll: { die: 4, total: 14 },
+        difficulty: { label: 'Moderate', dc: 12 },
+        skill: 'Athletics',
+        attribute: 'Strength'
+    };
+    const runtime = makeRuntime({
+        firstResponse: toolResponse('resolveSkillCheck', {
+            actor: 'player',
+            reason: 'The player tries to force the stuck door.',
+            skill: 'Athletics',
+            attribute: 'Strength',
+            difficultyLevel: 'Moderate',
+            circumstanceModifiers: []
+        }),
+        capturedMessagesByRound,
+        resolvePlausibilityCheck: async ({ dieRollOverride }) => {
+            capturedDieRollOverride = dieRollOverride;
+            return { actionResolution };
+        }
+    });
+
+    await runtime.runChatCompletionWithToolLoop({
+        requestOptions: { messages: [{ role: 'user', content: 'Force the door open.' }] },
+        metadataLabel: 'test_forced_skill_roll',
+        forcedSkillCheckRoll: async (request) => {
+            forcedRollRequests.push(request);
+            return 4;
+        }
+    });
+
+    assert.equal(forcedRollRequests.length, 1);
+    assert.equal(forcedRollRequests[0].checkType, 'unopposed');
+    assert.equal(forcedRollRequests[0].actor, 'player');
+    assert.equal(forcedRollRequests[0].skill, 'Athletics');
+    assert.equal(forcedRollRequests[0].attribute, 'Strength');
+    assert.equal(forcedRollRequests[0].difficultyLevel, 'Moderate');
+    assert.equal(capturedDieRollOverride, 4);
+});
+
 test('resolveSkillCheck accepts finite circumstance modifiers beyond ten points', async () => {
     const capturedMessagesByRound = [];
     let capturedPlausibility = null;

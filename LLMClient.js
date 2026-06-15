@@ -3048,6 +3048,22 @@ class LLMClient {
         return Boolean(fallback);
     }
 
+    static #resolveReasoningEffort({ explicit, payloadValue, configured } = {}) {
+        const candidate = explicit !== undefined && explicit !== null && explicit !== ''
+            ? explicit
+            : (payloadValue !== undefined && payloadValue !== null && payloadValue !== ''
+                ? payloadValue
+                : configured);
+        if (candidate === undefined || candidate === null || candidate === '') {
+            return null;
+        }
+        if (typeof candidate !== 'string') {
+            throw new Error('reasoningEffort/reasoning_effort must be a string when provided.');
+        }
+        const trimmed = candidate.trim();
+        return trimmed || null;
+    }
+
     static #generateSeed() {
         return Math.floor(Math.random() * 1e12) + 1;
     }
@@ -3474,6 +3490,7 @@ class LLMClient {
         multimodal = false,
         forceOutput = null,
         logStreamChunksToConsole = false,
+        reasoningEffort = null,
     } = {}) {
         const resolvedOutput = LLMClient.resolveOutput(output);
         const isSilent = resolvedOutput === 'silent';
@@ -3550,6 +3567,7 @@ class LLMClient {
                 seed,
                 topP,
                 multimodal,
+                reasoningEffort,
                 forceOutput: forceOutput !== null && forceOutput !== undefined ? '[provided]' : null
             });
         }
@@ -3708,6 +3726,16 @@ class LLMClient {
                     payload.temperature !== undefined ? payload.temperature : aiConfig.temperature
                 );
                 payload.temperature = resolvedTemperature;
+
+                const resolvedReasoningEffort = LLMClient.#resolveReasoningEffort({
+                    explicit: reasoningEffort,
+                    payloadValue: payload.reasoning_effort,
+                    configured: aiConfig.reasoning_effort
+                });
+                if (resolvedReasoningEffort) {
+                    payload.reasoning = true;
+                    payload.reasoning_effort = resolvedReasoningEffort;
+                }
 
                 const configuredMaxConcurrent = resolvedBackend === CodexBridgeClient.backendName
                     ? CodexBridgeClient.getMaxConcurrent(aiConfig)

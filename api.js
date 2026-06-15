@@ -61,6 +61,7 @@ const INFORMATION_GATHERING_CHAT_TOOL_NAMES = new Set([
     'listMysteryThreads',
     'getMysteryThread',
     'listLocationEntities',
+    'getTravelTime',
     'revealEntity',
     'hideEntity',
     'scheduleEvent',
@@ -200,6 +201,41 @@ function isCheckResultChatToolName(value) {
     return typeof value === 'string' && CHECK_RESULT_CHAT_TOOL_NAMES.has(value);
 }
 
+function extractInlineRollControls(text) {
+    if (typeof text !== 'string' || !text.length) {
+        return {
+            text,
+            dieRoll: null,
+            forceSkillCheckRolls: false
+        };
+    }
+
+    let parsedDieRoll = null;
+    let forceSkillCheckRolls = false;
+    const stripped = text.replace(/<(-?\d+|f)>/gi, (_, rawValue) => {
+        if (/^-?\d+$/.test(rawValue)) {
+            if (parsedDieRoll === null) {
+                parsedDieRoll = Number.parseInt(rawValue, 10);
+            }
+            return '';
+        }
+        if (String(rawValue).trim().toLowerCase() === 'f') {
+            forceSkillCheckRolls = true;
+            return '';
+        }
+        return _;
+    });
+
+    return {
+        text: stripped
+            .replace(/[ \t]{2,}/g, ' ')
+            .replace(/ *\n */g, '\n')
+            .trim(),
+        dieRoll: Number.isInteger(parsedDieRoll) ? parsedDieRoll : null,
+        forceSkillCheckRolls
+    };
+}
+
 function shouldIncludePlayerActionForEventChecks({
     actionText = '',
     plausibilityType = '',
@@ -320,6 +356,10 @@ function isRequestUserInputToolEnabled() {
 
 function isPlotAnalysisPromptEnabled() {
     return Globals.config?.plot_analysis?.enabled !== false;
+}
+
+function isImprovementPromptEnabled() {
+    return Globals.config?.improvement_prompt?.enabled === true;
 }
 
 function filterEnabledChatTools({ allowWorldMutationTools = false, modExtensionRegistry = null } = {}) {
@@ -1507,10 +1547,13 @@ module.exports = function registerApiRoutes(scope) {
             mode = 'text',
             title = '',
             confirmLabel: rawConfirmLabel = '',
-            cancelLabel: rawCancelLabel = ''
+            cancelLabel: rawCancelLabel = '',
+            requireConfig = true
         } = {}) {
-            const inputMode = mode === 'confirmation' ? 'confirmation' : 'text';
-            if (inputMode !== 'confirmation' && !isRequestUserInputToolEnabled()) {
+            const inputMode = mode === 'confirmation'
+                ? 'confirmation'
+                : (mode === 'integer' ? 'integer' : 'text');
+            if (inputMode !== 'confirmation' && requireConfig !== false && !isRequestUserInputToolEnabled()) {
                 throw createPlayerInputError(
                     'requestUserInput is disabled by configuration.',
                     'user_input_disabled'
@@ -1616,6 +1659,72 @@ module.exports = function registerApiRoutes(scope) {
                 confirmLabel,
                 cancelLabel
             });
+        }
+
+        function parseForcedSkillCheckRollAnswer(answer) {
+            const text = typeof answer === 'string' ? answer.trim() : '';
+            if (!/^-?\d+$/.test(text)) {
+                throw createPlayerInputError(
+                    'Forced die roll must be an integer.',
+                    'invalid_forced_die_roll'
+                );
+            }
+            return Number.parseInt(text, 10);
+        }
+
+        function formatForcedSkillCheckRollQuestion(request = {}) {
+            const clean = (value) => (typeof value === 'string' && value.trim() ? value.trim() : '');
+            const actor = clean(request.actor) || 'Actor';
+            const skill = clean(request.skill) || 'Skill';
+            const attribute = clean(request.attribute);
+            const reason = clean(request.reason);
+            const opponent = clean(request.opponent);
+            const difficultyLevel = clean(request.difficultyLevel);
+            const parts = [`Specify the d20 roll for ${actor}'s ${skill} check.`];
+            if (attribute) {
+                parts.push(`Attribute: ${attribute}`);
+            }
+            if (opponent) {
+                const opponentSkill = clean(request.opponentSkill);
+                const opponentAttribute = clean(request.opponentAttribute);
+                parts.push(`Opposed by: ${opponent}${opponentSkill ? ` (${opponentSkill}${opponentAttribute ? ` / ${opponentAttribute}` : ''})` : ''}`);
+            } else if (difficultyLevel) {
+                parts.push(`Difficulty: ${difficultyLevel}`);
+            }
+            if (reason) {
+                parts.push(`Reason: ${reason}`);
+            }
+            parts.push('Enter an integer. The roll is used as written.');
+            return parts.join('\n');
+        }
+
+        function createForcedSkillCheckRollResolver({
+            enabled = false,
+            stream = null,
+            promptLabel = 'chat'
+        } = {}) {
+            if (!enabled) {
+                return null;
+            }
+
+            return async (request = {}) => {
+                try {
+                    const response = await requestPlayerInputFromClient({
+                        stream,
+                        promptLabel,
+                        question: formatForcedSkillCheckRollQuestion(request),
+                        mode: 'integer',
+                        title: 'Forced Die Roll',
+                        confirmLabel: 'Use Roll',
+                        cancelLabel: 'Cancel',
+                        requireConfig: false
+                    });
+                    return parseForcedSkillCheckRollAnswer(response?.answer);
+                } catch (error) {
+                    error.fatalToolExecution = true;
+                    throw error;
+                }
+            };
         }
 
         async function resolvePendingPlayerAbilitySelection({ ensureOptionsForNext = false } = {}) {
@@ -2187,6 +2296,7 @@ module.exports = function registerApiRoutes(scope) {
         let plotSummaryRunOnNextEligibleTurn = false;
         let plotExpanderInProgress = false;
         let plotExpanderTurnCounter = 0;
+        let improvementPromptTurnCounter = 0;
         let plotAnalysisPromptSequence = 0;
         let plotAnalysisPromptToken = randomUUID();
         let offscreenNpcActivityInProgress = false;
@@ -5262,6 +5372,27 @@ module.exports = function registerApiRoutes(scope) {
             return plotExpanderTurnCounter % frequency === 0;
         }
 
+        function resolveImprovementPromptInterval() {
+            const rawInterval = config?.improvement_prompt?.interval;
+            if (rawInterval === undefined || rawInterval === null || rawInterval === '') {
+                return 10;
+            }
+            const interval = Number(rawInterval);
+            if (!Number.isInteger(interval) || interval < 1) {
+                throw new Error('improvement_prompt.interval must be an integer greater than or equal to 1 when provided.');
+            }
+            return interval;
+        }
+
+        function shouldRunImprovementPromptThisTurn() {
+            if (!isImprovementPromptEnabled()) {
+                return false;
+            }
+            const interval = resolveImprovementPromptInterval();
+            improvementPromptTurnCounter += 1;
+            return improvementPromptTurnCounter % interval === 0;
+        }
+
         function resetPlotAnalysisPromptRuntime() {
             plotAnalysisPromptSequence = 0;
             plotAnalysisPromptToken = randomUUID();
@@ -7710,6 +7841,142 @@ module.exports = function registerApiRoutes(scope) {
             } finally {
                 plotExpanderInProgress = false;
             }
+        }
+
+        function formatImprovementPromptChatContent(rawSuggestions) {
+            const suggestions = typeof rawSuggestions === 'string'
+                ? rawSuggestions.trim()
+                : '';
+            if (!suggestions) {
+                return '';
+            }
+            if (/^#{0,6}\s*Game improvement suggestions\b/i.test(suggestions)) {
+                return suggestions;
+            }
+            return `Game improvement suggestions\n\n${suggestions}`;
+        }
+
+        async function runImprovementPrompt({
+            locationOverride = null,
+            entryCollector = null,
+            parentEntryId = null,
+            locationId = null,
+            clientId = null,
+            sourceRequestId = null
+        } = {}) {
+            try {
+                if (!config?.ai) {
+                    console.warn('AI configuration missing; unable to run improvement prompt.');
+                    return null;
+                }
+
+                const baseContext = await prepareBasePromptContext({
+                    locationOverride,
+                    includeAllHistoryEntryTypes: true
+                });
+                const renderedTemplate = promptEnv.render('base-context.xml.njk', {
+                    ...baseContext,
+                    promptType: 'improvement-prompt'
+                });
+                const parsedTemplate = parseXMLTemplate(renderedTemplate);
+                if (!parsedTemplate?.systemPrompt || !parsedTemplate?.generationPrompt) {
+                    console.warn('Improvement prompt template missing prompts; skipping.');
+                    return null;
+                }
+
+                const requestOptions = {
+                    messages: [
+                        { role: 'system', content: parsedTemplate.systemPrompt },
+                        { role: 'user', content: parsedTemplate.generationPrompt }
+                    ],
+                    metadataLabel: 'improvement_prompt',
+                    metadata: {
+                        sourceRequestId: sourceRequestId || null
+                    },
+                    validateXML: false,
+                    runInBackground: true
+                };
+
+                if (typeof parsedTemplate.temperature === 'number') {
+                    requestOptions.temperature = parsedTemplate.temperature;
+                }
+
+                const rawResponse = await LLMClient.chatCompletion(requestOptions);
+                LLMClient.logPrompt({
+                    prefix: 'improvement_prompt',
+                    metadataLabel: 'improvement_prompt',
+                    systemPrompt: parsedTemplate.systemPrompt || '',
+                    generationPrompt: parsedTemplate.generationPrompt || '',
+                    response: rawResponse || '',
+                    model: requestOptions.model,
+                    endpoint: requestOptions.endpoint
+                });
+
+                const content = formatImprovementPromptChatContent(rawResponse);
+                if (!content) {
+                    console.warn('Improvement prompt response was empty.');
+                    return null;
+                }
+
+                const resolvedLocationId = requireLocationId(
+                    locationId || locationOverride?.id || currentPlayer?.currentLocation,
+                    'game improvement suggestions entry'
+                );
+                const metadata = {
+                    excludeFromBaseContextHistory: true
+                };
+                if (sourceRequestId) {
+                    metadata.sourceRequestId = sourceRequestId;
+                }
+                const entry = {
+                    role: 'assistant',
+                    content,
+                    summary: content,
+                    type: 'game-improvement-suggestions',
+                    parentId: parentEntryId,
+                    locationId: resolvedLocationId,
+                    metadata
+                };
+                const storedEntry = pushChatEntry(entry, entryCollector, resolvedLocationId);
+                if (clientId && storedEntry?.id) {
+                    try {
+                        Globals.emitToClient(clientId, 'chat_history_updated', {
+                            reason: 'game_improvement_suggestions',
+                            entryId: storedEntry.id,
+                            entryType: storedEntry.type,
+                            locationId: resolvedLocationId
+                        });
+                    } catch (notifyError) {
+                        console.warn('Failed to notify client about improvement suggestions:', notifyError.message || notifyError);
+                    }
+                }
+                return storedEntry;
+            } catch (error) {
+                console.warn('Failed to run improvement prompt:', error.message);
+                return null;
+            }
+        }
+
+        function scheduleImprovementPrompt({
+            locationOverride = null,
+            entryCollector = null,
+            parentEntryId = null,
+            locationId = null,
+            clientId = null,
+            sourceRequestId = null
+        } = {}) {
+            if (!isImprovementPromptEnabled()) {
+                return false;
+            }
+            void runImprovementPrompt({
+                locationOverride,
+                entryCollector,
+                parentEntryId,
+                locationId,
+                clientId,
+                sourceRequestId
+            });
+            return true;
         }
 
         async function runPlotAnalysisPrompt({
@@ -11232,12 +11499,16 @@ module.exports = function registerApiRoutes(scope) {
                     regionName: sanitizeString(exit.regionName)
                 }
             };
+            const isFastTravelMode = normalized.mode === 'fast-travel';
 
             if (!normalized.exit.destinationId) {
                 throw new Error('Travel metadata is missing a destinationId.');
             }
             if (!normalized.exit.originLocationId) {
                 throw new Error('Travel metadata is missing an originLocationId.');
+            }
+            if (isFastTravelMode && normalized.eventDriven) {
+                throw new Error('Fast travel metadata must use direct travel mode.');
             }
 
             return normalized;
@@ -17505,7 +17776,7 @@ module.exports = function registerApiRoutes(scope) {
             throw new Error(`Could not resolve ${label} "${name}".`);
         }
 
-        function resolvePlausibilityToolCall({ actor = null, plausibility = null } = {}) {
+        function resolvePlausibilityToolCall({ actor = null, plausibility = null, dieRollOverride = null } = {}) {
             if (!plausibility || typeof plausibility !== 'object') {
                 throw new Error('Skill-check tool resolver requires a plausibility object.');
             }
@@ -17513,7 +17784,8 @@ module.exports = function registerApiRoutes(scope) {
             const actingActor = resolveChatToolActor(actor || 'player', 'actor', { defaultToCurrentPlayer: true });
             const actionResolution = resolveActionOutcome({
                 plausibility,
-                player: actingActor
+                player: actingActor,
+                dieRollOverride: Number.isInteger(dieRollOverride) ? dieRollOverride : null
             });
             if (!actionResolution || typeof actionResolution !== 'object') {
                 throw new Error('Skill-check tool did not produce an action resolution.');
@@ -21092,6 +21364,12 @@ module.exports = function registerApiRoutes(scope) {
                         error: 'answer must be non-empty.'
                     });
                 }
+                if (pending.mode === 'integer' && !/^-?\d+$/.test(answer)) {
+                    return res.status(400).json({
+                        success: false,
+                        error: 'answer must be an integer.'
+                    });
+                }
 
                 finishPlayerInputRequest(inputRequestId, {
                     answer,
@@ -21702,6 +21980,21 @@ module.exports = function registerApiRoutes(scope) {
                     throw new Error(`Origin location '${normalizedOriginId}' not found in gameLocations for travel.`);
                 }
 
+                const destinationLocation = gameLocations.get(normalizedDestinationId) || null;
+                if (!destinationLocation) {
+                    throw new Error(`Destination location '${normalizedDestinationId}' not found in gameLocations.`);
+                }
+
+                const isFastTravelMode = travelMetadata.mode === 'fast-travel';
+                if (isFastTravelMode) {
+                    resolvedTravelContext = {
+                        originLocation,
+                        exit: null,
+                        destinationLocation
+                    };
+                    return resolvedTravelContext;
+                }
+
                 const availableDirections = typeof originLocation.getAvailableDirections === 'function'
                     ? originLocation.getAvailableDirections()
                     : [];
@@ -21735,11 +22028,6 @@ module.exports = function registerApiRoutes(scope) {
 
                 if (matchedExit.destination !== normalizedDestinationId) {
                     throw new Error('Travel exit destination does not match the provided destinationId.');
-                }
-
-                const destinationLocation = gameLocations.get(normalizedDestinationId) || null;
-                if (!destinationLocation) {
-                    throw new Error(`Destination location '${normalizedDestinationId}' not found in gameLocations.`);
                 }
 
                 resolvedTravelContext = {
@@ -21849,26 +22137,7 @@ module.exports = function registerApiRoutes(scope) {
                 let isNoContextPromptAction = false;
                 let genericPromptText = null;
                 let genericPromptStorageMode = 'normal';
-                const extractInlineDieRollOverride = (text) => {
-                    if (typeof text !== 'string' || !text.length) {
-                        return { text, dieRoll: null };
-                    }
-                    let parsedDieRoll = null;
-                    const stripped = text.replace(/<(-?\d+)>/g, (_, rawValue) => {
-                        if (parsedDieRoll === null) {
-                            parsedDieRoll = Number.parseInt(rawValue, 10);
-                        }
-                        return '';
-                    });
-                    const normalized = stripped
-                        .replace(/[ \t]{2,}/g, ' ')
-                        .replace(/ *\n */g, '\n')
-                        .trim();
-                    return {
-                        text: normalized,
-                        dieRoll: Number.isInteger(parsedDieRoll) ? parsedDieRoll : null
-                    };
-                };
+                let forceSkillCheckRolls = false;
                 currentUserMessage = userMessage;
                 if (userMessage && userMessage.role === 'user') {
                     originalUserContent = typeof userMessage.content === 'string' ? userMessage.content : '';
@@ -21977,7 +22246,7 @@ module.exports = function registerApiRoutes(scope) {
                     const playerChatLocationId = requireLocationId(currentPlayer?.currentLocation, 'player chat entry');
                     const shouldPersistUserEntry = !(isGenericPromptAction && genericPromptStorageMode === 'no_log');
                     if (shouldPersistUserEntry) {
-                        const userEntryContentWithoutInlineRoll = extractInlineDieRollOverride(
+                        const userEntryContentWithoutInlineRoll = extractInlineRollControls(
                             userMessage?.content
                         ).text;
                         const entryPayload = {
@@ -22109,9 +22378,10 @@ module.exports = function registerApiRoutes(scope) {
                             ? (questionActionText || '')
                             : (isGenericPromptAction ? (genericPromptText || '') : trimLeadingMarkers(originalUserContent))));
 
-                const inlineDieRollData = extractInlineDieRollOverride(sanitizedUserContent);
-                sanitizedUserContent = inlineDieRollData.text;
-                injectedDieRollOverride = inlineDieRollData.dieRoll;
+                const inlineRollControls = extractInlineRollControls(sanitizedUserContent);
+                sanitizedUserContent = inlineRollControls.text;
+                injectedDieRollOverride = inlineRollControls.dieRoll;
+                forceSkillCheckRolls = inlineRollControls.forceSkillCheckRolls;
 
                 if (isForcedEventAction) {
                     stream.status('player_action:forced_event', 'Processing forced event override.');
@@ -22168,6 +22438,15 @@ module.exports = function registerApiRoutes(scope) {
                     && !isPromptOnlyAction
                 )
                     ? shouldRunPlotExpanderThisTurn()
+                    : false;
+                const shouldRunImprovementPromptForThisTurn = (
+                    userMessage
+                    && userMessage.role === 'user'
+                    && !isCommentOnlyAction
+                    && !isForcedEventAction
+                    && !isPromptOnlyAction
+                )
+                    ? shouldRunImprovementPromptThisTurn()
                     : false;
 
                 // Add the location with the id of currentPlayer.curentLocation to the player context if available
@@ -22396,6 +22675,20 @@ module.exports = function registerApiRoutes(scope) {
                             });
                         } catch (plotExpanderScheduleError) {
                             console.warn('Failed to schedule plot expander prompt:', plotExpanderScheduleError.message);
+                        }
+                    }
+                    if (shouldRunImprovementPromptForThisTurn) {
+                        try {
+                            scheduleImprovementPrompt({
+                                locationOverride: location,
+                                entryCollector: newChatEntries,
+                                parentEntryId: rejectionMessageEntry?.id || null,
+                                locationId: rejectionLocationId,
+                                clientId: stream.clientId || null,
+                                sourceRequestId: stream.requestId || null
+                            });
+                        } catch (improvementPromptScheduleError) {
+                            console.warn('Failed to schedule improvement prompt:', improvementPromptScheduleError.message);
                         }
                     }
 
@@ -22987,6 +23280,11 @@ module.exports = function registerApiRoutes(scope) {
                             stream,
                             promptLabel: promptMetadataLabel
                         }),
+                        forcedSkillCheckRoll: createForcedSkillCheckRollResolver({
+                            enabled: forceSkillCheckRolls,
+                            stream,
+                            promptLabel: promptMetadataLabel
+                        }),
                         onToolCallEvent: event => checkResultsRecorder.record(event),
                         onToolCallDebug: toolCallDebugRecorder
                             ? event => toolCallDebugRecorder.record(event)
@@ -23142,6 +23440,11 @@ module.exports = function registerApiRoutes(scope) {
                                         toolResultCache,
                                         includeAllHistoryEntryTypes: allowWorldMutationTools,
                                         requestUserInput: createRequestUserInputHandler({
+                                            stream,
+                                            promptLabel: `${promptMetadataLabel}_rerun`
+                                        }),
+                                        forcedSkillCheckRoll: createForcedSkillCheckRollResolver({
+                                            enabled: forceSkillCheckRolls,
                                             stream,
                                             promptLabel: `${promptMetadataLabel}_rerun`
                                         }),
@@ -23471,6 +23774,20 @@ module.exports = function registerApiRoutes(scope) {
                         }
                     } catch (plotExpanderScheduleError) {
                         console.warn('Failed to schedule plot expander prompt:', plotExpanderScheduleError.message);
+                    }
+                    if (shouldRunImprovementPromptForThisTurn) {
+                        try {
+                            scheduleImprovementPrompt({
+                                locationOverride: location,
+                                entryCollector: newChatEntries,
+                                parentEntryId: aiResponseEntry?.id || null,
+                                locationId: aiResponseLocationId,
+                                clientId: stream.clientId || null,
+                                sourceRequestId: stream.requestId || null
+                            });
+                        } catch (improvementPromptScheduleError) {
+                            console.warn('Failed to schedule improvement prompt:', improvementPromptScheduleError.message);
+                        }
                     }
 
                     let eventResult = null;
@@ -28962,6 +29279,7 @@ module.exports = function registerApiRoutes(scope) {
                 const body = req.body && typeof req.body === 'object' ? req.body : {};
                 const rawLocationId = typeof body.locationId === 'string' ? body.locationId.trim() : '';
                 const accountTravelTime = body.accountTravelTime === true;
+                const storyToolTeleport = body.storyToolTeleport === true;
                 const clientId = typeof body.clientId === 'string' && body.clientId.trim()
                     ? body.clientId.trim()
                     : null;
@@ -28999,6 +29317,69 @@ module.exports = function registerApiRoutes(scope) {
                         success: false,
                         error: `Destination location '${rawLocationId}' not found`
                     });
+                }
+
+                if (!isNpc && storyToolTeleport) {
+                    const originLocationId = typeof npc.currentLocation === 'string'
+                        ? npc.currentLocation
+                        : null;
+                    const originLocation = resolveLocationById(originLocationId);
+
+                    if (originLocationId && originLocationId === destinationLocation.id) {
+                        return res.status(400).json({
+                            success: false,
+                            error: `${npc.name || 'Player'} is already at the requested location`
+                        });
+                    }
+
+                    npc.setLocation(destinationLocation.id);
+                    if (typeof Globals.clearPlayerArrivalVisitStates === 'function') {
+                        Globals.clearPlayerArrivalVisitStates();
+                    }
+
+                    if (players instanceof Map) {
+                        players.set(npc.id, npc);
+                    }
+
+                    if (gameLocations instanceof Map) {
+                        gameLocations.set(destinationLocation.id, destinationLocation);
+                    }
+
+                    let previousLocationPayload = null;
+                    if (originLocation && typeof buildLocationResponse === 'function') {
+                        try {
+                            previousLocationPayload = buildLocationResponse(originLocation);
+                        } catch (error) {
+                            console.warn('Failed to serialize previous location after player teleport:', error?.message || error);
+                        }
+                    }
+
+                    let destinationPayload = null;
+                    if (typeof buildLocationResponse === 'function') {
+                        try {
+                            destinationPayload = buildLocationResponse(destinationLocation);
+                        } catch (error) {
+                            console.warn('Failed to serialize destination location after player teleport:', error?.message || error);
+                        }
+                    }
+
+                    const responsePayload = {
+                        success: true,
+                        npc: serializeNpcForClient(npc),
+                        destination: destinationPayload,
+                        previousLocation: previousLocationPayload,
+                        locationIds: Array.from(new Set([
+                            destinationLocation.id,
+                            originLocation?.id || null
+                        ].filter(Boolean))),
+                        worldTime: null,
+                        timeProgress: null,
+                        removedFromParty: false,
+                        message: `${npc.name || 'Player'} teleported successfully.`
+                    };
+
+                    res.json(responsePayload);
+                    return;
                 }
 
                 const partyMemberIds = isNpc && currentPlayer && typeof currentPlayer.getPartyMembers === 'function'
@@ -39594,8 +39975,12 @@ module.exports = function registerApiRoutes(scope) {
                 }
 
                 const requestBody = req.body && typeof req.body === 'object' ? req.body : {};
-                const actionText = typeof requestBody.actionText === 'string'
+                const rawActionText = typeof requestBody.actionText === 'string'
                     ? requestBody.actionText.trim()
+                    : '';
+                const inlineRollControls = extractInlineRollControls(rawActionText);
+                const actionText = typeof inlineRollControls.text === 'string'
+                    ? inlineRollControls.text
                     : '';
                 if (!actionText) {
                     return res.status(400).json({
@@ -39653,18 +40038,24 @@ module.exports = function registerApiRoutes(scope) {
                     throw new Error('Container open-check requires resolveSkillCheck or resolveOpposedSkillCheck to be enabled.');
                 }
 
+                const additionalPayload = {};
+                if (enabledChatTools.length > 0) {
+                    additionalPayload.tools = enabledChatTools;
+                    additionalPayload.tool_choice = 'auto';
+                }
                 const requestOptions = {
                     messages: [
                         { role: 'system', content: parsedTemplate.systemPrompt },
                         { role: 'user', content: parsedTemplate.generationPrompt }
                     ],
                     metadataLabel: 'player_action_open_container',
-                    validateXML: false,
-                    tools: enabledChatTools,
-                    tool_choice: 'auto'
+                    validateXML: false
                 };
                 if (typeof parsedTemplate.temperature === 'number') {
                     requestOptions.temperature = parsedTemplate.temperature;
+                }
+                if (Object.keys(additionalPayload).length) {
+                    requestOptions.additionalPayload = additionalPayload;
                 }
 
                 const checkResultsRecorder = createCheckResultsRecorder({
@@ -39694,6 +40085,11 @@ module.exports = function registerApiRoutes(scope) {
                             promptLabel: 'player_action_open_container'
                         })
                         : null,
+                    forcedSkillCheckRoll: createForcedSkillCheckRollResolver({
+                        enabled: inlineRollControls.forceSkillCheckRolls,
+                        stream,
+                        promptLabel: 'player_action_open_container'
+                    }),
                     onToolCallEvent: event => checkResultsRecorder.record(event)
                 });
 
@@ -42498,6 +42894,7 @@ module.exports = function registerApiRoutes(scope) {
                 plotSummaryRunOnNextEligibleTurn = false;
                 plotExpanderInProgress = false;
                 plotExpanderTurnCounter = 0;
+                improvementPromptTurnCounter = 0;
                 resetPlotAnalysisPromptRuntime();
                 Globals.setPlotAnalysis(null);
                 resetOffscreenNpcActivityState();
@@ -43307,6 +43704,9 @@ module.exports = function registerApiRoutes(scope) {
             metadata.plotExpanderTurnCounter = Number.isInteger(plotExpanderTurnCounter) && plotExpanderTurnCounter >= 0
                 ? plotExpanderTurnCounter
                 : 0;
+            metadata.improvementPromptTurnCounter = Number.isInteger(improvementPromptTurnCounter) && improvementPromptTurnCounter >= 0
+                ? improvementPromptTurnCounter
+                : 0;
             metadata.offscreenNpcActivityState = normalizeOffscreenNpcActivityState(offscreenNpcActivityState);
             const currentLocationId = currentPlayer.currentLocation || null;
             const currentLocation = currentLocationId
@@ -43626,6 +44026,14 @@ module.exports = function registerApiRoutes(scope) {
                 }
             }
             plotExpanderInProgress = false;
+            {
+                const parsedImprovementPromptCounter = Number(metadata.improvementPromptTurnCounter);
+                if (Number.isInteger(parsedImprovementPromptCounter) && parsedImprovementPromptCounter >= 0) {
+                    improvementPromptTurnCounter = parsedImprovementPromptCounter;
+                } else {
+                    improvementPromptTurnCounter = 0;
+                }
+            }
             resetPlotAnalysisPromptRuntime();
             offscreenNpcActivityState = normalizeOffscreenNpcActivityState(metadata.offscreenNpcActivityState);
             Globals.setCurrentSaveInfo({
@@ -46627,3 +47035,4 @@ module.exports.sanitizeBarterPricingXmlForParsing = sanitizeBarterPricingXmlForP
 module.exports.shouldIncludePlayerActionForEventChecks = shouldIncludePlayerActionForEventChecks;
 module.exports.extractRegisteredThingBlueprintFields = extractRegisteredThingBlueprintFields;
 module.exports.parseUploadedEntityImageDataUrl = parseUploadedEntityImageDataUrl;
+module.exports.extractInlineRollControls = extractInlineRollControls;

@@ -93,6 +93,7 @@ test('Favorite location cards include computed shortest-route travel times', () 
     assert.match(viewSource, /function resolveFavoriteLocationTravelTimeText/);
     assert.match(viewSource, /favorite-location-card__travel-time/);
     assert.match(viewSource, /computedTravelTimeMinutes/);
+    assert.match(viewSource, /Travel \$\{formatMinutesCompactDurationLabel/);
     assert.match(scssSource, /\.favorite-location-card__travel-time/);
 });
 

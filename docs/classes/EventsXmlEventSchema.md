@@ -163,7 +163,7 @@ Use this when a new gatherable or harvestable resource appears in the scene, suc
 
 ### `pick_up_item`
 
-Use this when a character obtains one or more tangible carryable items by a method other than harvesting or gathering. Use `player` for the current player when appropriate. Do not use this for items consumed, altered, dropped, transferred, or harvested.
+Use this when a character obtains one or more tangible carryable items by a method other than harvesting or gathering. Use `player` for the current player when appropriate. Do not use this for items consumed, altered, dropped, transferred, or harvested. Multiple actors may each pick up the same item name when enough loose copies or stack quantity exists; exact duplicate actor/item/quantity rows in the same event batch are warning-skipped.
 
 ```xml
 <pickUpItem>

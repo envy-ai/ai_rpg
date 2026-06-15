@@ -267,6 +267,44 @@ class Location {
     return matchingLocations[0];
   }
 
+  static #routeLocationSummary(location) {
+    const locationId = location?.id || null;
+    const locationName = typeof location?.name === 'string' && location.name.trim()
+      ? location.name.trim()
+      : locationId;
+    const regionId = typeof location?.regionId === 'string' && location.regionId.trim()
+      ? location.regionId.trim()
+      : null;
+    const region = regionId ? Region.get(regionId) : null;
+    const regionName = typeof region?.name === 'string' && region.name.trim()
+      ? region.name.trim()
+      : regionId;
+
+    return {
+      id: locationId,
+      name: locationName,
+      regionId,
+      regionName
+    };
+  }
+
+  static #routeStepSummary({ fromLocation, toLocation, direction, travelTimeMinutes }) {
+    const fromSummary = Location.#routeLocationSummary(fromLocation);
+    const toSummary = Location.#routeLocationSummary(toLocation);
+    return {
+      fromLocationId: fromSummary.id,
+      fromLocationName: fromSummary.name,
+      fromRegionId: fromSummary.regionId,
+      fromRegionName: fromSummary.regionName,
+      direction,
+      toLocationId: toSummary.id,
+      toLocationName: toSummary.name,
+      toRegionId: toSummary.regionId,
+      toRegionName: toSummary.regionName,
+      travelTimeMinutes
+    };
+  }
+
   /**
    * Creates a new Location instance
    * @param {Object} options - Location configuration
@@ -849,14 +887,25 @@ class Location {
   }
 
   static findShortestTravelTimeMinutes(startLocationOrId, endLocationOrId) {
+    const route = Location.findShortestTravelRoute(startLocationOrId, endLocationOrId);
+    return route ? route.travelTimeMinutes : null;
+  }
+
+  static findShortestTravelRoute(startLocationOrId, endLocationOrId) {
     const startLocation = Location.#resolveLocationReference(startLocationOrId, { fieldName: 'startLocation' });
     const endLocation = Location.#resolveLocationReference(endLocationOrId, { fieldName: 'endLocation' });
 
     if (startLocation.id === endLocation.id) {
-      return 0;
+      return {
+        origin: Location.#routeLocationSummary(startLocation),
+        destination: Location.#routeLocationSummary(endLocation),
+        travelTimeMinutes: 0,
+        steps: []
+      };
     }
 
     const distances = new Map([[startLocation.id, 0]]);
+    const previousSteps = new Map();
     const visited = new Set();
 
     while (true) {
@@ -878,7 +927,35 @@ class Location {
       }
 
       if (currentLocationId === endLocation.id) {
-        return currentDistance;
+        const steps = [];
+        let cursorLocationId = endLocation.id;
+
+        while (cursorLocationId !== startLocation.id) {
+          const previousStep = previousSteps.get(cursorLocationId);
+          if (!previousStep) {
+            throw new Error(`Route resolution reached "${endLocation.id}" without a complete predecessor chain.`);
+          }
+          const fromLocation = Location.get(previousStep.fromLocationId);
+          const toLocation = Location.get(cursorLocationId);
+          if (!fromLocation || !toLocation) {
+            throw new Error('Route resolution predecessor chain references a missing location.');
+          }
+          steps.push(Location.#routeStepSummary({
+            fromLocation,
+            toLocation,
+            direction: previousStep.direction,
+            travelTimeMinutes: previousStep.travelTimeMinutes
+          }));
+          cursorLocationId = previousStep.fromLocationId;
+        }
+
+        steps.reverse();
+        return {
+          origin: Location.#routeLocationSummary(startLocation),
+          destination: Location.#routeLocationSummary(endLocation),
+          travelTimeMinutes: currentDistance,
+          steps
+        };
       }
 
       visited.add(currentLocationId);
@@ -914,6 +991,11 @@ class Location {
 
         if (knownDistance === undefined || candidateDistance < knownDistance) {
           distances.set(destinationId, candidateDistance);
+          previousSteps.set(destinationId, {
+            fromLocationId: currentLocation.id,
+            direction,
+            travelTimeMinutes: edgeWeight
+          });
         }
       }
     }
@@ -937,6 +1019,26 @@ class Location {
     );
 
     return Location.findShortestTravelTimeMinutes(startLocation, endLocation);
+  }
+
+  static findShortestTravelRouteByRegionAndLocationNames(
+    startRegionName,
+    startLocationName,
+    endRegionName,
+    endLocationName
+  ) {
+    const startLocation = Location.#resolveLocationByExactRegionAndName(
+      startRegionName,
+      startLocationName,
+      { fieldName: 'startLocation' }
+    );
+    const endLocation = Location.#resolveLocationByExactRegionAndName(
+      endRegionName,
+      endLocationName,
+      { fieldName: 'endLocation' }
+    );
+
+    return Location.findShortestTravelRoute(startLocation, endLocation);
   }
 
   /**

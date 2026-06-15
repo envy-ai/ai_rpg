@@ -24,9 +24,8 @@ Rendered inside `#mapContainer` in the Map tab.
 
 ### Interactions
 - Context menu on nodes and edges for edit/delete actions.
-- Tapping a visited non-current location node calls `GET /api/player/fast-travel-preview?destinationId=...`, displays `Travel to X will take Y hours, Z minutes. Confirm?`, and leaves the player on the map if the confirmation is canceled. Confirmed travel then returns the UI to the Adventure tab and fast-travels the player through the existing player-teleport flow.
-- Confirmed map fast travel advances world time by the shortest directed route cost computed from stored exit `travelTimeMinutes`; when minutes advance, the chat history gets travel and elapsed-time event-summary rows, parent-linked to visible arrival prose when one is generated. When no route exists, the map fast travel still completes with `0` minutes elapsed.
-- After a successful direct move or map fast-travel arrival, the client also refreshes chat history and Story Tools so any visible `while-you-were-away-player` reunion prose generated during arrival is shown immediately.
+- Tapping a visited non-current location node starts map fast travel: it calls `/api/player/fast-travel-preview`, opens `#mapFastTravelConfirmModal`, dispatches a `/api/chat` player-action travel prompt with `travelMetadata.mode: "fast-travel"` / `eventDriven: false`, then calls the player teleport helper with `accountTravelTime: true` after confirmation and prompt success.
+- Map fast travel refreshes the destination view, chat history, Story Tools, party state, and the active map after the teleport endpoint returns. Because it is gameplay travel rather than a story-tool teleport, the server still applies travel-time accounting, arrival processing, hidden-NPC checks, NPC sighting updates, and event summaries. Adventure focus changes only after successful teleport.
 - Stub node `Edit stub` opens the shared location-stub editor, including vehicle metadata controls (`isVehicle` + `vehicleInfo`) for both location stubs and region-entry stubs; the vehicle-exit field is a select labeled `inside -> outside`. Ordinary location stubs also expose the Region selector and can be moved between live or pending regions without changing their exits; region-entry stubs hide that selector because their target region is the region they represent.
 - Stub node context menus also show `Unstub Location` or `Unstub Region`. This calls `POST /api/stubs/:id/expand`, refreshes the active map/world-map, and does not require the player to travel to the stub first.
 - Hydrated location node context menu includes `Set Last Seen`, which opens the shared chat-page modal and submits the same `H AM/PM`, `H:MM AM/PM`, or `duration ago` formats accepted by `/set_last_seen` for that location's NPCs.
@@ -56,8 +55,8 @@ Rendered inside `#worldMapContainer` in the World Map tab.
   - location nodes,
   - region exit nodes.
 - World-map location nodes reuse the same floating location context menu as the region map, so `Set Last Seen` is available there too.
-- Tapping a visited non-current location node uses the shared map fast-travel helper, including the pre-travel confirmation, and only returns to the Adventure tab after confirmation and successful travel.
-- The Play tab Favorites subtab reuses this same shared map fast-travel helper when a favorite location card is clicked, so favorite-card travel matches world-map travel behavior, confirmation, and timing.
+- Tapping a visited non-current location node uses the same prompt-backed map fast-travel flow and only returns to the Adventure tab after successful teleport.
+- The Play tab Favorites subtab reuses this same shared map fast-travel helper when a favorite location card is clicked, so favorite-card travel matches world-map gameplay travel and runs the same preview, confirmation, chat prompt, and travel-time processing.
 - Vehicle-capable location nodes and vehicle region labels get centered emoji overlays from vehicle icon metadata.
 - Convex hull overlays are drawn around region groupings using
   `public/js/cytoscape-convex-hull.js`.

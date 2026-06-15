@@ -148,7 +148,7 @@ Response:
 
 Notes:
 - Only container Things can use this route, and `actionText` is required for checked containers.
-- The server renders the `player-action-open-container` prompt through base context, logs it with `LLMClient.logPrompt()` under `player_action_open_container`, exposes regular prose information tools plus `resolveSkillCheck` / `resolveOpposedSkillCheck` even when legacy prompt checks are enabled elsewhere, and fails loudly if no skill check was recorded.
+- The server renders the `player-action-open-container` prompt through base context, logs it with `LLMClient.logPrompt()` under `player_action_open_container`, sends regular prose information tools plus `resolveSkillCheck` / `resolveOpposedSkillCheck` in the LLM request payload even when legacy prompt checks are enabled elsewhere, and fails loudly if no skill check was recorded. Including `<f>` or `<F>` in `actionText` strips that marker and opens a forced integer die-roll prompt for each skill-check tool call made while resolving the open attempt.
 - The prompt returns `<containerOpenResult><success>...</success><permanentlyOpened>...</permanentlyOpened><prose>...</prose></containerOpenResult>`. Prose runs through the normal slop-removal pipeline, is stored visibly as a `player-action-open-container` chat entry, and then runs ordinary event checks. The `success` flag gates whether the client proceeds to `GET /api/things/:containerId/container`.
 - When `success` and `permanentlyOpened` are both true, the route persists `requiresCheckToOpen: false` on the container so future UI opens skip this check. Temporary successes should return `permanentlyOpened: false`.
 

@@ -1015,7 +1015,7 @@
                         </tr>
                     </tbody>
                 </table>
-                <p class="modal__instruction">Roll override: include <code>&lt;N&gt;</code> anywhere in action or crafting text to force your die roll to that integer.</p>
+                <p class="modal__instruction">Roll override: include <code>&lt;N&gt;</code> in crafting text or legacy-checked actions to force one die roll. Include <code>&lt;f&gt;</code> in action text to choose the die roll when each skill-check tool call happens.</p>
             </div>
         </div>
     </div>
@@ -1035,6 +1035,38 @@
                 <div class="button-group">
                     <button type="button" class="btn btn-secondary" id="emptyActionConfirmCancelBtn">Cancel</button>
                     <button type="button" class="btn btn-primary" id="emptyActionConfirmSubmitBtn">Continue</button>
+                </div>
+            </footer>
+        </div>
+    </div>
+
+    <div id="mapFastTravelConfirmModal" class="modal map-fast-travel-confirm-modal" role="dialog" aria-modal="true" aria-labelledby="mapFastTravelConfirmTitle" aria-describedby="mapFastTravelConfirmDescription" aria-hidden="true" hidden>
+        <div class="modal__dialog">
+            <header class="modal__header">
+                <h2 id="mapFastTravelConfirmTitle">Fast Travel</h2>
+                <button type="button" class="modal__close" id="mapFastTravelCancelIconBtn" aria-label="Close fast travel confirmation">
+                    <span aria-hidden="true">X</span>
+                </button>
+            </header>
+            <div class="modal__body map-fast-travel-confirm-body">
+                <p id="mapFastTravelConfirmDescription" class="modal__instruction">Travel details.</p>
+                <dl class="map-fast-travel-summary">
+                    <div class="map-fast-travel-summary__row">
+                        <dt>Destination</dt>
+                        <dd id="mapFastTravelDestination">Unknown destination</dd>
+                    </div>
+                    <div class="map-fast-travel-summary__row">
+                        <dt>Travel time</dt>
+                        <dd id="mapFastTravelTime">0 hours, 0 minutes</dd>
+                    </div>
+                </dl>
+                <label class="map-fast-travel-action-label" for="mapFastTravelActionText">Action</label>
+                <textarea id="mapFastTravelActionText" class="map-fast-travel-action-text" rows="5"></textarea>
+            </div>
+            <footer class="modal__footer">
+                <div class="button-group">
+                    <button type="button" class="btn btn-secondary" id="mapFastTravelCancelBtn">Cancel</button>
+                    <button type="button" class="btn btn-primary" id="mapFastTravelConfirmBtn">Travel</button>
                 </div>
             </footer>
         </div>
@@ -1106,9 +1138,10 @@
             </button>
         </header>
         <form id="playerInputRequestForm" class="player-input-request-panel__form">
-            <p id="playerInputRequestQuestion" class="player-input-request-panel__question"></p>
+            <div id="playerInputRequestQuestion" class="player-input-request-panel__question"></div>
             <label class="player-input-request-panel__label" for="playerInputRequestAnswer">Answer</label>
             <textarea id="playerInputRequestAnswer" class="player-input-request-panel__answer" rows="5"></textarea>
+            <input id="playerInputRequestNumericAnswer" class="player-input-request-panel__numeric-answer" type="number" step="1" inputmode="numeric" autocomplete="off" hidden>
             <p id="playerInputRequestStatus" class="player-input-request-panel__status" hidden></p>
             <footer class="player-input-request-panel__footer">
                 <button type="button" class="btn btn-secondary" id="playerInputRequestCancelBtn">Cancel</button>
@@ -7910,7 +7943,7 @@
             return result;
         }
 
-        async function teleportNpcToLocation(npc, destinationLocationId, { card = null, originLocationId = null, accountTravelTime = false } = {}) {
+        async function teleportNpcToLocation(npc, destinationLocationId, { card = null, originLocationId = null, accountTravelTime = false, storyToolTeleport = false } = {}) {
             if (!npc || !npc.id) {
                 throw new Error('Missing character information.');
             }
@@ -7926,6 +7959,7 @@
                 body: JSON.stringify({
                     locationId: destinationLocationId,
                     accountTravelTime: accountTravelTime === true,
+                    storyToolTeleport: storyToolTeleport === true,
                     clientId
                 })
             });
@@ -8055,7 +8089,8 @@
 
                             await teleportNpcToLocation(resolvedNpc, entry.id, {
                                 card,
-                                originLocationId: locationId || (window.lastRenderedLocation?.id || null)
+                                originLocationId: locationId || (window.lastRenderedLocation?.id || null),
+                                storyToolTeleport: true
                             });
                             return;
                         }
@@ -35141,10 +35176,179 @@
                 return `${hours} ${hours === 1 ? 'hour' : 'hours'}, ${minutes} ${minutes === 1 ? 'minute' : 'minutes'}`;
             }
 
-            function confirmMapFastTravel(destinationName, travelTimeMinutes) {
+            let pendingMapFastTravelConfirmation = null;
+
+            function syncMapFastTravelModalOpenClass() {
+                if (window.AIRPG_CHAT && typeof window.AIRPG_CHAT.syncBodyModalOpenClass === 'function') {
+                    window.AIRPG_CHAT.syncBodyModalOpenClass();
+                    return;
+                }
+                const hasOpenModal = Boolean(document.querySelector('.modal[aria-hidden="false"], .chat-edit-modal.is-open, .quest-confirmation.is-open, .npc-selection-modal'));
+                document.body.classList.toggle('modal-open', hasOpenModal);
+            }
+
+            function getMapFastTravelConfirmationElements() {
+                const elements = {
+                    modal: document.getElementById('mapFastTravelConfirmModal'),
+                    destination: document.getElementById('mapFastTravelDestination'),
+                    time: document.getElementById('mapFastTravelTime'),
+                    description: document.getElementById('mapFastTravelConfirmDescription'),
+                    actionText: document.getElementById('mapFastTravelActionText'),
+                    confirmButton: document.getElementById('mapFastTravelConfirmBtn'),
+                    cancelButton: document.getElementById('mapFastTravelCancelBtn'),
+                    closeButton: document.getElementById('mapFastTravelCancelIconBtn')
+                };
+                const missing = Object.entries(elements)
+                    .filter(([, element]) => !element)
+                    .map(([name]) => name);
+                if (missing.length) {
+                    throw new Error(`Fast travel confirmation modal is missing required element(s): ${missing.join(', ')}.`);
+                }
+                return elements;
+            }
+
+            function buildDefaultMapFastTravelActionText({ destinationName, destinationRegionName } = {}) {
                 const resolvedDestinationName = (destinationName && destinationName.toString().trim()) || 'the destination';
+                const resolvedRegionName = (destinationRegionName && destinationRegionName.toString().trim()) || '';
+                return resolvedRegionName && resolvedRegionName !== 'Unknown Region'
+                    ? `I travel to ${resolvedDestinationName} in ${resolvedRegionName}.`
+                    : `I travel to ${resolvedDestinationName}.`;
+            }
+
+            async function requestMapFastTravelConfirmation({
+                destinationName,
+                destinationRegionName,
+                travelTimeMinutes
+            } = {}) {
+                if (pendingMapFastTravelConfirmation) {
+                    throw new Error('A fast travel confirmation is already open.');
+                }
+
+                const elements = getMapFastTravelConfirmationElements();
+                const resolvedDestinationName = (destinationName && destinationName.toString().trim()) || 'the destination';
+                const resolvedRegionName = (destinationRegionName && destinationRegionName.toString().trim()) || '';
                 const travelTimeText = formatMapFastTravelConfirmationDuration(travelTimeMinutes);
-                return confirm(`Travel to ${resolvedDestinationName} will take ${travelTimeText}. Confirm?`);
+                const destinationLabel = resolvedRegionName && resolvedRegionName !== 'Unknown Region'
+                    ? `${resolvedDestinationName} (${resolvedRegionName})`
+                    : resolvedDestinationName;
+                const defaultActionText = buildDefaultMapFastTravelActionText({
+                    destinationName: resolvedDestinationName,
+                    destinationRegionName: resolvedRegionName
+                });
+                const previouslyFocused = document.activeElement instanceof HTMLElement
+                    ? document.activeElement
+                    : null;
+
+                elements.destination.textContent = destinationLabel;
+                elements.time.textContent = travelTimeText;
+                elements.description.textContent = `Travel to ${resolvedDestinationName} will take ${travelTimeText}.`;
+                elements.actionText.value = defaultActionText;
+                elements.modal.removeAttribute('hidden');
+                elements.modal.setAttribute('aria-hidden', 'false');
+                document.body.classList.add('modal-open');
+
+                return new Promise(resolve => {
+                    let settled = false;
+
+                    const cleanup = () => {
+                        elements.confirmButton.removeEventListener('click', confirm);
+                        elements.cancelButton.removeEventListener('click', cancel);
+                        elements.closeButton.removeEventListener('click', cancel);
+                        elements.modal.removeEventListener('click', handleBackdropClick);
+                        document.removeEventListener('keydown', handleKeydown);
+                        elements.modal.setAttribute('hidden', '');
+                        elements.modal.setAttribute('aria-hidden', 'true');
+                        pendingMapFastTravelConfirmation = null;
+                        syncMapFastTravelModalOpenClass();
+                        if (previouslyFocused && typeof previouslyFocused.focus === 'function') {
+                            previouslyFocused.focus();
+                        }
+                    };
+
+                    const finish = (confirmed) => {
+                        if (settled) {
+                            return;
+                        }
+                        settled = true;
+                        const actionText = confirmed
+                            ? ((elements.actionText.value || '').trim() || defaultActionText)
+                            : '';
+                        cleanup();
+                        resolve({
+                            confirmed,
+                            actionText
+                        });
+                    };
+
+                    function confirm() {
+                        finish(true);
+                    }
+
+                    function cancel() {
+                        finish(false);
+                    }
+
+                    function handleBackdropClick(event) {
+                        if (event.target === elements.modal) {
+                            cancel();
+                        }
+                    }
+
+                    function handleKeydown(event) {
+                        if (event.key === 'Escape') {
+                            event.preventDefault();
+                            cancel();
+                        }
+                    }
+
+                    pendingMapFastTravelConfirmation = {
+                        cancel
+                    };
+                    elements.confirmButton.addEventListener('click', confirm);
+                    elements.cancelButton.addEventListener('click', cancel);
+                    elements.closeButton.addEventListener('click', cancel);
+                    elements.modal.addEventListener('click', handleBackdropClick);
+                    document.addEventListener('keydown', handleKeydown);
+                    window.setTimeout(() => {
+                        elements.actionText.focus();
+                        elements.actionText.select();
+                    }, 0);
+                });
+            }
+
+            async function confirmMapFastTravel(destinationName, travelTimeMinutes, options = {}) {
+                const resolvedDestinationName = (destinationName && destinationName.toString().trim()) || 'the destination';
+                return requestMapFastTravelConfirmation({
+                    destinationName: resolvedDestinationName,
+                    destinationRegionName: options?.destinationRegionName || null,
+                    travelTimeMinutes
+                });
+            }
+
+            function buildMapFastTravelMetadata({
+                originLocationId,
+                destinationId,
+                destinationName,
+                destinationRegionName
+            } = {}) {
+                const normalizedOriginLocationId = typeof originLocationId === 'string' ? originLocationId.trim() : '';
+                const normalizedDestinationId = typeof destinationId === 'string' ? destinationId.trim() : '';
+                if (!normalizedOriginLocationId) {
+                    throw new Error('Fast travel metadata requires an origin location id.');
+                }
+                if (!normalizedDestinationId) {
+                    throw new Error('Fast travel metadata requires a destination location id.');
+                }
+                return {
+                    mode: 'fast-travel',
+                    eventDriven: false,
+                    exit: {
+                        originLocationId: normalizedOriginLocationId,
+                        destinationId: normalizedDestinationId,
+                        destinationName: (destinationName && destinationName.toString().trim()) || null,
+                        regionName: (destinationRegionName && destinationRegionName.toString().trim()) || null
+                    }
+                };
             }
 
             async function travelToAdjacentLocationFromMap(destinationId, { focusAdventureTab = true } = {}) {
@@ -35213,24 +35417,32 @@
                     if (travelPreview?.destination?.regionName) {
                         destinationRegionName = travelPreview.destination.regionName;
                     }
-                    if (!confirmMapFastTravel(destinationName, travelPreview.travelTimeMinutes)) {
+                    const confirmation = await confirmMapFastTravel(destinationName, travelPreview.travelTimeMinutes, {
+                        destinationRegionName
+                    });
+                    if (!confirmation?.confirmed) {
                         return false;
                     }
 
-                    const message = `${playerName} traveled to ${destinationName} in ${destinationRegionName}.`;
-                    showMoveOverlay();
+                    const actionText = (confirmation.actionText || '').trim()
+                        || buildDefaultMapFastTravelActionText({ destinationName, destinationRegionName });
+                    const travelMetadata = buildMapFastTravelMetadata({
+                        originLocationId: travelPreview?.origin?.id || lastRenderedLocation?.id || null,
+                        destinationId,
+                        destinationName,
+                        destinationRegionName
+                    });
 
-                    if (window.AIRPG_CHAT && typeof window.AIRPG_CHAT.dispatchAutomatedMessage === 'function') {
-                        try {
-                            await window.AIRPG_CHAT.dispatchAutomatedMessage(`# ${message}`, {
-                                travel: true,
-                                suppressTravelCompletionSound: true
-                            });
-                        } catch (chatError) {
-                            console.warn('Failed to log travel message:', chatError);
-                        }
+                    if (!window.AIRPG_CHAT || typeof window.AIRPG_CHAT.dispatchAutomatedMessage !== 'function') {
+                        throw new Error('AIRPG chat client not available; cannot dispatch fast travel action.');
                     }
+                    await window.AIRPG_CHAT.dispatchAutomatedMessage(actionText, {
+                        travel: true,
+                        travelMetadata,
+                        suppressTravelCompletionSound: true
+                    });
 
+                    showMoveOverlay();
                     await teleportNpcToLocation(playerRecord, destinationId, {
                         originLocationId: lastRenderedLocation?.id || null,
                         accountTravelTime: true

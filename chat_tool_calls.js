@@ -5,6 +5,9 @@ const {
     getSceneSummaryIndexText,
     shouldIncludeEntryInSceneSummaryIndex
 } = require('./scene_summary_index.js');
+const {
+    shouldExcludeEntryFromPromptHistory
+} = require('./base_context_history.js');
 const MysteryBox = require('./MysteryBox.js');
 const MysteryThread = require('./MysteryThread.js');
 const Faction = require('./Faction.js');
@@ -823,6 +826,36 @@ const CHAT_TOOL_DEFINITIONS = Object.freeze([
                     }
                 },
                 required: ['location'],
+                additionalProperties: false
+            }
+        }
+    },
+    {
+        type: 'function',
+        function: {
+            name: 'getTravelTime',
+            description: 'Calculate the shortest known travel time and route from one region/location to another. If fromLocation is omitted, uses the current player location as the origin.',
+            parameters: {
+                type: 'object',
+                properties: {
+                    region: {
+                        type: 'string',
+                        description: 'Destination region ID or name.'
+                    },
+                    location: {
+                        type: 'string',
+                        description: 'Destination location ID or name.'
+                    },
+                    fromRegion: {
+                        type: 'string',
+                        description: 'Optional origin region ID or name, used to disambiguate fromLocation.'
+                    },
+                    fromLocation: {
+                        type: 'string',
+                        description: 'Optional origin location ID or name. Omit to use the current player location.'
+                    }
+                },
+                required: ['region', 'location'],
                 additionalProperties: false
             }
         }
@@ -4565,6 +4598,102 @@ const createChatToolRuntime = ({
         };
     };
 
+    const summarizeLocationForTravelTool = (location) => ({
+        locationId: toTrimmedString(location?.id) || null,
+        locationName: toTrimmedString(location?.name) || null,
+        regionId: locationRegionId(location),
+        regionName: locationRegionName(location)
+    });
+
+    const executeGetTravelTimeTool = ({
+        region,
+        location,
+        fromRegion = null,
+        fromLocation = null
+    } = {}) => {
+        const functionName = 'getTravelTime';
+        const destinationRegionQuery = normalizeRequiredString(region, { functionName, fieldName: 'region' });
+        const destinationLocationQuery = normalizeRequiredString(location, { functionName, fieldName: 'location' });
+        const originRegionQuery = normalizeOptionalString(fromRegion);
+        const originLocationQuery = normalizeOptionalString(fromLocation);
+
+        if (originRegionQuery && !originLocationQuery) {
+            throw new ToolVisibleError(
+                'getTravelTime "fromRegion" requires "fromLocation"; omit both to use the current player location.',
+                { code: 'invalid_arguments' }
+            );
+        }
+
+        const destinationLocation = resolveLocationReference(destinationLocationQuery, {
+            fieldName: 'location',
+            regionQuery: destinationRegionQuery
+        });
+
+        let originLocation = null;
+        if (originLocationQuery) {
+            originLocation = resolveLocationReference(originLocationQuery, {
+                fieldName: 'fromLocation',
+                regionQuery: originRegionQuery
+            });
+        } else {
+            const currentPlayer = getCurrentPlayer();
+            const currentLocationId = toTrimmedString(currentPlayer?.currentLocation || currentPlayer?.locationId);
+            if (!currentLocationId) {
+                throw new ToolVisibleError(
+                    'getTravelTime could not use the current player location because the current player has no location.',
+                    { code: 'current_location_unavailable' }
+                );
+            }
+            originLocation = getLocationByIdLoose(currentLocationId);
+            if (!originLocation) {
+                throw new ToolVisibleError(
+                    `getTravelTime could not resolve current player location "${currentLocationId}".`,
+                    { code: 'current_location_unavailable' }
+                );
+            }
+        }
+
+        if (!Location || typeof Location.findShortestTravelRoute !== 'function') {
+            throw new Error('getTravelTime requires Location.findShortestTravelRoute.');
+        }
+
+        const routeResult = Location.findShortestTravelRoute(originLocation, destinationLocation);
+        const originSummary = summarizeLocationForTravelTool(originLocation);
+        const destinationSummary = summarizeLocationForTravelTool(destinationLocation);
+        const reachable = Boolean(routeResult);
+        const routeSteps = reachable && Array.isArray(routeResult.steps)
+            ? routeResult.steps
+            : [];
+        const travelTimeMinutes = reachable
+            ? routeResult.travelTimeMinutes
+            : null;
+
+        const lines = [
+            '<getTravelTimeResult>',
+            ...renderXmlNode('origin', originSummary, 1),
+            ...renderXmlNode('destination', destinationSummary, 1),
+            `  <reachable>${reachable ? 'true' : 'false'}</reachable>`,
+            ...renderXmlNode('travelTimeMinutes', travelTimeMinutes, 1),
+            `  <route count="${routeSteps.length}">`
+        ];
+        routeSteps.forEach((step, index) => {
+            lines.push(...renderXmlNode('step', step, 2, { index: index + 1 }));
+        });
+        lines.push('  </route>');
+        lines.push('</getTravelTimeResult>');
+
+        return {
+            content: lines.join('\n'),
+            metadata: {
+                origin: originSummary,
+                destination: destinationSummary,
+                reachable,
+                travelTimeMinutes,
+                route: routeSteps
+            }
+        };
+    };
+
     const executeSetEntityHiddenFromPlayerTool = ({
         name,
         description = '',
@@ -7656,7 +7785,11 @@ const createChatToolRuntime = ({
         attribute,
         difficultyLevel,
         circumstanceModifiers
-    } = {}, { defaultActorName = null, toolName = 'resolveSkillCheck' } = {}) => {
+    } = {}, {
+        defaultActorName = null,
+        toolName = 'resolveSkillCheck',
+        forcedSkillCheckRoll = null
+    } = {}) => {
         const functionName = toolName;
         if (typeof resolvePlausibilityCheck !== 'function') {
             throw new ToolVisibleError(
@@ -7683,7 +7816,24 @@ const createChatToolRuntime = ({
             circumstanceModifiers: modifiers
         });
 
-        const resolved = await resolvePlausibilityCheck({ actor: actorName, plausibility });
+        const dieRollOverride = typeof forcedSkillCheckRoll === 'function'
+            ? await forcedSkillCheckRoll({
+                toolName: functionName,
+                checkType: 'unopposed',
+                actor: actorName,
+                reason: reasonText,
+                skill: skillName,
+                attribute: attributeName,
+                difficultyLevel: difficultyName,
+                circumstanceModifiers: modifiers
+            })
+            : null;
+
+        const resolved = await resolvePlausibilityCheck({
+            actor: actorName,
+            plausibility,
+            dieRollOverride: Number.isInteger(dieRollOverride) ? dieRollOverride : null
+        });
         const actionResolution = resolved?.actionResolution || resolved;
         if (!actionResolution || typeof actionResolution !== 'object') {
             throw new ToolVisibleError(
@@ -7719,7 +7869,11 @@ const createChatToolRuntime = ({
         opponentSkill,
         opponentAttribute,
         circumstanceModifiers
-    } = {}, { defaultActorName = null, toolName = 'resolveOpposedSkillCheck' } = {}) => {
+    } = {}, {
+        defaultActorName = null,
+        toolName = 'resolveOpposedSkillCheck',
+        forcedSkillCheckRoll = null
+    } = {}) => {
         const functionName = toolName;
         if (typeof resolveOpposedPlausibilityCheck !== 'function') {
             throw new ToolVisibleError(
@@ -7753,7 +7907,26 @@ const createChatToolRuntime = ({
             circumstanceModifiers: modifiers
         });
 
-        const resolved = await resolveOpposedPlausibilityCheck({ actor: actorName, plausibility });
+        const dieRollOverride = typeof forcedSkillCheckRoll === 'function'
+            ? await forcedSkillCheckRoll({
+                toolName: functionName,
+                checkType: 'opposed',
+                actor: actorName,
+                reason: reasonText,
+                skill: skillName,
+                attribute: attributeName,
+                opponent: opponentName,
+                opponentSkill: opponentSkillName,
+                opponentAttribute: opponentAttributeName,
+                circumstanceModifiers: modifiers
+            })
+            : null;
+
+        const resolved = await resolveOpposedPlausibilityCheck({
+            actor: actorName,
+            plausibility,
+            dieRollOverride: Number.isInteger(dieRollOverride) ? dieRollOverride : null
+        });
         const actionResolution = resolved?.actionResolution || resolved;
         if (!actionResolution || typeof actionResolution !== 'object') {
             throw new ToolVisibleError(
@@ -8060,6 +8233,9 @@ const createChatToolRuntime = ({
         for (let index = 0; index < chatHistory.length; index += 1) {
             const entry = chatHistory[index];
             if (!entry || typeof entry !== 'object') {
+                continue;
+            }
+            if (shouldExcludeEntryFromPromptHistory(entry)) {
                 continue;
             }
             if (!includeAllEntryTypes && !isAssistantProseLikeEntry(entry)) {
@@ -9622,6 +9798,8 @@ const createChatToolRuntime = ({
         return result;
     };
 
+    const isFatalToolExecutionError = (error) => Boolean(error?.fatalToolExecution);
+
     const buildToolCallAttemptsExhaustedResult = (functionName, maxRounds) => buildToolVisibleErrorResult(
         functionName,
         new ToolVisibleError(
@@ -9636,7 +9814,8 @@ const createChatToolRuntime = ({
             resultCache = null,
             defaultActorName = null,
             includeAllHistoryEntryTypes = false,
-            requestUserInputHandler = null
+            requestUserInputHandler = null,
+            forcedSkillCheckRoll = null
         } = {}
     ) => {
         if (!toolCall || typeof toolCall !== 'object') {
@@ -9707,6 +9886,8 @@ const createChatToolRuntime = ({
                 toolResult = executeCreateExitTool(argumentsObject);
             } else if (toolCall.functionName === 'listLocationEntities') {
                 toolResult = executeListLocationEntitiesTool(argumentsObject);
+            } else if (toolCall.functionName === 'getTravelTime') {
+                toolResult = executeGetTravelTimeTool(argumentsObject);
             } else if (toolCall.functionName === 'revealEntity') {
                 toolResult = executeRevealEntityTool(argumentsObject);
             } else if (toolCall.functionName === 'hideEntity') {
@@ -9742,12 +9923,14 @@ const createChatToolRuntime = ({
             } else if (toolCall.functionName === 'resolveSkillCheck' || toolCall.functionName === 'resolvePlausibilityCheck') {
                 toolResult = executeResolvePlausibilityCheckTool(argumentsObject, {
                     defaultActorName,
-                    toolName: toolCall.functionName
+                    toolName: toolCall.functionName,
+                    forcedSkillCheckRoll
                 });
             } else if (toolCall.functionName === 'resolveOpposedSkillCheck' || toolCall.functionName === 'resolveOpposedPlausibilityCheck') {
                 toolResult = executeResolveOpposedPlausibilityCheckTool(argumentsObject, {
                     defaultActorName,
-                    toolName: toolCall.functionName
+                    toolName: toolCall.functionName,
+                    forcedSkillCheckRoll
                 });
             } else if (toolCall.functionName === 'locateNpcs') {
                 toolResult = executeLocateNpcsTool(argumentsObject);
@@ -9789,6 +9972,9 @@ const createChatToolRuntime = ({
             }
             return resolvedToolResult;
         } catch (error) {
+            if (isFatalToolExecutionError(error)) {
+                throw error;
+            }
             return buildToolExecutionErrorResult(toolCall.functionName, error);
         }
     };
@@ -9802,7 +9988,8 @@ const createChatToolRuntime = ({
         onToolCallEvent = null,
         defaultToolActor = null,
         includeAllHistoryEntryTypes = false,
-        requestUserInput: requestUserInputHandler = null
+        requestUserInput: requestUserInputHandler = null,
+        forcedSkillCheckRoll = null
     }) => {
         if (!requestOptions || typeof requestOptions !== 'object') {
             throw new Error('runChatCompletionWithToolLoop requires requestOptions.');
@@ -9815,6 +10002,9 @@ const createChatToolRuntime = ({
         }
         if (onToolCallEvent !== null && onToolCallEvent !== undefined && typeof onToolCallEvent !== 'function') {
             throw new Error('runChatCompletionWithToolLoop onToolCallEvent must be a function when provided.');
+        }
+        if (forcedSkillCheckRoll !== null && forcedSkillCheckRoll !== undefined && typeof forcedSkillCheckRoll !== 'function') {
+            throw new Error('runChatCompletionWithToolLoop forcedSkillCheckRoll must be a function when provided.');
         }
 
         const config = getConfig();
@@ -10047,12 +10237,16 @@ const createChatToolRuntime = ({
                             resultCache,
                             defaultActorName,
                             includeAllHistoryEntryTypes,
-                            requestUserInputHandler
+                            requestUserInputHandler,
+                            forcedSkillCheckRoll
                         });
                     if (!toolResult || typeof toolResult.content !== 'string' || !toolResult.content.trim()) {
                         throw new Error(`Tool "${toolCall.functionName}" returned empty content.`);
                     }
                 } catch (error) {
+                    if (isFatalToolExecutionError(error)) {
+                        throw error;
+                    }
                     toolResult = buildToolExecutionErrorResult(toolCall.functionName, error);
                 }
 

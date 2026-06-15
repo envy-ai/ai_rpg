@@ -29,6 +29,11 @@ plot_analysis:
   max_plot_threads: 3 # Currently does nothing
   max_plot_complications: 3
 
+improvement_prompt:
+  # Schedules a visible, prompt-excluded background prompt asking for game-system improvement ideas.
+  enabled: false
+  interval: 10
+
 # OpenAI-compatible API configuration
 ai:
   # Text generation backend:
@@ -119,6 +124,8 @@ ai:
 
   debug: false
   reasoning: false
+  # Optional OpenAI-compatible reasoning effort. When set, LLMClient sends reasoning: true and this reasoning_effort.
+  reasoning_effort: ""
 
 # Multimodal model configuration (overrides above)
 ai_multimodal:
@@ -186,6 +193,7 @@ prompt_progress:
     generic_prompt*: 5000
     get_*: 5000
     image_prompt_generation: 5000
+    improvement_prompt: 5000
     inventory_generation_*: 5000
     item_image: 5000
     levelup_abilities: 5000

@@ -120,6 +120,20 @@ plot_analysis:
 
 `max_plot_threads` and `max_plot_complications` default to the values shown in `config.default.yaml`. The current `prompts/_includes/plot-analysis-blurb.njk` warning text uses `max_plot_complications`; `max_plot_threads` remains available to prompt include customizations.
 
+## Improvement Prompt
+
+`improvement_prompt.enabled` controls whether normal player actions periodically schedule the non-blocking background `improvement-prompt` prompt.
+
+```yaml
+improvement_prompt:
+  enabled: false
+  interval: 10
+```
+
+`enabled` defaults to `false` in `config.default.yaml` and must be a boolean when provided. `config.yaml` enables it locally by setting `improvement_prompt.enabled: true`.
+
+`interval` defaults to `10` and must be an integer greater than or equal to `1` when provided. The cadence counts eligible player-action submissions (normal/creative actions; excludes question, generic, forced-event, and comment-only flows) and runs on every Nth eligible turn. The prompt runs through the shared base-context wrapper with all ordinary `@@`-eligible history available, logs through `LLMClient.logPrompt()` as `improvement_prompt`, and appends a visible `game-improvement-suggestions` chat entry headed `Game improvement suggestions`. That entry is excluded from base-context history, including all-entry generic prompt modes.
+
 ## Event Checks
 
 `event_checks.enabled` controls whether narrative event processing runs at all. When it is `false`, prose does not mutate world state through event checks and quest completion checks are skipped.
@@ -131,6 +145,22 @@ event_checks:
 ```
 
 `event_checks.use_xml` defaults to `true` and must be a boolean when provided. When enabled, `Events.runEventChecks(...)` uses the `events-xml` prompt for ordinary event categories and parses one `<events>` block. Need bars still use the dedicated `need-bars` prompt when need-bar definitions are present, and those results are injected as ordinary `needbar_change` events before outcomes are applied. Set `event_checks.use_xml` to `false` to use the legacy grouped `event-checks` prompts plus the same dedicated `need-bars` prompt. The `/config` page exposes the same option as “XML Event Pipeline”.
+
+## Per-prompt reasoning effort
+
+OpenAI-compatible `ai.reasoning_effort` can also be set per prompt through `ai_model_overrides` profiles. Matching profiles are selected by the prompt's `metadataLabel`, so this can tune cheap background checks without enabling reasoning globally.
+
+```yaml
+ai_model_overrides:
+  low_reasoning_checks:
+    reasoning_effort: low
+    prompts:
+      - quest_check
+      - event_checks
+      - need_bar_event_checks
+```
+
+`quest_check` covers quest completion checks. `event_checks` covers both the XML `events-xml` pipeline and the legacy grouped event-check prompts because they share the same AI override label. `need_bar_event_checks` covers the dedicated need-bar event prompt.
 
 ## Barter
 
@@ -284,6 +314,20 @@ prompt_progress:
 Prompt labels are normalized the same way as `metadataLabel`; keys ending in `*` match prefixes, and exact labels win over prefix matches. Missing target coverage for a tracked prompt label throws a clear error instead of falling back to a placeholder. The default config gives region-related prompts `20000`, location-related and NPC-generation prompts `10000`, and other known prompt families, including `scheduled_event_resolution` and `scene_illustration_prompt`, `5000`. Once `logs/prompt-output-character-stats.json` has a positive average output-character count for a label, that average becomes the prompt's progress target instead of the configured value; the config value remains the cold-start target before a usable average exists. Character-appended labels for inventory generation, NPC memories, NPC progression, NPC abilities, and NPC alias assignment use the base prompt label's average. Use `/promptstats` to inspect stored averages and `/promptstats clear` to clear them.
 
 Progress uses decoded JavaScript characters, not tokens or UTF-8 bytes. Up to the target `X`, the bar advances linearly through 75% of its width. After `X`, it approaches the end asymptotically: each additional `X` characters consumes half of the remaining 25%.
+
+## OpenAI-Compatible Reasoning Effort
+
+`config.ai.reasoning_effort` is an optional OpenAI-compatible chat-completion payload setting.
+
+```yaml
+ai:
+  reasoning: false
+  reasoning_effort: ""
+```
+
+Blank or omitted `reasoning_effort` preserves the current request payload shape: `LLMClient` does not send `reasoning` or `reasoning_effort` just because `config.ai.reasoning` is `false`. When `reasoning_effort` is a non-empty string, `LLMClient.chatCompletion()` sends `reasoning: true` and `reasoning_effort: "<value>"`. Per-call `LLMClient.chatCompletion({ reasoningEffort })` takes precedence over the merged AI config value.
+
+The field must be a string when provided. It can also be set through `ai_model_overrides` for selected prompt labels. This is separate from `ai.codex_bridge.reasoning_effort`, which controls Codex app-server `turn/start.effort`.
 
 ## AI custom args
 

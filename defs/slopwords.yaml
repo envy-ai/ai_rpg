@@ -11,6 +11,7 @@ forbidden_tropes:
   - \"most people do this… but YOU. you do THAT..\"
   - \"you did x. in y. in my z.\"
   - characters obsessively logging things
+  - \"I reported this to my company seventeen times and was ignored every time!\"
 
 # A list of slop words (ngrams are listed below as well) and their allowable parts per million before being flagged as repetitive
 regexes:

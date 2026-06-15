@@ -113,6 +113,28 @@ test('base-context history all-entry mode excludes system and diagnostic entries
     );
 });
 
+test('game improvement suggestions are excluded even in all-entry mode', () => {
+    const entry = {
+        type: 'game-improvement-suggestions',
+        role: 'assistant',
+        content: 'Game improvement suggestions\n\n- Add better travel planning.'
+    };
+
+    assert.equal(
+        shouldIncludeEntryInBaseContextHistory(entry, {
+            hasRenderableContent: true
+        }),
+        false
+    );
+    assert.equal(
+        shouldIncludeEntryInBaseContextHistory(entry, {
+            includeAllEntryTypes: true,
+            hasRenderableContent: true
+        }),
+        false
+    );
+});
+
 test('generic prompt route requests full-entry-type base context while no-context prompt stays isolated', () => {
     const source = fs.readFileSync(require.resolve('../api.js'), 'utf8');
     assert.match(

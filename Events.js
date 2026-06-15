@@ -9796,6 +9796,17 @@ class Events {
                     return null;
                 };
 
+                const seenPickupEntries = new Set();
+                const buildPickupEntryKey = (entry, quantity) => {
+                    const actorKey = typeof entry?.name === "string"
+                        ? entry.name.trim().toLowerCase()
+                        : "";
+                    const itemKey = typeof entry?.item === "string"
+                        ? entry.item.trim().toLowerCase()
+                        : "";
+                    return `${actorKey}\u0000${itemKey}\u0000${quantity}`;
+                };
+
                 await this._applyIndependentEventEntries("pick_up_item", entries, async (entry) => {
                     if (!entry) {
                         console.warn("pick_up_item event entry is invalid:", entry);
@@ -9818,14 +9829,15 @@ class Events {
                         entryText: JSON.stringify(entry),
                     });
 
-                    if (this.obtainedItems.has(itemName)) {
+                    const pickupEntryKey = buildPickupEntryKey(entry, quantity);
+                    if (seenPickupEntries.has(pickupEntryKey)) {
                         console.warn(
-                            "pick_up_item event entry has already been obtained:",
+                            "pick_up_item event entry is an exact duplicate:",
                             entry,
                         );
-                        console.trace();
                         return;
                     }
+                    seenPickupEntries.add(pickupEntryKey);
 
                     const actor =
                         typeof findActorByName === "function"

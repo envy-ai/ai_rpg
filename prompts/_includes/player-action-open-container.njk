@@ -19,13 +19,15 @@ The player describes their opening attempt as:
 {{ containerOpenAction }}
 </playerAction>
 
-Use the `resolveSkillCheck` tool during your draft to resolve the concrete attempt to open the container. Pick the attribute and skill that best match the described method. If another character is directly and actively opposing the opening attempt, use `resolveOpposedSkillCheck` instead.
+STRICTLY REQUIRED: Use the `resolveSkillCheck` tool to resolve the concrete attempt to open the container. Pick the attribute and skill that best match the described method. If another character is directly and actively opposing the opening attempt, use `resolveOpposedSkillCheck` instead.
 
 Strictly adhere to the check result. Do not show or describe the container's contents unless the attempt succeeds. A failed attempt may still produce visible consequences in the prose, but it must not open the container.
 
 Respond only with this XML:
 
 <containerOpenResult>
+  <toolUsed><!--the name of the tool used to resolve the check--></toolUsed>
+  <checkResult><!--the result of the check, including any relevant details such as degree of success or failure, and any opposed check results if applicable--></checkResult>
   <success><!--true if the attempt opens the container now; false otherwise--></success>
   <permanentlyOpened><!--true if the container is now permanently open and can be opened freely in the future without checks, false otherwise--></permanentlyOpened>
   <prose><!--Brief visible prose describing the attempt and outcome. Do not mention numerical stats. Do not reveal contents on failure.--></prose>

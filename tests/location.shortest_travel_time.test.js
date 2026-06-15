@@ -109,6 +109,116 @@ test('Location.findShortestTravelTimeMinutes uses Dijkstra weighting across mult
     }
 });
 
+test('Location.findShortestTravelRoute returns weighted route steps', () => {
+    const createdLocations = [];
+    Region.clear();
+
+    try {
+        const sourceRegion = new Region({
+            id: 'test-shortest-route-source-region',
+            name: 'Harbor Ward',
+            description: 'Source region.'
+        });
+        const destinationRegion = new Region({
+            id: 'test-shortest-route-destination-region',
+            name: 'Skyline',
+            description: 'Destination region.'
+        });
+
+        const start = new Location({
+            id: 'test-shortest-route-start',
+            name: 'Ferry Dock',
+            description: 'Starting point.',
+            regionId: sourceRegion.id
+        });
+        const alley = new Location({
+            id: 'test-shortest-route-alley',
+            name: 'Cutwater Alley',
+            description: 'Short route.',
+            regionId: sourceRegion.id
+        });
+        const lift = new Location({
+            id: 'test-shortest-route-lift',
+            name: 'Gantry Lift',
+            description: 'Vertical route.',
+            regionId: destinationRegion.id
+        });
+        const destination = new Location({
+            id: 'test-shortest-route-destination',
+            name: 'Signal Roost',
+            description: 'Destination.',
+            regionId: destinationRegion.id
+        });
+        createdLocations.push(start, alley, lift, destination);
+
+        start.addExit('direct', new LocationExit({
+            description: 'Direct but slow.',
+            destination: destination.id,
+            travelTimeMinutes: 20
+        }));
+        start.addExit('north', new LocationExit({
+            description: 'Into the alley.',
+            destination: alley.id,
+            travelTimeMinutes: 3
+        }));
+        alley.addExit('up', new LocationExit({
+            description: 'Up to the lift.',
+            destination: lift.id,
+            travelTimeMinutes: 4
+        }));
+        lift.addExit('east', new LocationExit({
+            description: 'Across the gantry.',
+            destination: destination.id,
+            travelTimeMinutes: 5
+        }));
+
+        const route = Location.findShortestTravelRoute(start.id, destination.id);
+
+        assert.equal(route.travelTimeMinutes, 12);
+        assert.equal(route.origin.name, 'Ferry Dock');
+        assert.equal(route.destination.name, 'Signal Roost');
+        assert.deepEqual(
+            route.steps.map(step => ({
+                direction: step.direction,
+                fromLocationName: step.fromLocationName,
+                fromRegionName: step.fromRegionName,
+                toLocationName: step.toLocationName,
+                toRegionName: step.toRegionName,
+                travelTimeMinutes: step.travelTimeMinutes
+            })),
+            [
+                {
+                    direction: 'north',
+                    fromLocationName: 'Ferry Dock',
+                    fromRegionName: 'Harbor Ward',
+                    toLocationName: 'Cutwater Alley',
+                    toRegionName: 'Harbor Ward',
+                    travelTimeMinutes: 3
+                },
+                {
+                    direction: 'up',
+                    fromLocationName: 'Cutwater Alley',
+                    fromRegionName: 'Harbor Ward',
+                    toLocationName: 'Gantry Lift',
+                    toRegionName: 'Skyline',
+                    travelTimeMinutes: 4
+                },
+                {
+                    direction: 'east',
+                    fromLocationName: 'Gantry Lift',
+                    fromRegionName: 'Skyline',
+                    toLocationName: 'Signal Roost',
+                    toRegionName: 'Skyline',
+                    travelTimeMinutes: 5
+                }
+            ]
+        );
+    } finally {
+        cleanupLocations(createdLocations);
+        Region.clear();
+    }
+});
+
 test('Location.findShortestTravelTimeMinutes returns null when no path exists', () => {
     const createdLocations = [];
     Region.clear();

@@ -3,8 +3,11 @@ const assert = require('node:assert/strict');
 
 const { CHAT_TOOL_DEFINITIONS, createChatToolRuntime } = require('../chat_tool_calls.js');
 const IdGenerator = require('../IdGenerator.js');
+const Location = require('../Location.js');
+const LocationExit = require('../LocationExit.js');
 const MysteryBox = require('../MysteryBox.js');
 const MysteryThread = require('../MysteryThread.js');
+const Region = require('../Region.js');
 
 function findToolDefinition(name) {
     return CHAT_TOOL_DEFINITIONS.find(entry => entry?.function?.name === name)?.function || null;
@@ -20,8 +23,12 @@ function createMinimalRuntime({
     deleteThingById = null,
     characters = [],
     currentPlayer = { currentLocation: 'loc-origin' },
-    things = []
+    things = [],
+    locations = [],
+    regions = []
 } = {}) {
+    const locationMap = new Map(locations.map(location => [location.id, location]));
+    const regionMap = new Map(regions.map(region => [region.id, region]));
     return createChatToolRuntime({
         getConfig: () => ({ ai: { max_tool_rounds: 4 } }),
         getChatHistory: () => chatHistory,
@@ -53,15 +60,23 @@ function createMinimalRuntime({
         },
         Player: { getAll: () => characters },
         Thing: { getAll: () => things },
-        Location: { getAll: () => [], get: () => null },
-        Region: { getAll: () => [] },
-        getGameLocations: () => new Map(),
+        Location,
+        Region,
+        getGameLocations: () => locationMap,
         getFactions: () => [],
-        getRegionsMap: () => new Map(),
+        getRegionsMap: () => regionMap,
         getPendingRegionStubs: () => new Map(),
         requestUserInput,
         deleteThingById
     });
+}
+
+function cleanupLocations(locations) {
+    for (const location of locations) {
+        if (location) {
+            Location.removeFromIndex(location);
+        }
+    }
 }
 
 test('requestUserInput tool definition asks a required question only', () => {
@@ -97,6 +112,180 @@ test('revealEntity and hideEntity tool definitions require only an entity name',
     assert.deepEqual(Object.keys(hideDefinition.parameters.properties).sort(), ['description', 'name']);
     assert.equal(revealDefinition.parameters.additionalProperties, false);
     assert.equal(hideDefinition.parameters.additionalProperties, false);
+});
+
+test('getTravelTime tool definition requires destination region and location', () => {
+    const definition = findToolDefinition('getTravelTime');
+
+    assert.ok(definition, 'Expected getTravelTime chat tool definition.');
+    assert.match(definition.description, /travel time/i);
+    assert.deepEqual(definition.parameters.required, ['region', 'location']);
+    assert.deepEqual(
+        Object.keys(definition.parameters.properties).sort(),
+        ['fromLocation', 'fromRegion', 'location', 'region']
+    );
+    assert.equal(definition.parameters.additionalProperties, false);
+});
+
+test('getTravelTime tool returns route from current location when origin is omitted', async () => {
+    const createdLocations = [];
+    Region.clear();
+
+    try {
+        const sourceRegion = new Region({
+            id: 'tool-travel-time-source-region',
+            name: 'Dockside',
+            description: 'Source region.'
+        });
+        const destinationRegion = new Region({
+            id: 'tool-travel-time-destination-region',
+            name: 'Citadel',
+            description: 'Destination region.'
+        });
+        const start = new Location({
+            id: 'tool-travel-time-start',
+            name: 'Canal Gate',
+            description: 'Start.',
+            regionId: sourceRegion.id
+        });
+        const bridge = new Location({
+            id: 'tool-travel-time-bridge',
+            name: 'Old Bridge',
+            description: 'Bridge.',
+            regionId: sourceRegion.id
+        });
+        const destination = new Location({
+            id: 'tool-travel-time-destination',
+            name: 'High Keep',
+            description: 'Destination.',
+            regionId: destinationRegion.id
+        });
+        createdLocations.push(start, bridge, destination);
+
+        start.addExit('east', new LocationExit({
+            description: 'To bridge.',
+            destination: bridge.id,
+            travelTimeMinutes: 4
+        }));
+        bridge.addExit('north', new LocationExit({
+            description: 'To keep.',
+            destination: destination.id,
+            travelTimeMinutes: 8
+        }));
+
+        const runtime = createMinimalRuntime({
+            currentPlayer: { id: 'player', name: 'Player', currentLocation: start.id },
+            locations: createdLocations,
+            regions: [sourceRegion, destinationRegion]
+        });
+
+        const result = await runtime.executeChatToolCall({
+            functionName: 'getTravelTime',
+            argumentsObject: {
+                region: 'Citadel',
+                location: 'High Keep'
+            }
+        });
+
+        assert.equal(result.metadata.travelTimeMinutes, 12);
+        assert.deepEqual(
+            result.metadata.route.map(step => ({
+                direction: step.direction,
+                fromLocationName: step.fromLocationName,
+                toLocationName: step.toLocationName,
+                travelTimeMinutes: step.travelTimeMinutes
+            })),
+            [
+                {
+                    direction: 'east',
+                    fromLocationName: 'Canal Gate',
+                    toLocationName: 'Old Bridge',
+                    travelTimeMinutes: 4
+                },
+                {
+                    direction: 'north',
+                    fromLocationName: 'Old Bridge',
+                    toLocationName: 'High Keep',
+                    travelTimeMinutes: 8
+                }
+            ]
+        );
+        assert.match(result.content, /<getTravelTimeResult>/);
+        assert.match(result.content, /<travelTimeMinutes>12<\/travelTimeMinutes>/);
+        assert.match(result.content, /<route count="2">/);
+        assert.match(result.content, /<field name="direction">east<\/field>/);
+    } finally {
+        cleanupLocations(createdLocations);
+        Region.clear();
+    }
+});
+
+test('getTravelTime tool accepts explicit origin region and location', async () => {
+    const createdLocations = [];
+    Region.clear();
+
+    try {
+        const sourceRegion = new Region({
+            id: 'tool-travel-time-explicit-source-region',
+            name: 'Low Market',
+            description: 'Source region.'
+        });
+        const destinationRegion = new Region({
+            id: 'tool-travel-time-explicit-destination-region',
+            name: 'Upper Market',
+            description: 'Destination region.'
+        });
+        const currentLocation = new Location({
+            id: 'tool-travel-time-explicit-current',
+            name: 'Current Player Spot',
+            description: 'Current player location.',
+            regionId: sourceRegion.id
+        });
+        const start = new Location({
+            id: 'tool-travel-time-explicit-start',
+            name: 'South Gate',
+            description: 'Explicit start.',
+            regionId: sourceRegion.id
+        });
+        const destination = new Location({
+            id: 'tool-travel-time-explicit-destination',
+            name: 'North Gate',
+            description: 'Explicit destination.',
+            regionId: destinationRegion.id
+        });
+        createdLocations.push(currentLocation, start, destination);
+
+        start.addExit('north', new LocationExit({
+            description: 'To north gate.',
+            destination: destination.id,
+            travelTimeMinutes: 9
+        }));
+
+        const runtime = createMinimalRuntime({
+            currentPlayer: { id: 'player', name: 'Player', currentLocation: currentLocation.id },
+            locations: createdLocations,
+            regions: [sourceRegion, destinationRegion]
+        });
+
+        const result = await runtime.executeChatToolCall({
+            functionName: 'getTravelTime',
+            argumentsObject: {
+                fromRegion: 'Low Market',
+                fromLocation: 'South Gate',
+                region: 'Upper Market',
+                location: 'North Gate'
+            }
+        });
+
+        assert.equal(result.metadata.origin.locationName, 'South Gate');
+        assert.equal(result.metadata.destination.locationName, 'North Gate');
+        assert.equal(result.metadata.travelTimeMinutes, 9);
+        assert.equal(result.metadata.route.length, 1);
+        assert.match(result.content, /<field name="fromLocationName">South Gate<\/field>/);
+    } finally {
+        cleanupLocations(createdLocations);
+        Region.clear();
+    }
 });
 
 test('updateMysteryBoxFields tool replaces selected mystery box fields', async () => {
@@ -729,6 +918,13 @@ test('getHistory can include all log entry types when the tool loop opts in', as
             type: 'event-summary',
             content: 'Events: the oxidized relay clue was logged as a summary row.',
             locationId: 'loc-1'
+        },
+        {
+            id: 'entry-improvement',
+            role: 'assistant',
+            type: 'game-improvement-suggestions',
+            content: 'Game improvement suggestions\n\n- Use the oxidized relay clue to test better prompt debugging.',
+            locationId: 'loc-1'
         }
     ];
     const capturedMessagesByRound = [];
@@ -786,6 +982,8 @@ test('getHistory can include all log entry types when the tool loop opts in', as
     assert.match(toolMessage.content, /Audit the oxidized relay clue/);
     assert.match(toolMessage.content, /event-summary/);
     assert.match(toolMessage.content, /oxidized relay clue was logged/);
+    assert.doesNotMatch(toolMessage.content, /game-improvement-suggestions/);
+    assert.doesNotMatch(toolMessage.content, /better prompt debugging/);
 });
 
 test('runChatCompletionWithToolLoop converts async ToolVisibleError rejections into tool messages', async () => {

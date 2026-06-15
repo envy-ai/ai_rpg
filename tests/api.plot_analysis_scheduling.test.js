@@ -8,6 +8,7 @@ const rootDir = path.join(__dirname, '..');
 const apiSource = fs.readFileSync(path.join(rootDir, 'api.js'), 'utf8');
 const serverSource = fs.readFileSync(path.join(rootDir, 'server.js'), 'utf8');
 const defaultConfig = yaml.load(fs.readFileSync(path.join(rootDir, 'config.default.yaml'), 'utf8'));
+const localConfig = yaml.load(fs.readFileSync(path.join(rootDir, 'config.yaml'), 'utf8'));
 
 test('player-action scheduling starts plot analysis before awaiting the player-action LLM response', () => {
     const requestOptionsIndex = apiSource.indexOf('const requestOptions = {', apiSource.indexOf("const promptMetadataLabel = promptType === 'question'"));
@@ -40,5 +41,42 @@ test('plot analysis scheduling is enabled by default and gated by config', () =>
     assert.match(
         scheduleSource,
         /if \(!isPlotAnalysisPromptEnabled\(\)\) \{\s*return false;\s*\}/
+    );
+});
+
+test('improvement prompt defaults disabled, local config enables it, and config is validated', () => {
+    assert.equal(defaultConfig.improvement_prompt?.enabled, false);
+    assert.equal(defaultConfig.improvement_prompt?.interval, 10);
+    assert.equal(localConfig.improvement_prompt?.enabled, true);
+
+    assert.match(serverSource, /improvement_prompt must be an object when provided/);
+    assert.match(serverSource, /improvement_prompt\.enabled must be a boolean when provided/);
+    assert.match(serverSource, /improvement_prompt\.interval must be an integer greater than or equal to 1 when provided/);
+});
+
+test('player-action scheduling starts improvement prompt before awaiting event checks', () => {
+    const responseEntryIndex = apiSource.indexOf('const aiResponseEntryType = isQuestionAction');
+    const scheduleIndex = apiSource.indexOf('scheduleImprovementPrompt({', responseEntryIndex);
+    const eventChecksIndex = apiSource.indexOf("stream.status('player_action:event_checks'", responseEntryIndex);
+
+    assert.notEqual(responseEntryIndex, -1, 'Unable to locate player-action response entry block.');
+    assert.notEqual(scheduleIndex, -1, 'Unable to locate improvement prompt scheduling call.');
+    assert.notEqual(eventChecksIndex, -1, 'Unable to locate player-action event-check await block.');
+    assert.ok(scheduleIndex < eventChecksIndex, 'improvement prompt must be scheduled before event checks are awaited.');
+});
+
+test('improvement prompt scheduler uses interval gate and visible prompt-excluded entry type', () => {
+    assert.match(apiSource, /function isImprovementPromptEnabled\(\)/);
+    assert.match(apiSource, /function resolveImprovementPromptInterval\(\)/);
+    assert.match(apiSource, /function shouldRunImprovementPromptThisTurn\(\)/);
+    assert.match(apiSource, /improvementPromptTurnCounter\s*\+=\s*1/);
+    assert.match(apiSource, /improvementPromptTurnCounter\s*%\s*interval\s*===\s*0/);
+    assert.match(apiSource, /type:\s*'game-improvement-suggestions'/);
+    assert.match(apiSource, /Game improvement suggestions/);
+    assert.match(apiSource, /excludeFromBaseContextHistory:\s*true/);
+    assert.doesNotMatch(
+        serverSource,
+        /HIDDEN_CHAT_ENTRY_TYPES[\s\S]*'game-improvement-suggestions'/,
+        'game improvement suggestions should stay visible to the client'
     );
 });

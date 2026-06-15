@@ -2452,6 +2452,29 @@ async function validateConfiguration() {
             validationErrors.push('plot_analysis.enabled must be a boolean when provided');
         }
     }
+    if (config.improvement_prompt !== undefined) {
+        const improvementPromptConfig = config.improvement_prompt;
+        if (!improvementPromptConfig || typeof improvementPromptConfig !== 'object' || Array.isArray(improvementPromptConfig)) {
+            validationErrors.push('improvement_prompt must be an object when provided');
+        } else {
+            if (
+                improvementPromptConfig.enabled !== undefined
+                && typeof improvementPromptConfig.enabled !== 'boolean'
+            ) {
+                validationErrors.push('improvement_prompt.enabled must be a boolean when provided');
+            }
+            if (
+                improvementPromptConfig.interval !== undefined
+                && improvementPromptConfig.interval !== null
+                && improvementPromptConfig.interval !== ''
+            ) {
+                const interval = Number(improvementPromptConfig.interval);
+                if (!Number.isInteger(interval) || interval < 1) {
+                    validationErrors.push('improvement_prompt.interval must be an integer greater than or equal to 1 when provided');
+                }
+            }
+        }
+    }
     if (config.event_checks?.use_xml !== undefined && typeof config.event_checks.use_xml !== 'boolean') {
         validationErrors.push('event_checks.use_xml must be a boolean when provided');
     }

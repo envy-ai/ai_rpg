@@ -61,12 +61,76 @@ test('request-user-input floating panel is non-modal and draggable', () => {
 });
 
 test('request-user-input panel renders confirmation-mode requests without free text input', () => {
-    assert.match(chatSource, /mode:\s*payload\.mode === 'confirmation' \? 'confirmation' : 'text'/);
+    assert.match(chatSource, /payload\.mode === 'integer' \? 'integer' : 'text'/);
     assert.match(chatSource, /const isConfirmation = request\.mode === 'confirmation'/);
     assert.match(chatSource, /playerInputRequestPanel\.classList\.toggle\('is-confirmation', isConfirmation\)/);
     assert.match(chatSource, /confirmed:\s*true/);
     assert.match(chatSource, /request\.confirmLabel \|\| 'Confirm'/);
     assert.match(chatSource, /request\.cancelLabel \|\| 'Cancel'/);
     assert.match(scssSource, /\.player-input-request-panel\.is-confirmation \.player-input-request-panel__label/);
-    assert.match(scssSource, /\.player-input-request-panel\.is-confirmation \.player-input-request-panel__answer/);
+    assert.match(scssSource, /\.player-input-request-panel\.is-confirmation\s+\.player-input-request-panel__answer/);
+});
+
+test('request-user-input panel supports integer-mode validation for forced rolls', () => {
+    assert.match(apiSource, /mode === 'integer' \? 'integer' : 'text'/);
+    assert.match(apiSource, /pending\.mode === 'integer' && !\/\^-\?\\d\+\$\/\.test\(answer\)/);
+    assert.match(chatSource, /const isInteger = request\.mode === 'integer'/);
+    assert.match(chatSource, /request\.mode === 'integer' && !\/\^-\?\\d\+\$\/\.test\(answer\)/);
+    assert.match(chatSource, /Enter an integer roll\./);
+});
+
+test('request-user-input panel formats multiline questions as readable blocks', () => {
+    assert.equal(
+        /renderPlayerInputRequestQuestion\(request\.question\)/.test(chatSource),
+        true,
+        'chat.js should render player-input questions through a multiline formatter'
+    );
+    assert.equal(
+        /player-input-request-panel__question-line/.test(chatSource),
+        true,
+        'chat.js should create per-line question blocks'
+    );
+});
+
+test('request-user-input panel uses a single-line numeric input for integer mode', () => {
+    assert.equal(
+        /id="playerInputRequestNumericAnswer"[^>]*type="number"/.test(viewSource),
+        true,
+        'view should include a numeric input for integer requests'
+    );
+    assert.equal(
+        /id="playerInputRequestNumericAnswer"[^>]*step="1"/.test(viewSource),
+        true,
+        'numeric input should step by whole numbers'
+    );
+    assert.equal(
+        /id="playerInputRequestNumericAnswer"[^>]*inputmode="numeric"/.test(viewSource),
+        true,
+        'numeric input should request a numeric mobile keyboard'
+    );
+    assert.equal(
+        /this\.playerInputRequestNumericAnswer = document\.getElementById\('playerInputRequestNumericAnswer'\)/.test(chatSource),
+        true,
+        'chat.js should cache the numeric input element'
+    );
+    assert.equal(
+        /playerInputRequestPanel\.classList\.toggle\('is-integer', isInteger\)/.test(chatSource),
+        true,
+        'integer mode should toggle a panel class'
+    );
+    assert.equal(
+        /getActivePlayerInputRequestAnswer\(\)/.test(chatSource),
+        true,
+        'submission should read from the active mode-specific input'
+    );
+    assert.equal(
+        /\.player-input-request-panel__numeric-answer/.test(scssSource),
+        true,
+        'SCSS should style the numeric input'
+    );
+    assert.equal(
+        /\.player-input-request-panel\.is-integer\s+\.player-input-request-panel__answer/.test(scssSource),
+        true,
+        'SCSS should hide the textarea in integer mode'
+    );
 });

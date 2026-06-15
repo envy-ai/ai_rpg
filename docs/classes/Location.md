@@ -26,6 +26,8 @@ Represents a game location, including description, exits, NPCs, items/scenery, a
 - `getAll()`.
 - `findShortestTravelTimeMinutes(startLocationOrId, endLocationOrId)`: runs Dijkstra over the directed location-exit graph and returns the minimum summed `travelTimeMinutes`, `0` for the same location, or `null` when no route exists.
 - `findShortestTravelTimeMinutesByRegionAndLocationNames(startRegionName, startLocationName, endRegionName, endLocationName)`: resolves each endpoint by exact region-scoped location name, then runs the same Dijkstra route search and returns the minimum summed `travelTimeMinutes`, `0` for the same location, or `null` when no route exists.
+- `findShortestTravelRoute(startLocationOrId, endLocationOrId)`: runs the same Dijkstra search and returns `{ origin, destination, travelTimeMinutes, steps }`, with each step including source/destination location+region names, direction, and `travelTimeMinutes`; returns `null` when no route exists.
+- `findShortestTravelRouteByRegionAndLocationNames(startRegionName, startLocationName, endRegionName, endLocationName)`: exact-name variant of `findShortestTravelRoute(...)`.
 - `get indexById()` / `get indexByName()`.
 - `removeFromIndex(locationOrId)` to prevent stale lookups.
 
@@ -72,8 +74,8 @@ Represents a game location, including description, exits, NPCs, items/scenery, a
 - Player-driven `Player.setLocation(...)` calls mark the destination as visited and stamp `lastVisitedTime` from `Globals.elapsedTime`; NPC and vehicle-only movement do not.
 - Legacy saves that predate persisted `visited` flags now load non-stub locations as visited and stub locations as unvisited by default.
 - Legacy saves that predate persisted `favorite` flags load locations as not favorite. Favorite locations are stored on the `Location` record, not on the player, so they persist with the world save and appear in the Play tab's Favorites subtab when visited and non-stub.
-- `findShortestTravelTimeMinutes(...)` treats exits as directed weighted edges and throws on malformed graph data such as dangling destinations or invalid travel-time values, instead of silently skipping them.
-- `findShortestTravelTimeMinutesByRegionAndLocationNames(...)` fails loudly when a named region is missing, a location name does not exist within the named region, or the same location name appears more than once inside that region.
+- `findShortestTravelTimeMinutes(...)` and `findShortestTravelRoute(...)` treat exits as directed weighted edges and throw on malformed graph data such as dangling destinations or invalid travel-time values, instead of silently skipping them.
+- The exact-name shortest-travel helpers fail loudly when a named region is missing, a location name does not exist within the named region, or the same location name appears more than once inside that region.
 - Adding/removing thing ids updates Thing metadata (location ownership) and removes from other locations via `Thing.removeFromWorldById`.
 - Status effects are stored as `StatusEffect` instances; getters return JSON snapshots.
 - Movement/integrity repair paths can safely reapply the same `regionId` to restore missing region membership, and can also recover a location from a stale missing previous region during explicit reconciliation.

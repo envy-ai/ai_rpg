@@ -8,6 +8,7 @@ function normalizeEntryRole(entry) {
 
 const PROMPT_DIAGNOSTIC_ENTRY_TYPES = new Set([
     'check-results',
+    'game-improvement-suggestions',
     'tool-call-debug'
 ]);
 

@@ -3,7 +3,10 @@ const Location = require('../Location.js');
 const Player = require('../Player.js');
 const Region = require('../Region.js');
 const SlashCommandBase = require('../SlashCommandBase.js');
-const Thing = require('../Thing.js');
+const {
+  containsNamedArgSyntax,
+  sanitizeLookupKey
+} = require('../slashcommand_utils/characterTargeting.js');
 
 const toTrimmedString = (value) => (typeof value === 'string' ? value.trim() : '');
 
@@ -70,7 +73,7 @@ class LocateCommand extends SlashCommandBase {
   }
 
   static get description() {
-    return 'Locate NPCs (name/alias) and things by substring.';
+    return 'Locate NPCs by exact name or alias.';
   }
 
   static get args() {
@@ -82,20 +85,22 @@ class LocateCommand extends SlashCommandBase {
   static async execute(interaction, args = {}) {
     const rawArgsText = typeof interaction?.argsText === 'string' ? interaction.argsText.trim() : '';
     const fallbackArgQuery = typeof args.query === 'string' ? args.query : '';
-    const rawQuery = rawArgsText || fallbackArgQuery;
+    const rawQuery = rawArgsText && !containsNamedArgSyntax(rawArgsText)
+      ? rawArgsText
+      : fallbackArgQuery;
     const query = stripQuotes(rawQuery);
     if (!query) {
-      throw new Error('Query is required. Usage: /locate <substring>');
+      throw new Error('Query is required. Usage: /locate <npc name or alias>');
     }
 
-    const queryLower = query.toLowerCase();
+    const queryKey = sanitizeLookupKey(query);
+    if (!queryKey) {
+      throw new Error('Query must contain at least one searchable character.');
+    }
+
     const allPlayers = Player.getAll();
     if (!Array.isArray(allPlayers)) {
       throw new Error('Player list is unavailable.');
-    }
-    const allThings = Thing.getAll();
-    if (!Array.isArray(allThings)) {
-      throw new Error('Thing list is unavailable.');
     }
     const allLocations = Location.getAll();
     if (!Array.isArray(allLocations)) {
@@ -189,10 +194,11 @@ class LocateCommand extends SlashCommandBase {
         continue;
       }
 
-      const aliasList = toAliasList(npc).map(alias => alias.toLowerCase());
-      const nameMatch = fullName.toLowerCase().includes(queryLower);
-      const aliasMatch = aliasList.some(alias => alias.includes(queryLower));
-      if (!nameMatch && !aliasMatch) {
+      const fullNameKey = sanitizeLookupKey(fullName);
+      const aliases = toAliasList(npc);
+      const matchedAlias = aliases.find(alias => sanitizeLookupKey(alias) === queryKey) || null;
+      const matchedName = fullNameKey === queryKey;
+      if (!matchedName && !matchedAlias) {
         continue;
       }
 
@@ -201,80 +207,17 @@ class LocateCommand extends SlashCommandBase {
         fullName,
         location: resolveLocationLabel(effectiveLocationId),
         region: resolveRegionLabel(effectiveLocationId),
-        type: 'npc'
-      });
-    }
-
-    const findThingLocationIdFromIndex = (thingId) => {
-      const normalizedThingId = toTrimmedString(thingId);
-      if (!normalizedThingId) {
-        return null;
-      }
-      for (const location of allLocations) {
-        if (!location || !Array.isArray(location.thingIds)) {
-          continue;
-        }
-        if (location.thingIds.includes(normalizedThingId)) {
-          return toTrimmedString(location.id) || null;
-        }
-      }
-      return null;
-    };
-
-    for (const thing of allThings) {
-      if (!thing) {
-        continue;
-      }
-      const thingName = toTrimmedString(thing.name) || toTrimmedString(thing.id);
-      if (!thingName) {
-        continue;
-      }
-      if (!thingName.toLowerCase().includes(queryLower)) {
-        continue;
-      }
-
-      const owners = typeof thing.whoseInventory === 'function' ? thing.whoseInventory() : [];
-      const owner = Array.isArray(owners) && owners.length ? owners[0] : null;
-
-      let locationLabel = 'Unknown';
-      let regionLabel = 'Unknown';
-      if (owner) {
-        const ownerName = toTrimmedString(owner.name) || toTrimmedString(owner.id) || 'Unknown';
-        locationLabel = `${ownerName}'s inventory`;
-        const ownerLocationId = resolveEffectiveCharacterLocationId(owner);
-        regionLabel = resolveRegionLabel(ownerLocationId);
-      } else {
-        const metadata = thing.metadata && typeof thing.metadata === 'object' ? thing.metadata : {};
-        const metadataLocationId = toTrimmedString(metadata.locationId || metadata.locationID) || null;
-        const indexedLocationId = findThingLocationIdFromIndex(thing.id);
-        const effectiveLocationId = metadataLocationId || indexedLocationId;
-        locationLabel = resolveLocationLabel(effectiveLocationId);
-        regionLabel = resolveRegionLabel(effectiveLocationId);
-      }
-
-      const normalizedType = toTrimmedString(thing.thingType).toLowerCase() === 'scenery'
-        ? 'scenery'
-        : 'item';
-
-      rows.push({
-        fullName: thingName,
-        location: locationLabel,
-        region: regionLabel,
-        type: normalizedType
+        matched: matchedName ? `name: ${fullName}` : `alias: ${matchedAlias}`
       });
     }
 
     rows.sort((a, b) => {
-      const typeCmp = a.type.localeCompare(b.type, undefined, { sensitivity: 'base' });
-      if (typeCmp !== 0) {
-        return typeCmp;
-      }
       return a.fullName.localeCompare(b.fullName, undefined, { sensitivity: 'base' });
     });
 
     if (!rows.length) {
       await interaction.reply({
-        content: `No NPCs or things found for substring "${query}".`,
+        content: `No NPCs found for name or alias "${query}".`,
         ephemeral: false
       });
       return;
@@ -283,12 +226,12 @@ class LocateCommand extends SlashCommandBase {
     const lines = [
       `Locate results for "${query}":`,
       '',
-      '| Full Name | Location | Region | Type |',
+      '| NPC | Location | Region | Matched |',
       '| --- | --- | --- | --- |'
     ];
     for (const row of rows) {
       lines.push(
-        `| ${escapeMarkdownCell(row.fullName)} | ${escapeMarkdownCell(row.location)} | ${escapeMarkdownCell(row.region)} | ${escapeMarkdownCell(row.type)} |`
+        `| ${escapeMarkdownCell(row.fullName)} | ${escapeMarkdownCell(row.location)} | ${escapeMarkdownCell(row.region)} | ${escapeMarkdownCell(row.matched)} |`
       );
     }
 

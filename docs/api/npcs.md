@@ -178,20 +178,20 @@ Response:
 - 400/404/500 with `{ success: false, error }`
 
 ## POST /api/npcs/:id/teleport
-Teleport an NPC to another location.
+Teleport a character to another location.
 
 Request:
-- Body: `{ locationId: string, accountTravelTime?: boolean, clientId?: string }`
+- Body: `{ locationId: string, accountTravelTime?: boolean, storyToolTeleport?: boolean, clientId?: string }`
 
 Response:
 - 200: `{ success: true, npc: NpcProfile, destination: LocationResponse, previousLocation: LocationResponse, locationIds: string[], worldTime, timeProgress, removedFromParty, message }`
 - 400/404/500 with `{ success: false, error }`
 
 Notes:
+- When the target character is the player and `storyToolTeleport` is `true`, this route is a story-tool teleport: it sets the player's current location to the requested existing location, returns refreshed origin/destination payloads, and skips travel-time accounting, `while-you-were-away`, hidden-NPC arrival checks, NPC sighting updates, and event-summary creation.
+- Player teleports without `storyToolTeleport` keep the normal arrival-processing path. Region Map, World Map, and Favorites use that gameplay path after their preview, confirmation, and `/api/chat` fast-travel prompt.
 - When the target character is an NPC in the current player's party, the route removes them from the party before applying the teleport so the old party/location state cannot leave a stale client-side presence behind.
-- When `accountTravelTime` is `true`, the route resolves the shortest directed path between the origin and destination using the location graph's stored `travelTimeMinutes`, advances world time by that total, and returns the resulting `worldTime` / `timeProgress`.
-- When the teleported character is the player and travel time advances, the route also records travel and elapsed-time event-summary rows, parent-linked to visible arrival prose when one is generated, and emits `chat_history_updated` when `clientId` is provided.
-- If no route exists, fast-travel time falls back to `0` minutes.
+- For NPC targets, and for non-story-tool player teleports, when `accountTravelTime` is `true`, the route resolves the shortest directed path between the origin and destination using the location graph's stored `travelTimeMinutes`, advances world time by that total, and returns the resulting `worldTime` / `timeProgress`. If no route exists, fast-travel time falls back to `0` minutes.
 
 ## DELETE /api/npcs/:id
 Delete an NPC.

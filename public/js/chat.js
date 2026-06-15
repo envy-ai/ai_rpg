@@ -403,6 +403,7 @@ class AIRPGChat {
         this.playerInputRequestForm = document.getElementById('playerInputRequestForm');
         this.playerInputRequestLabel = document.querySelector('label[for="playerInputRequestAnswer"]');
         this.playerInputRequestAnswer = document.getElementById('playerInputRequestAnswer');
+        this.playerInputRequestNumericAnswer = document.getElementById('playerInputRequestNumericAnswer');
         this.playerInputRequestStatus = document.getElementById('playerInputRequestStatus');
         this.playerInputRequestCloseButton = document.getElementById('playerInputRequestCloseBtn');
         this.playerInputRequestCancelButton = document.getElementById('playerInputRequestCancelBtn');
@@ -727,6 +728,14 @@ class AIRPGChat {
                 }
             });
         }
+        if (this.playerInputRequestNumericAnswer) {
+            this.playerInputRequestNumericAnswer.addEventListener('input', () => {
+                if (this.playerInputRequestStatus) {
+                    this.playerInputRequestStatus.hidden = true;
+                    this.playerInputRequestStatus.textContent = '';
+                }
+            });
+        }
     }
 
     bindPlayerInputRequestDrag() {
@@ -807,7 +816,9 @@ class AIRPGChat {
         return {
             inputRequestId,
             question,
-            mode: payload.mode === 'confirmation' ? 'confirmation' : 'text',
+            mode: payload.mode === 'confirmation'
+                ? 'confirmation'
+                : (payload.mode === 'integer' ? 'integer' : 'text'),
             title: typeof payload.title === 'string' && payload.title.trim()
                 ? payload.title.trim()
                 : null,
@@ -862,30 +873,92 @@ class AIRPGChat {
         }
     }
 
+    renderPlayerInputRequestQuestion(question) {
+        if (!this.playerInputRequestQuestion) {
+            return;
+        }
+        const source = typeof question === 'string' ? question.trim() : '';
+        const lines = source
+            .split(/\r?\n/)
+            .map(line => line.trim())
+            .filter(Boolean);
+        this.playerInputRequestQuestion.replaceChildren();
+        const renderedLines = lines.length ? lines : [source];
+        renderedLines.forEach((line, index) => {
+            const lineElement = document.createElement('div');
+            lineElement.className = 'player-input-request-panel__question-line';
+            if (index === 0) {
+                lineElement.classList.add('player-input-request-panel__question-line--lead');
+            } else if (/^enter an integer\b/i.test(line)) {
+                lineElement.classList.add('player-input-request-panel__question-line--note');
+            }
+
+            const labelMatch = index > 0 ? line.match(/^([^:]{1,40}):\s*(.+)$/) : null;
+            if (labelMatch) {
+                const label = document.createElement('span');
+                label.className = 'player-input-request-panel__question-label';
+                label.textContent = `${labelMatch[1]}:`;
+                const value = document.createElement('span');
+                value.className = 'player-input-request-panel__question-value';
+                value.textContent = labelMatch[2];
+                lineElement.append(label, document.createTextNode(' '), value);
+            } else {
+                lineElement.textContent = line;
+            }
+
+            this.playerInputRequestQuestion.appendChild(lineElement);
+        });
+    }
+
+    getActivePlayerInputRequestAnswer() {
+        const request = this.activePlayerInputRequest;
+        const input = request?.mode === 'integer'
+            ? this.playerInputRequestNumericAnswer
+            : this.playerInputRequestAnswer;
+        return input?.value?.trim() || '';
+    }
+
+    focusActivePlayerInputRequestAnswer() {
+        const request = this.activePlayerInputRequest;
+        const input = request?.mode === 'integer'
+            ? this.playerInputRequestNumericAnswer
+            : this.playerInputRequestAnswer;
+        input?.focus();
+    }
+
     showPlayerInputRequest(request) {
         if (!this.playerInputRequestPanel) {
             return;
         }
         const isConfirmation = request.mode === 'confirmation';
+        const isInteger = request.mode === 'integer';
         this.activePlayerInputRequest = request;
         this.playerInputRequestSubmitting = false;
         this.playerInputRequestPanel.classList.toggle('is-confirmation', isConfirmation);
+        this.playerInputRequestPanel.classList.toggle('is-integer', isInteger);
         if (this.playerInputRequestTitle) {
             this.playerInputRequestTitle.textContent = request.title || (isConfirmation ? 'Confirm Action' : 'Question from AI');
         }
-        if (this.playerInputRequestQuestion) {
-            this.playerInputRequestQuestion.textContent = request.question;
-        }
+        this.renderPlayerInputRequestQuestion(request.question);
         if (this.playerInputRequestPromptLabel) {
             this.playerInputRequestPromptLabel.textContent = request.promptLabel || '';
         }
         if (this.playerInputRequestAnswer) {
             this.playerInputRequestAnswer.value = '';
             this.playerInputRequestAnswer.disabled = false;
-            this.playerInputRequestAnswer.hidden = isConfirmation;
+            this.playerInputRequestAnswer.hidden = isConfirmation || isInteger;
+        }
+        if (this.playerInputRequestNumericAnswer) {
+            this.playerInputRequestNumericAnswer.value = '';
+            this.playerInputRequestNumericAnswer.disabled = false;
+            this.playerInputRequestNumericAnswer.hidden = isConfirmation || !isInteger;
         }
         if (this.playerInputRequestLabel) {
             this.playerInputRequestLabel.hidden = isConfirmation;
+            if (!isConfirmation) {
+                this.playerInputRequestLabel.textContent = isInteger ? 'Roll' : 'Answer';
+                this.playerInputRequestLabel.setAttribute('for', isInteger ? 'playerInputRequestNumericAnswer' : 'playerInputRequestAnswer');
+            }
         }
         if (this.playerInputRequestStatus) {
             this.playerInputRequestStatus.textContent = '';
@@ -907,6 +980,8 @@ class AIRPGChat {
         window.setTimeout(() => {
             if (isConfirmation) {
                 this.playerInputRequestSubmitButton?.focus({ preventScroll: true });
+            } else if (isInteger) {
+                this.playerInputRequestNumericAnswer?.focus({ preventScroll: true });
             } else {
                 this.playerInputRequestAnswer?.focus({ preventScroll: true });
             }
@@ -922,13 +997,24 @@ class AIRPGChat {
         this.playerInputRequestPanel.setAttribute('hidden', '');
         this.playerInputRequestPanel.setAttribute('aria-hidden', 'true');
         this.playerInputRequestPanel.classList.remove('is-confirmation');
+        this.playerInputRequestPanel.classList.remove('is-integer');
+        if (this.playerInputRequestQuestion) {
+            this.playerInputRequestQuestion.replaceChildren();
+        }
         if (this.playerInputRequestAnswer) {
             this.playerInputRequestAnswer.value = '';
             this.playerInputRequestAnswer.disabled = false;
             this.playerInputRequestAnswer.hidden = false;
         }
+        if (this.playerInputRequestNumericAnswer) {
+            this.playerInputRequestNumericAnswer.value = '';
+            this.playerInputRequestNumericAnswer.disabled = false;
+            this.playerInputRequestNumericAnswer.hidden = true;
+        }
         if (this.playerInputRequestLabel) {
             this.playerInputRequestLabel.hidden = false;
+            this.playerInputRequestLabel.textContent = 'Answer';
+            this.playerInputRequestLabel.setAttribute('for', 'playerInputRequestAnswer');
         }
         if (this.playerInputRequestTitle) {
             this.playerInputRequestTitle.textContent = 'Question from AI';
@@ -969,10 +1055,15 @@ class AIRPGChat {
             await this.sendPlayerInputRequestResponse(request, { confirmed: true });
             return;
         }
-        const answer = this.playerInputRequestAnswer?.value?.trim() || '';
+        const answer = this.getActivePlayerInputRequestAnswer();
         if (!answer) {
             this.setPlayerInputRequestStatus('Enter an answer before submitting.', 'error');
-            this.playerInputRequestAnswer?.focus();
+            this.focusActivePlayerInputRequestAnswer();
+            return;
+        }
+        if (request.mode === 'integer' && !/^-?\d+$/.test(answer)) {
+            this.setPlayerInputRequestStatus('Enter an integer roll.', 'error');
+            this.focusActivePlayerInputRequestAnswer();
             return;
         }
         await this.sendPlayerInputRequestResponse(request, { answer });
@@ -999,6 +1090,9 @@ class AIRPGChat {
         }
         if (this.playerInputRequestAnswer) {
             this.playerInputRequestAnswer.disabled = true;
+        }
+        if (this.playerInputRequestNumericAnswer) {
+            this.playerInputRequestNumericAnswer.disabled = true;
         }
         this.setPlayerInputRequestStatus(cancelled ? 'Cancelling...' : (confirmed ? 'Confirming...' : 'Submitting...'));
         try {
@@ -1031,6 +1125,9 @@ class AIRPGChat {
             }
             if (this.playerInputRequestAnswer) {
                 this.playerInputRequestAnswer.disabled = false;
+            }
+            if (this.playerInputRequestNumericAnswer) {
+                this.playerInputRequestNumericAnswer.disabled = false;
             }
             this.setPlayerInputRequestStatus(`Failed: ${error.message || error}`, 'error');
         }
