@@ -1129,6 +1129,8 @@ test('runEventChecks defaults to XML events plus dedicated need-bar prompt witho
     const previousHandlers = Events._handlers;
     const capturedPromptTypes = [];
     const loggedPrefixes = [];
+    let eventCheckResolved = false;
+    let needBarStartedBeforeEventCheckResolved = false;
     const player = {
         isNPC: false,
         name: 'Wanderer',
@@ -1163,6 +1165,9 @@ test('runEventChecks defaults to XML events plus dedicated need-bar prompt witho
             const payload = typeof message === 'string' ? JSON.parse(message) : {};
             capturedPromptTypes.push(payload.promptType || null);
             if (payload.promptType === 'need-bars') {
+                if (!eventCheckResolved) {
+                    needBarStartedBeforeEventCheckResolved = true;
+                }
                 return `<characters>
   <character>
     <name>Wanderer</name>
@@ -1177,6 +1182,8 @@ test('runEventChecks defaults to XML events plus dedicated need-bar prompt witho
   </character>
 </characters>`;
             }
+            await new Promise(resolve => setImmediate(resolve));
+            eventCheckResolved = true;
             return '<events><currency><amount>7</amount></currency></events>';
         };
         LLMClient.logPrompt = (entry) => {
@@ -1216,7 +1223,8 @@ test('runEventChecks defaults to XML events plus dedicated need-bar prompt witho
             textToCheck: 'Wanderer finds seven coins.'
         });
 
-        assert.deepEqual(capturedPromptTypes.sort(), ['events-xml', 'need-bars'].sort());
+        assert.deepEqual(capturedPromptTypes, ['events-xml', 'need-bars']);
+        assert.equal(needBarStartedBeforeEventCheckResolved, false);
         assert.equal(loggedPrefixes.includes('event_checks_xml'), true);
         assert.equal(loggedPrefixes.includes('need_bar_event_checks'), true);
         assert.equal(result.currencyChanges.length, 1);

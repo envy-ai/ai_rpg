@@ -31,4 +31,9 @@ Respond only with this XML:
   <success><!--true if the attempt opens the container now; false otherwise--></success>
   <permanentlyOpened><!--true if the container is now permanently open and can be opened freely in the future without checks, false otherwise--></permanentlyOpened>
   <prose><!--Brief visible prose describing the attempt and outcome. Do not mention numerical stats. Do not reveal contents on failure.--></prose>
+  <timePassed>
+    <!-- Required. Use reasoning and duration to report how much elapsed in-world wall-clock time the concrete non-travel action consumed. Estimate elapsed wall-clock time, not reading time and not the sum of each participant's labor when characters work in parallel. -->
+    <reasoning><!-- Brief breakdown of time-consuming actions --></reasoning>
+    <duration><!-- Exact duration rounded to the nearest minute, 1 minute minimum. No time ranges, unknowns, or other nonspecific answers. Format with one of: "HH:MM", "[INTEGER] [minutes/hours]", or "[INTEGER] hours, [INTEGER] minutes". --></duration>
+  </timePassed>
 </containerOpenResult>

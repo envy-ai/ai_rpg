@@ -240,11 +240,12 @@ Use this format:
 3c, 3d, and so on...
 4. ...
 5. ...
+
 <finalProse>
   story prose here
-  <hidden>any hidden notes here; omit if none</hidden>
+  <hidden>any hidden notes here; omit if none. Must be inside finalProse tags.</hidden>
   <timePassed>
-    Required. Use reasoning and duration to report how much elapsed in-world wall-clock time the concrete non-travel actions in the text realistically consumed. Estimate elapsed wall-clock time, not reading time and not the sum of each participant's labor when characters work in parallel. 
+    Required. Use reasoning and duration to report how much elapsed in-world wall-clock time the concrete non-travel actions in the text realistically consumed. Estimate elapsed wall-clock time, not reading time and not the sum of each participant's labor when characters work in parallel. Must be inside finalProse tags.
     <reasoning>Brief breakdown of time-consuming actions</reasoning>
     <duration>Exact duration rounded to the nearest minute, 1 minute minimum (typical for conversation and quick scenes). No time ranges, unknowns, or other nonspecific answers. Format with one of: "HH:MM", "[INTEGER] [minutes/hours]", or "[INTEGER] hours, [INTEGER] minutes".</duration>
   </timePassed>

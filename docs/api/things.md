@@ -142,15 +142,16 @@ Request:
 - Body: `{ actionText: string, clientId?: string, requestId?: string }`
 
 Response:
-- 200: `{ success: true, opened, prose, container, locationRefreshRequested, eventChecks, requestId }`
+- 200: `{ success: true, opened, prose, container, locationRefreshRequested, eventChecks, timeProgress, worldTime, requestId }`
 - 200: `{ success: true, opened: true, skipped: true, container }` when the target is a container that does not require a check.
 - 400/404/500 with `{ success: false, error }`
 
 Notes:
 - Only container Things can use this route, and `actionText` is required for checked containers.
 - The server renders the `player-action-open-container` prompt through base context, logs it with `LLMClient.logPrompt()` under `player_action_open_container`, sends regular prose information tools plus `resolveSkillCheck` / `resolveOpposedSkillCheck` in the LLM request payload even when legacy prompt checks are enabled elsewhere, and fails loudly if no skill check was recorded. Including `<f>` or `<F>` in `actionText` strips that marker and opens a forced integer die-roll prompt for each skill-check tool call made while resolving the open attempt.
-- The prompt returns `<containerOpenResult><success>...</success><permanentlyOpened>...</permanentlyOpened><prose>...</prose></containerOpenResult>`. Prose runs through the normal slop-removal pipeline, is stored visibly as a `player-action-open-container` chat entry, and then runs ordinary event checks. The `success` flag gates whether the client proceeds to `GET /api/things/:containerId/container`.
+- The prompt returns `<containerOpenResult><success>...</success><permanentlyOpened>...</permanentlyOpened><prose>...</prose><timePassed><duration>...</duration></timePassed></containerOpenResult>`. The required `timePassed` duration is parsed with the shared action-time parser, advances world time before event checks, and is passed into `Events.runEventChecks(...)` as `initialTimeProgress` so event-check `timePassed` / `time_passed` is only a fallback. Prose runs through the normal slop-removal pipeline, is stored visibly as a `player-action-open-container` chat entry, and then runs ordinary event checks. The `success` flag gates whether the client proceeds to `GET /api/things/:containerId/container`.
 - When `success` and `permanentlyOpened` are both true, the route persists `requiresCheckToOpen: false` on the container so future UI opens skip this check. Temporary successes should return `permanentlyOpened: false`.
+- Completed checked-open attempts run the standard autosave before returning, so the chat entry, elapsed time, event outcomes, and any cleared `requiresCheckToOpen` flag are durable.
 
 ## POST /api/things/:containerId/container/move-in
 Move a whole item stack from the current player's unequipped inventory or a loose current-location item into a container.
@@ -161,7 +162,7 @@ Request:
 - Optional `locationId`: required for `source: "location"` unless the current player location can be resolved.
 
 Response:
-- 200: `{ success: true, container: Thing, contents: Thing[], player: NpcProfile, playerInventory: Thing[], location?: LocationResponse }`
+- 200: `{ success: true, container: Thing, contents: Thing[], player: NpcProfile, playerInventory: Thing[], location?: LocationResponse, chatEntry?: ChatEntry }`
 - 400/404/409/500 with `{ success: false, error }`
 
 Notes:
@@ -169,6 +170,7 @@ Notes:
 - Rejects non-container destinations, missing items, non-item contents, equipped items, duplicate containment, self-containment, descendant cycles, missing current player state, player-source items outside the current player's inventory, and location-source items that are not loose in the current location.
 - Partial movement is handled by splitting the stack first, then moving the split stack.
 - Moving an item stack into a container automatically merges it into an existing same-name/same-checksum stack in that container. Containers and equipped items are excluded from automatic merging.
+- Successful prompt-free UI moves append one visible `container-transfer` assistant chat entry, such as `Baato put Flare (x3), Medkit into Cargo Crate.`, which is not excluded from base-context history.
 
 ## POST /api/things/:containerId/container/move-out
 Move a whole contained item stack into the current player's inventory.
@@ -177,13 +179,14 @@ Request:
 - Body: `{ thingId: string }` or `{ thingIds: string[] }`
 
 Response:
-- 200: `{ success: true, container: Thing, contents: Thing[], player: NpcProfile, playerInventory: Thing[] }`
+- 200: `{ success: true, container: Thing, contents: Thing[], player: NpcProfile, playerInventory: Thing[], chatEntry?: ChatEntry }`
 - 400/404/409/500 with `{ success: false, error }`
 
 Notes:
 - When `thingIds` is provided, the route validates the full list before moving anything and returns one refreshed container payload.
 - The moved item is removed from the container, has `metadata.containerId` cleared, and gains player inventory ownership metadata.
 - Moving a contained item stack into player inventory automatically merges it into an existing same-name/same-checksum stack in that inventory. Containers and equipped items are excluded from automatic merging.
+- Successful prompt-free UI moves append one visible `container-transfer` assistant chat entry, such as `Baato retrieved Flare (x3), Medkit from Cargo Crate.`, which is not excluded from base-context history.
 
 ## POST /api/things/:id/give
 Move an item into an inventory.

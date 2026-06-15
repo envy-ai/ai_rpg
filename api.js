@@ -23896,21 +23896,28 @@ module.exports = function registerApiRoutes(scope) {
                                 const suppressDirectTravelPromptMutation = Boolean(currentActionIsTravel
                                     && travelMetadata
                                     && !travelMetadataIsEventDriven);
-                                [eventResult, questResult] = await Promise.all([
-                                    Events.runEventChecks({
-                                        textToCheck,
-                                        actionText: (includePlayerActionForEventChecks && userInput)
-                                            ? userInput
-                                            : null,
-                                        stream,
-                                        // For non-travelProse turns, let event checks apply any narrated movement.
-                                        suppressMoveEvents: suppressDirectTravelPromptMutation,
-                                        suppressTimeAdvance: suppressDirectTravelPromptMutation
-                                            || (suppressEventDrivenExitTimeAdvance && eventDrivenTravelWillSucceed),
-                                        initialTimeProgress: playerActionTimeProgress
-                                    }),
-                                    Events.runQuestChecks()
+                                const eventCheckPromise = Events.runEventChecks({
+                                    textToCheck,
+                                    actionText: (includePlayerActionForEventChecks && userInput)
+                                        ? userInput
+                                        : null,
+                                    stream,
+                                    // For non-travelProse turns, let event checks apply any narrated movement.
+                                    suppressMoveEvents: suppressDirectTravelPromptMutation,
+                                    suppressTimeAdvance: suppressDirectTravelPromptMutation
+                                        || (suppressEventDrivenExitTimeAdvance && eventDrivenTravelWillSucceed),
+                                    initialTimeProgress: playerActionTimeProgress
+                                });
+                                const questCheckPromise = Events.runAfterPromptLaunchDelay(
+                                    Events.PROMPT_LAUNCH_STAGGER_MS * 2,
+                                    () => Events.runQuestChecks()
+                                );
+                                const [eventCheckOutcome, questCheckOutcome] = await Promise.all([
+                                    eventCheckPromise,
+                                    questCheckPromise
                                 ]);
+                                eventResult = eventCheckOutcome;
+                                questResult = questCheckOutcome;
                             }
                         } catch (eventError) {
                             console.warn('Failed to run event checks:', eventError.message);
@@ -39842,6 +39849,87 @@ module.exports = function registerApiRoutes(scope) {
             }
         }
 
+        function resolveContainerTransferName(value, label) {
+            if (!value || typeof value !== 'object') {
+                throw createContainerMoveError(`Container transfer ${label} is missing.`, 500);
+            }
+            const name = typeof value.name === 'string' && value.name.trim()
+                ? value.name.trim()
+                : (typeof value.id === 'string' && value.id.trim() ? value.id.trim() : '');
+            if (!name) {
+                throw createContainerMoveError(`Container transfer ${label} is missing a name.`, 500);
+            }
+            return name;
+        }
+
+        function formatContainerTransferItemForStory(item) {
+            const name = resolveContainerTransferName(item, 'item');
+            const count = Number(item.count);
+            return Number.isInteger(count) && count > 1 ? `${name} (x${count})` : name;
+        }
+
+        function buildContainerTransferChatEntry({
+            direction,
+            playerName = null,
+            container,
+            items,
+            locationId
+        } = {}) {
+            if (direction !== 'in' && direction !== 'out') {
+                throw createContainerMoveError('Container transfer direction must be "in" or "out".', 500);
+            }
+            const actorName = typeof playerName === 'string' && playerName.trim()
+                ? playerName.trim()
+                : (typeof currentPlayer?.name === 'string' && currentPlayer.name.trim() ? currentPlayer.name.trim() : '');
+            if (!actorName) {
+                throw createContainerMoveError('Container transfer entry requires a player name.', 500);
+            }
+            const containerName = resolveContainerTransferName(container, 'container');
+            if (!Array.isArray(items) || items.length === 0) {
+                throw createContainerMoveError('Container transfer entry requires at least one item.', 500);
+            }
+            const itemLabels = items.map(formatContainerTransferItemForStory);
+            const itemText = itemLabels.join(', ');
+            const content = direction === 'out'
+                ? `${actorName} retrieved ${itemText} from ${containerName}.`
+                : `${actorName} put ${itemText} into ${containerName}.`;
+
+            return {
+                role: 'assistant',
+                content,
+                summary: content,
+                type: 'container-transfer',
+                locationId,
+                metadata: {
+                    containerId: container?.id || null,
+                    containerName,
+                    direction,
+                    itemIds: items.map(item => item?.id || null).filter(Boolean),
+                    itemNames: itemLabels
+                }
+            };
+        }
+
+        function recordContainerTransferChatEntry({
+            direction,
+            container,
+            items,
+            locationId = null
+        } = {}) {
+            const resolvedLocationId = requireLocationId(
+                locationId || currentPlayer?.currentLocation,
+                'container transfer entry'
+            );
+            const entry = buildContainerTransferChatEntry({
+                direction,
+                playerName: currentPlayer?.name || null,
+                container,
+                items,
+                locationId: resolvedLocationId
+            });
+            return pushChatEntry(entry, null, resolvedLocationId);
+        }
+
         async function ensureContainerContentsGenerated(container, { location = null } = {}) {
             const pendingContents = Array.isArray(container?.containerContents)
                 ? container.containerContents
@@ -39951,7 +40039,15 @@ module.exports = function registerApiRoutes(scope) {
                 throw new Error('Container open-check response is missing non-empty <prose>.');
             }
 
-            return { success, permanentlyOpened, prose };
+            const timePassedNode = getDirectChildElementByTagName(root, 'timePassed');
+            if (!timePassedNode) {
+                throw new Error('Container open-check response is missing <timePassed>.');
+            }
+            const timePassedMinutes = parsePlayerActionTimePassedNode(timePassedNode, {
+                fieldLabel: 'container open-check <timePassed>'
+            });
+
+            return { success, permanentlyOpened, prose, timePassedMinutes };
         }
 
         app.post('/api/things/:id/container/open-check', async (req, res) => {
@@ -40128,6 +40224,11 @@ module.exports = function registerApiRoutes(scope) {
                         };
                     }
                 }
+                const containerOpenTimeAdjustment = applyPlayerActionTimePassedMinutes(
+                    parsedResult.timePassedMinutes,
+                    { source: 'player_action_open_container' }
+                );
+                const containerOpenTimeProgress = containerOpenTimeAdjustment?.timeProgress || null;
 
                 const resolvedLocationId = requireLocationId(location?.id || currentPlayer.currentLocation, 'container open-check entry');
                 const chatEntry = pushChatEntry({
@@ -40160,12 +40261,19 @@ module.exports = function registerApiRoutes(scope) {
                     locationRefreshRequested: true
                 });
 
-                const eventResult = await Events.runEventChecks({
+                let eventResult = await Events.runEventChecks({
                     textToCheck: playerFacingProse,
                     actionText,
                     stream,
-                    locationOverride: location || null
+                    locationOverride: location || null,
+                    initialTimeProgress: containerOpenTimeProgress
                 });
+                if (containerOpenTimeProgress && (!eventResult || !eventResult.timeProgress)) {
+                    if (!eventResult || typeof eventResult !== 'object') {
+                        eventResult = {};
+                    }
+                    eventResult.timeProgress = { ...containerOpenTimeProgress };
+                }
 
                 if (eventResult) {
                     appendEventSummariesToChat({
@@ -40185,6 +40293,12 @@ module.exports = function registerApiRoutes(scope) {
                     }, newChatEntries);
                 }
 
+                try {
+                    await runAutosaveIfEnabled();
+                } catch (autosaveError) {
+                    console.warn('Autosave after container open-check failed:', autosaveError?.message || autosaveError);
+                }
+
                 return res.json({
                     success: true,
                     opened: Boolean(parsedResult.success),
@@ -40193,6 +40307,12 @@ module.exports = function registerApiRoutes(scope) {
                     container: typeof container.toJSON === 'function' ? container.toJSON() : { id: container.id },
                     locationRefreshRequested: true,
                     eventChecks: eventResult?.html || null,
+                    timeProgress: containerOpenTimeProgress,
+                    worldTime: buildWorldTimePayload({
+                        transitions: Array.isArray(containerOpenTimeProgress?.transitions)
+                            ? containerOpenTimeProgress.transitions
+                            : []
+                    }),
                     requestId
                 });
             } catch (error) {
@@ -40257,7 +40377,15 @@ module.exports = function registerApiRoutes(scope) {
                     }
                     things.set(container.id, container);
                 }
-                return res.json(await buildContainerInventoryPayload(container, { location: sourceLocation }));
+                const chatEntry = recordContainerTransferChatEntry({
+                    direction: 'in',
+                    container,
+                    items: itemsToMove,
+                    locationId: sourceLocation?.id || currentPlayer.currentLocation
+                });
+                const payload = await buildContainerInventoryPayload(container, { location: sourceLocation });
+                payload.chatEntry = chatEntry;
+                return res.json(payload);
             } catch (error) {
                 return res.status(error.status || 500).json({
                     success: false,
@@ -40294,7 +40422,15 @@ module.exports = function registerApiRoutes(scope) {
                     }
                     things.set(container.id, container);
                 }
-                return res.json(await buildContainerInventoryPayload(container));
+                const chatEntry = recordContainerTransferChatEntry({
+                    direction: 'out',
+                    container,
+                    items: itemsToMove,
+                    locationId: currentPlayer.currentLocation
+                });
+                const payload = await buildContainerInventoryPayload(container);
+                payload.chatEntry = chatEntry;
+                return res.json(payload);
             } catch (error) {
                 return res.status(error.status || 500).json({
                     success: false,

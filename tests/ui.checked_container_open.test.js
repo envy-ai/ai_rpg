@@ -26,8 +26,13 @@ test('checked containers use a dedicated open-attempt modal and API route', () =
     assert.match(apiSource, /permanentlyOpened/);
     assert.match(apiSource, /container\.requiresCheckToOpen\s*=\s*false/);
     assert.match(apiSource, /Events\.runEventChecks/);
+    assert.match(apiSource, /applyPlayerActionTimePassedMinutes\(\s*parsedResult\.timePassedMinutes,[\s\S]*source:\s*'player_action_open_container'/);
+    assert.match(apiSource, /initialTimeProgress:\s*containerOpenTimeProgress/);
+    assert.match(apiSource, /worldTime:\s*buildWorldTimePayload/);
     assert.match(apiSource, /applySlopRemoval/);
     assert.match(promptSource, /<containerOpenResult>/);
+    assert.match(promptSource, /<timePassed>/);
+    assert.match(promptSource, /<duration>/);
     assert.match(promptSource, /resolveSkillCheck/);
 });
 

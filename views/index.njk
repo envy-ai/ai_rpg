@@ -23821,7 +23821,7 @@
                         console.warn('Failed to move container item:', error);
                         alert(error?.message || 'Failed to move item.');
                     }
-                });
+                }, true);
                 if (source === 'player') {
                     registerThingModuleDropTarget(card, thing, { context: 'container-player-inventory' });
                 }
@@ -24205,6 +24205,13 @@
             const payload = await response.json().catch(() => ({}));
             if (!response.ok || !payload?.success) {
                 throw new Error(payload?.error || `Request failed with status ${response.status}`);
+            }
+            if (payload?.chatEntry) {
+                try {
+                    await window.AIRPG_CHAT?.refreshChatHistory?.();
+                } catch (error) {
+                    console.warn('Failed to refresh chat history after container move:', error);
+                }
             }
             return payload;
         }

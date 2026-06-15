@@ -113,6 +113,7 @@ function loadContainerOpenResultParser() {
         'getDirectChildElementByTagName',
         'getDirectChildTextByTagName',
         'extractProseNodeContentPreservingTags',
+        'parsePlayerActionTimePassedNode',
         'parseContainerOpenResultXml'
     ];
     const functionSource = functionNames.map(name => extractFunction(source, name)).join('\n\n');
@@ -135,12 +136,17 @@ test('container open-check parser reads permanentlyOpened', () => {
   <success>true</success>
   <permanentlyOpened>true</permanentlyOpened>
   <prose>The latch clicks open.</prose>
+  <timePassed>
+    <reasoning>The lockpick attempt took several careful minutes.</reasoning>
+    <duration>7 minutes</duration>
+  </timePassed>
 </containerOpenResult>
 `);
 
     assert.equal(parsed.success, true);
     assert.equal(parsed.permanentlyOpened, true);
     assert.equal(parsed.prose, 'The latch clicks open.');
+    assert.equal(parsed.timePassedMinutes, 7);
 });
 
 test('container open-check parser requires permanentlyOpened', () => {
@@ -151,8 +157,24 @@ test('container open-check parser requires permanentlyOpened', () => {
 <containerOpenResult>
   <success>true</success>
   <prose>The latch clicks open.</prose>
+  <timePassed><duration>1 minute</duration></timePassed>
 </containerOpenResult>
 `),
         /missing <permanentlyOpened>/
+    );
+});
+
+test('container open-check parser requires timePassed', () => {
+    const parseContainerOpenResultXml = loadContainerOpenResultParser();
+
+    assert.throws(
+        () => parseContainerOpenResultXml(`
+<containerOpenResult>
+  <success>true</success>
+  <permanentlyOpened>true</permanentlyOpened>
+  <prose>The latch clicks open.</prose>
+</containerOpenResult>
+`),
+        /missing <timePassed>/
     );
 });

@@ -143,22 +143,22 @@ test('LLMClient.chatCompletion applies reasoning_effort from prompt-specific AI 
     assert.equal(Object.prototype.hasOwnProperty.call(untargetedPayload, 'reasoning_effort'), false);
 });
 
-test('local config sets low reasoning effort for quest, event, and need-bar event checks', () => {
+test('local config does not force reasoning effort for quest, event, and need-bar event checks', () => {
     const configPath = path.resolve(__dirname, '..', 'config.yaml');
     const config = load(fs.readFileSync(configPath, 'utf8'));
     const profiles = config?.ai_model_overrides || {};
-    const lowReasoningProfiles = Object.values(profiles).filter(profile => (
+    const checkLabels = new Set(['quest_check', 'event_checks', 'need_bar_event_checks']);
+    const checkReasoningProfiles = Object.values(profiles).filter(profile => (
         profile
         && typeof profile === 'object'
         && !Array.isArray(profile)
-        && profile.reasoning_effort === 'low'
         && Array.isArray(profile.prompts)
+        && profile.prompts.some(prompt => checkLabels.has(prompt))
+        && typeof profile.reasoning_effort === 'string'
+        && profile.reasoning_effort.trim()
     ));
-    const prompts = new Set(lowReasoningProfiles.flatMap(profile => profile.prompts));
 
-    assert.equal(prompts.has('quest_check'), true);
-    assert.equal(prompts.has('event_checks'), true);
-    assert.equal(prompts.has('need_bar_event_checks'), true);
+    assert.deepEqual(checkReasoningProfiles, []);
 });
 
 test('LLMClient configuration rejects non-string reasoning_effort', () => {

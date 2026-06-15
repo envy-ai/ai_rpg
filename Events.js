@@ -2176,11 +2176,27 @@ function resolveDispositionDirection(beforeText, afterText) {
 class Events {
     static DEFAULT_STATUS_DURATION = DEFAULT_STATUS_DURATION;
     static MAJOR_STATUS_DURATION = MAJOR_STATUS_DURATION;
+    static PROMPT_LAUNCH_STAGGER_MS = 2000;
     static _deps = {};
     static _parsers = {};
     static _aggregators = {};
     static _handlers = {};
     static _baseTimeout = BASE_TIMEOUT_MS;
+
+    static runAfterPromptLaunchDelay(delayMs, task) {
+        if (typeof task !== "function") {
+            return Promise.reject(new Error("runAfterPromptLaunchDelay requires a task function."));
+        }
+        if (typeof delayMs !== "number" || !Number.isFinite(delayMs) || delayMs < 0) {
+            return Promise.reject(new Error("runAfterPromptLaunchDelay requires a non-negative finite delayMs number."));
+        }
+        if (delayMs === 0) {
+            return Promise.resolve().then(task);
+        }
+        return new Promise((resolve) => {
+            setTimeout(resolve, delayMs);
+        }).then(task);
+    }
 
     static animatedItems = new SanitizedStringSet();
     static alteredItems = new SanitizedStringSet();
@@ -3195,17 +3211,7 @@ class Events {
 
         let requestPayloadForLog = null;
         let responsePayloadForLog = null;
-        const needBarEventCheckPromise = suppressNeedBarEventChecks
-            ? Promise.resolve({ responseText: "", entries: [] })
-            : this._runNeedBarEventChecks({
-                baseContext,
-                textToCheck,
-                actionText: normalizedActionText,
-                includePlayerActionBlock,
-                promptEnv,
-                parseXMLTemplate,
-            });
-        const responseTextPromise = LLMClient.chatCompletion({
+        const eventCheckPromise = LLMClient.chatCompletion({
             messages: [
                 { role: "system", content: parsedTemplate.systemPrompt },
                 { role: "user", content: parsedTemplate.generationPrompt },
@@ -3222,8 +3228,18 @@ class Events {
             // captureRequestPayload: (payload) => { requestPayloadForLog = payload; },
             // captureResponsePayload: (payload) => { responsePayloadForLog = payload; }
         });
+        const needBarEventCheckPromise = suppressNeedBarEventChecks
+            ? Promise.resolve({ responseText: "", entries: [] })
+            : this.runAfterPromptLaunchDelay(this.PROMPT_LAUNCH_STAGGER_MS, () => this._runNeedBarEventChecks({
+                baseContext,
+                textToCheck,
+                actionText: normalizedActionText,
+                includePlayerActionBlock,
+                promptEnv,
+                parseXMLTemplate,
+            }));
         const [responseText, needBarEventCheck] = await Promise.all([
-            responseTextPromise,
+            eventCheckPromise,
             needBarEventCheckPromise,
         ]);
 
@@ -3658,14 +3674,14 @@ class Events {
 
         const needBarEventCheckPromise = suppressNeedBarEventChecks
             ? Promise.resolve({ responseText: "", entries: [] })
-            : this._runNeedBarEventChecks({
+            : this.runAfterPromptLaunchDelay(this.PROMPT_LAUNCH_STAGGER_MS, () => this._runNeedBarEventChecks({
                 baseContext,
                 textToCheck,
                 actionText: normalizedActionText,
                 includePlayerActionBlock,
                 promptEnv,
                 parseXMLTemplate,
-            });
+            }));
         const groupResponsesPromise = Promise.all(
             promptGroups.map(async (group, groupIndex) => {
                 const questions = group.map((definition) => {

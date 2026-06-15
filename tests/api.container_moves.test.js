@@ -2,6 +2,9 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('fs');
 const vm = require('vm');
+const {
+    shouldIncludeEntryInBaseContextHistory
+} = require('../base_context_history.js');
 
 function loadContainerMoveHelpers() {
     const source = fs.readFileSync(require.resolve('../api.js'), 'utf8');
@@ -20,11 +23,12 @@ function loadContainerMoveHelpers() {
     };
 
     vm.createContext(context);
-    vm.runInContext(
+vm.runInContext(
         `${functionSource}
 this.resolveContainerMoveThingIds = resolveContainerMoveThingIds;
 this.validateContainerMoveInItems = validateContainerMoveInItems;
-this.validateContainerMoveOutItems = validateContainerMoveOutItems;`,
+this.validateContainerMoveOutItems = validateContainerMoveOutItems;
+this.buildContainerTransferChatEntry = buildContainerTransferChatEntry;`,
         context
     );
 
@@ -164,6 +168,86 @@ test('container move-out validation rejects missing and duplicate player-owned c
 
     context.currentPlayer = { hasInventoryItem: id => id === 'already-owned-id' };
     assert.throws(() => context.validateContainerMoveOutItems(container, [{ ...validItem, id: 'already-owned-id' }]), /already in the current player's inventory/);
+});
+
+test('container transfer story entries describe retrieved and stored item stacks', () => {
+    const context = loadContainerMoveHelpers();
+    const container = {
+        id: 'crate-id',
+        name: 'Cargo Crate'
+    };
+    const items = [
+        { id: 'flare-id', name: 'Flare', count: 3 },
+        { id: 'medkit-id', name: 'Medkit', count: 1 }
+    ];
+
+    const retrievedEntry = context.buildContainerTransferChatEntry({
+        direction: 'out',
+        playerName: 'Baato',
+        container,
+        items,
+        locationId: 'loc-1'
+    });
+    assert.equal(retrievedEntry.content, 'Baato retrieved Flare (x3), Medkit from Cargo Crate.');
+    assert.equal(retrievedEntry.summary, retrievedEntry.content);
+    assert.equal(retrievedEntry.type, 'container-transfer');
+    assert.equal(retrievedEntry.role, 'assistant');
+    assert.equal(retrievedEntry.locationId, 'loc-1');
+    assert.equal(retrievedEntry.metadata.containerId, 'crate-id');
+    assert.equal(retrievedEntry.metadata.containerName, 'Cargo Crate');
+    assert.equal(retrievedEntry.metadata.direction, 'out');
+    assert.deepEqual(JSON.parse(JSON.stringify(retrievedEntry.metadata.itemIds)), ['flare-id', 'medkit-id']);
+    assert.equal(retrievedEntry.metadata.excludeFromBaseContextHistory, undefined);
+    assert.equal(shouldIncludeEntryInBaseContextHistory(retrievedEntry, {
+        hasRenderableContent: true
+    }), true);
+
+    const storedEntry = context.buildContainerTransferChatEntry({
+        direction: 'in',
+        playerName: 'Baato',
+        container,
+        items,
+        locationId: 'loc-1'
+    });
+    assert.equal(storedEntry.content, 'Baato put Flare (x3), Medkit into Cargo Crate.');
+    assert.equal(storedEntry.metadata.direction, 'in');
+});
+
+test('container transfer story entry helper rejects invalid input loudly', () => {
+    const context = loadContainerMoveHelpers();
+    assert.throws(() => context.buildContainerTransferChatEntry({
+        direction: 'sideways',
+        playerName: 'Baato',
+        container: { id: 'crate-id', name: 'Cargo Crate' },
+        items: [{ id: 'flare-id', name: 'Flare' }],
+        locationId: 'loc-1'
+    }), /direction must be "in" or "out"/);
+    assert.throws(() => context.buildContainerTransferChatEntry({
+        direction: 'in',
+        playerName: 'Baato',
+        container: { id: 'crate-id', name: 'Cargo Crate' },
+        items: [],
+        locationId: 'loc-1'
+    }), /requires at least one item/);
+});
+
+test('container move routes append one story-visible chat entry after successful mutation', () => {
+    const source = fs.readFileSync(require.resolve('../api.js'), 'utf8');
+    const moveInSource = extractBlock(
+        source,
+        "        app.post('/api/things/:id/container/move-in'",
+        "\n        app.post('/api/things/:id/container/move-out'"
+    );
+    const moveOutSource = extractBlock(
+        source,
+        "        app.post('/api/things/:id/container/move-out'",
+        "\n        app.post('/api/things/:id/give'"
+    );
+
+    assert.match(moveInSource, /const chatEntry = recordContainerTransferChatEntry\(\{[\s\S]*direction:\s*'in'[\s\S]*items:\s*itemsToMove/);
+    assert.match(moveOutSource, /const chatEntry = recordContainerTransferChatEntry\(\{[\s\S]*direction:\s*'out'[\s\S]*items:\s*itemsToMove/);
+    assert.match(moveInSource, /payload\.chatEntry = chatEntry;/);
+    assert.match(moveOutSource, /payload\.chatEntry = chatEntry;/);
 });
 
 test('drop placement helper removes items from containing containers', () => {

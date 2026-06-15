@@ -39,6 +39,16 @@ test('container move responses are applied only to the active modal session', ()
     assert.match(viewSource, /refreshThingContainerForSession\(containerId, sessionToken\)/);
 });
 
+test('container move responses refresh chat when a story entry is returned', () => {
+    const start = viewSource.indexOf('async function requestThingContainerMove(');
+    assert.notEqual(start, -1, 'Unable to locate requestThingContainerMove.');
+    const end = viewSource.indexOf('\n        async function moveThingBetweenContainerColumns', start);
+    assert.notEqual(end, -1, 'Unable to locate end of requestThingContainerMove.');
+    const block = viewSource.slice(start, end);
+
+    assert.match(block, /if \(payload\?\.chatEntry\) \{[\s\S]*?await window\.AIRPG_CHAT\?\.refreshChatHistory\?\.\(\);[\s\S]*?\}/);
+});
+
 test('location drag handlers snapshot the dragged thing before async work starts', () => {
     assert.match(viewSource, /const locationThingDropInFlightIds = new Set\(\);/);
     assert.match(viewSource, /const resetThingDragState = \(expectedThingId = null\) =>/);

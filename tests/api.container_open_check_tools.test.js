@@ -32,3 +32,20 @@ test('checked container open-check sends skill-check tools through LLM additiona
         'open-check route should not rely on top-level requestOptions.tools'
     );
 });
+
+test('checked container open-check autosaves after applying route mutations', () => {
+    const source = fs.readFileSync(require.resolve('../api.js'), 'utf8');
+    const routeSource = extractContainerOpenCheckRoute(source);
+
+    const flagMutation = routeSource.indexOf('container.requiresCheckToOpen = false;');
+    const eventChecks = routeSource.indexOf('let eventResult = await Events.runEventChecks({', flagMutation);
+    const autosaveCall = routeSource.indexOf('await runAutosaveIfEnabled();', eventChecks);
+    const autosaveWarning = routeSource.indexOf('Autosave after container open-check failed', autosaveCall);
+    const response = routeSource.indexOf('return res.json({', eventChecks);
+
+    assert.notEqual(flagMutation, -1, 'Expected permanent-open flag mutation.');
+    assert.ok(eventChecks > flagMutation, 'Expected event checks after container flag mutation.');
+    assert.ok(autosaveCall > eventChecks, 'Expected autosave after open-check state and event processing.');
+    assert.ok(autosaveWarning > autosaveCall, 'Expected container open-check autosave warning path.');
+    assert.ok(response > autosaveWarning, 'Expected autosave before success response.');
+});
