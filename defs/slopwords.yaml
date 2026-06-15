@@ -12,6 +12,7 @@ forbidden_tropes:
   - \"you did x. in y. in my z.\"
   - characters obsessively logging things
   - \"I reported this to my company seventeen times and was ignored every time!\"
+  - \"She didn't say anything. She didn't have to."\ - Adds nothing. Always omit.
 
 # A list of slop words (ngrams are listed below as well) and their allowable parts per million before being flagged as repetitive
 regexes:
