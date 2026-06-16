@@ -17,6 +17,7 @@ let cachedFactionModule = null;
 let cachedMysteryBoxModule = null;
 let cachedMysteryThreadModule = null;
 let cachedScheduledEventModule = null;
+let cachedTrackerModule = null;
 const chatSummaryStore = new Map();
 const chatSummaryQueue = [];
 const COMMON_WORDS = new Set([
@@ -82,42 +83,52 @@ class Utils {
         throw new Error(`Invalid XML root tag name: ${tag}`);
       }
       const escapedTag = escapeRegExp(tag);
-      const closingPattern = new RegExp(`</\\s*${escapedTag}\\s*>`, 'gi');
-      let closingMatch = null;
+      const tagPattern = new RegExp(`<\\s*(/?)\\s*${escapedTag}(?=[\\s>/])[^>]*>`, 'gi');
+      const tagMatches = [];
+      let finalClosingMatch = null;
       let match = null;
-      while ((match = closingPattern.exec(text)) !== null) {
-        closingMatch = {
-          index: match.index,
-          end: match.index + match[0].length,
-        };
-      }
-      if (!closingMatch) {
-        continue;
-      }
-
-      const openingPattern = new RegExp(`<\\s*${escapedTag}(?=[\\s>/])[^>]*>`, 'gi');
-      let openingMatch = null;
-      while ((match = openingPattern.exec(text)) !== null) {
-        if (match.index >= closingMatch.index) {
-          break;
-        }
-        if (/\/\s*>$/.test(match[0])) {
+      while ((match = tagPattern.exec(text)) !== null) {
+        const fullTag = match[0];
+        const isClosingTag = match[1] === '/';
+        if (!isClosingTag && /\/\s*>$/.test(fullTag)) {
           continue;
         }
-        openingMatch = {
+        const tagMatch = {
           index: match.index,
-          end: match.index + match[0].length,
+          end: match.index + fullTag.length,
+          isClosingTag,
         };
+        tagMatches.push(tagMatch);
+        if (isClosingTag) {
+          finalClosingMatch = tagMatch;
+        }
       }
-      if (!openingMatch) {
+
+      if (!finalClosingMatch) {
         continue;
       }
 
-      if (!bestMatch || closingMatch.end > bestMatch.closingEnd) {
-        bestMatch = {
-          openingStart: openingMatch.index,
-          closingEnd: closingMatch.end,
-        };
+      let depth = 0;
+      for (let index = tagMatches.length - 1; index >= 0; index -= 1) {
+        const tagMatch = tagMatches[index];
+        if (tagMatch.index > finalClosingMatch.index) {
+          continue;
+        }
+        if (tagMatch.isClosingTag) {
+          depth += 1;
+          continue;
+        }
+        depth -= 1;
+        if (depth === 0) {
+          const candidate = {
+            openingStart: tagMatch.index,
+            closingEnd: finalClosingMatch.end,
+          };
+          if (!bestMatch || candidate.closingEnd > bestMatch.closingEnd) {
+            bestMatch = candidate;
+          }
+          break;
+        }
       }
     }
 
@@ -335,6 +346,66 @@ class Utils {
 
     const formatted = parts.join(', ');
     return includeAgo && isPast ? `${formatted} ago` : formatted;
+  }
+
+  static formatMinutesAsCountdownDuration(value, { includePast = true } = {}) {
+    const numeric = Number(value);
+    if (!Number.isFinite(numeric) || !Number.isInteger(numeric)) {
+      return null;
+    }
+
+    const isPast = numeric < 0;
+    let remaining = Math.abs(numeric);
+    const days = Math.floor(remaining / 1440);
+    remaining -= days * 1440;
+    const hours = Math.floor(remaining / 60);
+    remaining -= hours * 60;
+    const minutes = remaining;
+
+    const parts = [];
+    if (days > 0) {
+      parts.push(`${days} ${days === 1 ? 'day' : 'days'}`);
+      if (hours > 0) {
+        parts.push(`${hours} ${hours === 1 ? 'hour' : 'hours'}`);
+      }
+    } else if (hours > 0) {
+      parts.push(`${hours} ${hours === 1 ? 'hour' : 'hours'}`);
+      if (minutes > 0) {
+        parts.push(`${minutes} ${minutes === 1 ? 'minute' : 'minutes'}`);
+      }
+    } else {
+      parts.push(`${minutes} ${minutes === 1 ? 'minute' : 'minutes'}`);
+    }
+
+    const formatted = parts.join(', ');
+    return includePast && isPast && numeric !== 0 ? `${formatted} past` : formatted;
+  }
+
+  static formatCountdownUntilWorldMinute(value, { currentTotalMinutes = Globals.getTotalWorldMinutes() } = {}) {
+    if (value === null || value === undefined) {
+      return null;
+    }
+
+    const absoluteMinutes = Number(value);
+    if (!Number.isFinite(absoluteMinutes)) {
+      throw new Error('Countdown target world-minute timestamp must be a finite number.');
+    }
+    if (absoluteMinutes < 0) {
+      throw new Error('Countdown target world-minute timestamp must be non-negative.');
+    }
+
+    const currentMinutes = Number(currentTotalMinutes);
+    if (!Number.isFinite(currentMinutes)) {
+      throw new Error('Current total world minutes must be a finite number.');
+    }
+    if (currentMinutes < 0) {
+      throw new Error('Current total world minutes must be non-negative.');
+    }
+
+    return Utils.formatMinutesAsCountdownDuration(
+      Math.round(absoluteMinutes) - Math.round(currentMinutes),
+      { includePast: true }
+    );
   }
 
   static formatMinutesAsNaturalDuration(value, { includeAgo = false } = {}) {
@@ -1046,6 +1117,13 @@ class Utils {
     return cachedScheduledEventModule;
   }
 
+  static #getTrackerModule() {
+    if (!cachedTrackerModule) {
+      cachedTrackerModule = require('./Tracker.js');
+    }
+    return cachedTrackerModule;
+  }
+
   static serializeGameState(context = {}) {
     const {
       currentPlayer = null,
@@ -1150,6 +1228,12 @@ class Utils {
     }
     serialized.scheduledEvents = ScheduledEvent.serializeAll();
 
+    const Tracker = this.#getTrackerModule();
+    if (!Tracker || typeof Tracker.serializeAll !== 'function') {
+      throw new Error('Tracker serialization is unavailable.');
+    }
+    serialized.trackers = Tracker.serializeAll();
+
     const availableSkills = Array.from(skills.values()).map(skill => {
       if (skill && typeof skill.toJSON === 'function') {
         return skill.toJSON();
@@ -1175,6 +1259,7 @@ class Utils {
       totalMysteryBoxes: Object.keys(serialized.mysteryBoxes || {}).length,
       totalMysteryThreads: Object.keys(serialized.mysteryThreads || {}).length,
       totalScheduledEvents: Object.keys(serialized.scheduledEvents || {}).length,
+      totalTrackers: Object.keys(serialized.trackers || {}).length,
       totalGeneratedImages: generatedImages.size,
       totalSkills: skills.size,
       currentSettingId: currentSetting?.id || null,
@@ -1249,6 +1334,7 @@ class Utils {
     ensureFile('mysteryBoxes.json', serialized.mysteryBoxes || {});
     ensureFile('mysteryThreads.json', serialized.mysteryThreads || {});
     ensureFile('scheduledEvents.json', serialized.scheduledEvents || {});
+    ensureFile('trackers.json', serialized.trackers || {});
     ensureFile('skills.json', serialized.skills || []);
     ensureFile('metadata.json', serialized.metadata || {});
     ensureFile('pendingRegionStubs.json', serialized.pendingRegionStubs || {});
@@ -1306,6 +1392,7 @@ class Utils {
       mysteryBoxes: readJson('mysteryBoxes.json', {}),
       mysteryThreads: readJson('mysteryThreads.json', {}),
       scheduledEvents: readJson('scheduledEvents.json', {}),
+      trackers: readJson('trackers.json', {}),
       skills: readJson('skills.json', []),
       metadata: readJson('metadata.json', {}),
       setting: readJson('setting.json', null),
@@ -1963,6 +2050,7 @@ class Utils {
     const MysteryBox = this.#getMysteryBoxModule();
     const MysteryThread = this.#getMysteryThreadModule();
     const ScheduledEvent = this.#getScheduledEventModule();
+    const Tracker = this.#getTrackerModule();
 
     this.loadChatSummaries(serialized.chatSummaries || {});
     const sceneSummaries = Globals.getSceneSummaries();
@@ -2038,6 +2126,10 @@ class Utils {
       throw new Error('ScheduledEvent hydration is unavailable.');
     }
     ScheduledEvent.loadAll(serialized.scheduledEvents || {});
+    if (!Tracker || typeof Tracker.loadAll !== 'function') {
+      throw new Error('Tracker hydration is unavailable.');
+    }
+    Tracker.loadAll(serialized.trackers || {});
 
     if (things?.clear) {
       things.clear();

@@ -3,7 +3,7 @@
 Common payloads: see `docs/api/common.md`.
 
 ## POST /api/things
-Create a new thing.
+Create a Thing record directly in the runtime Thing registry.
 
 Request:
 - Body supports: `name`, `description`, `shortDescription`, `thingType`, `imageId`, `rarity`, `itemTypeDetail`, `metadata`, `slot`, `attributeBonuses`, `causeStatusEffect`, `causeStatusEffectOnTarget`, `causeStatusEffectOnEquipper`, `count`, `level`, `relativeLevel`, `containerContents`, `statusEffects`, plus boolean flags (`isVehicle`, `isCraftingStation`, `isProcessingStation`, `isHarvestable`, `isSalvageable`, `isContainer`, `requiresCheckToOpen`) and registered Thing fields exposed to create/edit flows.
@@ -13,7 +13,9 @@ Response:
 - 400: `{ success: false, error }`
 
 Notes:
-- When `causeStatusEffectOnTarget`/`causeStatusEffectOnEquipper` are supplied, `causeStatusEffect` is treated as legacy input.
+- This route does not automatically attach the Thing to a location, player inventory, NPC inventory, or container. Location-scoped generated item/scenery creation uses `POST /api/locations/:id/things`.
+- The current image eligibility helper treats Things as image-eligible. Creation clears the stored `imageId` and returns `imageNeedsGeneration: true`.
+- When `causeStatusEffectOnTarget`/`causeStatusEffectOnEquipper` are supplied, `causeStatusEffect` is treated as compatibility input.
 - Registered Thing fields with `clearThingSlotWhenPresent` clear `slot` when they are provided with a meaningful value.
 
 ## GET /api/things
@@ -25,6 +27,9 @@ Request:
 Response:
 - 200: `{ success: true, things: Thing[], count }`
 - 400/500 with `{ success: false, error }`
+
+Notes:
+- The list is built from the runtime `things` map and may include loose location Things, inventory Things, container contents, barter-stock Things, installed module Things, and other indexed records.
 
 ## GET /api/things/:id
 Fetch a thing by id.
@@ -60,7 +65,8 @@ Response:
 - 400/404 with `{ success: false, error }`
 
 Notes:
-- `causeStatusEffect` is treated as a legacy payload and mapped internally when provided.
+- When `name`, `description`, `thingType`, `rarity`, `itemTypeDetail`, or `metadata` changes and the request does not supply `imageId`, the route clears the stored `imageId` and returns `imageNeedsUpdate: true`.
+- `causeStatusEffect` is treated as a compatibility payload and mapped internally when provided.
 - Registered Thing fields are written through `thing.setExtensionField(...)` when available.
 - Registered Thing fields with `clearThingSlotWhenPresent` clear `slot` when they are provided with a meaningful value.
 
@@ -104,7 +110,7 @@ Notes:
 - Explicit split-stack placement opts out of automatic same-destination stack merging so the two stack fragments remain separate until one is moved or explicitly merged.
 
 ## POST /api/things/:id/merge-stacks
-Merge same-name, same-checksum stacks from the same inventory or location into the selected item stack.
+Merge same-name, same-checksum stacks from the same owner inventory, location, or Thing container into the selected item stack.
 
 Request:
 - No body required.
@@ -125,7 +131,7 @@ Notes:
 Fetch a container thing and the two-column inventory payload for the current player.
 
 Response:
-- 200: `{ success: true, container: Thing, contents: Thing[], player: NpcProfile, playerInventory: Thing[] }`
+- 200: `{ success: true, container: Thing, contents: Thing[], player: NpcProfile, playerInventory: Thing[], location: LocationResponse | null }`
 - 400: `{ success: false, error }` when the target thing is not a container.
 - 404/500 with `{ success: false, error }`
 
@@ -142,13 +148,13 @@ Request:
 - Body: `{ actionText: string, clientId?: string, requestId?: string }`
 
 Response:
-- 200: `{ success: true, opened, prose, container, locationRefreshRequested, eventChecks, timeProgress, worldTime, requestId }`
+- 200: `{ success: true, opened, permanentlyOpened, prose, container, locationRefreshRequested, eventChecks, timeProgress, worldTime, requestId }`
 - 200: `{ success: true, opened: true, skipped: true, container }` when the target is a container that does not require a check.
 - 400/404/500 with `{ success: false, error }`
 
 Notes:
 - Only container Things can use this route, and `actionText` is required for checked containers.
-- The server renders the `player-action-open-container` prompt through base context, logs it with `LLMClient.logPrompt()` under `player_action_open_container`, sends regular prose information tools plus `resolveSkillCheck` / `resolveOpposedSkillCheck` in the LLM request payload even when legacy prompt checks are enabled elsewhere, and fails loudly if no skill check was recorded. Including `<f>` or `<F>` in `actionText` strips that marker and opens a forced integer die-roll prompt for each skill-check tool call made while resolving the open attempt.
+- The server renders the `player-action-open-container` prompt through base context, logs it with `LLMClient.logPrompt()` under `player_action_open_container`, sends regular prose information tools plus `resolveSkillCheck` / `resolveOpposedSkillCheck` in the LLM request payload even when prompt-level checks are enabled elsewhere, and fails loudly if no skill check was recorded. Including `<f>` or `<F>` in `actionText` strips that marker and opens a forced integer die-roll prompt for each skill-check tool call made while resolving the open attempt.
 - The prompt returns `<containerOpenResult><success>...</success><permanentlyOpened>...</permanentlyOpened><prose>...</prose><timePassed><duration>...</duration></timePassed></containerOpenResult>`. The required `timePassed` duration is parsed with the shared action-time parser, advances world time before event checks, and is passed into `Events.runEventChecks(...)` as `initialTimeProgress` so event-check `timePassed` / `time_passed` is only a fallback. Prose runs through the normal slop-removal pipeline, is stored visibly as a `player-action-open-container` chat entry, and then runs ordinary event checks. The `success` flag gates whether the client proceeds to `GET /api/things/:containerId/container`.
 - When `success` and `permanentlyOpened` are both true, the route persists `requiresCheckToOpen: false` on the container so future UI opens skip this check. Temporary successes should return `permanentlyOpened: false`.
 - Completed checked-open attempts run the standard autosave before returning, so the chat entry, elapsed time, event outcomes, and any cleared `requiresCheckToOpen` flag are durable.
@@ -168,7 +174,7 @@ Response:
 Notes:
 - When `thingIds` is provided, the route validates the full list before moving anything and returns one refreshed container payload.
 - Rejects non-container destinations, missing items, non-item contents, equipped items, duplicate containment, self-containment, descendant cycles, missing current player state, player-source items outside the current player's inventory, and location-source items that are not loose in the current location.
-- Partial movement is handled by splitting the stack first, then moving the split stack.
+- These routes move whole Thing stacks. For partial movement, call `POST /api/things/:id/split-stack` first and move the returned split stack.
 - Moving an item stack into a container automatically merges it into an existing same-name/same-checksum stack in that container. Containers and equipped items are excluded from automatic merging.
 - Successful prompt-free UI moves append one visible `container-transfer` assistant chat entry, such as `Baato put Flare (x3), Medkit into Cargo Crate.`, which is not excluded from base-context history.
 
@@ -186,6 +192,7 @@ Notes:
 - When `thingIds` is provided, the route validates the full list before moving anything and returns one refreshed container payload.
 - The moved item is removed from the container, has `metadata.containerId` cleared, and gains player inventory ownership metadata.
 - Moving a contained item stack into player inventory automatically merges it into an existing same-name/same-checksum stack in that inventory. Containers and equipped items are excluded from automatic merging.
+- These routes move whole Thing stacks. For partial movement, call `POST /api/things/:id/split-stack` first and move the returned split stack.
 - Successful prompt-free UI moves append one visible `container-transfer` assistant chat entry, such as `Baato retrieved Flare (x3), Medkit from Cargo Crate.`, which is not excluded from base-context history.
 
 ## POST /api/things/:id/give
@@ -199,10 +206,11 @@ Response:
 - 400/404/409/500 with `{ success: false, error }`
 
 Notes:
+- The route rejects non-item Things when `thingType` is present and not `item`.
 - Moving an item into an inventory automatically merges it into an existing same-name/same-checksum stack owned by the destination actor. Containers and equipped items are excluded from automatic merging.
 
 ## POST /api/things/:id/drop
-Drop an item into a location.
+Drop a thing into a location.
 
 Request:
 - Body: `{ ownerId?: string, ownerType?: string, locationId?: string }`
@@ -212,8 +220,8 @@ Response:
 - 400/404/500 with `{ success: false, error }`
 
 Notes:
-- Dropping a contained item removes it from any containing Thing containers before adding it to the target location and clearing container ownership metadata.
-- Dropping an item into a location automatically merges it into an existing loose same-name/same-checksum item stack in that location. Containers and equipped items are excluded from automatic merging.
+- Dropping a contained Thing removes it from any containing Thing containers before adding it to the target location and clearing container ownership metadata.
+- Dropping an item-type Thing into a location automatically merges it into an existing loose same-name/same-checksum item stack in that location. Containers and equipped items are excluded from automatic merging.
 
 ## POST /api/things/:id/teleport
 Teleport a thing to a location (removing from inventories).
@@ -226,7 +234,8 @@ Response:
 - 400/404/500 with `{ success: false, error }`
 
 Notes:
-- Teleporting an item to a location uses the same automatic loose-location stack merge as dropping.
+- Teleporting an item-type Thing to a location uses the same automatic loose-location stack merge as dropping.
+- The route removes the Thing from actor inventories and its previous metadata location. It does not use the drop route's containing-container detachment helper.
 
 ## DELETE /api/things/:id
 Delete a thing.
@@ -241,18 +250,20 @@ Notes:
 - The generic/scheduled chat tool `deleteThing({ thing })` delegates to this same deletion path after resolving an item/scenery target and receiving explicit client confirmation through `player_input_request` confirmation mode, so these protections and affected-id response fields remain authoritative.
 
 ## GET /api/things/scenery
-List all scenery things.
+Registered route for listing scenery Things, shadowed by `GET /api/things/:id` in the current route order.
 
-Response:
-- 200: `{ success: true, things: Thing[], count }`
-- 500: `{ success: false, error }`
+Effective behavior:
+- A request to `/api/things/scenery` is handled as `GET /api/things/:id` with `id = "scenery"`.
+- It returns the Thing with id `scenery` if one exists, otherwise `{ success: false, error }` with `404`.
+- Use `GET /api/things?type=scenery` for scenery listings.
 
 ## GET /api/things/items
-List all item things.
+Registered route for listing item Things, shadowed by `GET /api/things/:id` in the current route order.
 
-Response:
-- 200: `{ success: true, things: Thing[], count }`
-- 500: `{ success: false, error }`
+Effective behavior:
+- A request to `/api/things/items` is handled as `GET /api/things/:id` with `id = "items"`.
+- It returns the Thing with id `items` if one exists, otherwise `{ success: false, error }` with `404`.
+- Use `GET /api/things?type=item` for item listings.
 
 ## POST /api/things/:id/image
 Trigger image generation for a thing.

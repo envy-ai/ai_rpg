@@ -9537,6 +9537,15 @@ class AIRPGChat {
         }
     }
 
+    showChatErrorPopup(message) {
+        const text = typeof message === 'string' && message.trim()
+            ? message.trim()
+            : 'Unknown chat error.';
+        if (typeof alert === 'function') {
+            alert(`Chat error: ${text}`);
+        }
+    }
+
     async submitChatMessage(rawContent, { setButtonLoading = false, travel = false, travelMetadata = null, suppressTravelCompletionSound = false, allowEmptyAction = false } = {}) {
         const content = typeof rawContent === 'string' ? rawContent : '';
         const trimmed = content.trim();
@@ -9680,9 +9689,11 @@ class AIRPGChat {
             }
 
             if (data.error) {
+                const errorMessage = data.error;
                 this.hideLoading(requestId);
                 if (!pendingAbilitySelection) {
-                    this.addMessage('system', `Error: ${data.error}`, true);
+                    this.addMessage('system', `Error: ${errorMessage}`, true);
+                    this.showChatErrorPopup(errorMessage);
                 }
                 finalizeMode = 'immediate';
             } else {
@@ -9698,7 +9709,9 @@ class AIRPGChat {
             }
         } catch (error) {
             this.hideLoading(requestId);
-            this.addMessage('system', `Connection error: ${error.message}`, true);
+            const errorMessage = `Connection error: ${error.message}`;
+            this.addMessage('system', errorMessage, true);
+            this.showChatErrorPopup(errorMessage);
             context.httpResolved = true;
             finalizeMode = 'immediate';
         }
@@ -9774,12 +9787,13 @@ class AIRPGChat {
         });
     }
 
-    async dispatchAutomatedMessage(message, { travel = false, travelMetadata = null, suppressTravelCompletionSound = false } = {}) {
+    async dispatchAutomatedMessage(message, { travel = false, travelMetadata = null, suppressTravelCompletionSound = false, allowEmptyAction = false } = {}) {
         await this.submitChatMessage(message, {
             setButtonLoading: Boolean(travel),
             travel: Boolean(travel),
             travelMetadata: travelMetadata || null,
-            suppressTravelCompletionSound: Boolean(suppressTravelCompletionSound)
+            suppressTravelCompletionSound: Boolean(suppressTravelCompletionSound),
+            allowEmptyAction: Boolean(allowEmptyAction)
         });
     }
 

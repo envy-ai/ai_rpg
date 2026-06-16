@@ -1,62 +1,97 @@
 # Crafting API
 
-Common payloads: see `docs/api/common.md` (ActionResolution, Thing).
+Common payloads: see `docs/api/common.md` (ActionResolution, Thing, ChatEntry).
 
 ## POST /api/craft
-Resolve crafting/processing/salvage/harvest actions.
+
+Resolves player crafting, processing, salvage, and harvest actions. The route requires an active player, runs the crafting plausibility/result prompts, applies the selected outcome to world state, advances world time, records check/result chat entries, and returns the created or recovered things.
 
 Request:
 - Body:
-  - `slots` (optional): array of `{ thingId: string, slotIndex?: number }`; may be empty for `craft`/`process`
-  - `mode`: `craft` | `process` | `salvage` | `harvest` (default `craft`)
-  - `actionType`: optional alias for `mode`
-  - `noProse` (optional boolean): when true, skips the player-action prose generation path
-  - `craftTargetType`: `item` | `scenery` (used only for craft mode)
-  - `intendedItemName`, `notes` (string)
-  - Station info: `stationThingId`, `stationName`
-  - Salvage info (used for salvage): `salvageItemId`, `salvageItemName`, `salvageItemDescription`, `salvageNotes`
-  - Harvest info (used for harvest): `harvestItemId`, `harvestItemName`, `harvestItemDescription`, `harvestNotes`
+  - `slots` (optional): array of `{ thingId: string, slotIndex?: number }`. Craft and process requests may use an empty array. Salvage and harvest requests require exactly one selected target.
+  - `mode` (optional): `craft` | `process` | `salvage` | `harvest`; defaults to `craft`.
+  - `actionType` (optional): compatibility alias. `salvage` and `harvest` override `mode`; other values leave the normalized `mode` behavior in place.
+  - `noProse` (optional): boolean, `1`/`0`, or common true/false strings such as `true`, `false`, `yes`, `no`, `on`, `off`.
+  - `craftTargetType` (optional): `item` | `scenery`; applies only to craft mode. `scenery` output is placed in the current location and has no slot, attribute bonuses, or status effects.
+  - `intendedItemName` (optional string): player-facing target name for craft/process attempts.
+  - `notes` (optional string): player intent for craft/process attempts.
+  - Station fields: `stationThingId`, `stationName`.
+  - Salvage fields: `salvageItemId`, `salvageItemName`, `salvageItemDescription`, `salvageNotes`. The selected `slots[0].thingId` is the authoritative salvage target; these fields are labels and prompt context.
+  - Harvest fields: `harvestItemId`, `harvestItemName`, `harvestItemDescription`, `harvestNotes`. The selected `slots[0].thingId` is the authoritative harvest target; these fields are labels and prompt context.
+  - Realtime/client fields: `clientId`, `requestId` are used for prose/check notifications and check-result metadata when supplied.
 
 Response:
-- 200: `{ success: true, outcome, resultLevel, craftedItem, craftedItems, recoveredItems, consumedThingIds, narrative, plausibility, unmatchedConsumedNames, timeTakenMinutes, timeProgress, worldTime }`
-  - `outcome`: ActionResolution
-  - `resultLevel`: string mapping the success degree (e.g., `success`, `failure`, `major_success`)
-  - `craftedItem`: Thing | null
-  - `craftedItems`: Thing[]
-  - `recoveredItems`: Thing[] (salvage/harvest)
-  - `consumedThingIds`: string[]
-  - `narrative`: `{ description: string, otherEffect: string | null }`
-  - `plausibility`: `{ type, reason }`
-  - `unmatchedConsumedNames`: string[]
-  - `timeTakenMinutes`: number (minutes applied to world-time advancement for this craft action)
-  - `timeProgress`: object (world-time advancement result; shape mirrors chat/event time progression)
-  - `worldTime`: object (updated serialized world-time payload)
-- 400: `{ success: false, error }` (invalid payload, implausible crafting, or wrong slot count for salvage/harvest)
-- 500: `{ success: false, error }`
+- 200: `{ success: true, outcome, resultLevel, craftedItem, craftedItems, recoveredItems, consumedThingIds, narrative, plausibility, unmatchedConsumedNames, timeTakenMinutes, timeProgress, locationRefreshRequested, worldTime }`
+  - `outcome`: ActionResolution.
+  - `resultLevel`: normalized crafting result tier selected from the prompt output, such as `success`, `barely_failed`, `major_success`, or `critical_failure`.
+  - `craftedItem`: first crafted Thing JSON object, or `null`.
+  - `craftedItems`: crafted Thing JSON objects. Portable items are placed in player inventory; scenery is attached to the current location.
+  - `recoveredItems`: recovered Thing JSON objects for salvage/harvest results, placed in player inventory.
+  - `consumedThingIds`: ids of selected inputs consumed by the result. Stack inputs with `count > 1` are decremented by one and remain in place; stacks at `1` or `0` are removed.
+  - `narrative`: `{ description: string, otherEffect: string | null }`. In `noProse` mode, `description` is a deterministic action summary and `otherEffect` is `null`.
+  - `plausibility`: `{ type, reason }`.
+  - `unmatchedConsumedNames`: compatibility field; successful responses normally contain `[]` because unmatched consumed names fail before the response is sent.
+  - `timeTakenMinutes`: integer minutes applied to world-time advancement for the action; minimum `1`.
+  - `timeProgress`: raw world-time advancement result from `Globals.advanceTime(...)`.
+  - `locationRefreshRequested`: boolean indicating that automatic hidden-NPC checks require a client location refresh.
+  - `worldTime`: updated serialized world-time payload.
+- 400: `{ success: false, error }` for request-level validation failures such as no active player, unknown selected thing id, nonlocal/offscreen selected input, equipped player-owned input, non-empty container input, wrong salvage/harvest slot count, or implausible crafting.
+- 500: `{ success: false, error }` for prompt, parser, model-result validation, item-name validation, or world-mutation failures that occur during processing.
 
-Notes:
+## Input Selection
+
 - Craft/process can run with no selected slot inputs; the prompts judge the attempt from the station, current scene, player abilities, and notes.
+- Salvage/harvest require exactly one selected slot target.
 - Selected inputs may come from the active player inventory, loose current-location items or scenery, or item contents inside containers in the current location. Player-owned selected inputs must be unequipped; offscreen/nonlocal thing ids are rejected.
-- Current-location container contents are available even when the container itself is scenery, but container contents remain item-only in the workbench picker. Loose current-location scenery, including scenery containers, is shown as a selectable room input and non-empty containers remain visible but disabled until emptied.
-- Non-empty containers cannot be selected as crafting inputs; the client greys them out and the server rejects them if submitted directly. Empty the container first if the container itself should be consumed or processed. Container emptiness is based on normalized, nonblank `containedThingIds`, so blank placeholder entries do not make a container count as non-empty.
-- Salvage/harvest require exactly one slot item.
-- When `actionType` is supplied, it overrides `mode` in some cases.
-- Inline die-roll override is supported in crafting description fields: `notes`, `salvageNotes`, and `harvestNotes`. Tokens matching `<-?\d+>` are stripped from those fields before prompt processing, and the first parsed value is used as the player d20 roll for crafting plausibility/skill-check resolution (no clamping).
-- When `noProse` is true, the server skips the prose prompt and does not run craft/salvage/harvest event-summary/additional-effect mechanics for that action. Quest checks still run using a deterministic action summary line.
-- Deterministic/action summary lines now include source context:
-  - Harvest/salvage lines use `from <source>`.
-  - Craft/process lines use `using <inputs>`.
-- Prose-mode craft/process/salvage/harvest result summaries now append the same `⏳ <natural duration> passed.` line used by normal turn event-summary bundles, sourced from the action's applied `timeTakenMinutes`.
-- Craft/process/salvage/harvest success-degree outcomes are recorded as visible prompt-excluded `check-results` chat entries using the same collapsed and expanded rendering as skill checks. This is synthesized from the action's `ActionResolution`, so it also appears for no-prose requests even though prose and event-summary entries are skipped.
-- Craft/process/salvage/harvest requests attempt the standard autosave before the action starts, then attempt another autosave after a successful action has applied inventory/scenery changes, time advancement, harvest history, vehicle arrivals, and NPC sighting updates.
-- Crafting/harvest prompts omit prior craft/harvest/process entries from base-context history to reduce duplicate actions.
-- Harvest plausibility prompts now receive `lastHarvestTime` as human-readable `... ago` text plus `harvestTarget.pastHarvests` from the source node's persisted harvest history.
-- Craft success-degree rerolls now require the model response to include a full outer `<response>...</response>` wrapper via `requiredRegex` before the response is accepted by `LLMClient`. When parsing the rerolled result, omitted direct `<result>` fields are filled from the standard-success outcome sent to the success-degree prompt. Explicit empty wrappers are preserved, and returned `<item>` nodes keep their model-authored fields while missing nested item fields are backfilled from the base item.
-- Player-action prose generation uses `_includes/player-action-craft.njk` via `promptType=player-action-craft` and expects XML in `<result><description>...</description></result>` (with optional `<otherEffectDescription>`).
-- `timeTaken` is parsed from each crafting/salvage/harvest `<result>` using the shared duration parser (`HH:MM`, minute values, or explicit day/hour/minute/round units). Unit-bearing quantities may be decimal (`2.5 hours`), and the final value is rounded to the nearest minute. If a result has an invalid `timeTaken`, the server logs a warning, skips that result entry, and continues parsing the others. A minimum of 1 minute is always advanced (including `timeTaken = 0`).
-- Craft/process consumption now follows the model output literally: only selected input things explicitly listed under `<itemsConsumed>` are consumed. If no inputs were selected, `<itemsConsumed>` must remain empty; if the model names consumed inputs that do not exactly match the provided slot things, the request fails loudly instead of falling back to consuming every remaining input. Salvage still falls back to consuming the sole target item when the model omits `<itemsConsumed>`.
-- Crafted item instantiation preserves `causeStatusEffectOnTarget` and `causeStatusEffectOnEquipper` as distinct effect entries when both are present, instead of collapsing the target effect onto both application paths.
-- Crafted/recovered item instantiation also preserves registered first-class Thing fields parsed from item XML, such as the implants mod's `<implantSlot>`. If one of those fields has `clearThingSlotWhenPresent`, the normal gear `slot` is cleared before the `Thing` is constructed.
-- Successful harvest actions now update the harvested source node itself: harvestable `Thing` instances keep a deduped `previouslyHarvestedItems` list plus `lastHarvested` as absolute world minutes at the successful completion time.
-- When a consumed input `Thing` has `count > 1`, crafting/salvage/harvest now decrements the stack by `1` instead of deleting the whole `Thing`; only stacks at `1` or `0` are fully removed.
-- Parsed crafted/recovered item `<count>` values are preserved when the resulting `Thing` instances are instantiated; crafted stacks no longer collapse to the default count of `1`.
+- Current-location container contents are available even when the container itself is scenery. Nested container contents are accepted by the server through the recursive current-location availability set.
+- Non-empty containers cannot be selected as crafting inputs. Empty the container first if the container itself should be consumed or processed. Container emptiness is based on normalized, nonblank `containedThingIds`, so blank placeholder entries do not make a container count as non-empty.
+
+## Roll Controls
+
+- `notes`, `salvageNotes`, and `harvestNotes` support one inline die-roll override token matching `<-?\d+>`.
+- Tokens are stripped from the prompt text before processing.
+- The first parsed integer is used as the player d20 roll for the crafting plausibility/skill-check resolution.
+- The override is not clamped.
+
+## Prompt And Result Flow
+
+- The route attempts an autosave before prompt processing and another autosave after a successful action applies inventory/scenery changes, time advancement, harvest history, vehicle arrivals, scheduled events, hidden-NPC checks, and NPC sighting updates. Autosave errors are logged as warnings.
+- Crafting prompt context is built with craft-history omission enabled, so prior craft/harvest/process entries are excluded from base-context history for these prompts.
+- Plausibility prompts use `plausibility-check-craft`, `plausibility-check-salvage`, or `plausibility-check-harvest` and are logged through `LLMClient.logPrompt()`.
+- The plausibility response must include a standard `success` result. The server resolves an ActionResolution, maps it to a crafting `resultLevel`, and returns 400 when the mapped level is `implausible`.
+- Non-success result tiers are generated through `promptType=craft-success-degree`; `LLMClient` requires a full outer `<response>...</response>` wrapper before accepting the response.
+- Craft result parsing accepts `<craftingResults>`, `<salvageResults>`, or `<harvestResults>` parents. Result entries read `<itemsConsumed><itemName>...`, `<itemsCrafted>`, `<itemsRecovered>`, optional direct `<item>` nodes, `<other>` for critical success/failure, `<abilities>`, and required `<timeTaken>`.
+- Success-degree parsing fills omitted direct `<result>` fields from the base success outcome. Explicit empty output wrappers are preserved, and returned `<item>` nodes keep model-authored fields while missing nested item fields are filled from the base item.
+- `timeTaken` uses the shared duration parser. Accepted formats include `HH:MM`, integer minute values, and explicit day/hour/minute/round units; unit-bearing quantities may be decimal. Parsed values are rounded to the nearest minute and then advanced with a one-minute minimum.
+- A result entry with missing or invalid `<timeTaken>` is skipped during parsing. If the selected outcome has no usable parsed result, the request fails with the route error shape.
+- Player-action prose generation uses `_includes/player-action-craft.njk` via `promptType=player-action-craft` and is logged through `LLMClient.logPrompt()`. The parser reads `<result><description>...</description></result>` and optional `<otherEffectDescription>`.
+
+## Consumption And Output
+
+- Craft/process consumption follows the model output literally: only selected input things explicitly listed under `<itemsConsumed>` are consumed. If no inputs were selected, `<itemsConsumed>` must remain empty.
+- Consumed names must exactly match selected input thing names, case-insensitively after trimming. Unmatched consumed names fail loudly instead of consuming unrelated inputs.
+- Salvage consumes the sole selected target when the result omits `<itemsConsumed>`.
+- Harvest keeps the selected source intact unless the model explicitly lists that selected source under `<itemsConsumed>`.
+- Consumed input Things with `causeStatusEffectOnTarget` apply that status effect to the current player on successful prose-mode actions, and the effect is included in the result summary.
+- Craft/process output is instantiated from `<itemsCrafted>` when present, otherwise from parsed recovered/direct item nodes accepted for compatibility. Portable items go to player inventory; scenery is attached to the current location.
+- Salvage/harvest output is instantiated from `<itemsRecovered>` when present, otherwise from a parsed direct item node accepted for compatibility, and goes to player inventory.
+- Crafted item level is computed from the top two selected input levels, station level, and player level counted twice, then adjusted by the blueprint `relativeLevel`. Salvage/harvest recovered items use the blueprint level, source level, or player level.
+- Parsed output `<count>` values are preserved on created Thing stacks.
+- Crafted/recovered Thing construction preserves split `causeStatusEffectOnTarget` and `causeStatusEffectOnEquipper` entries, container fields, station/vehicle/harvest/salvage flags, and registered first-class Thing fields parsed from item XML. Registered fields with `clearThingSlotWhenPresent` clear the normal gear `slot` before construction.
+- Created things are validated with `Globals.ensureThingNamesAllowed(...)` before the response is sent.
+
+## Chat, Events, And Time
+
+- `noProse` skips the player-action prose prompt, crafting result event-summary entries, consumed-item status-effect application, and additional-effect event checks. Quest checks still run using the deterministic action summary line.
+- Craft/process/salvage/harvest success-degree outcomes are recorded as visible prompt-excluded `check-results` chat entries using the same collapsed and expanded rendering as skill checks. This entry is synthesized from the action's ActionResolution, so it is recorded for `noProse` requests as well.
+- Prose-mode result summaries include source context: harvest/salvage lines use `from <source>`, and craft/process lines use `using <inputs>`.
+- Prose-mode result summaries include the elapsed-time row based on the applied `timeTakenMinutes`.
+- Additional `<other>` effects from the selected result can generate a separate visible player-action entry and run ordinary event checks in prose mode.
+- Quest checks run after the crafting mutation path. Quest reward/objective summaries are recorded when applicable.
+- After time advancement, the route applies time-based status/need processing, processes due vehicle arrivals and scheduled events, runs automatic hidden-NPC checks for the current player, records same-location NPC sightings, and includes updated `worldTime` in the response.
+
+## Harvest State
+
+- Harvest plausibility prompts receive `lastHarvestTime` as human-readable `... ago` text when available.
+- Harvest plausibility prompts receive `harvestTarget.pastHarvests` from the source Thing's persisted harvest history.
+- Successful harvest actions update the source Thing with a deduplicated `previouslyHarvestedItems` list and `lastHarvested` as absolute world minutes at successful completion time.

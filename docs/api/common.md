@@ -21,13 +21,13 @@ Fields:
 - `type`: string | null (examples: `player-action`, `user-question`, `storyteller-answer`, `user-generic-prompt`, `generic-prompt-response`, `event-summary`, `quest-reward`, `status-summary`, visible prompt-excluded check/result bubbles such as `check-results`, visible diagnostics such as prompt-excluded `tool-call-debug`, visible player-facing prompt diagnostics such as `game-improvement-suggestions`, visible assistant prose such as NPC-turn assistant entries and `while-you-were-away-player`, and hidden server-only story-note attachments such as `supplemental-story-info`, `while-you-were-away`, `plot-summary`, `plot-expander`, `offscreen-npc-activity-daily`, `offscreen-npc-activity-weekly`)
 - `summary`: string | null
 - `summaryTitle`: string | null (event summaries)
-- `summaryItems`: array | null (event/status summary rows; new rows use the SummaryItem shape below)
+- `summaryItems`: array | null (event/status summary rows use the SummaryItem shape below)
 - `travel`: boolean | undefined
 - `lastEditedAt`: ISO string | undefined (edited messages)
 - `ephemeral`: boolean | undefined (system-only entries)
 - `toolCalls`: array | undefined (structured records on visible `tool-call-debug` entries; each record includes sequence/name/status, `cacheHit`/`cacheKey` for cached tool results, plus parameters and result or error payloads)
 - `checkResults`: array | undefined (structured records on visible `check-results` entries; each record includes `kind` (`skill`, `opposed-skill`, `attack`, or `area-attack`), `status`, one-line `summary`, optional `skillCheck`, `attackSummary`, or `areaAttackSummary` expanded-detail payload, and `cacheHit`/`cacheKey` for cached tool results. Completed collapsed summaries avoid roll/DC/margin/health numbers; those stay in the expanded payloads. Skill summaries prefix the icon mapped from the existing outcome `degree` (`💣` critical failure, `🧨` major failure, `❌` failure, `😞` barely failed, `😰` barely succeeded, `✔️` success, `⭐` major success, `🌟` critical success); attack summaries map hits to `⚔️` with `(💥-Nhp)` appended and misses to `💨`. Area attack summaries use `💥` for hits and `💨` when no targets are hit, with expanded details listing each target's hit/miss, damage, remaining health, position, and secondary-effect suggestion; when per-target summaries are present, those expanded details reuse the regular attack breakdown for each target. Craft/process/salvage/harvest and location-modification success-degree outcomes also use this shape, synthesized from their `ActionResolution` rather than from chat-tool calls.)
-- `metadata`: object (always includes `locationId`; may include `requestId`, `npcNames`, `traveledToLocationId` for travel turns, quest metadata, `npcTurnPending` plus `excludeFromBaseContextHistory` while a visible NPC-turn placeholder is still running, etc.)
+- `metadata`: object (always includes `locationId`; may include `worldTime`, `requestId`, `npcNames`, `traveledToLocationId` for travel turns, quest metadata, `npcTurnPending` plus `excludeFromBaseContextHistory` while a visible NPC-turn placeholder is still running, etc.)
 
 ## SummaryItem
 Rows inside `ChatEntry.summaryItems` for `event-summary` and `status-summary` entries.
@@ -62,6 +62,9 @@ Base shape:
 - `circumstanceModifier`: number | undefined
 - `circumstanceModifiers`: array | undefined
 - `circumstanceReason`: string | null | undefined
+- `checkType`: string | undefined (`unopposed` when applicable)
+- `locationLevel`: number | undefined
+- `opponent`: object | undefined (opposed checks only)
 
 When `type` is `trivial` or `implausible`, `roll`, `difficulty`, `skill`, `attribute`, and `margin` are `null`.
 
@@ -74,15 +77,25 @@ When `type` is `trivial` or `implausible`, `roll`, `difficulty`, `skill`, `attri
 - `circumstanceModifiers`: array of `{ amount, reason }`
 - `circumstanceReason`: string | null
 - `total`: number
+- `opponentDie`, `opponentDetail`, `opponentSkillValue`, `opponentAttributeBonus`, `opponentTotal`: present for opposed checks
 
 `difficulty` fields (when present):
 - `label`: string | null
 - `dc`: number | null
+- `type`: string | undefined (`opposed` for opposed checks)
+
+Opposed-check `opponent` fields:
+- `name`: string
+- `id`: string | null (when the opponent resolves to an actor)
+- `skill`: string | null
+- `attribute`: string | null
+- `found`: boolean | undefined (present as `false` when the requested opponent cannot be resolved)
 
 ## StatusEffect
 Serialized via `StatusEffect.toJSON()`.
 
 Fields:
+- `id`: string
 - `name`: string
 - `description`: string
 - `attributes`: array of `{ attribute, modifier }`
@@ -90,7 +103,7 @@ Fields:
 - `needBars`: array of `{ name, delta }`
 - `duration`: number | null (minutes; `-1` = permanent)
 - `appliedAt`: number | null (world-time minutes when the effect was last applied/ticked)
-- Modifier arrays are only included when non-empty.
+- Modifier arrays are present and are empty when there are no modifiers of that type.
 
 ## VehicleInfo (VehicleInfo.toJSON)
 Fields:
@@ -119,6 +132,7 @@ Returned in many player/NPC endpoints and location responses.
 Fields:
 - `id`, `name`, `description`, `shortDescription`
 - `class`, `race`, `level`
+- `aliases` (array of strings)
 - `resistances`, `vulnerabilities` (strings)
 - `health`, `maxHealth`, `healthAttribute` (`health` may be fractional; clients display health readouts rounded upward)
 - `imageId`
@@ -169,8 +183,8 @@ Highlights beyond `Player.toJSON()`:
 - `partyMembers` (ids) and `partyMemberIds` (same list)
 - `dispositions`, `dispositionDefinitions`
 - `skills`, `abilities`, `unspentSkillPoints`, `unspentAttributePoints`
-- `statusEffects` (active effects), `intrinsicStatusEffects` may be added by the route
-- `modStatusSections` is added by the route from registered mod actor-status contributors so detailed character refreshes preserve mod-owned systems.
+- `statusEffects` (active effects), plus route-supplied `intrinsicStatusEffects` when available
+- `modStatusSections` from registered mod actor-status contributors, so detailed character refreshes preserve mod-owned systems
 - `gear`, `gearSlotsByType`, `gearSlotDefinitions`
 - `needBars`, `needBarApplicability`, `corpseCountdown`, `persistWhenDead`, `wasEverInPlayerParty`, `last_seen_time`, `last_seen_location`, `was_in_player_location_previous_round`, `importantMemories`
 - `resistances`, `vulnerabilities`
@@ -185,13 +199,15 @@ Fields:
 - `rarity`, `itemTypeDetail`, `slot`
 - `attributeBonuses` (array)
 - `causeStatusEffectOnTarget`, `causeStatusEffectOnEquipper`
-- `causeStatusEffect` (legacy field)
+- `causeStatusEffect` (legacy compatibility field)
 - `level`, `relativeLevel`
-- Boolean flags: `isVehicle`, `isCraftingStation`, `isProcessingStation`, `isHarvestable`, `isSalvageable`, `isContainer`
+- `previouslyHarvestedItems`, `lastHarvested`
+- Boolean flags: `isVehicle`, `isCraftingStation`, `isProcessingStation`, `isHarvestable`, `isSalvageable`, `isContainer`, `requiresCheckToOpen`
 - `containerContents` (array of pending `{ name, count }` seeds for not-yet-instantiated container contents)
 - `containedThingIds` (array of item ids held by this thing when `isContainer` is true)
 - `flags` (string array) and `metadata` (object)
 - `statusEffects` (array of StatusEffect)
+- Registered Thing extension fields from enabled mods may appear at the top level.
 
 Optional fields may be omitted when empty/undefined.
 Pending `containerContents` is separate from real `containedThingIds`; opening a container or viewing a player inventory route can generate those pending seeds into actual contained item Things and then clear `containerContents`.
@@ -199,7 +215,7 @@ Pending `containerContents` is separate from real `containedThingIds`; opening a
 ## ThingProfile (buildThingProfiles)
 Included in `LocationResponse.things`.
 
-`buildThingProfiles(...)` now returns the direct [Thing (Thing.toJSON)](#thing-thingtojson) shape for each location thing instead of maintaining a separate trimmed serializer.
+`buildThingProfiles(...)` returns the direct [Thing (Thing.toJSON)](#thing-thingtojson) shape for each location thing.
 
 ## LocationExit (LocationExit.toJSON)
 Fields:
@@ -211,27 +227,28 @@ Fields:
 ## LocationDetails (Location.getDetails)
 Fields:
 - `id`, `name`, `description`, `shortDescription`
-- `baseLevel`, `imageId`, `visited`
+- `baseLevel`, `imageId`, `imageVariants`, `visited`, `favorite`, `lastVisitedTime`
 - `exits`: object keyed by direction; each entry includes
   - `id`, `description`, `destination`, `destinationRegion`, `travelTimeMinutes`
   - `bidirectional`, `isVehicle`, `name`, `relativeName`, `vehicleType`
   - `exitObject` (LocationExit JSON)
 - `regionId`
 - `controllingFactionId` (string | null)
+- `isVehicle`, `vehicleInfo`
 - `createdAt`, `lastUpdated`
 - `isStub`, `hasGeneratedStubs`, `stubMetadata`
+- `generationHints`
 - `npcIds`, `thingIds`
 - `randomEvents`, `statusEffects`, `characterConcepts`, `enemyConcepts`
 
 ## LocationResponse (buildLocationResponse)
 Extends `LocationDetails` with:
 - `pendingImageJobId`
-- `favorite` (boolean; persisted UI marker used by the Play tab Favorites subtab)
 - `regionName` (resolved name)
 - `region` (object: `id`, `name`, `description`, `parentRegionId`, `averageLevel`, `isVehicle`, `vehicleInfo`)
 - `regionPath` (array of `{ id, name }`)
 - `exits` entries gain:
-  - `travelTimeMinutes` (integer minutes for non-vehicle traversal time; `0` may indicate an unpopulated legacy exit time awaiting backfill)
+  - `travelTimeMinutes` (integer minutes for non-vehicle traversal time; `0` can indicate an exit time that has not been populated)
   - `destinationName`, `destinationRegionName`, `destinationRegionExpanded`
   - `destinationIsStub`, `destinationIsRegionEntryStub`, `destinationVisited`
   - `destinationIsVehicle` (boolean; derived only from destination location/region/pending-stub vehicle state, never from `exit.isVehicle`/`exit.vehicleType`)
@@ -251,8 +268,10 @@ Fields:
 - `locationBlueprints`, `locationIds`, `entranceLocationId`
 - `parentRegionId`, `createdAt`, `lastUpdated`
 - `controllingFactionId` (string | null)
+- `isVehicle`, `vehicleInfo`
 - `statusEffects`, `averageLevel`, `numImportantNPCs`
 - `randomEvents`, `characterConcepts`, `enemyConcepts`, `secrets`
+- `weather`, `weatherState`
 
 ## NeedBar (normalizeNeedBarResponse)
 Fields:
@@ -283,7 +302,11 @@ Core fields:
 - `imagePromptPrefixCharacter`, `imagePromptPrefixLocation`, `imagePromptPrefixItem`, `imagePromptPrefixScenery`
 - `playerStartingLevel`, `defaultStartingCurrency`
 - `defaultPlayerName`, `defaultPlayerDescription`, `defaultStartingLocation`
+- `hidingAttribute`, `hidingSkill`, `perceptionAttribute`, `perceptionSkill`
+- `defaultFactionCount`, `defaultFactions`
+- `calendarDefinition`, `unifiedTonalScale`
 - `defaultExistingSkills`, `availableClasses`, `availableRaces`, `customSlopWords`
+- `modSettings`
 - `createdAt`, `lastUpdated`
 
 ## Quest (Quest.toJSON)
@@ -305,11 +328,11 @@ Fields:
 Used by map endpoints.
 
 Fields:
-- `id`, `name`, `isStub`, `visited`, `regionId`
+- `id`, `name`, `isStub`, `visited`, `favorite`, `regionId`
 - `isVehicle` (boolean)
 - `vehicleIcon` (string | null; when `isVehicle` is true)
 - `exits`: array of
-  - `id`, `destination`, `destinationRegion`, `destinationRegionName`, `destinationRegionExpanded`
+  - `id`, `destination`, `destinationRegion`, `travelTimeMinutes`, `destinationRegionName`, `destinationRegionExpanded`
   - `destinationName`, `bidirectional`, `isVehicle`, `vehicleType`
   - `isVehicle`/`vehicleType` describe the travel edge only; they do not imply destination vehicle status
   - `isVehicleOutbound`, `isVehicleInbound` (booleans)

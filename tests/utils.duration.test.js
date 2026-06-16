@@ -118,3 +118,26 @@ test('formatAbsoluteWorldMinutesAgo formats absolute minute timestamps against t
         '0 minutes ago'
     );
 });
+
+test('formatCountdownUntilWorldMinute formats two significant units and past deadlines', () => {
+    assert.equal(
+        Utils.formatCountdownUntilWorldMinute(3124, { currentTotalMinutes: 1500 }),
+        '1 day, 3 hours'
+    );
+    assert.equal(
+        Utils.formatCountdownUntilWorldMinute(305, { currentTotalMinutes: 180 }),
+        '2 hours, 5 minutes'
+    );
+    assert.equal(
+        Utils.formatCountdownUntilWorldMinute(225, { currentTotalMinutes: 180 }),
+        '45 minutes'
+    );
+    assert.equal(
+        Utils.formatCountdownUntilWorldMinute(150, { currentTotalMinutes: 215 }),
+        '1 hour, 5 minutes past'
+    );
+    assert.equal(
+        Utils.formatCountdownUntilWorldMinute(180, { currentTotalMinutes: 180 }),
+        '0 minutes'
+    );
+});

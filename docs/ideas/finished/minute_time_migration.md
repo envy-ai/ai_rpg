@@ -1,283 +1,125 @@
-# Minute-Based Time Migration Plan
+# Minute-Based Time Migration Archive
+
+This finished design note records the migration from decimal-hour canonical time to
+minute-based canonical time. It is no longer an active task list. Current
+behavior is documented first; the original design intent is preserved afterward so
+later time-related work can tell what was deliberate.
+
+## Current Implemented Behavior
+
+- Canonical world time is minute-based: `worldTime = { dayIndex, timeMinutes }`.
+  Saves write `worldTime.json` in this shape.
+- `Globals.getTotalWorldMinutes()` is the canonical elapsed-time helper.
+  `Globals.advanceTime(minutes, { source })` requires a non-negative integer
+  minute count and returns `advancedMinutes`; transition entries use
+  `atTimeMinutes`.
+- `Globals.getTotalWorldHours()` still exists as a read convenience, but
+  decimal hours are not the persisted or API contract.
+- `Globals.formatTime(...)` renders 12-hour `h:MM AM/PM` labels from
+  `timeMinutes`.
+- `Player.elapsedTime`, location/region `lastVisitedTime`, vehicle trip timing,
+  NPC last-seen fields, scheduled events, offscreen NPC activity snapshots, and
+  history `metadata.worldTime` all use minute semantics.
+- New-game `startTime` is intentionally still an hour-only `0`-`23` input in the
+  UI/API. The server applies it through the minute path as `startTime * 60`.
+- API and client-facing payloads use minute names such as `timeMinutes`,
+  `advancedMinutes`, `timeTakenMinutes`, `travelTimeMinutes`, `durationMinutes`,
+  and `nextChangeMinutes`.
+
+## Duration Parsing
+
+`Utils.parseDurationToMinutes(value, { fieldName, allowSigned })` is the shared
+duration parser for current code. It accepts:
+
+- numeric minute values and bare integer minute strings
+- `HH:MM` duration strings, interpreted as elapsed time rather than clock time
+- day/hour/minute/second/round unit strings, including compact forms such as
+  `3d4h2m`
+- decimal unit quantities such as `2.5 hours`
+
+Unknown units, malformed separators, bare decimal strings without units, and
+disallowed signed values throw explicit errors. Some model-output parse paths
+catch those parser errors and skip a bad optional model result, but the parser
+itself is fail-loud.
+
+## Time Advancement Paths
+
+- Player-action `<timePassed>` and event-check `time_passed` values are parsed
+  to minutes. Event-check `time_passed` only advances time when an earlier action
+  or travel path has not already produced `timeProgress`.
+- Event-check zero-duration time still advances by the historical minimum of
+  one minute.
+- Crafting, salvage, harvest, and location-modification result `<timeTaken>`
+  values are parsed to `timeTakenMinutes`; successful applied actions advance at
+  least one minute and return `timeProgress`.
+- Time advancement triggers the surrounding elapsed-time work: need/status
+  ticking, due vehicle arrivals, scheduled events, and world-time payload refresh.
+
+## Domain-Specific Minute State
+
+- Status effects store `duration` and `appliedAt` in minutes. `-1` is permanent,
+  `null` means no scheduled expiration or unknown duration, and unit-bearing
+  strings are normalized through `Utils.parseDurationToMinutes(...)`.
+- Weather definitions store duration ranges as `minMinutes`/`maxMinutes`.
+  Active weather state stores `nextChangeMinutes` and `durationMinutes`.
+- `LocationExit` travel times are `travelTimeMinutes`; `0` remains the
+  unpopulated-travel-time sentinel for saved exits and backfill flows.
+- Scheduled events use absolute world minutes plus canonical
+  `{ dayIndex, timeMinutes }` target snapshots.
+
+## Compatibility That Remains
+
+Legacy hour-based saves are still supported. During load, hour-based saves are
+detected when `serialized.worldTime` has `timeHours` without `timeMinutes`.
+Migration converts compatible hour fields to minute fields before object
+hydration, including:
+
+- world-time snapshots
+- player elapsed/visited timestamps
+- location/region visited timestamps
+- status-effect `duration` and `appliedAt`
+- weather duration ranges and active weather state
+- offscreen NPC activity scheduler snapshots
+
+Some runtime normalizers also accept old hour fields, such as `timeHours`,
+`minHours`/`maxHours`, `durationHours`, and `nextChangeHours`, then normalize to
+minute fields. New writes should continue to use only the minute-canonical field
+names.
+
+## Original Design Notes
+
+The migration was designed around these decisions:
+
+1. Canonical internal and persisted elapsed time should be minutes, not
+   decimal hours.
+2. New-game start time should remain a simple hour selector.
+3. LLM-facing duration fields should allow human-readable forms such as `HH:MM`,
+   `2 hours`, `45 minutes`, `1 day, 2 hours`, and round counts.
+4. Invalid duration data should surface clearly instead of being silently
+   converted through ad hoc string stripping.
+5. Display labels should stay human-readable even though storage is numeric
+   minutes.
+6. Legacy saves should load through explicit migration, but current saves and
+   API payloads should write the minute-canonical names.
 
-This document defines the migration from decimal-hour canonical time to minute-based canonical time across runtime state, prompts, parsing, APIs, saves, and docs.
+These notes explain why current code still has a small number of compatibility
+reads for hour-shaped data while treating minute-shaped data as the active
+contract.
 
-## Decisions
+## Current Reference Points
 
-1. Canonical time unit is **minutes**.
-2. `startTime` for new game remains **hour-only** (`0`-`23`).
-3. Duration inputs accepted from LLM/user-facing time fields:
-   - `HH:MM` duration format
-   - `Z days, X hours, Y minutes` (any subset/combination of units, including rounds)
-   - Single-unit forms like `X hours`, `Y minutes`, `Z days`, `N rounds`
+Use the current focused docs for implementation details:
 
-## Current-State Summary
-
-- Canonical world time is currently decimal hours via `worldTime.timeHours`.
-- Many systems convert between minutes and decimal hours at boundaries.
-- Status effect durations are currently normalized to decimal hours.
-- Craft/salvage/harvest prompts and parsers currently request/consume decimal hours.
-- Weather duration ranges are currently hour-based (`minHours`/`maxHours`).
-- Offscreen NPC schedule snapshots and arithmetic currently use hour fields.
-
-## Target Canonical Model
-
-All internal elapsed/absolute time values become minute-based.
-
-- World time:
-  - `worldTime.dayIndex` (unchanged)
-  - `worldTime.timeMinutes` (replaces `worldTime.timeHours`)
-- Advancement results:
-  - `advancedMinutes` (replaces `advancedHours`)
-  - transition markers use `atTimeMinutes` (replaces `atTimeHours`)
-- Actor/location elapsed timestamps:
-  - `Player.elapsedTime`, `Location.lastVisitedTime`, `Region.lastVisitedTime` become minute-based.
-- Status effects:
-  - `duration` and `appliedAt` stored/processed in minutes.
-
-`timeLabel` uses 12-hour `h:MM AM/PM` display formatting.
-
-## Parsing Contract
-
-Create one shared parser for duration-like inputs (recommended location: `Utils.js`) and use it in all time-related parse paths.
-
-Accepted examples:
-
-- `0`
-- `15`
-- `00:15`
-- `1:30`
-- `2 hours`
-- `45 minutes`
-- `1 day`
-- `1 day, 2 hours`
-- `2 days 15 minutes`
-- `3 hours, 5 minutes`
-
-Parser behavior:
-
-1. `HH:MM` is interpreted as a **duration**, not clock-of-day.
-2. Mixed units may appear in any order.
-3. Duplicate units are summed.
-4. Unknown units, malformed separators, or ambiguous text throw explicit errors.
-5. No silent fallback conversions.
-
-## Workstreams
-
-## 1) Core World Time (Globals)
-
-Files:
-
-- `Globals.js`
-
-Changes:
-
-1. Replace `timeHours` normalization and arithmetic with `timeMinutes`.
-2. Replace `getTotalWorldHours()` with minute-based equivalent (new name should reflect minutes).
-3. Replace `advanceTime(hours)` with minute-based API (new name/signature should reflect minutes).
-4. Update transition payload fields from `atTimeHours` to `atTimeMinutes`.
-5. Set `formatTime()` output to 12-hour `h:MM AM/PM`, computed from minute canonical values directly.
-
-## 2) Event Time Parsing and Advancement
-
-Files:
-
-- `Events.js`
-
-Changes:
-
-1. Update `time_passed` prompt wording to request minute/day/hour formats instead of decimal hours.
-2. Replace decimal-only parser in `time_passed` parsing with shared duration parser.
-3. Preserve minimum advancement behavior as 1 minute when parsed value is zero.
-4. Update any event result metadata fields to minute naming.
-
-## 3) Craft/Salvage/Harvest Time
-
-Files:
-
-- `api.js`
-- `prompts/_includes/plausibility-check-craft.njk`
-- `prompts/_includes/plausibility-check-salvage.njk`
-- `prompts/_includes/plausibility-check-harvest.njk`
-
-Changes:
-
-1. Replace `timeTakenHours` parsing/storage/response with `timeTakenMinutes`.
-2. Parse `<timeTaken>` through shared duration parser.
-3. Update advancement call site to minute API.
-4. Remove unit-stripping fallback parse behavior and fail explicitly on invalid values.
-5. Update prompt comments/examples to include `HH:MM` and mixed-unit examples.
-
-## 4) Status Effect Durations
-
-Files:
-
-- `StatusEffect.js`
-- `Player.js`
-- `Thing.js`
-- `Location.js`
-- `Region.js`
-- `server.js`
-
-Changes:
-
-1. Convert duration normalization/storage from decimal hours to minutes.
-2. Convert `appliedAt` semantics from world-hour stamp to world-minute stamp.
-3. Remove all `* 60` / `/ 60` bridge logic currently used for ticking/decrementing.
-4. Keep `-1` semantic for permanent/infinite durations.
-5. Keep explicit throw behavior for invalid duration inputs.
-
-## 5) Weather Duration Model
-
-Files:
-
-- `Region.js`
-- `slashcommands/weather.js`
-- `prompts/_includes/region-generator.njk`
-
-Changes:
-
-1. Replace weather duration structures:
-   - `minHours`/`maxHours` -> `minMinutes`/`maxMinutes`
-   - `durationHours` -> `durationMinutes`
-   - `nextChangeHours` -> `nextChangeMinutes`
-2. Update parser/normalizer/schema checks accordingly.
-3. Update slash-command weather formatting to render minute-based duration ranges.
-4. Update region generator prompt schema examples away from decimal-hour ranges.
-
-## 6) Offscreen NPC Activity Scheduling
-
-Files:
-
-- `api.js`
-
-Changes:
-
-1. Migrate schedule snapshots and normalization from `timeHours` to `timeMinutes`.
-2. Migrate absolute-time arithmetic to minutes.
-3. Keep schedule checkpoints at 07:00/19:00 and weekly 07:00, but compare in minutes.
-4. Update human-readable “elapsed since last run” formatting logic as needed.
-
-## 7) API and Payload Contract Updates
-
-Files:
-
-- `api.js`
-- `docs/api/chat.md`
-- `docs/api/crafting.md`
-- `docs/api/common.md`
-- `slashcommands/calendar_info.js`
-
-Changes:
-
-1. `worldTime.timeHours` -> `worldTime.timeMinutes` in payloads.
-2. `timeTakenHours` -> `timeTakenMinutes` in craft response.
-3. Transition payload fields `atTimeHours` -> `atTimeMinutes`.
-4. Slash-command calendar output should report minutes-based canonical field.
-
-Compatibility note:
-
-- During migration window, reading both old and new field names is recommended.
-- Writing should use only new minute-based fields after migration completes.
-
-## 8) New Game Start-Time Behavior
-
-Files:
-
-- `views/new-game.njk`
-- `public/js/new-game.js`
-- `api.js`
-- `docs/api/game.md`
-
-Changes:
-
-1. Keep `startTime` input and validation as integer hour.
-2. Convert chosen start hour to canonical minute value at initialization.
-3. Keep UI label semantics “24h hour”.
-
-## 9) Prompt Contract Changes (LLM-facing)
-
-Primary files:
-
-- `Events.js` (`time_passed` prompt text)
-- `prompts/_includes/plausibility-check-craft.njk`
-- `prompts/_includes/plausibility-check-salvage.njk`
-- `prompts/_includes/plausibility-check-harvest.njk`
-- `prompts/_includes/status-effect-generate.njk`
-- `prompts/_includes/region-generator.njk`
-- `prompts/_includes/item.njk`
-- `prompts/_includes/character-alter.njk`
-
-Required prompt language updates:
-
-1. Remove decimal-hour instruction language.
-2. Explicitly allow:
-   - `HH:MM`
-   - day/hour/minute/round combinations
-3. Align duration wording that still says “turns” to minute/hour/day durations (for status durations).
-4. Ensure all prompts continue to produce parseable, explicit durations.
-
-## 10) Save Migration
-
-Files:
-
-- `Utils.js`
-- `Globals.js`
-- any load/hydration paths in `api.js`/`server.js` that read old shapes
-
-Changes:
-
-1. On load, detect legacy hour-based fields and convert to minute equivalents.
-2. Convert persisted structures:
-   - `worldTime.timeHours`
-   - status effect `duration` / `appliedAt` hour semantics
-   - weather state duration/change-hour fields
-   - offscreen scheduler snapshots
-   - elapsed/last-visited time fields
-3. Bump save metadata/version after migration.
-4. Keep load-path compatibility for older saves.
-
-## 11) UI Behavior
-
-Files:
-
-- `public/js/chat.js`
-- `views/index.njk`
-- `public/js/player-stats.js`
-
-Changes:
-
-1. Keep user-facing display in human-readable forms (`HH:MM`, `Xh Ym`, `N minutes`, etc).
-2. Ensure UI readers/writers no longer assume numeric durations are decimal hours.
-3. Ensure any status-effect duration editors/tooltips are consistent with minute-based canonical storage and parser.
-
-## 12) Docs To Update After Implementation
-
-- `docs/config.md`
-- `docs/api/chat.md`
-- `docs/api/crafting.md`
-- `docs/api/common.md`
-- `docs/api/game.md`
 - `docs/classes/Globals.md`
-- `docs/classes/StatusEffect.md`
-- `docs/classes/Events.md`
-- `docs/classes/Player.md`
-- `docs/classes/Location.md`
-- `docs/classes/Region.md`
 - `docs/classes/Utils.md`
-- `docs/server_llm_notes.md`
+- `docs/classes/StatusEffect.md`
+- `docs/classes/Region.md`
+- `docs/classes/Events.md`
+- `docs/api/chat.md`
+- `docs/api/crafting.md`
+- `docs/api/game.md`
+- `docs/api/serialization.md`
 
-## Validation Checklist
-
-1. Unit tests for duration parser:
-   - `HH:MM`, mixed-unit strings, invalid forms, zero/minimum semantics.
-2. World-time advancement tests:
-   - day rollover, segment changes, season changes, transition payload fields.
-3. Crafting time tests:
-   - `timeTaken` parsing and minimum advancement.
-4. Status-effect ticking tests:
-   - finite, permanent, and zero-expiry behavior.
-5. Save migration tests:
-   - load old hour-based save data and verify converted minute state.
-6. API contract tests:
-   - verify renamed fields are present and old fields are absent after cutover.
+Useful regression anchors include duration parser tests, event time-passed
+tests, crafting time-result tests, world-time/calendar tests, weather payload
+tests, and scheduled-event tests.

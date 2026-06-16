@@ -1,12 +1,24 @@
 # Tactical Map Generation Brainstorm
 
-This document expands the tactical battles brainstorm into the harder problem of generating tactical maps for arbitrary locations. It is a brainstorm, not an implementation spec. The core premise is that tactical maps cannot be produced by a generic room generator alone because locations can be anything: a tavern, a jungle canopy, a moving train, a starship bridge, a dreamscape, a marketplace riot, a flooded cave, a courtroom, a caravan, a battlefield trench, or the inside of a huge vehicle.
+This document expands the tactical battles brainstorm into the harder problem of generating tactical maps for arbitrary locations. It is a proposal and archive note, not an implemented system spec. The core premise is that tactical maps cannot be produced by a generic room generator alone because locations can be anything: a tavern, a jungle canopy, a moving train, a starship bridge, a dreamscape, a marketplace riot, a flooded cave, a courtroom, a caravan, a battlefield trench, or the inside of a huge vehicle.
 
-The likely answer is an LLM-assisted semantic map pipeline: the LLM interprets the current location and conflict into tactical zones, edges, cover, hazards, interactables, exits, deployment areas, and objectives; the server validates that structure; the UI renders it with deterministic layout rules.
+The proposed answer is an LLM-assisted semantic map pipeline: the LLM would interpret the current location and conflict into tactical zones, edges, cover, hazards, interactables, exits, deployment areas, and objectives; the server would validate that structure; the UI would render it with deterministic layout rules.
+
+## Current project status
+
+Tactical map generation is not implemented in the current codebase. There is no `TacticalMap` or `TacticalScene` class, save field, API, prompt, or UI panel yet; references to those names in this document are proposed model names. The related `docs/ideas/tactical_battles_brainstorm.md` file is also a proposal.
+
+Relevant implemented systems that a future tactical-map feature would build on:
+
+- `Location` already persists descriptions, exits, NPCs, things/scenery, weather/image hints, generation hints, and optional `vehicleInfo`.
+- `Region` already persists weather definitions/state, random events, location blueprints, and optional region-level `vehicleInfo`.
+- `VehicleInfo` already tracks `vehicleExitId`, destinations, current/pending destination, departure time, and ETA for moving vehicle contexts.
+- `LLMClient.logPrompt()` is the existing prompt logging path and should be used for any future tactical-map generation or repair prompt.
+- The implemented area-attack tool deliberately avoids exact tactical-map geometry, so this proposal should be treated as a future positioning layer rather than current combat behavior.
 
 ## Core problem
 
-The tactical battle system needs a map that is playable, legible, and mechanically useful. But the source material is generated prose plus arbitrary game state. A procedural generator can make "a forest clearing" or "a dungeon room," but it cannot reliably infer the important combat affordances of every generated location.
+A future tactical battle system would need a map that is playable, legible, and mechanically useful. The source material is generated prose plus arbitrary game state. A procedural generator can make "a forest clearing" or "a dungeon room," but it cannot reliably infer the important combat affordances of every generated location.
 
 The map generator needs to answer questions like:
 
@@ -49,9 +61,9 @@ These are semantic questions. They need local story context, setting context, kn
 
 ## Recommended direction
 
-The strongest direction is a semantic zone graph with optional layout hints.
+The strongest proposed direction is a semantic zone graph with optional layout hints.
 
-The LLM produces a tactical map as structured data:
+The LLM would produce a tactical map as structured data:
 
 - Zones.
 - Connections.
@@ -65,7 +77,7 @@ The LLM produces a tactical map as structured data:
 - Visibility and elevation.
 - Optional relative coordinates for display.
 
-The server validates the graph and uses deterministic rendering to lay it out. The UI can start with cards/list/graph rendering, then later support canvas/SVG layouts. The server should treat the graph as the mechanical source of truth; coordinates are display hints only.
+The server would validate the graph and use deterministic rendering to lay it out. The UI could start with cards/list/graph rendering, then later support canvas/SVG layouts. The server should treat the graph as the mechanical source of truth; coordinates are display hints only.
 
 This avoids brittle procedural map generation while keeping the LLM in the part of the problem it is best suited for: interpreting arbitrary prose into useful tactical affordances.
 
@@ -133,6 +145,8 @@ Recommendation: use option 2 as the canonical path. Later, option 4 can produce 
 
 ## Canonical map model
 
+This section sketches a possible model. The current save format does not contain these fields.
+
 ### TacticalMap
 
 Possible fields:
@@ -154,7 +168,7 @@ Possible fields:
 - `createdAtWorldMinutes`
 - `updatedAtWorldMinutes`
 
-The map can be embedded in a `TacticalScene` or cached against a `Location` when useful. For a first version, scene-local maps are safer because the same location may need different tactical maps depending on objective, participants, weather, lighting, or where the fight starts.
+The map could be embedded in a future `TacticalScene` or cached against a `Location` when useful. For a first version, scene-local maps are safer because the same location may need different tactical maps depending on objective, participants, weather, lighting, or where the fight starts.
 
 ### Zone
 
@@ -312,14 +326,16 @@ Possible fields:
 
 ## LLM-assisted generation pipeline
 
+This is a proposed pipeline. It should fail loudly on invalid structure, matching the project preference for explicit errors over silent placeholder data.
+
 ### 1. Gather map context
 
 Inputs should include:
 
-- Current location name, description, short description, base level.
+- Current location name, description, short description, and level/generation hints where available.
 - Region name, weather, light, parent hierarchy, vehicle status.
 - Known exits and directions.
-- Location items and scenery.
+- Location things, split into items and scenery when useful.
 - NPCs, party, hostiles, bystanders.
 - Current player action or tactical trigger.
 - Tactical objective and stakes.
@@ -332,7 +348,7 @@ Avoid dumping all history. The map prompt needs concrete local affordances more 
 
 ### 2. Ask for a map plan, not prose
 
-The prompt should explicitly ask for structured output only. The LLM should identify map concepts, then emit final map XML/JSON. Any reasoning should be outside the final block or omitted if strict parsing requires it.
+The prompt should explicitly ask for structured output only. The LLM should identify map concepts, then emit final map XML/JSON. Any reasoning should be outside the final block or omitted if strict parsing requires it. New prompts should not set an explicit `<maxTokens/>`; let the shared prompt defaults apply.
 
 Important prompt constraints:
 
@@ -732,7 +748,7 @@ The final output should still be parsed and validated by the server. The self-ch
 
 ### TacticalScene
 
-`TacticalScene` can reference:
+A future `TacticalScene` could reference:
 
 - `tacticalMapId`
 - active map version
@@ -768,11 +784,11 @@ The battle log should record map-relevant changes:
 
 ### Location
 
-Use location descriptions, short descriptions, exits, random events, status effects, generation hints, things, NPCs, and vehicle info as source material.
+A future generator should use location descriptions, short descriptions, exits, random events, status effects, generation hints, things, NPCs, weather exposure hints, image variant context when useful, and vehicle info as source material.
 
 ### Region and weather
 
-Weather and light can affect visibility, hazards, cover quality, and movement. Outdoor tactical maps should reflect region weather when applicable.
+Weather and light can affect visibility, hazards, cover quality, and movement. Outdoor tactical maps should reflect `Region.resolveCurrentWeather()` output when applicable.
 
 ### Things and scenery
 
@@ -788,7 +804,7 @@ Normal event checks should not double-apply map changes. Tactical map state chan
 
 ### Save/load
 
-Active tactical maps must serialize with active tactical scenes. Cached location maps need invalidation metadata if location description, exits, or scenery change.
+If implemented, active tactical maps must serialize with active tactical scenes. Cached location maps need invalidation metadata if location description, exits, vehicle info, weather exposure, or scenery change.
 
 ## UI ideas
 
@@ -885,7 +901,7 @@ Playwright:
 - Confirm legal moves update.
 - Confirm mobile layout works.
 
-## Rollout options
+## Implementation slices
 
 ### Slice 1: Map generation preview
 
@@ -938,7 +954,7 @@ Pros:
 Cons:
 - Higher UI and testing cost.
 
-## Strong first implementation candidate
+## Recommended first proposal
 
 The strongest first tactical-map feature would likely be a map preview and validator:
 
@@ -964,4 +980,3 @@ This isolates the hardest uncertainty: whether the LLM can reliably convert arbi
 8. Should the first renderer be zone cards only, graph only, or both?
 9. How should hidden zones and hidden enemies be represented in player-facing UI?
 10. How should generated maps handle contradictory or vague location descriptions?
-

@@ -1,26 +1,33 @@
 # RunPlotExpanderCommand
 
 ## Purpose
-Slash command `/runplotexpander` to run the plot-expander prompt immediately and store it as a hidden `plot-expander` chat entry.
+`/runplotexpander` runs the plot-expander prompt for a named plot thread and stores the response as a hidden `plot-expander` assistant entry.
 
 ## Args
 - `show` (optional boolean)
-  - `true`: reply with the generated plot expander text.
-  - omitted/`false`: do not print the generated text.
+  - `true`: replies with the generated plot-expander text.
+  - omitted or `false`: replies with a storage confirmation.
 - `specificPlot` (required string)
-  - Name/description of the plot thread to expand.
-  - For positional usage, provide it in quotes after `show`.
+  - Name or description of the plot thread to expand.
+  - In chat input, positional usage includes the `show` value before the quoted plot string because `show` is the first declared argument.
 
 ## Behavior
-- Calls the server's plot-expander prompt runner directly (same prompt path used by scheduled runs).
-- Stores the result in chat history as `type: plot-expander` with hidden/base-context-excluded metadata.
-- Passes `specificPlot` through to the prompt template as `specificPlot`.
+- Requires `interaction.runPlotExpanderPrompt`; command execution fails when that helper is unavailable.
+- Trims `specificPlot` and requires a non-empty string.
+- Calls the server plot-expander prompt runner with `{ specificPlot }`.
+- The prompt runner renders `base-context.xml.njk` with `promptType: 'plot-expander'` and passes the trimmed `specificPlot` into the plot-expander include.
+- The stored entry has `role: 'assistant'`, `type: 'plot-expander'`, `content` and `summary` set to the generated text, the resolved current location id, and `metadata.excludeFromBaseContextHistory: true`.
+- Prompt requests use `metadataLabel: 'plot_expander'`, `validateXML: false`, and `runInBackground: true`; the rendered prompt and response are logged through `LLMClient.logPrompt()`.
 - Replies with either:
-  - the generated text when `show=true`, or
-  - a confirmation message when `show` is omitted/false.
+  - the generated text when `show` is `true`, or
+  - `Plot expander generated and stored.` when `show` is omitted or `false`.
+
+## Failure Cases
+- A blank or missing `specificPlot` fails validation.
+- A missing plot-expander helper fails with `Plot expander execution is unavailable in this command context.`
+- If the prompt runner returns no stored entry, the command fails with `Plot expander did not produce a stored entry (it may already be running).`
+- If `show` is `true` and the stored entry has no text content, the command fails with `Plot expander entry was created without content.`
 
 ## Example
 - `/runplotexpander false "The missing tome"`
-
-## Notes
-- If a plot expander run is already in progress, command execution fails instead of silently no-oping.
+- `/runplotexpander true "The missing tome"`

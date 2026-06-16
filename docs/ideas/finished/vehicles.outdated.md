@@ -1,201 +1,126 @@
-# Vehicles (Design Brainstorm)
+# Vehicles (Archived Design Notes)
 
-## Goals
+This is an older vehicle brainstorm, not the current implementation spec. Use it for design context and future-idea mining, then verify current behavior in:
 
-- Make travel feel meaningful: speed, safety, capacity, stealth, and narrative tone all change with the chosen vehicle.
-- Treat travel as a system, not a teleport: add routes, services, schedules, and hazards.
-- Let _any_ world entity act as a vehicle (items, scenery, NPCs, locations, regions).
-- Support both diegetic travel (ride, sail, fly) and magical/abstract travel (portals, living paths).
-- Enable emergent gameplay: heists, smuggling, escort contracts, convoy warfare, and mobile bases.
+- `docs/classes/VehicleInfo.md`
+- `docs/classes/Location.md`
+- `docs/classes/Region.md`
+- `docs/classes/LocationExit.md`
+- `docs/api/common.md`
+- `docs/api/chat.md`
+- `docs/ui/maps.md`
+- `docs/slashcommands/VehicleStatusCommand.md`
 
-## Core Concepts
+## Current Vehicle Behavior
 
-- **Vehicle Profile**: Common stat block used across all vehicle types.
-  - Speed / time-cost modifier.
-  - Capacity (passengers + cargo slots).
-  - Safety / encounter bias (e.g., ambush risk, exposure to elements).
-  - Stealth / detectability.
-  - Reliability (breakdown chance, maintenance needs).
-  - Fuel / stamina / charge and consumption rate.
-  - Access rules (ownership, keys, reputation, skill checks).
-- **Vehicle Instance**: A specific, stateful vehicle (durability, fuel, location, owner, cargo).
-- **Route**: A travel path with stops, schedule, and services (can be attached to NPCs, locations, or regions).
-- **Vehicle Mode**: The narrative + rules context when traveling (mounted, aboard ship, convoy, portal transit).
+The implemented vehicle system is centered on `VehicleInfo`, `Location`, `Region`, and `LocationExit`.
 
-## Universal System Hooks (Cross-Cutting)
+- A `Location` or `Region` is a vehicle when it has non-null `vehicleInfo`; `isVehicle` is derived from that field.
+- `VehicleInfo` stores `terrainTypes`, `icon`, `currentDestination`, `pendingDestination`, fixed-route `destinations`, `ETA`, `departureTime`, and `vehicleExitId`.
+- A `LocationExit` can be marked with `isVehicle` and optional `vehicleType`, but that marks the edge as a vehicle boarding/disembark/travel edge. It does not by itself make the destination a vehicle.
+- Vehicle locations and vehicle regions can move by retargeting the tracked outside exit referenced by `vehicleInfo.vehicleExitId`.
+- Positive `<travelProse><vehicleInfo><travelTime>` starts a timed trip by setting `pendingDestination`, `departureTime`, and `ETA`; final destination resolution and exit retargeting happen during due-arrival processing.
+- `0` or omitted vehicle travel time moves the vehicle immediately.
+- Due vehicle arrivals are processed through the same positive world-time advancement paths that also handle needs, statuses, and scheduled events.
+- `Player.currentVehicle` exposes the active onboard vehicle, destination label, pending destination, remaining time, and `isUnderway` / `hasArrived` / `isArriving` state for prompts and diagnostics.
+- `/vehicle_status` reports the current player's active vehicle route and trip state.
+- Location, region, and stub edit APIs validate vehicle metadata through `VehicleInfo`.
+- Region generation can create large vehicle location stubs and huge vehicle region-entry stubs with vehicle metadata and tracked vehicle exits.
+- Region and world maps render vehicle icons and omit vehicle exits while a vehicle is underway or waiting for arrival finalization.
+- `Thing` has an `isVehicle` flag for item/scenery classification, but there is no implemented `VehicleProfile`, fuel, cargo, ownership, durability, crew, or item-driven vehicle movement system.
 
-- **Travel Actions**: Standardize on `travel`, `board`, `ride`, `pilot`, `dock`, `disembark`, `tow`.
-- **Requirements**: Skills (riding, sailing), items (keys, tickets), faction standing, or NPC permission.
-- **Risk & Events**: Vehicle-specific random event tables (storms, breakdowns, stowaways, bandits).
-- **Combat**: Optional combat-on-vehicle (chases, boarding actions, ramming, disabling).
-- **Persistence**: Vehicle instances persist in saves and are returned to their last known location.
-- **Prompt Context**: Prompts include available vehicles, their capabilities, and travel constraints.
+## Current Limits
 
-## Vehicle Profile (Proposed Data Shape)
+These older ideas are not current behavior:
 
-- `VehicleProfile`
-  - `id`, `name`, `type` (`item`, `scenery`, `npc`, `location`, `region`)
-  - `speedMultiplier`, `timeCostModifier`
-  - `cargoSlots`, `passengerSlots`
-  - `safetyRating`, `stealthRating`, `reliabilityRating`
-  - `fuelType`, `fuelCapacity`, `fuelBurnRate`
-  - `accessRules` (skills, items, reputation, permissions)
-  - `allowedTerrain` / `blockedTerrain`
-  - `requiresPilot`, `crewSize`, `minSkill`
-  - `tags` (airship, caravan, subterranean, aquatic, arcane)
+- A universal `VehicleProfile` stat block shared by items, scenery, NPCs, locations, and regions.
+- A separate `VehicleInstance` entity with durability, fuel, owner, cargo, or maintenance state.
+- Vehicle choice as a general travel modifier for speed, safety, stealth, risk, or encounter odds.
+- Fuel, stamina, charge, repair, breakdowns, or vehicle wear.
+- Passenger/cargo capacity rules.
+- NPC transport-service schedules, fares, permissions, or route timetables.
+- Vehicle combat, chases, ramming, boarding actions, or disabling rules.
+- Vehicle ownership, theft, registration, keys, tickets, or faction permits.
+- UI for selecting among multiple available vehicles for ordinary travel.
 
-## Items as Vehicles
+Future work should build on `VehicleInfo` and existing directed exits instead of adding a parallel travel graph.
 
-### Feature Ideas
+## Original Goals Worth Preserving
 
-1. **Mount Items** — Saddles or harnesses that turn a creature into a rideable mount.
-2. **Foldable Vehicles** — Pocket skiffs, collapsible gliders, instant bicycles.
-3. **Consumable Transit** — Single-use teleport scrolls, emergency wing tokens, smoke-ride charms.
-4. **Modular Vehicles** — Chassis + engine + upgrades; assemble a cart or glider from parts.
-5. **Cargo Carriers** — Pack frames or wagons that add inventory capacity but slow travel.
-6. **Terrain Bypass Gear** — Ice skates for frozen rivers, sand skimmers for dunes.
-7. **Summonables** — Whistles/charms that call a vehicle from storage or a stable.
-8. **Vehicle-as-Weapon** — Lance-optimized mount gear, explosive ram sleds.
-9. **Magic Anchors** — Items that spawn temporary portals or stepping-stones.
-10. **Ticket Items** — Tickets/permits for scheduled transports (trains, ferries, airships).
+- Make travel feel meaningful: speed, safety, capacity, stealth, and narrative tone can change with the vehicle.
+- Treat travel as more than teleportation by supporting routes, services, schedules, hazards, and visible trip state.
+- Keep vehicle concepts setting-agnostic: ships, trains, mounts, portals, living paths, airships, caravans, elevators, and stranger equivalents should fit.
+- Enable scenario hooks such as smuggling, escorts, convoy trouble, mobile bases, and vehicle-centered quests.
 
-### Implementation Sketch
+## Outdated Core Concepts
 
-- Add `vehicleProfile` to item definitions or as a tag in `Thing` metadata.
-- On `use`, spawn or attach a `VehicleInstance` to the player with active stats.
-- Use `VehicleInstance` durability + fuel as a stateful `StatusEffect`-like tracker.
-- Allow upgrades via crafted items that patch the vehicle profile (engine upgrades, armor).
-- Item-based vehicles can create temporary exits or apply travel modifiers for the next action.
+The original brainstorm used broader terms than the current code:
 
-## Scenery as Vehicles
+- **Vehicle Profile**: Proposed common stats such as speed, cargo/passenger capacity, safety, stealth, reliability, fuel, access rules, terrain rules, pilot requirements, and tags. Current code only has `VehicleInfo`, which is route/trip/display metadata.
+- **Vehicle Instance**: Proposed stateful entity with durability, fuel, location, owner, and cargo. Current vehicle state lives on a vehicle `Location` or `Region`.
+- **Route**: Proposed scheduled paths with stops and services. Current fixed routes are just `VehicleInfo.destinations` entries, including `pending-region:<region>` tokens for unresolved region destinations.
+- **Vehicle Mode**: Proposed narrative/rules context such as mounted, aboard ship, convoy, or portal transit. Current prompts can see `Player.currentVehicle`, but there is no general rules mode layer.
 
-### Feature Ideas
+## Original Entity Ideas
 
-1. **Ziplines and Ropeways** — One-way fast traversal across hazards.
-2. **Elevators & Lifts** — Vertical travel linking sub-level locations.
-3. **Conveyor Networks** — Industrial belts moving cargo and players.
-4. **Wind Currents** — Gliding paths that require a glider item.
-5. **River Currents** — Natural “routes” that carry rafts downstream.
-6. **Rotating Rooms** — Puzzle rooms where stepping on a platform rotates exits.
-7. **Portal Arches** — Static scenery that opens travel to other locations or regions.
-8. **Siege Towers** — Move within a battle map to reach fortifications.
-9. **Beast Trails** — Living paths (migrating grass platforms, moving mushrooms).
-10. **Gravity Lanes** — Magical rails that move anyone who steps inside.
+### Items
 
-### Implementation Sketch
+Original item-vehicle ideas included saddles, harnesses, foldable vehicles, single-use transit items, modular vehicle parts, cargo carriers, terrain-bypass gear, summon charms, vehicle weapons, magic anchors, and ticket items.
 
-- Model rideable scenery as `Thing` with `sceneryVehicleProfile` + `transportAction`.
-- When used, it triggers a `LocationExit` resolution with `isVehicle` and `vehicleType` set.
-- Allow scenery vehicles to have cooldowns, schedules, or one-way flags.
-- Use event checks to reroute or disable scenery (collapsed bridge, broken lift).
+Current project fit:
 
-## NPCs as Vehicles
+- Item or scenery records can be flagged `isVehicle`, but that is descriptive/classification metadata today.
+- A future item-driven vehicle should probably create, reveal, board, or modify a vehicle `Location`/`Region` and its tracked `LocationExit` rather than inventing an unrelated travel object.
+- Ticket, key, permit, fuel, or upgrade items would need explicit mechanics and persistence rules; they do not exist in the current vehicle layer.
 
-### Feature Ideas
+### Scenery
 
-1. **Mount NPCs** — Rideable beasts with temperament and stamina.
-2. **Carriers** — NPC porters that carry the player through dangerous zones.
-3. **Taxi Services** — Drivers, ferrymen, gondoliers, courier escorts.
-4. **Guided Tours** — NPC-led routes that reveal hidden locations.
-5. **Giant/Friendly Monster Transit** — Hitch a ride on a massive creature.
-6. **Convoy Membership** — Join NPC-led caravans for safe travel.
-7. **Smuggling** — NPCs hide you in cargo to pass guarded borders.
-8. **Kidnapping/Forced Travel** — NPCs can drag players to a location (story trigger).
-9. **Co-Pilots** — NPC crew improve speed or safety on ships/airships.
-10. **Rival Rides** — Chase scenes where NPCs ride opposing vehicles.
+Original scenery-vehicle ideas included ziplines, ropeways, lifts, conveyors, wind currents, river currents, portal arches, siege towers, living paths, and gravity lanes.
 
-### Implementation Sketch
+Current project fit:
 
-- Add `transportService` or `mountProfile` to NPC definitions.
-- Allow NPCs to expose routes (`routeId`, `schedule`, `fare`, `requirements`).
-- Tie service availability to NPC schedules and disposition.
-- Use follower/party mechanics to attach NPC drivers to a travel action.
-- Gate access via faction reputation or quest flags.
+- Fixed traversal can already be represented as normal or vehicle-marked `LocationExit` records.
+- If scenery should become an active moving vehicle, it would need to drive or attach to a vehicle `Location`/`Region` with `VehicleInfo`.
+- Cooldowns, schedules, one-way behavior beyond ordinary exit directionality, and disabled/broken transit states remain future mechanics.
 
-## Locations as Vehicles (Mobile Bases)
+### NPCs
 
-### Feature Ideas
+Original NPC-vehicle ideas included rideable beasts, porters, taxi services, ferrymen, guided tours, convoy leaders, smugglers, forced transport, co-pilots, and rival rides.
 
-1. **Airships & Ships** — Location is the deck; interiors are sub-locations.
-2. **Moving Trains** — Each car is a location; stops are locations you can disembark to.
-3. **Caravan Camps** — A mobile camp that periodically relocates on the map.
-4. **Siege Engines** — A battle platform with interior stations (pilot, gunner).
-5. **Giant Turtles** — The “town” is on the creature’s back.
-6. **Subterranean Crawlers** — Drill rigs that move between underground nodes.
-7. **Floating Fortresses** — A defensible base that travels to high-value regions.
-8. **Pocket Dungeons** — Locations that “teleport” when powered.
-9. **Astral Stations** — Dock at orbital points above regions.
-10. **Nomad Settlements** — Markets that only appear when the location arrives.
+Current project fit:
 
-### Implementation Sketch
+- NPCs do not currently expose `transportService`, `mountProfile`, schedules, fares, or crew effects.
+- Future NPC transport should likely create/use vehicle exits or vehicle locations and route access through existing party, faction, disposition, and prompt/tool systems.
+- Forced travel already has general movement/event pathways, but not NPC-specific vehicle ownership or service rules.
 
-- Treat the vehicle as a `Location` with a `mobilityProfile` (route + schedule + anchor points).
-- Update its region or map position as time advances; update exits dynamically at each stop.
-- Use `LocationExit` to represent boarding/disembarking and to gate travel at dock times.
-- Manage sub-locations as child nodes that remain “inside” the vehicle during movement.
-- Provide a “travel state” banner in prompts so narration accounts for motion.
+### Locations And Regions
 
-## Regions as Vehicles (World-Scale Motion)
+This is the part closest to current code.
 
-### Feature Ideas
+Original ideas included ships, airships, trains, caravan camps, siege engines, giant-creature settlements, crawlers, floating fortresses, pocket dungeons, astral stations, traveling islands, caravan regions, habitats, mystic planes, war fleets, storm fronts, living forests, and dimensional trainlines.
 
-1. **Traveling Island Region** — A region that drifts across the world map.
-2. **Caravan Region** — A cluster of moving locations that act as a mobile region.
-3. **Space Habitat** — Orbiting region that docks with surface regions on schedule.
-4. **Mystic Plane** — Region shifts between anchor points in the world.
-5. **Migratory Mega-Region** — Seasonal migration that opens/locks routes.
-6. **War Fleet** — Region comprised of multiple ships; travels between coastal nodes.
-7. **Storm Front Region** — A moving weather entity that redefines local travel rules.
-8. **Living Forest** — A region that “walks” and changes border exits.
-9. **Dimensional Trainline** — Region that only intersects other regions at set times.
-10. **Nomadic Empire** — Political region that changes borders as it moves.
+Current project fit:
 
-### Implementation Sketch
+- Vehicle `Location` and `Region` records are real.
+- A region vehicle can contain multiple locations, making it a good current match for trains, ships with interiors, space habitats, or mobile settlements.
+- Movement is tracked through `VehicleInfo.currentDestination`, `pendingDestination`, `ETA`, `departureTime`, `destinations`, and `vehicleExitId`, not through a separate `mobilityProfile`.
+- World-scale adjacency changes, seasonal docking windows, border changes, and moving weather regions remain design ideas.
 
-- Give `Region` a `mobilityProfile` with `route`, `anchorRegions`, and `dockWindows`.
-- When the region moves, update adjacency for all `Region` exits and map overlays.
-- Allow travel _with_ the region (stay aboard) or _to_ the region (dock/portal).
-- Use seasonal or event-driven triggers to reposition region anchors.
+## Future Design Threads
 
-## Vehicles in Systems (Extended Ideas)
+These ideas remain useful, but should be implemented as extensions of the current vehicle primitives:
 
-- **Economy & Trade**
-  - Caravans provide bulk transport and introduce trade surges at destinations.
-  - Vehicle ownership unlocks regional arbitrage loops (buy low, haul, sell high).
+- **Travel planning:** choose route, pace, vehicle use, lodging, supplies, and risk using the existing directed exit graph and `VehicleInfo` trip state.
+- **Economy and trade:** use vehicles for bulk hauling, route control, destination shortages, and arbitrage only after cargo/ownership rules exist.
+- **Quests and events:** add escort trips, repairs, fuel searches, stowaways, storms, checkpoints, and convoy trouble through scheduled events and travel-prose/event systems.
+- **Faction dynamics:** model faction-owned routes, route access, blockades, permits, and sabotage through explicit faction/quest checks.
+- **Survival and needs:** let vehicles affect exposure, rest, hunger, thirst, or shelter after those effects have concrete rules.
+- **Combat and hazards:** chases, boarding, crashes, and vehicle damage need a combat/hazard contract rather than ad hoc travel prose.
 
-- **Quests & Events**
-  - Escort missions, convoy ambushes, and rescue missions mid-journey.
-  - “Fix the engine” or “secure fuel” arcs to keep a vehicle moving.
+## Questions For Future Work
 
-- **Faction Dynamics**
-  - Factions own major routes; reputation grants access to exclusive vehicles.
-  - Sabotage or blockade routes to shift power.
-
-- **Survival & Needs**
-  - Vehicles can reduce exposure or speed up rest recovery.
-  - Hunger/thirst impact on long voyages; ration systems for ships.
-
-- **Exploration**
-  - Vehicles unlock new terrain types (ocean, sky, desert, void).
-  - “Soft-gates” exploration without hard teleportation.
-
-## Prompting & Narrative Guidance
-
-- Include **available vehicles** and their constraints in travel prompts.
-- Explicitly log all new prompts that introduce vehicle context.
-- Encourage narration that reflects the vehicle mode (e.g., swaying ship, rumbling crawler).
-
-## Incremental Implementation Plan (Suggested)
-
-1. **Add vehicle profile support to items and scenery** with minimal fields (speed, capacity, access).
-2. **Extend travel resolution** to allow vehicle selection and apply time/safety modifiers.
-3. **Introduce transport services** on NPCs with schedules and fares.
-4. **Add mobile location** support (airship/trains) with dynamic exits.
-5. **Add mobile region** support for large-scale moving hubs.
-
-## Open Questions
-
-1. How should vehicle combat interact with the existing encounter system?
-2. Should vehicle wear/tear be global or localized to a given save/player?
-3. What’s the default handling of abandoned vehicles (despawn, persistent, reclaimable)?
-4. How do we expose vehicle options in the UI without cluttering travel flows?
+1. What minimal vehicle stats are worth adding without duplicating normal exits, status effects, inventory, or scheduled events?
+2. Should item/scenery/NPC vehicles become true vehicle owners, or should they always adapt into vehicle `Location`/`Region` records?
+3. How should access rules be represented: skills, items, faction standing, quest flags, NPC disposition, or a shared requirement object?
+4. Should active journey state become its own persisted object, or can `VehicleInfo` plus scheduled events cover the needed cases?
+5. How should the UI present vehicle choices without cluttering ordinary adjacent travel?

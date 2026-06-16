@@ -1,10 +1,21 @@
 # World Inspector and Editor Brainstorm
 
-This document expands the world inspector idea from `user_experience_improvement_brainstorm.md`. It is a brainstorm, not an implementation spec. The core premise is an in-app developer/admin tool for inspecting, validating, navigating, and eventually editing the live game world without relying on ad hoc console inspection or raw save-file surgery.
+This document expands the world inspector idea from `user_experience_improvement_brainstorm.md`. It is a proposal/archive note, not an implementation spec. The core premise is an in-app developer/admin tool for inspecting, validating, navigating, and eventually editing the live game world without relying on ad hoc console inspection or raw save-file surgery.
+
+## Current project status
+
+This cohesive world inspector/editor is not implemented yet. The project does have adjacent developer/admin surfaces that should be treated as current behavior and likely building blocks:
+
+- `/debug` renders raw current-player, all-player, world-profile, and in-memory game-world JSON, plus image-generation and save/load debug controls. It is useful for raw inspection, but it is not relationship-aware and does not run world validation.
+- Story Tools on the Play page is implemented for full-history inspection/search, chat-entry edits, scene-summary edits, and mystery thread/box edits. These routes persist immediately when an active save directory is available and otherwise update runtime state for the next save.
+- Slash-command diagnostics already cover parts of the proposed validation/repair space, including `/world_outline`, `/orphaned_locations`, `/fix_exits`, `/fill_exit_travel_times`, `/short_description_check`, `/exit_backtraces`, `/scheduled`, `/locate`, `/teleport`, and `/needbars`.
+- Generic-prompt chat tools include targeted inspection/mutation helpers such as `moreInfo({ includeFullState })`, scene-summary and mystery edit tools, `teleportCharacterToLocation`, and `teleportThingToLocation`. These are explicit tools, not a browsable inspector UI.
+
+The proposal below describes a future unified inspector/editor that would make those capabilities discoverable, searchable, validated, linked, and safer to operate.
 
 ## Core pitch
 
-The game world is a graph of players, NPCs, locations, regions, exits, pending stubs, items, containers, vehicles, factions, quests, summaries, memories, weather, world time, and prompt-generated history. When something goes wrong, the hard part is often not fixing it; it is seeing exactly what state exists, which references point where, and which invariants are broken.
+The game world is a graph of players, NPCs, locations, regions, exits, pending stubs, items, containers, vehicles, factions, quests, scheduled events, scene summaries, mystery boxes/threads, memories, weather, world time, world-profile settings, and prompt-generated history. When something goes wrong, the hard part is often not fixing it; it is seeing exactly what state exists, which references point where, and which invariants are broken.
 
 A world inspector/editor would provide a structured, searchable, relationship-aware view of the current save and runtime state. Editing should come later and be guarded by validation, previews, explicit confirmation, and audit trails.
 
@@ -88,7 +99,7 @@ Show a current-save snapshot:
 - Current location and region.
 - World time and calendar.
 - Player party count.
-- Counts for players, NPCs, locations, regions, stubs, exits, things, containers, factions, quests, active prompts, image jobs.
+- Counts for players, NPCs, locations, regions, stubs, exits, things, containers, factions, quests, scheduled events, mystery boxes/threads, scene summaries, active prompts, and image jobs.
 - Validation status summary.
 - Recent errors/warnings.
 - Active vehicle trips.
@@ -109,7 +120,9 @@ Searchable list of all major entities:
 - Quests.
 - Skills.
 - Status effects.
-- Chat entries and summaries.
+- Chat entries, scene summaries, mystery boxes, and mystery threads.
+- Scheduled events.
+- World-profile settings and loaded save metadata.
 - Prompt jobs/log references where available.
 
 Filters:
@@ -292,6 +305,7 @@ Inspect:
 - Display time/date/season/holiday.
 - Region weather state.
 - Offscreen activity scheduling metadata.
+- Scheduled events and due/resolved state.
 - Vehicle ETAs.
 - Status-effect/need-bar applied-at stamps.
 
@@ -299,16 +313,18 @@ Useful validations:
 
 - Minute-canonical fields are integers.
 - Weather next-change times are valid.
+- Scheduled events reference valid region/location/actor targets where applicable.
 - Status effects have valid durations/appliedAt values.
 - Actor elapsed/last-visited stamps are coherent.
 
-### Chat, summaries, memories, and prompts
+### Chat, summaries, mysteries, memories, and prompts
 
 Inspect:
 
 - Chat entries by type.
 - Hidden entries.
 - Scene summaries.
+- Mystery boxes and mystery threads, including resolved state and box assignment.
 - Plot summary and plot expander entries.
 - NPC important memories and selection state.
 - Prompt-progress state if active.
@@ -319,6 +335,7 @@ Useful validations:
 - Chat entries have ids, locations, timestamps.
 - Hidden entries are excluded from client history when expected.
 - Summary ranges are coherent.
+- Mystery thread box ids resolve, and boxes assigned in Story Tools have at most one visible parent thread.
 - Prompt-generated state mutations have linked summaries when relevant.
 
 ## Core architecture ideas
@@ -353,11 +370,15 @@ Possible route idea:
 
 - `GET /api/world-inspector/snapshot`
 
+There is no current route with this shape. `/debug` currently renders a server-side page with raw JSON rather than a structured inspector API.
+
 ### Entity detail endpoint
 
 Possible route idea:
 
 - `GET /api/world-inspector/entities/:type/:id`
+
+There is no current entity-detail endpoint with this path. Existing routes expose domain-specific details, and Story Tools has specialized endpoints for scene summaries and mystery records.
 
 Returns:
 
@@ -374,6 +395,8 @@ Possible route idea:
 
 - `POST /api/world-inspector/validate`
 
+This would be new. Existing validation is scattered across constructors, save/load hydration, API route validation, config/defs validation, event handling, and slash-command diagnostics.
+
 Supports:
 
 - Whole-world validation.
@@ -385,6 +408,8 @@ Supports:
 Possible route idea:
 
 - `POST /api/world-inspector/actions/:actionName`
+
+This would be new. Current repair/edit operations live in slash commands, domain API routes, Story Tools routes, and generic-prompt chat tools.
 
 Rules:
 
@@ -542,7 +567,13 @@ Raw JSON diff can be an advanced expansion.
 
 ### `/debug`
 
-The world inspector could start as a richer `/debug` page or a new debug subpage. If it grows into an editor, a dedicated route may be cleaner.
+The existing `/debug` page already shows raw current-player/all-player/world-profile data, in-memory locations/exits/regions, image-generation controls, and save/load controls. A world inspector could start as a richer `/debug` subpage, but a dedicated route would likely be cleaner once search, backlinks, validation, and editor actions are added.
+
+The key upgrade over `/debug` would be structured resource views rather than broad JSON dumps.
+
+### Story Tools
+
+Story Tools is current behavior for full-history inspection/search plus scene-summary and mystery-thread/box editing. The world inspector should link to these records instead of duplicating their forms unless it needs cross-entity relationships, validation findings, or transaction previews.
 
 ### Existing edit modals
 
@@ -579,7 +610,7 @@ Useful first repair workflows:
 - Find missing travel times.
 - Find missing short descriptions.
 
-Existing slash commands like `/orphaned_locations`, `/fix_exits`, `/fill_exit_travel_times`, and `/short_description_check` suggest good early inspector panels.
+Existing slash commands like `/world_outline`, `/orphaned_locations`, `/fix_exits`, `/fill_exit_travel_times`, `/short_description_check`, `/exit_backtraces`, `/scheduled`, and `/vehicle_status` suggest good early inspector panels. The inspector should initially surface their diagnostic logic rather than inventing parallel checks.
 
 ## Testing ideas
 
@@ -688,7 +719,7 @@ Cons:
 
 ## Strong first implementation candidate
 
-The strongest first feature would likely be a read-only inspector plus validation dashboard:
+The strongest first new feature would likely be a read-only inspector plus validation dashboard:
 
 - Route under `/debug` or a dedicated `/world-inspector`.
 - Resource list for players, NPCs, locations, regions, exits, things, containers, factions, quests, and vehicles.
@@ -697,7 +728,7 @@ The strongest first feature would likely be a read-only inspector plus validatio
 - Raw JSON expansion.
 - No mutations.
 
-This gives immediate debugging value while avoiding the safety risks of editing.
+This would build on the existing `/debug`, Story Tools, and slash-command surfaces while avoiding the safety risks of editing.
 
 ## Open questions for a future spec
 
@@ -711,4 +742,3 @@ This gives immediate debugging value while avoiding the safety risks of editing.
 8. How much hidden story/prompt data should be visible by default?
 9. Should generated repair actions be possible, or only hand-coded actions?
 10. How should inspector edits notify open chat/map/settings tabs to refresh?
-

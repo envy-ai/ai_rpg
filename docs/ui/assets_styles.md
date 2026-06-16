@@ -8,13 +8,13 @@
   - Shared app-header theme tokens live here, including the header surface, border, hover/action/active/accent colors, focus ring, muted text, control height/radius, and compact spacing.
 - `public/css/main.scss`
   - Base layout and the bulk of component styling for the chat UI.
-  - The shared `.app-header` uses SCSS placeholder inheritance (`%app-header-control-base`, `%app-header-control-interactive`, `%app-header-link-surface`, `%app-header-action-surface`, `%app-header-accent-surface`) plus CSS custom properties on `.app-header` so future themes can override colors without rewriting component selectors. Header controls are namespaced and do not depend on generic `.btn` styles.
-  - The app header renders a dark glass band with a crossed-swords brand crest, primary nav labels `Play`, `New Game`, `Worlds`, `Mods`, `Lorebooks`, `System`, a native `Tools` disclosure, and chat-only `Save` / `Load` actions. Tablet-width viewports move nav to a horizontally scrollable second row; phone-width viewports switch nav to a wrapping flex layout and render the open Tools menu as an embedded two-column panel so it stays inside the viewport.
+  - The shared `.app-header` uses SCSS placeholder inheritance (`%app-header-control-base`, `%app-header-control-interactive`, `%app-header-link-surface`, `%app-header-action-surface`, `%app-header-accent-surface`) plus CSS custom properties on `.app-header` for theme color overrides without rewriting component selectors. Header controls are namespaced and do not depend on generic `.btn` styles.
+  - The app header renders a dark glass band with a crossed-swords SVG brand mark, primary nav labels `Play`, `New Game`, `Worlds`, `Mods`, `Lorebooks`, `System`, a native `Tools` disclosure, and chat-only `Save` / `Load` actions. Tablet-width viewports move nav to a horizontally scrollable second row; phone-width viewports switch nav to a wrapping flex layout and render the open Tools menu as an embedded panel inside the viewport.
   - The chat tab bar uses icon-only `.tab-button` controls with shared `.tab-button__icon` sizing, transparent button chrome, and a flush `.tab-bar` layout with no gap or bottom margin plus a subtle inset shadow.
   - The Favorites tab uses `.favorites-panel` as a dark rounded content box matching the Factions tab detail-panel treatment: `18px` radius, translucent dark background, subtle white border, internal padding, and a soft dark shadow. Favorite cards include `.favorite-location-card__travel-time` as a compact route-time line between the region metadata and description.
   - The map fast-travel action modal styles use `.map-fast-travel-confirm-modal`, `.map-fast-travel-summary`, and `.map-fast-travel-action-text`; Region Map, World Map, and Favorites player travel use that modal before the prompt-backed fast-travel flow continues, while character-menu story-tool teleports bypass it.
   - Live skill/attack check chat bubbles use `.check-results-*` and `.check-result-*` classes for grouped rows, collapsed `<details>` summaries, status/error/cache-hit borders, and expanded detail bodies that reuse the existing skill/attack breakdown markup.
-  - The play-page spinner/status feedback uses `.chat-spinner-status-bar` between the prompt-progress dock and chat input. It is hidden by default, switches to `.is-visible` for flex layout, uses a small `.chat-spinner-status-bar__spinner`, italic text, and `pointer-events: none` so it does not block chat or sidebar interaction. Request-scoped chat progress text is routed into this same strip instead of using temporary loading bubbles.
+  - The play-page spinner/status feedback uses `.chat-spinner-status-bar` between the prompt-progress dock and chat input. It is hidden by default, switches to `.is-visible` for flex layout, uses a small `.chat-spinner-status-bar__spinner`, italic text, and `pointer-events: none` so it does not block chat or sidebar interaction. Request-scoped chat progress text is rendered in this same strip.
   - The one-line prompt-progress tracker places tightly spaced eye/cancel/retry controls before the prompt name, keeps those white SVG icons fully bright with a slight white glow on hover/active, gives the prompt name a fixed 60% desktop allocation with medium-bold weight and ellipsis overflow, appends `(and N more)` when multiple prompts are running, and relaxes the label width on mobile.
   - Prompt-progress viewer windows are modeless `.prompt-progress-viewer` floating dialogs with `pointer-events: auto`, no backdrop, draggable headers, native resize, and stacked auto-anchored offsets so opening multiple prompt snapshots does not force the rest of the interface inert.
   - The player-input request panel uses `.player-input-request-panel.is-confirmation` when a destructive chat tool asks for confirmation; that mode hides the answer label and textarea while keeping the same draggable modeless panel styling and server-supplied confirm/cancel buttons.
@@ -23,19 +23,22 @@
   - The Adventure-tab `.chat-sidebar` outer panel also keeps only the bottom-right corner rounded.
   - Desktop Adventure layout exposes slim `.adventure-resize-handle` separators for the location and player/party columns. They use `col-resize`, highlight on hover/focus/drag, disable text selection while dragging, and are hidden in the stacked narrow layout.
   - The nested `.chat-wrapper` sets `min-width: 0` so wide chat descendants do not make the middle chat column exceed the width left by the resized side panels.
-  - On narrow/mobile layouts, the Adventure stack now clears the desktop fixed-height/inner-scroll chain (`.main-content` / `.tab-panels` / `#tab-adventure` / `.adventure-content` / `.chat-wrapper`) so `.location-block > .container` and `.chat-sidebar` grow with content instead of keeping redundant inner vertical scrollbars.
+  - On narrow/mobile layouts, the Adventure stack clears the desktop fixed-height/inner-scroll chain (`.main-content` / `.tab-panels` / `#tab-adventure` / `.adventure-content` / `.chat-wrapper`) so `.location-block > .container` and `.chat-sidebar` grow with content.
   - The chat sidebar Abilities picker uses `.player-abilities-modal`, `.player-abilities-grid`, `.player-abilities-card`, and `.player-abilities-empty` hooks. It inherits the shared modal dialog surface and `.npc-view-ability-card` styling from the View modal, but the scoped player-abilities rules do not add backdrop blur.
   - The chat sidebar Skills picker uses `.player-skills-modal`, `.player-skills-grid`, `.player-skills-card`, and `.player-skills-empty` hooks. It inherits the shared modal dialog surface and `.skill-card` rank-card styling from the View modal, but the scoped player-skills rules do not add backdrop blur.
-  - Compact thing-list popovers now promote their owning `.thing-list-panel` with a temporary `.thing-list-panel--popover-open` stacking class so location item/scenery text cannot paint above an open filter or sort popup.
-  - Open item context menus use the `.entity-context-menu--floating` body-level positioning class while open, so Scenery menus can paint above the Things section and modal inventory/crafting menus are not clipped by scroll containers; the floating menu width shrinks to the widest visible option instead of keeping the legacy minimum width.
+  - Compact thing-list popovers promote their owning `.thing-list-panel` with a temporary `.thing-list-panel--popover-open` stacking class so location item/scenery text cannot paint above an open filter or sort popup.
+  - Open item context menus use the `.entity-context-menu--floating` body-level positioning class while open, so Scenery menus can paint above the Things section and modal inventory/crafting menus are not clipped by scroll containers; the floating menu width shrinks to the widest visible option.
   - Thing-list icon surfaces opt out of native mobile long-press image/callout behavior (`-webkit-touch-callout`, image drag, and selection); modal drag-wired icons also use `touch-action: none` so custom pointer/touch movement-threshold dragging is not canceled by native gestures.
-  - The thing-container inventory modal uses `.thing-container-modal__*` classes for a wide two-column layout, compact visible-item bulk buttons, dashed drag/drop zones, breadcrumb buttons, touch-drag ghost styling, generated-content loading spinner sizing that reuses the barter modal loading pattern, and a mobile vertical half-and-half split instead of a free-height one-column stack.
+  - The thing-container inventory modal uses `.thing-container-modal__*` classes for a wide two-column layout, compact visible-item bulk buttons, dashed drag/drop zones, breadcrumb buttons, touch-drag ghost styling, generated-content loading spinner sizing that reuses the barter modal loading pattern, and a mobile vertical half-and-half split.
   - Character view ability cards use `.npc-view-ability-*` classes and visually mirror the player level-up ability selector cards without inheriting the selector's clickable/selected behavior. Shared `.ability-type-*` classes color-code active/passive/triggered ability names, uppercase type labels, and NPC editor ability type controls.
   - Compiled output: `public/css/main.css`.
 - `public/css/settings.scss`
   - World Profiles page layout and field styling, including the structured Calendar tab editor rows, sub-tabs, dynamic select stale-state styling, and compact responsive layouts.
   - The modules mod's `slotTypes` setting uses `.modules-slot-types-editor` row controls in the Worlds editor for add/remove/edit behavior while persisting as the normal namespaced `modSettings.modules.slotTypes` array.
   - Compiled output: `public/css/settings.css`.
+- `public/css/config.scss`
+  - System Configuration and Mods page tab layout, config content spacing, and YAML override textarea sizing.
+  - Compiled output: `public/css/config.css`.
 - `mods/modules/public/css/modules.scss`
   - Styles installed-module tooltip/lightbox rows, including the small module icon shown to the left of each module name, plus module slot-type editor rows.
   - Compiled output: `mods/modules/public/css/modules.css`.
@@ -50,6 +53,8 @@
 - `mods/modules/assets/module.svg` is the bundled installable-module badge icon and tooltip fallback thumbnail.
 - `mods/modules/assets/modular.svg` is the bundled modular-item badge icon for items with module slots.
 - `public/icons/` stores static UI icon assets (for example, `sword-shield.svg`).
+- `assets/fluentui-emoji/crossed_swords_color_classic.svg` is the favicon and app-header brand mark.
+- Single-color SVG icon assets use `#ffffff` for their explicit fill/stroke color. Multicolor emoji/logo SVGs keep their original palette and gradient definitions.
 - `assets/material-icons/app-nav-icons/` stores mask-friendly app-header icons for New Game, System, Tools, Save, Load, Debug, and Player Stats. App-header masks also reuse existing game-tab icons for Play, Worlds, and Lorebooks, and `assets/material-icons/misc/puzzle.svg` for Mods.
 - `assets/material-icons/misc/compress.svg` and `assets/material-icons/misc/expand.svg` are used by the docked prompt-progress tracker mode buttons and rendered as white right-aligned controls in the one-line state. `assets/material-icons/misc/view_prompt.svg`, `restart.svg`, and `cancel.svg` are used by the prompt row action buttons, rendered as white icons on transparent borderless buttons. `star.svg` and `star_solid.svg` provide matching outlined/solid star variants, including the borderless transparent current-location favorite toggle inset `4px` from the image corner.
 - `public/js/image-manager.js` coordinates image job requests and updates.
@@ -62,11 +67,11 @@
 
 ## Vendor libraries (public/vendor)
 Loaded on the chat page:
-- `cytoscape.min.js` + layout plugins (`cose-base`, `fcose`, `euler`) for maps.
+- `cytoscape.min.js` plus `layout-base.js`, `cose-base.js`, `cytoscape-fcose.js`, `cytoscape-euler.js`, and `public/js/cytoscape-convex-hull.js` for Region and World maps.
 - `json-viewer.js`, vendored from `@andypf/json-viewer`, registers the `andypf-json-viewer` web component used for tool-call debug JSON sections. Result/Error `content` fields are pulled into adjacent `.tool-call-debug-content-field` preformatted blocks so escaped XML remains readable while the surrounding JSON stays inspectable.
 - `markdown-it.min.js` for chat markdown rendering.
 - `nunjucks.js` for client-side templating.
-- `vaadin.js` (loaded for UI assets; check usage before removal).
+- `fitty.min.js` and `vaadin.js` are present in `public/vendor/` but are not included by the checked templates.
 
 ## Notes
 - The chat UI relies on SCSS variables and mixins in `_globals.scss`.
@@ -79,24 +84,24 @@ Loaded on the chat page:
 - Markdown code fences / preformatted blocks in chat messages (`.message .message-content pre`)
   use `white-space: pre-wrap`, `overflow-wrap: anywhere`, and `word-break: break-word` so
   long lines wrap inside the message column instead of forcing horizontal overflow.
-- New-exit map pills use `.turn-diff-drawer__new-exit-pill` inside the `What changed` drawer and
+- New-exit map pills use `.turn-diff-drawer__new-exit-pill` inside the turn state-diff drawer and
   `.event-summary-new-exit-pill` in standalone/initial event-summary rows. Both share the compact
   rounded cyan pill treatment and keyboard-visible focus ring.
 - Item tooltip styling includes stacked tooltip cards (`.tooltip-thing-stack*`) so hovering an
   equippable item can show currently equipped compatible-slot items beneath the primary card.
-- The shared image lightbox now has an optional two-pane thing-view mode driven by
+- The shared image lightbox supports an optional two-pane thing-view mode driven by
   `.image-lightbox--details`, `.image-lightbox__media`, and `.image-lightbox__details`,
-  reusing the existing tooltip-card markup inside the right-hand pane. Desktop keeps the image
+  reusing tooltip-card markup inside the right-hand pane. Desktop keeps the image
   in a left column capped to `67vw` and vertically centers the tooltip pane without stretching it
   full-height, while mobile switches the panes vertical and makes the overall viewer scrollable.
   Clicking either pane or the surrounding backdrop dismisses the lightbox.
 - Shared theming primitives for entity cards/menus live in `public/css/main.scss`:
   `.entity-card`, `.entity-icon`, `.entity-image`, `.entity-name`,
   `.entity-context-menu-button`, `.entity-context-menu`, `.entity-context-menu-item`.
-  Legacy classes (for example `.location-entity-*`, `.inventory-*`, `.npc-card-menu*`)
-  are still emitted in templates/scripts for compatibility, but unified styles bind to
+  Compatibility classes (for example `.location-entity-*`, `.inventory-*`, `.npc-card-menu*`)
+  are emitted in templates/scripts, while unified styles bind to
   the shared `entity-*` classes.
-- Shared portrait health bars now include a `.health-bar-readout` overlay positioned directly
+- Shared portrait health bars include a `.health-bar-readout` overlay positioned directly
   above the bar, using white text with a black outline plus a subtle drop shadow; size is tuned
   per bar variant through CSS custom properties on `.health-bar`, `.chat-health-bar`, and
   `.npc-health-bar`. Readout text displays current/max health as upward-rounded integers even
@@ -134,21 +139,21 @@ Loaded on the chat page:
 - Built-in container badges can render `.entity-image-badge__lock` when the Thing has
   `requiresCheckToOpen`; the lock uses `assets/material-icons/misc/lock.svg` as a CSS mask,
   `#ff4444` fill, and `62.5%` badge-relative sizing in the badge's upper-right corner.
-- Inventory, location item/scenery sections, and the crafting inventory now share the same
+- Thing-list panels in NPC inventory, location item/scenery sections, crafting, module workbench, and container inventory share the
   inventory-style thing-card DOM builder in `views/index.njk`, with shared control/popup
   classes in `public/css/main.scss` such as `.thing-list-panel`, `.thing-list-panel__header`,
   `.thing-list-panel__controls`, `.thing-list-filters-shell`, `.thing-list-sort-shell`,
   `.thing-list-view-shell`, `.thing-list-filters-row`, `.thing-list-panel__icon-toggle`,
   `.thing-list-sort-option`, and `.thing-list-view-option`. Narrow panels switch to a
   popover-style filter shell anchored to the shared icon-only filter toggle button, while
-  sort and view each stay in their own popup. The shared control icons now come from
+  sort and view each stay in their own popup. The shared control icons come from
   `assets/material-icons/inventory-view-icons/filter.svg`,
   `assets/material-icons/inventory-view-icons/sort.svg`,
   `assets/material-icons/inventory-view-icons/view.svg`,
   plus the per-sort glyphs (including `sort_chronological.svg` and `sort_quantity.svg`)
   and the `cards.svg` / `table.svg` / `grid.svg` / `grid_small.svg` view icons in that same folder. The repeated toggle, sort-shell,
-  and view-shell markup now comes from the
-  shared `views/_includes/thing-list-filter-toggle.njk` macros so all four panels stay in sync.
+  and view-shell markup comes from the
+  shared `views/_includes/thing-list-filter-toggle.njk` macros so panels stay in sync.
   Size-related tuning for shared item/scenery imagery is centralized in the
   `// Shared thing-view sizing tokens` block near the top of `public/css/main.scss`,
   covering the classic-card container, base icon size, grid/tile sizing, table image cell,
@@ -160,9 +165,9 @@ Loaded on the chat page:
   `.thing-table-row__icon`,
   `.thing-action-icon-list`, `.thing-grid-tile`, `.thing-grid-tile__icon`,
   `.thing-grid-equipment-pill`, and `.thing-grid-equipment-feedback`; grid modes use a `1px` tile gap and a `2px`
-  rarity-colored border on the image/icon itself. Inventory-style grid views that already allow equipment actions render the slot label as a top-center pill, with a solid equipped state, an outlined available state, and centered `Equipped`/`Unequipped` fade feedback after toggles. `Small Grid` now overrides those shared
+  rarity-colored border on the image/icon itself. Inventory-style grid views that allow equipment actions render the slot label as a top-center pill, with a solid equipped state, an outlined available state, and centered `Equipped`/`Unequipped` fade feedback after toggles. `Small Grid` overrides those shared
   sizing tokens to `0.7x` with SCSS math so the tile, image, count badge, overlay badge bar,
-  grid equipment pill, and context-menu button all shrink together without transform scaling. Table mode now uses a real
+  grid equipment pill, and context-menu button all shrink together without transform scaling. Table mode uses a real
   HTML table (`<table>/<tbody>/<tr>/<td>`) with collapsed borders; its image cell and row height use
   a shared `0.5x` scale derived from the base icon size, the title cell is explicitly left-aligned and vertically centered, and its `•••` context-menu button/menu are absolutely anchored from `.thing-table-row__content` instead of the utilities cell.
   Inventory-style tables additionally opt into `.thing-table__head` / `.thing-table__head-cell`
@@ -172,7 +177,7 @@ Loaded on the chat page:
   `.thing-table-row__value`, `.thing-table-row__equipment`, `.thing-table-row__equipment-inner`,
   and `.thing-table-row__equipment-label` cell styles so `Level`, `Value`, and `Equipment Slot`
   render as dedicated columns, with the equipment cell hosting the `Equip` / `Unequip` button.
-  Location item/scenery tables intentionally keep the slimmer three-column variant. The shared default view is `Grid`;
+  Location item/scenery tables use the slimmer three-column variant. The shared default view is `Grid`;
   row and cell borders are styled as collapsed `2px` lines with zero spacing. The shared list container also gets semantic mode classes
   for downstream styling hooks: `.view-classic-mode`, `.view-table-mode`,
   `.view-grid-mode`, `.view-grid-mode-large`, and `.view-grid-mode-small`.
@@ -183,7 +188,7 @@ Loaded on the chat page:
   The crafting inventory grid also carries the same `8px` top separation below filters as the
   player inventory grid for consistent spacing after the radio filter row.
 - NPC memories/goals editors share `npc-list-editor-*` base classes for modal layout,
-  row controls, and actions; legacy `.npc-memories-*`/`.npc-goals-*` classes remain on
+  row controls, and actions; compatibility `.npc-memories-*`/`.npc-goals-*` classes remain on
   markup for compatibility.
 - Long names are handled client-side before render: when names exceed 40 characters,
   the UI wraps the name in a `<div class="entity-name-long">` so sizing/line-height is

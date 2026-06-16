@@ -1,5 +1,7 @@
 # Mod UI Hooks Design
 
+> Archive status: this is a design proposal, not a current modding API reference. Verified against current code and focused docs on 2026-06-16: the first-class `ModUI` manifest/runtime described below is not implemented.
+
 ## Goal
 
 Add a first-class UI extension system for enabled mods. Mods should be able to add top-level UI pages, navigation entries, panels, actions, and limited alterations to existing UI without editing core templates directly.
@@ -8,15 +10,17 @@ The supported path should be registry-driven and tied into the existing mod load
 
 ## Current Context
 
-The existing mod system already supports runtime hooks through `ModExtensionRegistry`, including chat tools, XML events, prompt context contributors, actor status contributors, world-profile setting tabs and fields, entity fields, and startup validators.
+The current mod system supports runtime hooks through `ModExtensionRegistry`, including chat tools, XML events, base-context contributors, player-action prompt steps, generation prompt instructions, actor status contributors, attribute/status/target-status contributors, inventory sync contributors, world-profile setting tabs and fields, entity fields, Thing image badges, Thing context actions, and startup validators.
 
-The existing loader also serves each enabled mod's `public/` directory and injects mod scripts and styles on the play page. That makes client-side mod code possible, but it does not provide a stable contract for where UI code should mount, how dynamic UI rerenders should notify mods, or how mods should add navigation and pages.
+The current loader serves each enabled mod's `public/` directory at `/mods/<mod>/...`, serves `assets/` at `/mods/<mod>/assets/...`, and injects mod scripts and styles on the play page through `ModLoader.getModClientScripts()` and `ModLoader.getModClientStyles()`. That makes client-side mod code possible on the play page, but it does not provide a stable contract for where arbitrary UI code should mount, how dynamic UI rerenders should notify mods, or how mods should add navigation and pages.
 
 World-profile settings already have a mod tab and field model. The UI hook system should follow that pattern rather than creating a parallel mod extension registry.
 
+For implemented behavior, use `docs/modding.md`, `docs/modding_hooks.md`, `docs/classes/ModExtensionRegistry.md`, `docs/classes/ModLoader.md`, and `docs/ui/pages.md`. This archive remains useful as design intent if a first-class mod UI extension layer is revived.
+
 ## Design Summary
 
-Use a hybrid model:
+The proposal was a hybrid model:
 
 - Server-side UI declarations are registered through `ModExtensionRegistry`.
 - A browser-side `ModUI` runtime reads a normalized active-mod UI manifest.
@@ -28,13 +32,15 @@ This gives mods a supported UI surface while keeping the core app in control of 
 
 ## Server-Side Hooks
 
-Extend `ModExtensionRegistry` with these hook types:
+The proposed extension to `ModExtensionRegistry` was:
 
 - `registerUiPage({ id, label, route, title, description, icon, order, script, style })`
 - `registerNavigationItem({ id, label, href, icon, order, section })`
 - `registerUiPanel({ id, slot, label, order, clientModule, renderMode })`
 - `registerUiAction({ id, surface, label, icon, order, clientHandler })`
 - `registerUiOverride({ id, target, operation, value })`
+
+These methods do not exist in current code. `ModLoader.createModScope(...)` also does not expose scoped UI registration helpers, and there is no current `getUiManifest()` or `getUiPage()` accessor.
 
 All registrations are namespaced by the registering mod and normalized into a UI manifest. Duplicate IDs, invalid IDs, invalid routes, unknown slots, unknown surfaces, and unsupported override operations fail loudly at registration or startup validation time.
 
@@ -46,11 +52,13 @@ Registered mod pages default to namespaced routes under:
 
 Mods may register navigation items pointing at those pages or at mod-owned API-backed pages if they intentionally define their own route. The default mod page route should render a shared mod page template that loads the active UI manifest, the `ModUI` runtime, and the enabled mod's client assets.
 
+Current code only has mod-owned API route registration through `scope.registerModRoute(...)`, which registers routes under `/api/mods/<mod>/...`. It does not provide default mod UI pages under `/mods/:modName/ui/:pageId`.
+
 ## Client Runtime
 
-Add `public/js/mod-ui.js` and load it before enabled mod scripts on every top-level page.
+The proposed client runtime was `public/js/mod-ui.js`, loaded before enabled mod scripts on every top-level page. There is no current `public/js/mod-ui.js`, `window.__AIRPG_MOD_UI__`, or `window.ModUI`.
 
-The runtime reads:
+The proposed runtime reads:
 
 ```js
 window.__AIRPG_MOD_UI__
@@ -136,14 +144,14 @@ Core template replacement, arbitrary HTML replacement, and monkeypatching core r
 
 ## Asset Loading
 
-Move mod client asset injection into a shared Nunjucks include so all top-level pages can load:
+The proposal moved mod client asset injection into a shared Nunjucks include so all top-level pages could load:
 
 - the normalized UI manifest
 - `public/js/mod-ui.js`
 - enabled mod styles
 - enabled mod scripts
 
-The play page already injects mod assets; this should become shared behavior for `/`, `/settings`, `/mods`, `/config`, `/new-game`, `/lorebooks`, `/debug`, and registered mod UI pages.
+Current behavior is narrower: `server.js` passes `modStyles` and `modScripts` to the play page (`views/index.njk`), and that template loads mod CSS and JS there. Other top-level pages do not currently receive a shared mod UI manifest/runtime include.
 
 Mod styles should load after core styles. Mod scripts should load after `mod-ui.js` and before page inline code only when the page expects mod handlers during initial inline setup; otherwise they can load at the end of the body in deterministic mod order.
 
@@ -172,13 +180,15 @@ mod-<modName>-
 
 ## Bundled Mod Usage
 
-The implants mod should use the UI hooks as an integration example:
+The current bundled implants and spells mods do not register `ModUI` panels or actions. They surface behavior through implemented hooks such as actor status contributors, world-profile setting tabs/fields, chat tools, XML events, Thing image badges, Thing context actions, base-context contributors, and startup validators.
+
+If this UI hook design is revived, the implants mod should use it as an integration example:
 
 - Register a profile panel in `play.character.profile` that shows installed implants under the configured label.
 - Register an NPC detail panel or action only if it is useful for inspecting NPC implants.
 - Do not add inventory equip or unequip controls for implant items. That remains intentionally prose/tool driven.
 
-The spells mod can use the UI hooks as a second integration example:
+The spells mod can use the revived UI hooks as a second integration example:
 
 - Register a spell panel in `play.character.profile`.
 - Show mana and known spells where available.
@@ -186,9 +196,9 @@ The spells mod can use the UI hooks as a second integration example:
 
 These examples should prove that the hook system supports more than one domain and is not tailored to implants.
 
-## Testing
+## Testing If Revived
 
-Add focused tests for:
+Add focused tests for a future implementation:
 
 - Registry validation for pages, nav items, panels, actions, and overrides.
 - Duplicate contribution failures.
@@ -202,9 +212,9 @@ Add focused tests for:
 
 Run syntax checks for altered JavaScript files. If SCSS is touched, compile the corresponding CSS output before finishing.
 
-## Documentation
+## Documentation If Revived
 
-Update these docs during implementation:
+Update these docs only after the runtime and registry APIs exist in code:
 
 - `docs/modding.md`
 - `docs/modding_hooks.md`
@@ -214,9 +224,9 @@ Update these docs during implementation:
 - `docs/ui/assets_styles.md`
 - `docs/README.md`
 
-Add examples showing a minimal mod page, a profile panel, and an entity action.
+Add examples showing a minimal mod page, a profile panel, and an entity action once those examples are tested current behavior.
 
-## Acceptance Criteria
+## Acceptance Criteria For A Future Implementation
 
 - An enabled mod can register a top-level UI page and navigation entry without adding an Express route manually.
 - An enabled mod can mount a panel into a named slot on an existing page.

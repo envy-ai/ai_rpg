@@ -1,101 +1,190 @@
 # Setting Creation Studio Brainstorm
 
-This document expands the setting creation studio idea from `user_experience_improvement_brainstorm.md`. It is a brainstorm, not an implementation spec. The core premise is a guided, previewable, validation-heavy authoring experience for settings that brings together the current settings manager, new-game defaults, AI fill-missing flows, factions, skills, prompt guidance, image style, calendars, and startup conditions.
+This archive/design note expands the setting creation studio idea from
+`user_experience_improvement_brainstorm.md`. It is not an implementation spec.
+It records the rationale for a guided, previewable, validation-heavy authoring
+experience for world profiles while reflecting the current World Profiles and
+New Game implementation.
 
-## Current setup
+The current project already implements many pieces that an eventual studio would
+use: reusable `SettingInfo` world profiles, the `/settings` World Profiles
+editor, AI fill-missing flows, setting-local faction drafts, structured calendar
+drafts, per-setting unified tonal scales, custom slop words, image prompt
+prefixes, and New Game defaults. The remaining studio idea is mainly about
+workflow, critique, validation, previews, staged AI edits, and a clearer handoff
+from concept to playable game.
 
-The current setting creation flow is split across two major surfaces.
+## Current Foundation
 
-### `/settings`
+### World Profiles UI
 
-The settings manager already supports:
+`/settings` is the current authoring surface. It is a master/detail editor with
+a world-profile library on the left and an editor on the right. The library
+supports search, sort, and selection actions such as edit, apply, clone, and
+delete. The editor has a sticky action bar for clear, create/update, and
+auto-fill blank fields.
 
-- A master-detail library/editor layout.
-- Search and sort by setting metadata.
-- Selection actions: edit, apply, clone, delete.
-- Tabbed editor sections: Basics, New Game Defaults, Factions, Character Options, Prompt Guidance, Image Prefixes.
-- Basic identity fields such as name, description, theme, genre, tone, difficulty, starting location type, classes, and races.
-- New-game defaults such as player defaults, starting currency, starting location generation instructions, default skills, faction count, and faction drafts.
-- Settings-local faction editor with assets, relations, reputation tiers, pre-generation, and AI fill-missing.
-- Prompt guidance fields such as writing style, character generation instructions, base-context preamble, and custom slop words.
+Current editor tabs are:
+
+- Basics.
+- New Game Defaults.
+- Tone Scale.
+- Factions.
+- Character Options.
+- Prompt Guidance.
+- Optional mod-owned tabs.
+- Calendar.
+- Image Prefixes.
+
+The editor persists successful creates/updates through the settings API and
+applies the saved profile as the active world profile.
+
+### SettingInfo Model
+
+`SettingInfo` is the current world-profile model. It stores:
+
+- Identity and world description fields.
+- Currency, prompt guidance, writing style, and base-context preamble fields.
 - Image prompt prefixes for characters, locations, items, and scenery.
-- AI fill-missing for settings, with optional user instructions and optional image input.
-- Persistence, clone, rename-as-new-id, apply, and delete behavior.
+- New-game defaults such as player defaults, starting level, starting currency,
+  default starting-location instructions, available classes, available races,
+  and `defaultExistingSkills`.
+- Hide/perception selectors for current stealth-related mechanics.
+- Setting-local faction draft count and faction draft data.
+- Structured `calendarDefinition` drafts.
+- Per-setting `unifiedTonalScale` selections.
+- `customSlopWords`.
+- Namespaced `modSettings`.
 
-`config.yaml` also currently contains an ad hoc unified tonal scale in prompt instructions. It uses notation like `I#-G#-S#-F#` for Idealism, Grit, Seriousness, and Focus. That scale has worked well enough that it should become first-class setting data rather than remaining buried in global prompt text.
+The active setting is used at runtime, saved under `setting.json`, and restored
+when a save is loaded.
 
-### `/new-game`
+### Current AI Assistance
 
-The new-game page already supports:
+The current settings APIs already support useful authoring operations:
 
-- Player name, description, class, race, level, start time, starting currency, and starting location instructions.
-- Attribute and skill allocation with formula-derived pools.
-- Skills sourced from the active setting's `defaultExistingSkills`.
-- Saved new-game form configurations.
-- Default starting location instructions inherited from the active setting.
-- Generation progress events after submission.
+- `POST /api/settings/fill-missing` fills blank profile fields, accepts optional
+  user instructions, accepts optional image input, preserves user-provided
+  values, and can append setting-specific skills when requested.
+- `POST /api/settings/factions/generate` returns setting-local faction drafts.
+- `POST /api/settings/factions/fill-missing` fills one setting-local faction
+  draft with sibling drafts as valid relation targets.
+- `POST /api/settings/calendar/generate` returns a structured calendar draft.
+- `GET /api/settings/calendar/default` returns the built-in Gregorian-style
+  calendar draft.
 
-### Server/model support
+These operations are field or section helpers, not a complete guided studio.
+They should remain available even if a higher-level studio workflow is added.
 
-Current server and model support includes:
+### Current New Game Integration
 
-- `SettingInfo` fields for identity, prompt/style guidance, image prefixes, defaults, skills, factions, custom slop words, classes, and races.
-- Settings APIs for CRUD, apply, save/load, AI fill-missing, faction fill-missing, and faction pre-generation.
-- New-game APIs for form settings save/load and game generation.
-- New-game setup that uses active-setting faction defaults, default faction count, default skills, world calendar generation, starting location instructions, and player startup defaults.
+`/new-game` requires an active setting. It uses active-setting data for player
+defaults, class/race options, starting level, starting currency, starting
+location instructions, available skill definitions, faction setup, and calendar
+setup.
 
-## Core problem
+Faction setup loads active-setting `defaultFactions` first, up to the resolved
+target count. `defaultFactionCount` controls the target when set; draft count and
+config count are fallbacks. A target count of `0` disables faction setup.
 
-The current setup is powerful but field-oriented. A user has to know which fields matter, which fields feed prompts, which fields affect new-game generation, which fields are optional, and what a coherent setting should contain. AI fill-missing helps, but it is mostly a form completion operation. It does not yet feel like a guided setting design process with previews, quality checks, generation dry-runs, or a clear path from concept to playable world.
+Calendar setup uses the active setting's stored `calendarDefinition` when
+present. Without a stored calendar draft, new-game setup runs calendar generation
+and falls back to the built-in Gregorian-style calendar if generation fails. The
+New Game form also supports a start hour from `0` through `23`, with `9` as the
+default.
+
+Saved New Game form profiles remain separate from settings. This is useful
+because one world profile can support multiple protagonists and starts.
+
+### Current Unified Tonal Scale
+
+The unified tonal scale is first-class project data rather than only an
+ad hoc prompt block. Current behavior:
+
+- `defs/unified_tonal_scale.yaml` defines the shared axes.
+- `UnifiedTonalScale.js` loads and validates the definition, generates half-step
+  options, normalizes selections, and renders prompt markdown.
+- `SettingInfo.unifiedTonalScale` stores per-setting selections and optional
+  comments.
+- The World Profiles Tone Scale tab renders merged axes from the definition.
+- If any axis is selected, every axis must have a selected numeric level before
+  saving.
+- Empty selections render no tonal-scale prompt block.
+- Rendered prompt text includes the full scale definitions plus the selected
+  story notation and selected meaning table.
+- `buildSettingPromptContext(...)` exposes the rendered block as
+  `setting.unifiedTonalScalePrompt`.
+- Current prompt templates insert that block in base-context, generic prompt
+  without context, and slop-remover prompts before global extra system
+  instructions.
+
+`config.yaml` still contains legacy or profile-specific tonal text in some
+global instruction fields, but the structured setting-level path is the YAML
+definition plus `SettingInfo.unifiedTonalScale`.
+
+## Core Problem
+
+The current setup is powerful but still field-oriented. A user has to know which
+fields matter, which fields feed prompts, which fields affect new-game
+generation, which fields are optional, and what a coherent setting should
+contain. AI fill-missing helps, but it mostly completes form fields. It does not
+yet provide a guided path from concept to playable world with staged AI edits,
+quality checks, generation previews, or readiness review.
 
 The studio idea is to turn setting creation into a structured workflow:
 
 - Start with a concept.
 - Expand it into a coherent setting profile.
 - Configure play defaults and rule expectations.
-- Generate and review factions, skills, prompt guidance, image style, calendar assumptions, and starting situation.
+- Generate and review factions, skills, prompt guidance, image style, calendar
+  assumptions, and starting situation.
 - Validate coherence.
-- Preview generated outputs.
-- Save, version, apply, and start a game with confidence.
+- Preview generated outputs without mutating live world state.
+- Save, apply, and start a game with confidence.
 
 ## Goals
 
 - Make settings easier to create, understand, reuse, and improve.
 - Preserve the existing `SettingInfo` model where it already fits.
-- Unify `/settings` and `/new-game` concepts without removing either surface immediately.
+- Build on `/settings` and `/new-game` instead of replacing them prematurely.
 - Make AI assistance visible, reviewable, and field-specific.
 - Give users previews before committing to a new game.
 - Reduce broken or incoherent new-game starts.
 - Support both quick creation and expert editing.
-- Keep settings setting-agnostic, not genre-locked.
-- Provide validation that catches missing or contradictory setup before world generation.
-- Support future optional rules modules such as tactical battles, journey risk, survival, factions, or mystery clues.
+- Keep settings setting-agnostic rather than genre-locked.
+- Provide validation that catches missing or contradictory setup before world
+  generation.
+- Leave room for future optional rules modules such as tactical battles, journey
+  risk, survival, factions, trade, or mystery clues.
 
-## Non-goals
+## Non-Goals
 
 - Do not replace all freeform setting fields with rigid forms.
 - Do not require a long wizard for users who already know what they want.
-- Do not make AI-generated settings auto-apply without review.
-- Do not silently "fix" invalid settings.
+- Do not auto-apply AI-generated settings without review.
+- Do not silently fix invalid settings.
 - Do not make setting authoring depend on image generation.
-- Do not combine server config, per-game config overrides, and settings into one confusing editor.
-- Do not require every future mechanics idea to be implemented before the studio is useful.
+- Do not combine server config, per-game config overrides, and world profiles
+  into one confusing editor.
+- Do not require every future mechanics idea to exist before the studio is
+  useful.
 
-## Studio modes
+## Proposed Studio Modes
 
-### Quick start
+### Quick Start
 
 For users who want a game fast:
 
 - Enter a short concept.
-- Pick or infer genre/tone/difficulty.
+- Pick or infer genre, tone, and difficulty.
 - Let AI draft the rest.
-- Review a short summary.
-- Start a game.
+- Review a compact summary and readiness warnings.
+- Apply the setting and continue to New Game.
 
-This mode should still expose warnings before generation if major fields are missing.
+This mode should still show blocking errors and major warnings before world
+generation.
 
-### Guided studio
+### Guided Studio
 
 A step-by-step workspace:
 
@@ -103,51 +192,55 @@ A step-by-step workspace:
 2. World identity.
 3. Player options.
 4. Starting situation.
-5. Skills and abilities assumptions.
+5. Skills and ability assumptions.
 6. Factions.
 7. Prompt guidance.
-8. Universal tone scales.
+8. Tone scale.
 9. Image style.
-10. Calendar/time.
+10. Calendar and time.
 11. Rules modules.
 12. Preview and validation.
-13. Save/apply/start.
+13. Save, apply, and start.
 
 Each step can be skipped, manually edited, or AI-assisted.
 
-### Expert editor
+### Expert Editor
 
-The current field-based settings editor remains useful. Expert mode should preserve direct access to all fields and raw-ish advanced sections such as prompt preamble, image prefixes, custom slop words, and faction drafts.
+The current field-based World Profiles editor remains useful. Expert mode should
+preserve direct access to all persisted fields and advanced sections such as
+base-context preamble, image prefixes, custom slop words, mod settings, calendar
+structure, and faction drafts.
 
-### Iteration mode
+### Iteration Mode
 
 For existing settings:
 
-- Analyze a setting.
+- Analyze a profile.
 - Show coherence issues.
 - Suggest improvements.
-- Preview changed prompts/generation.
-- Save as a new version or update the current setting.
+- Preview changed prompts and generated samples.
+- Save as a variant or update the current setting.
 
-## Suggested studio sections
+## Proposed Studio Sections
 
-### 1. Concept brief
+### 1. Concept Brief
 
 Capture:
 
 - One-sentence pitch.
 - Genre and subgenres.
-- Tone.
-- Themes.
+- Tone and themes.
 - Player fantasy.
-- Expected scale: local, regional, global, cosmic, personal.
-- Conflict style: exploration, mystery, survival, political, tactical, social, horror, heroic, comedic, tragic.
+- Expected scale: personal, local, regional, global, cosmic.
+- Conflict style: exploration, mystery, survival, political, tactical, social,
+  horror, heroic, comedic, tragic.
 - Inspiration notes.
 - Hard exclusions.
 
-AI can use this as the source brief for field generation.
+AI can use this as the source brief for field generation. This is not currently
+a persisted first-class field.
 
-### 2. World identity
+### 2. World Identity
 
 Maps mostly to existing fields:
 
@@ -157,182 +250,142 @@ Maps mostly to existing fields:
 - Genre.
 - Tone.
 - Difficulty.
-- Currency name/plural.
+- Currency name and plural.
 - Currency value notes.
 - Writing style notes.
 - Base-context preamble.
 
 Potential enhancement:
 
-- Show a generated "setting card" preview that summarizes what the LLM will understand about the world.
+- Show a generated setting-card preview summarizing what prompts will understand
+  about the world.
 
-### 3. Play defaults
+### 3. Play Defaults
 
-Maps to:
+Maps to existing fields:
 
-- Default player name/description.
+- Default player name and description.
 - Player starting level.
 - Default starting currency.
 - Available classes.
 - Available races.
 - Starting location type.
-- Start-time expectations.
+- Start-time expectations through the New Game form.
 
-Potential enhancement:
+Potential enhancements:
 
-- Clarify which defaults are just placeholders and which affect generation.
-- Allow multiple starting templates per setting.
+- Clarify which defaults are placeholders and which affect generation.
+- Support named start profiles linked to a setting while keeping standalone New
+  Game form saves.
 
-### 4. Starting situation
+### 4. Starting Situation
 
-Current field:
+Current raw field:
 
-- `defaultStartingLocation`
+- `defaultStartingLocation`.
 
 Studio expansion:
 
 - Starting region concept.
 - Starting location concept.
 - Why the player is there.
-- Immediate threat/opportunity.
+- Immediate threat or opportunity.
 - Nearby safe place.
 - Nearby danger.
-- Region exits/stubs.
+- Region exits and stubs.
 - Starting NPC expectations.
-- Starting items/resources.
-- Whether the opening is calm, urgent, mysterious, or dangerous.
+- Starting items or resources.
+- Opening pressure: calm, urgent, mysterious, or dangerous.
 
-The current multiline starting-location template can remain the raw advanced representation.
+The existing multiline starting-location instructions can remain the advanced
+representation.
 
-### 5. Skills and character options
+### 5. Skills And Character Options
 
 Current fields:
 
-- `defaultExistingSkills`
-- `availableClasses`
-- `availableRaces`
-- character generation instructions
+- `defaultExistingSkills`.
+- `availableClasses`.
+- `availableRaces`.
+- `characterGenInstructions`.
+- Hide/perception attribute and skill selectors.
 
 Studio expansion:
 
 - Skill categories.
 - Setting-specific skill suggestions.
-- Warnings for too many/too few skills.
-- Duplicate/near-duplicate skill detection.
+- Warnings for too many or too few skills.
+- Duplicate or near-duplicate skill detection.
 - Attribute association preview if skill metadata exists or can be generated.
 - Class/race recommendations.
-- Optional "no race/class assumptions" mode for modern or grounded settings.
+- Optional no-class or no-race framing for modern or grounded settings.
 
 ### 6. Factions
 
-Current features are already strong:
+Current features are already substantial:
 
-- `defaultFactionCount`
-- `defaultFactions`
-- pre-generate factions
-- fill selected faction
-- relation and reputation tiers
+- `defaultFactionCount`.
+- `defaultFactions`.
+- Pre-generate factions.
+- Fill selected faction.
+- Assets, relations, tags, goals, and reputation tiers.
 
 Studio expansion:
 
-- Faction role coverage: authority, underworld, labor, religion, science, rebels, locals, outsiders, monsters, corporations, noble houses, families, cults, etc.
+- Faction role coverage: authority, underworld, labor, religion, science,
+  rebels, locals, outsiders, monsters, corporations, noble houses, families,
+  cults, and similar roles.
 - Conflict map preview.
 - Duplicate-role warnings.
 - Reputation tier consistency checks.
 - Starting-region faction relevance.
-- "Player-facing importance" flags.
+- Player-facing importance flags.
 - Faction hooks and first-contact ideas.
 
-### 7. Prompt guidance
+### 7. Prompt Guidance
 
 Current fields:
 
-- writing style notes
-- base-context preamble
-- character generation instructions
-- custom slop words
+- Writing style notes.
+- Base-context preamble.
+- Character generation instructions.
+- Custom slop words.
+- Mod settings that affect prompts.
 
 Studio expansion:
 
-- Separate guidance into player-facing tone, GM behavior, content boundaries, genre tropes, and anti-tropes.
-- Show how guidance appears in base context or image prompts.
-- Validate that base-context preamble follows expected concise bracketed style.
-- Warn when guidance contradicts other fields.
+- Separate guidance into player-facing tone, GM behavior, content boundaries,
+  genre tropes, and anti-tropes.
+- Show where guidance appears in prompt context.
+- Validate that base-context preamble stays concise enough for prompt use.
+- Warn when guidance contradicts the selected tone scale or other profile
+  fields.
 - Suggest slop words based on genre and user preference.
 
-### 8. Universal tone scales
+### 8. Tone Scale
 
-The universal tone scales from `config.yaml` should become real setting fields. These are stronger than a freeform `tone` string because they define a shared tonal coordinate system and explain what adjacent or opposite settings mean.
+Current implementation provides the shared axes and per-setting selections. A
+studio layer should focus on making that behavior easier to reason about:
 
-Prototype axes from the current config:
+- Show compact notation such as `I4-G2-S3-F2`.
+- Show all axis levels with selected levels highlighted.
+- Show the exact prompt block that will be injected.
+- Generate a short "what this means for this setting" explanation.
+- Highlight contradictions, such as grave seriousness plus prompt guidance
+  requesting constant jokes.
+- Explain that blank tone-scale selections currently omit the tonal-scale prompt
+  block rather than applying a hidden default.
 
-#### Idealism: how the universe treats hope
+Potential future decisions:
 
-| Level | Name | Description |
-|-------|------|-------------|
-| 1 | Grimdark | Hope is a trap. Good people lose. Virtue is punished or mocked. |
-| 2 | Cynical | Systems are corrupt. Small victories possible but costly. Trust is weakness. |
-| 3 | Mixed | Good struggles. Sometimes wins, sometimes pays. World is compromised but not hopeless. |
-| 4 | Hopeful | Virtue usually rewarded. Darkness is beatable. Effort and courage matter. |
-| 5 | Idealistic | Good triumphs. People are redeemable. The universe validates hope. |
+- Whether to make a complete tone-scale selection required for all saved
+  settings.
+- Whether to inject the rendered block into more prompt types, such as
+  region/location/NPC generation and event-check prompts.
+- Whether global config should retain legacy tonal text once structured
+  per-setting selections are widely used.
 
-#### Grit: how the world looks and feels
-
-| Level | Name | Description |
-|-------|------|-------------|
-| 1 | Pristine | Clean, bright, stylized. Adventure-ready. Consequences are aesthetic. |
-| 2 | Polished | Mostly appealing with realistic touches. Wear shows but does not overwhelm. |
-| 3 | Lived-in | Realistic decay and consequence. Bodies leave stains. History accumulates. |
-| 4 | Grimy | Oppressive atmosphere. Decay visible everywhere. Survival is messy. |
-| 5 | Brutal | Everything is broken, dirty, dying. The world itself is hostile. |
-
-#### Seriousness: how heavily content is treated
-
-| Level | Name | Description |
-|-------|------|-------------|
-| 1 | Farce | Nothing is serious, including stakes. Rule of Funny overrides all. |
-| 2 | Comic Relief | Stakes are real but humor is very frequent. Comedy serves the story and does not undermine it. |
-| 3 | Balanced | Equal weight to light and heavy moments. Tonal shifts are deliberate. |
-| 4 | Sober | Humor is rare and pointed. Most content carries weight. |
-| 5 | Grave | Everything is serious. No relief. Consequences are absolute. |
-
-#### Focus: adventure vs. romance
-
-| Level | Name | Description |
-|-------|------|-------------|
-| 1 | Adventure-Dominant | Plot drives everything. Romance is absent or incidental. Action, exploration, and external conflict are primary. |
-| 2 | Adventure-Heavy | Romance exists as subplot or character flavor. The adventure is the main story; relationships develop alongside it. Characters are designed around being interesting, independent people rather than romantic interests for the player character. |
-| 3 | Balanced | Adventure and romance receive roughly equal weight. Either can drive a scene. Combat and intimacy both matter. |
-| 4 | Romance-Heavy | Adventure serves as backdrop for relationship development. The love story is the story. |
-| 5 | Romance-Dominant | Pure relationship focus. Adventure is minimal window dressing for intimate encounters. |
-
-Studio behavior:
-
-- Let each setting choose values on each axis, including decimal values when useful, such as `3.5`.
-- Show the compact notation, such as `I4-G2-S3-F2`, as a setting summary.
-- Let users edit per-level descriptions or define custom axes later, but start with the universal built-in scale.
-- Generate a short "what this means for this setting" summary for each selected axis.
-- Highlight contradictions, such as `Grave` seriousness with prompt guidance asking for constant jokes.
-- Keep the existing freeform `tone` field as a natural-language label, but derive prompt-facing tonal guidance from the scales.
-
-Prompt contract:
-
-- Prompts should include the full scale definitions, not only the selected values.
-- The selected values should be called out separately after the full scale.
-- The full scale matters because the narrator needs to know what *not* to do: for example, `Focus 2` means avoid `Focus 4-5` romance-dominant assumptions, not merely "include some adventure."
-- The scale block should be available to narrator prompts, event/narrative prompts, NPC generation, region/location generation, and any prompt where tone drift is likely.
-- Prompt templates should avoid duplicating stale hardcoded scale text; they should render from setting data.
-- If no setting-level tone scale exists, use a default universal scale rather than silently omitting tonal guidance.
-
-Potential UI:
-
-- Four sliders or segmented controls with labels and descriptions visible at every level.
-- A compact notation preview.
-- A full-scale preview showing all levels, with selected levels highlighted.
-- A "narrator prompt preview" showing exactly what will be injected into prompts.
-- A warning when freeform prompt guidance contradicts the selected scale.
-
-### 9. Image style
+### 9. Image Style
 
 Current fields:
 
@@ -345,7 +398,7 @@ Studio expansion:
 
 - Unified art direction brief.
 - Per-category overrides.
-- Style swatches or text presets.
+- Style presets or text swatches.
 - Negative guidance.
 - Composition preferences.
 - Setting-specific visual motifs.
@@ -353,57 +406,59 @@ Studio expansion:
 
 Image generation itself can stay optional.
 
-### 10. Calendar and time
+### 10. Calendar And Time
 
 Current behavior:
 
-- New-game setup generates a calendar via LLM.
-- Earth-like settings are instructed to use Gregorian.
-- Fallback Gregorian calendar exists.
-- New-game page chooses a start hour.
+- World profiles can persist a structured `calendarDefinition`.
+- The settings page has a structured calendar editor.
+- The settings API can generate a calendar draft or return a default
+  Gregorian-style draft.
+- New-game setup uses the stored calendar when present, otherwise generates one
+  and falls back to the built-in Gregorian-style calendar.
+- The New Game form chooses a start hour.
 
 Studio expansion:
 
-- Calendar preference: Gregorian, custom, inherit from setting, no strong preference.
-- Season names/descriptions.
+- Calendar preference summary: Gregorian, custom, inherit from setting, or no
+  strong preference.
+- Season names and descriptions.
 - Holiday expectations.
-- Day/night tone and light descriptions.
-- Starting date/time defaults.
-- Warnings when setting concept implies Earth but calendar guidance is missing.
+- Day/night tone and lighting descriptions.
+- Starting date/time defaults beyond a single hour.
+- Warnings when the concept implies Earth-like assumptions but calendar guidance
+  is missing.
 
-Potential future field:
+### 11. Rules Modules
 
-- A setting-level calendar draft that new-game can use before falling back to generation.
+Future-facing but useful as studio metadata or prompt guidance:
 
-### 11. Rules modules
-
-Future-facing but valuable as a studio concept:
-
-- Survival/journey risk.
+- Survival and journey risk.
 - Tactical battles.
 - Faction operations.
 - Relationship arcs.
 - Mystery clue tracking.
-- Horror stress/sanity.
-- Trade/economy.
+- Horror stress or sanity.
+- Trade and economy.
 - Vehicles.
 - Downtime projects.
 
-For now, this can be metadata or guidance rather than active mechanics. The important thing is to let a setting declare what kinds of systems should matter.
+The first version does not need active mechanics for each module. The useful
+part is declaring what kinds of systems should matter in this setting.
 
-### 12. Preview and validation
+### 12. Preview And Validation
 
-The most important studio addition.
+This is the most important studio addition.
 
 Preview examples:
 
 - Base setting card.
-- Universal tone scale block and selected notation.
+- Unified tone-scale prompt block and selected notation.
 - Base-context preamble.
 - Starting location generation instructions.
 - Sample starting region outline.
 - Sample NPC concept.
-- Sample item/scenery prompt.
+- Sample item or scenery prompt.
 - Sample faction summary.
 - Sample opening situation.
 - Skill list coverage.
@@ -413,50 +468,53 @@ Validation examples:
 
 - Missing required fields.
 - Too little description for AI generation.
-- Contradictory tone/theme/difficulty.
-- Contradictory universal tone scale and prompt guidance.
-- Missing tone-scale selection when the setting expects structured tone guidance.
+- Contradictory tone, theme, genre, or difficulty.
+- Contradictory tone-scale selections and prompt guidance.
 - Empty or baseline-only skills.
 - Invalid faction relations.
-- Duplicate faction names.
+- Duplicate faction names or roles.
 - Missing reputation tiers.
 - Starting location instructions too vague.
 - Base-context preamble too verbose.
 - Image prefixes empty when image generation is likely enabled.
 - Custom slop words malformed.
-- Class/race lists empty when the setting expects them.
+- Empty class/race lists in settings that appear to expect them.
+- Calendar references that are invalid or inconsistent.
 
 Validation should show errors, warnings, and suggestions separately.
 
-## AI assistance model
+## AI Assistance Model
 
-### Field-level fill
+### Field-Level Fill
 
-Current fill-missing behavior is useful and should remain:
+Current fill-missing behavior should remain:
 
 - Fill blank fields.
 - Use optional user instructions.
 - Use optional image input.
 - Preserve user-provided values.
+- Optionally augment default skills.
 
-### Section-level generation
+### Section-Level Generation
 
 The studio could add section-specific AI:
 
-- Generate factions from concept.
-- Generate skill list.
+- Generate factions from a concept.
+- Generate a skill list.
 - Generate image style.
 - Generate starting situation.
 - Generate prompt guidance.
-- Generate calendar draft.
+- Generate or revise calendar assumptions.
 
-Section generation should explain what changed and allow accept/reject per field.
+Section generation should explain what changed and allow accept/reject per
+field.
 
-### Whole-setting draft
+### Whole-Setting Draft
 
-Given a concept brief, draft a full setting. The result should be staged for review, not directly saved over an existing setting.
+Given a concept brief, draft a full setting. The result should be staged for
+review, not directly saved over an existing setting.
 
-### Critique pass
+### Critique Pass
 
 Ask AI to critique a setting for:
 
@@ -469,10 +527,12 @@ Ask AI to critique a setting for:
 - Image style inconsistency.
 - Genre drift.
 - Tone-scale drift or contradictions.
+- Calendar assumptions that do not match the setting.
 
-Critique should produce suggestions, not direct edits unless the user requests applying them.
+Critique should produce suggestions, not direct edits unless the user requests
+applying them.
 
-### Preview generation
+### Preview Generation
 
 Use AI to generate samples without mutating world state:
 
@@ -484,61 +544,73 @@ Use AI to generate samples without mutating world state:
 
 These should be dry-run previews and must not create live world objects.
 
-## Data model ideas
+## Data Model Ideas
 
-Existing `SettingInfo` covers much of the required data. Potential additions for later:
+Already implemented and should be reused:
 
-- `conceptBrief`
-- `hardExclusions`
-- `toneScales`
-- `toneScaleSelections`
-- `toneScaleSummary`
-- `toneScalePromptPolicy`
-- `ruleModulePreferences`
-- `calendarPreference`
-- `calendarDraft`
-- `startingSituationNotes`
-- `artDirection`
-- `validationNotes`
-- `studioVersion`
-- `settingVersion`
-- `parentSettingId`
-- `previewArtifacts`
+- `unifiedTonalScale`.
+- `calendarDefinition`.
+- `defaultFactions`.
+- `defaultFactionCount`.
+- `customSlopWords`.
+- `modSettings`.
+- New-game default fields.
+- Image prompt prefix fields.
 
-These should not be added casually. Many can start as derived UI state or optional metadata until a concrete implementation needs persistence.
+Potential additions for a future studio:
 
-## API ideas
+- `conceptBrief`.
+- `hardExclusions`.
+- `startingSituationNotes`.
+- `ruleModulePreferences`.
+- `artDirection`.
+- `validationNotes`.
+- `studioVersion`.
+- `settingVersion`.
+- `parentSettingId`.
+- `previewArtifacts`.
+- `namedStartProfiles`.
+
+These should not be added casually. Many can start as derived UI state or
+optional metadata until a concrete implementation needs persistence.
+
+## API Ideas
+
+Current endpoints that can power a first studio layer:
+
+- `POST /api/settings/fill-missing`.
+- `POST /api/settings/factions/generate`.
+- `POST /api/settings/factions/fill-missing`.
+- `GET /api/settings/calendar/default`.
+- `POST /api/settings/calendar/generate`.
+- `POST /api/settings`.
+- `PUT /api/settings/:id`.
+- `POST /api/settings/:id/clone`.
+- `POST /api/settings/:id/save`.
+- `POST /api/settings/:id/apply`.
+- `POST /api/new-game/settings/save`.
+- `POST /api/new-game/settings/load`.
+- `GET /api/new-game/settings/saves`.
 
 Possible future endpoints:
 
-- `POST /api/settings/studio/draft`
-- `POST /api/settings/studio/critique`
-- `POST /api/settings/studio/validate`
-- `POST /api/settings/studio/tone-scales/preview`
-- `POST /api/settings/studio/preview/start-location`
-- `POST /api/settings/studio/preview/npc`
-- `POST /api/settings/studio/preview/faction-conflict`
-- `POST /api/settings/studio/section/:sectionName/fill`
+- `POST /api/settings/studio/draft`.
+- `POST /api/settings/studio/critique`.
+- `POST /api/settings/studio/validate`.
+- `POST /api/settings/studio/preview/tone-scale`.
+- `POST /api/settings/studio/preview/start-location`.
+- `POST /api/settings/studio/preview/npc`.
+- `POST /api/settings/studio/preview/faction-conflict`.
+- `POST /api/settings/studio/section/:sectionName/fill`.
 
-Current endpoints can still power much of the first version:
+## UI Ideas
 
-- `POST /api/settings/fill-missing`
-- `POST /api/settings/factions/generate`
-- `POST /api/settings/factions/fill-missing`
-- `POST /api/settings`
-- `PUT /api/settings/:id`
-- `POST /api/settings/:id/apply`
-- `POST /api/new-game/settings/save`
-- `POST /api/new-game/settings/load`
-
-## UI ideas
-
-### Studio workspace
+### Studio Workspace
 
 Possible layout:
 
 - Left: setting library and version/history list.
-- Center: current studio step/editor.
+- Center: current studio step or editor.
 - Right: validation, preview, AI suggestions, and changed fields.
 
 ### Stepper
@@ -552,17 +624,19 @@ A stepper helps casual users:
 - Skills.
 - Factions.
 - Guidance.
+- Tone.
 - Images.
 - Calendar.
 - Preview.
 
 Each step shows completion state and validation count.
 
-### Expert field mode
+### Expert Field Mode
 
-Expert mode shows the current tabbed editor style and every persisted field. This preserves fast editing for advanced users.
+Expert mode shows the current tabbed editor style and every persisted field.
+This preserves fast editing for advanced users.
 
-### Diff and accept/reject
+### Diff And Accept/Reject
 
 AI generation should produce a diff:
 
@@ -571,9 +645,9 @@ AI generation should produce a diff:
 - Unchanged.
 - Needs review.
 
-Users can accept/reject by field or by section.
+Users can accept or reject by field or by section.
 
-### Preview panel
+### Preview Panel
 
 The preview panel can show:
 
@@ -584,7 +658,7 @@ The preview panel can show:
 - Skill list warnings.
 - New-game readiness checklist.
 
-### Start game handoff
+### Start Game Handoff
 
 When a setting validates cleanly, the studio can hand off to `/new-game` with:
 
@@ -592,35 +666,41 @@ When a setting validates cleanly, the studio can hand off to `/new-game` with:
 - Pre-filled player defaults.
 - Starting situation.
 - Recommended start time.
-- Optional saved new-game form profile.
+- Optional saved New Game form profile.
 
-## Validation and quality checks
+## Validation And Quality Checks
 
-### Structural validation
+### Structural Validation
 
-Already mostly model-backed:
+Current model/API validation already covers much of this:
 
 - Required name.
 - Numeric defaults.
-- Faction ids/names/relations.
+- Faction ids, names, relations, and tiers.
 - String lists.
+- Calendar shape.
+- Tone-scale selection shape and prompt-render validation.
+- Mod-settings object shape.
 - Settings persistence.
 
-### Coherence validation
+### Coherence Validation
 
-Possible checks:
+Possible studio checks:
 
-- Theme/genre/tone are not empty.
+- Theme, genre, and tone are not empty.
 - Description is long enough to guide generation.
 - Difficulty has gameplay meaning.
-- Starting location instructions include region, summary, locations/rooms, and exits.
+- Starting location instructions include region, summary, locations or rooms, and
+  exits.
 - Skill list has enough breadth.
-- Faction count matches faction drafts or intentionally leaves room for generated factions.
+- Faction count matches faction drafts or intentionally leaves room for
+  generated factions.
 - Factions have distinct names and roles.
-- Prompt guidance does not contradict tone/genre.
+- Prompt guidance does not contradict tone, genre, or tone-scale selections.
 - Image prefixes agree with art direction.
+- Calendar expectations match the setting concept.
 
-### Readiness score
+### Readiness State
 
 A readiness indicator can be useful if it stays explanatory:
 
@@ -631,47 +711,53 @@ A readiness indicator can be useful if it stays explanatory:
 
 Avoid opaque numeric scores. Show concrete findings.
 
-## Versioning and reuse
+## Versioning And Reuse
 
 Useful workflows:
 
-- Clone setting as new variant.
+- Clone a setting as a new variant.
 - Save versions with notes.
 - Compare current draft to saved version.
 - Export/import setting JSON.
 - Mark favorites.
 - Track which saves used which setting id/version.
 
-Rename-as-new-id already exists and can inform versioning, but users need clearer intent: rename, clone, fork, update current.
+Clone and rename-as-new-id behavior already exists and can inform versioning,
+but users need clearer intent: rename, clone, fork, update current, or save a
+new version.
 
-## Integration with new-game form
+## Integration With New Game
 
-The studio should reduce duplication with `/new-game`, not hide the player setup workflow.
+The studio should reduce duplication with `/new-game`, not hide the player setup
+workflow.
 
 Possible handoff:
 
-- "Apply setting and configure player."
-- "Start with defaults."
-- "Save this player start profile."
-- "Preview opening setup first."
+- Apply setting and configure player.
+- Start with defaults.
+- Save this player start profile.
+- Preview opening setup first.
 
-New-game saved form configs remain useful because the same setting can support multiple protagonists or starts.
+New Game saved form configurations remain useful because the same setting can
+support multiple protagonists or starts.
 
-## Error handling principles
+## Error Handling Principles
 
 - Invalid AI output should fail with a visible error and logged prompt.
-- Section generation should preserve user-provided fields unless explicitly replacing them.
+- Section generation should preserve user-provided fields unless explicitly
+  replacing them.
 - Validation should block only true errors; warnings should be reviewable.
 - Preview generation should not mutate live settings unless accepted.
 - Starting a game should still fail loudly if strict lifecycle validation fails.
 - No fallback setting should be silently substituted.
 
-## Testing ideas
+## Testing Ideas
 
 Unit-level:
 
 - Setting validation rules.
-- Universal tone scale validation and prompt rendering.
+- Unified tone-scale validation and prompt rendering.
+- Calendar draft validation.
 - Section payload normalization.
 - Faction draft validation.
 - Skill list parsing.
@@ -682,11 +768,12 @@ Integration:
 
 - Draft setting from concept.
 - Fill missing fields with image input.
-- Generate factions and apply to setting.
+- Generate factions and apply them to a setting.
+- Generate and save a calendar draft.
 - Validate incomplete setting.
 - Save/apply setting.
-- Handoff to new-game form.
-- Start new game from studio-authored setting.
+- Handoff to New Game form.
+- Start a game from a studio-authored setting.
 
 Playwright:
 
@@ -696,97 +783,124 @@ Playwright:
 - Accept/reject AI changes.
 - Pre-generate factions.
 - View validation/readiness panel.
-- Apply setting and navigate to new game.
+- Apply setting and navigate to New Game.
 - Confirm mobile layout remains usable.
 
 Fixtures:
 
 - Minimal valid setting.
 - Empty/incomplete setting.
-- Setting with universal tone scales.
+- Setting with unified tone-scale selections.
 - Faction-heavy setting.
 - Modern no-class/no-race setting.
 - Earth-like setting.
 - Custom-calendar setting.
 - Image-style-heavy setting.
 
-## Rollout options
+## Rollout Options
 
-### Slice 1: Readiness and preview panel
+### Slice 1: Readiness And Preview Panel
 
-Add validation/readiness and preview summaries to the existing settings editor.
+Add validation/readiness and preview summaries to the existing World Profiles
+editor.
 
 Pros:
+
 - Builds on current UI.
 - Gives immediate value.
+- Does not require a new persistence model.
 
 Cons:
-- Does not yet feel like a studio.
 
-### Slice 2: Guided concept-to-setting draft
+- Still is not a full studio.
 
-Add a concept brief and whole-setting draft flow that stages AI-generated fields for review.
+### Slice 2: Guided Concept-To-Setting Draft
+
+Add a concept brief and whole-setting draft flow that stages AI-generated fields
+for review.
 
 Pros:
+
 - Big improvement for new users.
 
 Cons:
+
 - Needs diff/accept UI.
 
-### Slice 3: Section-level studio tabs
+### Slice 3: Section-Level Studio Tabs
 
-Turn existing tabs into studio sections with validation, suggestions, and previews.
+Turn existing tabs into studio sections with validation, suggestions, and
+previews.
 
 Pros:
+
 - Preserves current structure while improving guidance.
 
 Cons:
+
 - More UI complexity.
 
-### Slice 4: New-game handoff
+### Slice 4: New Game Handoff
 
-Let users apply a validated setting and move into `/new-game` with defaults and optional saved form profile.
+Let users apply a validated setting and move into `/new-game` with defaults and
+optional saved form profile.
 
 Pros:
+
 - Connects authoring to play.
 
 Cons:
+
 - Needs careful state handoff and confirmation.
 
-### Slice 5: Versions, exports, and advanced previews
+### Slice 5: Versions, Exports, And Advanced Previews
 
 Add setting versions, compare, import/export, and dry-run generated samples.
 
 Pros:
+
 - Strong reuse and iteration support.
 
 Cons:
+
 - More persistence and UI work.
 
-## Strong first implementation candidate
+## Strong First Implementation Candidate
 
-The strongest first feature would likely be a studio-style readiness and preview panel inside the existing settings editor:
+The strongest first feature remains a studio-style readiness and preview panel
+inside the existing World Profiles editor:
 
 - Analyze current setting fields.
 - Show errors, warnings, and suggestions.
-- Preview setting card, universal tone scale prompt block, starting instructions, skills, factions, prompt guidance, and image style.
-- Offer targeted "fill this section" actions.
+- Preview setting card, tone-scale prompt block, starting instructions, skills,
+  factions, prompt guidance, calendar summary, and image style.
+- Offer targeted fill-this-section actions.
+- Reuse current settings, factions, calendar, and fill-missing APIs.
 - Do not change the persistence model.
 - Do not alter `/new-game` yet.
 
-This validates the studio direction while reusing the current settings manager and avoiding a large route/UI rewrite.
+This validates the studio direction while reusing the current settings manager
+and avoiding a large route/UI rewrite.
 
-## Open questions for a future spec
+## Open Questions For A Future Spec
 
 1. Should the studio replace `/settings` or become a mode within it?
-2. Should setting versions be first-class, or should clone/rename-as-new-id remain the versioning mechanism?
-3. Should calendar drafts be persisted on settings or generated only during new game?
+2. Should setting versions be first-class, or should clone/rename-as-new-id
+   remain the versioning mechanism?
+3. Should named New Game starts be attached to settings, remain separate saved
+   form settings, or support both?
 4. Should rules modules be real config fields or prompt guidance at first?
-5. Should AI whole-setting draft overwrite blank fields only or stage a full proposed setting?
-6. Should preview generation use forced dry-run prompts that never mutate world state?
-7. Should new-game saved form settings be attached to settings as named starts?
-8. How should modern settings represent empty class/race lists without looking incomplete?
-9. Should image input guide only AI fill-missing, or become a persistent visual reference for the setting?
-10. Which validations should block starting a game versus warn only?
-11. Should universal tone scales be editable globally, per setting, or both?
-12. Which prompt types must receive the full tone scale block in version one?
+5. Should AI whole-setting draft overwrite blank fields only or stage a full
+   proposed setting?
+6. Should preview generation use forced dry-run prompts that never mutate world
+   state?
+7. How should modern settings represent empty class/race lists without looking
+   incomplete?
+8. Should image input guide only AI fill-missing, or become a persistent visual
+   reference for the setting?
+9. Which validations should block starting a game versus warn only?
+10. Should complete tone-scale selections become required for all settings?
+11. Should tone-scale prompt injection expand beyond the current base/generic
+    prompt and slop-remover paths?
+12. Should legacy tonal text in global config be removed once per-setting tone
+    scale usage is mature?

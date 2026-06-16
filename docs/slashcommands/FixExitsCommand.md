@@ -1,18 +1,36 @@
 # FixExitsCommand
 
-## Purpose
-Slash command `/fix_exits` to repair one-way location exits by creating missing reverse links.
+## Command
+- Slash command: `/fix_exits`
+- Aliases: none
+- Usage: `/fix_exits`
+- Help description: `Create missing reverse exits so one-way connections become two-way.`
 
-## Args
-- None.
+## Purpose
+Repairs loaded location graph edges where a source location has an exit to a destination location, but the destination location has no exit back to the source.
 
 ## Behavior
-- Scans all locations and exits.
-- Detects exits whose destination location has no return exit back to the source.
-- Repairs those links with `ensureExitConnection(..., bidirectional: true)` so each one-way connection becomes two-way.
-- Preserves vehicle metadata (`isVehicle`, `vehicleType`) when creating reverse links.
-- Reports counts for scanned exits, repaired connections, and skipped invalid/self-referential exits.
+- Requires `server.ensureExitConnection` and `Location.getAll()`; the command throws a clear error if either dependency is unavailable.
+- Builds a lookup table from loaded location ids, then scans each loaded location that exposes `getAvailableDirections()` and `getExit()`.
+- Counts every scanned exit, including exits that cannot be repaired.
+- Skips exits with an empty destination id or a destination id that does not resolve to a loaded location.
+- Skips self-referential exits.
+- Treats an exit as already repaired when the destination location has any exit, in any direction, whose destination is the source location id.
+- Marks the source exit as `bidirectional=true` before running the shared repair helper.
+- Calls `ensureExitConnection(sourceLocation, destinationLocation, { bidirectional: true, ... })` for each missing reverse connection.
+- Uses the source exit description when present; otherwise it uses the destination location name or id as the source-exit description.
+- Resolves the destination-region option from `exit.destinationRegion` first. When that is empty, it compares the source and destination region ids or stub metadata and passes the destination region only for cross-region links.
+- Forwards vehicle-edge metadata. A source exit with either `isVehicle=true` or a non-empty `vehicleType` is treated as a vehicle edge, and `vehicleType` is passed through when present.
+- Keeps the source exit travel time and lets `ensureExitConnection` apply it to the reverse edge.
+- Relies on `ensureExitConnection` to create or reuse the reverse exit. The helper chooses the reverse direction key and uses `Path back to <source name or id>` for the reverse description.
+- Mutates loaded location/exit objects in memory. It does not call `performGameSave()` and does not request a client refresh.
+
+## Reply
+- Sends one non-ephemeral reply.
+- Includes counts for scanned exits, repaired one-way connections, skipped missing destinations, and skipped self-referential exits.
+- Includes up to 20 repaired connection samples formatted as `Source -> Destination`.
+- If more than 20 connections were repaired, adds a final line with the remaining count.
 
 ## Notes
-- Exits with missing destination locations are skipped and counted (not auto-removed).
-- Reply output includes up to 20 repaired connection samples.
+- Exits that point to missing destinations are not removed.
+- Reverse exits created by `ensureExitConnection` are direct return edges; the helper is responsible for storing new exits in the global exit registry.

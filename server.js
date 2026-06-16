@@ -101,6 +101,7 @@ const Region = require('./Region.js');
 const Faction = require('./Faction.js');
 const MysteryBox = require('./MysteryBox.js');
 const MysteryThread = require('./MysteryThread.js');
+const Tracker = require('./Tracker.js');
 
 // Import image generation clients
 const ComfyUIClient = require('./ComfyUIClient.js');
@@ -3064,6 +3065,25 @@ function buildActiveMysteryThreadsForPrompt(sourceConfig = config) {
     }));
 }
 
+function formatTrackerLastUpdatedWorldMinute(worldMinute) {
+    return Utils.formatAbsoluteWorldMinutesAgo(worldMinute, {
+        currentTotalMinutes: Globals.getTotalWorldMinutes()
+    });
+}
+
+function formatTrackerCountdownUntilWorldMinute(worldMinute) {
+    return Utils.formatCountdownUntilWorldMinute(worldMinute, {
+        currentTotalMinutes: Globals.getTotalWorldMinutes()
+    });
+}
+
+function buildTrackersForPrompt() {
+    return Tracker.getAll().map(tracker => tracker.toPromptContext({
+        formatLastUpdated: formatTrackerLastUpdatedWorldMinute,
+        formatCountdownValue: formatTrackerCountdownUntilWorldMinute
+    }));
+}
+
 function shouldShowHiddenNotes(sourceConfig = config) {
     return sourceConfig?.show_hidden_notes === true;
 }
@@ -3899,6 +3919,13 @@ function queueLocationThingImages(location) {
     }
 }
 
+function serializeTrackersForClient() {
+    return Tracker.getAll().map(tracker => tracker.toClientJSON({
+        formatLastUpdated: formatTrackerLastUpdatedWorldMinute,
+        formatCountdownValue: formatTrackerCountdownUntilWorldMinute
+    }));
+}
+
 function serializeNpcForClient(npc, options = {}) {
     const { includePartyMembers = true } = options || {};
     if (!npc) {
@@ -4226,6 +4253,7 @@ function serializeNpcForClient(npc, options = {}) {
     }
     if (!Boolean(npc.isNPC)) {
         serialized.dispositionDefinitions = dispositionDefinitions;
+        serialized.trackers = serializeTrackersForClient();
     }
 
     if (typeof npc.getCurrentQuests === 'function') {
@@ -7101,6 +7129,7 @@ function buildBasePromptContext({
         plotAnalysis: typeof Globals.getPlotAnalysis === 'function' ? Globals.getPlotAnalysis() : null,
         mysteryThreadMaxActive: resolveMysteryThreadMaxActive(config),
         activeMysteryThreads: buildActiveMysteryThreadsForPrompt(config),
+        trackers: buildTrackersForPrompt(),
         currentRegion: currentRegionContext,
         currentLocation: currentLocationContext,
         currentPlayer: currentPlayerContext,
@@ -10996,9 +11025,14 @@ function scheduleStubExpansion(location, { createOriginExit } = {}) {
 
     stubExpansionPromises.set(location.id, expansionPromise);
 
-    expansionPromise.finally(() => {
-        stubExpansionPromises.delete(location.id);
-    });
+    expansionPromise.then(
+        () => {
+            stubExpansionPromises.delete(location.id);
+        },
+        () => {
+            stubExpansionPromises.delete(location.id);
+        }
+    );
 
     return expansionPromise;
 }
@@ -12337,12 +12371,13 @@ const deterministicTemplateEnv = new nunjucks.Environment(
 
 // Import and add common template filters to server-side environments
 const diceModule = require('./nunjucks_dice.js');
-const { addEvalFilter } = require('./nunjucks_filters.js');
+const { addEvalFilter, addRandomWordGlobal } = require('./nunjucks_filters.js');
 const e = require('express');
 
 // Add common template filters to server-side environments
 function addDiceFilters(env) {
     addEvalFilter(env);
+    addRandomWordGlobal(env);
 
     env.addFilter('roll', function (notation, seedOrOpts) {
         const opts = typeof seedOrOpts === 'string' ? { seed: seedOrOpts } : (seedOrOpts || {});
@@ -30789,6 +30824,7 @@ const apiScope = {
     Events,
     diceModule,
     addEvalFilter,
+    addRandomWordGlobal,
     promptEnv,
     modLoader,
     modExtensionRegistry,

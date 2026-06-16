@@ -1,6 +1,20 @@
 # Tactical Battles Brainstorm
 
-This document expands the tactical conflict idea from `gameplay_improvement_brainstorm.md`. It is a brainstorm, not an implementation spec. The core premise is an optional structured battle layer for players who want more tactical depth while preserving the normal freeform prose mode.
+This document expands the tactical conflict idea from `gameplay_improvement_brainstorm.md`. It is a brainstorm/archive document, not an implementation spec. The core premise is a future optional structured battle layer for players who want more tactical depth while preserving the normal freeform prose mode.
+
+## Current project status
+
+Tactical battles are not implemented as a first-class mode. There is no `TacticalScene`, tactical scene save payload, tactical-mode config, zone map, battle panel, or separate battle log in the current codebase. Combat still happens through the normal prose/chat turn loop.
+
+The current combat baseline is still relevant to this design:
+
+- Regular prose prompts can use `resolveAttack`, `resolveAreaAttack`, `resolveSkillCheck`, and `resolveOpposedSkillCheck` when `use_legacy_prompt_checks` is false.
+- Attack and skill results are recorded as prompt-excluded `check-results` chat entries; `resolveAreaAttack` records one grouped `area-attack` row for a shared area effect.
+- The XML `attackDamage` event is informational for attack tracking/reveal behavior and does not directly apply health damage.
+- The XML `inCombat` event sets `Globals.inCombat`; post-player NPC turns in combat are controlled by `combat_npc_turns`, separate from ordinary `npc_turns`.
+- Player/NPC health, status effects, skills, attributes, gear, inventory, faction/disposition state, and event outcomes remain the authoritative durable state.
+
+Any tactical layer should build on those systems rather than replacing them. The main missing piece is battle-local state: zones, objective progress, action economy, participant positions, morale, clocks, and a UI that lets the player inspect and act on that state.
 
 ## Core pitch
 
@@ -114,7 +128,7 @@ The end summary should record:
 
 ### TacticalScene
 
-A new persistent scene state could track:
+A proposed persistent scene state could track:
 
 - `id`
 - `locationId`
@@ -133,11 +147,11 @@ A new persistent scene state could track:
 - `createdAtWorldMinutes`
 - `updatedAtWorldMinutes`
 
-Persistence matters because the player may save/load mid-battle, switch tabs, or recover from a server restart. Tactical scene state should be serialized with saves if active.
+Persistence matters because the player may save/load mid-battle, switch tabs, or recover from a server restart. Tactical scene state should be serialized with saves if active; the current save schema does not yet have an active tactical-scene slot.
 
 ### TacticalParticipant
 
-Each participant can reference an existing `Player` or NPC and add battle-local state:
+Each participant would reference an existing `Player` or NPC and add battle-local state:
 
 - Actor id.
 - Side: player, ally, enemy, neutral, environmental, unknown.
@@ -172,7 +186,7 @@ Zone fields could include:
 - `exitIds` or linked location exits.
 - `control`: player, ally, enemy, contested, neutral.
 
-Zones can be generated from the current location description, scenery, exits, weather, and current participants.
+Zones can be generated from the current location description, scenery, exits, dynamic weather, world-time lighting payload, and current participants.
 
 See `docs/ideas/tactical_map_generation_brainstorm.md` for a deeper brainstorm on LLM-assisted generation of these zone maps for arbitrary locations.
 
@@ -301,7 +315,7 @@ The split matters because "behind cover" should not become a persistent characte
 
 ### Damage and injury
 
-The existing attack and damage systems can remain the base. Tactical mode could add:
+The existing attack and damage systems should remain the base. Current prose combat already has a single-target health-mutating `resolveAttack` tool and a grouped `resolveAreaAttack` tool for one shared area effect. Tactical mode should call or share that resolver path where possible, then add battle-local context:
 
 - Advantage/disadvantage-like modifiers from cover, flanking, morale, range, elevation, and visibility.
 - Objective damage to vehicles, doors, barriers, rituals, machines, shields, or scenery.
@@ -326,6 +340,8 @@ This should start conservative. Resource tracking that is not already represente
 ## Role of the LLM
 
 The LLM is strongest at scene interpretation, NPC intent, descriptive narration, and creative consequences. The server should own durable state, validation, and mechanical application.
+
+This mirrors the current prose-tool pattern: the model can propose structured attack/check tool calls, but the server validates inputs, resolves rolls, applies health/status effects, records `check-results`, and throws clear errors for invalid mechanical output.
 
 Good LLM responsibilities:
 
@@ -353,7 +369,7 @@ Hard boundary:
 
 ## Prompt ideas
 
-Potential prompt labels:
+No tactical-specific prompt labels currently exist. Future labels could be:
 
 - `tactical_scene_setup`: create zones, objectives, stakes, participants, and clocks.
 - `tactical_player_action_interpretation`: map freeform player intent into candidate tactical actions and checks.
@@ -361,13 +377,13 @@ Potential prompt labels:
 - `tactical_outcome_narration`: narrate server-resolved mechanical outcomes.
 - `tactical_scene_resolution`: summarize aftermath and follow-up consequences.
 
-Output should be strict XML or structured tool calls with required sections. Invalid output should fail or retry explicitly.
+Output should be strict XML or structured tool calls with required sections. Invalid output should fail or retry explicitly, matching the current preference for explicit errors over silent placeholder behavior.
 
 ## UI ideas
 
 ### Battle panel
 
-A dedicated battle panel could show:
+No dedicated battle panel exists today. A future panel could show:
 
 - Objective and clocks.
 - Round and active side/participant.
@@ -423,7 +439,7 @@ This log should be useful after save/load and for debugging.
 
 ### Chat
 
-Tactical mode can still append chat entries, but not every micro-action should flood the main narrative. Options:
+Tactical mode can still append chat entries, but not every micro-action should flood the main narrative. Current `check-results` entries already provide prompt-excluded, visible mechanical rows for attacks and checks; a tactical design should decide whether to reuse that surface, add a battle-local log, or bridge both. Options:
 
 - Keep a compact battle log in the tactical panel.
 - Append major round summaries to chat.
@@ -432,12 +448,13 @@ Tactical mode can still append chat entries, but not every micro-action should f
 
 ### Events
 
-`Events` can still process aftermath or major narration, but tactical mode should avoid double-applying movement, damage, item changes, or status effects already resolved by tactical mechanics.
+`Events` can still process aftermath or major narration, but tactical mode should avoid double-applying movement, damage, item changes, or status effects already resolved by tactical mechanics. This is especially important because current attack health mutation belongs to `resolveAttack` / `resolveAreaAttack`, while XML `attackDamage` only tracks attack occurrence and reveal behavior.
 
 Potential rule:
 
 - During tactical turns, use tactical-specific structured outcomes for mechanical changes.
 - Use normal event checks for final aftermath and non-mechanical narrative consequences only when safe.
+- Let `inCombat`/`combat_npc_turns` remain the coarse global combat gate unless a future `TacticalScene` needs a stricter active-scene gate.
 
 ### Abilities
 
@@ -566,7 +583,7 @@ This connects naturally to companion tactics defaults from the gameplay brainsto
 
 ## Configuration ideas
 
-Possible config options:
+No tactical-specific configuration exists today. Possible future config options:
 
 - Enable tactical mode.
 - Prompt before tactical scenes.
@@ -581,7 +598,7 @@ Possible config options:
 
 ## Data and persistence considerations
 
-Persistent state likely needs:
+No tactical scene state is currently serialized. A future implementation likely needs:
 
 - Active tactical scene.
 - Scene participants and battle-local state.
@@ -594,6 +611,7 @@ Save/load should preserve an active tactical scene. If the underlying world chan
 
 ## Error handling principles
 
+- Current attack/check tooling already favors validation and explicit errors; tactical mechanics should keep that posture.
 - Invalid tactical scene data should throw explicit errors during development.
 - Missing actor/location/thing references should surface clearly.
 - LLM output that references unknown zones, missing actors, invalid skills, or impossible actions should retry or fail, not silently ignore.
@@ -621,6 +639,7 @@ Integration:
 - Enemy turn applies movement and damage once.
 - Save/load mid-battle.
 - End scene and emit aftermath summary.
+- Preserve existing `resolveAttack` / `resolveAreaAttack` `check-results` behavior when tactical actions use those resolver paths.
 
 Playwright:
 
@@ -694,7 +713,7 @@ Cons:
 
 ## Strong first implementation candidate
 
-The strongest first tactical feature would likely be a small skirmish mode:
+The strongest first tactical feature would likely be a small skirmish mode layered on the current prose-tool combat baseline:
 
 - Opt-in only.
 - Current location only.

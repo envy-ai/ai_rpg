@@ -1,57 +1,77 @@
 # SettingInfo
 
 ## Purpose
-Represents a game setting/world configuration, including theme, genre, prompts, and defaults used to generate a game session. Tracks instances via static indexes and supports file persistence.
+`SettingInfo` is the world-profile model. It stores reusable setting identity, prompt guidance, new-game defaults, faction drafts, calendar drafts, tonal guidance, custom slop entries, and namespaced mod settings. Instances are tracked in process by id and lowercased name indexes, can be applied as the active world profile, can be saved under `saves/settings`, and are serialized into game saves as `setting.json`.
 
 ## Key State
-- Core fields: `#id`, `#name`, `#description`, `#theme`, `#genre`, `#tone`, `#difficulty`, `#startingLocationType`.
-- Prompt and style fields: `#currencyName`, `#currencyNamePlural`, `#currencyValueNotes`, `#writingStyleNotes`, `#baseContextPreamble`, `#characterGenInstructions`, `#imagePromptPrefix*`, `#customSlopWords`, `#unifiedTonalScale`.
-- Defaults: `#playerStartingLevel`, `#defaultStartingCurrency`, `#defaultPlayerName`, `#defaultPlayerDescription`, `#defaultStartingLocation` (generation instructions), `#defaultExistingSkills`, `#hidingAttribute`, `#hidingSkill`, `#perceptionAttribute`, `#perceptionSkill`, `#defaultFactionCount`, `#defaultFactions`, `#calendarDefinition`.
-- Lists: `#availableClasses`, `#availableRaces`, `#customSlopWords`.
-- Mod settings: `#modSettings` (namespaced JSON object for world-profile settings registered by mods).
-- Metadata: `#createdAt`, `#lastUpdated`.
+- Identity and timestamps: `#id`, `#name`, `#createdAt`, `#lastUpdated`.
+- World profile fields: `#description`, `#theme`, `#genre`, `#startingLocationType`, `#magicLevel`, `#techLevel`, `#tone`, `#difficulty`.
+- Currency and prompt fields: `#currencyName`, `#currencyNamePlural`, `#currencyValueNotes`, `#writingStyleNotes`, `#baseContextPreamble`, `#characterGenInstructions`.
+- Image prompt fields: `#imagePromptPrefixCharacter`, `#imagePromptPrefixLocation`, `#imagePromptPrefixItem`, `#imagePromptPrefixScenery`.
+- New-game defaults: `#playerStartingLevel`, `#defaultStartingCurrency`, `#defaultPlayerName`, `#defaultPlayerDescription`, `#defaultStartingLocation`, `#defaultExistingSkills`, `#availableClasses`, `#availableRaces`.
+- Mechanics selectors: `#hidingAttribute`, `#hidingSkill`, `#perceptionAttribute`, `#perceptionSkill`.
+- World setup drafts: `#defaultFactionCount`, `#defaultFactions`, `#calendarDefinition`.
+- Prompt controls: `#unifiedTonalScale`, `#customSlopWords`.
+- Mod settings: `#modSettings`, keyed by mod namespace.
 - Static indexes: `#indexByID`, `#indexByName`.
 
 ## Construction
-- `new SettingInfo(options)` validates required fields and normalizes lists, numeric defaults, and faction drafts. Adds the instance to static indexes.
+- `new SettingInfo(options)` requires a non-empty string `name`. It generates an id when `options.id` is absent, assigns fresh timestamps, normalizes supported fields, and registers the instance in both static indexes.
+- `fromJSON(data)` and `load(filepath)` construct a new instance from serialized data. Constructor timestamps are used for the hydrated instance.
+- `writingStyleNotes` accepts `styleNotes` as an input alias.
+- `playerStartingLevel` is stored as at least `1`; `defaultStartingCurrency` is stored as at least `0`.
+- Line-ending normalization converts `\r\n` to `\n` for multiline prompt and image-prefix fields.
+- List fields accept arrays or newline-delimited strings, trim string entries, and drop blanks.
+- Selector fields trim strings and store blank for non-strings.
 
-## Accessors
-- Getters and setters exist for all fields above. Setters normalize strings and update `#lastUpdated`.
-- `modSettings` returns/clones the full namespaced mod settings object.
-- `getModSettings(namespace)`, `getModSetting(namespace, key, defaultValue)`, `setModSetting(namespace, key, value)`, and `updateModSettings(namespace, updates)` provide namespaced access for mod labels, formulas, and resource identifiers.
+## Normalized Structured Fields
+- `defaultFactionCount` is `null` or a non-negative integer.
+- `defaultFactions` is an array of setting-local faction drafts. Drafts require unique ids and names, reject the name `"None"`, normalize string-list fields, require named assets, sort reputation tiers by numeric threshold, and require relation targets to reference another draft id with status `allied`, `neutral`, `hostile`, or `rival` plus notes.
+- `calendarDefinition` is `null` or a normalized calendar object from `Globals.normalizeCalendarDefinition`. Strings are parsed as JSON before normalization. Getters and snapshots return deep clones.
+- `unifiedTonalScale` is a JSON object keyed by tonal axis. Each populated entry is `{ level, comment? }`; `level` must be numeric, comments require a level, and decimal half-step values are preserved. Full axis-key and level validation happens when tonal prompt text is rendered from `defs/unified_tonal_scale.yaml`.
+- `modSettings` must be a JSON-serializable object keyed by non-empty namespace. Each namespace value must be an object.
 
 ## Instance API
-- `update(updates)`: applies updates via setters, skipping id and timestamps.
+- Getters return scalar fields directly and clone arrays/structured objects.
+- Setters update `#lastUpdated`. Structured setters (`calendarDefinition`, `unifiedTonalScale`, `modSettings`, `defaultFactions`, `defaultFactionCount`) validate and throw on invalid payloads.
+- `update(updates)`: applies defined keys through setters, skips `id`, `createdAt`, `lastUpdated`, and `undefined` values. Validation errors for `calendarDefinition`, `unifiedTonalScale`, and `modSettings` propagate; most other setter errors are warning-logged and leave the old value in place.
 - `getStatus()`: returns a full snapshot of all fields.
 - `toJSON()`: alias of `getStatus()`.
 - `clone(newName)`: deep-ish copy with a new id and timestamps; optionally renames.
-- `getPromptVariables()`: returns a reduced object for prompt templates, including `calendarDefinition` and `unifiedTonalScale`.
-- Hiding/perception mechanic selectors are persisted and exposed to prompt variables/base context. `hidingAttribute` and `perceptionAttribute` are required by the Worlds UI, while `hidingSkill` and `perceptionSkill` may be blank.
+- `getPromptVariables()`: returns prompt-facing setting values, including world traits, currency, prompt guidance, image prefixes, new-game numeric defaults, hide/perception selectors, `calendarDefinition`, `unifiedTonalScale`, `availableClasses`, `availableRaces`, `customSlopWords`, `modSettings`, `settingName`, and `settingDescription`.
+- `getModSettings(namespace)`: returns a clone of one namespace.
+- `getModSetting(namespace, key, defaultValue)`: returns a single value or `defaultValue`.
+- `setModSetting(namespace, key, value, { suppressTimestamp })`: sets one namespaced key and returns the stored value.
+- `updateModSettings(namespace, updates, options)`: shallow-merges a namespace and returns a clone of the namespace.
 - `toString()`: returns `"name (theme/genre)"`.
 - `save(saveDir)`: writes to `saves/settings` (or provided dir) as JSON.
 - `deleteSavedFile(saveDir)`: deletes persisted files for this setting by id suffix match.
 
 ## Static API
-- `create(options)`.
-- `getById(id)` / `getByName(name)` / `getAll()` / `exists(id)` / `delete(id)` / `count()` / `clear()`.
-- `fromJSON(data)`.
-- `load(filepath)`: loads a single file.
-- `saveAll(saveDir)` / `loadAll(saveDir)`.
-- `listSavedSettings(saveDir)`: returns metadata for available settings on disk.
-- `deleteSavedFilesById(id, saveDir)`: removes persisted files matching `*_<id>.json`.
+- `create(options)`: wrapper for `new SettingInfo(options)`.
+- `getById(id)`, `getByName(name)`, `getAll()`, `exists(id)`, `delete(id)`, `count()`, `clear()`: operate on the in-memory indexes.
+- `fromJSON(data)`: constructs and indexes an instance from serialized fields.
+- `load(filepath)`: reads one JSON file and constructs a setting.
+- `saveAll(saveDir)`: saves all indexed settings to individual files.
+- `loadAll(saveDir)`: clears the in-memory indexes, loads JSON files from the settings directory, warning-logs invalid files, and returns loaded settings plus file metadata.
+- `listSavedSettings(saveDir)`: reads saved-file metadata (`filename`, `filepath`, `name`, `theme`, `genre`, `lastModified`, `size`, optional `error`) without indexing the files.
+- `deleteSavedFilesById(id, saveDir)`: removes saved files whose names end in `_<id>.json`.
 
-## Private Helpers
-- `#generateId()`: unique id generator.
-- `#normalizeExistingSkills(value)` / `#normalizeStringList(value)`.
-- `#updateTimestamp()`.
+## Settings API and UI
+- `/api/settings` creates and lists in-memory world profiles. `POST /api/settings` passes request bodies directly to the constructor after checking name presence and duplicate names.
+- `PUT /api/settings/:id` updates an existing profile. A rename request creates a separate profile with a new id and leaves the source profile in memory. A missing id can create a profile with that id when the fallback name is available.
+- The Worlds editor loads saved settings into memory on page load, edits the fields stored by this class, persists successful creates/updates through `/api/settings/:id/save`, and applies the saved profile through `/api/settings/:id/apply`.
+- The editor requires `hidingAttribute` and `perceptionAttribute` from merged attribute definitions. `hidingSkill` and `perceptionSkill` are optional and are selected from `defaultExistingSkills`.
+- Registered mod setting fields are collected into `modSettings`. Fields registered with `persist: false` are editor controls only and are omitted from `modSettings`.
+- Settings calendar controls build structured `calendarDefinition` data through the profile form. The calendar generation route returns a draft; saving the world profile persists it.
 
-## Notes
-- Many setters normalize line endings to `\n` for prompt fields.
-- List normalization accepts string (newline-delimited) or array input.
-- `unifiedTonalScale` is stored as an object keyed by `defs/unified_tonal_scale.yaml` axis key. Each populated axis stores `{ level, comment? }`; comments require a selected numeric level. Decimal half-step values are preserved so the Tone Scale UI can store generated midpoint selections such as `3.5`.
-- Faction draft normalization validates ids/names, relation targets/statuses/notes, assets, and reputation tiers; invalid payloads throw explicit errors.
-- `calendarDefinition` stores an optional world-profile calendar draft using the same shape as the active-game calendar (`yearName`, `months`, `weekdays`, `seasons`, `holidays`). It is normalized through `Globals.normalizeCalendarDefinition`, saved with the setting JSON, and returned as a deep clone. `null` means new-game creation should generate a calendar normally.
-- Mod setting fields registered through `ModExtensionRegistry.registerSettingField(...)` are rendered on the Worlds UI and persisted under `modSettings`. Mods can group those fields into their own World Profiles tabs through `ModExtensionRegistry.registerSettingTab(...)`; ungrouped fields remain in the Prompt Guidance `Mod Settings` block.
-- Registered setting fields can be select controls. Non-persisted action fields, such as the implants mod's `applyPreset` select, may update other persisted mod settings in the editor but are not saved into `modSettings`.
-- `baseContextPreamble` is prepended to image-generation prompts at execution time for the OpenAI and NanoGPT backends; ComfyUI skips it.
-- Legacy saved games whose current setting lacks hiding/perception attributes are backfilled on `/api/load` through the `setting_hide_perception` prompt, then written back to the loaded save.
+## Runtime Integration
+- New-game setup requires an active setting. It derives player name, description, class, race, level, starting location, starting currency, existing skills, available class/race lists, faction count, faction drafts, and calendar behavior from the active setting.
+- Faction setup loads `defaultFactions` first, up to the resolved target count. `defaultFactionCount` controls the target when set; draft count and config count are fallbacks. A target of `0` disables faction setup.
+- Calendar setup uses `calendarDefinition` when present. Without a stored calendar draft, the server runs the `calendar_generation` prompt and uses the built-in Gregorian-style calendar if generation fails.
+- Game saves serialize the active setting into `setting.json` and save setting id/name in metadata. Loading a save reconstructs `currentSetting` with `SettingInfo.fromJSON()`.
+- Load compatibility behavior fills missing hide/perception selectors through the `setting_hide_perception` prompt and persists the hydrated save when a backfill is applied.
+- Load compatibility behavior fills missing saved `calendarDefinition` data from the loaded setting when available; otherwise it uses calendar generation with Gregorian fallback.
+- Prompt rendering uses setting snapshots for base context, setting includes, generic prompts, slop-remover prompts, region/location/NPC generation, and name prompts. `baseContextPreamble` is inserted into base-context generation prompts.
+- Image prompt prefixes apply by target type. `baseContextPreamble` is prepended to image-generation prompts for non-ComfyUI engines; ComfyUI receives type-specific prefixes without the base preamble.
+- `customSlopWords` extends active slop filtering. Single-token entries are treated as words; multi-token entries are normalized as ngrams. Invalid custom entries raise errors during slop collection.

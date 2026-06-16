@@ -113,3 +113,20 @@ test('travelProse same-name unknown region does not create duplicate same-name l
     assert.equal(context.createRegionStubCalls.length, 1);
     assert.equal(context.createLocationCalls.length, 0);
 });
+
+test('travelProse new region with specific location preserves pending region-entry context', async () => {
+    const context = loadTravelProseDestinationResolver();
+
+    const result = await context.resolveTravelProseDestination('Northern Mountain Range|Installation Alpha', {
+        allowCreate: true,
+        originLocation: { id: 'origin', name: 'Origin' }
+    });
+
+    assert.equal(result.location.id, 'created-location');
+    assert.equal(result.region, null);
+    assert.equal(result.regionEntryStub.id, 'created-region-stub');
+    assert.equal(result.pendingRegionId, 'created-region');
+    assert.equal(context.createRegionStubCalls.length, 1);
+    assert.equal(context.createLocationCalls.length, 1);
+    assert.equal(context.createLocationCalls[0].targetRegionId, 'created-region');
+});

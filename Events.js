@@ -10,6 +10,7 @@ const StatusEffect = require("./StatusEffect.js");
 const VehicleInfo = require("./VehicleInfo.js");
 const MysteryBox = require("./MysteryBox.js");
 const MysteryThread = require("./MysteryThread.js");
+const Tracker = require("./Tracker.js");
 const { CHAT_TOOL_DEFINITIONS, createChatToolRuntime } = require("./chat_tool_calls.js");
 
 const BASE_TIMEOUT_MS = 120000;
@@ -267,6 +268,10 @@ const EVENT_PROMPT_ORDER = [
         {
             key: "time_passed",
             prompt: `How long did the things that happened in the text for the turn realistically take in elapsed wall-clock time (consider whether some of the above activities could have happened in parallel)? Estimate the duration of the concrete actions described, not how long the prose takes to read and not how long a simple game action usually takes. If the text summarizes an extended activity such as cleaning, searching, crafting, repairing, cooking, resting, training, travel, or careful investigation, estimate the full real-world time required. Consider whether multiple characters worked in parallel; use elapsed wall-clock time rather than summing every person's labor. First briefly identify the time-consuming actions and any parallel work, then provide one best duration estimate. Answer in the format "[brief breakdown/reasoning] -> [time taken]". Format time taken with one of: "HH:MM", "[INTEGER] [minutes/hours]", or "[INTEGER] hours, [INTEGER] minutes". Do NOT use time ranges ("10-20 minutes"); use exact times only (just pick a reasonable amount of time).  If no time passed, answer "Nothing time-consuming happened -> 0".`,
+        },
+        {
+            key: "tracker_updates",
+            prompt: `Did any plot trackers need to be added, updated, or removed? If so, list each change as "[exact tracker name] → [countdown|numerical_count|x_out_of_total|percentage|short_string] → [add|update|remove] → [new tracker value, or none for remove] → [one sentence reason]". Percentage values may include or omit a percent sign. Separate multiple entries with vertical bars. Otherwise answer N/A.`,
         },
         {
             key: "triggered_abilities",
@@ -4962,6 +4967,205 @@ class Events {
         return JSON.stringify(toPlainValue(node));
     }
 
+    static _normalizeTrackerUpdateAction(value) {
+        const action = normalizeString(value).toLowerCase();
+        if (!["add", "update", "remove"].includes(action)) {
+            throw new Error("tracker update action must be add, update, or remove.");
+        }
+        return action;
+    }
+
+    static _normalizeTrackerUpdateType(value) {
+        const rawType = normalizeString(value);
+        if (!rawType) {
+            throw new Error("tracker update type is required.");
+        }
+        const normalized = rawType
+            .toLowerCase()
+            .replace(/%/g, "percentage")
+            .replace(/[^a-z0-9]+/g, "_")
+            .replace(/^_+|_+$/g, "");
+        const aliases = new Map([
+            ["count", "numerical_count"],
+            ["number", "numerical_count"],
+            ["numeric_count", "numerical_count"],
+            ["numerical", "numerical_count"],
+            ["numerical_count", "numerical_count"],
+            ["countdown", "countdown"],
+            ["x_out_of_total", "x_out_of_total"],
+            ["x_of_total", "x_out_of_total"],
+            ["x_total", "x_out_of_total"],
+            ["out_of_total", "x_out_of_total"],
+            ["percentage", "percentage"],
+            ["percent", "percentage"],
+            ["short_string", "short_string"],
+            ["short_text", "short_string"],
+        ]);
+        const type = aliases.get(normalized) || normalized;
+        if (!Tracker.validTypes.includes(type)) {
+            throw new Error(
+                `tracker update type must be one of: ${Tracker.validTypes.join(", ")}.`,
+            );
+        }
+        return type;
+    }
+
+    static _normalizeTrackerUpdateValue(value, type, { required = true } = {}) {
+        const normalizedType = this._normalizeTrackerUpdateType(type);
+        const text = normalizeString(value);
+        const lowered = text.toLowerCase();
+        if (!text || NO_EVENT_TOKENS.has(lowered)) {
+            if (required) {
+                throw new Error("tracker update value is required.");
+            }
+            return "";
+        }
+
+        if (normalizedType === "percentage") {
+            const match = text.match(/^([+-]?(?:\d+(?:\.\d+)?|\.\d+))\s*%?$/);
+            if (!match || !Number.isFinite(Number(match[1]))) {
+                throw new Error("tracker percentage update value must be a finite number with optional %.");
+            }
+            return `${match[1]}%`;
+        }
+
+        if (normalizedType === "x_out_of_total") {
+            const match = text.match(/^(\d+)\s*\/\s*(\d+)$/);
+            if (!match) {
+                throw new Error("tracker x_out_of_total update value must use x/total format.");
+            }
+            const current = Number.parseInt(match[1], 10);
+            const total = Number.parseInt(match[2], 10);
+            if (
+                !Number.isSafeInteger(current) ||
+                !Number.isSafeInteger(total) ||
+                current < 0 ||
+                total < 0
+            ) {
+                throw new Error("tracker x_out_of_total update value must use non-negative integer parts.");
+            }
+        }
+
+        if (normalizedType === "short_string") {
+            const words = text.split(/\s+/).filter(Boolean);
+            if (words.length > 3) {
+                throw new Error("tracker short_string update value must be three words or fewer.");
+            }
+        }
+
+        return text;
+    }
+
+    static _parseTrackerUpdateRawEntry(entry) {
+        const rawEntry = typeof entry === "string" ? entry : String(entry ?? "");
+        const parts = splitArrowParts(rawEntry, 5);
+        if (parts.length < 3) {
+            throw new Error("tracker update entries require tracker name, type, and action.");
+        }
+
+        const trackerName = normalizeString(parts[0]);
+        if (!trackerName) {
+            throw new Error("tracker update trackerName is required.");
+        }
+
+        const type = this._normalizeTrackerUpdateType(parts[1]);
+        const action = this._normalizeTrackerUpdateAction(parts[2]);
+        let newValue = "";
+        let reason = "";
+        if (action === "remove") {
+            if (parts.length >= 5) {
+                newValue = this._normalizeTrackerUpdateValue(parts[3], type, {
+                    required: false,
+                });
+                reason = normalizeString(parts[4]);
+            } else {
+                reason = normalizeString(parts[3]);
+            }
+        } else {
+            newValue = this._normalizeTrackerUpdateValue(parts[3], type);
+            reason = normalizeString(parts[4]);
+        }
+
+        const record = {
+            trackerName,
+            type,
+            action,
+            reason,
+        };
+        if (action !== "remove" || newValue) {
+            record.newValue = newValue;
+        }
+        return record;
+    }
+
+    static _formatTrackerUpdateRawEntry(entry) {
+        const trackerName = normalizeString(entry?.trackerName || entry?.name || entry?.tracker);
+        const type = this._normalizeTrackerUpdateType(entry?.type);
+        const action = this._normalizeTrackerUpdateAction(entry?.action);
+        const rawValue = action === "remove"
+            ? normalizeString(entry?.newValue ?? entry?.value) || "none"
+            : this._normalizeTrackerUpdateValue(entry?.newValue ?? entry?.value, type);
+        const reason = normalizeString(entry?.reason);
+        if (!trackerName) {
+            throw new Error("tracker update trackerName is required.");
+        }
+        return [
+            trackerName,
+            type,
+            action,
+            rawValue,
+            reason,
+        ].join(" → ");
+    }
+
+    static _formatXmlTrackerUpdateRawEntry(node) {
+        return this._formatTrackerUpdateRawEntry({
+            trackerName: this._getXmlDirectChildText(node, "trackerName"),
+            type: this._getXmlDirectChildText(node, "type"),
+            action: this._getXmlDirectChildText(node, "action"),
+            newValue: this._getXmlDirectChildText(node, "newValue"),
+            reason: this._getXmlDirectChildText(node, "reason"),
+        });
+    }
+
+    static _logTrackerUpdateEntryError(entry, error) {
+        const entryText = this._formatEventEntryForLog(entry);
+        const errorText = this._formatEventErrorForLog(error);
+        console.error(`tracker_updates: skipped entry after per-entry failure: ${entryText}: ${errorText}`);
+    }
+
+    static _resolveTrackerUpdateTarget(rawQuery) {
+        const query = normalizeString(rawQuery);
+        if (!query) {
+            throw new Error("tracker update target is required.");
+        }
+
+        const exactMatch = Tracker.getById(query);
+        if (exactMatch) {
+            return exactMatch;
+        }
+
+        const matches = Tracker.findByNameOrKey(query);
+        if (!matches.length) {
+            throw new Error(`No tracker matches "${query}".`);
+        }
+        if (matches.length > 1) {
+            const candidates = matches
+                .map((tracker) => `${tracker.id} (${tracker.name})`)
+                .join(", ");
+            throw new Error(`Multiple trackers match "${query}": ${candidates}.`);
+        }
+        return matches[0];
+    }
+
+    static _getTrackerUpdateWorldMinute() {
+        const worldMinute = Globals.getTotalWorldMinutes();
+        if (!Number.isInteger(worldMinute) || worldMinute < 0) {
+            throw new Error("tracker update world minute must be a non-negative integer.");
+        }
+        return worldMinute;
+    }
+
     static _mapXmlEventNodeToLegacyRaw(node) {
         const tagName = node?.tagName;
         switch (tagName) {
@@ -5430,6 +5634,30 @@ class Events {
                         "duration",
                     ]),
                 };
+            case "trackerUpdates": {
+                const entries = [];
+                for (const child of this._getXmlElementChildren(node)) {
+                    if (child.tagName !== "trackerUpdate") {
+                        this._logTrackerUpdateEntryError(
+                            child?.tagName || child,
+                            new Error("<trackerUpdates> may only contain <trackerUpdate> entries."),
+                        );
+                        continue;
+                    }
+                    try {
+                        entries.push(this._formatXmlTrackerUpdateRawEntry(child));
+                    } catch (error) {
+                        this._logTrackerUpdateEntryError(
+                            this._formatRegisteredXmlEventRaw(child),
+                            error,
+                        );
+                    }
+                }
+                return {
+                    key: "tracker_updates",
+                    raw: entries.join(" | "),
+                };
+            }
             case "triggeredAbility":
                 return {
                     key: "triggered_abilities",
@@ -6643,6 +6871,17 @@ class Events {
                     });
                     return null;
                 }
+            },
+            tracker_updates: (raw) => {
+                const parsed = [];
+                for (const entry of splitPipeList(raw)) {
+                    try {
+                        parsed.push(this._parseTrackerUpdateRawEntry(entry));
+                    } catch (error) {
+                        this._logTrackerUpdateEntryError(entry, error);
+                    }
+                }
+                return parsed;
             },
             in_combat: (raw) => {
                 if (typeof raw !== "string") {
@@ -9105,6 +9344,123 @@ class Events {
                 const advancement = Globals.advanceTime(advancementAmount, { source: "event_check" });
                 context.timeProgress = advancement;
                 applyTimeBasedNeedBarEffectsAfterTimeAdvance(context);
+            },
+            tracker_updates: function (entries = [], context = {}) {
+                if (!Array.isArray(entries) || !entries.length) {
+                    return;
+                }
+
+                const appliedEntries = [];
+                if (!Array.isArray(context.trackerUpdates)) {
+                    context.trackerUpdates = [];
+                }
+
+                for (const entry of entries) {
+                    try {
+                        const trackerName = normalizeString(
+                            entry?.trackerName || entry?.name || entry?.tracker,
+                        );
+                        if (!trackerName) {
+                            throw new Error("tracker update target is required.");
+                        }
+                        const action = this._normalizeTrackerUpdateAction(entry?.action);
+                        const entryType = this._normalizeTrackerUpdateType(entry?.type);
+                        const worldMinute = this._getTrackerUpdateWorldMinute();
+                        const reason = normalizeString(entry?.reason);
+
+                        if (action === "add") {
+                            const existing = Tracker.getAll().find(
+                                (tracker) =>
+                                    normalizeString(tracker?.name).toLowerCase() ===
+                                    trackerName.toLowerCase(),
+                            );
+                            if (existing) {
+                                throw new Error(`Tracker "${trackerName}" already exists.`);
+                            }
+                            if (!reason) {
+                                throw new Error("tracker add requires a reason to use as its description.");
+                            }
+                            const newValue = this._normalizeTrackerUpdateValue(
+                                entry?.newValue ?? entry?.value,
+                                entryType,
+                            );
+                            const tracker = new Tracker({
+                                name: trackerName,
+                                type: entryType,
+                                value: newValue,
+                                hiddenFromPlayer: false,
+                                lastUpdatedWorldMinute: worldMinute,
+                                deriveCountdownUntilWorldMinute: entryType === "countdown",
+                                description: reason,
+                            });
+                            const applied = {
+                                action,
+                                trackerId: tracker.id,
+                                trackerName: tracker.name,
+                                type: tracker.type,
+                                previousValue: null,
+                                newValue: tracker.value,
+                                reason,
+                            };
+                            context.trackerUpdates.push(applied);
+                            appliedEntries.push(applied);
+                            continue;
+                        }
+
+                        const tracker = this._resolveTrackerUpdateTarget(trackerName);
+                        if (entryType !== tracker.type) {
+                            throw new Error(
+                                `Tracker "${tracker.name}" is type ${tracker.type}, not ${entryType}.`,
+                            );
+                        }
+
+                        if (action === "update") {
+                            const previousValue = tracker.value;
+                            const newValue = this._normalizeTrackerUpdateValue(
+                                entry?.newValue ?? entry?.value,
+                                tracker.type,
+                            );
+                            tracker.updateValue(newValue, { worldMinute });
+                            const applied = {
+                                action,
+                                trackerId: tracker.id,
+                                trackerName: tracker.name,
+                                type: tracker.type,
+                                previousValue,
+                                newValue: tracker.value,
+                                reason,
+                            };
+                            context.trackerUpdates.push(applied);
+                            appliedEntries.push(applied);
+                            continue;
+                        }
+
+                        if (action === "remove") {
+                            const removed = Tracker.removeById(tracker.id);
+                            if (!removed) {
+                                throw new Error(`Tracker "${tracker.name || tracker.id}" disappeared before removal.`);
+                            }
+                            const applied = {
+                                action,
+                                trackerId: removed.id,
+                                trackerName: removed.name,
+                                type: removed.type,
+                                previousValue: removed.value,
+                                newValue: null,
+                                reason,
+                            };
+                            context.trackerUpdates.push(applied);
+                            appliedEntries.push(applied);
+                        }
+                    } catch (error) {
+                        this._logTrackerUpdateEntryError(entry, error);
+                    }
+                }
+
+                entries.length = 0;
+                if (appliedEntries.length) {
+                    entries.push(...appliedEntries);
+                }
             },
             in_combat: function (flag, context = {}) {
                 //console.log(`Processing in_combat event: ${JSON.stringify(flag)}`);

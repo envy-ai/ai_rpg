@@ -2,7 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const nunjucks = require('nunjucks');
 
-const { addEvalFilter } = require('../nunjucks_filters.js');
+const { addEvalFilter, addRandomWordGlobal } = require('../nunjucks_filters.js');
 
 function createEnv() {
     const env = new nunjucks.Environment(null, {
@@ -48,4 +48,21 @@ test('eval filter rejects non-object locals', () => {
         }),
         /eval filter locals must be an object/
     );
+});
+
+test('randomword global renders a word from data/words.txt', () => {
+    const env = new nunjucks.Environment(null, {
+        autoescape: false,
+        throwOnUndefined: true
+    });
+    assert.equal(typeof addRandomWordGlobal, 'function');
+    addRandomWordGlobal(env);
+    const originalRandom = Math.random;
+
+    try {
+        Math.random = () => 0;
+        assert.equal(env.renderString('{{ randomword() }}'), 'the');
+    } finally {
+        Math.random = originalRandom;
+    }
 });

@@ -1,0 +1,55 @@
+<h2>Simplified Needs Editor</h2>
+<p class="subtitle">A compact value editor: icon, need name, colored slider, and one numeric input.</p>
+
+<div class="mockup">
+  <div class="mockup-header">Preview: Baato's Needs</div>
+  <div class="mockup-body">
+    <div style="display:grid;gap:10px;max-width:760px;">
+      <div style="display:grid;grid-template-columns:minmax(130px, 170px) minmax(180px, 1fr) 86px;align-items:center;gap:12px;padding:10px 12px;border:1px solid rgba(148,163,184,.28);border-radius:8px;background:rgba(15,23,42,.62);">
+        <div style="display:flex;align-items:center;gap:8px;font-weight:650;color:#e5e7eb;">
+          <span aria-hidden="true">🍖</span>
+          <span>Food</span>
+        </div>
+        <input type="range" min="0" max="1000" value="810" style="width:100%;accent-color:#FFA500;">
+        <input type="number" value="810" style="width:86px;box-sizing:border-box;padding:6px 8px;border-radius:6px;border:1px solid rgba(148,163,184,.5);background:rgba(2,6,23,.72);color:#e5e7eb;">
+      </div>
+
+      <div style="display:grid;grid-template-columns:minmax(130px, 170px) minmax(180px, 1fr) 86px;align-items:center;gap:12px;padding:10px 12px;border:1px solid rgba(148,163,184,.28);border-radius:8px;background:rgba(15,23,42,.62);">
+        <div style="display:flex;align-items:center;gap:8px;font-weight:650;color:#e5e7eb;">
+          <span aria-hidden="true">⚡</span>
+          <span>Stamina</span>
+        </div>
+        <input type="range" min="0" max="1000" value="455" style="width:100%;accent-color:#33CC66;">
+        <input type="number" value="455" style="width:86px;box-sizing:border-box;padding:6px 8px;border-radius:6px;border:1px solid rgba(148,163,184,.5);background:rgba(2,6,23,.72);color:#e5e7eb;">
+      </div>
+
+      <div style="display:grid;grid-template-columns:minmax(130px, 170px) minmax(180px, 1fr) 86px;align-items:center;gap:12px;padding:10px 12px;border:1px solid rgba(148,163,184,.28);border-radius:8px;background:rgba(15,23,42,.62);">
+        <div style="display:flex;align-items:center;gap:8px;font-weight:650;color:#e5e7eb;">
+          <span aria-hidden="true">🛌</span>
+          <span>Rest</span>
+        </div>
+        <input type="range" min="0" max="1000" value="620" style="width:100%;accent-color:#00BFFF;">
+        <input type="number" value="620" style="width:86px;box-sizing:border-box;padding:6px 8px;border-radius:6px;border:1px solid rgba(148,163,184,.5);background:rgba(2,6,23,.72);color:#e5e7eb;">
+      </div>
+
+      <div style="display:grid;grid-template-columns:minmax(130px, 170px) minmax(180px, 1fr) 86px;align-items:center;gap:12px;padding:10px 12px;border:1px solid rgba(148,163,184,.28);border-radius:8px;background:rgba(15,23,42,.62);">
+        <div style="display:flex;align-items:center;gap:8px;font-weight:650;color:#e5e7eb;">
+          <span aria-hidden="true">✨</span>
+          <span>Mana</span>
+        </div>
+        <input type="range" min="0" max="1000" value="930" style="width:100%;accent-color:#8A2BE2;">
+        <input type="number" value="930" style="width:86px;box-sizing:border-box;padding:6px 8px;border-radius:6px;border:1px solid rgba(148,163,184,.5);background:rgba(2,6,23,.72);color:#e5e7eb;">
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="options">
+  <div class="option" data-choice="compact-confirm" onclick="toggleSelect(this)">
+    <div class="letter">A</div>
+    <div class="content">
+      <h3>This compact row is the right direction</h3>
+      <p>Remove the progress bar, metadata, description, effect text, and min/max/delta buttons from the needs edit modal.</p>
+    </div>
+  </div>
+</div>

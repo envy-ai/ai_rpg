@@ -2,9 +2,9 @@
 
 ## Purpose
 
-This is the informal XML schema for the default single-prompt event pipeline (`event_checks.use_xml: true`). The model reads one chat entry or prose segment and emits an `<events>` block. It is not an XSD document.
+This is the informal XML schema for the default single-prompt event pipeline (`event_checks.use_xml: true`). The model reads one chat entry or prose segment and emits an `<events>` block. It is not an XSD document. `Events.js` requires a parseable `<events>...</events>` block and extracts it even when the model wraps the block in markdown fences.
 
-The XML element names use camelCase. Section headings use snake_case labels for readability; the XML examples show the exact tag names the model should emit.
+The XML element names use camelCase. Section headings use snake_case labels for readability; the XML examples show the exact tag names the model should emit. Unknown built-in tags throw parse errors unless an enabled mod has registered the tag.
 
 ## Top-Level Shape
 
@@ -21,12 +21,20 @@ Rules:
 - Omit event tags when that event did not occur.
 - Repeat event tags for multiple instances.
 - If no player/party travel occurred, all event elements remain direct children of `<events>` and belong to the active location.
-- The first `<moveLocation>` or `<moveNewLocation>` element is the travel boundary. Events before it happened at the origin; events after `<arriveAtLocation/>` happened after arrival at the destination. As such, it is important that events be listed in chronological order.
+- The first `<moveLocation>` or `<moveNewLocation>` element is the travel boundary. Events before it happened at the origin; events after `<arriveAtLocation/>` happened after arrival at the destination. List events in chronological order.
 - Omit any events that occur chronologically between the beginning and end of travel. If such tags are emitted anyway, the processor ignores them, except `thingMoveWithCharacter`, which is deferred to the after-arrival phase so objects carried, driven, or otherwise moved with a character can land at the character's destination.
 - Do not emit more than one player/party travel event in a single `<events>` block.
 - `newExitDiscovered` is a normal event and does not create a context boundary.
 - Emit one element for each observed event. Downstream processing may aggregate compatible entries later.
-- Enabled mods can inject additional event tags into the prompt schema through `ModExtensionRegistry.registerXmlEvent(...)`. These tags are parsed live by tag name and should be emitted only when the prose explicitly supports the mod event.
+- Callers can supply ignored event keys. The prompt tells the model not to emit those categories, and the parser hard-removes matching keys if they appear anyway. `npc_arrival` / `npc_departure` normalize to `npc_arrival_departure`; `thing_arrival` / `thing_departure` normalize to `thing_arrival_departure`.
+
+## Registered Mod Event Elements
+
+Enabled mods can inject additional event tags into the prompt schema through `ModExtensionRegistry.registerXmlEvent(...)`. The prompt renders each registered schema's `name`, `description`, and XML example after the core top-level rules. Registered mod tags should be emitted only when the prose explicitly supports the mod event.
+
+The parser looks up registered tag names case-insensitively, converts the tag's direct child XML into a JSON-shaped raw payload, runs the registered parser under the registered `eventKey`, and applies the registered handler through the same event outcome pipeline as built-in tags. Repeated child tag names become arrays. Duplicate XML tags or event keys fail during mod registration.
+
+Bundled mod examples include `<implantEquipped>` / `<implantUnequipped>`, `<moduleInstalled>` / `<moduleRemoved>`, and `<spellLearned>` / `<spellCast>` when those mods are enabled.
 
 ## Travel Boundary
 
@@ -34,7 +42,7 @@ Travel boundary elements are direct children of `<events>`. Include at most one 
 
 ### `move_location`
 
-Use this when the player or party physically travels to, or ends up in, a different existing location. Use it only for actual movement, not for talking about movement, considering movement, looking toward a route, or repositioning within the same fully visible scene.
+Use this when the player or party physically travels to, or ends up in, a different existing location. Use it only for actual movement, not for talking about movement, considering movement, looking toward a route, or repositioning within the same fully visible scene. When the current location is a vehicle, do not infer that the player deboards just because the vehicle has reached its destination; the checked text must say the player deboarded.
 
 ```xml
 <moveLocation>
@@ -44,7 +52,7 @@ Use this when the player or party physically travels to, or ends up in, a differ
 
 ### `move_new_location`
 
-Use this when the player or party physically moves into a destination that is not already a known connected location. Use it for newly entered rooms, newly reached nearby places, new regions, or large structures that should become regions. Do not use it for an exit that was merely discovered but not traveled through.
+Use this when the player or party physically moves into a destination that is not already a known connected location. Use it for newly entered rooms, newly reached nearby places, new regions, or large structures that should become regions. Do not use it for an exit that was merely discovered but not traveled through. When the current location is a vehicle, do not infer that the player deboards just because the vehicle has reached its destination; the checked text must say the player deboarded.
 
 ```xml
 <moveNewLocation>
@@ -70,7 +78,9 @@ Normal event elements are direct children of `<events>`.
 
 ### `new_exit_discovered`
 
-Use this when the text reveals, unlocks, unblocks, creates, clears, finds out about, or otherwise discovers a route or vehicle connection to another location or region. Unlike movement tags, this does not mean the player traveled there. `newExitDiscovered` is not a travel context boundary. Omit `origin` when the route is discovered at the current location; include it when the discovered exit starts somewhere else. If `destinationType` is `region`, still include a concrete destination location name when the text provides or implies one; the handler uses the region as the wiring target while summaries can display the specific destination location. If `destinationType` is `location` and `destinationHasNewExits` is `true`, the parser promotes `locationName` into the region target/name and clears the destination location field before handling.
+Use this when the text reveals, unlocks, unblocks, creates, clears, finds out about, or otherwise identifies a route or vehicle connection to another location or region that is not already represented in the current location XML. Unlike movement tags, this does not mean the player traveled there. `newExitDiscovered` is not a travel context boundary. Do not use it for travel that occurred without a route discovery.
+
+Omit `origin` when the route is discovered at the current location; include it when the discovered exit starts somewhere else. If `destinationType` is `region`, still include a concrete destination location name when the text provides or implies one; the handler uses the region as the wiring target while summaries can display the specific destination location. If `destinationType` is `location` and `destinationHasNewExits` is `true`, the parser promotes `locationName` into the region target/name and clears the destination location field before handling. `travelTime` should be a concrete nonzero duration from the exit origin.
 
 ```xml
 <newExitDiscovered>
@@ -92,7 +102,7 @@ Use this when the text reveals, unlocks, unblocks, creates, clears, finds out ab
 
 ### `alter_location`
 
-Use this when the current location's visual or environmental description changes in a meaningful lasting way while the player remains there. This is not for travel from one location to another. If the location name still fits after the alteration, repeat the same name as `newLocationName`.
+Use this when the current location's visual or environmental description changes in a meaningful lasting way while the player remains there. Ephemeral lighting or mood shifts usually do not qualify. This is not for travel from one location to another, and not for item or scenery movement; use `thingMoveWithCharacter`, `thingArrival`, or `thingDeparture` for movement of existing things. If the location name still fits after the alteration, repeat the same name as `newLocationName`.
 
 ```xml
 <alterLocation>
@@ -104,20 +114,20 @@ Use this when the current location's visual or environmental description changes
 
 ### `mystery_box_mention`
 
-Use this when the text introduces or materially adds to a significant unresolved mystery, hidden offscreen actor, secret motive, conspiracy, unexplained artifact, suspicious discrepancy, or private background thread that may matter later. This does not reveal anything to the player by itself. It triggers a separate private continuity prompt that creates or updates a persisted `MysteryBox`.
+Use this when the text introduces or materially expands a significant unresolved mystery, hidden offscreen actor, secret motive, conspiracy, unexplained artifact, suspicious discrepancy, or private background thread that may matter later. This does not reveal anything to the player by itself. It triggers a separate private continuity prompt that creates or updates a persisted `MysteryBox`.
 
 Do not emit this for every unanswered question, ordinary flavor detail, routine clue, or player speculation. Use it when future scenes would benefit from a stable hidden truth or motive instead of improvising vague mystery later.
 
 ```xml
 <mysteryBoxMention>
   <name>Short stable name for the mystery, actor, clue, or thread</name>
-  <context>One sentence describing what was introduced or added in this text</context>
+  <context>One sentence describing what was introduced or expanded in this text</context>
 </mysteryBoxMention>
 ```
 
 ### `currency`
 
-Use this when the player gains currency, pays currency, or otherwise has currency directly added or removed. Currency is tracked separately from items, so do not represent money as `itemAppear`, `pickUpItem`, `consumeItem`, or `transferItem`.
+Use this when the player gains currency, pays currency, or otherwise has currency directly increased or decreased. Currency is tracked separately from items, so do not represent money as `itemAppear`, `pickUpItem`, `consumeItem`, or `transferItem`.
 
 ```xml
 <currency>
@@ -240,7 +250,7 @@ If a fully consumed target is a container, the handler first moves any instantia
 
 ### `alter_item`
 
-Use this when an item or scenery object is permanently changed in form, name, contents, condition, enchantment, upgrade state, or other durable physical state. Do not use this for being equipped, worn, moved, given, dropped, temporary effects, or full consumption.
+Use this when an item or scenery object is permanently altered in form, name, contents, condition, enchantment, upgrade state, or other durable physical state. Do not use this for being equipped, worn, moved, given, dropped, temporary effects, or full consumption.
 
 ```xml
 <alterItem>
@@ -253,7 +263,7 @@ Use this when an item or scenery object is permanently changed in form, name, co
 
 ### `harvest_gather`
 
-Use this when a character gathers resources from a natural or manufactured source such as a bush, vein, pile, crate, machine, or similar collection. This tag does not by itself mean the source was consumed or changed; use `consumeItem` or `alterItem` separately if the source is depleted or altered.
+Use this when a character gathers resources from a natural or manufactured source such as a bush, vein, pile, crate, machine, or similar collection. This tag does not by itself mean the source was consumed or altered; use `consumeItem` or `alterItem` separately if the source is depleted or altered.
 
 ```xml
 <harvestGather>
@@ -266,7 +276,7 @@ Use this when a character gathers resources from a natural or manufactured sourc
 
 ### `item_inflict`
 
-Use this when an item is used on a target in a way that might cause a status effect, such as applying a bandage, reading a cursed object, injecting something, or otherwise using an item without necessarily ingesting it. The `statusEffect` field should briefly describe the observed effect. If the same item-target pair is represented by `itemIngest`, do not also emit `itemInflict` for the ingestion.
+Use this when an item is used on a target in a way that might cause a status effect, such as applying a bandage, reading a cursed object, injecting something, or otherwise using an item without necessarily ingesting it. The `statusEffect` field should briefly describe the observed effect so the entry parses, but the handler applies the item's configured target status effect (`causeStatusEffectOnTarget`) when available. If the same item-target pair is represented by `itemIngest`, do not also emit `itemInflict` for the ingestion.
 
 ```xml
 <itemInflict>
@@ -278,7 +288,7 @@ Use this when an item is used on a target in a way that might cause a status eff
 
 ### `item_ingest`
 
-Use this when a character eats, drinks, swallows, inhales, or otherwise ingests an item. Use this even when the item is not fully consumed; use `consumeItem` separately if the item stack is actually used up.
+Use this when a character eats, drinks, swallows, inhales, or otherwise ingests an item. Use this even when the item is not fully consumed; use `consumeItem` separately if the item stack is actually used up. The handler infers any applied status effect from the ingested item's configured target effect and suppresses duplicate same item-target `itemInflict` entries in the same batch.
 
 ```xml
 <itemIngest>
@@ -324,7 +334,7 @@ Use this for significant lasting changes to an animate entity, especially physic
 
 ### `status_effect_change`
 
-Use this when an animate entity gains or loses a temporary status effect that is not already represented as a permanent NPC alteration. Use `gained` for new effects and `lost` only when an existing listed status effect goes away. If the effect came from an item use or ingestion, prefer `itemInflict` or `itemIngest` instead of duplicating the same change here.
+Use this when an animate entity gains or loses a temporary status effect that is not already represented as a permanent NPC alteration. Use `gained` for new effects and `lost` only when an existing listed status effect goes away. If the effect came from an item use or ingestion, prefer `itemInflict` or `itemIngest` instead of duplicating the same change here. Lost effects are removed by exact effect name or exact description. Gained effects that duplicate same-turn item-triggered effects are skipped.
 
 ```xml
 <statusEffectChange>
@@ -361,12 +371,13 @@ Use this when an animate entity leaves the scene for another destination. Includ
 
 ### `reveal_hidden_npc`
 
-Use this when narration says the player could notice, expose, discover, or otherwise reveal a currently hidden living NPC. The handler ignores the event if that NPC is not hidden or is dead. A failed opposed check leaves the NPC hidden.
+Use this when narration says the player could notice, expose, discover, or otherwise reveal a currently hidden living NPC. The handler ignores the event if that NPC is not hidden or is dead. `useOpposedCheck` defaults to `true`; a failed opposed check leaves the NPC hidden. Use `false` when the NPC willingly reveals themself or the narration plainly makes them visible without a check.
 
 ```xml
 <revealHiddenNpc>
   <npcName>Exact hidden NPC or entity name</npcName>
   <description>One sentence reason the NPC might be revealed</description>
+  <useOpposedCheck>true|false</useOpposedCheck>
 </revealHiddenNpc>
 ```
 
@@ -517,18 +528,6 @@ Use this when the player becomes aware of a quest, task, promise, self-imposed g
 </receivedQuest>
 ```
 
-### `completed_quest_objective`
-
-Use this when a listed player quest objective is completed. Use the quest and objective indexes from the prompt, and include a short reason explaining why the objective is complete.
-
-```xml
-<completedQuestObjective>
-  <questIndex>1-based quest index from prompt</questIndex>
-  <objectiveIndex>1-based objective index from prompt</objectiveIndex>
-  <statusReason>Brief reason objective is complete</statusReason>
-</completedQuestObjective>
-```
-
 ### `defeated_enemy`
 
 Use this when the player defeats one or more enemies during the turn. Do not use this for enemies merely damaged, delayed, escaped from, intimidated, or bypassed.
@@ -563,22 +562,65 @@ Use this when the player's reputation with a faction should significantly increa
 </factionReputationChange>
 ```
 
+### `tracker_updates`
+
+Optional container for plot tracker mutations. Omit `<trackerUpdates>` when no tracker values changed. If present, each `<trackerUpdate>` is parsed independently; malformed entries are skipped and logged to the console without dropping the whole event block. Percentage values may include or omit the percent sign. Countdown values are concrete durations until the deadline; the handler stores an absolute target minute and display code renders the remaining time automatically.
+
+```xml
+<trackerUpdates>
+  <trackerUpdate>
+    <trackerName>Exact tracker name</trackerName>
+    <type>countdown|numerical_count|x_out_of_total|percentage|short_string</type>
+    <action>add|update|remove</action>
+    <newValue>New tracker value, duration until deadline for countdown, or none for remove</newValue>
+    <reason>One sentence reason</reason>
+  </trackerUpdate>
+</trackerUpdates>
+```
+
+### `triggered_abilities`
+
+Use this when a character's triggered ability fires during the turn. Include only abilities that actually triggered, not abilities that were merely available, discussed, or considered.
+
+```xml
+<triggeredAbility>
+  <characterName>Exact character name</characterName>
+  <abilityName>Exact ability name</abilityName>
+</triggeredAbility>
+```
+
+## Parser-Compatible Event Elements
+
+These tags are accepted by the XML parser and mapped into the normal event pipeline, but the active `events-xml` prompt does not render them as ordinary event tags. They remain useful for compatibility behavior, tests, and pipeline-injected outcomes.
+
+### `completed_quest_objective`
+
+Quest completion normally comes from the dedicated quest-check flow, which merges normalized objective completions into event outcomes. If this XML tag is present, the parser accepts quest and objective indexes from the prompt plus the completion reason.
+
+```xml
+<completedQuestObjective>
+  <questIndex>1-based quest index from prompt</questIndex>
+  <objectiveIndex>1-based objective index from prompt</objectiveIndex>
+  <statusReason>Brief reason objective is complete</statusReason>
+</completedQuestObjective>
+```
+
 ### `disposition_check`
 
-Use this when an NPC's disposition toward the current player changes significantly. If the NPC's attitude did not meaningfully change, omit the tag.
+NPC disposition changes normally use their own memory/disposition prompting path, but this tag still parses into the `disposition_check` handler. Use it only when an NPC's disposition toward the current player changes significantly.
 
 ```xml
 <dispositionCheck>
   <npcName>Exact NPC name</npcName>
   <before>How they felt before</before>
-  <after>How they feel now</after>
+  <after>How they feel after the event</after>
   <reason>One sentence reason</reason>
 </dispositionCheck>
 ```
 
 ### `needbar_change`
 
-Use this when something in the turn changes a need bar for the player, party member, or NPC. Choose the magnitude from the need-bar definitions and the concrete situation. Omit unchanged need bars.
+Need bars normally come from the dedicated `need-bars` prompt and are injected into the XML origin phase as `needbar_change` entries. If this XML tag is present, the parser accepts it and the handler applies the matching need-bar change.
 
 ```xml
 <needBarChange>
@@ -592,22 +634,11 @@ Use this when something in the turn changes a need bar for the player, party mem
 
 ### `time_passed`
 
-Use this to report fallback elapsed in-world wall-clock time for concrete non-travel actions when no earlier action parser already supplied elapsed time. Estimate elapsed wall-clock time, not reading time and not the sum of each participant's labor when characters work in parallel. If the player travels by exit/route or the XML block includes `<moveLocation>`/`<moveNewLocation>`, use `0` here because travel time is resolved from the route or exit instead. Use `0` when nothing non-travel and time-consuming happened.
+Time advancement normally comes from action elapsed-time parsing, route/exit travel time, or other caller-provided `initialTimeProgress`. If this XML tag is present and no earlier time progress exists, it reports fallback elapsed in-world wall-clock time for concrete non-travel actions. `0` is accepted and advances canonical world time by 1 minute. XML travel-boundary responses suppress `timePassed` because route/exit timing is authoritative, except when a move to an active in-motion vehicle destination is suppressed and elapsed time is still needed to finish the vehicle trip.
 
 ```xml
 <timePassed>
   <reasoning>Brief breakdown of time-consuming actions</reasoning>
   <duration>Exact duration, or 0</duration>
 </timePassed>
-```
-
-### `triggered_abilities`
-
-Use this when a character's triggered ability fires during the turn. Include only abilities that actually triggered, not abilities that were merely available, discussed, or considered.
-
-```xml
-<triggeredAbility>
-  <characterName>Exact character name</characterName>
-  <abilityName>Exact ability name</abilityName>
-</triggeredAbility>
 ```

@@ -1,7 +1,7 @@
 # Location
 
 ## Purpose
-Represents a game location, including description, exits, NPCs, items/scenery, and status effects. Supports stub locations that can be promoted to fully generated locations.
+Represents a game location, including descriptive text, exits, NPCs, items/scenery, status effects, visit/favorite state, weather/image hints, and optional vehicle metadata. Supports stub locations that can be promoted into generated locations.
 
 ## Key State
 - Core fields: `#id`, `#name`, `#description`, `#shortDescription`, `#baseLevel`, `#imageId`, `#imageVariants`.
@@ -10,7 +10,8 @@ Represents a game location, including description, exits, NPCs, items/scenery, a
 - Exits: `#exits` (Map of direction -> LocationExit).
 - NPC/Thing references: `#npcIds`, `#thingIds`.
 - Status effects: `#statusEffects`.
-- Stub support: `#isStub`, `#stubMetadata`, `#hasGeneratedStubs`, `#generationHints`.
+- Stub support: `#isStub`, `#stubMetadata`, `#hasGeneratedStubs`.
+- Generation hints: `#generationHints` (`numItems`, `numScenery`, `numNpcs`, `numHostiles`, `hasWeather`).
 - Random events: `#randomEvents`.
 - Visit tracking: `#visited`, `#lastVisitedTime` (minute timestamp).
 - UI markers: `#favorite`.
@@ -18,28 +19,29 @@ Represents a game location, including description, exits, NPCs, items/scenery, a
 - Static indexes: `#indexById`, `#indexByName`.
 
 ## Construction
-- `new Location({...})` validates required fields, links to a `Region`, assigns a compact `loc_n` id when missing, initializes indexes, and normalizes status effects and hints. `visited` and `favorite` default to `false` unless explicitly provided.
-- `static fromXMLSnippet(xmlSnippet, options)` parses XML and constructs a Location with normalized hints and events.
+- `new Location({...})` validates required fields, assigns a compact `loc_n` id when missing, initializes static indexes, and links the location into its `Region` when `checkRegionId` is true. Non-stub locations require a string `description`, positive numeric `baseLevel`, and a live `regionId`; stubs can carry incomplete text/level data but still require a region id string. Callers use `checkRegionId: false` for pending-region ids.
+- Construction normalizes stub metadata, status effects, image variants, generation hints, random events, vehicle info, NPC ids, Thing ids, concept lists, `visited`, `favorite`, and finite numeric `lastVisitedTime` values.
+- `static fromXMLSnippet(xmlSnippet, options)` parses `<location>` XML, normalizes generation hints/random events, computes `baseLevel` from absolute or relative level data, and can promote or update an existing stub while enforcing authoritative stub fields. Missing optional generated metadata blocks such as `randomStoryEvents`, `characterConcepts`, and `enemyConcepts` are accepted and normalize to empty arrays/preserved defaults rather than aborting parsing.
 
 ## Static API
-- `get(id)` / `getById(id)` / `getByName(name)` / `findByName(name)`.
+- `get(id)` / `getById(id)` / `getByName(name)` / `findByName(name)`. Name lookup is case-insensitive through the static name index.
 - `getAll()`.
 - `findShortestTravelTimeMinutes(startLocationOrId, endLocationOrId)`: runs Dijkstra over the directed location-exit graph and returns the minimum summed `travelTimeMinutes`, `0` for the same location, or `null` when no route exists.
 - `findShortestTravelTimeMinutesByRegionAndLocationNames(startRegionName, startLocationName, endRegionName, endLocationName)`: resolves each endpoint by exact region-scoped location name, then runs the same Dijkstra route search and returns the minimum summed `travelTimeMinutes`, `0` for the same location, or `null` when no route exists.
 - `findShortestTravelRoute(startLocationOrId, endLocationOrId)`: runs the same Dijkstra search and returns `{ origin, destination, travelTimeMinutes, steps }`, with each step including source/destination location+region names, direction, and `travelTimeMinutes`; returns `null` when no route exists.
 - `findShortestTravelRouteByRegionAndLocationNames(startRegionName, startLocationName, endRegionName, endLocationName)`: exact-name variant of `findShortestTravelRoute(...)`.
 - `get indexById()` / `get indexByName()`.
-- `removeFromIndex(locationOrId)` to prevent stale lookups.
+- `removeFromIndex(locationOrId)` removes the id index entry and removes the name index entry when given a Location object with a name.
 
 ## Accessors
-- `regionId` (get/set) and `region` (get). Reassigning `regionId` now keeps region membership indexes in sync by removing the location from the old region, adding it to the new region, and repairing the old region's `entranceLocationId` if it pointed at the moved location. If the previous `regionId` is already stale/missing, reassignment logs a warning and still repairs the location into the new live region instead of failing. Stub locations that need to point at a pending region use `setStubRegionId(...)` instead of the live-region-only setter.
+- `regionId` (get/set) and `region` (get). Reassigning `regionId` requires a live target region, removes the location from the previous live region when present, adds it to the target region, updates `stubMetadata.regionId`, and lets `Region.removeLocationId(...)` repair the previous region's `entranceLocationId`. If the previous region id is stale/missing, reassignment logs a warning and links the location into the target live region.
 - `controllingFactionId` (get/set).
 - Basic fields: `id`, `name`, `description`, `shortDescription`, `baseLevel`, `imageId`, `imageVariants`, `createdAt`, `lastUpdated`.
-- Visit tracking: `visited` (get/set), `lastVisitedTime` (get/set, minutes), `minutesSinceLastVisit(currentTime?)`.
+- Visit tracking: `visited` (get/set), `lastVisitedTime` (get/set, minutes), `minutesSinceLastVisit(currentTime?)`. Setting `lastVisitedTime` also stamps the owning live region's `lastVisitedTime`.
 - Favorite marker: `favorite` (get/set) and `isFavorite` (read alias).
 - Stub metadata: `isStub`, `stubMetadata` (get/set), `hasGeneratedStubs` (get/set).
 - Vehicle metadata: `isVehicle` (derived get), `vehicleInfo` (get/set; serialized object or `null`).
-- `generationHints` (get/set).
+- `generationHints` (get/set; count hints are integers from `0` to `20` or `null`, and `hasWeather` is `yes`, `no`, `outside`, or `null`).
 - Random events: `randomEvents` (get/set).
 - Entities: `npcIds`, `npcs`, `thingIds`, `things`, `items`, `scenery`.
 - Concepts: `characterConcepts` (get/set), `enemyConcepts` (get/set).
@@ -47,19 +49,21 @@ Represents a game location, including description, exits, NPCs, items/scenery, a
 ## Instance API
 - Stub lifecycle: `promoteFromStub(...)`, `markStubsGenerated()`, `resetStubGeneration()`.
 - `setStubRegionId(regionId, { requireLiveRegion = false })`: reassigns a stub location's internal `regionId` and `stubMetadata.regionId`. When the target is a live region it also adds the stub to that region's membership; callers that allow pending-region ids must maintain `pendingRegionStubs.locationIds` separately.
-- Visit tracking: `markVisited(visitedAt?)` marks the location visited and, when a minute timestamp is available, updates `lastVisitedTime`.
+- Visit tracking: `markVisited(visitedAt?)` marks the location visited and, when a minute timestamp is available, updates `lastVisitedTime`. With no argument it uses `Globals.elapsedTime`; with `null` it marks `visited` without a timestamp.
 - Image variants: `getImageVariant(variantKey)`, `setImageVariant(variantKey, entry)`, `removeImageVariant(variantKey)`, and `clearImageVariants({ sourceImageId? })` manage persisted display-only image variants such as weather/lighting renders.
-- Exit management: `addExit(direction, exit)`, `removeExit(direction)`, `getExit(direction)`, `getAvailableDirections()`, `hasExit(direction)`, `clearExits()`.
-- Summaries: `getSummary()`, `getDetails()`, `toJSON()` now include `visited`, `favorite`, `lastVisitedTime`, serialized `imageVariants`, and `generationHints`.
+- Exit management: `addExit(direction, exit)`, `removeExit(direction)`, `getExit(direction)`, `getAvailableDirections()`, `hasExit(direction)`, `clearExits()`. Directions are lower-cased and trimmed.
+- Summaries: `getSummary()` returns a lightweight snapshot with counts/directions. `getDetails()` and `toJSON()` return the save/API location payload, including visit/favorite fields, image variants, vehicle info, generation hints, exits, NPC/Thing ids, status effects, random events, and concept tags.
 - Random events: `addRandomEvent(event)`, `removeRandomEvent(event)`.
 - NPC helpers: `getNPCIds()`, `getNPCs()`, `getNPCNames()`, `addNpcId(id)`, `removeNpcId(id)`, `setNpcIds(ids)`, `clearNpcIds()`.
-- Thing helpers: `addThingId(id)`, `removeThingId(id)`, `setThingIds(ids)`, `clearThingIds()`.
-- `addThingId(id)` automatically merges incoming non-container, unequipped item stacks into existing loose same-name/same-checksum stacks in the location unless called with `mergeStacks: false`.
+- Thing helpers: `addThingId(id, { mergeStacks = true } = {})`, `removeThingId(id)`, `setThingIds(ids)`, `clearThingIds()`.
+- `addThingId(...)` removes the incoming Thing from other world locations, updates its metadata for location ownership, and merges incoming non-container, unequipped item stacks into existing loose same-name/same-checksum stacks in the location unless called with `mergeStacks: false`.
 - Status effects: `getStatusEffects()`, `setStatusEffects(effects)`, `addStatusEffect(effect, defaultDuration)`, `removeStatusEffect(description)`, `tickStatusEffects(elapsedMinutes)`, `clearExpiredStatusEffects()`.
 - `toString()`.
 
 ## Private/Static Helpers
 - `#generateId()`.
+- `#normalizeWeatherExposure(value, fieldName)`.
+- `#normalizeStubMetadata(metadata)`.
 - `#normalizeStatusEffects(effects)`.
 - `#normalizeImageVariantEntry(entry, fallbackKey)` / `#normalizeImageVariants(imageVariants)` / `#serializeImageVariants(variants)`.
 - `#normalizeRandomEvents(events)`.
@@ -67,19 +71,18 @@ Represents a game location, including description, exits, NPCs, items/scenery, a
 - `#normalizeVehicleInfo(vehicleInfo)`.
 
 ## Notes
-- Stub locations now carry both a long `stubDescription` and a one-sentence `stubShortDescription` in `stubMetadata`; those are treated as authoritative during stub expansion and reused without regeneration. Stub short descriptions are also copied into `location.shortDescription` on creation/load so stubs render properly in base-context world outlines. Event-created location stubs are the exception: they intentionally leave short-description fields blank so the short-description hydrator still treats them as missing and generates a real one later.
-- Event-created location stubs can target a pending region-entry stub by `targetRegionId`. These stubs are recorded on `pendingRegionStubs.locationIds`, reused if the generated region blueprint later names the same location, and preserved even if the generated region blueprint omits them.
-- Event/travel-created stubs also persist `stubMetadata.createOriginExit`; when that flag is `false`, later stub expansion skips creating the generic origin/reverse links so vehicle-specific exit wiring can remain authoritative. Travel-driven unstub/expansion can also stamp that flag onto already-existing stubs before expansion, which prevents older saves from recreating the plain link.
-- Legacy stubs without `stubDescription` continue to expand, but only their long description is fixed; the LLM still generates a short description.
-- Player-driven `Player.setLocation(...)` calls mark the destination as visited and stamp `lastVisitedTime` from `Globals.elapsedTime`; NPC and vehicle-only movement do not.
-- Legacy saves that predate persisted `visited` flags now load non-stub locations as visited and stub locations as unvisited by default.
-- Legacy saves that predate persisted `favorite` flags load locations as not favorite. Favorite locations are stored on the `Location` record, not on the player, so they persist with the world save and appear in the Play tab's Favorites subtab when visited and non-stub.
-- `findShortestTravelTimeMinutes(...)` and `findShortestTravelRoute(...)` treat exits as directed weighted edges and throw on malformed graph data such as dangling destinations or invalid travel-time values, instead of silently skipping them.
-- The exact-name shortest-travel helpers fail loudly when a named region is missing, a location name does not exist within the named region, or the same location name appears more than once inside that region.
-- Adding/removing thing ids updates Thing metadata (location ownership) and removes from other locations via `Thing.removeFromWorldById`.
-- Status effects are stored as `StatusEffect` instances; getters return JSON snapshots.
-- Movement/integrity repair paths can safely reapply the same `regionId` to restore missing region membership, and can also recover a location from a stale missing previous region during explicit reconciliation.
-- Stub expansion prompts include authoritative stub fields (description/shortDescription, relative/base level, controlling faction, numNpcs/numHostiles). When present, these fields are omitted from the LLM output and filled from the stub during parsing; if the LLM provides a different value, the server warns and overrides with the stub values. For description/shortDescription, if the LLM output starts with the stub text (after whitespace normalization), the expanded text is accepted instead of being overridden.
-- `generationHints` now optionally carries `hasWeather` as `yes`, `no`, `outside`, or `null` so outdoor/indoor weather applicability can persist through stub promotion, API responses, and save/load. Stub metadata fields `hasWeather` and `locationHasWeather` use the same normalization, so legacy saved stub booleans load as `yes`/`no`. Legacy boolean values are accepted on hydration/prompt parsing and normalized to `yes`/`no`. `outside` means the location is sheltered but exterior weather remains visible, such as through windows or an open view. The main location edit modal can set this hint to exposed, outside-visible, sheltered, or automatic.
-- Locations can now act as vehicles by setting `vehicleInfo`; `isVehicle` is derived from `vehicleInfo !== null`. `getSummary()`/`getDetails()`/`toJSON()` include both `isVehicle` and serialized `vehicleInfo`.
-- `imageVariants` stores cached presentation-layer image ids keyed by source base image plus normalized lighting/weather. These variants never replace `imageId`; callers clear them when a visual location edit or base image regeneration changes the authoritative location image.
+- Stub locations can carry a long `stubDescription` and a one-sentence `stubShortDescription` in `stubMetadata`. Stub expansion treats those fields as authoritative when present. Stub short descriptions are copied into `location.shortDescription` during construction/hydration so stubs render in world outlines. Manual stub edits accept empty descriptions and synchronize the presentation fields in `stubMetadata`. Event-created location stubs intentionally omit short-description fields so the short-description hydrator can generate them later.
+- Stub expansion prompts include authoritative stub fields such as description/shortDescription, relative/base level, controlling faction, and NPC/hostile counts. `Location.fromXMLSnippet(...)` enforces authoritative description/shortDescription, relative/base level, and NPC/hostile counts. The generation caller resolves and applies the controlling faction. Expanded description/shortDescription text is accepted when it starts with the authoritative stub text after whitespace normalization.
+- Event-created location stubs can target a pending region-entry stub by `targetRegionId`. These stubs are recorded on `pendingRegionStubs.locationIds`, matched by normalized name/alias during region expansion, and preserved even when the generated region blueprint omits them.
+- Event/travel-created stubs persist `stubMetadata.createOriginExit`; when the flag is `false`, stub expansion skips generic origin/reverse link creation so vehicle-specific exit wiring remains authoritative. Travel-driven expansion stores the flag on a matching existing stub before expansion.
+- Stubs without `stubDescription` can expand; their long description falls back through `blueprintDescription`, `shortDescription`, existing `description`, or existing `shortDescription`, while the LLM supplies the missing short description.
+- Player-driven `Player.setLocation(...)` calls mark the destination as visited and stamp `lastVisitedTime` from `Globals.elapsedTime`; NPC movement and vehicle-only movement do not mark visit state. `Globals.recordPlayerArrivalVisitState(...)` snapshots the destination's previous visit state before player moves for arrival/chat payloads.
+- Save hydration: when saved `visited` is absent, hydrated non-stub locations default to visited and hydrated stubs default to unvisited. When saved `favorite` is absent, hydrated locations default to not favorite. Missing saved exit `travelTimeMinutes` values hydrate as `0`. Favorites are stored on the `Location` record, persist with the world save, and the Favorites subtab lists only visited, non-stub favorites.
+- `findShortestTravelTimeMinutes(...)` and `findShortestTravelRoute(...)` treat exits as directed weighted edges and throw on malformed graph data such as dangling destinations or invalid `travelTimeMinutes` values. The exact-name shortest-travel helpers throw when a named region is missing, a location name does not exist within the named region, or the same location name appears more than once inside that region.
+- `addThingId(...)` and `removeThingId(...)` maintain Thing metadata for direct location ownership. `setThingIds(...)` and `clearThingIds()` replace the id list without doing per-Thing metadata repair.
+- Status effects are stored as `StatusEffect` instances; getters return JSON snapshots. Timed status effects tick by positive elapsed minute amounts and `clearExpiredStatusEffects()` removes effects whose finite duration is `0`.
+- Movement/integrity repair paths can reapply the same `regionId` to restore missing region membership, and explicit reassignment can recover from a stale previous region id while requiring the target region to be live.
+- `generationHints.hasWeather`, `stubMetadata.hasWeather`, and `stubMetadata.locationHasWeather` use `yes`, `no`, `outside`, or `null`. Boolean and boolean-like inputs are accepted during hydration/prompt parsing and normalized to `yes`/`no`. `outside` means the location is sheltered while exterior weather remains visible. The location edit API stores this hint and clears cached weather/lighting variants when it changes.
+- Locations act as vehicles by setting `vehicleInfo`; `isVehicle` is derived from `vehicleInfo !== null`. API/map payloads enrich vehicle info for display, include vehicle icon/direction metadata on exits, and omit vehicle exits that should be hidden while the vehicle is in transit.
+- `Location.toJSON()` returns model state. `buildLocationResponse(...)` and map serializers add API/UI fields such as region names/paths, image URLs, NPC/Thing profiles, destination visit/stub/vehicle metadata, and vehicle-exit filtering.
+- `imageVariants` stores cached presentation-layer image ids keyed by source base image plus normalized lighting/weather. Variants do not replace `imageId`; callers clear them when visual location edits, weather-exposure edits, vehicle edits, or base-image regeneration make cached variants stale.

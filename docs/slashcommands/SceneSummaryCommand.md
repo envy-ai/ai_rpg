@@ -1,19 +1,24 @@
 # SceneSummaryCommand
 
 ## Purpose
-Slash command `/summarize` (alias `/scene_summary`) to summarize chat history into scenes and export to a text file.
+Slash command `/summarize` (alias `/scene_summary`) summarizes scene-summary-indexed chat history into stored scene summaries and writes a plain-text export.
 
 ## Args
-- `range` (string, required): "check", "all", "N", or "N-M".
-- `redo` (boolean, optional): re-summarize and extend the range slightly.
+- `range` (string, required): `check`, `all`, `N`, `N-M`, or `N..M`.
+- `redo` (boolean, optional): when true, delete overlapping stored summaries before rebuilding the requested range.
 
 ## Behavior
-- When `range` is "check", counts unsummarized entries using the same scene-summary index as the summarizer.
-- Otherwise parses the range and calls `Globals.summarizeScenesForHistoryRange`.
-- `range=all` without `redo` summarizes only the unsummarized tail.
-- `range=all` with `redo=true` clears overlapping scene summaries and rebuilds all scenes from entry 1.
-- Writes a text export file and replies with the result path.
+- Reads chat history from `interaction.getChatHistory()` or `interaction.chatHistory`; unavailable or empty history produces an ephemeral reply.
+- `range=check` counts total, summarized, and unsummarized entries with the shared scene-summary index and replies without calling the LLM summarizer.
+- Other ranges call `Globals.summarizeScenesForHistoryRange({ chatHistory, startIndex, endIndex, redo })`; a missing summarizer throws `Scene summarization is unavailable on this server.`
+- `range=all` with `redo=false` starts at the first uncovered scene-summary index and fails when all indexed entries are already summarized.
+- `range=all` with `redo=true` rebuilds from entry 1 after removing overlapping stored summaries.
+- `range=N` summarizes one indexed entry; `range=N-M` and `range=N..M` summarize inclusive indexed ranges. Invalid, reversed, zero, or negative ranges produce ephemeral replies.
+- Successful summarization requires at least one returned scene. The command writes `exports/summary-<timestamp>.txt`, echoes the formatted export to the server console, and replies with the output path.
+- Export or formatting failures produce ephemeral replies that include the failing operation and error message.
 
 ## Notes
 - Scene-summary entry numbers are 1-based scene-summary index numbers, not raw `chatHistory` array offsets.
-- The shared scene-summary index excludes `event-summary` and `status-summary` entries, plus plot-summary/plot-expander entries, while preserving hidden supplemental/offscreen story entries such as `while-you-were-away`.
+- The shared scene-summary index excludes prompt-history-excluded entries, diagnostics such as `tool-call-debug` and `check-results`, `event-summary`, `status-summary`, `plot-summary`, `plot-expander`, summary-style entries, and omitted-result markers.
+- Hidden story-note entries remain eligible when they contain narrative text, including `supplemental-story-info`, `offscreen-npc-activity-daily`, `offscreen-npc-activity-weekly`, and `while-you-were-away`.
+- The server summarizer requires a configured AI backend. It chunks long ranges by `summaries.scene_summary_max_entries_per_prompt`, logs prompts through `LLMClient.logPrompt()` under the `scene_summarize` prefix, and stores scene bounds in `Globals.getSceneSummaries()`.

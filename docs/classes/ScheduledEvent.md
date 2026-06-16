@@ -1,33 +1,100 @@
 # ScheduledEvent
 
 ## Purpose
-Persistent record for a planned future event created by the `scheduleEvent` chat tool.
+`ScheduledEvent` is the persisted record for a planned future event created through the `scheduleEvent` chat tool. The record stores timing, target location, lifecycle state, and resolution text; runtime API hooks perform due-event resolution and any resulting world mutations.
+
+## Creation
+- The `scheduleEvent` chat tool requires `event`, `region`, and `location`, plus exactly one timing mode:
+  - `in`: a future duration string or numeric minute count parsed by `Utils.parseDurationToMinutes(...)`.
+  - `at`: canonical world time `{ dayIndex, timeMinutes }`.
+- `scheduleEvent` is available to regular prose prompts, scheduled-event resolution, generic prompt actions, and background `plot-analysis` prompts. Plot analysis receives it only alongside `addTracker`, so it can add new timed events without broader mutation tools.
+- `createScheduledEventScheduler(...)` resolves the region by id or exact name, resolves the location by id or name, and validates that the location belongs to the requested region.
+- Region and location ambiguity raises an error instead of selecting an arbitrary match. Same-named locations are resolved inside the requested region when that region identifies a single matching location.
+- Relative timings must be positive. Exact timings must be inside the configured day cycle and strictly after `Globals.getTotalWorldMinutes()`.
+- Successful scheduling creates a `ScheduledEvent` with a compact `sevent_n` id, absolute `targetWorldMinute`, canonical `targetWorldTime`, and creation time copied from the active world clock.
 
 ## Fields
-- `id`: compact `sevent_n` identifier from `IdGenerator`.
-- `event`: description of what is planned to happen.
-- `regionId` / `regionName`: resolved target region.
-- `locationId` / `locationName`: resolved target location.
-- `targetWorldMinute`: absolute world minute when the event becomes due.
+- `id`: compact `sevent_n` identifier allocated by `IdGenerator.next('scheduledEvent')`, or an explicit id loaded from saves.
+- `event`: non-empty description of the planned event.
+- `regionId` / `regionName`: resolved region target.
+- `locationId` / `locationName`: resolved location target.
+- `targetWorldMinute`: absolute minute when the event becomes due.
 - `targetWorldTime`: canonical `{ dayIndex, timeMinutes }` target time.
-- `createdAtWorldMinute` / `createdAtWorldTime`: world time when scheduled.
-- `status`: `pending`, `resolved`, or `skipped`.
-- `resolutionSummary`: hidden chat-log summary when the event happened.
-- `playerProse`: player-facing prose returned when the player was at the event location; this is normally stored visibly, but same-location player-action interruptions fold it into the rewritten player-action prose instead.
-- `resolvedAtWorldMinute` / `resolvedAtWorldTime`: world time when processed.
-- `createdAt` / `updatedAt`: real timestamps for save/debug use.
+- `createdAtWorldMinute` / `createdAtWorldTime`: world time at scheduling.
+- `status`: `pending`, `resolved`, or `skipped`; defaults to `pending`.
+- `resolutionSummary`: hidden chat-log summary for a resolved event.
+- `playerProse`: player-facing prose for a resolved event when the player was present at the target location. Same-location player-action interruptions suppress a separate visible scheduled-event entry and fold this prose into the rewritten player-action prose.
+- `resolvedAtWorldMinute` / `resolvedAtWorldTime`: world time when the event was resolved or skipped; `null` while pending.
+- `createdAt` / `updatedAt`: real ISO timestamps for save and diagnostics.
 
-## API
-- `getPendingDue(worldMinute)`: returns pending due events sorted by target minute, then id.
-- `getPendingBetween(startWorldMinute, endWorldMinute)`: returns pending events with `targetWorldMinute` greater than the start and less than or equal to the end, sorted by target minute, then id.
-- `markResolved({ summary, playerProse, worldMinute, worldTime })`: records a happened event.
-- `markSkipped({ worldMinute, worldTime })`: records a due event that no longer made sense.
-- `serializeAll()` / `loadAll(payload)`: save/load map helpers used by `Utils`.
+## Validation
+- The constructor requires an object payload, non-empty event/region/location fields, non-negative integer world-minute fields, world-time objects with non-negative integer `dayIndex` and `timeMinutes`, and one of the valid statuses.
+- `markResolved(...)` requires a non-empty `summary`.
+- `markSkipped(...)` clears `resolutionSummary` and `playerProse`.
+- `loadAll(payload)` clears the in-memory registry, requires an object map, and hydrates each entry through the constructor.
+
+## Static API
+- `clear()`: removes all in-memory scheduled events.
+- `getAll()`: returns all records in insertion/map order.
+- `getById(id)`: returns a record by trimmed id, or `null`.
+- `getPending()`: returns pending records sorted by `targetWorldMinute`, then id.
+- `getPendingDue(worldMinute)`: returns pending records with `targetWorldMinute <= worldMinute`, sorted by due time and id.
+- `getPendingBetween(startWorldMinute, endWorldMinute)`: returns pending records with `targetWorldMinute > startWorldMinute` and `targetWorldMinute <= endWorldMinute`, sorted by due time and id. It throws if the end minute is before the start minute.
+- `fromJSON(payload)`: constructs a record from a serialized payload.
+- `serializeAll()`: returns an id-keyed object map of `toJSON()` payloads.
+- `loadAll(payload)`: replaces the in-memory registry from an id-keyed object map.
+
+## Instance API
+- `markResolved({ summary, playerProse, worldMinute, worldTime })`: sets `status` to `resolved`, stores trimmed resolution text, records resolution world time, and refreshes `updatedAt`.
+- `markSkipped({ worldMinute, worldTime })`: sets `status` to `skipped`, clears resolution text, records resolution world time, and refreshes `updatedAt`.
+- `toJSON()`: returns the persisted record shape with cloned world-time objects.
+
+## Save And Load
+- `Utils.serializeGameState(...)` writes scheduled events through `ScheduledEvent.serializeAll()`.
+- `Utils.writeSerializedGameState(...)` stores the map in `scheduledEvents.json`.
+- Save metadata includes `totalScheduledEvents`.
+- `Utils.loadSerializedGameState(...)` reads `scheduledEvents.json`, defaulting to `{}` when the file is absent or cannot be parsed.
+- `Utils.hydrateGameState(...)` loads scheduled events through `ScheduledEvent.loadAll(...)` before hydrating things, players, chat history, locations, exits, and regions.
+- Constructors and loaders register scheduled-event ids with `IdGenerator` so loaded ids are not reused.
+
+## Due-Event Resolution
+`api.js` owns runtime processing for due scheduled events:
+
+- `processDueScheduledEvents(...)` guards against re-entrant resolution, reads `ScheduledEvent.getPendingDue(Globals.getTotalWorldMinutes())`, and resolves due events in chronological order.
+- Due-event sweeps run after due vehicle arrivals in the main `/api/chat` response path, crafting actions, location modification actions, positive world-time adjustments, travel/fast-travel time adjustments, and `/time` forward adjustments.
+- Negative world-time adjustments move the raw clock backward and do not process due scheduled events.
+- Each due event renders `base-context.xml.njk` with `promptType: 'scheduled-event-resolution'`, which includes `prompts/_includes/scheduled-event-resolution.njk`.
+- Resolution prompts use metadata label `scheduled_event_resolution`, are logged through `LLMClient.logPrompt()`, and use the configured prompt-progress target for that label.
+- Scheduled-event resolution receives built-in chat tools except generic-prompt-only edit/rerun helpers, plus registered mod chat tools. World-mutation tools are available.
+- `requestUserInput` is in the scheduled-event tool list. It succeeds only with an active client stream/id, realtime delivery, and enabled configuration; otherwise the tool loop returns a visible tool error to the model.
+- The parser uses the final `<scheduledEventResult>` block in the model response. A self-closing result, or a result with no summary and no `proseForPlayer`, skips the event.
+- A happened result must include `summary`. If the player is at the scheduled location, it must also include `proseForPlayer`.
+- Happened events store a hidden `scheduled-event` chat entry with `hiddenFromClient: true`.
+- When the player is present and visible prose is not suppressed, happened events also store a visible `scheduled-event-prose` entry. Slop removal can run on that visible scheduled-event prose before storage.
+- `markResolved(...)` stores player prose only when the player was present. Off-location resolutions keep `playerProse` empty.
+
+## Player-Action Interruptions
+Normal player-action `<finalProse>` responses with parsed `<timePassed>` can be interrupted by same-location scheduled events before slop removal:
+
+- The chat route skips interruption handling for travel prose, questions, generic prompts, and responses without parsed player-action time.
+- `findScheduledEventInterruptionForPlayerAction(...)` checks `getPendingBetween(turnStart, turnEnd)` and filters to the player's current location.
+- If multiple local events share the earliest due minute inside the action interval, all events at that minute resolve together.
+- The route advances world time to the interruption minute, applies status/need ticking for that elapsed segment, then resolves the local events with source `player_action_interruption` and `suppressVisibleProse: true`.
+- If at least one event happened, `prompts/_includes/scheduled-event-interruption-rewrite.njk` rewrites the original player-action XML so the scheduled-event prose is incorporated into the player-facing action prose.
+- The rewrite must preserve non-prose XML fields, must not convert the response to travel prose, must not reject the action, and must preserve the original `<timePassed>` duration. For `<finalProse>` responses, the rewrite edits the direct `<prose>` child while preserving that wrapper, direct child `<hidden>` notes, and nested hidden notes inside prose.
+- The remaining player-action time advances after the rewrite. Regular slop removal, event checks, quest checks, autosave, and response shaping continue on the rewritten prose.
+- Due events in other locations remain pending during the interruption pass and are eligible for the regular due-event sweep at response time.
 
 ## Diagnostics
-- `/scheduled` lists pending scheduled events in readable markdown, ordered by due time and id. It is read-only and does not process due events.
+- `/scheduled` is a read-only slash command backed by `ScheduledEvent.getPending()`.
+- It replies with `No pending scheduled events.` when none are pending.
+- Otherwise it returns a numbered Markdown list sorted by due time and id, including due date/time, relative time, region name/id, location name/id, and the full event text.
+- Resolved and skipped records are omitted from `/scheduled`.
 
-## Runtime Flow
-When time advances, API hooks process due `ScheduledEvent` records. Each due event renders `prompts/_includes/scheduled-event-resolution.njk`, receives the complete built-in and registered mod chat-tool definition list, uses the default `scheduled_event_resolution` prompt-progress target, logs the prompt through `LLMClient.logPrompt()`, and parses `<scheduledEventResult>`. This includes world-mutation tools. `requestUserInput` is also exposed; it succeeds only when the processing context has an active client and config allows it, otherwise the tool result is a visible `<toolError>`. A self-closing or empty result marks the event `skipped`. A happened result stores a hidden `scheduled-event` chat entry and, if the player is in the event location, a visible `scheduled-event-prose` entry.
-
-For normal `<finalProse>` player actions with parsed `<timePassed>`, the chat route checks `getPendingBetween(turnStart, turnEnd)` before slop removal. If the earliest due event is in the player's current location, the route advances time to that interruption minute, resolves same-minute local scheduled events with visible scheduled-event prose suppressed, then renders `prompts/_includes/scheduled-event-interruption-rewrite.njk` to rewrite the player-action XML while preserving non-prose fields such as `<hidden>` and `<timePassed>`. The rewritten prose then goes through the regular slop-removal and event-check path. Due events elsewhere remain pending until the normal due-event sweep processes them outside the player prose.
+## Reference Tests
+- `tests/scheduled_event.test.js`: model lifecycle, due ordering, interval bounds, and save/load round-trip.
+- `tests/scheduled_event_runtime.test.js`: scheduler timing, region/location validation, same-name region-scoped lookup, and result XML parsing.
+- `tests/chat_tool_schedule_event.test.js`: chat-tool schema, delegation, result XML, and invalid timing-mode errors.
+- `tests/scheduled_command.test.js`: `/scheduled` registration and Markdown output.
+- `tests/scheduled_event_api_integration.test.js`: API wiring for scheduling, resolution prompts, tool list, prompt logging, chat entry types, and vehicle-before-scheduled ordering.
+- `tests/api.player_action_rejection.test.js`: scheduled-event interruption rewrite order before slop removal.

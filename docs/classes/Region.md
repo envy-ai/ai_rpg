@@ -1,75 +1,151 @@
 # Region
 
 ## Purpose
-Represents a region containing multiple locations, with metadata like average level, random events, and status effects. Maintains static indexes for lookup by id and name.
+`Region` models a named area that contains multiple `Location` records. Regions provide world structure, hierarchy, location blueprints for generated stubs, average level metadata, controlling faction, secrets, dynamic weather, random events, status effects, and optional vehicle-region state. The class maintains static lookup indexes by id and lowercase name.
 
 ## Key State
-- `#id`, `#name`, `#description`, `#shortDescription`.
-- `#locationBlueprints`: blueprint definitions for generated locations (now include per-location `shortDescription` plus exit `travelTimeMinutes`).
-- `#locationIds`: ids for instantiated locations in the region.
-- `#entranceLocationId`, `#parentRegionId`, `#controllingFactionId`.
-- `#vehicleInfo` (`VehicleInfo` or `null`) for mobile/vehicle regions.
-- `#statusEffects`, `#randomEvents`, `#averageLevel`, `#relativeLevel`.
-- `#numImportantNPCs`, `#characterConcepts`, `#enemyConcepts`, `#secrets`.
-- `#weather`, `#weatherState` for region-level dynamic weather definitions/state (minute duration fields).
-- `#lastVisitedTime` (minutes).
+- Identity and descriptions: `#id`, `#name`, `#description`, `#shortDescription`.
+- Location membership: `#locationBlueprints`, `#locationIds`, `#entranceLocationId`.
+- Hierarchy and ownership: `#parentRegionId`, `#controllingFactionId`.
+- Vehicle data: `#vehicleInfo`, stored as a `VehicleInfo` instance or `null`; `isVehicle` is derived from this field.
+- Gameplay metadata: `#averageLevel`, `#relativeLevel`, `#numImportantNPCs`, `#randomEvents`, `#characterConcepts`, `#enemyConcepts`, `#secrets`.
+- Status and time: `#statusEffects`, `#lastVisitedTime` in world minutes.
+- Weather: `#weather` definitions and `#weatherState` using minute-canonical duration fields.
+- Runtime timestamps: `#createdAt`, `#lastUpdated`.
 
 ## Construction
-- `new Region({...})` validates name/description, assigns a compact `region_n` id when missing, normalizes blueprints, events, levels, and status effects. Adds to static indexes.
+- `new Region({...})` requires string `name` and `description`, accepts `shortDescription` as string or `null`, assigns a compact `region_n` id through `IdGenerator` when `id` is omitted, and registers the id with the counter system.
+- Constructor input normalizes location blueprints, `locationIds`, entrance/parent/faction ids, status effects, random events, concepts, secrets, important NPC count, `VehicleInfo`, weather definitions, and weather state.
+- Constructed instances are registered in the static id/name indexes. Name lookups are case-insensitive.
+- `fromJSON(data)` reconstructs a region from saved payload fields and rebuilds indexes through the constructor. Save hydration in `Utils.hydrateGameState()` clears the runtime maps/indexes, calls `Region.fromJSON()` for each saved region, and stores successful regions in the active `regions` map. Pending region-entry stubs are persisted separately from `Region` instances.
 
 ## Static API
-- `get(id)` / `getByName(name)` / `getAll()`.
-- `get indexById()` / `get indexByName()` / `getIndexById()` / `getIndexByName()`.
-- `removeFromIndex(regionOrId)` to drop stale rolled-back regions from the static indexes.
-- `clear()`.
-- `fromJSON(data)` / `fromXMLSnippet(xmlSnippet)`.
-- `parseWeatherDefinitionFromXmlSnippet(xmlSnippet)` to parse `<weather>` blocks without instantiating a region.
-- `get stubRegionCount()`: count of regions without location ids.
+- `get(id)`, `getByName(name)`, and `getAll()` read from static indexes.
+- `indexById`, `indexByName`, `getIndexById()`, and `getIndexByName()` return copied `Map` instances.
+- `clear()` empties the static indexes.
+- `removeFromIndex(regionOrId)` removes stale id/name entries, primarily for failed generation rollback.
+- `fromJSON(data)` hydrates saved region data.
+- `fromXMLSnippet(xmlSnippet)` parses a generated `<region>` XML block and returns a registered `Region`.
+- `parseWeatherDefinitionFromXmlSnippet(xmlSnippet)` parses only the `<weather>` block from a `<region>` XML snippet.
+- `stubRegionCount` returns the number of registered regions whose `locationIds` array is empty.
 
 ## Accessors
-- `name`, `description`, `shortDescription` (get/set).
-- `locationBlueprints`, `locationIds` (get/set).
-- `entranceLocationId`, `parentRegionId` (get/set).
-- `controllingFactionId` (get/set).
-- `isVehicle` (derived get), `vehicleInfo` (get/set; serialized object or `null`).
-- `weather` (get/set), `weatherState` (get/set), `resolveCurrentWeather({ seasonName, totalMinutes })` (`totalHours` is still accepted as a compatibility fallback).
-- `randomEvents` (get/set), `addRandomEvent`, `removeRandomEvent`.
-- `numImportantNPCs` (get/set).
-- `relativeLevel` (get/set), `averageLevel` (get) with `setAverageLevel(level)`.
-- `characterConcepts`, `enemyConcepts`, `secrets` (get/set).
-- `lastVisitedTime` (get/set, minutes), `minutesSinceLastVisit(currentTime?)`.
-- Relationship helpers: `childRegions`, `siblingRegions`, `parentRegion`, `parentHierarchy`.
+- `name`, `description`, and `shortDescription` get/set display text. `name` and `description` reject missing/non-string values; `shortDescription` accepts `null`.
+- `locationBlueprints` returns cloned blueprint records. `locationIds` returns a cloned id array and can be replaced as an array.
+- `entranceLocationId`, `parentRegionId`, and `controllingFactionId` expose linkage fields. `controllingFactionId` rejects non-string values except `null`/empty clear operations.
+- `isStub` is true when the region has no `locationIds`.
+- `isVehicle` is true when `vehicleInfo` is non-null. `vehicleInfo` returns serialized `VehicleInfo` data or `null`, and the setter accepts a `VehicleInfo`, plain object, or `null`.
+- `weather` returns a deep clone of the normalized weather definition. Assigning `weather` normalizes the definition and resets `weatherState`.
+- `weatherState` returns a clone of the active weather state or `null`; setting it validates `{ seasonName, name, description, nextChangeMinutes, durationMinutes }`.
+- `resolveCurrentWeather({ seasonName, totalMinutes, totalHours, visitedRegionIds })` resolves the active weather for a non-negative time. `totalMinutes` is canonical; `totalHours` is accepted for compatibility and converted to minutes.
+- `randomEvents` get/set returns or stores arrays of strings. `addRandomEvent(event)` appends a non-empty string. `removeRandomEvent(eventOrIndex)` removes by exact string or array index.
+- `numImportantNPCs`, `relativeLevel`, `averageLevel`, `characterConcepts`, `enemyConcepts`, `secrets`, and `lastVisitedTime` expose gameplay metadata. `setAverageLevel(level)` stores a rounded whole number with a minimum of `1`, or clears to `null`.
+- `minutesSinceLastVisit(currentTime?)` uses the supplied minute timestamp or `Globals.elapsedTime`; it throws if the reference time is not finite.
+- Relationship helpers: `childRegions`, `siblingRegions`, `parentRegion`, and `parentHierarchy`. `parentHierarchy` throws if a circular parent chain is detected.
 
 ## Instance API
-- `toJSON()`: serializes region state.
-- Status effects: `getStatusEffects()`, `setStatusEffects(effects)`, `addStatusEffect(effect, defaultDuration)`, `removeStatusEffect(description)`, `tickStatusEffects(elapsedMinutes)`, `clearExpiredStatusEffects()`.
-- NPC discovery: `getNPCs()`, `getNPCIds()`, `get locations()`.
-- Location tracking: `addLocationId(id)` / `addLocation(id)`.
+- `toJSON()` serializes the current region state, including location blueprints, location ids, entrance, parent, controlling faction, vehicle info, status effects, average level, important NPC count, random events, concepts, secrets, weather, and weather state.
+- Status effects:
+  - `getStatusEffects()` returns cloned effects.
+  - `setStatusEffects(effects)` replaces all effects after normalization.
+  - `addStatusEffect(effect, defaultDuration)` adds or replaces by case-insensitive description.
+  - `removeStatusEffect(description)` removes by case-insensitive description.
+  - `tickStatusEffects(elapsedMinutes)` decrements finite positive durations in minutes.
+  - `clearExpiredStatusEffects()` removes effects whose finite duration is `0`.
+- Location membership:
+  - `addLocationId(id)` / `addLocation(id)` append a string id if absent.
+  - `removeLocationId(id)` / `removeLocation(id)` remove an id and reset `entranceLocationId` to the first remaining location or `null` when needed.
+  - `locations` resolves member ids through `Location.get()`.
+- NPC discovery:
+  - `getNPCs()` resolves NPC ids across member locations through `Player.get()`.
+  - `getNPCIds()` returns a `Set` of unique NPC ids across member locations.
 
-## Private Helpers
-- `#generateId()`.
-- `#normalizeBlueprint(blueprint)`.
-- `#normalizeImportantNpcCount(value)`.
-- `#normalizeStatusEffects(effects)`.
-- weather normalization helpers for booleans, duration ranges, weather definitions/state.
-- `#normalizeVehicleInfo(vehicleInfo)`.
+## Location Blueprints
+`locationBlueprints` are generated-region plans that server generation turns into location stubs. Each blueprint normalizes to:
 
-## Notes
-- Region stub expansion expects a `<shortDescription>` in the stub response and persists it on the generated `Region`.
-- Region entry stubs with an assigned controlling faction pass that faction into stub-generation prompts as authoritative context; the region-level `<controllingFaction>` field is omitted from stub-mode output expectations so expansion preserves the stub faction.
-- Pending region-entry stubs can carry `locationIds` for specific location stubs discovered before the region is expanded. Expansion seeds the generated region with those locations, reuses them when a generated blueprint matches by normalized name or alias, preserves them if the blueprint omits them, and protects them from rollback if later generated-location instantiation fails.
-- `fromXMLSnippet` accepts both `<region>` and mixed tag variants (name/description/shortDescription).
-- `fromXMLSnippet` now reads location blueprints only from direct `<locations><location>` children, so nested vehicle-destination tags like `<destination><location>...` do not get misparsed as region locations.
-- Region XML location exits now use `<exit><destination>...</destination><travelTime>...</travelTime></exit>` and normalize to blueprint entries shaped like `{ target, travelTimeMinutes }`.
-- During generated-region instantiation, location blueprint exits that resolve back to the source location are ignored with a console warning instead of aborting the whole region. Connected-region definitions that resolve to the region currently being created are also ignored with a warning, so a self-referential `<regionExits>` entry cannot trip the lower-level exit self-loop guard.
-- Explicit prompt-generated `0`-minute exit travel times are normalized up to `1` minute during region and region-stub parsing so persisted `0` can continue to mean “not populated yet”.
-- Generated `<regionExits><stubRegion>` entries now also require `<travelTime>`; those minutes are applied to the created cross-region exit the same way normal `<exit>` travel times are, without storing the time on the pending region-stub record itself.
-- Region stub-location parsing in `server.js` uses the same exit shape and preserves the first parsed travel time for both directions when reverse exits are synthesized.
-- `parentHierarchy` throws on circular references to surface data errors early.
-- Location blueprints now include both a two-paragraph `<description>` and one-sentence `<shortDescription>`; these are carried into stub metadata as `stubDescription`/`stubShortDescription`, including region stub expansions.
-- Location blueprints can include `<hasWeather>yes</hasWeather>`, `<hasWeather>no</hasWeather>`, or `<hasWeather>outside</hasWeather>`; legacy `true`/`false` values are accepted and normalized to `yes`/`no`. `outside` keeps current regional weather visible in prompts without treating the location as directly weather-exposed.
-- Region XML weather definitions (`<weather>`, `<seasonWeather>`, `<weatherType>`) are persisted and can drive dynamic per-season weather selection over elapsed world time. If a region has no dynamic weather, `resolveCurrentWeather(...)` inherits weather from the nearest parent region with dynamic weather before returning the sheltered/no-active-weather fallback.
-- Weather duration data is minute-canonical (`minMinutes`/`maxMinutes`, `durationMinutes`, `nextChangeMinutes`) with legacy hour fields accepted during load normalization.
-- If a weather type has an invalid duration string, Region logs a warning, skips that weather-type entry, and continues parsing remaining entries.
-- Region API payloads include `weather` and `weatherState`, and the location context menu's weather editor updates `Region.weather`. Setting `weather` resets `weatherState`, so the next weather resolution starts from the new definition.
-- Regions can now be flagged as vehicles by storing `vehicleInfo`; `isVehicle` is derived from `vehicleInfo !== null`, and `toJSON()` includes both fields for persistence/API responses.
+- `name`: required non-empty string.
+- `description`: string, defaulting to `''`.
+- `shortDescription`: string or `null`.
+- `exits`: array of `{ target, travelTimeMinutes }`. Object exits accept `target`, `name`, or `destination`; string exits are accepted with `travelTimeMinutes: 0`. XML exits require `<destination>` and `<travelTime>`, parse duration text, and normalize generated `0`-minute values to `1` minute.
+- `aliases`: array of alternate names used during pending-region stub reuse.
+- `relativeLevel`, `numNpcs`, `numHostiles`: numeric generation hints.
+- `controllingFaction`: faction name from generated XML; server instantiation resolves it to an id.
+- `hasWeather`: `yes`, `no`, `outside`, or `null`; boolean/boolean-like inputs normalize to `yes`/`no`.
+
+During `server.js` region instantiation, blueprints become `Location` stubs with stub metadata such as `stubDescription`, `stubShortDescription`, suggested exits, level/NPC/hostile hints, controlling faction id, and weather exposure. Pending region-entry expansion can seed preserved location stubs into a region, match them by normalized name/alias, keep preserved stubs even when a blueprint omits them, and avoid deleting those preserved stubs during rollback.
+
+Generated self-referential location exits are skipped with a console warning. Generated connected-region definitions that point to the region being created are skipped the same way.
+
+## XML Parsing
+`fromXMLSnippet(xmlSnippet)` expects a `<region>` root or a string containing a `<region>` block. It parses:
+
+- Region identity: `<regionName>` or `<name>`, `<regionDescription>` or `<description>`, and optional `<shortDescription>`.
+- `<relativeLevel>` into `averageLevel` using whole-number minimum `1`.
+- `<numImportantNPCs>`.
+- `<locations><location>` direct children only. Nested `<location>` tags inside other structures, such as vehicle destination tags, are ignored for region-blueprint parsing.
+- Location blueprint fields: `<name>`, `<description>`, `<shortDescription>`, `<relativeLevel>`, `<numNpcs>`, `<numHostiles>`, `<hasWeather>`, `<controllingFaction>`, and `<exits><exit>`.
+- XML location exits as `<exit><destination>...</destination><travelTime>...</travelTime></exit>`. Missing destination or travel time throws.
+- Optional generated metadata: `<randomStoryEvents><event>`, `<characterConcept>`/`<characterConcepts><concept>`, and `<enemyConcept>`/`<enemyConcepts><concept>` are all accepted when present and default to empty arrays when omitted.
+- `<secrets><secret>`.
+- `<weather>` through `parseWeatherDefinitionFromXmlSnippet()`.
+
+Missing region or location short descriptions log warnings but do not abort parsing. Invalid XML, missing region name, or missing region description throw clear errors.
+
+`server.js` performs additional parsing around the same generated XML for region exits and vehicles. `<regionExits><stubRegion>` entries require `<travelTime>`; parsed minutes are applied to created cross-region exits and are not stored on pending-region stub records. Large generated vehicles become location stubs; huge generated vehicles become pending region-entry stubs with vehicle metadata.
+
+## Weather
+Region weather definitions normalize to:
+
+```js
+{
+  hasDynamicWeather: boolean,
+  seasonWeather: [
+    {
+      seasonName: string,
+      weatherTypes: [
+        {
+          name: string,
+          description: string,
+          relativeFrequency: number,
+          durationRange: { minMinutes: number, maxMinutes: number }
+        }
+      ]
+    }
+  ]
+}
+```
+
+Weather state normalizes to:
+
+```js
+{
+  seasonName: string,
+  name: string,
+  description: string,
+  nextChangeMinutes: number,
+  durationMinutes: number
+}
+```
+
+`resolveCurrentWeather()` chooses a weather type by weighted `relativeFrequency`, stores the state until `nextChangeMinutes`, and returns `{ name, description, seasonName, dynamic }`. Regions without dynamic weather inherit from the nearest parent region with dynamic weather. If no ancestor has dynamic weather, the method returns the sheltered no-active-weather result. Circular parent weather lookups throw.
+
+Duration data is minute-canonical. `minHours`/`maxHours`, `durationHours`, `nextChangeHours`, and `totalHours` are accepted as compatibility inputs and converted to minutes. Invalid duration strings inside weather-type XML log warnings and skip that weather type; a dynamic weather definition with no valid weather types throws during normalization.
+
+## Vehicle Regions
+A region represents a vehicle when `vehicleInfo` is present. `vehicleInfo` uses the canonical `VehicleInfo` shape: `terrainTypes`, `icon`, `currentDestination`, `pendingDestination`, `destinations`, `ETA`, `departureTime`, and `vehicleExitId`.
+
+Region vehicles participate in:
+
+- `Player.currentVehicle`, which exposes computed trip state for prompts (`isUnderway`, `hasArrived`, `isArriving`, destination, remaining minutes, and formatted remaining time).
+- Travel-prose handling in `api.js`, which resolves named vehicles against both vehicle locations and vehicle regions.
+- Region/world map responses, which render vehicle icons and hide vehicle exits while a vehicle is underway or finalizing arrival.
+- Save/load through `Region.toJSON()` and `Region.fromJSON()`.
+
+## API, UI, And Prompt Integration
+- Persistence: `Utils.serializeGameState()` writes `Region.toJSON()` under `gameWorld.regions`. `Utils.hydrateGameState()` reconstructs regions through `fromJSON()` and persists unresolved region-entry stubs in `pendingRegionStubs.json`.
+- Region API: `GET /api/regions/:id` returns a focused edit payload with id, descriptions, parent, average level, controlling faction, vehicle data, secrets, weather, and weather state. `PUT /api/regions/:id` updates those fields, rejects parent cycles, validates faction ids, validates vehicle data through `VehicleInfo`, and resets `weatherState` when weather is assigned. Weather updates include a `worldTime` payload for UI refresh.
+- Region generation API: `POST /api/regions/generate` calls `generateRegionFromPrompt()`, parses XML with `Region.fromXMLSnippet()`, instantiates location stubs, chooses an entrance, populates important NPCs, and returns `Region.toJSON()` plus created locations.
+- Maps: `/api/map/region` reads `locationIds` to build a regional location graph. `/api/map/world` uses `id`, `name`, `parentRegionId`, `isVehicle`, `vehicleInfo.icon`, `isStub`, `locationIds`, `locationCount`, `averageLevel`, and computed `childRegionIds`.
+- Events: `Events.js` resolves live regions and pending region-entry stubs by id/name/original name for move, exit-discovery, NPC-arrival/departure, and thing-arrival/departure flows. Unknown offscreen destination regions may be represented as pending region stubs through server helpers rather than immediate `Region` instances.
+- Chat tools: `updateObjectFields({ objectType: "region" })` can update allowlisted scalar/list/object fields such as descriptions, level metadata, concepts, secrets, visit time, parent/entrance/faction ids, weather, weather state, random events, and status effects. Compact `moreInfo` omits bulky region scaffolding like `locationBlueprints`, random events, concepts, and `weatherState` unless `includeFullState` is requested, while leaving `secrets` visible.
+- Prompt context: base context renders current region name, description, secrets, location names, and connected region names. Current weather enters prompts through the world-time payload after `resolveCurrentWeather()`. `templates/region.njk` renders fuller region detail including parent, controlling faction, average level, locations, connected regions, secrets, current weather, and status effects.

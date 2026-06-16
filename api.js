@@ -20,6 +20,7 @@ const Faction = require('./Faction.js');
 const MysteryBox = require('./MysteryBox.js');
 const MysteryThread = require('./MysteryThread.js');
 const ScheduledEvent = require('./ScheduledEvent.js');
+const Tracker = require('./Tracker.js');
 const FormulaEvaluator = require('./public/js/formula-evaluator.js');
 const { resolvePointPoolFormulas } = require('./utils/point-pool-formulas.js');
 const {
@@ -64,6 +65,7 @@ const INFORMATION_GATHERING_CHAT_TOOL_NAMES = new Set([
     'getTravelTime',
     'revealEntity',
     'hideEntity',
+    'addTracker',
     'scheduleEvent',
     'resolveAttack',
     'resolveAreaAttack',
@@ -79,6 +81,11 @@ const GENERIC_PROMPT_ONLY_BUILT_IN_CHAT_TOOL_NAMES = new Set([
     'editChatLogEntry',
     'rerunSceneSummary',
     'editSceneSummary'
+]);
+
+const PLOT_ANALYSIS_CHAT_TOOL_NAMES = new Set([
+    'addTracker',
+    'scheduleEvent'
 ]);
 
 const LEGACY_PROMPT_CHECK_CHAT_TOOL_NAMES = new Set([
@@ -384,6 +391,22 @@ function filterEnabledChatTools({ allowWorldMutationTools = false, modExtensionR
             : { regularProseOnly: true })
         : [];
     return [...builtInTools, ...modTools];
+}
+
+function getPlotAnalysisChatToolDefinitions({ modExtensionRegistry = null } = {}) {
+    const tools = getChatToolDefinitions({ modExtensionRegistry }).filter(toolDefinition => {
+        const functionName = typeof toolDefinition?.function?.name === 'string'
+            ? toolDefinition.function.name.trim()
+            : '';
+        return PLOT_ANALYSIS_CHAT_TOOL_NAMES.has(functionName);
+    });
+    const includedNames = new Set(tools.map(toolDefinition => toolDefinition.function.name));
+    const missingNames = Array.from(PLOT_ANALYSIS_CHAT_TOOL_NAMES)
+        .filter(name => !includedNames.has(name));
+    if (missingNames.length) {
+        throw new Error(`Plot analysis chat tools are unavailable: ${missingNames.join(', ')}.`);
+    }
+    return tools;
 }
 
 function getAllChatToolDefinitions({ modExtensionRegistry = null, includeGenericPromptOnly = true } = {}) {
@@ -1151,6 +1174,63 @@ function validateNewExitWorldEntityName({
 let eventsProcessedThisTurn = false;
 function markEventsProcessed() {
     eventsProcessedThisTurn = true;
+}
+
+function isRegionEntryStubForTravelDestination(location) {
+    return Boolean(
+        location
+        && location.isStub === true
+        && location.stubMetadata
+        && typeof location.stubMetadata === 'object'
+        && location.stubMetadata.isRegionEntryStub === true
+    );
+}
+
+function normalizeTravelDestinationRegionId(value) {
+    return typeof value === 'string' && value.trim() ? value.trim() : '';
+}
+
+function resolvePendingRegionEntryStubForTravelDestination({
+    destinationLocation = null,
+    regionEntryStub = null,
+    pendingRegionId = '',
+    pendingRegionStubs = null,
+    gameLocations = null
+} = {}) {
+    if (isRegionEntryStubForTravelDestination(regionEntryStub)) {
+        return regionEntryStub;
+    }
+
+    const candidateRegionIds = [];
+    const appendRegionId = (value) => {
+        const normalized = normalizeTravelDestinationRegionId(value);
+        if (normalized && !candidateRegionIds.includes(normalized)) {
+            candidateRegionIds.push(normalized);
+        }
+    };
+
+    appendRegionId(pendingRegionId);
+    appendRegionId(destinationLocation?.regionId);
+    appendRegionId(destinationLocation?.stubMetadata?.regionId);
+    appendRegionId(destinationLocation?.stubMetadata?.targetRegionId);
+
+    if (!(pendingRegionStubs instanceof Map) || !(gameLocations instanceof Map)) {
+        return null;
+    }
+
+    for (const candidateRegionId of candidateRegionIds) {
+        const pendingRegion = pendingRegionStubs.get(candidateRegionId) || null;
+        const entranceStubId = normalizeTravelDestinationRegionId(pendingRegion?.entranceStubId);
+        if (!entranceStubId) {
+            continue;
+        }
+        const entranceStub = gameLocations.get(entranceStubId) || null;
+        if (isRegionEntryStubForTravelDestination(entranceStub)) {
+            return entranceStub;
+        }
+    }
+
+    return null;
 }
 
 let aiDebugInterceptorInstalled = false;
@@ -2264,6 +2344,13 @@ module.exports = function registerApiRoutes(scope) {
             resolvePlausibilityCheck: resolvePlausibilityToolCall,
             resolveOpposedPlausibilityCheck: resolvePlausibilityToolCall,
             scheduleEvent: scheduledEventScheduler.scheduleEvent,
+            getCurrentWorldMinute: () => Globals.getTotalWorldMinutes(),
+            formatTrackerLastUpdated: (worldMinute) => Utils.formatAbsoluteWorldMinutesAgo(worldMinute, {
+                currentTotalMinutes: Globals.getTotalWorldMinutes()
+            }),
+            formatTrackerCountdownValue: (worldMinute) => Utils.formatCountdownUntilWorldMinute(worldMinute, {
+                currentTotalMinutes: Globals.getTotalWorldMinutes()
+            }),
             deleteThingById,
             LLMClient,
             Player,
@@ -4493,6 +4580,55 @@ module.exports = function registerApiRoutes(scope) {
             return trimLeadingParagraphSpaces(content || '').trim();
         }
 
+        function getDirectChildElementsByTagName(parentNode, tagName) {
+            if (!parentNode || typeof tagName !== 'string' || !tagName.trim()) {
+                return [];
+            }
+
+            const targetTag = tagName.trim().toLowerCase();
+            return Array.from(parentNode.childNodes || [])
+                .filter(child => {
+                    if (!child || child.nodeType !== 1) {
+                        return false;
+                    }
+                    const childName = typeof child.nodeName === 'string'
+                        ? child.nodeName.toLowerCase()
+                        : '';
+                    return childName === targetTag;
+                });
+        }
+
+        function serializeXmlNodePreservingTags(node) {
+            if (!node) {
+                return '';
+            }
+            if (typeof Utils.innerXML === 'function') {
+                return Utils.innerXML({ childNodes: [node] });
+            }
+            return node.textContent || '';
+        }
+
+        function extractFinalProseContent(finalNode) {
+            if (!finalNode) {
+                return '';
+            }
+
+            const proseNode = getDirectChildElementByTagName(finalNode, 'prose');
+            if (!proseNode) {
+                throw new Error('player action <finalProse> must include a direct <prose> child.');
+            }
+
+            const proseText = extractProseNodeContentPreservingTags(proseNode);
+            if (!proseText) {
+                throw new Error('player action <finalProse><prose> must not be empty.');
+            }
+
+            const directHiddenText = getDirectChildElementsByTagName(finalNode, 'hidden')
+                .map(serializeXmlNodePreservingTags)
+                .join('');
+            return `${proseText}${directHiddenText}`.trim();
+        }
+
         function parsePlayerActionTimePassedNode(timePassedNode, { fieldLabel = 'player action <timePassed>' } = {}) {
             if (!timePassedNode) {
                 return null;
@@ -4638,14 +4774,12 @@ module.exports = function registerApiRoutes(scope) {
                 };
             }
             const finalNode = doc.getElementsByTagName('finalProse')[0] || null;
-            const finalTimePassedNode = getDirectChildElementByTagName(finalNode, 'timePassed');
-            const finalTimePassedMinutes = parsePlayerActionTimePassedNode(finalTimePassedNode, {
-                fieldLabel: 'player action <finalProse><timePassed>'
-            });
-            const finalText = extractProseNodeContentPreservingTags(finalNode, {
-                excludeDirectChildTags: ['timePassed']
-            });
-            if (finalText) {
+            if (finalNode) {
+                const finalTimePassedNode = getDirectChildElementByTagName(finalNode, 'timePassed');
+                const finalTimePassedMinutes = parsePlayerActionTimePassedNode(finalTimePassedNode, {
+                    fieldLabel: 'player action <finalProse><timePassed>'
+                });
+                const finalText = extractFinalProseContent(finalNode);
                 return { prose: finalText, travel: null, timePassedMinutes: finalTimePassedMinutes };
             }
             const travelNode = doc.getElementsByTagName('travelProse')[0] || null;
@@ -8016,6 +8150,7 @@ module.exports = function registerApiRoutes(scope) {
                     return null;
                 }
 
+                const plotAnalysisTools = getPlotAnalysisChatToolDefinitions({ modExtensionRegistry });
                 const requestOptions = {
                     messages: [
                         { role: 'system', content: parsedTemplate.systemPrompt },
@@ -8026,14 +8161,28 @@ module.exports = function registerApiRoutes(scope) {
                         sourceRequestId: sourceRequestId || null
                     },
                     validateXML: false,
-                    runInBackground: true
+                    runInBackground: true,
+                    tools: plotAnalysisTools
                 };
 
                 if (typeof parsedTemplate.temperature === 'number') {
                     requestOptions.temperature = parsedTemplate.temperature;
                 }
 
-                const rawResponse = await LLMClient.chatCompletion(requestOptions);
+                const assertPlotAnalysisPromptCurrent = (event = {}) => {
+                    if (!event || event.phase !== 'started') {
+                        return;
+                    }
+                    if (promptToken !== plotAnalysisPromptToken || promptSequence !== plotAnalysisPromptSequence) {
+                        throw new Error('Plot analysis prompt became stale before tool execution; aborting tool calls.');
+                    }
+                };
+                const toolLoopResult = await runChatCompletionWithToolLoop({
+                    requestOptions,
+                    metadataLabel: 'plot_analysis',
+                    onToolCallEvent: assertPlotAnalysisPromptCurrent
+                });
+                const rawResponse = toolLoopResult.aiResponse || '';
                 LLMClient.logPrompt({
                     prefix: 'plot_analysis',
                     metadataLabel: 'plot_analysis',
@@ -8720,7 +8869,12 @@ module.exports = function registerApiRoutes(scope) {
                     locationName = '';
                 }
                 if (!locationName) {
-                    return { location: createdRegionEntryStub, region: region || null };
+                    return {
+                        location: createdRegionEntryStub,
+                        region: region || null,
+                        regionEntryStub: createdRegionEntryStub,
+                        pendingRegionId
+                    };
                 }
             }
 
@@ -8733,7 +8887,12 @@ module.exports = function registerApiRoutes(scope) {
 
             if (!locationName) {
                 if (createdRegionEntryStub) {
-                    return { location: createdRegionEntryStub, region: region || null };
+                    return {
+                        location: createdRegionEntryStub,
+                        region: region || null,
+                        regionEntryStub: createdRegionEntryStub,
+                        pendingRegionId
+                    };
                 }
                 const fallbackLocation = resolveRegionFallbackLocation(region, regionName);
                 return { location: fallbackLocation, region };
@@ -8766,7 +8925,12 @@ module.exports = function registerApiRoutes(scope) {
                 if (!created) {
                     throw new Error(`Failed to create travel destination "${locationName}" in region "${regionName}".`);
                 }
-                return { location: created, region: region || null };
+                return {
+                    location: created,
+                    region: region || null,
+                    regionEntryStub: createdRegionEntryStub,
+                    pendingRegionId
+                };
             }
             return { location, region };
         };
@@ -13717,13 +13881,22 @@ module.exports = function registerApiRoutes(scope) {
             destinationLocation,
             {
                 travelContext = null,
-                createOriginExit = undefined
+                createOriginExit = undefined,
+                regionEntryStub = null,
+                pendingRegionId = ''
             } = {}
         ) => {
             let resolvedDestination = destinationLocation || null;
             if (!resolvedDestination) {
                 throw new Error('Travel prose destination could not be resolved.');
             }
+            let expandedRegionEntryStubId = '';
+            const updateResolvedDestination = (location) => {
+                resolvedDestination = location;
+                if (travelContext) {
+                    travelContext.destinationLocation = location;
+                }
+            };
 
             if (resolvedDestination.isStub && resolvedDestination.stubMetadata?.isRegionEntryStub) {
                 if (typeof expandRegionEntryStub !== 'function') {
@@ -13733,10 +13906,51 @@ module.exports = function registerApiRoutes(scope) {
                 if (!expanded) {
                     throw new Error('Region entry expansion returned no location.');
                 }
-                resolvedDestination = expanded;
-                if (travelContext) {
-                    travelContext.destinationLocation = expanded;
+                expandedRegionEntryStubId = typeof resolvedDestination.id === 'string'
+                    ? resolvedDestination.id.trim()
+                    : '';
+                updateResolvedDestination(expanded);
+            }
+
+            const pendingRegionEntryStub = resolvePendingRegionEntryStubForTravelDestination({
+                destinationLocation: resolvedDestination,
+                regionEntryStub: (
+                    regionEntryStub
+                    && regionEntryStub.id
+                    && regionEntryStub.id === expandedRegionEntryStubId
+                ) ? null : regionEntryStub,
+                pendingRegionId,
+                pendingRegionStubs,
+                gameLocations
+            });
+            if (
+                pendingRegionEntryStub
+                && pendingRegionEntryStub.id
+                && pendingRegionEntryStub.id !== expandedRegionEntryStubId
+                && pendingRegionEntryStub.id !== resolvedDestination.id
+            ) {
+                if (typeof expandRegionEntryStub !== 'function') {
+                    throw new Error('Region entry stub expansion is unavailable.');
                 }
+                const destinationIdBeforeRegionExpansion = typeof resolvedDestination.id === 'string'
+                    ? resolvedDestination.id.trim()
+                    : '';
+                const expandedRegionEntry = await expandRegionEntryStub(pendingRegionEntryStub);
+                if (!expandedRegionEntry) {
+                    throw new Error('Pending-region entry expansion returned no location.');
+                }
+                if (!(gameLocations instanceof Map)) {
+                    throw new Error('Location registry is unavailable after pending-region entry expansion.');
+                }
+                const refreshedDestination = destinationIdBeforeRegionExpansion
+                    ? gameLocations.get(destinationIdBeforeRegionExpansion) || null
+                    : null;
+                if (!refreshedDestination) {
+                    throw new Error(
+                        `Pending-region entry expansion did not preserve destination location "${destinationIdBeforeRegionExpansion}".`
+                    );
+                }
+                updateResolvedDestination(refreshedDestination);
             }
 
             if (resolvedDestination.isStub && !resolvedDestination.stubMetadata?.isRegionEntryStub) {
@@ -13753,10 +13967,7 @@ module.exports = function registerApiRoutes(scope) {
                 if (expandedLocation.isStub) {
                     throw new Error(`Location stub "${resolvedDestination.id}" is still stubbed after expansion.`);
                 }
-                resolvedDestination = expandedLocation;
-                if (travelContext) {
-                    travelContext.destinationLocation = expandedLocation;
-                }
+                updateResolvedDestination(expandedLocation);
             }
 
             return resolvedDestination;
@@ -13786,7 +13997,8 @@ module.exports = function registerApiRoutes(scope) {
                     : (destinationLocation?.region || null);
                 return {
                     location: destinationLocation,
-                    region: destinationRegion
+                    region: destinationRegion,
+                    pendingRegionId
                 };
             }
 
@@ -14447,8 +14659,9 @@ module.exports = function registerApiRoutes(scope) {
                 const pendingDestination = normalizedVehicleInfo.pendingDestination;
                 const createOriginExit = vehicleTarget.kind !== 'location';
                 let resolvedDestination = null;
+                let resolvedPendingDestination = null;
                 if (pendingDestination) {
-                    const resolvedPendingDestination = await resolvePendingVehicleDestinationForArrival(pendingDestination, {
+                    resolvedPendingDestination = await resolvePendingVehicleDestinationForArrival(pendingDestination, {
                         originLocation: sourceLocation,
                         createOriginExit
                     });
@@ -14466,7 +14679,9 @@ module.exports = function registerApiRoutes(scope) {
 
                 resolvedDestination = await ensureTravelProseDestinationUnstubbed(resolvedDestination, {
                     travelContext: null,
-                    createOriginExit
+                    createOriginExit,
+                    regionEntryStub: resolvedPendingDestination?.regionEntryStub || null,
+                    pendingRegionId: resolvedPendingDestination?.pendingRegionId || ''
                 });
                 const destinationId = requireLocationId(
                     resolvedDestination?.id,
@@ -25296,6 +25511,7 @@ module.exports = function registerApiRoutes(scope) {
             };
             metadata.totalMysteryBoxes = MysteryBox.getAll().length;
             metadata.totalMysteryThreads = MysteryThread.getAll().length;
+            metadata.totalTrackers = Tracker.getAll().length;
             Globals.setSaveMetadata(metadata);
             fs.writeFileSync(path.join(saveDir, 'metadata.json'), JSON.stringify(metadata, null, 2));
             return true;
@@ -43812,6 +44028,7 @@ module.exports = function registerApiRoutes(scope) {
             metadata.totalFactions = factions.size;
             metadata.totalMysteryBoxes = MysteryBox.getAll().length;
             metadata.totalMysteryThreads = MysteryThread.getAll().length;
+            metadata.totalTrackers = Tracker.getAll().length;
             metadata.chatHistoryLength = Array.isArray(serialized.chatHistory)
                 ? serialized.chatHistory.length
                 : (metadata.chatHistoryLength || 0);
@@ -44377,6 +44594,7 @@ module.exports = function registerApiRoutes(scope) {
             metadata.totalFactions = factions.size;
             metadata.totalMysteryBoxes = MysteryBox.getAll().length;
             metadata.totalMysteryThreads = MysteryThread.getAll().length;
+            metadata.totalTrackers = Tracker.getAll().length;
             metadata.chatHistoryLength = Array.isArray(chatHistory)
                 ? chatHistory.length
                 : (metadata.chatHistoryLength || 0);
@@ -47172,3 +47390,4 @@ module.exports.shouldIncludePlayerActionForEventChecks = shouldIncludePlayerActi
 module.exports.extractRegisteredThingBlueprintFields = extractRegisteredThingBlueprintFields;
 module.exports.parseUploadedEntityImageDataUrl = parseUploadedEntityImageDataUrl;
 module.exports.extractInlineRollControls = extractInlineRollControls;
+module.exports.resolvePendingRegionEntryStubForTravelDestination = resolvePendingRegionEntryStubForTravelDestination;

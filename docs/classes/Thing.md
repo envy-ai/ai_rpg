@@ -1,94 +1,95 @@
 # Thing
 
 ## Purpose
-Represents items and scenery in the game world. Supports rarity metadata, attribute bonuses, status effects (including AI enrichment), and placement in locations or inventories. Maintains indexes by id and name. Rarity definitions are loaded from root `defs/rarities.yaml` plus any matching mod defs overlays.
+`Thing` represents items and scenery in the game world. It owns the durable object record used by locations, actor inventories, containers, crafting, event checks, prompt generation, saves, and the browser UI.
+
+The class maintains runtime indexes by id and normalized name. Rarity definitions come from merged `defs/rarities.yaml` data, including enabled mod overlays.
 
 ## Key State
-- Core fields: `#id`, `#name`, `#description`, `#shortDescription`, `#thingType`, `#imageId`, `#count`, `#containedThingIds`, `#containerContents`.
-- Metadata: `#metadata` (mirrors slot, applied bonuses, raw prompt-scale `unscaledAttributeBonuses`, cause effects, flags, levels).
-- Extension fields: `#extensionFields` stores first-class mod-registered fields such as `implantSlot` without using `metadata`.
-- Rarity and level: `#rarity`, `#itemTypeDetail`, `#level`, `#relativeLevel`.
-- Harvest history: `#previouslyHarvestedItems` (deduped list of item names harvested from this node) and `#lastHarvested` (absolute world minutes at the last successful harvest).
-- Status: `#statusEffects`, `#causeStatusEffect` (applied to target/equipper).
-- Flags: `#flags` (SanitizedStringSet) with boolean flag helpers (`isVehicle`, `isCraftingStation`, `isContainer`, `requiresCheckToOpen`, etc).
-- Static indexes: `#indexByID`, `#indexByName`.
+- Core identity: `#id`, `#name`, `#description`, `#shortDescription`, `#thingType`, `#imageId`, `#createdAt`, `#lastUpdated`.
+- Item mechanics: `#rarity`, `#itemTypeDetail`, `#slot`, `#attributeBonuses`, `#unscaledAttributeBonuses`, `#level`, `#relativeLevel`, `#count`.
+- Effects: `#statusEffects` for effects on the thing itself and `#causeStatusEffect` for effects applied to a target or equipper.
+- Placement helpers: `#metadata`, which mirrors ownership, location, container, slot, bonus, level, count, and boolean-flag data used by callers and save compatibility.
+- Containers: `#containedThingIds` for instantiated contents and `#containerContents` for pending generated-content seeds.
+- Harvesting: `#previouslyHarvestedItems` and `#lastHarvested`, where `lastHarvested` is absolute world minutes.
+- Flags: `#flags`, a `SanitizedStringSet` backing `isVehicle`, `isCraftingStation`, `isProcessingStation`, `isHarvestable`, `isSalvageable`, `isContainer`, and `requiresCheckToOpen`.
+- Mod fields: `#extensionFields`, which stores registered first-class Thing fields such as `implantSlot`, `moduleSlots`, `moduleType`, `installedModuleIds`, and `moduleInstalledOnItemId`.
+- Static registries: `#indexByID`, `#indexByName`, `#runtimeRegistries`, rarity definitions, and valid type definitions.
 
 ## Construction
-- `new Thing({...})` validates required fields, normalizes metadata, initializes status effects, assigns a compact `thing_n` id when missing, and registers in indexes.
+`new Thing({...})` requires non-empty string `name`, `description`, and `thingType`, with `thingType` limited to `item` or `scenery`. Missing ids are allocated through `IdGenerator.next('thing')` and registered with the id generator.
 
-## Static API (Rarity)
-- `loadRarityDefinitions({ forceReload })`, `getAllRarityDefinitions()`, `generateRandomRarityDefinition()`.
-- `getRarityDefinition(rarity, { fallbackToDefault })` and convenience getters for multipliers and color.
-- `getDefaultRarityKey()` / `getDefaultRarityLabel()`.
-- `getMaxAttributeBonus(rarity, level)`.
-- `normalizeRarityKey(value)`.
+Construction normalizes metadata mirrors, boolean flags, status effects, cause effects, counts, levels, container data, harvest data, and registered extension fields before inserting the instance into the static id/name indexes. Loaded records call `Thing.fromJSON(...)`, which constructs with status-effect enrichment disabled.
 
-## Static API (Lookup)
-- `getAll()` / `getById(id)` / `getByName(name)`.
-- `getAllByName(name)` / `getByNameAndLocation(name, location)`.
-- `getByType(type)` / `getAllScenery()` / `getAllItems()`.
-- `thingNameExists(name)`.
-- `clear()`.
-- `get validTypes()`.
+## Static API
+- Rarity: `loadRarityDefinitions({ forceReload })`, `getAllRarityDefinitions()`, `generateRandomRarityDefinition()`, `getRarityDefinition(rarity, { fallbackToDefault })`, `getDefaultRarityKey()`, `getDefaultRarityLabel()`, rarity multiplier/color getters, `getMaxAttributeBonus(rarity, level)`, and `normalizeRarityKey(value)`.
+- Lookup: `getAll()`, `getById(id)`, `getByName(name)`, `getAllByName(name)`, `getByNameAndLocation(name, location)`, `getByType(type)`, `getAllScenery()`, `getAllItems()`, `thingNameExists(name)`, `allThingNames`, `validTypes`, and `clear()`.
+- Placement helpers: `whoseInventoryById(thingId)`, `whoseContainerById(thingId)`, `removeFromWorldById(thingId)`, `dropById(thingId)`, `getAllByLocationId(locationId)`, `putInLocationById(thingId, locationId)`, and `putInInventoryById(thingId, playerId)`.
+- Stack helpers: `canMergeStacks(targetThing, incomingThing)`, `findMergeTarget(incomingThing, candidates)`, and `mergeIntoExistingStack(incomingThing, candidates)`.
+- Runtime registry hooks: `registerRuntimeRegistry(map)` and `unregisterRuntimeRegistry(map)` keep external runtime maps such as the server `things` map in sync when merge/delete paths remove a `Thing`.
+- Flag metadata: `booleanFlagMap` and `booleanFlagKeys`.
 
 ## Accessors
-- Basic getters: `id`, `name`, `description`, `shortDescription`, `thingType`, `imageId`, `createdAt`, `lastUpdated`, `checksum`, `count`.
-- Equipment helpers: `equippedBy`, `isEquipped`, `equippedSlot`.
-- Flags: `isVehicle`, `isCraftingStation`, `isProcessingStation`, `isHarvestable`, `isSalvageable`, `isContainer`, `requiresCheckToOpen` (get/set).
-- Container helpers: `containedThingIds`, `containerContents` (pending generated-content seeds), `getInventoryItems()`, `addInventoryItem()`, `removeInventoryItem()`, `hasInventoryItem()`, `setInventory()`, `clearInventory()`, `clearContainerContents()`, `whoseContainer()`.
-- Rarity/level: `rarity`, `itemTypeDetail`, `level`, `relativeLevel` (get/set). Generated item XML `<type>` values are persisted as `itemTypeDetail`; older generated records may also mirror that value as `metadata.itemType`.
-- Metadata: `metadata` (get/set), `slot` (get/set), `attributeBonuses` (get/set), `unscaledAttributeBonuses` (get/set; prompt-scale source bonuses mirrored into metadata when known).
-- Mod extension fields: `getExtensionField(fieldName)`, `setExtensionField(fieldName, value)`, `getExtensionFields({ includeDefaults })`, plus direct accessors like `thing.implantSlot` for fields registered before the Thing is constructed or loaded.
-- Stack size: `count` (get/set; persisted integer quantity, defaults to `1`).
-- Cause effects: `causeStatusEffect` (get/set), `causeStatusEffectOnTarget`, `causeStatusEffectOnEquipper`.
-- Harvest helpers: `previouslyHarvestedItems` (get/set), `lastHarvested` (get/set), `getLastHarvestedAgoText(...)`.
+- Identity and serialization state: `id`, `name`, `description`, `shortDescription`, `thingType`, `imageId`, `createdAt`, `lastUpdated`, `checksum`, and `count`.
+- Equipment helpers: `equippedBy`, `isEquipped`, and `equippedSlot`.
+- Boolean flags: `isVehicle`, `isCraftingStation`, `isProcessingStation`, `isHarvestable`, `isSalvageable`, `isContainer`, and `requiresCheckToOpen`.
+- Container data: `containedThingIds`, `containerContents`, `getInventoryItems()`, `addInventoryItem()`, `removeInventoryItem()`, `hasInventoryItem()`, `containsThingRecursive()`, `setInventory()`, `clearInventory()`, `clearContainerContents()`, and `whoseContainer()`.
+- Rarity and level data: `rarity`, `itemTypeDetail`, `level`, and `relativeLevel`. Generated XML `<type>` values map to `itemTypeDetail`; `metadata.itemType` is also accepted by callers that read generated records.
+- Metadata and stats: `metadata`, `slot`, `attributeBonuses`, `unscaledAttributeBonuses`, and `getAttributeBonus(attributeName)`.
+- Mod extension fields: `getExtensionField(fieldName)`, `setExtensionField(fieldName, value)`, and `getExtensionFields({ includeDefaults })`. Direct property accessors such as `thing.implantSlot` exist for fields registered before the instance is constructed or hydrated.
+- Cause effects: `causeStatusEffect`, `causeStatusEffectOnTarget`, `causeStatusEffectOnEquipper`, and `setCauseStatusEffects({ target, equipper, legacy })`.
+- Harvest helpers: `previouslyHarvestedItems`, `lastHarvested`, `recordSuccessfulHarvest(itemNames, { harvestedAtMinutes })`, and `getLastHarvestedAgoText(...)`.
+- Status effects: `getStatusEffects()`, `setStatusEffects(effects)`, `addStatusEffect(effect, defaultDuration)`, `removeStatusEffect(description)`, `tickStatusEffects(elapsedMinutes)`, and `clearExpiredStatusEffects()`.
+- Type helpers: `isType(type)`, `isScenery()`, `isItem()`, and `toString()`.
 
-## Instance API
-- Flag helpers: `hasFlag(flag)`, `setFlag(flag, enabled)`.
-- Bonuses: `getAttributeBonus(attributeName)`.
-- Cause effects: `setCauseStatusEffects({ target, equipper, legacy })`.
-- Harvest tracking: `recordSuccessfulHarvest(itemNames, { harvestedAtMinutes })` appends newly seen harvested item names and stamps `lastHarvested` at the successful completion time.
-- Distinct target/equipper cause effects remain separate through constructor ingestion and metadata sync; dual-effect items are not collapsed into one shared payload.
-- Serialization: `toJSON()`, `copy({...})`, `delete()`.
-- Registered extension fields serialize as top-level properties. `Thing.fromJSON(...)` restores only currently registered extension fields; mods that need a field should register it before saves are loaded.
-- Registered Thing fields with `exposeToGeneratorPrompt` and `exposeToXmlParser` are included in the shared item XML prompt scaffold and parsed back from generated item/scenery XML. Seeded string values render directly, while seeded array/object values render as JSON so they can round-trip through the XML parser. Natural location, inventory, container-content, craft/process/salvage/harvest, and `createThing` generation paths pass parsed values into `new Thing({...})` as first-class extension fields. If a registered field sets `clearThingSlotWhenPresent`, generation and API update paths clear the normal `slot` equipment field when that registered field has a meaningful value.
-- Generated item descriptions preserve the model-authored descriptive prose. Mechanical details such as type, slot, rarity, value, weight, properties, attribute bonuses, and target/equipper status effects are stored in structured fields and rendered by tooltips instead of being appended to `description`. Event-generated item/scenery XML maps `<type>` into top-level `itemTypeDetail`, with metadata mirrors for legacy/client display compatibility.
-- Container inventories: only explicit `isContainer` things can hold contents; contents must be item-type things, equipped items are rejected, and nested containers are allowed only when they do not create self/descendant cycles. `containerContents` stores pending `{ name, count }` seeds parsed from generated thing XML before real contents are instantiated; omitted or empty values normalize to an empty list, exact empty sentinel names such as `empty`, `none`, or `n/a` are ignored, zero-count seeds are ignored, omitted counts default to `1`, and count text such as `3 flares` is reduced to the integer count. A Thing with non-empty pending contents is promoted to `isContainer` with a console warning. Containers can set `requiresCheckToOpen` to make the client run a player-authored opening attempt through the checked-container prompt before showing the inventory interface; a successful prompt result with `permanentlyOpened` clears that flag.
-- Status effects: `getStatusEffects()`, `setStatusEffects(effects)`, `addStatusEffect(effect, defaultDuration)`, `removeStatusEffect(description)`, `tickStatusEffects(elapsedMinutes)`, `clearExpiredStatusEffects()`.
-- Consumption: `consumeOne({ things })` decrements persisted `count` by `1` when the stack is larger than `1`; otherwise it fully deletes the thing from inventories/locations, static indexes, and the provided runtime `things` container.
-- Inventory/world placement: `whoseInventory()`, `removeFromWorld()`, `drop(locationIdOverride)`, `putInLocation(locationId)`, `putInInventory(playerId)`.
-- Stack merging: `canMergeStacks(...)`, `findMergeTarget(...)`, and `mergeIntoExistingStack(...)` support automatic same-name/same-checksum item-stack merging during placement. Merging adds the incoming `count` to the surviving stack and deletes the incoming Thing from static indexes and registered runtime maps.
-- Type checks: `isType(type)`, `isScenery()`, `isItem()`.
-- `toString()`.
+## Serialization And Saves
+`toJSON()` writes the top-level Thing state used in `things.json`, including split cause-effect fields, boolean flags, stack count, levels, harvest history, container state, registered extension fields, metadata mirrors, and status effects. `Utils.serializeGameState(...)` persists the runtime `things` map with `thing.toJSON()`, and `Utils.hydrateGameState(...)` hydrates each payload through `Thing.fromJSON(...)`.
 
-## Static Inventory/World Helpers
-- `whoseInventoryById(thingId)`.
-- `whoseContainerById(thingId)`.
-- `removeFromWorldById(thingId)`.
-- `dropById(thingId)`.
-- `getAllByLocationId(locationId)`.
-- `putInLocationById(thingId, locationId)`.
-- `putInInventoryById(thingId, playerId)`.
+`Thing.fromJSON(...)` accepts top-level fields and metadata mirrors for compatibility. It restores only extension fields currently registered in `Globals.modExtensionRegistry`; mods that own Thing fields must register those fields before save hydration.
 
-## Private Helpers
-- Index helpers: `#getNameBucket`, `#addThingToNameIndex`, `#removeThingFromNameIndex`, `#normalizeNameIndexEntry`.
-- Metadata helpers: `#applyMetadataFieldsFromMetadata`, `#syncFieldsToMetadata`.
-- Extension field helpers: `#installExtensionFieldAccessors`, `#applyExtensionFieldInputs`, `#setExtensionFieldValue`, and registry lookup/normalization helpers.
-- Normalizers: `#normalizeBooleanFlag`, `#normalizeAttributeBonuses`, `#normalizeStatusEffects`, `#sanitizeSlot`, `#normalizeCauseStatusEffectEntry`, `#normalizePreviouslyHarvestedItems`, `#normalizeLastHarvested`.
-- Cause effect helpers: `#upsertCauseStatusEffectEntry`, `#getCauseStatusEffectEntry`, `#ingestCauseStatusEffects`.
-- Status enrichment: `#triggerStatusEffectEnrichment`, `#enrichStatusEffectsUsingGlobals`.
+`checksum` is a fast FNV-1a hash of canonicalized `toJSON()` data. It excludes identity/timestamps (`id`, `createdAt`, `lastUpdated`), stack quantity (`count`), prompt-roundtrip raw bonuses (`unscaledAttributeBonuses`), and placement/ownership metadata (`location*`, `owner*`, `player*`, `inventoryOwnerId`, `containerId`) so equivalent items hash the same across movement, saves, and stack quantity differences.
 
-## Notes
-- Status effect enrichment calls `StatusEffect.generateFromDescriptions` using `Globals` prompt hooks.
-- Loaded `Thing` records disable background status-effect enrichment during hydration to avoid save/load side effects. Prompt-backed item alteration therefore enriches returned target/equipper cause effects in the server alteration helper before writing them back to the `Thing`.
-- Name lookups are location-aware: `getByName` prefers current location/region contexts.
-- Harvest history is persisted in both top-level `Thing` JSON and mirrored metadata so save/load and metadata-based paths stay in sync.
-- Container state persists as top-level `containedThingIds`; contained items keep `metadata.containerId` and have owner/player/location placement metadata cleared. Pending generated contents persist as top-level `containerContents` until a container/inventory view generates them into real contained item Things and clears the pending list.
-- `removeFromWorld()` removes a thing from players, locations, and all container inventories. `delete()` rejects non-empty containers so contents cannot be orphaned accidentally. The event-system `consume_item` handler is the special destruction path: before deleting a fully consumed container, it moves instantiated contents to the destroyed container's current holder or location.
-- `checksum` is a fast non-cryptographic FNV-1a hash of canonicalized `toJSON()` data. It intentionally excludes volatile identity/timestamp fields (`id`, `createdAt`, `lastUpdated`), the persisted `count`, prompt-roundtrip-only metadata (`unscaledAttributeBonuses`), and placement/ownership metadata (`location*`, `owner*`, `player*`, `inventoryOwnerId`) so equivalent things remain stable across saves and movement.
-- `copy({...})` creates a new `Thing` with a fresh id/timestamps but the same hashable data and image by default; stack-splitting paths use it to preserve item identity details while changing only count/placement metadata as needed. Container contents are not copied unless `containedThingIds` is explicitly supplied.
-- `addInventoryItem(...)`, `Location.addThingId(...)`, and `Player.addInventoryItem(...)` automatically merge incoming non-container, unequipped item stacks into matching stacks already at the destination unless called with `mergeStacks: false`; explicit split/separate flows use that opt-out.
-- `registerRuntimeRegistry(map)` lets the server's runtime `things` map be cleaned when a merged-away incoming Thing is deleted; `unregisterRuntimeRegistry(map)` removes that hook.
-- Shared consumption code should call `consumeOne({ things })` instead of directly deleting a consumed thing; this preserves stacked items by decrementing `count` in place when possible.
-- Hook-based attachment mods should register first-class extension fields instead of overloading `Thing.slot`. The bundled implants mod registers `implantSlot`, exposes `<implantSlot>` in generated item XML and the item editor, and clears `Thing.slot` on new/edited implant-compatible items; items with only `implantSlot` remain ordinary inventory items in the UI and do not show normal Equip/Unequip gear controls.
-- The bundled modules mod registers `moduleSlots`, `moduleType`, `installedModuleIds`, and `moduleInstalledOnItemId` as first-class extension fields. Base equippable items use normal `Thing.slot` plus `moduleSlots`; module items use `moduleType` and remain ordinary inventory items unless installed into a base item.
+`copy({...})` creates a fresh `Thing` id/timestamps with the same hashable data and image by default. Stack splitting uses it to preserve item details while overriding count and placement metadata. `containedThingIds` and pending `containerContents` are reset unless explicitly supplied in the copy overrides.
+
+## Placement And Stacks
+`removeFromWorld()` detaches a thing from players, equipment, barter inventories, locations, and containing Things. `drop(locationIdOverride)`, `putInLocation(locationId)`, and `putInInventory(playerId)` move the thing through `Location` and `Player` APIs.
+
+`Player.addInventoryItem(...)`, `Location.addThingId(...)`, and container `addInventoryItem(...)` automatically merge incoming item stacks into same-name, same-checksum destination stacks when both stacks are item-type, unequipped, and not containers. Callers pass `mergeStacks: false` for explicit split/separate flows that must keep records distinct. Merging increases the surviving stack's `count`, deletes the incoming `Thing` from static indexes, and cleans registered runtime maps.
+
+`consumeOne({ things })` decrements `count` for stacks larger than one and deletes the thing when the consumed stack reaches zero. Shared consumption paths that operate on stacks should use this API or the event-system quantity consumer instead of deleting directly.
+
+## Containers
+Only `isContainer` Things can hold contents. Contents must be item-type Things; equipped items are rejected. A container cannot contain itself, and nested containers are rejected when the move would create a descendant cycle.
+
+Instantiated contents are stored as `containedThingIds`; contained items receive `metadata.containerId` and have owner/player/location placement metadata cleared. `removeFromWorld()` also removes matching ids from all container inventories.
+
+`containerContents` is a pending seed list parsed from generated Thing XML before real contained item Things exist. Entries normalize to `{ name, count }`; missing or empty values produce `[]`, omitted counts default to `1`, count text such as `3 flares` yields `3`, empty sentinel names such as `empty`, `none`, and `n/a` are ignored, and zero-count entries are ignored. A Thing with non-empty pending contents is marked as a container with a console warning.
+
+The container inventory API generates pending contents through the `thing-generator-contents` prompt before serializing the container payload, creates real item Things, inserts them into the container, and clears pending seeds. `requiresCheckToOpen` makes the browser run the dedicated checked-open route before showing inventory; a successful response with `permanentlyOpened` persists `requiresCheckToOpen: false`.
+
+`delete()` rejects non-empty containers so contents are not orphaned. The event-system `consume_item` full-destruction path resolves the destroyed container's holder or location, moves instantiated contents there, clears the container inventory, then deletes the container.
+
+## Prompts, APIs, And Events
+Generated item descriptions remain descriptive prose. Mechanical details such as type, slot, rarity, value, weight, properties, attribute bonuses, target/equipper cause effects, flags, and mod fields are stored structurally and rendered by client tooltips/details.
+
+The shared item XML prompt includes count, item/scenery kind, type, slot, rarity, value, weight, relative level, boolean flags, container data, attribute bonuses, target/equipper cause effects, properties, short description, and registered Thing fields exposed to generator prompts. The XML parser returns the same fields for natural location generation, inventory generation, container-content generation, crafting/process/salvage/harvest output, item alteration, and thing separation.
+
+`POST /api/things`, `PUT /api/things/:id`, crafting instantiation, event-created placeholder items, location/inventory generation, and container-content generation all construct or mutate `Thing` records through the same structural fields. API payloads also accept registered fields exposed to create/edit flows.
+
+The `thing-separate` route accepts item and scenery sources. If separated output contains one or more containers, the first returned container receives the rest of the returned item-type things. Scenery output remains at the source destination because container inventories only hold item Things. Stack separation and explicit split-stack flows opt out of automatic merging.
+
+Event checks use Thing data for item infliction, ingestion, consumption, alteration, transfer, pickup/drop, harvested resources, and item-to-NPC transformation. Target cause effects apply to attack/use targets; equipper cause effects contribute through `Player.getStatusEffects()` while the item is equipped.
+
+## Mod Fields
+`ModExtensionRegistry.registerEntityField({ entityType: 'thing', ... })` registers first-class Thing fields. Registered fields validate type, serialize as top-level properties when stored, expose optional default values through `getExtensionFields({ includeDefaults: true })`, and can be exposed to create tools, update tools, generator prompts, XML parsing, and the item editor.
+
+For fields with `clearThingSlotWhenPresent`, generation and API write paths clear the normal equipment `slot` when the registered field has a meaningful value. The implants mod uses this for `implantSlot`, so implant-compatible items remain inventory items rather than normal gear-slot equipment.
+
+The modules mod registers `moduleSlots`, `moduleType`, `installedModuleIds`, and `moduleInstalledOnItemId`. Base equippable items use normal `Thing.slot` plus `moduleSlots`; module items use `moduleType`; installed modules remain real Things in the same holder as their base item, with backlinks and UI filtering handled by the modules mod.
+
+## Validation And Errors
+Invalid required constructor fields, invalid `thingType`, invalid count values, invalid extension field values, invalid non-array container contents, invalid non-string contained ids, malformed status-effect entries, and unresolved destructive container operations throw explicit errors. Several API routes catch these errors and return structured `{ success: false, error }` responses.
+
+Level values are rounded to positive integers in the model. `relativeLevel` is rounded into the model-supported relative range. Stack `count` must be an integer `0` or greater and defaults to `1` when absent.
+
+Status-effect enrichment calls `StatusEffect.generateFromDescriptions(...)` through `Globals` prompt hooks when prompt services are available. Hydration disables enrichment to avoid save/load side effects; prompt-backed alteration enriches target/equipper effects before writing them onto the `Thing`.

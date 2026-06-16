@@ -608,38 +608,6 @@ The below context is an account of the current game state, including the setting
   {% if plotExpander and plotExpander | trim %}
   <plotExpander>{{ plotExpander }}</plotExpander>
   {% endif %}
-  {% set plotAnalysisHasThreads = plotAnalysis and plotAnalysis.plotThreads and plotAnalysis.plotThreads.length %}
-  {% set plotAnalysisHasComplications = plotAnalysis and plotAnalysis.currentPlotComplications and plotAnalysis.currentPlotComplications.length %}
-  {% set plotAnalysisHasContent = plotAnalysisHasThreads or plotAnalysisHasComplications %}
-  {% if promptType != 'plot-analysis' and plotAnalysisHasContent %}
-  <plotAnalysis{% if plotAnalysis.updatedAt %} updatedAt="{{ plotAnalysis.updatedAt }}"{% endif %}>
-    {% if plotAnalysis.plotThreads and plotAnalysis.plotThreads.length %}
-    <plotThreads>
-      {% for thread in plotAnalysis.plotThreads %}
-      <plotThread>
-        <description>{{ thread.description }}</description>
-        <isCurrentFocus>{{ thread.isCurrentFocus }}</isCurrentFocus>
-      </plotThread>
-      {% endfor %}
-    </plotThreads>
-    {% endif %}
-    {% if plotAnalysis.currentPlotComplications and plotAnalysis.currentPlotComplications.length %}
-    <currentPlotComplications>
-      {% for complication in plotAnalysis.currentPlotComplications %}
-      <complication>
-        <description>{{ complication.description }}</description>
-      </complication>
-      {% endfor %}
-    </currentPlotComplications>
-    {% endif %}
-    {% if plotAnalysis.parseError %}
-    <parseError>{{ plotAnalysis.parseError }}</parseError>
-    {% endif %}
-    {% if plotAnalysis.raw %}
-    <rawOutput>{{ plotAnalysis.raw }}</rawOutput>
-    {% endif %}
-  </plotAnalysis>
-  {% endif %}
   {% if activeMysteryThreads and activeMysteryThreads.length %}
   <activeMysteryThreads max="{{ mysteryThreadMaxActive | default(activeMysteryThreads.length, true) }}">
     <instructions>GM-private continuity. Preserve these mystery facts and constraints when generating new material, but do not directly reveal hidden truth unless the player discovers it through play.</instructions>
@@ -674,6 +642,13 @@ The below context is an account of the current game state, including the setting
     </mysteryThread>
     {% endfor %}
   </activeMysteryThreads>
+  {% endif %}
+  {% if trackers and trackers.length %}
+  <trackers>
+    {% for tracker in trackers %}
+    {{ tracker.id }} | {{ tracker.name }} | type={{ tracker.type }} | value={{ tracker.value }} | hidden={{ tracker.hidden }} | lastUpdated={{ tracker.lastUpdated }} | guidance={{ tracker.guidance }}
+    {% endfor %}
+  </trackers>
   {% endif %}
   <recentStoryHistory>{{ recentGameHistory }}</recentStoryHistory>
 </gameState>
@@ -771,6 +746,8 @@ The below context is an account of the current game state, including the setting
     {% endfor %}
   </currentCharacterNeeds>
 </currentConditions>
+
+{% include "_includes/randomwords.njk" %}
 
 {% include "_includes/" + promptType + ".njk" %}
 ]]></generationPrompt>

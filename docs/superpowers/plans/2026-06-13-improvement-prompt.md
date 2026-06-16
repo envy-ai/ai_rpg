@@ -1,100 +1,69 @@
-# Improvement Prompt Implementation Plan
+# Improvement Prompt Implementation Archive
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> Archive note: this implementation plan is complete. It is retained for historical design context and as a compact map of the implemented improvement-prompt behavior, not as a live checklist.
 
-**Goal:** Add a visible client chat entry for periodic game-improvement suggestions while keeping those suggestions out of every base-context prompt, including `@@` generic prompts.
+**Historical goal:** Add a visible client chat entry for periodic game-improvement suggestions while keeping those suggestions out of every base-context prompt, including `@@` generic prompts.
 
-**Architecture:** Reuse the existing base-context prompt renderer, background prompt request flow, chat-history entry storage, and prompt-counter persistence used by plot summary/expander prompts. The new entry type is client-visible because it is not a hidden chat type, but it is prompt-invisible because the base-context history predicate treats it as a diagnostic/system-support type.
+**Implemented architecture:** `api.js` schedules a fire-and-forget `improvement-prompt` background request on eligible player-action turns when `improvement_prompt.enabled` is true and the persisted cadence counter reaches `improvement_prompt.interval`. The prompt renders through `base-context.xml.njk` with all ordinary `@@`-eligible history available. Its stored `game-improvement-suggestions` entry is visible to the client, but `base_context_history.js` treats that type as an always-excluded diagnostic entry so it stays out of normal history, all-entry generic prompts, improvement prompts, and `getHistory`.
 
-**Tech Stack:** Node.js, Express route helpers in `api.js`, Nunjucks prompt includes, YAML config, `node:test`.
+**Current implementation map:**
+- Config defaults and local enablement: `config.default.yaml` and `config.yaml`.
+- Config validation: `server.js`.
+- Scheduler, prompt execution, prompt logging, chat-entry storage, client notification, and save/load counter persistence: `api.js`.
+- Prompt template: `prompts/_includes/improvement-prompt.njk`.
+- Prompt-history exclusion rules: `base_context_history.js`.
+- Current reference docs: `docs/config.md`, `docs/api/chat.md`, `docs/classes/base_context_history.md`, `docs/api/common.md`, and `docs/api/serialization.md`.
+- Reference tests: `tests/base_context_history.test.js`, `tests/api.plot_analysis_scheduling.test.js`, and `tests/chat_tool_calls.test.js`.
+
+**Tech stack:** Node.js, Express route helpers in `api.js`, Nunjucks prompt includes, YAML config, `node:test`.
 
 ---
 
 ### Task 1: Tests
 
 **Files:**
-- Modify: `tests/base_context_history.test.js`
-- Modify: `tests/api.plot_analysis_scheduling.test.js`
+- Modified: `tests/base_context_history.test.js`
+- Modified: `tests/api.plot_analysis_scheduling.test.js`
+- Modified: `tests/chat_tool_calls.test.js`
 
-- [ ] **Step 1: Add base-context exclusion coverage**
-
-Add a test asserting that a `game-improvement-suggestions` entry with renderable content is excluded with and without `includeAllEntryTypes`.
-
-- [ ] **Step 2: Add config/scheduler source coverage**
-
-Add a test asserting default config has `improvement_prompt.enabled: false` and `interval: 10`, `config.yaml` enables it, server validation exists, and `/api/chat` schedules the improvement prompt before the ordinary event-check await.
-
-- [ ] **Step 3: Run the focused tests to verify failure**
-
-Run:
+- [x] Added base-context exclusion coverage proving `game-improvement-suggestions` entries with renderable content are excluded with and without `includeAllEntryTypes`.
+- [x] Added config/scheduler source coverage for default disabled config, local enablement, server validation, interval gating, visible entry storage, hidden-client-type exclusion, and scheduling before ordinary event checks.
+- [x] Added `getHistory` coverage proving all-entry generic prompt history can search non-diagnostic prompt-excluded rows while still excluding `game-improvement-suggestions`.
+- [x] Kept the focused verification target as:
 
 ```bash
 node --test tests/base_context_history.test.js tests/api.plot_analysis_scheduling.test.js
 ```
 
-Expected: at least one assertion fails because the new config keys, scheduler, prompt, and exclusion type do not exist yet.
-
 ### Task 2: Runtime Implementation
 
 **Files:**
-- Modify: `config.default.yaml`
-- Modify: `config.yaml`
-- Modify: `server.js`
-- Modify: `base_context_history.js`
-- Modify: `api.js`
-- Create: `prompts/_includes/improvement-prompt.njk`
+- Modified: `config.default.yaml`
+- Modified: `config.yaml`
+- Modified: `server.js`
+- Modified: `base_context_history.js`
+- Modified: `api.js`
+- Created: `prompts/_includes/improvement-prompt.njk`
 
-- [ ] **Step 1: Add config and validation**
+- [x] Added `improvement_prompt.enabled` and `improvement_prompt.interval`. Defaults are disabled with interval `10`; the checked-in local config enables the prompt. Validation rejects non-object config, non-boolean `enabled`, and provided intervals below `1` or non-integers.
+- [x] Added `_includes/improvement-prompt.njk`, rendered through `base-context.xml.njk` as `promptType: 'improvement-prompt'`.
+- [x] Added the cadence counter and scheduler. Eligible user turns exclude comment-only, forced-event, question, and generic-prompt flows; creative-mode turns count as eligible player-action turns.
+- [x] Stored visible `role: assistant`, `type: game-improvement-suggestions` entries with a `Game improvement suggestions` heading, `metadata.excludeFromBaseContextHistory: true`, parent linkage, location metadata, and optional source request metadata. The type is intentionally absent from `HIDDEN_CHAT_ENTRY_TYPES`.
+- [x] Logged prompt artifacts through `LLMClient.logPrompt()` with `metadataLabel: 'improvement_prompt'`.
+- [x] Persisted `metadata.improvementPromptTurnCounter` on save and restored it on load, matching the plot prompt counter pattern.
 
-Add:
+### Task 3: Documentation And Verification
 
-```yaml
-improvement_prompt:
-  enabled: false
-  interval: 10
-```
+**Current reference docs:**
+- `docs/config.md`
+- `docs/api/chat.md`
+- `docs/classes/base_context_history.md`
+- `docs/api/common.md`
+- `docs/api/serialization.md`
 
-to `config.default.yaml`, and:
-
-```yaml
-improvement_prompt:
-  enabled: true
-```
-
-to `config.yaml`. Validate `enabled` as boolean and `interval` as an integer greater than or equal to 1 when the prompt is enabled.
-
-- [ ] **Step 2: Add prompt template**
-
-Create `_includes/improvement-prompt.njk` with the requested base-context prompt asking for ideas about features, improvements, prompt optimizations, etc.
-
-- [ ] **Step 3: Add scheduler**
-
-Track `improvementPromptTurnCounter`, increment it on eligible normal/creative player-action turns, and schedule `runImprovementPrompt(...)` when enabled and the counter is divisible by interval.
-
-- [ ] **Step 4: Store visible prompt-excluded chat entry**
-
-Append a `role: assistant`, `type: game-improvement-suggestions` entry with content headed `Game improvement suggestions`, `metadata.excludeFromBaseContextHistory: true`, and the parent player-action entry id. Do not add the type to hidden client types.
-
-- [ ] **Step 5: Persist counter**
-
-Save `metadata.improvementPromptTurnCounter` and restore it on load, matching the existing plot prompt counters.
-
-### Task 3: Docs And Verification
-
-**Files:**
-- Modify: `docs/api/chat.md`
-- Modify: `docs/config.md`
-- Modify: `docs/server_llm_notes.md`
-- Modify: `docs/classes/base_context_history.md`
-- Modify: `docs/README.md`
-
-- [ ] **Step 1: Document config and behavior**
-
-Document the enabled/interval config, visible chat entry behavior, background scheduling, and base-context exclusion.
-
-- [ ] **Step 2: Run checks**
-
-Run:
+- [x] Documented enabled/interval config, visible chat entry behavior, background scheduling, prompt logging, save metadata, and base-context/history-tool exclusion.
+- [x] Treat the maintained reference docs listed above as authoritative for current behavior.
+- [x] Current focused verification targets:
 
 ```bash
 node --test tests/base_context_history.test.js tests/api.plot_analysis_scheduling.test.js
@@ -102,5 +71,3 @@ node --check api.js
 node --check server.js
 node --check base_context_history.js
 ```
-
-Expected: all commands exit 0.

@@ -45,6 +45,7 @@ function buildRenderContext() {
         omitGameHistory: false,
         worldOutline: { regions: [] },
         factions: [],
+        trackers: [],
         currentRegion: {
             name: 'Test Region',
             description: '',
@@ -405,4 +406,42 @@ test('base-context includes active mystery threads and contained boxes only', ()
     assert.match(rendered, /<text>Kellen Drask is the siphoner\.<\/text>/);
     assert.doesNotMatch(rendered, /Resolved Furnace Password/);
     assert.doesNotMatch(rendered, /The password was spoken in the council chamber\./);
+});
+
+test('base-context includes trackers as compact plain text lines', () => {
+    const promptEnv = createPromptEnv();
+    const context = buildRenderContext();
+    context.trackers = [
+        {
+            id: 'tracker_1',
+            name: 'Ritual Completion',
+            type: 'countdown',
+            value: '3 hours',
+            hidden: true,
+            lastUpdated: '12 minutes ago',
+            guidance: 'Update when the cult ritual advances, stalls, or is interrupted.'
+        },
+        {
+            id: 'tracker_2',
+            name: 'Guard Alert',
+            type: 'percentage',
+            value: '45%',
+            hidden: false,
+            lastUpdated: 'just now',
+            guidance: 'Update when the guards gain or lose evidence.'
+        }
+    ];
+
+    const rendered = promptEnv.render('base-context.xml.njk', context);
+
+    assert.match(rendered, /<trackers>/);
+    assert.match(
+        rendered,
+        /tracker_1 \| Ritual Completion \| type=countdown \| value=3 hours \| hidden=true \| lastUpdated=12 minutes ago \| guidance=Update when the cult ritual advances, stalls, or is interrupted\./
+    );
+    assert.match(
+        rendered,
+        /tracker_2 \| Guard Alert \| type=percentage \| value=45% \| hidden=false \| lastUpdated=just now \| guidance=Update when the guards gain or lose evidence\./
+    );
+    assert.doesNotMatch(rendered, /<tracker id=/);
 });

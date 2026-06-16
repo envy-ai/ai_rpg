@@ -1,108 +1,202 @@
-# Trade and Barter System Plan
+# Trade and Barter System
 
-## Summary
+## Status
 
-Add a setting-agnostic trade and barter loop between the player and non-hostile NPCs. Trade can be opened from an NPC card or initiated by events. The system should combine deterministic inventory/currency mutation with LLM-authored valuation, willingness, stock generation, and haggle reactions.
+Implemented. This file is now an archival design note for the current NPC barter system, plus rationale for why it is shaped the way it is. The API and class reference docs are the canonical endpoint and field references:
 
-The first implementation should reuse the existing container-style inventory UI as much as possible, while adding trade-specific price, willingness, currency, and haggle controls.
+- `docs/api/npcs.md`
+- `docs/classes/Player.md`
+- `docs/ui/modals_overlays.md`
+- `docs/config.md`
 
-## Goals
+## Current Summary
 
-- Let the player buy, sell, and barter items with non-hostile NPCs.
-- Let NPCs have persistent trade stock that is separate from their normal carried inventory.
-- Let NPCs optionally sell items from their normal inventory without duplicating them.
-- Let the LLM decide context-sensitive willingness and prices using item standard values, NPC personality, role, disposition, faction context, location, scarcity, and setting currency notes. Making this a base-context prompt is the best way to do this.
-- Let haggling use an opposed skill check and then, on success or failure, rerun valuation with the haggle context (major failures may increase prices or make the NPC unwilling to sell).
-- Haggle dialogue should be recorded along with other scene dialogue and should appear in the chat history and LLM context immediately. Haggling history for the current transaction while the modal is open should be displayed in a small chat history above the haggle input.
-- Let NPCs refuse trade temporarily through haggling outcomes or events.
-- Refresh part of NPC trade stock daily so merchants feel active without losing all continuity.
+The game has a setting-agnostic trade and barter loop between the player and eligible NPCs. A trade session can be opened from an NPC card trade icon for living, non-hostile, willing NPCs at the current location or in the player's party.
 
-## Non-Goals For V1
+The implementation keeps inventory and currency mutation deterministic and server-authoritative, while using an LLM pricing prompt for context-sensitive merchant behavior: willingness to buy or sell, unit prices, generated stock, merchant currency during stock refresh, and haggle responses.
 
-- Do not build a full economy simulation.
-- Do not globally reprice every item in the world.
-- Do not mutate an item's standard value just because a merchant offered a different price.
-- Do not allow client-side-only inventory or currency mutation.
-- Do not make trade available with hostile, dead, disabled, or missing NPCs.
-- Do not make player trade inventory separate from ordinary player inventory.
+The system deliberately does not try to simulate a global economy. Prices are quoted for a temporary session and do not mutate a `Thing`'s standard value. Player trade inventory is ordinary player inventory; NPCs additionally have a persisted barter-stock inventory separate from their normal carried inventory.
 
-## Existing Anchors
+## Design Rationale
 
-- `Player` already has inventory and currency helpers: `getInventoryItems()`, `addInventoryItem(...)`, `removeInventoryItem(...)`, `getCurrency()`, `setCurrency(...)`, `adjustCurrency(...)`.
-- `Player` already tracks hostility, dispositions, factions, party membership, location, and persisted NPC state.
-- `Thing` already supports stack counts, values in metadata/XML output, container contents, ownership/location placement, copying, splitting, and deletion.
-- The UI already has a reusable two-column thing-container modal with filters, views, drag/drop, bulk actions, and concurrent distinct item moves.
-- Base-context already exposes player inventory item values and currency.
-- Event handling already supports item transfer and currency changes, but trade should use exact server-side transaction endpoints rather than relying on narrative event parsing.
+The original design goal was to make currency and item value matter without requiring every world profile to define a full economy or every NPC to carry a hand-authored shop schema. Barter is therefore split into two responsibilities:
 
-## Key Gotchas
+- The server owns identity, item counts, stack splitting, inventory placement, currency totals, session expiry, and final transaction application.
+- The LLM owns local flavor: what the merchant is willing to buy or sell, what stock they plausibly have, how they price items, and how they react to haggling.
 
-1. Inventory mutation must be atomic. A barter transaction changes two inventories plus up to two currency totals; partial success would create dupes or losses.
-2. Normal NPC inventory and barter inventory must not duplicate the same item. If an NPC sells an existing carried item, it should stay in its original inventory until the transaction executes.
-3. Price is not the same as standard value. The prompt may assign buy/sell prices, but standard `Thing.value` should remain unchanged unless an item generation/alteration prompt explicitly changes the item.
-4. Stack handling matters. Buying or selling part of a stack should reuse the existing split/copy semantics so count, image, metadata, and equipment state stay coherent.
-5. Equipped items should not silently move. The trade API should reject or require unequipping, matching existing inventory transfer behavior.
-6. Currency should not go negative. If either side cannot pay the net difference, the transaction should fail before moving anything.
-7. The LLM can refuse or reprice, but the server remains authoritative for IDs, counts, currency, and whether referenced items exist.
-8. Daily stock refresh should only flush barter inventory stock, not normal NPC inventory, equipped gear, quest items, or items currently committed to an active transaction.
+That split lets the game use NPC personality, faction context, disposition, location scarcity, needs, recent conversation, and setting currency notes while still avoiding client-side or narrative-only inventory mutation.
 
-## Data Model
+## Eligibility
 
-### Player/NPC Fields
+The barter resolver currently requires:
 
-Add persistent NPC fields to `Player`:
+- The target is an NPC, not the current player.
+- The NPC is alive.
+- The NPC is at the current player location or is in the current player party.
+- The NPC is not hostile according to the current disposition-based `isHostileToPlayer` heuristic.
+- The NPC is currently willing to trade.
 
-- `willingToTrade`: boolean, default `true` for NPCs. The player should ignore this field or always be treated as willing.
-- `tradeRefusalExpiresAt`: absolute world minute or `null`. When present and current world time is earlier than this value, `willingToTrade` behaves as `false`. At or after expiry, willingness resets to `true` and the expiry clears.
-- `barterInventory`: list of `Thing` ids owned by the NPC as trade stock, separate from normal inventory.
-- `barterStockUpdatedAt`: absolute world minute or `null`.
-- `barterProfile`: optional object for durable merchant flavor, such as preferred goods, disliked goods, merchant role, and recent haggle notes.
+The browser renders a trade button on eligible NPC cards and party cards. Dead, player, and hostile cards do not get the button. NPCs with `willingToTrade === false` keep a disabled trade button with a "Not willing to trade right now" title.
 
-The save format should persist these fields. Legacy saves should hydrate NPCs as:
+## Persisted Actor State
 
-```yaml
-willingToTrade: true
-tradeRefusalExpiresAt: null
-barterInventory: []
-barterStockUpdatedAt: null
-barterProfile: null
+`Player` persists the barter state for NPCs:
+
+- `barterInventory`: separate NPC trade stock, stored as `Thing` ids.
+- `willingToTrade`: boolean trade availability flag; players are always treated as willing.
+- `tradeRefusalExpiresAt`: optional world-minute timestamp that re-enables trade after a temporary refusal.
+- `barterStockUpdatedAt`: optional world-minute timestamp for daily stock refresh.
+- `barterProfile`: optional JSON object for durable merchant flavor or preferences.
+
+Barter-stock items carry `metadata.barterOwnerId` while they are in that stock. Adding an item to barter stock removes ordinary owner, location, and container placement metadata; removing it clears matching barter-owner metadata.
+
+## Session Lifecycle
+
+Barter sessions are in-memory quotes and are not saved. They are keyed by a generated session id and store:
+
+- `npcId`
+- `createdAtWorldMinutes`
+- `expiresAtWorldMinutes`
+- `playerOffers`
+- `merchantOffers`
+- `haggleHistory`
+
+`POST /api/npcs/:id/trade/session` starts or refreshes a session. The route refreshes expired trade refusals, optionally refreshes NPC stock, runs the pricing prompt, and returns the quoted offers with serialized player/NPC payloads and currency labels.
+
+`POST /api/npcs/:id/trade/conclude` closes a session without item transfer. If haggling happened, the merchant gets a normal NPC follow-up turn with recent haggle context.
+
+## Pricing Prompt
+
+The implemented valuation prompt is `promptType: "barter-prices"` through `base-context.xml.njk`, with the task include at `prompts/_includes/barter-prices.njk`. Prompts are logged through `LLMClient.logPrompt()` with metadata label `barter_prices`; haggle passes use the `barter_haggle` log prefix.
+
+The prompt receives:
+
+- Setting currency name, plural, and value notes through base context.
+- Current location/region and normal base-context history.
+- Player state, currency, and standalone non-scenery inventory items.
+- NPC state, currency, normal inventory, persisted barter inventory, and barter fields.
+- Standard item values, counts, short descriptions, ids, names, and source labels.
+- Generated-stock min/max, and whether merchant currency is being refreshed.
+- Current haggle offer, opposed-check result, and session haggle history on haggle passes.
+
+The current XML shape uses `unitPrice` for existing offers and `price` for generated stock:
+
+```xml
+<barterPrices>
+  <generalReasoning>...</generalReasoning>
+  <merchantCurrency>0</merchantCurrency>
+  <haggleResponse>...</haggleResponse>
+  <continueTrading>true</continueTrading>
+  <playerItems>
+    <item>
+      <name>Exact existing player item name</name>
+      <id>Existing player item id</id>
+      <unitPrice>Non-negative integer amount the merchant pays per unit</unitPrice>
+      <reason>Short reason</reason>
+    </item>
+  </playerItems>
+  <merchantItems>
+    <item>
+      <name>Exact existing merchant item name</name>
+      <id>Existing merchant item id</id>
+      <source>inventory|barterInventory</source>
+      <unitPrice>Non-negative integer amount the player pays per unit</unitPrice>
+      <reason>Short reason</reason>
+    </item>
+  </merchantItems>
+  <newStock>
+    <item>
+      <name>Generated item name</name>
+      <count>Positive integer</count>
+      <value>Standard value as a non-negative integer</value>
+      <price>Merchant sell price per unit as a non-negative integer</price>
+      <description>Brief item description</description>
+      <type>Item type</type>
+      <rarity>Rarity label</rarity>
+      <reason>Short reason this merchant has it</reason>
+    </item>
+  </newStock>
+</barterPrices>
 ```
 
-### Trade Session State
+Omitted existing items are unavailable for that session. Existing item references are resolved by unique exact name first, with id fallback when the name is blank or ambiguous. Unknown existing ids are warning-skipped rather than failing the whole quote; malformed pricing XML, invalid numeric fields, invalid booleans, and invalid generated stock fields fail the prompt path.
 
-Trade sessions should be server-authoritative and short-lived. Store active sessions in memory, not in saves:
+## Generated And Refreshed Stock
 
-- `sessionId`
-- `npcId`
-- `playerId`
-- `locationId`
-- `createdAtWorldMinutes`
-- `pricingRevision`
-- `playerBuyOffers`: map of player inventory thing id to offer metadata
-- `npcSellOffers`: map of NPC sellable thing id to offer metadata
-- `generatedStockIds`: generated barter stock ids created for this session, if any
-- `haggleHistory`: list of player haggle text plus skill-check result summaries
+NPC barter stock is persistent, but part of it can refresh when opening trade after at least one in-world day has elapsed. The implementation removes a configured fraction of current barter stock, deletes those generated `Thing` records, stamps `barterStockUpdatedAt`, and lets the pricing prompt request replacement stock.
 
-Offer metadata:
+Generated stock is not created directly by the pricing prompt. The pricing prompt returns item seeds, and the server instantiates them through the shared `inventory-generator` flow in `barterStock` mode. Batches are capped by `barter.generated_stock.max_items_per_prompt`.
 
-- `thingId`
-- `source`: `playerInventory`, `npcInventory`, or `npcBarterInventory`
-- `willing`: boolean
-- `price`: integer currency units
-- `reason`: short LLM-facing/player-facing explanation
-- `maxCount`: integer stack amount available for this offer
+Player-sold items currently move into the NPC's barter inventory, which makes resale and later refresh behavior straightforward.
 
-Do not store proposed cart contents in the session as authoritative state. The client sends desired item ids/counts on commit, and the server validates against the latest session data.
+## Haggling
+
+`POST /api/npcs/:id/trade/haggle` accepts free text on an active session. The server resolves an opposed check with a d20 roll plus the best available trade/social-style skill for each actor. Preferred skill-name fragments include barter, haggle, mercantile, merchant, trade, negotiation, persuasion, diplomacy, deception, charm, and intimidation; if none match, the best numeric skill is used.
+
+The haggle offer is recorded as a visible `barter-haggle` user chat entry. The pricing prompt reruns with haggle context and returns repriced offers plus a merchant response. The response is recorded as a visible `barter-haggle` assistant entry and is also shown in the modal's haggle history.
+
+If the prompt returns `<continueTrading>false</continueTrading>`, the NPC becomes temporarily unwilling to trade, the session closes, and the merchant takes a normal NPC action in response to the concluded haggling.
+
+## Transaction Model
+
+`POST /api/npcs/:id/trade/commit` commits selected item/count lines from an active session:
+
+- `playerItems`: items the player gives to the merchant.
+- `merchantItems`: items the merchant gives to the player.
+
+The server validates the entire transaction before applying it. It checks that the session exists and belongs to the NPC, the NPC is still eligible and willing, at least one item is selected, counts are positive integers, selected offers are still quoted and willing, source items still exist in the expected inventory bucket, counts are available, and currency settlement is possible.
+
+Trade math is:
+
+- `playerSellTotal`: sum of merchant buy `unitPrice * count`.
+- `merchantSellTotal`: sum of merchant sell `unitPrice * count`.
+- `netPlayerPays = merchantSellTotal - playerSellTotal`.
+
+If `netPlayerPays > 0`, the player pays the merchant. If it is negative, the merchant pays the player. If the player cannot cover the payment, the commit fails. If the merchant cannot cover payment to the player, the first commit fails with `reason: "merchant-insufficient-currency"`; the client can resubmit with `acceptMerchantCurrencyShortfall: true` to accept only the merchant's available currency.
+
+Successful commits split stacks as needed, move player-sold items into NPC barter inventory, move merchant-sold normal or barter-stock items into player inventory, adjust currency totals, delete the session, record a visible trade event summary, refresh the client, and queue a merchant follow-up NPC turn.
+
+## UI
+
+The barter modal reuses the shared thing-list renderer and container-style two-column interaction model, but stages proposed trades client-side until commit. It shows:
+
+- Player sell offers and merchant sell offers.
+- Both actors' currency.
+- Persistent item price badges across view modes.
+- Hidden-by-default unavailable offers behind per-column toggles.
+- Pending source and pending-copy visual states.
+- Click, drag/drop, shift-click, shift-drag, and mobile stack quantity handling.
+- Net trade/currency summary and merchant shortfall confirmation.
+- Haggle input, check/result feedback, and chat-like haggle history.
+
+The modal starts only after a lightweight confirmation so an accidental NPC-card click does not immediately launch pricing and stock-generation prompts.
+
+## Event Integration
+
+The implemented XML event integration is trade availability, not automatic modal opening. The event tag is:
+
+```xml
+<tradeAvailability>
+  <npcName>Exact NPC name</npcName>
+  <willingToTrade>true|false</willingToTrade>
+  <reason>One sentence reason</reason>
+</tradeAvailability>
+```
+
+The `trade_availability` handler resolves the NPC and calls `setWillingToTrade(...)`. Setting an NPC unwilling stamps `tradeRefusalExpiresAt` using `barter.refusal_duration_minutes`; setting them willing clears the expiry.
+
+An older idea for a direct `startTrade` event was not implemented. Normal event processing does not silently open a client modal from background work.
 
 ## Configuration
 
-Add config under a `barter` key:
+Current default config:
 
 ```yaml
 barter:
   generated_stock:
     min_items: 0
-    max_items: 20
+    max_items: 16
+    max_items_per_prompt: 8
   daily_refresh:
     min_fraction: 0.3333333333
     max_fraction: 0.6666666667
@@ -110,370 +204,25 @@ barter:
   session_timeout_minutes: 60
 ```
 
-Validation rules:
+Validation fails loudly when configured item counts are not non-negative integers, `generated_stock.max_items_per_prompt` or duration fields are not positive integers, fractions are outside `0..1`, or min values exceed max values.
 
-- `generated_stock.min_items` and `generated_stock.max_items` must be integers `>= 0`.
-- `max_items` must be `>= min_items`.
-- `daily_refresh.min_fraction` and `daily_refresh.max_fraction` must be numbers between `0` and `1`.
-- `daily_refresh.max_fraction` must be `>= min_fraction`.
-- `refusal_duration_minutes` and `session_timeout_minutes` must be integers `>= 0`.
+## Boundaries And Non-Goals
 
-Do not silently clamp invalid config values. Raise a clear validation error.
+The current system still intentionally avoids:
 
-## Prompt Design
+- A global or simulated economy.
+- Repricing every item in the world.
+- Mutating item standard value because a merchant quoted a different price.
+- Client-side-only inventory or currency mutation.
+- A separate player trade inventory.
+- Automatic event-driven modal opening from background event checks.
 
-### Trade Valuation Prompt
+## Extension Ideas
 
-Create a base-context prompt include such as `prompts/_includes/barter-prices.njk`.
+These remain proposals rather than current behavior:
 
-Inputs:
-
-- Current setting currency name, plural, and value notes.
-- Current location and region context.
-- NPC identity, role/class, description, faction, disposition toward player, hostility state, current currency, normal inventory, barter inventory, and barter profile.
-- Player currency and player inventory.
-- For every item, include id, name, count, type, rarity, level, standard value, short description, equipped state, and relevant metadata flags.
-- Configured generated stock min/max.
-- Previous haggle history when repricing after a haggle.
-
-Outputs should be strict XML:
-
-```xml
-<barterPrices>
-  <playerItems>
-    <item>
-      <id>thing-id</id>
-      <price>integer</price>
-      <maxCount>integer</maxCount>
-      <reason>short reason</reason>
-    </item>
-  </playerItems>
-  <npcItems>
-    <item>
-      <id>thing-id</id>
-      <source>npcInventory|npcBarterInventory</source>
-      <price>integer</price>
-      <maxCount>integer</maxCount>
-      <reason>short reason</reason>
-    </item>
-  </npcItems>
-  <newStock>
-    <item>
-      <!-- Existing item prompt seed fields: name, shortDescription, type, rarity, value, relativeLevel, flags, etc. -->
-    </item>
-  </newStock>
-  <profileNotes>optional durable notes about this NPC's trade preferences</profileNotes>
-</barterPrices>
-```
-
-Only include existing player items the NPC is willing to buy and existing NPC/barter-stock items the NPC is willing to sell. Omitted existing items are treated as unavailable for trade.
-
-Rules:
-
-- The prompt may return 0 to configured max generated stock items.
-- If it references an existing item id, the server must verify it belongs to the stated source.
-- Generated stock should use the existing item-generation/parser path where possible, preserving image and metadata flows.
-- If a price is missing, non-integer, or negative, parsing should fail loudly.
-- If `maxCount` exceeds the actual stack count, parsing should fail loudly rather than silently reduce it.
-
-### Haggle Reaction Prompt
-
-The haggle button should first resolve an opposed skill check. On success, rerun the trade valuation prompt with the haggle text and skill result in context.
-
-On failure or major failure, run a smaller `barter-haggle-reaction` prompt, or include reaction output in the valuation prompt, to decide whether the NPC:
-
-- Continues trading with no price change.
-- Becomes less favorable in pricing.
-- Temporarily refuses trade.
-- Adds a short response line for the UI/chat.
-
-Output:
-
-```xml
-<haggleReaction>
-  <message>short NPC response</message>
-  <continueTrading>true|false</continueTrading>
-  <refuseUntilReset>true|false</refuseUntilReset>
-</haggleReaction>
-```
-
-If `refuseUntilReset` is true, set `willingToTrade = false` and `tradeRefusalExpiresAt = current world minutes + barter.refusal_duration_minutes`.
-
-## Skill Check Design
-
-The haggle control has a text input and `Haggle` button.
-
-Flow:
-
-1. Player enters an offer or argument.
-2. Server resolves an opposed skill check.
-3. If successful, rerun `barter-prices` with the haggle text and check result.
-4. If failed, optionally run `barter-haggle-reaction` to decide whether the NPC refuses, mocks the attempt, or continues unchanged.
-
-Open decisions for implementation:
-
-- Which player skill should be used by default? Likely a setting-aware social skill chosen from available skills, with a config fallback such as `barter.default_player_skill`.
-- Which NPC skill opposes it? Likely the best social/trade/reasoning skill available, with a fallback attribute/level formula.
-- Should high success improve all prices, only selected cart prices, or prompt-reprice the whole session? The requested behavior says reassign values and willingness for both merchant and player items, so V1 should reprice the whole session.
-
-## Transaction Math
-
-The barter UI should let the player move item stacks between two offer columns before committing.
-
-Define:
-
-- `playerToNpcValue`: sum of NPC purchase prices for items the player gives.
-- `npcToPlayerValue`: sum of NPC sell prices for items the NPC gives.
-- `netCurrencyDue = npcToPlayerValue - playerToNpcValue`.
-
-If `netCurrencyDue > 0`, the player pays that amount to the NPC.
-
-If `netCurrencyDue < 0`, the NPC pays `abs(netCurrencyDue)` to the player.
-
-If `netCurrencyDue === 0`, no currency moves.
-
-On commit:
-
-1. Validate session exists and has not timed out.
-2. Resolve player and NPC.
-3. Validate both are still in a compatible location/state.
-4. Validate NPC is currently willing to trade.
-5. Validate all offered thing ids exist, are in the expected source, and have enough count.
-6. Validate no offered item is equipped unless existing equip-transfer rules explicitly allow it.
-7. Validate payer has enough currency.
-8. Split stacks as needed.
-9. Move things between player inventory, NPC inventory, and NPC barter inventory.
-10. Adjust currencies.
-11. Record an event-summary/chat entry with item and currency changes.
-12. Emit UI refreshes for player, NPC, chat, and the active barter modal.
-
-The whole commit should be a single server-side operation. If any validation fails, no item or currency should move.
-
-## UI Plan
-
-### NPC Card Trade Icon
-
-Add a trade icon in the bottom right of non-hostile NPC cards, just above need bars.
-
-Visibility:
-
-- Show for living, non-hostile NPCs in the current location.
-- Hide or disable for the current player.
-- Hide or disable for dead/disabled NPCs.
-- If `willingToTrade` is false, show disabled with a tooltip explaining refusal and reset time if known.
-
-Click behavior:
-
-- Calls trade session endpoint.
-- Opens barter modal after successful session creation.
-
-### Barter Modal
-
-Reuse the existing container modal layout and shared thing-list renderer.
-
-Differences from container modal:
-
-- Header shows player currency and NPC currency.
-- Player side shows inventory items with NPC buy price/willingness.
-- NPC side shows barter inventory plus sellable normal inventory items with sell price/willingness.
-- Item cards/table rows include:
-  - Standard value.
-  - Offered buy/sell price.
-  - Willing/unwilling status.
-  - Max tradable count.
-  - Reason tooltip.
-- Cart footer shows:
-  - Player offer value.
-  - NPC offer value.
-  - Net currency due.
-  - Whether either side cannot afford the current proposal.
-- Commit button performs final transaction.
-- Haggle input and button live below the footer.
-
-Drag/drop and shift-click can mirror the container interface, but should move items into a "proposed trade" state client-side until commit. Do not mutate inventories through existing container move endpoints.
-
-## API Plan
-
-Likely endpoints:
-
-- `POST /api/npcs/:id/trade/session`
-  - Creates or refreshes a trade session.
-  - Runs daily stock refresh if needed.
-  - Runs valuation prompt.
-  - Returns session, offers, NPC/player currency, and serialized things.
-
-- `POST /api/trade/:sessionId/commit`
-  - Body contains item ids/counts from each side.
-  - Validates and applies transaction atomically.
-
-- `POST /api/trade/:sessionId/haggle`
-  - Body contains haggle text.
-  - Runs opposed skill check.
-  - On success, reruns valuation prompt.
-  - On failure, may run reaction prompt and update willingness.
-
-- `POST /api/npcs/:id/trade/willing`
-  - Developer/admin or event-facing route to set willingness, if needed.
-  - This may be unnecessary if events call model methods directly.
-
-## Event Integration
-
-Add event support for:
-
-- Initiating trade with an NPC.
-- Setting `willingToTrade` true/false.
-- Optional setting of a refusal duration.
-
-XML event tags could be:
-
-```xml
-<tradeAvailable>
-  <npcName>...</npcName>
-  <value>true|false</value>
-  <duration>optional duration</duration>
-  <reason>optional reason</reason>
-</tradeAvailable>
-```
-
-For direct initiation:
-
-```xml
-<startTrade>
-  <npcName>...</npcName>
-  <reason>optional reason</reason>
-</startTrade>
-```
-
-The server should not silently open a client modal during background event processing unless there is an active client stream to target. For event-initiated trade in normal turns, V1 can append a visible summary/action chip such as "Trade available with Mira" that the client can click to open the session.
-
-## Daily Barter Stock Refresh
-
-When opening trade, check `npc.barterStockUpdatedAt`.
-
-If at least one day has passed:
-
-1. Choose a fraction between configured min/max.
-2. Remove that fraction of current barter inventory stock, excluding items locked in an active session.
-3. Generate replacement stock with `barter-prices` or a dedicated `barter-stock` prompt.
-4. Stamp `barterStockUpdatedAt` to current world minutes.
-
-Items sold by the player to the NPC should enter either:
-
-- NPC normal inventory, if the NPC is buying for personal use.
-- NPC barter inventory, if the NPC is buying for resale.
-
-The valuation prompt can include a buy disposition such as `personalUse` vs `resale`, but V1 can default purchased goods into barter inventory so daily refresh naturally simulates resale.
-
-## Persistence
-
-Persist:
-
-- `willingToTrade`
-- `tradeRefusalExpiresAt`
-- `barterInventory`
-- `barterStockUpdatedAt`
-- `barterProfile`
-- Any generated barter `Thing` records
-
-Do not persist:
-
-- Active trade sessions
-- Client cart proposals
-- Temporary haggle check result objects, except perhaps as short `barterProfile` notes if useful
-
-On save/load, validate:
-
-- Every `barterInventory` id resolves to a `Thing`.
-- Each barter thing's ownership metadata agrees with the NPC barter inventory.
-- Missing or invalid barter thing ids are reported clearly during hydration or world validation.
-
-## Prompt Logging
-
-All new prompts should use `LLMClient.logPrompt()`:
-
-- `barter_prices`
-- `barter_haggle_reaction`
-- optional `barter_stock`
-
-Use metadata labels that support per-prompt model overrides.
-
-## Implementation Phases
-
-### Phase 1: Data and Server Transaction Core
-
-- Add persisted NPC barter fields.
-- Add save/load hydration and validation.
-- Add server helpers for resolving sellable NPC items and player inventory offers.
-- Add atomic barter transaction helper with stack splitting and currency transfer.
-- Add API commit endpoint with no LLM yet, using deterministic test fixtures.
-
-### Phase 2: Valuation Prompt and Session API
-
-- Add `barter-prices` prompt.
-- Add parser and strict validation.
-- Add session creation endpoint.
-- Generate 0 to configured max stock items.
-- Persist generated stock to NPC barter inventory.
-- Return structured offers to the client.
-
-### Phase 3: Barter UI
-
-- Add NPC card trade icon.
-- Add barter modal based on the container modal.
-- Add price/willingness display, currency headers, net-difference footer, and commit button.
-- Wire modal refresh after successful transaction.
-
-### Phase 4: Haggle
-
-- Add haggle text input/button.
-- Add opposed skill check integration.
-- Add success repricing.
-- Add failure reaction and temporary refusal.
-- Add chat/check-result summaries for haggle outcomes.
-
-### Phase 5: Events and Daily Refresh
-
-- Add event parser/handler support for trade initiation and willingness changes.
-- Add daily barter inventory refresh.
-- Add clickable event summary/action chip for event-initiated trade.
-- Add docs and broader regression tests.
-
-## Test Plan
-
-### Unit Tests
-
-- Hydrates missing trade fields on legacy NPCs.
-- Persists barter fields in saves.
-- Refusal expires after configured duration.
-- Trade session parser accepts valid XML and rejects missing ids, invalid prices, overlarge counts, duplicate ids, and unknown sources.
-- Transaction helper moves exact stack counts and preserves metadata.
-- Transaction helper rejects equipped items.
-- Transaction helper rejects insufficient player/NPC currency before moving anything.
-- Daily refresh only removes barter inventory, not normal inventory or equipped gear.
-- Sold player items enter the intended NPC inventory bucket.
-
-### API Tests
-
-- Opening trade for a non-hostile NPC returns offers and currencies.
-- Opening trade for hostile/dead/unwilling NPCs fails or returns disabled state as designed.
-- Commit endpoint applies item and currency deltas atomically.
-- Haggle endpoint runs opposed check and reprices on success.
-- Haggle reaction can set temporary refusal.
-
-### UI Tests
-
-- Trade icon appears on non-hostile NPC cards in the correct position.
-- Trade icon is absent/disabled for hostile/dead/unwilling NPCs.
-- Barter modal shows both currencies.
-- Price pills and net-difference footer update as items are proposed.
-- Commit refreshes player inventory, NPC inventory, currencies, and chat summary.
-- Haggle updates prices/refusal state without closing the modal unless refusal happens.
-
-## Open Questions
-
-1. Which skill names should haggle prefer in settings without an obvious `Barter`, `Persuasion`, or `Negotiation` skill?
-2. Should player-sold goods default into NPC barter inventory, NPC normal inventory, or should the LLM decide per item?
-3. Should the player be allowed to trade with party members through this UI, or only non-party current-location NPCs?
-4. Should unwilling NPCs show a disabled trade icon with tooltip, or should the icon be hidden completely?
-5. Should event-initiated trade open the modal automatically for the active client, or produce a clickable chat/event summary action?
-6. Should barter stock generation use the existing item-generator prompt directly, or a dedicated stock prompt that returns item seeds for the existing parser?
+- Location-owned markets, vending machines, or trade posts that are not tied to one NPC inventory.
+- Richer use of `barterProfile` for merchant specialties, recurring preferences, dislikes, reputation, or supply chains.
+- Rumor/opportunity cards that point the player toward known traders.
+- More explicit admin tools for inspecting and repairing NPC barter stock.
+- Optional merchant role presets for world profiles that want more consistent shop behavior without a full economy model.

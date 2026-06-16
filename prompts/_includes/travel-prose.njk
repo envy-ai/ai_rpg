@@ -1,5 +1,5 @@
 {% if currentVehicle.vehicleInfo.isUnderway -%}
-  <!-- Note: The vehicle "{{ currentVehicle.name | trim }}" is currently enroute to "{{ currentVehicle.destination | trim }}", and the player is on board. Reply with <finalProse> rather than <travelProse> unless:
+  <!-- Note: The vehicle "{{ currentVehicle.name | trim }}" is currently enroute to "{{ currentVehicle.destination | trim }}" and will arrive in {{ currentVehicle.timeToDestination | trim }}, and the player is on board. Reply with <finalProse> rather than <travelProse> unless:
   * The vehicle is making an unplanned stop or changing destinations, OR
   * The player is exiting the vehicle, OR
   * The player is moving around *inside* the vehicle

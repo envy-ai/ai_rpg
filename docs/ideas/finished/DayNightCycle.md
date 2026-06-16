@@ -1,137 +1,61 @@
-# Day/Night Cycle (Design Draft)
+# Day/Night Cycle
 
-## Goals
+This archive design doc records the original day/night-cycle goals and the current state of the implemented clock/calendar systems. For current reference docs, see `docs/classes/Globals.md`, `docs/config.md`, `docs/api/game.md`, `docs/api/chat.md`, `docs/ui/chat_interface.md`, and `docs/classes/ScheduledEvent.md`.
 
-- Add world rhythm that changes danger, services, and NPC behavior.
-- Support stealth, travel planning, and time-sensitive events.
-- Provide consistent time context for prompts, logs, and UI.
-- Tie time-of-day to a named calendar with seasons that shape the world.
+## Current Behavior
 
-## Core Concepts
+- `Globals` owns the canonical world clock as `worldTime = { dayIndex, timeMinutes }`.
+- Runtime config `time` controls `cycleLengthMinutes`, `tickMinutes`, and named `segmentBoundaries`. Defaults are a 1440-minute day, a 15-minute tick, and `dawn`, `day`, `dusk`, and `night` boundaries.
+- `Globals.getWorldTimeContext()` derives the current segment, season, formatted `h:MM AM/PM` time, formatted date, holiday context, lighting text, and optional segment/season transition entries.
+- `calendarDefinition` is normalized and persisted with `yearName`, `months`, `weekdays`, `seasons`, and `holidays`. Months store `name`, `lengthDays`, and optional `seasonName`; seasons store `name`, `description`, `startMonth`, `startDay`, optional `dayLengthMinutes`, and ordered `timeDescriptions`.
+- New games use a calendar from the active setting when present. Otherwise the server runs the calendar-generation prompt and falls back to the built-in Gregorian-style calendar if generation fails.
+- Save/load writes `worldTime.json` and `calendarDefinition.json`. Legacy hour-based `worldTime.timeHours` data is migrated to minute-canonical `timeMinutes`.
+- Forward time advancement goes through `Globals.advanceTime(minutes, { source })`, returns `advancedMinutes` plus transition data, and syncs the non-NPC current player's elapsed time.
+- Time advances from parsed player-action elapsed time, `time_passed` / `timePassed` event fallbacks, route/exit travel time, crafting/process/salvage/harvest actions, checked-container opening, location modification, positive `/time` adjustments, and related fast-travel paths.
+- Forward advancement paths process time-based need/status work, due vehicle arrivals, and due `ScheduledEvent` records where the calling flow supports those effects. Negative `/time` rewinds only the raw clock and does not undo already processed arrivals, statuses, scheduled events, or offscreen work.
+- Base prompt context includes `worldTime` with date, segment, season, light-level text, local weather context, and calendar season summaries. Chat-history entries can store `metadata.worldTime` for in-world history labels.
+- The Adventure UI world-time chip shows time, date, segment/season, light-level text, and current local weather when available. It updates from chat/history payloads and realtime world-time refreshes.
+- `GET /api/calendar` returns the active calendar and world-time payload. `PUT /api/calendar` validates and replaces the calendar while preserving the current `{ dayIndex, timeMinutes }`. The in-game calendar modal and world-profile Calendar tab both edit structured calendar data.
+- `/calendar_info` displays the normalized active calendar and current world-time context. `/time` adjusts the world clock by a signed duration.
+- Region weather resolution uses the current season and total world minutes. Optional ComfyUI location variants use the current world-time lighting and regional weather to render display-only weather/lighting image variants.
+- The `scheduleEvent` chat tool persists future `ScheduledEvent` records by relative duration or exact `{ dayIndex, timeMinutes }`; due records resolve through the scheduled-event runtime and may create visible prose when the player is present.
 
-- **World Time**: A canonical clock (day number + time of day) shared across systems.
-- **Calendar**: Named months/weeks/holidays generated per setting.
-- **Season**: Seasonal phase that affects day length, weather, and faction behavior.
-- **Time Segment**: Named ranges such as dawn, day, dusk, night.
-- **Lighting**: Environmental visibility modifiers derived from time segment and location.
-- **Schedules**: NPC and service availability keyed to time segment.
-- **Events**: Time-gated encounters, quests, and ambient changes.
+## Original Design Context
 
-## Data Model (Proposed)
+The original design goal was a shared world rhythm that could influence danger, travel planning, time-sensitive events, services, NPC behavior, stealth, and environmental presentation. The core vocabulary still applies:
 
-- `WorldTime`
-  - `dayIndex`, `timeMinutes`, `segment`, `phase`
-  - `calendarDate` (`year`, `monthName`, `dayOfMonth`, `weekday`, `seasonName`)
-  - `cycleLengthMinutes`, `segmentBoundaries`
-- `CalendarDefinition`
-  - `yearName`, `months`, `weekdays`, `seasons`, `holidays`
-- `CalendarMonth`
-  - `name`, `lengthDays`, `seasonName` (optional), `notes`
-- `CalendarSeason`
-  - `name`, `startMonth`, `startDay`, `dayLengthMinutes`
-  - `weatherBias`, `encounterBias`, `factionBehaviorBias`
-- `TimeSegment`
-  - `name`, `startMinute`, `endMinute`, `ambientLight`, `encounterBias`, `serviceBias`
-- `Schedule`
-  - `entityId`, `entityType` (npc/location/service)
-  - `availabilityBySegment` (map)
-  - `behaviorBySegment` (map)
-- `TimeEvent`
-  - `id`, `name`, `triggerAt` (segment or absolute time), `effects`
+- **World Time**: a shared clock for gameplay, prompts, saves, logs, and UI.
+- **Calendar**: named months, weekdays, holidays, and seasons for the setting.
+- **Season**: calendar-derived context used for descriptions and weather.
+- **Time Segment**: named ranges such as dawn, day, dusk, and night.
+- **Lighting**: environmental visibility or light-level text derived from season/time data or segment fallback.
+- **Events**: timed future beats represented in current code by `ScheduledEvent`.
 
-## Engagement Features (10)
+The implemented data model differs from the early sketch:
 
-1. **Visibility Modifiers**
-   - Night reduces sight ranges; dawn/dusk add partial cover benefits.
-2. **NPC Routines**
-   - Merchants close at dusk; guards change shifts; nocturnal NPCs emerge.
-3. **Travel Strategy**
-   - Safer daytime travel vs faster but riskier night travel.
-4. **Timed Quests**
-   - Delivery windows or nightly rituals that unlock special outcomes.
-5. **Ambush Patterns**
-   - Certain enemies only hunt at night; bandit activity peaks at dusk.
-6. **Service Availability**
-   - Inns, healers, or markets offer limited hours.
-7. **Seasonal Weather & Rituals**
-   - Weather, wildlife, or rituals vary by season and time segment.
-8. **Stealth Advantages**
-   - Night provides stealth bonuses for specific actions.
-9. **Faction Behavior**
-   - Rival patrols shift schedule; black-market services appear at night and intensify in certain seasons.
-10. **Calendar Events**
-    - Festivals and named holidays unlock special quests, markets, and NPC routines.
+- `WorldTime` stores only canonical `dayIndex` and `timeMinutes`; segment, season, date, holiday, and lighting values are derived views.
+- `CalendarMonth.notes`, generic `Schedule`, and generic segment-triggered `TimeEvent` records were not added.
+- Season `weatherBias`, `encounterBias`, and `factionBehaviorBias` were not added as calendar fields. Seasonal weather lives on `Region.weather`; faction or encounter behavior remains prompt/system logic rather than a calendar schema.
+- Segment boundaries define coarse labels. Seasonal `timeDescriptions` supply more specific light-level descriptions, but they do not currently recalculate segment boundaries or mechanically change day length.
 
-## Systemic Behavior Rules
+## Deferred Ideas
 
-- Time advances per player action (configurable tick size).
-- Segment changes trigger re-evaluation of NPC schedules and services.
-- Location modifiers (indoors, cave, city) can override ambient light.
-- Seasons adjust day length, weather probability, and faction behavior bias.
-- Events can be queued at a segment boundary, calendar date, or specific time.
+These ideas are useful archive context but are not current general-purpose systems:
 
-## Integration Touchpoints (Existing Systems)
+- NPC/service schedule templates keyed to segment and season.
+- Mechanical visibility, stealth, encounter, and faction modifiers tied directly to time segment.
+- Automatic merchant, healer, inn, patrol, or black-market availability based on the clock.
+- Generic quest windows or calendar-date trigger rules beyond explicit scheduled events and prompt-authored world mutations.
+- Segment-boundary hooks that re-evaluate NPC routines or service availability automatically.
+- Calendar holidays that directly unlock quests, markets, or NPC routines without a prompt/tool path.
 
-- **Globals**: store `worldTime`, calendar definition, helpers for segment/season resolution, and time advancement.
-- **Player**: track rest state, time-based buffs, and action time costs.
-- **NPC Generation**: add schedule defaults by archetype and season.
-- **Quests**: add time windows and calendar-date triggers.
-- **Events**: gate or prioritize events based on current segment and season.
-- **Prompts**: include time, date, and season context in base prompt to guide narration.
-- **UI**: expose current time, date, season, and upcoming transitions.
+## Current Integration Map
 
-## Implementation Sketch
-
-1. Define world time and calendar schemas; generate a named calendar per setting at game start.
-2. Add time tracking + calendar definition to Globals and save/load pipelines.
-3. Add segment/season calculator helpers and time advancement API.
-4. Hook time advancement into action processing and rest.
-5. Update prompts to include time + date + season context.
-6. Phase 2: Attach schedule data to NPCs and services (with seasonal variations).
-
-## Suggested Fixes for Coherence
-
-- Use a single time source for all systems (no duplicated clocks).
-- Keep time advancement deterministic and logged in one place.
-- Ensure all LLM prompts using time context are logged via `LLMClient.logPrompt`.
-
-## TODO: Remaining Implementation Steps (Detailed)
-
-PHASE 1
-
-1. **Schema + generation**
-   - Define `CalendarDefinition` for months, weekdays, seasons, and holidays.
-   - Generate a named calendar per setting at game start (not config-driven).
-   - Add `time.cycleLengthMinutes`, `time.segmentBoundaries`, and `time.tickMinutes`.
-   - Provide default segments: dawn, day, dusk, night.
-
-2. **Core time utilities**
-   - Add `Globals.worldTime` and `Globals.calendarDefinition`.
-   - Add helpers: `advanceTime(minutes)`, `getTimeSegment()`, `getSeason()`, `formatTime()`, `formatDate()`.
-   - Centralize time advancement in a single function to keep logs consistent.
-
-3. **Persistence**
-   - Include `worldTime` + calendar definition in save files and restore on load.
-
-4. **Action integration**
-   - Time spent doing actions is already supplied in an event prompt, but not used. Use it.
-   - Advance time after actions and report segment/season changes.
-
-5. **UI hooks**
-   - Add a small time + date indicator and segment/season transition notifications.
-
-6. **Prompt context**
-   - Update base prompt context to include time/segment/season/date and lighting.
-
-PHASE 2 7. **NPC + services schedules**
-
-- Add default schedule templates per NPC archetype and location type.
-- Resolve availability based on current segment and season.
-
-8. **Event gating**
-   - Add time-window checks to event selection and quest triggers.
-   - Support calendar-date triggers (holidays, solstices, etc.).
-
-9. **Testing + validation**
-   - Unit tests for segment/season resolution and time advancement.
-   - Smoke test: rest until morning, verify schedules and events refresh.
+- **Globals**: canonical clock, calendar normalization, date/segment/season/light helpers, serialization helpers, and forward time advancement.
+- **Config**: `time.cycleLengthMinutes`, `time.tickMinutes`, and `time.segmentBoundaries`.
+- **Save/load**: persisted `worldTime.json`, `calendarDefinition.json`, and hour-to-minute compatibility migration.
+- **API**: `/api/chat`, travel, crafting, locations, things, `/api/calendar`, and slash-command time adjustment all return or update world-time payloads where relevant.
+- **Events**: `time_passed` / `timePassed` is a fallback time source when no action/travel time was already applied; movement time uses route/exit timing where available.
+- **ScheduledEvent**: explicit future event records with due processing by absolute world minute.
+- **Prompts**: base prompt context includes world time, calendar, lighting, season, and weather context; prompt logs are handled through the normal prompt execution paths.
+- **UI**: world-time chip, calendar edit modal, world-profile Calendar tab, weather/light transition summaries, and optional weather/lighting image variants.

@@ -1,89 +1,133 @@
 # LLMClient
 
 ## Purpose
-Centralized client for LLM chat completions with concurrency limits, streaming progress reporting, retry logic, prompt logging, and optional image preprocessing. Also exposes prompt cancellation and log utilities.
+`LLMClient.js` is the shared text-completion orchestration layer. It selects the configured backend, builds chat-completion payloads, enforces concurrency, runs retries, reports prompt progress, handles cancellation, validates structured output, logs prompts/errors, supports deterministic test outputs, and records per-prompt output-character statistics.
 
-## Internal Class: Semaphore
-- `constructor(maxConcurrent)`: sets concurrency limit.
-- `acquire({ background? })` / `release(permit)`: manage async access. Background acquisitions are lower priority than foreground acquisitions.
-- `setLimit(newLimit)` / `dispatch()`: adjust and drain queued acquisitions.
+Callers use it from gameplay routes, world-generation helpers, event checks, status-effect generation, chat-tool loops, and `scripts/run_prompts.js`. The class returns the final assistant text string; callers that need normalized response metadata or tool calls use `onResponse`.
 
-## Key State (Static)
-- `#semaphores`: per-key Semaphore instances.
-- `#semaphoreLimit`: current global limit.
-- `#streamProgress`: active stream tracking and ticker state.
-- `#abortControllers`: map of in-flight requests by stream id.
-- `#controllerAbortIntents`: per-attempt abort intent (`cancel` vs `retry`) keyed by abort controller.
-- `#codexUsageStats`: in-process counters for Codex prompt count and quota-turn cadence.
+## Backends
+- `openai_compatible`: sends HTTP requests with `axios` to a normalized `/chat/completions` endpoint using `ai.endpoint`, `ai.apiKey` or OAuth refresh-token auth, and `ai.model`.
+- `codex_cli_bridge`: delegates transport to `CodexBridgeClient.chatCompletion(...)`. `LLMClient` keeps ownership of retry handling, validation, progress tracking, prompt stats, cancellation, and Codex usage/quota reporting around the bridge response.
 
-## Public API (Static)
-- `cancelPrompt(streamId, reason)`: aborts an in-flight request.
-- `retryPrompt(streamId, reason)`: aborts the current attempt and restarts the same prompt call.
-- `cancelAllPrompts(reason)`: aborts all currently tracked in-flight prompt attempts.
-- `waitForPromptDrain({ timeoutMs, pollIntervalMs })`: waits until tracked prompt activity is fully drained.
-- `ensureAiConfig()`: validates `Globals.config.ai`.
-- `resolveBackend(aiConfigOverride)`: resolves the active text backend (`openai_compatible` or `codex_cli_bridge`).
-- `getConfigurationErrors(aiConfigOverride)`: returns backend-aware config validation errors.
-- `isConfigured(aiConfigOverride)`: true when the selected backend has the required config.
-- `getMaxConcurrent(aiConfigOverride)`: reads `max_concurrent_requests`.
-- Background requests marked with `runInBackground: true` use the same per-backend semaphore, but queued foreground requests are dispatched first. When `max_concurrent_requests > 1`, background requests reserve one configured slot for foreground work instead of filling every slot.
-- `resetForcedOutputState()`: clears cached forced-output fixture data/counters.
-- `calculatePromptProgressFraction(receivedCharacters, targetCharacters)`: applies the character-based progress formula used by the UI.
-- `resolvePromptProgressCharacterTarget(label, config)`: resolves an exact or prefix `prompt_progress.character_targets` entry for a normalized prompt label; missing coverage throws.
-- `getPromptOutputCharacterStats(label)` / `listPromptOutputCharacterStats(options?)` / `recordPromptOutputCharacters(label, outputCharacters)` / `clearPromptOutputCharacterStats()`: read, list, update, and clear the persistent per-label output-character stats file.
-- `writeLogFile({ prefix, metadataLabel, payload, serializeJson, onFailureMessage, error, append })`: writes error logs named `ERROR_<prefix>_<metadataLabel>_<timestamp>.log`, with the label sanitized for filenames. Chat tool execution failures use this for dedicated `ERROR_tool_call_failed_*` JSON files containing the tool name, parameters, and backtrace.
-- `formatMessagesForErrorLog(messages)`: formats messages into a readable log.
-- `logPrompt({...})`: writes prompt/response logs to `logs/`.
-- `baseTimeoutMilliseconds()` / `resolveTimeout(timeoutMs, multiplier)`.
-- `resolveChatEndpoint(endpoint)` / `resolveTemperature(explicit, fallback)` / `resolveOutput(output, fallback)`.
-- `chatCompletion({ messages, metadataLabel, timeoutMs, temperature, stream, ... })`:
-  - Handles retries, streaming, logging, and optional image preprocessing.
-  - Optional `reasoningEffort: string` enables OpenAI-compatible reasoning for that request by sending `reasoning: true` and `reasoning_effort: <value>`. If omitted, the merged `ai.reasoning_effort` config value is used when present; blank/omitted effort leaves the payload unchanged. `ai_model_overrides` profiles can also set `reasoning_effort` for specific `metadataLabel` values such as `quest_check`, `event_checks`, and `need_bar_event_checks`.
-  - Optional `validateXMLStrict: true` upgrades XML validation from the normal lenient parser to `Utils.parseXmlDocumentStrict(...)`, causing malformed XML to fail with parser diagnostics instead of being normalized first. Before XML validation, response text is reduced to the final complete XML block inferred from the last closing tag, so analysis before or after the final block does not make an otherwise valid XML answer fail validation.
-  - Optional `logStreamChunksToConsole: true` dumps raw streamed `data:` payload chunks to the server console with separator lines; it is a no-op for non-streamed calls.
-  - Supports deterministic `forceOutput` mode for tests: skips AI network calls but still runs response post-processing/validation and emits normalized `onResponse` data.
-  - Supports fixture-driven deterministic outputs via `LLM_FORCE_OUTPUTS_FILE` env or `ai.force_outputs_file` config:
-    - Fixture maps prompt labels to response arrays (consumed in order per label).
-    - Label lookup prefers exact `metadataLabel`, then normalized underscore form.
-    - Additional fixture-key fallbacks: `prompt_<label>` and grouped `<label>_group_N` buckets (flattened by numeric `N` order).
-    - In strict mode (default), missing labels or exhausted arrays throw explicit errors.
-  - Normalizes response payloads for both stream and non-stream calls so `choices[0].message.tool_calls` is available to callers.
-  - Assembles streamed `delta.tool_calls` chunks into full function calls and validates that each call has parseable JSON `function.arguments`.
-  - Uses `LLMClient.logPrompt` and emits prompt progress via `Globals.realtimeHub`.
-  - Error logs use `errorLogLabel` when supplied, then `metadata.promptName`, then `metadata.promptType`, then `metadataLabel`, so prompts can keep AI override labels while writing clearer error filenames.
+Backend aliases and backend-specific configuration validation are centralized through `CodexBridgeClient.normalizeBackend(...)` and `CodexBridgeClient.getConfigurationErrors(...)`. See [CodexBridgeClient.md](CodexBridgeClient.md) for bridge session modes, structured-output conversion, and app-server transport details.
 
-## Private Helpers (Selected)
-- Stream tracking: `#isInteractive`, `#shouldTrackPromptProgress`, `#renderStreamProgress`, `#ensureProgressTicker`, `#trackStreamStart`, `#trackStreamReceived`, `#trackStreamBytes`, `#applyStreamPreviewText`, `#applyCodexPreviewUpdate`, `#trackStreamStatus`, `#trackStreamEnd`, `#formatCodexProgressEvent`, `#extractCodexPreviewUpdate`, `#broadcastProgress`.
-- Codex reporting: `#formatTokenCount`, `#formatEpochTimestamp`, `#formatCodexRateLimitWindow`, `#formatCodexRateLimits`, `#reportCodexUsage`.
-- Concurrency: `#ensureSemaphore`.
-- Formatting: `#formatMessageContent`, `#cloneAiConfig`.
-- Parsing/validation: `#resolveBoolean`, `#resolveReasoningEffort`, `#generateSeed`.
-- Image handling: `#getSharp`, `#parseImageDataUrl`, `#convertImageDataUrlToWebp`, `#convertMessagesToWebp`.
+## Configuration Inputs
+- `Globals.config.ai` is cloned for each request attempt. Matching `ai_model_overrides` profiles are applied by normalized `metadataLabel` before that attempt is dispatched.
+- `ai_multimodal` overrides the text config when `chatCompletion({ multimodal: true })` is used; the multimodal config must exist and be enabled.
+- `ai.custom_args` injects provider-specific top-level payload fields. Reserved core payload keys are rejected in configured custom args.
+- `ai.headers`, override-profile headers, and per-call `headers` are merged for HTTP requests. OAuth-backed requests always set `Authorization` from the refreshed access token.
+- `ai.cachebuster: true` prepends `[cachebuster:<uuid>]` to the final user message in the outbound payload copy. Caller-provided message objects are not mutated.
+- `ai.reasoning_effort`, override-profile `reasoning_effort`, payload `reasoning_effort`, or per-call `reasoningEffort` opt into OpenAI-compatible reasoning by sending `reasoning: true` and `reasoning_effort`.
+- `ai.force_outputs_file` or `LLM_FORCE_OUTPUTS_FILE` supplies deterministic fixture output buckets for tests and scripted runs.
 
-## Notes
-- `chatCompletion(...)` is now backend-aware: the default `openai_compatible` path still POSTs to `/chat/completions`, while `codex_cli_bridge` delegates transport to `CodexBridgeClient` and then reuses the same response normalization, retry, prompt logging, and XML/regex validation flow.
-- Streaming/progress updates are broadcast through `Globals.realtimeHub` when available, including per-prompt `promptText` content for the request payload and `previewText` content for the currently streamed textual response or backend status text. High-frequency streamed received-count/preview broadcasts are coalesced so active `prompt_progress` client updates are sent at most once every 500 ms, with final/clear events still emitted immediately. Both OpenAI-compatible streams and Codex bridge streams count decoded assistant characters, not UTF-8 bytes or model tokens.
-- Prompt-progress payload entries include `progressFraction`, `targetCharacters`, `runCount`, and `averageOutputCharacters`. Targets come from `prompt_progress.character_targets`; missing label coverage fails loudly.
-- Prompt-progress tracking no longer depends on an interactive TTY alone; it stays active whenever the realtime hub is available, so the browser prompt-progress dock can still work when the server process is running non-interactively.
-- `runInBackground: true` still allows a request to run through normal retry/logging/progress handling, but it is labeled as background for progress display and receives lower semaphore priority so gameplay foreground prompts can start ahead of queued background work.
-- Streamed tool calls are allowed: empty textual content is accepted when valid tool calls are present, and regex/XML output validation is skipped for those tool-call turns.
-- Retries are built in; stream timeouts are incrementally increased on retry.
-- Per-attempt `ERROR_chatCompletionError_*` logs include `message`, `status` when available, `attemptNumber`, `maxAttempts`, and `willRetry` fields in `Error Details`, so an intermediate failed stream can be distinguished from the final exhausted attempt. Axios/custom-serialized errors preserve that retry metadata even when the error object defines its own `toJSON()`.
-- Manual retries from prompt-progress UI do not consume configured automatic retry attempts for the prompt call.
-- Retry attempts re-resolve active AI runtime settings (including `ai_model_overrides` selected by `metadataLabel`) before each request attempt, so model/endpoint/key and other settings can change between retries.
-- When `ai_model_overrides` apply, console debugging prints the prompt label and matching profile names, but does not dump the merged override object or emit one line per overridden key.
-- Retry wait time between automatic attempts comes from `waitAfterError` (per-call override), else `ai.waitAfterError` (including per-prompt `ai_model_overrides`), else default `10` seconds. Rate-limit (`429`) retries can use `waitAfterRateLimitError`/`ai.waitAfterRateLimitError`, which overrides the general retry wait for those failures only.
-- `ai.custom_args` supports structured provider-specific top-level request args; profile `ai_model_overrides` merge `custom_args` per key (deep merge), with `null` deleting inherited keys.
-- `ai.headers` supports global HTTP request headers; profile `ai_model_overrides` merge `headers` per key, with `null` deleting inherited headers.
-- `ai.oauth-key` plus `ai.oauth-url` (or the same keys inside a matching `ai_model_overrides` profile) can satisfy the OpenAI-compatible auth requirement through OAuth refresh-token auth. `LLMClient` refreshes the key to a short-lived access token, stores rotated credentials under `tmp/oauth/`, sends the access token in the normal `Authorization: Bearer ...` header, and forces one refresh/retry if the provider rejects a request with 401. `ai.oauth-client-id` is optional and is sent as `client_id` when set. Configured request headers are still merged, but OAuth-backed chat requests keep the refreshed bearer token as `Authorization`.
-- `ai.cachebuster` is boolean; omitted or `false` disables it, while `true` prepends a fresh `[cachebuster:<uuid>]` line to the final `user` message for each outbound request attempt. The payload copy, prompt-progress broadcast, and error logs show the tagged prompt, while the caller's original `messages` array remains unchanged.
-- When the Codex bridge backend is selected, `fresh` mode uses `ai.max_concurrent_requests`, while resumed Codex session modes remain serialized through backend-specific semaphore keys.
-- Codex bridge requests reuse the same prompt-progress ids and abort-controller registry as streamed OpenAI requests, so the docked prompt tracker cancel/retry controls work for Codex runs too.
-- Codex bridge progress now comes from the Codex app-server transport: the bridge converts structured-output JSON message deltas into plain assistant `content` preview text before handing them to `LLMClient`, with lifecycle-status fallback only before real assistant text starts.
-- When a Codex response includes normalized `usage`, `LLMClient` writes an unconditional server-console usage line for that prompt attempt using the per-prompt input/cached/output/total token counts.
-- `LLMClient` now queries the local Codex app-server for a rate-limit snapshot every 5 counted gameplay turns rather than every N raw prompts. Counted turns are opt-in via request metadata (`__codexQuotaCountAsTurn` + stable `__codexQuotaTurnKey`) so tool-loop rounds do not double-count. If that auxiliary quota query fails, it logs a clear warning instead of silently claiming quota data.
-- When Codex returns multiple rate-limit buckets, `LLMClient` now selects one preferred bucket for reporting: exact match on the active model first, then the generic `codex` bucket, then first bucket as a final fallback. Both the console quota line and the `🌀 Codex Quota` chat notice use that same selected bucket instead of mixing or blindly taking the first entry.
-- Successful 5-turn Codex quota snapshots also append a visible `status-summary` chat entry (`🌀 Codex Quota`) with up to three short lines: optional positive credit balance, `Primary: <percent> remaining; resets <time>`, and `Secondary: <percent> remaining; resets <month day ordinal> at <time>`. Each row carries `category: "status"` for the chat state-diff drawer, and the entry is flagged `metadata.excludeFromBaseContextHistory = true` so it never enters base prompt history.
-- `logPrompt` is the standard logging path for prompts throughout the codebase, including pre-LLM template parse failures that need to preserve the rendered prompt XML alongside the parse error.
-- Successful `chatCompletion(...)` calls record the final assistant text length in decoded characters under `logs/prompt-output-character-stats.json`. Tool-call-only completions do not update those output-character averages. The file is validated on load, invalid JSON or invalid numeric stats throw clear errors, and writes are atomic via temp-file rename. Character-appended labels for `inventory_generation`, `npc_memories`, `npc_progression_assignments`, `npc_ability_assignments`, and `npc_alias_assignments` are aggregated under the base label, including legacy per-character stats entries loaded from disk. Normal prompt logs start with a stats block showing the stats label, completed run count, average output characters, and latest output characters when present; labels with no runs report `averageOutputCharacters: null`. `listPromptOutputCharacterStats()` powers `/promptstats` and includes configured prompt-progress labels/patterns with null averages when they have not run yet; `clearPromptOutputCharacterStats()` clears all stored averages through the same validated write path. Prompt progress uses a positive established average as the current run's target characters, falling back to `prompt_progress.character_targets` until a usable average exists. When a tracked prompt completes, `LLMClient` emits one final progress payload for that prompt at `progressFraction: 1` and holds it for 250 ms before the clear event.
-- The chat completion payload does not force reasoning by default. `ai.reasoning_effort`, per-label `ai_model_overrides.<profile>.reasoning_effort`, or per-call `reasoningEffort` explicitly enables reasoning by sending `reasoning: true` plus `reasoning_effort`; blank or omitted effort leaves existing request payloads unchanged.
+## Public API
+- `chatCompletion(options)`: runs one completion request and returns assistant text.
+- `cancelPrompt(streamId, reason)`: aborts one tracked in-flight prompt and causes that request to return `''`.
+- `retryPrompt(streamId, reason)`: aborts one tracked attempt and restarts the same `chatCompletion(...)` loop without consuming an automatic retry attempt.
+- `cancelAllPrompts(reason)`: aborts all prompts currently registered in the abort-controller map and returns cancellation counts.
+- `waitForPromptDrain({ timeoutMs, pollIntervalMs })`: waits until prompt-progress entries and abort-controller entries are empty.
+- `ensureAiConfig()`, `resolveBackend(aiConfigOverride)`, `getConfigurationErrors(aiConfigOverride)`, `isConfigured(aiConfigOverride)`, `getMaxConcurrent(aiConfigOverride)`: configuration helpers used by settings and tests.
+- `resolveChatEndpoint(endpoint)`, `baseTimeoutMilliseconds()`, `resolveTimeout(timeoutMs, multiplier)`, `resolveTemperature(explicit, fallback)`, `resolveOutput(output, fallback)`: request utility helpers.
+- `calculatePromptProgressFraction(receivedCharacters, targetCharacters)` and `resolvePromptProgressCharacterTarget(label, config)`: prompt-progress math and configured target lookup.
+- `getPromptOutputCharacterStats(label)`, `listPromptOutputCharacterStats(options)`, `recordPromptOutputCharacters(label, outputCharacters)`, `clearPromptOutputCharacterStats()`: persistent output-character statistics helpers used by `/promptstats`.
+- `logPrompt(options)`: writes prompt/response logs under `logs/`.
+- `writeLogFile(options)`: writes `ERROR_<prefix>_<metadataLabel>_<timestamp>.log` files for validation, chat-completion, and tool-call failures.
+- `formatMessagesForErrorLog(messages)`: renders chat messages into readable system/prompt/other sections for logs.
+- `resetForcedOutputState()` and `resetPromptOutputCharacterStatsForTests()`: test helpers.
+
+## `chatCompletion(...)`
+Important options:
+
+- `messages`: required OpenAI-style chat messages.
+- `metadataLabel`: prompt label used for override matching, logging, prompt progress, stats, and Codex usage labels.
+- `errorLogLabel`: optional error-log label. Error logs otherwise prefer `metadata.promptName`, then `metadata.promptType`, then `metadataLabel`.
+- `additionalPayload`: extra request body fields such as `tools`, `tool_choice`, or provider-specific parameters.
+- `headers`: per-call HTTP headers.
+- `model`, `apiKey`, `endpoint`, `temperature`, `maxTokens`, `topP`, `frequencyPenalty`, `presencePenalty`, `seed`: per-call request overrides.
+- `timeoutMs`, `timeoutScale`, `retryAttempts`, `waitAfterError`, `waitAfterRateLimitError`, `waitAfterNetworkError`: timeout and retry controls.
+- `stream`: OpenAI-compatible streaming control. Codex bridge requests are sent through the bridge with `stream: false` while bridge events feed prompt progress.
+- `runInBackground`: marks the request as background for progress display and lower semaphore priority.
+- `multimodal`: merges `Globals.config.ai_multimodal` into the effective AI config.
+- `validateXML`, `validateXMLStrict`, `requiredTags`, `requiredRegex`: response validation controls.
+- `forceOutput`: deterministic string or response-shaped object that skips network transport and runs normalization, validation, stats, and hooks.
+- `captureRequestPayload`, `captureResponsePayload`, `onResponse`: testing and integration hooks.
+- `logStreamChunksToConsole`: dumps raw OpenAI-compatible streamed `data:` payloads.
+- `output`: `stdout`, `stderr`, or `silent`; `silent` suppresses normal console output and prompt-progress tracking.
+
+Request flow:
+
+1. Convert any `image_url` data URLs in message content to WebP through `sharp`. Non-data image URLs in this preprocessing path fail with an explicit error.
+2. Resolve deterministic output from `forceOutput` or a forced-output fixture, if configured.
+3. Resolve retry count from the call option or `ai.retryAttempts`.
+4. For each attempt, clone AI config, apply `ai_model_overrides`, merge custom args/headers, apply cachebuster, resolve model/temperature/token/top-p/reasoning settings, resolve backend, and choose a semaphore key.
+5. Acquire the semaphore. Background requests share the same semaphore but foreground requests are dispatched first; with a limit above one, background work leaves one slot available for foreground prompts.
+6. Start prompt-progress tracking when the request is trackable and output is not `silent`.
+7. Dispatch through `axios.post(...)` or `CodexBridgeClient.chatCompletion(...)`.
+8. Normalize the response into an OpenAI-style `chat.completion` payload, call capture/on-response hooks, strip `<think>...</think>` blocks from returned text, validate output, update prompt stats, and return assistant text.
+
+## Response Normalization And Validation
+- Streaming OpenAI-compatible responses are assembled from SSE `data:` chunks. Text deltas are concatenated and `delta.tool_calls` chunks are assembled into complete function calls.
+- Non-stream responses and Codex bridge responses use the same normalized shape for `choices[0].message.content` and `choices[0].message.tool_calls`.
+- Tool-call arguments must be parseable JSON strings. Malformed tool-call payloads throw before callers receive them.
+- Empty assistant text is accepted only when one or more valid tool calls are present. Tool-call-only completions return `''` while `onResponse` carries the normalized tool calls.
+- `requiredRegex`, XML validation, and required-tag checks are skipped for tool-call turns.
+- With XML validation enabled, `Utils.extractFinalXmlBlockFromResponse(...)` isolates the final complete XML block for parsing and required-tag checks. `validateXMLStrict: true` uses `Utils.parseXmlDocumentStrict(...)`; otherwise `Utils.parseXmlDocument(...)` is used.
+- Chat-completion errors, invalid XML, missing tags, and missing regex matches write dedicated error logs containing response text and formatted prompts. Exhausted per-attempt failures return `''`; preflight/configuration errors and strict fixture-resolution errors throw.
+
+## Prompt Progress And Cancellation
+Prompt progress is active when output is not `silent` and either an interactive terminal or `Globals.realtimeHub.emit(...)` is available.
+
+Progress entries include:
+- `id`, `label`, `model`, elapsed seconds, timeout seconds, retry count, and background flag.
+- `promptText` from `formatMessagesForErrorLog(...)`.
+- `previewText` from streamed assistant text or Codex bridge assistant-content events.
+- `receivedCount` and `receivedUnit`; both OpenAI-compatible and Codex bridge progress count decoded JavaScript characters.
+- `targetCharacters`, `progressFraction`, `runCount`, and `averageOutputCharacters`.
+
+Cold-start targets come from `config.prompt_progress.character_targets`. Label matching normalizes metadata labels; exact entries win over `*` prefix entries. Missing coverage throws. When a positive stored average exists for a prompt label, that average is used as the target for the next run. Progress advances linearly to 75% at the target and approaches 100% asymptotically after that.
+
+High-frequency progress broadcasts are coalesced to at most one active update every 500 ms. Completion sends an immediate `progressFraction: 1` update, holds the completed entry for 250 ms, then emits the clear event. Prompt-progress `id` values are the ids accepted by `cancelPrompt(...)` and `retryPrompt(...)`.
+
+## Concurrency
+`LLMClient` keeps a semaphore per backend/model/auth/session key.
+
+- OpenAI-compatible keys use the resolved API credential or OAuth cache key plus model.
+- Codex fresh-mode keys use backend plus model and honor `ai.max_concurrent_requests`.
+- Codex resumed-session keys serialize by Codex home and, for `resume_id`, session id.
+- `runInBackground: true` lowers queue priority and limits concurrent background occupancy so foreground gameplay prompts can start ahead of queued background prompts.
+
+## Prompt Logging
+`logPrompt(...)` writes `logs/<timestamp>_<prefix>_<metadataLabel>.log` with:
+- prompt output-character stats header.
+- model, endpoint, and token metadata when available.
+- request and response JSON payload sections when supplied.
+- system prompt, generation prompt, reasoning, custom sections, and response text.
+
+`writeLogFile(...)` writes error files under `logs/` using sanitized labels. It serializes `Error` objects, including retry metadata (`attemptNumber`, `maxAttempts`, `willRetry`) and common Axios/custom error fields. Chat tool failures use this path for structured `ERROR_tool_call_failed_*` JSON logs.
+
+## Prompt Output Character Stats
+Successful `chatCompletion(...)` calls record the final assistant text length in decoded characters under `logs/prompt-output-character-stats.json`. Tool-call-only completions do not update averages.
+
+The stats file has `version: 1`, is validated on load, and is written atomically via temp-file rename. Invalid JSON, unsupported versions, non-normalized keys, invalid numeric values, or inconsistent zero-run entries throw. Character-appended labels for `inventory_generation`, `npc_memories`, `npc_progression_assignments`, `npc_ability_assignments`, and `npc_alias_assignments` aggregate under their base label, including compatible persisted per-character entries.
+
+`listPromptOutputCharacterStats()` includes stored stats and configured prompt-progress target labels. `clearPromptOutputCharacterStats()` replaces the stats file with an empty validated file and returns the cleared prompt count.
+
+## Deterministic Outputs
+Per-call `forceOutput` accepts either a string or a response-shaped object with `content`, `message`, `choices`, `tool_calls`/`toolCalls`, `finish_reason`/`finishReason`, `model`, `id`, and `usage` fields where applicable.
+
+Forced-output fixtures are loaded from `LLM_FORCE_OUTPUTS_FILE` or `ai.force_outputs_file`. Fixture groups can live under `byMetadataLabel`, `labels`, `outputs`, or top-level keys. Label lookup tries the raw label, normalized label, `unknown`, `prompt_<label>`, and ordered `<label>_group_N` buckets. Fixture strict mode is enabled unless `strict: false`; in strict mode, missing buckets and exhausted buckets throw.
+
+## Codex Usage And Quota Reporting
+When the Codex bridge response includes normalized `usage`, `LLMClient` writes a server-console usage line for that prompt with input, cached-input, output, and total token counts.
+
+Quota snapshots are based on unique gameplay-turn metadata rather than raw prompt count. A prompt counts only when `metadata.__codexQuotaCountAsTurn === true` and `metadata.__codexQuotaTurnKey` is a non-empty stable string. Duplicate keys are ignored; a missing key with counting enabled throws. Every fifth counted turn calls `CodexBridgeClient.readRateLimits(...)`.
+
+When a rate-limit snapshot contains multiple buckets, reporting prefers an exact active-model bucket, then the generic `codex` bucket, then the first available bucket. Successful quota reads append a visible `status-summary` chat entry titled `🌀 Codex Quota` through `Globals.appendChatEntry(...)`; the entry is marked `metadata.excludeFromBaseContextHistory = true`. Quota read or chat-notice failures warn to the server console and do not fail the completed prompt.
+
+## Current Call Patterns
+- `/api/chat` uses `player_action`, `question`, `generic_prompt`, and `generic_prompt_nocontext` labels, passes chat tools through `additionalPayload`, and uses `metadata.__codexQuotaCountAsTurn` only for player-action turns.
+- `chat_tool_calls.js` relies on `onResponse` to inspect normalized tool calls across multiple tool-loop rounds, and logs tool-loop rounds with `LLMClient.logPrompt(...)`.
+- `Events.js` uses labels such as `event_checks`, `need_bar_event_checks`, `quest_check`, `mystery_thread_check`, `mystery_box_update`, `alter_location`, and `alter_npc`, with regex/XML validation on structured prompts.
+- `server.js` uses the client for generation, summaries, image-prompt writing, NPC/item/location/region creation, and background prompts. Background prompt callers set `runInBackground: true`.
+- `StatusEffect.js` uses `status_effect_generate` and logs the rendered prompt/response through `LLMClient.logPrompt(...)`.
+- `scripts/run_prompts.js` disables XML validation, accepts an optional required regex, and logs each run through `LLMClient.logPrompt(...)`.

@@ -1,10 +1,27 @@
 # Travel Planner and Journey Risk Brainstorm
 
-This document expands the travel planner and journey risk idea from `gameplay_improvement_brainstorm.md`. It is a brainstorm, not an implementation spec. The core premise is that long-distance travel should become a visible journey with plans, risks, rest, food, lodging, foraging, and possible interruptions instead of a single time jump that leaves the party exhausted and starving.
+This document expands the travel planner and journey risk idea from `gameplay_improvement_brainstorm.md`. It is a proposal/archive note, not an implemented system spec. The core premise is that long-distance travel could become a visible journey with plans, risks, rest, food, lodging, foraging, and possible interruptions instead of a single time jump that leaves the party exhausted and starving.
+
+## Current project status
+
+A full journey planner is not currently implemented. The useful foundation already exists in the project:
+
+- Directed location exits with `LocationExit.travelTimeMinutes`.
+- Shortest-route helpers on `Location`, including `findShortestTravelTimeMinutes(...)` and `findShortestTravelRoute(...)`.
+- Direct exit movement through `/api/player/move`, with positive exit time advancing world time unless the source context is a vehicle.
+- Region Map, World Map, and Favorites fast travel with `/api/player/fast-travel-preview`, `travelMetadata.mode: "fast-travel"`, a confirmation modal, prompt-backed travel prose, and travel-time-accounting teleport.
+- Canonical minute world time via `Globals.advanceTime(...)`.
+- Elapsed-time need/status/health processing through `Player.applyStatusEffectNeedBarsToAll()`.
+- Travel-prose handling that uses stored graph route time as authoritative for ordinary player movement and uses structured vehicle travel time for timed vehicle trips.
+- Vehicle state through `VehicleInfo.currentDestination`, `pendingDestination`, `ETA`, `departureTime`, fixed-route `destinations`, and `vehicleExitId`.
+- Due vehicle-arrival and scheduled-event processing after positive time advances.
+- Region/location random-event infrastructure and weather data that could inform future journey risk.
+
+The proposal below is about adding a player-facing planning and resolution layer on top of those mechanics. Future work should not invent a parallel travel graph or bypass existing time, need, status, vehicle, scheduled-event, and summary paths.
 
 ## Core pitch
 
-Travel should ask "how do you make the journey?" rather than only "where do you go?" The player can choose speed, caution, route, lodging, camping, food strategy, foraging, hunting, vehicle use, and tolerance for risk. The system then advances time, resolves resource use and skill checks, updates needs/status effects, and surfaces meaningful encounters or complications along the route.
+Travel should ask "how do you make the journey?" rather than only "where do you go?" The player could choose speed, caution, route, lodging, camping, food strategy, foraging, hunting, vehicle use, and tolerance for risk. The system would then advance time through the existing world-time path, resolve resource use and skill checks, update needs/status effects, and surface meaningful encounters or complications along the route.
 
 The goal is not to make every short exit tedious. It is to make long trips, dangerous terrain, scarce supplies, and harsh weather feel like real gameplay.
 
@@ -40,7 +57,7 @@ For nearby exits with modest travel time, the current move flow can remain:
 - Apply existing time-based need/status processing.
 - Show the travel summary.
 
-The travel planner should appear when the journey is long, crosses multiple exits, enters dangerous territory, uses a vehicle route, or the player explicitly opens it.
+A future travel planner could appear when the journey is long, crosses multiple exits, enters dangerous territory, uses a vehicle route, or the player explicitly opens it.
 
 ### Journey planning
 
@@ -63,7 +80,7 @@ The player then chooses a travel posture and resource plan.
 
 ### Journey execution
 
-Execution should produce a concise journey report:
+Execution would produce a concise journey report:
 
 - Route taken.
 - Time elapsed.
@@ -79,7 +96,7 @@ Execution should produce a concise journey report:
 
 ### Interrupted journeys
 
-If a travel encounter, hazard, failed skill check, vehicle issue, or story event interrupts the trip, the player should arrive in an intermediate state:
+If a travel encounter, hazard, failed skill check, vehicle issue, or story event interrupts the trip, the player would arrive in an intermediate state:
 
 - Current location or temporary travel scene.
 - Remaining destination.
@@ -359,6 +376,8 @@ The system should distinguish:
 
 ## Route and leg model ideas
 
+The following names are proposal-level data shapes, not current classes or persisted records.
+
 ### JourneyPlan
 
 Possible fields:
@@ -458,7 +477,7 @@ Hard boundary:
 
 ## Prompt ideas
 
-Potential prompt labels:
+Future prompt labels could include:
 
 - `journey_plan_options`: summarize route options and setting-appropriate travel strategies.
 - `journey_forage_check`: produce structured foraging/hunting/scavenging outcome context after server rolls.
@@ -466,7 +485,7 @@ Potential prompt labels:
 - `journey_interruption_scene`: create an intermediate scene when travel is interrupted.
 - `journey_arrival_summary`: narrate completed travel with structured mechanical summary.
 
-All prompt-backed paths should use `LLMClient.logPrompt()` and strict structured output validation where practical.
+All prompt-backed paths should use `LLMClient.logPrompt()` and strict structured output validation where practical. These prompt labels are proposal names only; they are not current prompt templates.
 
 ## UI ideas
 
@@ -523,27 +542,29 @@ If interrupted:
 
 ### Location and exit graph
 
-Use:
+Reuse the current route foundation:
 
-- `Location.findShortestTravelTimeMinutes(...)`
+- `Location.findShortestTravelTimeMinutes(...)`.
+- `Location.findShortestTravelRoute(...)`.
 - Directed exits.
-- `LocationExit.travelTimeMinutes`
+- `LocationExit.travelTimeMinutes`.
 - Existing strict graph integrity checks.
 
 Malformed graph data should fail loudly rather than being silently skipped.
 
 ### World time
 
-Use:
+Use the current elapsed-time path:
 
-- `Globals.advanceTime(...)`
+- `Globals.advanceTime(...)`.
 - Existing time transition summaries.
 - Minute-canonical `worldTime`.
-- Existing due-arrival processing for vehicles.
+- `Player.applyStatusEffectNeedBarsToAll()` after positive time advances.
+- Existing due-arrival processing for vehicles and scheduled events.
 
 ### Need bars and status effects
 
-Travel should go through normal elapsed-time need/status processing, then apply additional journey outcomes such as poor rest, good lodging, hunger mitigation, exposure, injury, or morale effects.
+Travel should go through normal elapsed-time need/status processing first, then apply additional journey outcomes such as poor rest, good lodging, hunger mitigation, exposure, injury, or morale effects. If a future journey layer adds direct need/status deltas, it should emit visible summaries instead of hiding them inside narration.
 
 ### Inventory and currency
 
@@ -571,13 +592,13 @@ Use region weather definitions, seasonal light descriptions, and random event se
 
 ### Vehicles
 
-Vehicle trips should respect:
+Vehicle trips should respect current `VehicleInfo` semantics:
 
 - `VehicleInfo.currentDestination`
 - `VehicleInfo.pendingDestination`
 - `VehicleInfo.ETA`
 - `VehicleInfo.departureTime`
-- fixed-route destinations
+- fixed-route `destinations`
 - hidden exits during underway/finalizing states
 
 Journey planning can make vehicle trips clearer by showing onboard rest, route timing, stops, and risks.
@@ -589,7 +610,7 @@ Travel risk can build on existing random-event infrastructure:
 - Region seeds.
 - Location/region event types.
 - Forced random events.
-- Weather/light event summaries.
+- Weather and light context.
 
 Travel-specific event checks should avoid duplicate movement/time application.
 
@@ -604,7 +625,7 @@ Travel can create or resolve:
 - Party disposition changes from hardship or good planning.
 - Quest deadlines and missed opportunities.
 
-## Config ideas
+## Future config ideas
 
 Possible config options:
 
@@ -625,7 +646,7 @@ Possible config options:
 
 ## Persistence considerations
 
-Most completed journeys may not need durable journey objects beyond chat/event summaries. Interrupted or multi-stage journeys may need active state:
+Most completed journeys may not need durable journey objects beyond chat/event summaries. Interrupted or multi-stage journeys would need active state if the player can save/load before the trip is resolved:
 
 - Destination.
 - Remaining route.
@@ -636,7 +657,7 @@ Most completed journeys may not need durable journey objects beyond chat/event s
 - Vehicle state if relevant.
 - Original request metadata.
 
-Active journey state should be saved if the player can save/load during an interruption.
+Active journey state should be saved if the player can save/load during an interruption. Current saves persist locations, exits, vehicles, players, needs, status effects, scheduled events, summaries, and chat history, but there is no `JourneyPlan` or active journey object today.
 
 ## Error handling principles
 
@@ -687,7 +708,7 @@ Fixtures:
 - Vehicle route.
 - Route with missing travel-time sentinel values.
 
-## Rollout options
+## Proposal rollout options
 
 ### Slice 1: Travel estimate and warnings
 

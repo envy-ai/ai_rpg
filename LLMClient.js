@@ -1248,6 +1248,43 @@ class LLMClient {
         return 1;
     }
 
+    static #isRetryableNetworkError(error, errorStatus = undefined) {
+        const normalizedStatus = Number(errorStatus ?? error?.status ?? error?.response?.status);
+        if (Number.isFinite(normalizedStatus)) {
+            return false;
+        }
+        if (axios.isCancel?.(error) || error?.name === 'AbortError' || error?.code === 'ERR_CANCELED') {
+            return false;
+        }
+
+        const retryableCodes = new Set([
+            'EAI_AGAIN',
+            'ECONNABORTED',
+            'ECONNREFUSED',
+            'ECONNRESET',
+            'ENETUNREACH',
+            'ENOTFOUND',
+            'EPIPE',
+            'ETIMEDOUT',
+            'ERR_HTTP_CONTENT_LENGTH_MISMATCH',
+            'ERR_HTTP2_STREAM_CANCEL',
+            'ERR_NETWORK',
+            'ERR_SOCKET_CLOSED',
+            'ERR_STREAM_PREMATURE_CLOSE'
+        ]);
+        const rawCode = typeof error?.code === 'string' ? error.code : '';
+        if (retryableCodes.has(rawCode) || rawCode.startsWith('UND_ERR_')) {
+            return true;
+        }
+        if (Array.isArray(error?.errors)) {
+            return error.errors.some(innerError => LLMClient.#isRetryableNetworkError(innerError));
+        }
+        if (error?.cause && error.cause !== error) {
+            return LLMClient.#isRetryableNetworkError(error.cause);
+        }
+        return Boolean(error?.request && !error?.response);
+    }
+
     static #hashSecret(value) {
         return createHash('sha256').update(String(value || '')).digest('hex');
     }
@@ -3475,6 +3512,7 @@ class LLMClient {
         requiredRegex = null,
         waitAfterError = null,
         waitAfterRateLimitError = null,
+        waitAfterNetworkError = null,
         dumpReasoningToConsole = false,
         debug = false,
         output = 'stdout',
@@ -3563,6 +3601,7 @@ class LLMClient {
                 requiredRegex,
                 waitAfterError,
                 waitAfterRateLimitError,
+                waitAfterNetworkError,
                 dumpReasoningToConsole,
                 seed,
                 topP,
@@ -3771,6 +3810,20 @@ class LLMClient {
                     }
                     resolvedWaitAfterRateLimitError = configuredRateLimitWait;
                 }
+                let resolvedWaitAfterNetworkError = 0;
+                if (waitAfterNetworkError !== null && waitAfterNetworkError !== undefined) {
+                    const explicitNetworkWait = Number(waitAfterNetworkError);
+                    if (!Number.isFinite(explicitNetworkWait) || explicitNetworkWait < 0) {
+                        throw new Error('waitAfterNetworkError must be a non-negative number when provided.');
+                    }
+                    resolvedWaitAfterNetworkError = explicitNetworkWait;
+                } else if (Object.prototype.hasOwnProperty.call(aiConfig, 'waitAfterNetworkError')) {
+                    const configuredNetworkWait = Number(aiConfig.waitAfterNetworkError);
+                    if (!Number.isFinite(configuredNetworkWait) || configuredNetworkWait < 0) {
+                        throw new Error('AI waitAfterNetworkError must be a non-negative number when configured.');
+                    }
+                    resolvedWaitAfterNetworkError = configuredNetworkWait;
+                }
                 const resolvedEndpoint = resolvedBackend === CodexBridgeClient.backendName
                     ? null
                     : LLMClient.resolveChatEndpoint(endpoint || aiConfig.endpoint);
@@ -3843,6 +3896,7 @@ class LLMClient {
                         effectiveMaxConcurrent,
                         resolvedWaitAfterError,
                         resolvedWaitAfterRateLimitError,
+                        resolvedWaitAfterNetworkError,
                         semaphoreKey,
                         streamStartTimeoutMs,
                         streamContinueTimeoutMs,
@@ -3894,6 +3948,7 @@ class LLMClient {
                     effectiveMaxConcurrent,
                     resolvedWaitAfterError,
                     resolvedWaitAfterRateLimitError,
+                    resolvedWaitAfterNetworkError,
                     semaphoreKey,
                     streamStartTimeoutMs,
                     streamContinueTimeoutMs,
@@ -3957,6 +4012,7 @@ class LLMClient {
                 let resolvedTimeout = null;
                 let waitAfterErrorSeconds = 10;
                 let waitAfterRateLimitErrorSeconds = 10;
+                let waitAfterNetworkErrorSeconds = 0;
                 let streamStartTimeoutMs = 40000;
                 let streamContinueTimeoutMs = 10000;
                 const controller = new AbortController();
@@ -4004,6 +4060,7 @@ class LLMClient {
                         resolvedTimeout = attemptRuntime.resolvedTimeout;
                         waitAfterErrorSeconds = attemptRuntime.resolvedWaitAfterError;
                         waitAfterRateLimitErrorSeconds = attemptRuntime.resolvedWaitAfterRateLimitError;
+                        waitAfterNetworkErrorSeconds = attemptRuntime.resolvedWaitAfterNetworkError;
                         streamStartTimeoutMs = attemptRuntime.streamStartTimeoutMs;
                         streamContinueTimeoutMs = attemptRuntime.streamContinueTimeoutMs;
 
@@ -4356,6 +4413,7 @@ class LLMClient {
                                     retryAttempts,
                                     waitAfterError: waitAfterErrorSeconds,
                                     waitAfterRateLimitError: waitAfterRateLimitErrorSeconds,
+                                    waitAfterNetworkError: waitAfterNetworkErrorSeconds,
                                     validateXML,
                                     validateXMLStrict,
                                     requiredTags,
@@ -4463,6 +4521,11 @@ class LLMClient {
                             log(`Waiting ${waitAfterRateLimitErrorSeconds} seconds before retrying...`);
                             await new Promise(resolve => setTimeout(resolve, waitAfterRateLimitErrorSeconds * 1000));
                         }
+                    } else if (LLMClient.#isRetryableNetworkError(error, errorStatus)
+                        && attempt < retryAttempts
+                        && waitAfterNetworkErrorSeconds > 0) {
+                        log(`Network error from LLM transport. Waiting ${waitAfterNetworkErrorSeconds} seconds before retrying...`);
+                        await new Promise(resolve => setTimeout(resolve, waitAfterNetworkErrorSeconds * 1000));
                     }
 
                     const shouldForceOAuthRefresh = errorStatus === 401

@@ -1,131 +1,127 @@
-# Faction System (Design Draft)
+# Faction System (Archived Design Notes)
 
-## Goals
+This is a finished/archive design document. It preserves the original faction-system intent while summarizing what the current project actually implements. For authoritative implementation details, use:
+
+- `docs/classes/Faction.md`
+- `docs/api/factions.md`
+- `docs/api/settings.md`
+- `docs/classes/Player.md`
+- `docs/api/game.md`
+- `docs/api/serialization.md`
+
+## Current Implementation Snapshot
+
+The faction system is implemented as persistent active-game faction records plus player-specific numeric standings.
+
+- `Faction` stores `id`, `name`, descriptions, `tags`, `goals`, `homeRegionName`, id-keyed `relations`, `assets`, `reputationTiers`, and timestamps.
+- Active factions live in the server-level `factions` map and in `Faction` static indexes by id and lowercased exact name.
+- `Player` stores actor faction membership as `factionId` and faction standings as a map of `factionId -> number`.
+- Standing values are finite numbers. The HTTP/API helpers do not clamp them to a fixed range.
+- Reputation tiers live on each `Faction`; `Faction.resolveReputationTier(value)` resolves the highest configured tier threshold less than or equal to the standing value.
+- Generated reputation tiers currently request thresholds at `-60`, `-20`, `0`, `20`, and `60`, but the model accepts any finite tier thresholds.
+- Relations are directional faction-to-faction records keyed by target faction id. Valid statuses are `allied`, `neutral`, `hostile`, and `rival`, each with non-empty notes.
+- `assets` are persisted faction metadata. They do not currently drive systemic trade, patrol, or economy rules by themselves.
+
+## Current Generation And Setup
+
+New-game faction setup uses active setting defaults before falling back to config:
+
+- `SettingInfo.defaultFactions` can provide setting-local faction drafts.
+- `SettingInfo.defaultFactionCount` sets the target faction count when present.
+- `config.factions.count` is the fallback target; `0` disables faction setup.
+- Preconfigured drafts are loaded first, up to the target count.
+- If more factions are needed, `generateFactionsList()` runs a three-stage prompt flow: core faction data, relationship matrix, and reputation tiers.
+- If faction generation returns fewer factions than requested, new-game setup fails. If it returns more, the extras are accepted.
+- Combined factions must have unique names.
+- Each active faction receives relation entries for every other active faction. Missing or invalid entries normalize to neutral with default notes.
+- Faction generation, relationship generation, reputation generation, autofill, and inbound relationship prompts are logged through `LLMClient.logPrompt()`.
+
+## Current API, UI, And Persistence
+
+Implemented runtime surfaces include:
+
+- `GET /api/factions`: lists active factions plus the current player's standings.
+- `POST /api/factions`: creates an active-game faction and generates inbound relation edges from existing factions.
+- `POST /api/factions/fill-missing`: fills missing active-game faction form fields through AI without creating the faction.
+- `PUT /api/factions/:id`: updates present faction fields; relation, asset, and tier fields are whole-field replacements.
+- `DELETE /api/factions/:id`: removes the faction, relation edges to it, player memberships/standings for it, and location/region control references to it.
+- `PUT /api/player/factions/:id/standing`: sets or clears the current player's numeric standing.
+- `/api/settings/factions/generate` and `/api/settings/factions/fill-missing`: manage world-profile faction drafts, not live factions.
+- The chat/scheduled-event tool `upsertFactionFields` can create or update factions through allowed individual fields.
+- The main UI has a Factions tab with faction fields, relation editing, reputation tiers, and player standing editing.
+- Quest editing supports per-faction reputation rewards.
+- Save/load persists factions in `factions.json`, player faction state in `allPlayers.json`, and location/region control fields in `gameWorld.json`.
+- Load reconciliation clears stale faction ids from players, standings, location/region/pending-stub control fields, and invalid/self relation edges.
+
+## Current Integration Points
+
+- **Player/NPCs**: `Player.factionId` identifies membership; `Player.getFactionStandings()`, `getFactionStanding()`, `setFactionStanding()`, and `removeFactionStanding()` manage player-specific reputation.
+- **Quests**: quest faction reputation rewards resolve faction ids through the registry and update player standings.
+- **Events**: XML `faction_reputation_change` entries map `a little` to `1` point and `a lot` to `4` points, signed by increase/decrease.
+- **Witness gating**: event reputation changes apply only when a witness from that faction is in scene: the player, a party member, or an NPC in the current location with that `factionId`.
+- **NPC generation**: NPC prompts can select a faction by full faction name or `None`.
+- **Locations/Regions**: `Location` and `Region` store `controllingFactionId`; there is no implemented `FactionPresence` object with influence, law level, patrol rate, or services.
+- **Prompt context**: `base-context.xml.njk` includes active faction summaries for name, descriptions, tags, goals, and home region. It does not currently include the full faction relation matrix.
+- **Chat tools**: `updateObjectFields` can update `faction` objects, and `upsertFactionFields` is the dedicated faction create/update tool.
+
+## Original Design Goals
+
+The original design aimed to:
 
 - Create systemic, emergent conflict and cooperation across regions and NPCs.
 - Make player choices matter through reputation shifts and world-state changes.
-- Provide repeatable content loops (quests, patrols, trade, politics) without fixed lore.
+- Provide repeatable content loops such as quests, patrols, trade, and politics without fixed lore.
 
-## Core Concepts
+These goals still describe the direction of the feature, but only some of the systemic loops are implemented as mechanics today.
 
-- **Faction**: An organization with goals, assets, and relationships to other factions.
-- **Standing**: Player-specific reputation with each faction (numeric + tier).
-- **Presence**: How strongly a faction operates in a region/location (influence, patrols, services).
-- **Relations**: Diplomatic ties between factions (allied, neutral, hostile, rival) with a short relationship note.
-- **Assets**: Controlled resources, outposts, NPCs, or services that provide systemic effects.
+## Original Concept Terms And Current Status
 
-## Data Model (Proposed)
+| Concept | Current status |
+| --- | --- |
+| Faction | Implemented as a persistent `Faction` model and active-game registry. |
+| Standing | Implemented as `Player` numeric standings by faction id. Tier and flags are not stored in the standing entry. |
+| Presence | Not implemented as a standalone influence/law/patrol/services model. Current world ownership is `controllingFactionId` on regions, locations, and pending stubs. |
+| Relations | Implemented as directional, id-keyed relation records with status and notes. |
+| Assets | Implemented as metadata on factions. Systemic asset effects remain design space. |
+| Faction events | Partially implemented through faction reputation events and quest rewards. There is no generic faction resource-shift event model. |
 
-- `Faction`
-  - `id`, `name`, `tags` (ideology/archetype), `goals`, `homeRegionName`
-  - `relations`: map of `factionId -> { status, notes }` (`status` is allied/neutral/hostile/rival)
-  - `assets`: list of outposts, trade routes, leaders
-  - `reputationTiers`: thresholds + perks/penalties
-- `FactionStanding` (per player)
-  - `factionId`, `value` (-100..100), `tier`, `lastChangedAt`, `flags` (banned, sworn, undercover)
-- `FactionPresence`
-  - `regionId`/`locationId`, `factionId`, `influence` (0..100), `lawLevel`, `patrolRate`, `services`
-- `FactionEvent`
-  - `type`, `factionId`, `targetFactionId?`, `locationId?`, `effects` (standing deltas, resource shifts)
+## Original Engagement Ideas, Reframed
 
-## Engagement Features (10)
+The original design listed ten engagement features. Their current status is:
 
-1. **Reputation Tiers & Perks**
-   - Unlock discounts, safe houses, special dialogue, and faction-only items.
-2. **Territory Control**
-   - Factions control regions; control changes alter encounter tables and law enforcement.
-3. **Dynamic Diplomacy**
-   - Alliances/hostilities shift based on events; player actions can influence treaties.
-4. **Faction Contracts (Quest Lanes)**
-   - Repeatable quests tied to faction goals; branching outcomes affect standings.
-5. **Economic Pressure**
-   - Faction trade routes change prices, scarcity, and crafting inputs.
-6. **Patrols and Checkpoints**
-   - Presence spawns patrols; high law level means inspections and fines.
-7. **Leadership & Succession**
-   - Leaders can be removed/installed, causing ideology shifts and new policies.
-8. **Infiltration & Cover**
-   - Undercover status allows access but risks exposure; exposure triggers manhunts.
-9. **Faction Warfare Events**
-   - Large-scale events (raids, sieges) change region state and NPC populations.
-10. **Recruitment & Party Ties**
+1. **Reputation tiers and perks**: implemented as faction tier data and UI display; automatic discounts, safe houses, or item unlocks are not broadly enforced.
+2. **Territory control**: partially implemented through `controllingFactionId`; encounter tables, law enforcement, and regional rule changes are not a dedicated system.
+3. **Dynamic diplomacy**: faction relations are stored and editable; automatic alliance/hostility drift is not implemented as a scheduled subsystem.
+4. **Faction contracts**: quests can carry faction reputation rewards; repeatable faction contract lanes are not a dedicated mechanic.
+5. **Economic pressure**: still design-only beyond narrative/tool-authored changes.
+6. **Patrols and checkpoints**: still design-only as a systemic presence feature, though prompts can narrate faction-controlled areas.
+7. **Leadership and succession**: can be represented in descriptions/assets/goals, but there is no leadership subsystem.
+8. **Infiltration and cover**: not implemented as player standing flags or exposure mechanics.
+9. **Faction warfare events**: can be narrated or manually mutated through existing tools, but no large-scale warfare subsystem exists.
+10. **Recruitment and party ties**: party mechanics and faction metadata exist, but high-standing unlocks are not automatic.
 
-- High standing unlocks faction companions, training, or passive buffs.
+## Original Implementation Sketch, Current Outcome
 
-## Systemic Behavior Rules
+The original sketch proposed:
 
-- Standing changes from quests, combat, theft, or aid.
-- Influence drift over time (decay, growth from events, suppression from rivals).
-- Relations gate NPC default disposition toward the player.
-- Faction presence modifies random events (patrols, ambushes, aid caravans).
-
-## Integration Touchpoints (Existing Systems)
-
-- **Player**: add `factionStanding` map; surface standing in `getStatus()`.
-- **Quests**: add `factionId` and `reputationDelta` on completion/failure.
-- **Events**: add faction outcomes in event checks to update standing/presence.
-- **NPC Generation**: add `factionId` on NPCs; default dispositions from relations.
-- **Region/Location**: add `controllingFactionId` and `presence` in metadata.
-- **Globals**: store `factions`, `getFactionById`, and helpers for standing changes.
-- **Save/Load**: include factions, standings, and presence in serialize/hydrate.
-
-## Implementation Sketch
-
-1. Add a faction-generation prompt and parse the XML at new-game time.
-2. Add standing changes to quest completion and combat outcomes.
+1. Add a faction-generation prompt and parse XML at new-game time.
+2. Add standing changes to quest completion and combat/event outcomes.
 3. Extend random events to include faction patrols and conflicts.
 4. Add UI hooks for standing tiers and region control indicators.
 5. Persist faction state in save files.
 
-## Suggested Fixes for Coherence
+Current outcome:
 
-- Use a single standing scale and tier table to avoid mixed systems.
-- Make all faction-driven prompts log via `LLMClient.logPrompt`.
-- Add list of factions to base-context.xml.njk and the function that prepares its context. The list should include each faction's name, short description, and relations with the other factions.
-- Player class faction standings should be listed
+- New-game faction generation is implemented through XML prompts, with active-setting draft support.
+- Quest rewards and XML event checks can update player faction standings.
+- Faction patrol/conflict random-event behavior is not a dedicated faction subsystem.
+- UI support exists for faction management, player standings, quest faction rewards, NPC faction selection, and location/region controlling faction fields.
+- Save/load persistence and stale-reference reconciliation are implemented.
 
-## TODO: Remaining Implementation Steps (Detailed)
+## Design Notes To Preserve
 
-1. **Finalize XML schema + generation prompt**
-   - Add an LLM prompt that generates factions at new-game time (no defs file).
-   - Make the faction count configurable via `config.factions.count` (default 5, set to 0 to disable generation).
-   - Define a canonical standing scale (e.g., -100..100) and shared tier thresholds.
-   - Add validation rules for relations (`allied|neutral|hostile|rival`, with required notes) and tier ordering.
-
-2. **Core model wiring**
-   - Ensure `Faction.js` is loaded in the appropriate bootstrap file (likely `server.js`) and expose via `Globals.factions`.
-   - Add helper functions to `Globals`: `getFactionById`, `getFactionByName`, `adjustFactionStanding`, `getFactionStandingTier`.
-
-3. **Player standings**
-   - Extend `Player` with a `factionStandings` map (`factionId -> { value, tier, lastChangedAt, flags }`).
-   - Add methods: `getFactionStanding(factionId)`, `setFactionStanding(factionId, value)`, `adjustFactionStanding(factionId, delta)`.
-   - Include standings in `Player.getStatus()` and `Player.toJSON()`; hydrate in `Player.fromJSON()`.
-
-4. **Region/location presence**
-   - Add `controllingFactionId` and `factionPresence` metadata to `Region` and `Location`.
-   - Define a shared presence schema: `{ influence, lawLevel, patrolRate, services }`.
-   - Update serialization to include presence data and controlling faction info.
-
-5. **Quest integration**
-   - Add optional `factionId` and `reputationDelta` fields to `Quest` and its serialization.
-   - When quests complete/fail, apply standing deltas via `Player.adjustFactionStanding`.
-
-6. **Event checks + outcomes**
-   - Extend event prompts to capture faction involvement (patrols, raids, diplomatic changes).
-   - Add parsing and handler steps in `Events` to apply standing/presence changes.
-
-7. **NPC generation + disposition**
-   - Add `factionId` to NPC generation templates and stored NPC metadata.
-   - Derive default disposition toward the player from faction relations and player standing tiers.
-
-8. **UI/UX surfaces**
-   - Add faction summaries to `base-context.xml.njk` for LLM context.
-   - Expose faction list and standings in client UI (overview panel, tooltips, etc.).
-
-9. **Persistence**
-   - Update save/load pipelines to persist factions, standings, presence, and relations.
-   - Ensure new fields remain backward-compatible with existing saves.
-
-10. **Testing + validation**
-   - Add unit tests for standing adjustments and tier resolution.
-   - Add smoke tests for save/load integrity with faction data.
+- Prefer explicit faction ids in persisted state and relation maps; use names mainly for prompt/UI resolution.
+- Do not assume standing values are clamped to `-100..100`.
+- Do not model standing as `{ value, tier, lastChangedAt, flags }` unless the code is intentionally expanded; current saves store numeric values.
+- Do not assume `Globals` owns faction helper methods. Current helpers are primarily on `Faction`, `Player`, API closures, and chat-tool helpers.
+- Treat `FactionPresence`, automatic economy pressure, patrol rates, law levels, infiltration flags, and leadership succession as future design concepts, not current behavior.

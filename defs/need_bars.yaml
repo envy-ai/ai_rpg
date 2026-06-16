@@ -95,9 +95,12 @@ need_bars:
       - non-strenuous activity (such as walking)
       - light exercise
       - being outside of battle
+      - any activity with non-strenuous movement (cooking, sweeping the floor, playing golf, etc)
     fill_completely:
       - sitting down for a moment
       - standing still for a moment
+      - sitting, standing, or lying down for any length of time
+      - any activity that that requires minimal or no movement (talking, using a computer, playing chess, sewing, etc)
     small_decrease:
       - moderately strenuous activity
       - swinging a weapon

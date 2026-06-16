@@ -1,139 +1,172 @@
 # Playwright
 
-This project now includes Playwright-based browser testing for both headless and headed Chromium.
+This project uses Playwright for browser-level regression coverage against the Express app. The Playwright Test suite lives in `tests/e2e`, with standalone browser helpers in `playwright_scripts`.
 
 ## Install
 
-Install dependencies:
+Install Node dependencies:
 
 ```bash
 npm install
 ```
 
-Install Playwright browser binaries:
+Install the Chromium browser binary used by the test projects:
 
 ```bash
 npm run playwright:install
 ```
 
-## Run Tests
+## Main Test Commands
 
-Headless Chromium:
+Default headless Chromium run:
 
 ```bash
 npm run test:e2e:headless
 ```
 
-Headed Chromium:
+Headed Chromium with an available display:
 
 ```bash
 npm run test:e2e:headed
 ```
 
-Headed Chromium by attaching to an existing X session (same user only):
+Headed Chromium using an existing X session for the same user:
 
 ```bash
 ./playwright_scripts/run_on_existing_x_session.sh npm run test:e2e:headed
 ```
 
-One-off end-to-end new-game flow (starts server, creates a setting, starts a game, sends `look around`):
-
-```bash
-node playwright_scripts/test_new_game_end_to_end.js
-```
-
-This script now logs live progress milestones and streams server stdout/stderr to the console while long generation steps run.
-It also validates `/api/new-game` completion and fails fast when game creation reports an error.
-
-Deterministic playthrough regression replay (loads fixture autosave, configures forced prompt outputs, runs a captured attack turn):
-
-```bash
-npm run test:e2e:playthrough-regression
-```
-
-Notes:
-- This test is intentionally gated behind `PLAYWRIGHT_PLAYTHROUGH_REGRESSION=1` so normal e2e runs are unaffected.
-- It copies fixtures into runtime `autosaves/` and `tmp/` paths, then cleans them up after the test.
-- `PLAYWRIGHT_PLAYTHROUGH_MODE` selects which scenario runs:
-  - `attack` (default): captured deterministic attack replay.
-  - `region`: cross-region move + return, asserting single back-link exits and no double-travel.
-  - `all`: run both scenarios.
-
-Region round-trip mode shortcut:
-
-```bash
-npm run test:e2e:playthrough-region-roundtrip
-```
-
-Deterministic new-game vehicle region regression (uses captured `region_generation` log output as forced prompt output, starts a new game, and verifies generated vehicle locations carry `vehicleInfo`):
-
-```bash
-PLAYWRIGHT_NEW_GAME_VEHICLE_REGRESSION=1 npm run test:e2e:headless -- tests/e2e/new-game.vehicles.spec.js
-```
-
-Notes:
-- This test is gated behind `PLAYWRIGHT_NEW_GAME_VEHICLE_REGRESSION=1` so regular e2e runs stay unchanged.
-- It copies `tests/e2e/fixtures/new_game_vehicle_region_forced_outputs.json` into `tmp/` at runtime, then cleans it up.
-- The fixture’s `region_generation` payload is derived from `logs/2026-03-05T01-02-17-626Z_region_generation_region_generation.log`.
-- It performs a final `/api/save` and intentionally retains that save in `saves/` so the generated world can be loaded and inspected manually after the test.
-- It also validates vehicle exit button rendering in the Adventure UI: inbound exits use the configured vehicle icon, and outbound exits in vehicle context render `Exit Vehicle:` without a left-side vehicle icon.
-
-One-off settings-page capture + validation against an already-running server:
-
-```bash
-npm run playwright:settings:screenshot
-```
-
-This captures desktop/mobile screenshots and writes `tmp/playwright_settings_capture/result.json`.
-The script fails if the redesigned settings layout is not present.
-
-Settings persistence regression (create -> rename-as-new-id -> delete original -> refresh verification, plus Calendar tab saved-calendar persistence):
-
-```bash
-npm run test:e2e:headless -- tests/e2e/settings.persistence.spec.js
-```
-
-Notes:
-- The test uses the selected-setting action panel (`Edit` / `Delete`) rather than deprecated inline row action buttons.
-- It validates API-level persistence state in addition to UI interactions.
-- It also verifies the Worlds editor Calendar tab can load the explicit Gregorian default into structured fields and save it as `SettingInfo.calendarDefinition`.
-
-Headed Chromium with virtual display (Linux servers/containers):
+Headed Chromium under `xvfb-run`:
 
 ```bash
 npm run test:e2e:headed:xvfb
 ```
 
-All projects:
+All configured projects:
 
 ```bash
 npm run test:e2e
 ```
 
-Interactive UI mode:
+Interactive Playwright UI:
 
 ```bash
 npm run test:e2e:ui
+```
+
+Target a single spec by passing the path after the npm script:
+
+```bash
+npm run test:e2e:headless -- tests/e2e/settings.persistence.spec.js
 ```
 
 ## Configuration
 
 - Config file: `playwright.config.js`
 - Test directory: `tests/e2e`
-- Default test server URL: `http://127.0.0.1:4173`
-- The Playwright runner starts the app automatically with:
-  - `npm run start -- --port 4173`
+- Projects:
+  - `chromium`: Desktop Chrome, headless.
+  - `chromium-headed`: Desktop Chrome, headed.
+- Default port: `4173`
+- Default base URL: `http://127.0.0.1:4173`
+- Web server command: `npm run start -- --port <port>`
+- Web server reuse: enabled when a compatible server is already listening.
+- Test timeout: 30 seconds.
+- Expect timeout: 5 seconds.
+- Reporter: list output plus HTML report with `open: never`.
+- Failure artifacts: traces and videos are retained on failure; screenshots are captured only on failure.
+- CI behavior: retries are set to 2, workers are limited to 1, and committed `test.only` calls are forbidden.
 
-You can override runtime values with environment variables:
+Environment variables:
 
-- `PLAYWRIGHT_PORT`
-- `PLAYWRIGHT_BASE_URL`
-- `PLAYWRIGHT_SKIP_WEBSERVER=1` (skip auto-start and target an already-running server)
-- `PLAYWRIGHT_SETTINGS_PATH` (path for settings capture script, defaults to `/settings`)
+- `PLAYWRIGHT_PORT`: port used by the Playwright web server and default base URL.
+- `PLAYWRIGHT_BASE_URL`: full base URL used by specs and some standalone scripts.
+- `PLAYWRIGHT_SKIP_WEBSERVER=1`: disables Playwright's automatic server startup for runs against an already-running app.
+- `PLAYWRIGHT_SETTINGS_PATH`: path captured by `playwright_scripts/capture_settings_page.js`; defaults to `/settings`.
+
+## E2E Spec Coverage
+
+- `new-game.smoke.spec.js`: new-game form rendering and immediate redirect to the Adventure tab after submit.
+- `empty-action-confirm.spec.js`: empty chat sends require confirmation before `/api/chat` receives an empty user action.
+- `crafting.empty-submit.spec.js`: crafting and location-modification modals submit intentional empty material selections, including the Ctrl+Enter prose shortcut.
+- `header.navigation.spec.js`: shared header rendering, nav labels, save/load actions, tools menu layering, and mobile non-overlap checks.
+- `settings.persistence.spec.js`: world profile create/rename/delete persistence and Calendar tab serialization.
+- `story-tools-search.spec.js`: Story Tools search modes, type filters, case sensitivity, delayed filtering, and Mystery Box load/save behavior.
+- `playthrough.regression.spec.js`: deterministic playthrough replay and cross-region round-trip checks, gated by environment variables.
+- `new-game.vehicles.spec.js`: deterministic vehicle-region generation and vehicle exit UI checks, gated by environment variables.
+
+## Gated Regression Specs
+
+The default e2e run skips deterministic regressions that require fixture setup or forced prompt outputs.
+
+Deterministic playthrough attack replay:
+
+```bash
+npm run test:e2e:playthrough-regression
+```
+
+Playthrough mode is controlled by `PLAYWRIGHT_PLAYTHROUGH_MODE`:
+
+- `attack`: captured attack turn replay; this is the default.
+- `region`: cross-region move and return, asserting single back-link exits and no double travel.
+- `all`: both scenarios.
+
+Region round-trip shortcut:
+
+```bash
+npm run test:e2e:playthrough-region-roundtrip
+```
+
+The playthrough regression copies `tests/e2e/fixtures/playthrough_save_start` into `autosaves/`, copies forced outputs into `tmp/`, configures deterministic runtime values through `/api/slash-command`, and removes its runtime autosave and forced-output file during teardown.
+
+Vehicle-region regression:
+
+```bash
+PLAYWRIGHT_NEW_GAME_VEHICLE_REGRESSION=1 npm run test:e2e:headless -- tests/e2e/new-game.vehicles.spec.js
+```
+
+The vehicle regression copies `tests/e2e/fixtures/new_game_vehicle_region_forced_outputs.json` into `tmp/`, appends deterministic forced outputs for region-stub and location generation, creates a temporary world profile, and removes those temporary runtime files and settings during teardown. It performs a final `/api/save` and leaves that save available under `saves/` for manual inspection.
+
+## Standalone Browser Scripts
+
+One-off new-game flow:
+
+```bash
+node playwright_scripts/test_new_game_end_to_end.js
+```
+
+This script starts the server, creates and applies a world profile through `/settings`, starts a game through `/new-game`, sends `look around`, writes `tmp/playwright_new_game_run/result.json`, writes `tmp/playwright_new_game_run/server.log`, and captures `tmp/playwright_new_game_run/final-chat.png`.
+
+Settings page capture:
+
+```bash
+npm run playwright:settings:screenshot
+```
+
+This runs `playwright_scripts/capture_settings_page.js` against `PLAYWRIGHT_BASE_URL` or `http://localhost:7777`, captures desktop and mobile screenshots under `tmp/playwright_settings_capture/`, writes `result.json`, and verifies that the settings workspace layout is present while `.settings-grid` is absent.
+
+Major screen capture:
+
+```bash
+node playwright_scripts/capture_major_screens.js
+```
+
+This targets `MAJOR_SCREENS_BASE_URL`, then `PLAYWRIGHT_BASE_URL`, then `http://127.0.0.1:7777`. It captures top-level pages and chat tabs into a timestamped `tmp/major_screens_*` directory.
+
+Fitty overflow check:
+
+```bash
+node playwright_scripts/check_fitty_overflow.js
+```
+
+This targets `http://127.0.0.1:7777`, checks visible `.entity-name`, `.party-name`, and `#chatPlayerName` elements for horizontal overflow, and writes `tmp/fitty-overflow-check.json`.
 
 ## Existing X Session Helper
 
-- Script: `playwright_scripts/run_on_existing_x_session.sh`
-- Purpose: find an existing X session environment from a process owned by the current user, export the required variables, and run the command you pass in.
-- Default command (if no args): `npm run test:e2e:headed`
-- This script fails if no same-user `DISPLAY` is found.
+`playwright_scripts/run_on_existing_x_session.sh` finds a same-user process with `DISPLAY`, exports the related X/session environment variables, and runs the command passed to it. With no arguments, it runs:
+
+```bash
+npm run test:e2e:headed
+```
+
+The helper exits with an error if it cannot find a same-user X display. It also fills `XAUTHORITY` from `$HOME/.Xauthority` when the selected process does not provide one and that file exists.

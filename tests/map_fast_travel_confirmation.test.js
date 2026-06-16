@@ -13,14 +13,27 @@ function extractFunction(source, functionName) {
   const start = source.indexOf(`function ${functionName}`);
   assert.notEqual(start, -1, `${functionName} should exist`);
 
-  const signatureEnd = source.indexOf('\n', start);
-  assert.notEqual(signatureEnd, -1, `${functionName} should have a signature line`);
+  const paramsStart = source.indexOf('(', start);
+  assert.notEqual(paramsStart, -1, `${functionName} should have a parameter list`);
 
-  const signatureLine = source.slice(start, signatureEnd);
-  const signatureBodyOffset = signatureLine.lastIndexOf('{');
-  assert.notEqual(signatureBodyOffset, -1, `${functionName} should have a body`);
+  let parenDepth = 0;
+  let paramsEnd = -1;
+  for (let index = paramsStart; index < source.length; index += 1) {
+    const char = source[index];
+    if (char === '(') {
+      parenDepth += 1;
+    } else if (char === ')') {
+      parenDepth -= 1;
+      if (parenDepth === 0) {
+        paramsEnd = index;
+        break;
+      }
+    }
+  }
 
-  const bodyStart = start + signatureBodyOffset;
+  assert.notEqual(paramsEnd, -1, `${functionName} should close its parameter list`);
+
+  const bodyStart = source.indexOf('{', paramsEnd);
   assert.notEqual(bodyStart, -1, `${functionName} should have a body`);
 
   let depth = 0;
@@ -82,8 +95,8 @@ test('shared map fast travel asks for confirmation before gameplay travel side e
     'confirmation should be resolved through the modal promise helper'
   );
   assert.ok(
-    viewSource.includes('function buildDefaultMapFastTravelActionText'),
-    'confirmation should build a default full player-action travel prompt'
+    viewSource.includes('id="mapFastTravelActionText"'),
+    'confirmation modal should include action text input'
   );
   assert.ok(
     viewSource.includes('function buildMapFastTravelMetadata'),
@@ -119,8 +132,8 @@ test('shared map fast travel asks for confirmation before gameplay travel side e
   );
   assert.match(
     helperSource,
-    /dispatchAutomatedMessage\(actionText,\s*\{[\s\S]*?travel:\s*true,[\s\S]*?travelMetadata,[\s\S]*?suppressTravelCompletionSound:\s*true/,
-    'map fast travel should dispatch a full player-action prompt before teleporting'
+    /dispatchAutomatedMessage\(actionText,\s*\{[\s\S]*?travel:\s*true,[\s\S]*?travelMetadata,[\s\S]*?suppressTravelCompletionSound:\s*true,[\s\S]*?allowEmptyAction:\s*true/,
+    'map fast travel should dispatch the confirmed action before teleporting, allowing blank text'
   );
   assert.match(
     helperSource,
@@ -137,12 +150,53 @@ test('shared map fast travel asks for confirmation before gameplay travel side e
 
   assert.notEqual(previewIndex, -1, 'preview should be inside the shared map travel helper');
   assert.notEqual(confirmationIndex, -1, 'confirmation should be inside the shared map travel helper');
+  assert.notEqual(tabIndex, -1, 'Adventure should focus from the shared map travel helper');
   assert.ok(previewIndex < confirmationIndex, 'travel preview should happen before confirmation');
   assert.ok(confirmationIndex < overlayIndex, 'confirmation should happen before the moving overlay');
+  assert.ok(confirmationIndex < tabIndex, 'Adventure should focus when the Travel button is confirmed');
+  assert.ok(tabIndex < messageIndex, 'Adventure should focus before the fast-travel chat prompt starts');
   assert.ok(confirmationIndex < messageIndex, 'confirmation should happen before automated travel logging');
   assert.ok(messageIndex < overlayIndex, 'the full action prompt should finish before the moving overlay is shown');
   assert.ok(confirmationIndex < teleportIndex, 'confirmation should happen before the teleport request');
-  assert.ok(teleportIndex < tabIndex, 'Adventure should focus only after successful teleport');
+  assert.ok(tabIndex < teleportIndex, 'Adventure should focus before the teleport request starts');
+});
+
+test('map fast travel confirmation starts blank and preserves blank action text', () => {
+  const viewSource = read('views/index.njk');
+  const chatSource = read('public/js/chat.js');
+  const requestSource = extractFunction(viewSource, 'requestMapFastTravelConfirmation');
+  const helperSource = extractFunction(viewSource, 'travelToAdjacentLocationFromMap');
+
+  assert.equal(
+    viewSource.includes('function buildDefaultMapFastTravelActionText'),
+    false,
+    'map fast travel should not build automatic player-action text'
+  );
+  assert.match(
+    requestSource,
+    /elements\.actionText\.value\s*=\s*'';/,
+    'confirmation textarea should be blank when the modal opens'
+  );
+  assert.match(
+    requestSource,
+    /const actionText\s*=\s*confirmed\s*\?\s*\(\(elements\.actionText\.value\s*\|\|\s*''\)\.trim\(\)\)\s*:\s*'';/,
+    'confirmed blank action text should resolve as an empty string'
+  );
+  assert.equal(
+    helperSource.includes('buildDefaultMapFastTravelActionText'),
+    false,
+    'shared map travel helper should not replace blank confirmation text with generated text'
+  );
+  assert.match(
+    helperSource,
+    /const actionText\s*=\s*\(confirmation\.actionText\s*\|\|\s*''\)\.trim\(\);/,
+    'shared map travel helper should preserve a blank confirmed action'
+  );
+  assert.match(
+    chatSource,
+    /async dispatchAutomatedMessage\(message,\s*\{[\s\S]*?allowEmptyAction\s*=\s*false[\s\S]*?}\s*=\s*\{\}\)\s*\{[\s\S]*?allowEmptyAction:\s*Boolean\(allowEmptyAction\)/,
+    'automated messages should forward explicit empty-action permission'
+  );
 });
 
 test('server accepts direct fast-travel metadata for non-adjacent map travel prompts', () => {

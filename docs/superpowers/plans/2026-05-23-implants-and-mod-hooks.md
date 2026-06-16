@@ -1,244 +1,210 @@
 # Mod-Owned Implant and Spell System Hooks Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use `superpowers:subagent-driven-development` (recommended) or `superpowers:executing-plans` to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking. Repo rule: do not run git commands unless the user explicitly authorizes them.
+> Archive note: this is the historical implementation plan for the implant/spell mod hook work. It is retained as a completed-plan reference, not as a pending task list. For current contracts, prefer [`../../modding_hooks.md`](../../modding_hooks.md), [`../../modding.md`](../../modding.md), [`../../classes/ModExtensionRegistry.md`](../../classes/ModExtensionRegistry.md), and [`../../classes/ActorAttachmentSystem.md`](../../classes/ActorAttachmentSystem.md).
 
-**Goal:** Add mod hooks that let mods define new actor-owned systems, then ship two bundled mods: `implants` for inventory-backed body attachments and `spells` for generated mana-consuming spells.
+**Historical goal:** Add generic mod hooks that let mods define actor-owned systems, then prove the hook surface with two bundled runtime mods: `implants` for inventory-backed body attachments and `spells` for generated mana-consuming abilities.
 
-**Architecture:** Core provides generic extension points plus optional helper libraries. The bundled mods own their domain systems: storage namespaces, first-class mod fields, display labels, tools, XML events, prompt/status output, generation prompts, and modifier/resource behavior. Implementing both mods is required so the hook system is proven against two different use cases instead of fitting only implants.
+**Implemented architecture:** Core owns generic extension points and persistence primitives: `ModExtensionRegistry`, namespaced `Player.modState`, namespaced `SettingInfo.modSettings`, first-class registered `Thing` fields, actor status/base-context contributors, chat tools, XML event hooks, mod settings tabs/fields, Thing image badges, and Thing context actions. The bundled mods own their domain names, settings, tools, XML tags, prompt/status output, assets, and mechanics.
 
-**Tech Stack:** Node.js CommonJS, Express routes in `api.js`, Nunjucks prompts, browser UI in `views/index.njk`, SCSS in `public/css/*.scss`, Node test runner.
+**Tech stack:** Node.js CommonJS, Express routes in `api.js`, Nunjucks prompts, server-rendered/browser UI in `views/*.njk`, SCSS in `public/css/*.scss`, and Node test runner coverage.
 
 ---
 
 ## Key Decisions
 
-- Use a hybrid hook model: low-level core hooks stay generic, while `modding/ActorAttachmentSystem.js` and `modding/ActorActivatableSystem.js` provide reusable helper behavior for common mod patterns.
-- Core must not know about implant slots, implant labels, spell lists, mana costs, `implantSlot`, `equipImplant`, `castSpell`, or related XML tags except through registered mod data.
-- Store actor extension state in generic persisted `Player.modState` namespaces. The implant mod uses `modState.implants`; the spell mod uses `modState.spells`.
-- Store user-facing mod settings in generic persisted `SettingInfo.modSettings` namespaces. Mods register their own setting fields.
-- Installed implants remain inventory-backed and use a registered first-class `Thing.implantSlot` field; they never use normal `Thing.slot`.
-- Spells are actor-owned generated records, not inventory Things. They are similar to implants in that they are mod-owned actor capabilities surfaced in status/prompt context and activated through prose tools/events.
-- The spell mod ensures a `mana` need bar through its own `defs/need_bars.yaml` overlay and a startup/runtime validator that fails loudly if the active merged definitions do not expose the configured mana bar.
-- Spell activation consumes mana using a configurable formula with variables from the spell’s `manaUsage` value (`low`, `medium`, `high`) and `level`.
-- Do not add inventory UI install/remove controls for implants or direct spell-management UI in v1. Prose tools, XML events, and mod status sections own interaction.
-- Registry lookups must be live, because mods load after API route registration.
-- Tool/event/helper failures must be explicit; do not create missing placeholder implants/spells or silently ignore invalid activation.
+- Core hook storage is generic. Mods register tools, XML events, settings, entity fields, context actions, image badges, validators, and contributors through `ModExtensionRegistry`.
+- The reusable behavior shipped as helper classes, not auto-registering factories: `modding/ActorAttachmentSystem.js` and `modding/ActorActivatableSystem.js`. Mods instantiate helpers and wire their methods into registry hooks.
+- Core does not hard-code implant or spell tool/event names in built-in tool definitions or event schemas. Registered XML schemas and chat tool records are collected live from the registry.
+- Actor extension state is persisted in `Player.modState`. The implant mod stores installed item ids under `modState.implants.slots`; the spell mod stores learned records under `modState.spells.records`.
+- World-profile mod settings are persisted in `SettingInfo.modSettings`. The implant mod uses `modSettings.implants`; the spell mod uses `modSettings.spells`.
+- Installed implants remain inventory-backed `Thing` records. Compatibility is determined by the first-class registered `Thing.implantSlot` field, and `clearThingSlotWhenPresent` keeps those items out of normal gear slots.
+- Spells are actor-owned generated records, not inventory Things. They surface through actor status/base prompt context and activate through prose tools/events.
+- The spells mod provides a `mana` need-bar defs overlay and a startup validator requiring the `mana` bar. If a world setting points `manaNeedBarId` at a missing bar, activation fails through the actor need-bar helper.
+- Spell cost defaults are `{ low: 10, medium: 25, high: 50 }` with formula `baseCost * level`. Formula variables are `level`, `usageRank`, `manaUsage`, and `baseCost`; costs are not clamped.
+- Runtime mod enablement is process-local. Missing enablement flags are treated as enabled, but changing enabled mods requires restart before hooks, defs overlays, assets, and validators change.
 
 ## Core Hook Changes
 
-- [ ] Create `ModExtensionRegistry` and expose one instance through server scope, API routes, event parsing, base context building, and mod scopes.
-- [ ] Add registration methods:
-  - `registerChatTool({ modName, definition, executor, allowedInRegularProse, allowedInGenericPrompt })`
-  - `registerXmlEvent({ modName, tagName, eventKey, promptSchema, parser, handler })`, where `promptSchema` is `{ name, description, xml }`
-  - `registerBaseContextContributor({ modName, contributor })`
-  - `registerActorStatusContributor({ modName, contributor })`
-  - `registerAttributeModifierContributor({ modName, contributor })`
-  - `registerStatusEffectContributor({ modName, contributor })`
-  - `registerInventorySyncContributor({ modName, contributor })`
-  - `registerSettingField({ modName, namespace, key, label, type, defaultValue, normalize })`
-  - `registerEntityField({ modName, entityType, fieldName, type, defaultValue, description, exposeToCreateTool, exposeToUpdateTool, exposeToGeneratorPrompt, exposeToXmlParser })`
-  - `registerStartupValidator({ modName, validator })`
-- [ ] Validate duplicate names loudly:
-  - chat tool function names
-  - XML tag names
-  - XML event keys
-  - setting namespace/key pairs
-  - entity type/field-name pairs
-- [ ] Update chat tool filtering/runtime to merge built-in tools with registry tools at request time.
-- [ ] Update XML event parsing so registered XML tags map into registered event keys and handlers.
-- [ ] Update event prompt rendering so registered `promptSchema` names, descriptions, and XML examples are included in the events XML schema prompt.
-- [ ] Run startup validators after mods load and definition caches reload, and expose a reload-time path so validation also catches broken mod state after `/reload_config`.
-- [ ] Update base prompt context and actor serialization so registry contributors can add mod-owned sections without changing core player fields for each new system.
-- [ ] Update player inventory removal, clear, and replacement paths to call inventory sync contributors after normal gear sync.
-- [ ] Add generic `Player.modState` helpers and persistence:
+- [x] Create `ModExtensionRegistry` and expose one instance through server scope, API routes, event parsing, base-context building, globals, and mod scopes.
+- [x] Add registration methods for the shipped hook surface:
+  - `registerChatTool(...)`
+  - `registerXmlEvent(...)`
+  - `registerBaseContextContributor(...)`
+  - `registerPlayerActionPromptStep(...)`
+  - `registerGenerationPromptInstruction(...)`
+  - `registerActorStatusContributor(...)`
+  - `registerAttributeModifierContributor(...)`
+  - `registerStatusEffectContributor(...)`
+  - `registerThingTargetStatusEffectContributor(...)`
+  - `registerInventorySyncContributor(...)`
+  - `registerSettingTab(...)`
+  - `registerSettingField(...)`
+  - `registerEntityField(...)`
+  - `registerThingImageBadge(...)`
+  - `registerThingContextAction(...)`
+  - `registerStartupValidator(...)`
+- [x] Validate duplicate names loudly for chat tools, XML tags/keys, setting tabs/fields, entity fields, image badges, context actions, prompt steps, and generation instructions.
+- [x] Merge built-in chat tools with registry tools at request time, filtered separately for regular prose and generic prompts.
+- [x] Map registered XML tags into registered event keys, parsers, prompt schemas, and handlers.
+- [x] Render registered XML event schema snippets into `prompts/_includes/events-xml.njk`.
+- [x] Run startup validators after mods and merged definitions load. The original reload-time validator idea was superseded by restart-bound mod enablement rather than hot-swapped runtime hooks.
+- [x] Add registry actor-status contributors to client/player/NPC payloads and base prompt context through `modStatusSections`.
+- [x] Add base-context contributors under `modContext`.
+- [x] Run inventory sync contributors after inventory mutation paths so mod-owned references can prune stale item ids.
+- [x] Add generic `Player.modState` helpers and persistence:
   - `getModState(namespace)`
   - `setModState(namespace, value)`
   - `updateModState(namespace, updater)`
-- [ ] Add generic `SettingInfo.modSettings` helpers and persistence, with settings UI/API support for registered fields.
-- [ ] Expose need-bar read/write helpers to mod tool executors through scope, using existing `getNeedBarValue` and `setNeedBarValue` behavior.
-- [ ] Fix the `ModLoader.getModConfig()` registration-time issue so `scope.modConfig` includes file config and schema defaults during `register(scope)`.
+- [x] Add generic `SettingInfo.modSettings` helpers and persistence:
+  - `getModSettings(namespace)`
+  - `getModSetting(namespace, key, defaultValue)`
+  - `setModSetting(namespace, key, value)`
+  - `updateModSettings(namespace, updates)`
+- [x] Use existing actor need-bar helpers (`getNeedBarValue`, `setNeedBarValue`) for mod activation logic.
+- [x] Populate `scope.modConfig` with file config and schema defaults during `register(scope)`.
 
 ## Generic Actor Attachment Helper
 
-- [ ] Create `modding/ActorAttachmentSystem.js`.
-- [ ] Export `createActorAttachmentSystem(scope, options)` where `options` includes:
+- [x] Create `modding/ActorAttachmentSystem.js`.
+- [x] Export `ActorAttachmentSystem` as a CommonJS class. The original `createActorAttachmentSystem(...)` factory did not ship.
+- [x] Constructor options include:
   - `namespace`
+  - `displayLabel`
   - `itemSlotFieldName`
-  - `displayLabelSettingKey`
-  - `defaultDisplayLabel`
   - `installToolName`
   - `removeToolName`
   - `installEventTag`
   - `removeEventTag`
   - `installEventKey`
   - `removeEventKey`
-- [ ] The helper registers install/remove chat tools, install/remove XML event tags, actor status/base-context contributors, attribute/status contributors, inventory sync, and a display-label setting field.
-- [ ] The helper stores state under `actor.modState[namespace].slots`, with each slot value as an ordered array of Thing IDs.
-- [ ] The helper resolves actors and items through existing scope helpers where available, defaults actor to current player when omitted, and requires the item to be in the actor inventory.
-- [ ] The helper verifies the item slot field exists and matches any requested slot.
-- [ ] The helper preserves health ratio when attachment changes alter max-health-affecting modifiers.
-- [ ] The helper produces generic status/base-context output shaped as mod-owned attachment sections, not as core gear.
+- [x] The helper provides install, remove, list, inventory sync, attribute modifier, equipper status effect, actor status section, display-label, and XML raw-payload parsing behavior.
+- [x] The helper does not register hooks by itself. `mods/implants/mod.js` wires it into context actions, chat tools, XML events, inventory sync, actor status, base context, attributes, and status effects.
+- [x] Attachment state lives under `actor.modState[namespace].slots`, with each slot storing an ordered array of `Thing` ids.
+- [x] Items resolve from the actor inventory by object/id or exact name. Missing, ambiguous, or out-of-inventory items fail loudly.
+- [x] Compatibility requires the configured item slot field, such as `implantSlot`; `Thing.slot` is ignored for attachment compatibility.
+- [x] Install/remove mutations preserve health ratio when the actor exposes `withHealthRatioPreserved`.
+- [x] Status output is shaped as mod-owned actor status sections, not as core gear.
 
 ## Generic Actor Activatable Helper
 
-- [ ] Create `modding/ActorActivatableSystem.js`.
-- [ ] Export `createActorActivatableSystem(scope, options)` where `options` includes:
+- [x] Create `modding/ActorActivatableSystem.js`.
+- [x] Export `ActorActivatableSystem` as a CommonJS class. The original `createActorActivatableSystem(...)` factory did not ship.
+- [x] Constructor options include:
   - `namespace`
-  - `entryLabel`
-  - `displayLabelSettingKey`
-  - `defaultDisplayLabel`
-  - `resourceNeedBarSettingKey`
-  - `defaultResourceNeedBarId`
-  - `usageField`
-  - `levelField`
-  - `usageBaseValuesSettingKey`
-  - `costFormulaSettingKey`
-  - `generateToolName`
-  - `activateToolName`
-  - `learnEventTag`
-  - `activateEventTag`
-  - `learnEventKey`
-  - `activateEventKey`
-  - `generatorPromptTemplate`
-- [ ] Store generated/known entries under `actor.modState[namespace].known`, as mod-owned JSON records with stable IDs.
-- [ ] Register generation and activation chat tools, learn/activate XML events, actor status/base-context contributors, and setting fields for display label, resource need bar id, usage base values, and cost formula.
-- [ ] Use the existing formula evaluator with variables:
+  - `displayLabel`
+  - `resourceNeedBarId`
+  - `usageBaseCosts`
+  - `costFormula`
+  - `recordLabel`
+- [x] Learned entries are stored under `actor.modState[namespace].records`. The original plan's `known` key was not used.
+- [x] The helper provides learn, list, find, cost calculation, activation, actor status section, display-label, and XML raw-payload parsing behavior.
+- [x] The helper does not render generation prompts or register hooks by itself. `mods/spells/mod.js` owns prompt rendering, `LLMClient.logPrompt(...)`, chat tools, XML events, settings, startup validation, actor status, and base context wiring.
+- [x] Formula variables are:
   - `level`
   - `usageRank` (`low` = 1, `medium` = 2, `high` = 3)
-  - `baseCost` from the configured usage base values
   - `manaUsage` as the same numeric value as `usageRank`
-- [ ] Fail loudly if a generated entry has an invalid level, invalid usage value, invalid formula result, missing resource bar, or insufficient resource value.
-- [ ] Log all generation prompts through `LLMClient.logPrompt()`.
-- [ ] Do not clamp computed costs. If the formula returns a finite positive value larger than current mana, activation fails for insufficient mana.
+  - `baseCost`
+- [x] Invalid records, invalid usage values, invalid formulas, missing/invalid resource values, and insufficient resource values fail loudly.
+- [x] Computed costs are positive finite numbers and are not clamped.
 
 ## Implant Mod
 
-- [ ] Add bundled `mods/implants/mod.js`.
-- [ ] Configure `ActorAttachmentSystem` with:
+- [x] Add bundled `mods/implants/mod.js`.
+- [x] Configure `ActorAttachmentSystem` with:
   - `namespace: "implants"`
   - `itemSlotFieldName: "implantSlot"`
-  - `displayLabelSettingKey: "displayLabel"`
-  - `defaultDisplayLabel: "implants"`
+  - `displayLabel` from the active/default preset
   - `installToolName: "equipImplant"`
   - `removeToolName: "unequipImplant"`
   - `installEventTag: "implantEquipped"`
   - `removeEventTag: "implantUnequipped"`
   - `installEventKey: "implant_equipped"`
   - `removeEventKey: "implant_unequipped"`
-- [ ] Register the implant display-label setting under `modSettings.implants.displayLabel`.
-- [ ] Register `Thing.implantSlot` as a first-class mod entity field and expose it to `createThing` and `updateObjectFields`.
-- [ ] Define `equipImplant` parameters: `actorName` optional, `itemName` required, `implantSlot` optional, `reason` optional.
-- [ ] Define `unequipImplant` parameters: `actorName` optional, `itemName` required, `reason` optional.
-- [ ] Define XML tags with the same actor/item/slot/reason fields as the tools.
-- [ ] Keep the mod enabled by default through existing mod discovery rules unless disabled with `config.mods.implants.enabled: false` or `mods/implants/config.json`.
+- [x] Register an `Implants` World Profiles tab and fields under `modSettings.implants`:
+  - `displayLabel`
+  - `itemLabel`
+  - `badgeImagePath`
+  - non-persisted `applyPreset`
+- [x] Load terminology/badge presets from `mods/implants/presets.yaml`; shipped presets are `implants` and `tattoo`.
+- [x] Register `Thing.implantSlot` as a first-class mod entity field and expose it to create/update tools, generation prompts, XML parsing, and the item/scenery edit modal.
+- [x] Use `clearThingSlotWhenPresent` so implant-compatible items do not behave as normal gear-slot items.
+- [x] Register a top-left implant-compatible Thing image badge with setting-driven asset and label overrides.
+- [x] Register `Install implant` and `Uninstall implant` Thing context actions for inventory owners.
+- [x] Define `equipImplant` parameters: `actorName` optional, `itemName` required, `implantSlot` optional, `reason` optional.
+- [x] Define `unequipImplant` parameters: `actorName` optional, `itemName` required, `reason` optional.
+- [x] Define `<implantEquipped>` and `<implantUnequipped>` XML tags with actor/item/slot/reason payloads.
+- [x] Keep the mod enabled by default unless disabled by `config.mods.implants.enabled: false` or mod file config; restart is required for enablement changes to affect runtime hooks.
 
 ## Spell Mod
 
-- [ ] Add bundled `mods/spells/mod.js`.
-- [ ] Add `mods/spells/defs/need_bars.yaml` with a `mana` definition or overlay that guarantees a usable mana bar when the mod is enabled.
-- [ ] Add `mods/spells/prompts/spell-generator.xml.njk` for generating spell records.
-- [ ] Configure `ActorActivatableSystem` with:
+- [x] Add bundled `mods/spells/mod.js`.
+- [x] Add `mods/spells/defs/need_bars.yaml` with a shared `mana` need bar.
+- [x] Add `mods/spells/prompts/spell-generator.xml.njk` for generated spell records.
+- [x] Configure `ActorActivatableSystem` with:
   - `namespace: "spells"`
-  - `entryLabel: "spell"`
-  - `displayLabelSettingKey: "displayLabel"`
-  - `defaultDisplayLabel: "spells"`
-  - `resourceNeedBarSettingKey: "manaNeedBarId"`
-  - `defaultResourceNeedBarId: "mana"`
-  - `usageField: "manaUsage"`
-  - `levelField: "level"`
-  - `usageBaseValuesSettingKey: "manaUsageBaseCosts"`
-  - `costFormulaSettingKey: "manaCostFormula"`
-  - `generateToolName: "generateSpell"`
-  - `activateToolName: "castSpell"`
-  - `learnEventTag: "spellLearned"`
-  - `activateEventTag: "spellCast"`
-  - `learnEventKey: "spell_learned"`
-  - `activateEventKey: "spell_cast"`
-  - `generatorPromptTemplate: "spell-generator.xml.njk"`
-- [ ] Register spell settings under `modSettings.spells`:
+  - `displayLabel: "spells"`
+  - `recordLabel: "spell"`
+  - `resourceNeedBarId: "mana"`
+  - `usageBaseCosts: { low: 10, medium: 25, high: 50 }`
+  - `costFormula: "baseCost * level"`
+- [x] Register a `Spells` World Profiles tab and fields under `modSettings.spells`:
   - `displayLabel`, default `spells`
   - `manaNeedBarId`, default `mana`
-  - `manaUsageBaseCosts`, default `{ low: 50, medium: 100, high: 200 }`
+  - `manaUsageBaseCosts`, default `{ low: 10, medium: 25, high: 50 }`
   - `manaCostFormula`, default `baseCost * level`
-- [ ] Define generated spell records with required fields:
-  - `id`
+- [x] Define spell records with:
+  - `id` generated when omitted
   - `name`
   - `description`
   - `level`
   - `manaUsage` as `low`, `medium`, or `high`
   - `effectSummary`
-- [ ] Define `generateSpell` parameters: `actorName` optional, `concept` required, `level` optional, `manaUsage` optional.
-- [ ] Define `castSpell` parameters: `actorName` optional, `spellName` required, `targetName` optional, `reason` optional.
-- [ ] `generateSpell` stores the validated spell in the actor’s `modState.spells.known`.
-- [ ] `castSpell` resolves the known spell, computes mana cost from settings, verifies the actor has enough mana, deducts that mana, and returns a tool result for prose narration.
-- [ ] `<spellLearned>` stores a generated or explicit spell record; `<spellCast>` consumes mana through the same activation path as `castSpell`.
-- [ ] Keep the mod enabled by default through existing mod discovery rules unless disabled with `config.mods.spells.enabled: false` or `mods/spells/config.json`.
+- [x] Define `generateSpell` parameters: `actorName` optional, `concept` optional, `level` optional, `manaUsage` optional.
+- [x] Define `castSpell` parameters: `actorName` optional, `spellName` required, `reason` optional. The original `targetName` parameter was not implemented.
+- [x] `generateSpell` renders the mod prompt, calls `LLMClient.chatCompletion`, logs with `LLMClient.logPrompt(...)`, parses XML, and stores the validated record in `modState.spells.records`.
+- [x] `castSpell` resolves a known spell, computes mana cost from settings, verifies sufficient resource value, deducts the exact computed cost, and returns a prose-tool result.
+- [x] `<spellLearned>` stores an explicit spell record; `<spellCast>` consumes mana through the same activation path as `castSpell`.
+- [x] Keep the mod enabled by default unless disabled by `config.mods.spells.enabled: false` or mod file config; restart is required for enablement changes to affect runtime hooks.
 
 ## UI And Prompt Behavior
 
-- [ ] Render actor mod-status sections in player/NPC profile surfaces using contributor labels, so installed implants and known spells appear under their configured labels.
-- [ ] Include actor mod-status sections in base prompt context so prose can see installed attachments and known spells.
-- [ ] Include registered events schema snippets in `prompts/_includes/events-xml.njk`.
-- [ ] Ensure inventory UI equipment controls only respond to normal gear data (`slot`, `metadata.slot`, `equippedSlot`) and do not treat `implantSlot` as normal equipment.
-- [ ] Optionally show implant-compatible inventory items as normal inventory rows/cards with no install/remove button.
-- [ ] Do not add a spell management UI in v1; spell generation/casting is prose/tool driven.
+- [x] Actor mod-status sections render in player/NPC profile surfaces via `modStatusSections`.
+- [x] Base prompt context includes actor `modStatusSections` so prose can see installed attachments and learned spells.
+- [x] Base prompt context also includes registry `modContext` entries for mod-level context such as labels and item terminology.
+- [x] Registered event schema snippets render in `prompts/_includes/events-xml.njk`.
+- [x] Normal inventory equipment controls continue to use normal gear data such as `slot`, `metadata.slot`, and `equippedSlot`; tests guard that `implantSlot` does not trigger the normal Equip/Unequip pill.
+- [x] Implant-compatible inventory items may show mod-owned affordances: image badges, edit-modal `Implant slot`, and context-menu install/uninstall actions.
+- [x] There is no dedicated spell management UI in this plan; spell generation and casting are tool/XML driven, with status display through profile/prompt sections.
 
-## Test Plan
+## Test Coverage Map
 
-- [ ] Unit test `ModExtensionRegistry` registration, duplicate rejection, live lookups, startup validators, and contributor ordering.
-- [ ] Unit test `SettingInfo.modSettings` defaults, persistence, API update behavior, and settings UI rendering for registered fields.
-- [ ] Unit test `Player.modState` persistence and old-save defaulting.
-- [ ] Unit test inventory sync contributors running after item removal, inventory clear, and inventory replacement.
-- [ ] Unit test `ActorAttachmentSystem` install/remove:
-  - successful install into first-class item slot
-  - multiple installed items in one slot
-  - duplicate install failure
-  - missing actor failure
-  - ambiguous item failure
-  - item not in actor inventory failure
-  - missing item slot field failure
-  - requested slot mismatch failure
-  - removal keeps the Thing in inventory
-  - inventory sync clears stale Thing IDs
-- [ ] Unit test attachment attribute modifiers and equipper status effects.
-- [ ] Unit test `ActorActivatableSystem` generation/activation:
-  - generated spell validation
-  - invalid `manaUsage` failure
-  - invalid level failure
-  - cost formula using low/medium/high and level
-  - invalid formula failure
-  - missing mana bar failure
-  - insufficient mana failure
-  - successful cast deducts exact computed mana
-  - cast does not clamp mana/cost values
-- [ ] Need-bar overlay test proving `mods/spells/defs/need_bars.yaml` ensures the configured mana bar exists when the spell mod is enabled.
-- [ ] Chat tool runtime tests proving `equipImplant`, `unequipImplant`, `generateSpell`, and `castSpell` are available in regular prose and generic prompts through registry tools.
-- [ ] XML event tests proving implant and spell event tags parse through registry events and call their helper paths.
-- [ ] Two-mod integration test proving implant and spell sections can coexist in actor status/base context without name collisions.
-- [ ] UI/static tests proving `implantSlot` does not render normal Equip/Unequip controls and actor mod-status sections render under configured labels.
-- [ ] Run targeted Node tests for changed behavior.
-- [ ] Run `node --check` on altered JS files.
-- [ ] If SCSS changes, compile the corresponding CSS before finishing.
+- [x] `tests/mod_extension_hooks.test.js` covers registry duplicate rejection/live lookups, XML registration, bundled implant/spell registration, `Player.modState`, `SettingInfo.modSettings`, attachment install/remove/sync, and activatable learn/cast cost behavior.
+- [x] `tests/settings_mod_tabs.test.js` covers mod setting tabs and registered field rendering.
+- [x] `tests/mod_entity_field_xml_prompt.test.js`, `tests/chat_tool_create_thing_container.test.js`, `tests/chat_tool_update_character_fields.test.js`, and `tests/api.crafting_registered_thing_fields.test.js` cover registered `Thing.implantSlot` prompt/tool/XML/API surfaces.
+- [x] `tests/mod_thing_image_badges_ui.test.js` covers mod Thing image badges, context actions, and edit-field exposure.
+- [x] `tests/thing_grid_equipment_pill_ui.test.js` guards against treating `implantSlot` as normal equipment.
+- [x] `tests/definition_overlays.test.js` covers definition overlay loading/validation, including mod-provided defs.
 
 ## Gotchas
 
 1. Do not add `SettingInfo.implantLabel` or `SettingInfo.spellLabel`; labels belong to registered `modSettings`.
 2. Do not add implant- or spell-specific fields/methods to `Player`; use generic `modState` and registry contributors.
-3. Do not reuse `Thing.slot`; current inventory UI treats it as normal gear.
-4. Tool/event handlers must throw explicit errors rather than creating missing placeholder implants/spells.
-5. Registry lookups must not be frozen at API registration time.
-6. Existing saves must load with empty `modState` and `modSettings`.
-7. Attribute/status contributors must preserve current gear behavior and only add registered mod contributions.
-8. Spell cost formulas must not clamp numeric values; invalid formulas fail, and insufficient mana blocks casting.
-9. All new generation prompts must be logged with `LLMClient.logPrompt()`.
+3. Helper classes do not register hooks automatically. Mods own registration and can choose which helper methods to expose.
+4. Do not reuse `Thing.slot` for implants. `Thing.slot` remains normal gear; `Thing.implantSlot` is a first-class mod field.
+5. Tool/event/helper failures should throw explicit errors rather than creating missing placeholder implants/spells.
+6. Registry lookups for tool/schema surfaces must stay live at request/render time.
+7. Existing saves must load with empty `modState` and `modSettings`.
+8. Attribute/status contributors must preserve current gear behavior and only add registered mod contributions.
+9. Spell cost formulas must not clamp numeric values; invalid formulas fail, and insufficient mana blocks casting.
+10. New generation prompts must be logged with `LLMClient.logPrompt(...)`.
 
 ## Acceptance Criteria
 
-- A mod can add a new inventory-backed actor attachment system without core code knowing the system’s domain name.
-- A mod can add a generated actor capability system with resource costs, need-bar validation, activation tools, and event hooks.
-- The bundled `implants` mod adds install/remove prose tools, XML events, prompt context, actor status output, setting label, and modifier/status behavior through hooks.
-- The bundled `spells` mod ensures mana, generates known spell records, computes configurable mana costs from usage/level, consumes mana on cast, and exposes spell status/prompt context through hooks.
+- A mod can add an inventory-backed actor attachment system without core code knowing the system's domain name.
+- A mod can add generated actor capability records with resource costs, need-bar validation, activation tools, and event hooks.
+- The bundled `implants` mod adds install/remove prose tools, XML events, prompt context, actor status output, setting labels, presets, image badges, context actions, and modifier/status behavior through hooks.
+- The bundled `spells` mod ensures mana exists, generates learned spell records, computes configurable mana costs from usage/level, consumes mana on cast, and exposes spell status/prompt context through hooks.
 - A setting can rename visible mod-owned system labels without changing code or global config.
-- Installed implant items remain in inventory but are not managed by inventory equipment UI.
+- Installed implant items remain in inventory and are not managed by normal gear equipment UI.
 - Implant and spell state persists in saves, and stale implant references are cleaned up when inventory contents change.
-- The same hook set is reusable for later systems like tattoos, runes, brands, licenses, curses, cyberware, techniques, prayers, or psychic powers.
+- The same hook set is reusable for later systems such as tattoos, runes, brands, licenses, curses, cyberware, techniques, prayers, or psychic powers.

@@ -37,6 +37,41 @@ this.applyStubExpansionOverrides = applyStubExpansionOverrides;`,
     };
 }
 
+function loadScheduleStubExpansionWithRejectedGenerator() {
+    const source = fs.readFileSync(require.resolve('../server.js'), 'utf8');
+    const start = source.indexOf('function scheduleStubExpansion(location, { createOriginExit } = {}) {');
+    const end = source.indexOf('\nfunction extractRegionCharacterConcepts(stubResponse) {', start);
+    if (start < 0 || end < 0) {
+        throw new Error('Unable to locate scheduleStubExpansion in server.js');
+    }
+
+    const stubExpansionPromises = new Map();
+    const context = {
+        console: {
+            error() {}
+        },
+        stubExpansionPromises,
+        applyStubExpansionOverrides: () => {},
+        Location: {
+            get: () => null
+        },
+        generateLocationFromPrompt: async () => {
+            throw new Error('simulated location generation outage');
+        }
+    };
+    vm.createContext(context);
+    vm.runInContext(
+        `${source.slice(start, end)}
+this.scheduleStubExpansion = scheduleStubExpansion;`,
+        context
+    );
+
+    return {
+        scheduleStubExpansion: context.scheduleStubExpansion,
+        stubExpansionPromises
+    };
+}
+
 test('buildLocationEventStubMetadata persists suppressed origin-exit intent', () => {
     const { buildLocationEventStubMetadata } = loadLocationStubOriginExitHelpers();
 
@@ -159,4 +194,33 @@ test('applyStubExpansionOverrides stamps suppressed origin-exit intent onto exis
 
     applyStubExpansionOverrides(stubLocation, { createOriginExit: true });
     assert.equal(stubLocation.stubMetadata.createOriginExit, true);
+});
+
+test('failed stub expansion cleanup does not emit an unhandled rejection', async () => {
+    const { scheduleStubExpansion, stubExpansionPromises } = loadScheduleStubExpansionWithRejectedGenerator();
+    const unhandledRejections = [];
+    const onUnhandledRejection = (reason) => {
+        unhandledRejections.push(reason);
+    };
+
+    process.on('unhandledRejection', onUnhandledRejection);
+    try {
+        await assert.rejects(
+            scheduleStubExpansion({
+                id: 'loc_failure_case',
+                name: 'Failure Case',
+                isStub: true,
+                stubMetadata: {}
+            }),
+            /simulated location generation outage/
+        );
+
+        await new Promise(resolve => setImmediate(resolve));
+        await new Promise(resolve => setImmediate(resolve));
+
+        assert.equal(stubExpansionPromises.has('loc_failure_case'), false);
+        assert.equal(unhandledRejections.length, 0);
+    } finally {
+        process.off('unhandledRejection', onUnhandledRejection);
+    }
 });

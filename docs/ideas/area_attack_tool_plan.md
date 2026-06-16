@@ -1,50 +1,25 @@
-# Area Attack Tool Plan
+# Area Attack Tool Design Notes
 
 ## Summary
 
-Implementation status: v1 is implemented in the regular prose chat-tool path. Secondary effect fields are returned as suggested metadata only; the tool does not directly generate new status effects because the schema does not include duration/level data for a fully validated status application.
+`resolveAreaAttack` is implemented in the regular prose chat-tool path. It is the health-mutating tool for one shared area effect that can affect multiple explicit defenders in a single operation: grenades, blasts, cones, sweeping magic, automatic fire, shockwaves, traps, gas clouds, vehicle impacts, falling rubble, and similar effects.
 
-Add a first-class `resolveAreaAttack` chat tool for attacks that affect multiple targets at once: grenades, blasts, cones, sweeping magic, automatic fire, shockwaves, traps, gas clouds, vehicle impacts, and similar effects.
+The single-target `resolveAttack` tool remains the ordinary one-attacker/one-defender path. `resolveAreaAttack` is intentionally not a loose batch wrapper around `resolveAttack`; it represents one area effect with a shared source, target list, shared roll, and per-target outcomes. This keeps ordinary attacks simple while giving the prose model a clear tool when one action can harm or impair several actors.
 
-The existing `resolveAttack` tool should remain the single-target path. `resolveAreaAttack` should not be a loose batch wrapper around `resolveAttack`; it should model one area effect with a shared source, target list, and per-target outcomes. This keeps ordinary attacks simple while giving the LLM a clear tool for cases where one action can harm or impair several actors.
+Secondary effect fields are suggested metadata only. The area tool does not directly create a new status effect from `secondaryEffect`, because that schema does not carry enough duration/level data for a fully validated status application. Per-target results can still include `appliedStatusEffects` from the normal damage application path.
 
-## Goals
+## Current Tool Contract
 
-- Let the LLM resolve one area attack against several targets with one tool call.
-- Apply damage/status outcomes to each resolved target in one validated operation.
-- Return structured per-target results that the LLM can narrate accurately.
-- Record one grouped check-results entry or grouped attack summary instead of several unrelated single-target summaries.
-- Preserve existing single-target `resolveAttack` behavior.
-- Keep the tool setting-agnostic: grenades, spells, breath weapons, psychic blasts, flamethrowers, falling rubble, and sci-fi weapons should all fit.
-
-## Non-Goals For V1
-
-- Do not build a full tactical map or precise blast-radius geometry.
-- Do not require exact distances.
-- Do not model shrapnel trajectories, facing, or friendly-fire physics in detail.
-- Do not replace `environmental_status_damage`; ongoing hazards can still use that event path.
-- Do not let the LLM apply raw damage directly without server validation.
-
-## Why Not Just Allow A Target List In `resolveAttack`?
-
-Passing a list to `resolveAttack` is workable, but it blurs two different mechanics:
-
-- A batch of ordinary attacks, such as three shots at three targets.
-- One shared area effect, such as one grenade blast affecting everyone near the center.
-
-Those should not always share the same dice behavior. AOE often has one placement/attack quality and then per-target defenses, cover, distance, toughness, and damage effectiveness. A separate tool makes that distinction explicit and keeps the single-target tool easier for the LLM to use correctly.
-
-## Proposed Tool
+The tool is available to regular `player_action` and `npc_action` prose prompts when legacy prompt checks are not enabled. It resolves one shared area effect and records a grouped `area-attack` check-results row.
 
 ```json
 {
   "name": "resolveAreaAttack",
-  "description": "Resolve one attack or effect that can affect multiple defenders, apply per-target damage and status results, and return structured outcomes for each target.",
   "parameters": {
     "attacker": "Exact attacker name or player",
     "targets": [
       {
-        "name": "Exact defender name",
+        "name": "Exact defender name or player",
         "position": "center|near|edge|behind cover|uncertain",
         "defenseInfo": {
           "evadeSkill": "N/A or exact skill",
@@ -54,7 +29,7 @@ Those should not always share the same dice behavior. AOE often has one placemen
         "circumstanceModifiers": [
           {
             "amount": 0,
-            "reason": "Brief target-specific modifier reason"
+            "reason": "Brief target-specific defense modifier reason"
           }
         ],
         "damageEffectiveness": 3
@@ -65,79 +40,69 @@ Those should not always share the same dice behavior. AOE often has one placemen
       "damageAttribute": "Exact attribute name used for damage"
     },
     "ability": "N/A or exact ability name",
-    "weapon": "N/A, barehanded, or exact weapon/item name",
+    "weapon": "N/A, barehanded, or exact weapon/item/effect source",
     "areaShape": "blast|cone|line|cloud|burst|sweep|other",
-    "effectDescription": "Short description of the area effect",
+    "effectDescription": "Short description of the shared area effect",
     "rollMode": "sharedAttackRoll",
     "circumstanceModifiers": [
       {
         "amount": 0,
-        "reason": "Brief attacker/effect modifier reason"
+        "reason": "Brief attacker/effect-wide modifier reason"
       }
     ],
     "secondaryEffect": {
       "name": "N/A or status effect name",
-      "description": "Observed effect if applicable",
+      "description": "Observed effect if applicable, or N/A",
       "appliesOn": "hit|damage|anyEffect|never"
     }
   }
 }
 ```
 
-For v1, `rollMode` can be required to be `sharedAttackRoll`. This avoids prematurely designing every burst-fire or multi-shot edge case while still allowing the common grenade/blast use case.
+The current implementation supports only `rollMode: "sharedAttackRoll"`. `damageEffectiveness` is required per target and must be an integer from 1 to 5, matching the single-target attack resolver's effectiveness scale.
 
 ## Resolution Model
 
-1. Resolve and validate the attacker.
-2. Resolve every target before applying anything.
-3. Reject the whole tool call if any target is ambiguous or missing.
-4. Roll one shared attack/placement result.
-5. For each target:
-   - Build a target-specific defense difficulty from the target's level, defense skill, position, and modifiers.
-   - Apply the shared attack total against that target difficulty.
-   - Calculate damage using the existing weapon/attribute/toughness/effectiveness machinery where possible.
-   - Apply position scaling.
-   - Apply health damage if the result is damaging.
-   - Optionally apply a secondary status effect when the returned condition matches `appliesOn`.
-6. Return one structured result object with all per-target outcomes.
+The resolver validates everything before applying damage:
 
-This should be all-or-nothing at validation time, but not all-or-nothing mechanically. Once every referenced actor is valid, each target can hit, miss, resist, take partial damage, or receive a secondary effect independently.
+1. Resolve the attacker.
+2. Reject unsupported roll modes, empty target lists, invalid positions, missing target names, and duplicate targets.
+3. Resolve every target and reject the whole tool call if any target cannot be resolved.
+4. Build one attack context per target while reusing one shared d20 roll.
+5. Combine effect-wide modifiers, position modifiers, and target-specific modifiers.
+6. Calculate hit/miss and damage through the existing attack resolver machinery.
+7. Apply damage to hit targets only after all target outcomes are computable.
+8. Reveal a living hidden attacker and request a location refresh when needed.
+9. Return one grouped result object with per-target attack summaries.
 
-## Position And Damage Scaling
+This is all-or-nothing at validation time, but not mechanically all-or-nothing. After validation succeeds, each target can independently hit, miss, resist, take reduced damage, or be defeated.
 
-V1 can use a simple symbolic position model:
+## Position Scaling
 
-| Position       | Suggested Meaning                           |
-| -------------- | ------------------------------------------- |
-| `center`       | Target is at or near the main impact point. |
-| `near`         | Target is in the main affected group.       |
-| `edge`         | Target is barely caught by the effect.      |
-| `behind cover` | Target is in the area but shielded.         |
+The implementation uses symbolic positions rather than exact map geometry:
 
-The server can translate this into per-target modifiers and/or damage scaling. The exact numbers should be conservative and configurable later if needed. Initial behavior could be:
+| Position | Defense adjustment | Damage multiplier | Meaning |
+| --- | ---: | ---: | --- |
+| `center` | +0 | x1 | At or near the main impact point. |
+| `near` | +2 | x1 | In the main affected group. |
+| `edge` | +4 | x0.5 | Barely caught by the effect. |
+| `behind cover` | +6 | x0.5 | In the area but shielded. |
+| `uncertain` | +2 | x1 | Position is unclear but plausibly exposed. |
 
-- `center`: no defensive bonus, full damage.
-- `near`: small defensive bonus, full damage.
-- `edge`: defensive bonus, reduced damage.
-- `behind cover`: stronger defensive bonus, reduced damage.
+The model deliberately avoids exact distances, blast radii, shrapnel trajectories, facing, and tactical-map geometry. Target-specific `circumstanceModifiers` remain available for cover, surprise, cramped quarters, elevation, or other narrative factors that the position label does not capture.
 
-Avoid adding hard-coded numeric tuning until implementation, but the tool shape should preserve enough information for it.
+## Result Shape
 
-## Return Shape
-
-The LLM-facing tool content should stay concise, similar to `resolveAttack`, but the metadata should be fully structured for UI and event summaries.
-
-Example LLM-facing content:
+The tool content shown back to the model stays concise:
 
 ```text
 Area attack results:
-- Commander Razorclaw: hit, Damage: 14%, Remaining health: 62%, effect: Concussed
-- Goblin Sapper 1: hit, Damage: 18%, Remaining health: 41%, effect: Disoriented
-- Goblin Sapper 2: miss, no damage
-Do not re-run tool calls for these same checks in later drafts.
+- Commander Razorclaw: hit, Damage: 14%, Remaining health: 62%
+- Goblin Sapper: hit, Damage: 8%, Remaining health: 41%
+- Shield Adept: miss, no damage
 ```
 
-Structured metadata:
+Structured metadata is richer for UI and event summaries:
 
 ```json
 {
@@ -146,6 +111,7 @@ Structured metadata:
   "weapon": "Concussion Grenade",
   "ability": "N/A",
   "areaShape": "blast",
+  "effectDescription": "Concussive grenade blast",
   "rollMode": "sharedAttackRoll",
   "sharedRoll": {
     "die": 13,
@@ -156,95 +122,72 @@ Structured metadata:
   "results": [
     {
       "target": "Commander Razorclaw",
+      "targetId": "npc_123",
       "hit": true,
       "damageApplied": 14,
+      "healthLostPercent": 14,
       "remainingHealthPercent": 62,
       "position": "center",
-      "secondaryEffectApplied": true,
-      "secondaryEffect": "Concussed"
+      "secondaryEffectApplied": false,
+      "secondaryEffect": "Concussed",
+      "appliedStatusEffects": [],
+      "attackSummary": {}
     }
   ]
 }
 ```
 
+`secondaryEffect` means "possible effect" unless `secondaryEffectApplied` is true. The current area-tool path sets `secondaryEffectApplied` to false for its own suggested secondary effect.
+
 ## Chat/UI Presentation
 
-`check-results` should display this as one grouped area-attack box:
+`resolveAreaAttack` creates one grouped `check-results` entry with `kind: "area-attack"`. Collapsed summaries use the area effect as one event:
 
-- Collapsed summary: `💥 Exis hit 3 targets with Concussion Grenade`
-- Miss-only summary: `💨 Exis caught no targets with Concussion Grenade`
-- Mixed summary: `💥 Exis hit 2/4 targets with Concussion Grenade`
-- Expanded details: one row per target, including hit/miss, damage, remaining health, and applied secondary effect.
+- `💥 Exis hit 3 targets with Concussion Grenade`
+- `💨 Exis caught no targets with Concussion Grenade`
+- `💥 Exis hit 2/4 targets with Concussion Grenade`
 
-The event-summary drawer should avoid duplicating all of this as separate ungrouped attack rows if the area attack tool already recorded the mechanical results.
+Expanded details list each target's hit/miss, damage, remaining health, position, and possible secondary effect. When per-target `attackSummary` data is present, the expanded details reuse the same attack-breakdown renderer used by single-target attacks.
 
-## Event Check Integration
+## Caching And Idempotency
 
-The existing `attackDamage` XML tag can remain single-target for now. The event checker sees prose after the tool call and may still report attacks, but the actual health mutation should come from `resolveAreaAttack`, not from `attackDamage`.
+Area attack tool results are cached for the current prose prompt round. The cache key includes:
 
-Potential follow-up event schema additions:
+- prompt round id
+- attacker
+- sorted target names
+- weapon
+- ability
+- area shape
+- effect description
+- roll mode
+- attack skill
 
-```xml
-<areaAttackDamage>
-  <attackerName>Exact attacker name</attackerName>
-  <targetName>Exact target name</targetName>
-  <areaEffectName>Grenade blast, cone of fire, etc.</areaEffectName>
-</areaAttackDamage>
-```
+Repeated calls with the same cache key return the original result without re-rolling or re-applying damage. Sorting target names prevents harmless target-order changes from applying the same blast twice. Cached tool content includes the same warning pattern used by other check tools, telling the prose model not to re-run checks from earlier drafts.
 
-This is optional for v1. The first version can rely on the tool metadata and existing status/death/incapacitation event checks.
+## Event Check Relationship
 
-## Caching
+The XML `attackDamage` event remains single-target and does not directly apply health damage. Area-attack health mutation should come from `resolveAreaAttack`, not from a later event check that notices the prose. The event checker can still track/summarize attacks, reveal hidden attackers where relevant, and handle other narrative consequences.
 
-Area attack caching should follow the existing attack-tool pattern:
+There is no `areaAttackDamage` XML event in the current schema. If one is added later, it should be informational or carefully coordinated with tool metadata so it does not duplicate already-applied damage.
 
-- Cache key should include prompt round id, attacker, weapon, ability, area shape, effect description, roll mode, and the sorted target names.
-- A repeated call with the same key returns the original results and does not re-roll or re-apply damage/status effects.
-- The cached tool content should include the existing warning telling the LLM not to rerun checks from earlier drafts.
+## Rationale Preserved From The Original Plan
 
-The sorted target-name piece prevents harmless list ordering differences from reapplying damage.
+Allowing a target list on `resolveAttack` would blur two different mechanics:
 
-## Error Handling
+- A batch of ordinary attacks, such as three separate shots at three targets.
+- One shared area effect, such as one grenade blast affecting everyone near the center.
 
-Prefer explicit tool errors before any mutation:
+Those should not always share dice behavior. An area effect commonly has one placement/attack quality and then per-target defenses, cover, distance, toughness, and damage effectiveness. A separate tool makes that distinction explicit and keeps the single-target tool easier for the prose model to use correctly.
 
-- Missing attacker: return a tool error.
-- Missing target: return a tool error listing the unresolved target.
-- Ambiguous target: return candidates and ask the LLM to retry by exact name or ID if that becomes supported.
-- Empty target list: return a tool error.
-- Duplicate target names: dedupe exact duplicates or reject. V1 should reject unless there is a clear reason to dedupe.
-- Hit with no finite damage: return a tool error before applying that target's result.
+The design also stays setting-agnostic. It can represent grenades, spells, breath weapons, psychic blasts, flamethrowers, falling rubble, and sci-fi weapons without adding setting-specific combat concepts to the schema.
 
-No damage or status effects should be applied until every target has resolved and the attack result can be computed.
+## Deferred Ideas
 
-## Implementation Sketch
+These are proposals only, not current behavior:
 
-1. Add `resolveAreaAttack` to the regular player/NPC prose tool list.
-2. Add argument parsing and validation in `chat_tool_calls.js`.
-3. Reuse the existing attack resolver internals in `api.js` by extracting shared helpers from `resolveAttackToolCall`.
-4. Add a new resolver that validates all targets, computes one shared attack roll, loops target outcome calculation, then applies damage/status.
-5. Add grouped `check-results` rendering for `kind: "area-attack"`.
-6. Extend tool-call caching to use an area-attack cache key and prevent repeated damage application.
-7. Document the tool in `docs/api/chat.md`, `docs/api/common.md`, and `docs/server_llm_notes.md`.
-8. Add tests for all-hit, mixed hit/miss, duplicate target rejection, missing target rejection, cache replay without reapplying damage, and grouped check-result shape.
-
-## Open Questions
-
-1. Should v1 support secondary status effects directly, or should the LLM narrate them and let event checks create `statusEffectChange` entries?
-2. Should position scaling be hard-coded initially, or should it only influence suggested modifiers until there is more combat tuning?
-3. Should the tool accept target IDs now, or stay name-only to match `resolveAttack`?
-4. Should friendly fire be allowed by default if allies are included in the target list, or should the tool warn/reject unless an explicit `allowFriendlyFire` flag is true?
-
-## Recommended V1
-
-Implement `resolveAreaAttack` with:
-
-- `sharedAttackRoll` only.
-- Name-based target resolution matching `resolveAttack`.
-- Required explicit target list.
-- Per-target `position`, modifiers, and damage effectiveness.
-- Grouped check-results UI.
-- Cached replay protection.
-- No direct XML event-schema changes yet.
-
-For secondary effects, start conservatively: return suggested/applied effect text in metadata only if the implementation can create real status effects through existing status-effect helpers. If that is too invasive, defer direct status application and rely on event checks for `statusEffectChange`.
+1. Add direct secondary status application after the schema can carry status duration, level/intensity, source, and validation details.
+2. Make position scaling configurable if combat tuning needs to vary by setting or difficulty.
+3. Accept stable target IDs in addition to names, while preserving name-based calls for prose readability.
+4. Add an explicit friendly-fire policy flag if the game needs warnings or rejections when allies appear in the target list.
+5. Add an informational `areaAttackDamage` XML event only if event summaries need a schema-level area attack record separate from tool metadata.

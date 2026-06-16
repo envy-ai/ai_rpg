@@ -1,23 +1,23 @@
-# API Routes From `api.js`
+# API Route Reference
 
-This is the high-level index for every Express route registered in `api.js`. The detailed, low-level reference lives in `docs/api/` and is intended to give an accurate picture of request/response shapes and variants without scanning the source.
+This is the high-level index for the project's HTTP API documentation. Most `/api/*` routes are registered by `api.js` through `registerApiRoutes(scope)`. `server.js` also defines `/api/game-config-override`, which is documented with the game lifecycle routes.
 
 ## How This Reference Is Organized
-- High-level index (this file): quick map of endpoints by domain.
-- Low-level docs (`docs/api/`): per-domain route specs, sorted by path, with response variants and edge cases.
-- Common shapes: shared payloads such as `NpcProfile`, `LocationResponse`, `ActionResolution`, etc.
+- High-level index: this file maps endpoint groups to the detailed domain docs.
+- Domain docs: `docs/api/` files describe request/response shapes, variants, and edge cases.
+- Shared shapes: `docs/api/common.md` defines payloads such as `NpcProfile`, `LocationResponse`, and `ActionResolution`.
 
-## Low-Level Index
+## Domain Index
 - `docs/api/common.md` - shared payload shapes and conventions
-- `docs/api/serialization.md` - legacy pointer to shared shapes
+- `docs/api/serialization.md` - compatibility pointer to shared shapes
 - `docs/api/attributes.md` - duplicate `/api/attributes` definitions
 - `docs/api/chat.md` - chat endpoints
 - `docs/api/crafting.md` - crafting/salvage/harvest
-- `docs/api/game.md` - new game, save/load, active calendar editing, summaries, short-description backfill, mod manager, and pending post-restart load APIs
+- `docs/api/game.md` - new game, save/load, active calendar editing, per-game config overrides, summaries, short-description processing, mod manager, and pending post-restart load APIs
 - `docs/api/factions.md` - factions CRUD, relations, and player standings
 - `docs/api/images.md` - image generation, weather/lighting location variants, and job tracking
 - `docs/api/locations.md` - locations, exits, stubs, map data, player move
-- `docs/api/map.md` - legacy pointer to map endpoints
+- `docs/api/map.md` - compatibility pointer to map endpoints
 - `docs/api/lorebooks.md` - lorebook management
 - `docs/api/mystery-boxes.md` - mystery-box editor routes
 - `docs/api/mystery-threads.md` - mystery-thread editor routes
@@ -28,11 +28,11 @@ This is the high-level index for every Express route registered in `api.js`. The
 - `docs/api/scene-summaries.md` - Story Tools scene-summary editor routes
 - `docs/api/settings.md` - setting CRUD, AI fill-missing, faction defaults, and world-profile calendar drafts
 - `docs/api/things.md` - items/scenery CRUD and inventory transfers
-- `docs/api/misc.md` - feature flags, health check, slash commands, prompt cancel, config test
+- `docs/api/misc.md` - feature flags, health check, slash commands, prompt cancellation/retry, config test
 
-## Duplicate / Legacy Notes
+## Compatibility Notes
 - Duplicate route: `GET /api/attributes` is defined twice. Express binds the first definition (attribute definitions + generation methods). The later definition is unreachable until the duplication is removed; both behaviors are documented in `docs/api/attributes.md`.
-- Legacy behavior: `POST /api/generate-image` includes a legacy sync mode when `async=false`. See `docs/api/images.md`.
+- Image generation compatibility: `POST /api/generate-image` supports synchronous responses when `async=false`; the code marks that mode as legacy. Prefer the async image job routes documented in `docs/api/images.md`.
 
 ## Conventions
 - Most JSON responses include a `success` boolean. Some endpoints do not (noted in the low-level docs).

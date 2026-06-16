@@ -381,6 +381,23 @@
                                     <div class="chat-party-empty" id="chatPartyEmpty">No companions are currently travelling with you.</div>
                                     <div class="location-entity-grid chat-party-grid" id="chatPartyMembers"></div>
                                 </section>
+
+                                <section class="chat-trackers-section" id="chatTrackersSection">
+                                    <div class="chat-trackers-header">
+                                        <h3 class="chat-sidebar-heading">Trackers</h3>
+                                        <div class="chat-trackers-header-controls">
+                                            <span class="chat-trackers-count" id="chatTrackersCount">0</span>
+                                            <button type="button" class="chat-trackers-hidden-toggle" id="chatTrackersHiddenToggle" aria-label="Show hidden trackers" aria-pressed="false" title="Show hidden trackers">
+                                                <svg class="chat-trackers-hidden-toggle__icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                                                    <path d="M2.06 12.35a1 1 0 0 1 0-.7C3.74 7.51 7.68 4.75 12 4.75s8.26 2.76 9.94 6.9a1 1 0 0 1 0 .7c-1.68 4.14-5.62 6.9-9.94 6.9s-8.26-2.76-9.94-6.9Z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"></path>
+                                                    <circle cx="12" cy="12" r="3.1" fill="none" stroke="currentColor" stroke-width="1.8"></circle>
+                                                </svg>
+                                            </button>
+                                        </div>
+                                    </div>
+                                    <div class="chat-trackers-empty" id="chatTrackersEmpty">No active trackers.</div>
+                                    <div class="chat-trackers-list" id="chatTrackersList"></div>
+                                </section>
                             </aside>
                         </div>
                     </div>
@@ -4813,6 +4830,8 @@
             }
         }
 
+        let chatTrackersShowHidden = false;
+
         const chatSidebarElements = {
             card: document.getElementById('chatPlayerCard'),
             portrait: document.getElementById('chatPlayerPortrait'),
@@ -4833,7 +4852,12 @@
             description: document.getElementById('chatPlayerDescription'),
             partyGrid: document.getElementById('chatPartyMembers'),
             partyEmpty: document.getElementById('chatPartyEmpty'),
-            partyCount: document.getElementById('chatPartyCount')
+            partyCount: document.getElementById('chatPartyCount'),
+            trackersSection: document.getElementById('chatTrackersSection'),
+            trackersList: document.getElementById('chatTrackersList'),
+            trackersEmpty: document.getElementById('chatTrackersEmpty'),
+            trackersCount: document.getElementById('chatTrackersCount'),
+            trackersHiddenToggle: document.getElementById('chatTrackersHiddenToggle')
         };
 
         function getLatestPlayerData() {
@@ -5838,6 +5862,88 @@
             }
         });
 
+        function updateChatTrackersHiddenToggleButton(hiddenCount = 0) {
+            const toggle = chatSidebarElements.trackersHiddenToggle;
+            if (!toggle) {
+                return;
+            }
+            toggle.classList.toggle('is-active', chatTrackersShowHidden);
+            toggle.disabled = hiddenCount <= 0;
+            toggle.setAttribute('aria-pressed', chatTrackersShowHidden ? 'true' : 'false');
+            toggle.setAttribute('aria-label', chatTrackersShowHidden ? 'Hide hidden trackers' : 'Show hidden trackers');
+            toggle.title = chatTrackersShowHidden ? 'Hide hidden trackers' : 'Show hidden trackers';
+        }
+
+        function renderChatTrackersPanel(trackers = []) {
+            const list = chatSidebarElements.trackersList;
+            const emptyState = chatSidebarElements.trackersEmpty;
+            const countLabel = chatSidebarElements.trackersCount;
+            const safeTrackers = Array.isArray(trackers)
+                ? trackers.filter(tracker => tracker && typeof tracker === 'object')
+                : [];
+            const hiddenCount = safeTrackers.filter(tracker => Boolean(tracker.hiddenFromPlayer)).length;
+            if (hiddenCount <= 0) {
+                chatTrackersShowHidden = false;
+            }
+            const visibleTrackers = safeTrackers.filter(tracker => !Boolean(tracker.hiddenFromPlayer) || chatTrackersShowHidden);
+
+            if (countLabel) {
+                countLabel.textContent = String(visibleTrackers.length);
+            }
+            updateChatTrackersHiddenToggleButton(hiddenCount);
+
+            if (!list) {
+                return;
+            }
+            list.innerHTML = '';
+
+            if (emptyState) {
+                emptyState.textContent = safeTrackers.length && hiddenCount === safeTrackers.length && !chatTrackersShowHidden
+                    ? 'Only hidden trackers are active.'
+                    : 'No active trackers.';
+                emptyState.style.display = visibleTrackers.length ? 'none' : 'block';
+            }
+            list.style.display = visibleTrackers.length ? 'grid' : 'none';
+
+            visibleTrackers.forEach(tracker => {
+                const name = typeof tracker.name === 'string' && tracker.name.trim()
+                    ? tracker.name.trim()
+                    : (typeof tracker.id === 'string' && tracker.id.trim() ? tracker.id.trim() : 'Tracker');
+                const value = typeof tracker.value === 'string' && tracker.value.trim()
+                    ? tracker.value.trim()
+                    : '?';
+
+                const card = document.createElement('div');
+                card.className = 'chat-tracker-card';
+                card.classList.toggle('is-hidden-from-player', Boolean(tracker.hiddenFromPlayer));
+
+                const header = document.createElement('div');
+                header.className = 'chat-tracker-card__header';
+
+                const title = document.createElement('span');
+                title.className = 'chat-tracker-card__name';
+                title.textContent = name;
+                header.appendChild(title);
+
+                const valueEl = document.createElement('span');
+                valueEl.className = 'chat-tracker-card__value';
+                valueEl.textContent = value;
+                header.appendChild(valueEl);
+
+                card.appendChild(header);
+                list.appendChild(card);
+            });
+        }
+
+        if (chatSidebarElements.trackersHiddenToggle) {
+            updateChatTrackersHiddenToggleButton(0);
+            chatSidebarElements.trackersHiddenToggle.addEventListener('click', (event) => {
+                event.preventDefault();
+                chatTrackersShowHidden = !chatTrackersShowHidden;
+                renderChatTrackersPanel(Array.isArray(window.currentPlayerData?.trackers) ? window.currentPlayerData.trackers : []);
+            });
+        }
+
         function updateChatPlayerPanel(player = {}) {
             if (!chatSidebarElements.card) {
                 return;
@@ -5946,6 +6052,7 @@
                     }
                 );
             }
+            renderChatTrackersPanel(Array.isArray(data?.trackers) ? data.trackers : []);
 
             if (data?.id) {
                 if (window.currentNpcData instanceof Map) {
@@ -14599,69 +14706,26 @@
                     entry.originalValue = normalizedValue;
                 }
 
-                const card = document.createElement('div');
-                card.className = 'npc-adjustment-entry npc-adjustment-entry--needs npc-needs-entry';
-                card.dataset.needId = entry.id || '';
+                const needName = entry.name || entry.id || 'Need';
 
-                const heading = document.createElement('div');
-                heading.className = 'npc-adjustment-heading npc-adjustment-heading--needs npc-needs-heading';
+                const row = document.createElement('div');
+                row.className = 'npc-adjustment-entry npc-adjustment-entry--needs npc-needs-entry';
+                row.dataset.needId = entry.id || '';
 
                 const labelEl = document.createElement('div');
                 labelEl.className = 'npc-adjustment-label npc-adjustment-label--needs npc-needs-label';
                 if (entry.icon) {
                     const iconEl = document.createElement('span');
+                    iconEl.className = 'npc-needs-icon';
                     iconEl.textContent = entry.icon;
                     iconEl.setAttribute('aria-hidden', 'true');
                     labelEl.appendChild(iconEl);
                 }
                 const nameSpan = document.createElement('span');
-                nameSpan.textContent = entry.name || entry.id || 'Need';
+                nameSpan.className = 'npc-needs-name';
+                nameSpan.textContent = needName;
                 labelEl.appendChild(nameSpan);
-                heading.appendChild(labelEl);
-
-                const metaEl = document.createElement('div');
-                metaEl.className = 'npc-needs-meta';
-                const rangeLabel = document.createElement('span');
-                rangeLabel.textContent = `Range ${min} – ${max}`;
-                metaEl.appendChild(rangeLabel);
-                if (Number.isFinite(entry.changePerMinute) && entry.changePerMinute !== 0) {
-                    const rateLabel = document.createElement('span');
-                    rateLabel.textContent = `Δ/min ${entry.changePerMinute > 0 ? `+${entry.changePerMinute}` : entry.changePerMinute}`;
-                    metaEl.appendChild(rateLabel);
-                }
-                const audienceLabel = formatNeedBarAudienceLabel(entry);
-                if (audienceLabel && audienceLabel !== 'All actors') {
-                    const badge = document.createElement('span');
-                    badge.textContent = audienceLabel;
-                    badge.style.color = '#fde68a';
-                    metaEl.appendChild(badge);
-                }
-                heading.appendChild(metaEl);
-                card.appendChild(heading);
-
-                if (entry.description) {
-                    const descriptionEl = document.createElement('p');
-                    descriptionEl.className = 'npc-adjustment-description npc-needs-description';
-                    descriptionEl.textContent = entry.description;
-                    card.appendChild(descriptionEl);
-                }
-
-                const progress = document.createElement('div');
-                progress.className = 'npc-needs-progress';
-                if (entry.color) {
-                    progress.style.setProperty('--npc-needs-color', entry.color);
-                }
-                const progressFill = document.createElement('div');
-                progressFill.className = 'npc-needs-progress-fill';
-                progress.appendChild(progressFill);
-                card.appendChild(progress);
-
-                const sliderRow = document.createElement('div');
-                sliderRow.className = 'npc-adjustment-slider-row npc-needs-slider-row';
-
-                const valueDisplay = document.createElement('span');
-                valueDisplay.className = 'npc-needs-value-display';
-                sliderRow.appendChild(valueDisplay);
+                row.appendChild(labelEl);
 
                 const slider = document.createElement('input');
                 slider.type = 'range';
@@ -14670,74 +14734,28 @@
                 slider.max = String(max);
                 slider.step = '1';
                 slider.value = String(normalizedValue);
-                sliderRow.appendChild(slider);
+                slider.setAttribute('aria-label', `Set ${needName} value`);
+                if (entry.color) {
+                    slider.style.setProperty('--npc-needs-color', entry.color);
+                    slider.style.accentColor = entry.color;
+                }
+                row.appendChild(slider);
 
-                card.appendChild(sliderRow);
-
-                const inputRow = document.createElement('div');
-                inputRow.className = 'npc-adjustment-control-row npc-needs-input-row';
-
-                const valueWrapper = document.createElement('label');
-                valueWrapper.className = 'npc-adjustment-value-input npc-adjustment-value-input--needs npc-needs-value-input';
-                valueWrapper.textContent = 'Value';
                 const numberInput = document.createElement('input');
                 numberInput.type = 'number';
+                numberInput.className = 'npc-needs-value-input';
                 numberInput.value = String(normalizedValue);
                 numberInput.step = '1';
                 numberInput.min = String(min);
                 numberInput.max = String(max);
-                valueWrapper.appendChild(numberInput);
-                inputRow.appendChild(valueWrapper);
-
-                const buttonsWrapper = document.createElement('div');
-                buttonsWrapper.className = 'npc-adjustment-buttons npc-adjustment-buttons--needs npc-needs-buttons';
-
-                const addButton = (label, action, delta = 0) => {
-                    const button = document.createElement('button');
-                    button.type = 'button';
-                    button.dataset.action = action;
-                    button.dataset.delta = String(delta);
-                    button.textContent = label;
-                    buttonsWrapper.appendChild(button);
-                };
-
-                addButton('Min', 'min');
-                const rangeSpan = max - min;
-                const step = Math.max(1, Math.round(rangeSpan / 10));
-                addButton(`-${step}`, 'delta', -step);
-                addButton(`+${step}`, 'delta', step);
-                addButton('Max', 'max');
-
-                inputRow.appendChild(buttonsWrapper);
-                card.appendChild(inputRow);
-
-                const thresholdLabel = resolveNeedThreshold(entry.effectThresholds, normalizedValue);
-                const thresholdEl = document.createElement('div');
-                thresholdEl.className = 'npc-adjustment-thresholds npc-needs-thresholds';
-                thresholdEl.textContent = thresholdLabel
-                    ? `Current effect: ${thresholdLabel.name || thresholdLabel.effect || 'None'}`
-                    : 'Current effect: None';
-                card.appendChild(thresholdEl);
-
-                const updateDisplays = (current) => {
-                    const denominator = max - min;
-                    const ratio = denominator ? Math.max(0, Math.min(1, (current - min) / denominator)) : 1;
-                    progressFill.style.width = `${(ratio * 100).toFixed(1)}%`;
-                    valueDisplay.textContent = `${current} / ${max}`;
-                    const resolvedThreshold = resolveNeedThreshold(entry.effectThresholds, current);
-                    thresholdEl.textContent = resolvedThreshold
-                        ? `Current effect: ${resolvedThreshold.name || resolvedThreshold.effect || 'None'}`
-                        : 'Current effect: None';
-                };
-
-                updateDisplays(normalizedValue);
+                numberInput.setAttribute('aria-label', `Set ${needName} value`);
+                row.appendChild(numberInput);
 
                 const applyValue = (nextValue) => {
                     const clampedValue = clampNeedValue(nextValue, min, max);
                     slider.value = String(clampedValue);
                     numberInput.value = String(clampedValue);
                     entry.value = clampedValue;
-                    updateDisplays(clampedValue);
                     setNpcNeedsDirty();
                 };
 
@@ -14756,24 +14774,7 @@
                     applyValue(Number(numberInput.value));
                 });
 
-                buttonsWrapper.querySelectorAll('button').forEach(button => {
-                    button.addEventListener('click', (event) => {
-                        event.preventDefault();
-                        const action = button.dataset.action;
-                        if (action === 'min') {
-                            applyValue(min);
-                        } else if (action === 'max') {
-                            applyValue(max);
-                        } else if (action === 'delta') {
-                            const delta = Number(button.dataset.delta);
-                            if (Number.isFinite(delta)) {
-                                applyValue(entry.value + delta);
-                            }
-                        }
-                    });
-                });
-
-                npcNeedsList.appendChild(card);
+                npcNeedsList.appendChild(row);
             });
 
             setNpcNeedsDirty();
@@ -35214,14 +35215,6 @@
                 return elements;
             }
 
-            function buildDefaultMapFastTravelActionText({ destinationName, destinationRegionName } = {}) {
-                const resolvedDestinationName = (destinationName && destinationName.toString().trim()) || 'the destination';
-                const resolvedRegionName = (destinationRegionName && destinationRegionName.toString().trim()) || '';
-                return resolvedRegionName && resolvedRegionName !== 'Unknown Region'
-                    ? `I travel to ${resolvedDestinationName} in ${resolvedRegionName}.`
-                    : `I travel to ${resolvedDestinationName}.`;
-            }
-
             async function requestMapFastTravelConfirmation({
                 destinationName,
                 destinationRegionName,
@@ -35238,10 +35231,6 @@
                 const destinationLabel = resolvedRegionName && resolvedRegionName !== 'Unknown Region'
                     ? `${resolvedDestinationName} (${resolvedRegionName})`
                     : resolvedDestinationName;
-                const defaultActionText = buildDefaultMapFastTravelActionText({
-                    destinationName: resolvedDestinationName,
-                    destinationRegionName: resolvedRegionName
-                });
                 const previouslyFocused = document.activeElement instanceof HTMLElement
                     ? document.activeElement
                     : null;
@@ -35249,7 +35238,7 @@
                 elements.destination.textContent = destinationLabel;
                 elements.time.textContent = travelTimeText;
                 elements.description.textContent = `Travel to ${resolvedDestinationName} will take ${travelTimeText}.`;
-                elements.actionText.value = defaultActionText;
+                elements.actionText.value = '';
                 elements.modal.removeAttribute('hidden');
                 elements.modal.setAttribute('aria-hidden', 'false');
                 document.body.classList.add('modal-open');
@@ -35278,7 +35267,7 @@
                         }
                         settled = true;
                         const actionText = confirmed
-                            ? ((elements.actionText.value || '').trim() || defaultActionText)
+                            ? ((elements.actionText.value || '').trim())
                             : '';
                         cleanup();
                         resolve({
@@ -35431,8 +35420,11 @@
                         return false;
                     }
 
-                    const actionText = (confirmation.actionText || '').trim()
-                        || buildDefaultMapFastTravelActionText({ destinationName, destinationRegionName });
+                    if (focusAdventureTab && typeof window.activateTab === 'function') {
+                        window.activateTab('adventure');
+                    }
+
+                    const actionText = (confirmation.actionText || '').trim();
                     const travelMetadata = buildMapFastTravelMetadata({
                         originLocationId: travelPreview?.origin?.id || lastRenderedLocation?.id || null,
                         destinationId,
@@ -35446,7 +35438,8 @@
                     await window.AIRPG_CHAT.dispatchAutomatedMessage(actionText, {
                         travel: true,
                         travelMetadata,
-                        suppressTravelCompletionSound: true
+                        suppressTravelCompletionSound: true,
+                        allowEmptyAction: true
                     });
 
                     showMoveOverlay();
@@ -35454,10 +35447,6 @@
                         originLocationId: lastRenderedLocation?.id || null,
                         accountTravelTime: true
                     });
-
-                    if (focusAdventureTab && typeof window.activateTab === 'function') {
-                        window.activateTab('adventure');
-                    }
 
                     const mapTab = document.querySelector('[data-tab="map"]');
                     if (mapTab && mapTab.classList.contains('active')) {

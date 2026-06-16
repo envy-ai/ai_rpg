@@ -18,6 +18,8 @@ class IdGenerator {
     ['mthread', 'mthread'],
     ['scheduledEvent', 'sevent'],
     ['sevent', 'sevent'],
+    ['tracker', 'tracker'],
+    ['trackers', 'tracker'],
     ['quest', 'quest'],
     ['objective', 'obj'],
     ['obj', 'obj'],

@@ -104,13 +104,23 @@ Use this quick rubric when deciding whether an idea deserves near-term work.
 | Can v1 be small? | It can ship as a read-only or collapsed surface. | It needs full editing, sync, and repair on day one. |
 | Does it reveal generated-state bugs? | It exposes malformed or missing links clearly. | It hides errors behind placeholders. |
 
+## Status framing
+
+Use these labels to keep archive/design material distinct from shipped surfaces:
+
+- **Implemented:** The core idea has shipped. Keep the section for design context and follow-up refinements, not as a greenfield proposal.
+- **Partial / foundation exists:** The project has supporting UI, APIs, or data, but the user-facing workflow described here is not complete.
+- **Proposal:** The idea remains mostly conceptual and needs design/implementation work before it can be used.
+
 ## Low-effort ideas
 
 ### 1. Turn state-diff drawer
 
+Status: **Implemented** for parent-linked `event-summary` and `status-summary` entries through `public/js/turn-state-diff-drawer.js`. Keep this section as archive context for future refinements such as richer row metadata, filtering, and entity navigation.
+
 Create a compact drawer attached to each turn that groups state changes: time passed, health changes, need changes, faction reputation, disposition, item movement, NPC arrivals/departures, quest progress, location changes, and vehicle progress. Event summaries already exist, so this is mainly a presentation and filtering improvement.
 
-Expanded brainstorm and implementation plan: [turn_state_diff_drawer_brainstorm_plan.md](turn_state_diff_drawer_brainstorm_plan.md).
+Expanded brainstorm and implementation plan: [finished/turn_state_diff_drawer_brainstorm_plan.md](finished/turn_state_diff_drawer_brainstorm_plan.md).
 
 Player problem:
 
@@ -149,6 +159,8 @@ Risks:
 - If event summaries lack stable IDs, some rows may need name-only linking with visible ambiguity handling.
 
 ### 2. Clickable entity references in chat
+
+Status: **Partial / foundation exists.** Turn-diff drawer entity chips can navigate exact ID-backed references from summary metadata. General assistant-prose autolinking remains a proposal.
 
 Turn recognized NPC, item, location, region, quest, and faction names in assistant prose into links that open the existing tooltip, detail modal, map focus, or quest/thread surface.
 
@@ -191,6 +203,8 @@ Risks:
 
 ### 3. Current-situation strip
 
+Status: **Partial / foundation exists.** The Play UI has a world-time chip, vehicle-aware location header, prompt-progress dock, player/sidebar state, and pending ability surfaces, but not one compact orientation strip.
+
 Add a short persistent strip near the chat composer or Adventure panel: location, region, time, weather/light, vehicle state, party count, critical needs, combat/blocker state, pending ability picks, and unsaved/prompt activity when relevant.
 
 Player problem:
@@ -231,6 +245,8 @@ Risks:
 - Too many chips will train players to ignore the strip.
 
 ### 4. Action composer helpers
+
+Status: **Partial / foundation exists.** Slash command help, prompt prefixes, empty-action confirmation, ability/skill insertion, and entity chooser patterns exist. Context-aware starters, recent actions, and target insertion remain proposals.
 
 Add optional composer tools: recent actions, continue scene, common verbs, targeted entity picker, inline roll override insertion, and mode buttons for in-character action, out-of-character question, slash command, and no-context prompt. The output should remain editable text.
 
@@ -273,6 +289,8 @@ Risks:
 
 ### 5. Save resume summary
 
+Status: **Proposal with foundation.** Save metadata, scene summaries, plot analysis, Story Tools history, and load responses exist, but the load flow does not yet present a dedicated resume card.
+
 When loading a save, show a concise resume card: current location, party, active quests, recent summary, unresolved consequences, world time, vehicle underway state, pending ability picks, last save timestamp, and any warnings that require action before play can continue.
 
 Player problem:
@@ -312,6 +330,8 @@ Risks:
 - Older saves may not have enough summary data; the UI should state that clearly.
 
 ### 6. Model/config health panel
+
+Status: **Partial / foundation exists.** `/config`, `/debug`, `LLMClient.getConfigurationErrors(...)`, prompt-progress events, and config docs cover pieces of this. The missing piece is a consolidated readable health panel.
 
 Add a clearer runtime health view for text backend, image backend, config validation, active mods, active world profile, force-output state, prompt concurrency, and recent prompt failures. This is developer-facing, but should still be readable.
 
@@ -355,9 +375,11 @@ Risks:
 
 ### 7. Top menu and header revamp
 
-Redesign the top menu/header into a consistent shared navigation system across pages. The current main menu behaves and looks inconsistent between pages; a unified header could give the app a stronger visual identity, make page switching predictable, and reduce the sense that different sections belong to different tools.
+Status: **Implemented core.** Top-level pages now include `views/_includes/app-header.njk` and `views/_includes/app-header-nav.njk`; `views/_navigation.njk` is a compatibility shim. Keep this section for archive context and future header extensions such as health/save indicators or command-palette entry points.
 
-Expanded brainstorm: [header_revamp_brainstorm.md](header_revamp_brainstorm.md).
+Original proposal: redesign the top menu/header into a consistent shared navigation system across pages. A unified header gives the app a stronger visual identity, makes page switching predictable, and reduces the sense that different sections belong to different tools.
+
+Expanded brainstorm: [finished/header_revamp_brainstorm.md](finished/header_revamp_brainstorm.md).
 
 Player problem:
 
@@ -385,7 +407,9 @@ Benefits:
 
 Likely anchors:
 
-- `views/_navigation.njk`.
+- `views/_includes/app-header.njk`.
+- `views/_includes/app-header-nav.njk`.
+- `views/_navigation.njk` compatibility shim.
 - `views/_includes/head-common.njk`.
 - Top-level page templates in `views/`.
 - `docs/ui/pages.md`.
@@ -400,6 +424,8 @@ Risks:
 - Existing page-specific tabs and action buttons must not be confused with global navigation.
 
 ### 8. Global command palette
+
+Status: **Proposal.** Slash command metadata, entity indexes, route metadata, and chooser modals provide ingredients, but there is no global palette workflow yet.
 
 Add a keyboard-first palette for slash commands, settings pages, NPCs, locations, items, saves, prompt logs, and common UI actions. Use fuzzy search and show the action type clearly.
 
@@ -440,6 +466,8 @@ Risks:
 - A command palette can become a dumping ground if ownership is unclear.
 
 ### 9. Quest and thread dashboard
+
+Status: **Partial / foundation exists.** The Quests tab, Story Tools Scene Summaries, Mystery Threads/Boxes, and editable full-history entries cover parts of this. A unified player-facing journal for quests, soft threads, rumors, promises, and notes remains a proposal.
 
 Create a dashboard that separates hard quests from soft story threads, rumors, consequences, promises, faction obligations, and player agenda notes.
 
@@ -482,6 +510,8 @@ Risks:
 
 ### 10. Map route inspection
 
+Status: **Partial / foundation exists.** Region Map, World Map, and Favorites already use `GET /api/player/fast-travel-preview` and `Location.findShortestTravelTimeMinutes(...)` for fast-travel confirmation. The broader inspect-without-travel workflow, route-step display, unknown-segment explanation, and blocked-path messaging remain proposals.
+
 Let players click a destination on the region/world map and see known route time, required exits, vehicle status, unexplored stubs, and whether the path is currently blocked.
 
 Player problem:
@@ -505,12 +535,13 @@ Benefits:
 
 - Makes travel-time work visible.
 - Improves navigation in large generated worlds.
-- Helps debug one-way or stale exits.
+- Helps debug one-way or broken exits.
 
 Likely anchors:
 
 - Region/world map UI.
 - `Location.findShortestTravelTimeMinutes(...)`.
+- `GET /api/player/fast-travel-preview`.
 - `/api/exits/options`.
 - Vehicle exit filtering.
 
@@ -522,7 +553,9 @@ Risks:
 
 ### 11. Prompt progress timeline
 
-The prompt-progress overlay already exposes streaming, cancel, retry, and prompt viewing. A timeline view could group a full turn's prompt calls by phase: action, tools, event checks, need checks, NPC turns, random event, summaries, slop remover, image jobs.
+Status: **Partial / foundation exists.** The prompt-progress dock already exposes streaming progress, cancel/retry/view controls, and modeless prompt/response viewers. A timeline view would add phase grouping across the whole turn.
+
+The prompt-progress surface can be extended to group a full turn's prompt calls by phase: action, tools, event checks, need checks, NPC turns, random event, summaries, slop remover, image jobs.
 
 Player problem:
 
@@ -560,6 +593,8 @@ Risks:
 - Prompt labels may need friendlier phase names.
 
 ### 12. Entity history tabs
+
+Status: **Proposal with foundation.** Event/status summaries, Story Tools search, and turn-diff entity refs preserve useful history metadata, but entity modals do not yet have dedicated history tabs.
 
 Add a history tab to NPC, item, location, and quest modals: recent mentions, changes, ownership/movement, status effects gained/lost, relationship changes, and relevant chat turns.
 
@@ -601,6 +636,8 @@ Risks:
 
 ### 13. New-game generation checklist
 
+Status: **Partial / foundation exists.** New-game creation emits realtime status and redirects to the Play UI, but there is no phase checklist with per-step status, retry guidance, and safe failure handling.
+
 During new-game creation, show a checklist of generation phases: setting load, calendar, factions, player, region, locations, NPCs, items, abilities, intro, images. Allow each phase to display status, logs, and retry where safe.
 
 Player problem:
@@ -638,6 +675,8 @@ Risks:
 - Checklist state must reflect real server progress, not merely client optimism.
 
 ### 14. Contextual adventure affordances
+
+Status: **Proposal with foundation.** Current location panels, visible entity lists, exits, quests, and composer insertion helpers provide grounding; the proposed "Try" affordance layer has not been built.
 
 Add lightweight "possible approaches" around the current location, visible NPCs, exits, items, and active threads. This is not an AI hints system that solves the game; it is a UI affordance layer that reminds players which verbs and targets are available.
 
@@ -685,6 +724,8 @@ Risks:
 
 ### 15. Branching timeline and snapshot manager
 
+Status: **Proposal with foundation.** Save metadata and autosaves exist, but there is no branch-aware timeline, snapshot card, or fork workflow.
+
 Add a visual timeline of saves/autosaves with branch labels, summaries, screenshots, location/time metadata, and "fork from here" workflows.
 
 Player problem:
@@ -725,6 +766,8 @@ Risks:
 
 ### 16. World inspector/editor
 
+Status: **Proposal with foundation.** `/debug` exposes broad runtime data, and several slash commands help diagnose graph/history issues. The richer inspector/editor described here remains a separate admin-tool proposal.
+
 Build a developer/admin inspector for live world state: players, NPCs, locations, regions, exits, stubs, factions, quests, things, containers, vehicles, indexes, and prompt-linked metadata. Include validation checks, backlinks, safe repair actions, and jump links to edit modals.
 
 Expanded brainstorm: [world_inspector_editor_brainstorm.md](world_inspector_editor_brainstorm.md).
@@ -736,7 +779,7 @@ Player problem:
 First useful version:
 
 - Read-only inspector with validation warnings and backlinks.
-- Start with graph integrity, orphaned objects, stale indexes, duplicate names, invalid containment, and vehicle destination consistency.
+- Start with graph integrity, orphaned objects, invalid indexes, duplicate names, invalid containment, and vehicle destination consistency.
 - Repair actions can come later, after the inspector earns trust.
 
 Design notes:
@@ -765,6 +808,8 @@ Risks:
 - Needs clear separation from player-facing UI.
 
 ### 17. Conversation and memory browser
+
+Status: **Partial / foundation exists.** Story Tools already has full-history paging/search/filtering, Scene Summaries, and Mystery Threads/Boxes. This idea extends that into a broader memory/source browser spanning visible history, hidden notes, NPC memory, lorebook hits, and prompt logs.
 
 Provide a dedicated browser for chat history, scene summaries, hidden plot notes, NPC memories, selected important memories, and lorebook injections. Include filters by entity, location, prompt label, and hidden/visible status.
 
@@ -805,6 +850,8 @@ Risks:
 - Too many source types can confuse normal players unless modes are clear.
 
 ### 18. Setting creation studio
+
+Status: **Partial / foundation exists.** World Profiles, New Game form settings, calendar/faction generation, tone scale, mod-owned settings fields, and validation already cover much of the raw authoring surface. The proposed studio would make it guided, previewable, and less config-shaped.
 
 Turn world/setting creation into a structured studio: genre, tone, rules modules, default skills, factions, slop words, image style, calendars, start conditions, and preview prompts. Provide validation and sample generated output before starting a game.
 
@@ -848,6 +895,8 @@ Risks:
 
 ### 19. Accessibility and keyboard-first pass
 
+Status: **Proposal / ongoing quality area.** Some UI surfaces already have keyboard/focus affordances, but this remains a broad cross-UI audit rather than one shipped feature.
+
 Audit the whole UI for keyboard navigation, focus management, modal layering, screen-reader labels, reduced motion, color contrast, target sizes, and mobile touch behavior.
 
 Player problem:
@@ -887,6 +936,8 @@ Risks:
 - Some legacy UI patterns may need incremental migration.
 
 ### 20. In-app prompt lab
+
+Status: **Proposal with foundation.** `scripts/run_prompts.js`, prompt logs, forced outputs, prompt-progress viewing, and config overrides are available pieces. The missing workflow is a safe browser-based dry-run lab.
 
 Add a developer-facing prompt lab that can run selected prompt templates against current save context, compare outputs, view logs, force fixture outputs, and replay with config overrides.
 
@@ -932,10 +983,11 @@ Risks:
 
 Best first candidates:
 
-1. Turn state-diff drawer.
-2. Current-situation strip.
-3. Clickable entity references in chat.
-4. Action composer helpers.
+1. Current-situation strip.
+2. Clickable assistant-prose entity references.
+3. Action composer helpers.
+4. Contextual adventure affordances.
+5. Turn state-diff drawer refinements only where current summary metadata is insufficient.
 
 Why this phase first:
 
@@ -962,11 +1014,11 @@ Why this phase next:
 
 Best candidates:
 
-1. Top menu and header revamp.
-2. Global command palette.
-3. Prompt progress timeline.
-4. Model/config health panel.
-5. New-game generation checklist.
+1. Global command palette.
+2. Prompt progress timeline.
+3. Model/config health panel.
+4. New-game generation checklist.
+5. Header refinements that build on the shared app-header partial.
 
 Why this phase next:
 
@@ -1043,13 +1095,13 @@ Why it matters:
 
 ## Best first candidates
 
-These ideas look like the strongest near-term UX payoff:
+These unimplemented or partial ideas look like the strongest near-term UX payoff:
 
-1. Turn state-diff drawer.
-2. Current-situation strip.
-3. Clickable entity references in chat.
-4. Action composer helpers.
-5. Save resume summary.
-6. Quest and thread dashboard.
-7. Map route inspection.
-8. Top menu and header revamp.
+1. Current-situation strip.
+2. Clickable assistant-prose entity references.
+3. Action composer helpers.
+4. Save resume summary.
+5. Quest and thread dashboard.
+6. Map route inspection.
+7. Global command palette.
+8. Prompt progress timeline.

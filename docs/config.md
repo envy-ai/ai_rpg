@@ -1,6 +1,6 @@
 # Configuration
 
-This document covers config options that change game behavior beyond model/runtime settings.
+This document covers runtime configuration layers, editing surfaces, and config options that affect game behavior.
 
 ## CLI config override file
 
@@ -25,24 +25,37 @@ Merge precedence is:
 The override file must exist and contain a YAML object. Invalid or missing files fail startup with a clear error.
 If the server is started with `--config-override`, `reload_config` keeps using the same override file.
 
+Object values are merged recursively. Arrays, scalars, and `null` replace the lower-precedence value.
+`config.yaml` must exist for normal server startup; copy `config.default.yaml` to `config.yaml` during setup.
+
 ## Per-game YAML override
 
-The `/config` page also exposes a per-game YAML override textarea for the currently loaded save.
+The `/config` page exposes a per-game YAML override textarea for the loaded save.
 
 Merge precedence becomes:
 
 1. `config.default.yaml`
 2. `config.yaml`
 3. `--config-override` file
-4. current game's YAML override
+4. loaded game's YAML override
 
 Rules:
 - The per-game override must contain a YAML object when non-blank.
 - Blank input clears the per-game override for the loaded game.
 - Editing the field triggers the same runtime reload path used by `/reload_config`.
 - The raw YAML is saved as `gameConfigOverride.yaml` inside the save and is reapplied before save hydration on `/api/load`.
-- Starting a brand-new game clears any previous loaded-save override before world generation begins.
-- Like `/reload_config`, mod enable/disable changes are validated immediately but still require a restart to fully change the active mod set.
+- New game creation reloads config with a blank per-game override before world generation begins.
+- Like `/reload_config`, mod enable/disable edits are validated immediately but require a restart to fully change the active mod set.
+
+## Runtime editing surfaces
+
+The web UI and slash commands expose different config write paths:
+
+- `/config` renders the merged config and saves form submissions to root `config.yaml`. The page response tells the user to restart; the form save path does not run definition reloads or hot-toggle the active mod set.
+- `/api/game-config-override` accepts `{ "yaml": "..." }`, requires a loaded game, stores the raw per-game YAML on `Globals`, and runs the same runtime reload path as `/reload_config`.
+- `/reload_config` reloads `config.default.yaml`, `config.yaml`, the startup CLI override, and the loaded game override; validates formula config; refreshes definition caches; invalidates Nunjucks caches; and reports mod enablement drift.
+- `/get <path>` reads a dotted path from `Globals.config`.
+- `/set <path> <value>` mutates the in-memory `Globals.config` object only. It parses `true`/`false` as booleans and leaves other values as strings. It does not write YAML or reload definitions.
 
 ## Mod enablement
 
@@ -63,7 +76,7 @@ Rules:
 - Missing `enabled` defaults to `true`.
 - This merged-config value takes precedence over `mods/<name>/config.json` `enabled`.
 - Disabled mods are skipped for `mod.js` loading, defs overlays, and `public/` asset serving.
-- The active mod set is frozen at startup, so changing mod enablement on disk still requires a server restart to apply. `/reload_config` reports drift but does not hot-toggle mods.
+- The active mod set is frozen at startup, so editing mod enablement on disk requires a server restart to apply. `/reload_config` reports drift but does not hot-toggle mods.
 - The `/mods` page writes these same flags to `config.yaml` through the mod manager API.
 - Save metadata includes the active enabled-mod list. Loading a save with a different list asks whether to apply the save configuration, keep the current configuration for that load, or cancel.
 
@@ -92,7 +105,7 @@ dispositions:
   first_impression_multiplier: 3
 ```
 
-Disposition types, ranges, icons, and threshold labels still live in `defs/dispositions.yaml` plus mod defs overlays. The multiplier is loaded from merged config instead, so `config.yaml`, `--config-override`, and per-game YAML overrides can tune it without editing defs. The value must be a finite number when provided.
+Disposition types, ranges, icons, and threshold labels are defined in `defs/dispositions.yaml` plus mod defs overlays. The multiplier is loaded from merged config, so `config.yaml`, `--config-override`, and per-game YAML overrides can tune it without editing defs. The value must be a finite number when provided.
 
 ## Chat tools
 
@@ -118,7 +131,7 @@ plot_analysis:
 
 `enabled` defaults to `true` and must be a boolean when provided. When disabled, new player turns do not schedule background plot-analysis work; the latest saved `Globals.plotAnalysis` value still loads, persists, appears in base-context prompts, and remains visible through `/plot_analysis`.
 
-`max_plot_threads` and `max_plot_complications` default to the values shown in `config.default.yaml`. The current `prompts/_includes/plot-analysis-blurb.njk` warning text uses `max_plot_complications`; `max_plot_threads` remains available to prompt include customizations.
+`max_plot_threads` and `max_plot_complications` default to the values shown in `config.default.yaml`. `prompts/_includes/plot-analysis-blurb.njk` uses `max_plot_complications`; `max_plot_threads` is available to prompt include customizations.
 
 ## Improvement Prompt
 
@@ -130,7 +143,7 @@ improvement_prompt:
   interval: 10
 ```
 
-`enabled` defaults to `false` in `config.default.yaml` and must be a boolean when provided. `config.yaml` enables it locally by setting `improvement_prompt.enabled: true`.
+`enabled` defaults to `false` in `config.default.yaml` and must be a boolean when provided.
 
 `interval` defaults to `10` and must be an integer greater than or equal to `1` when provided. The cadence counts eligible player-action submissions (normal/creative actions; excludes question, generic, forced-event, and comment-only flows) and runs on every Nth eligible turn. The prompt runs through the shared base-context wrapper with all ordinary `@@`-eligible history available, logs through `LLMClient.logPrompt()` as `improvement_prompt`, and appends a visible `game-improvement-suggestions` chat entry headed `Game improvement suggestions`. That entry is excluded from base-context history, including all-entry generic prompt modes.
 
@@ -170,8 +183,8 @@ ai_model_overrides:
 barter:
   generated_stock:
     min_items: 0
-    max_items: 15
-    max_items_per_prompt: 15
+    max_items: 16
+    max_items_per_prompt: 8
   daily_refresh:
     min_fraction: 0.3333333333
     max_fraction: 0.6666666667
@@ -212,7 +225,7 @@ Validation requires a non-negative integer. `0` disables active mystery-thread b
 
 ## AI backend selection
 
-`config.ai.backend` selects which text-generation transport the game uses.
+`config.ai.backend` selects the text-generation transport.
 
 ```yaml
 ai:
@@ -220,12 +233,44 @@ ai:
 ```
 
 Supported values:
-- `openai_compatible`: the existing `/chat/completions` HTTP path using `ai.endpoint`, `ai.apiKey`, and `ai.model`.
+- `openai_compatible`: the `/chat/completions` HTTP path using `ai.endpoint`, `ai.apiKey` or OAuth refresh-token auth, and `ai.model`.
 - `codex_cli_bridge`: runs text requests through the local Codex CLI bridge; this backend uses `ai.model` plus `ai.codex_bridge.*` and does not require `ai.endpoint` or `ai.apiKey`.
 
 Validation rules:
 - `backend` defaults to `openai_compatible` when omitted.
 - Unknown backend values fail validation loudly at startup and on reload.
+
+## Core AI request settings
+
+These keys are shared by normal prompt calls unless a caller or `ai_model_overrides` profile supplies a more specific value:
+
+```yaml
+ai:
+  model: zai-org/glm-4.7
+  maxTokens: 10000
+  lowTemperature: 0.0
+  temperature: 0.6
+  highTemperature: 1.0
+  top_p: 1.0
+  max_concurrent_requests: 6
+  stream: true
+  stream_start_timeout: 45
+  stream_continue_timeout: 15
+  increment_start_timeout: 15
+  increment_continue_timeout: 5
+  supress_seed: true
+model_swap_options:
+  - "zai-org/glm-4.7"
+```
+
+- `model` is the default model for OpenAI-compatible requests and the Codex bridge model override.
+- `maxTokens` becomes `max_tokens` when a prompt call does not provide a positive `maxTokens`; server helpers may also use it as a minimum when resolving prompt-specific token caps.
+- `temperature`, `top_p`, and `stream` map to chat-completion payload fields. The Codex bridge forces `stream: false` at the normalized `LLMClient` payload layer because Codex streaming is handled by the bridge client.
+- `lowTemperature` and `highTemperature` are available to caller code that chooses bounded temperature variants.
+- `stream_start_timeout` and `stream_continue_timeout` are seconds. Retry attempts add `increment_start_timeout` and `increment_continue_timeout`, also in seconds.
+- `supress_seed: true` omits the `seed` payload field. The key name is spelled `supress_seed` in the config file and code.
+- `max_concurrent_requests` controls the per-model/API-key semaphore for OpenAI-compatible requests and the fresh-session concurrency limit for the Codex bridge.
+- `model_swap_options` drives the `/config` page model selector and is saved as a JSON string-array field by that page.
 
 ## OAuth Refresh-Token Auth
 
@@ -258,7 +303,7 @@ When `config.ai.backend` is `codex_cli_bridge`, the game runs text completions t
 ```yaml
 ai:
   backend: codex_cli_bridge
-  model: gpt-5.4-mini
+  model: zai-org/glm-4.7
   codex_bridge:
     command: codex
     home: ./tmp/codex-bridge-home
@@ -266,7 +311,7 @@ ai:
     session_id: ""
     sandbox: read-only
     skip_git_repo_check: true
-    reasoning_effort: none
+    reasoning_effort: ""
     profile: ""
     prompt_preamble: ""
     idle_timeout_ms: 30000
@@ -278,7 +323,7 @@ Fields:
 - `session_mode`: `fresh`, `resume_last`, or `resume_id`.
 - `session_id`: required only when `session_mode` is `resume_id`.
 - `sandbox`: sandbox passed to Codex app-server thread/turn creation (`read-only`, `workspace-write`, `danger-full-access`).
-- `skip_git_repo_check`: retained bridge config field; the current app-server turn path does not need the old `codex exec --skip-git-repo-check` flag.
+- `skip_git_repo_check`: accepted bridge config field. App-server requests do not pass a git-repo-check flag.
 - `reasoning_effort`: optional reasoning-effort override passed through on app-server `turn/start`; supported values are `none`, `minimal`, `low`, `medium`, `high`, `xhigh`. `none` is the lowest setting.
 - `profile`: optional Codex config profile.
 - `prompt_preamble`: optional text prepended ahead of the generated bridge wrapper prompt.
@@ -296,7 +341,7 @@ Behavior notes:
 - `resume_last` and `resume_id` stay serialized at one active request per targeted session/home to avoid interleaving turns into the same resumed Codex session.
 - The bridge uses the shared `ai.model` field as the Codex thread/turn model override.
 - The bridge forwards its wrapper instructions and all incoming chat `system` messages through Codex `developer_instructions`; only non-system messages are flattened into the user-message conversation transcript.
-- Prompt-progress live preview now streams real assistant `content` text from Codex app-server message deltas, rather than waiting for the old `codex exec --json` final-message file path.
+- Prompt-progress live preview streams assistant `content` text from Codex app-server message deltas.
 
 ## Prompt Progress Targets
 
@@ -360,8 +405,8 @@ ai_model_overrides:
 
 Merge semantics:
 - Object values merge recursively by key.
-- Non-object values replace previous values.
-- Arrays replace previous arrays.
+- Non-object values replace inherited values.
+- Arrays replace inherited arrays.
 - `null` deletes the targeted key from the inherited `custom_args` tree.
 
 ## AI request headers
@@ -418,24 +463,28 @@ ai:
 
 ## AI retry wait after errors
 
-`config.ai.waitAfterError` controls how many seconds to wait between automatic retry attempts after retryable non-rate-limit failures (`5xx`).
+`config.ai.waitAfterError` controls how many seconds to wait between automatic retry attempts after retryable non-rate-limit HTTP failures (`5xx`).
 `config.ai.waitAfterRateLimitError` is a specific override used for rate-limit failures (`429`).
+`config.ai.waitAfterNetworkError` controls how many seconds to wait before retrying transport/network failures that do not have an HTTP status, such as `ECONNRESET`, `EPIPE`, `ETIMEDOUT`, or `ENETUNREACH`.
 
 ```yaml
 ai:
   retryAttempts: 3
   waitAfterError: 10
   waitAfterRateLimitError: 10
+  waitAfterNetworkError: 5
 ```
 
 - Must be a non-negative number.
 - `0` disables the delay between retries.
-- If unset, the default is `10`.
+- If unset, `waitAfterError` defaults to `10`, `waitAfterRateLimitError` falls back to `waitAfterError`, and `waitAfterNetworkError` defaults to `0`.
 - Can be overridden per prompt via `ai_model_overrides.<profile>.waitAfterError` (using that profile's `prompts` selection).
 - `waitAfterRateLimitError` falls back to `waitAfterError` when unset.
 - `waitAfterRateLimitError` can also be overridden per prompt via `ai_model_overrides.<profile>.waitAfterRateLimitError`.
+- `waitAfterNetworkError` can also be overridden per prompt via `ai_model_overrides.<profile>.waitAfterNetworkError`.
 - Per-call `LLMClient.chatCompletion({ waitAfterError })` still takes precedence over config values when explicitly provided.
 - Per-call `LLMClient.chatCompletion({ waitAfterRateLimitError })` takes highest precedence for rate-limit retries.
+- Per-call `LLMClient.chatCompletion({ waitAfterNetworkError })` takes highest precedence for network-error retries.
 
 ## Character creation point pools
 
@@ -444,7 +493,7 @@ ai:
 ```yaml
 formulas:
   character_creation:
-    attribute_pool_formula: "level * (number_of_attributes / 2)"
+    attribute_pool_formula: "ceil(level * (number_of_attributes / 2))"
     skill_pool_formula: "level * ceil(number_of_skills / 5)"
     max_attribute: "infinity"
     max_skill: "infinity"
@@ -487,14 +536,14 @@ Attribute/skill names are normalized to lowercase with non-alphanumeric characte
 formulas:
   dc:
     trivial: "0"
-    easy: "10"
-    medium: "15"
-    hard: "20"
-    very_hard: "25"
-    legendary: "30"
+    easy: "10 + level"
+    medium: "floor(15 + level * 1.1)"
+    hard: "floor(10 + level * 1.2)"
+    very_hard: "floor(25 + level * 1.3)"
+    legendary: "floor(30 + level * 1.4)"
 ```
 
-The default formulas preserve the previous hardcoded DCs. Invalid or missing DC formulas fail configuration validation, and a recognized difficulty cannot be rolled unless its formula evaluates to a finite number.
+Invalid or missing DC formulas fail configuration validation, and a recognized difficulty cannot be rolled unless its formula evaluates to a finite number.
 
 ## Outcome margin formulas
 
@@ -503,13 +552,13 @@ The default formulas preserve the previous hardcoded DCs. Invalid or missing DC 
 ```yaml
 formulas:
   outcome_margins:
-    critical_success: "10"
-    major_success: "6"
+    critical_success: "20"
+    major_success: "10"
     success: "3"
     barely_succeeded: "0"
-    critical_failure: "-10"
-    major_failure: "-6"
     failure: "-3"
+    major_failure: "-10"
+    critical_failure: "-20"
 ```
 
 `barely_failed` is the implicit band between `failure` and `barely_succeeded`. The evaluated formulas must remain ordered (`critical_success >= major_success >= success >= barely_succeeded` and `critical_failure <= major_failure <= failure < barely_succeeded`) or config validation fails.
@@ -579,7 +628,7 @@ supplemental_story_info_prompt_frequency: 5
 
 ## Offscreen NPC activity prompt count
 
-`offscreen_npc_activity_prompt_count` controls the twice-daily hidden "what are they doing right now" NPC activity prompt size.
+`offscreen_npc_activity_prompt_count` controls the twice-daily hidden offscreen NPC activity prompt size.
 
 ```yaml
 offscreen_npc_activity_prompt_count: 5
@@ -642,7 +691,7 @@ healthRegenPercentPerMinute: 0.01736111111
 ```
 
 - The value must be a finite non-negative number.
-- Regeneration is applied when elapsed world-time effects are processed, and each actor persists `healthRegenAppliedAt` so reloads do not replay old elapsed minutes.
+- Regeneration is applied when elapsed world-time effects are processed, and each actor persists `healthRegenAppliedAt` so reloads do not replay elapsed minutes from before the saved application point.
 - Current health is stored internally as a float; client health readouts round displayed values upward.
 
 ## Image prompt generation retries and batching
@@ -661,7 +710,7 @@ imagegen:
 ```
 
 - `prompt_generation_attempts` defaults to `3` and must be an integer greater than or equal to `1`.
-- When enabled, a new image-prompt generation request waits `delay_ms` milliseconds after the most recent queued request so compatible requests can be sent in one LLM call.
+- When enabled, each queued image-prompt generation request waits `delay_ms` milliseconds after the last queued request so compatible requests can be sent in one LLM call.
 - Compatibility is based on the rendered image-prompt system prompt. Requests with different system prompts are kept separate.
 - `max_items` is the maximum number of compatible requests in one batch. Reaching the cap flushes the queue immediately.
 - Validation fails if `prompt_generation_attempts` is not a positive integer, `enabled` is not boolean, `delay_ms` is not a non-negative integer, or `max_items` is not a positive integer.
@@ -722,11 +771,11 @@ imagegen:
 `slop_remover_base_attempts` controls the starting number of rewrite attempts for the slop-remover pass.
 
 ```yaml
-slop_remover_base_attempts: 2
+slop_remover_base_attempts: 1
 ```
 
 - Must be an integer `>= 1`.
-- This is the base attempt count before parse-failure extensions.
+- This is the base attempt count before parse-failure extensions. If omitted, the runtime fallback is `2`.
 - Parse failures can still increase the effective cap up to 5 attempts.
 
 ## Random event frequency and custom types
@@ -738,9 +787,8 @@ random_event_frequency:
   enabled: true
   common: 0.05
   rare: 0.01
-  party: 0.2
-  regionSpecific: 0.06
-  locationSpecific: 0.06
+  regionSpecific: 0.05
+  locationSpecific: 0.05
 ```
 
 - `enabled: false` disables random event rolls and seed-pool generation. Missing location and region seed pools are generated again on the next eligible turn after random events are re-enabled.
@@ -793,15 +841,40 @@ chat_completion_sound: assets/audio/bleep.mp3
 - `client_message_history` affects only what the web client receives/renders via `/api/chat/history` and initial page load history.
 
 ```yaml
-recent_history_turns: 10
+recent_history_turns: 25
 client_message_history:
-  max_messages: 50
-  prune_to: 40
+  max_messages: 100
+  prune_to: 80
 ```
 
 `client_message_history.max_messages` is interpreted as a **turn cap** (anchored on user entries; assistant prose anchors are used only as fallback when user entries are unavailable). This does not change `recent_history_turns`.
 
-`client_message_history.prune_to` remains a validated config value (`<= max_messages`) for prune-mode flows, but the standard chat-history responses now use `max_messages` turn-capped output so client-visible history length no longer tracks `recent_history_turns`.
+`client_message_history.prune_to` is a validated config value (`<= max_messages`) for prune-mode flows. Standard chat-history responses use `max_messages` turn-capped output, so client-visible history length is independent of `recent_history_turns`.
+
+## Memory, summaries, and autosaves
+
+These keys control memory selection, scene-summary sizing, and save retention:
+
+```yaml
+max_memories_to_recall: 10
+party_generate_memory_interval: 12
+autosaves_to_retain: 50
+summaries:
+  enabled: true
+  summarize_on_load: false
+  batch_size: 30
+  summary_word_length: 12
+  max_unsummarized_log_entries: 200
+  max_summarized_log_entries: 2000
+  scene_summary_max_entries_per_prompt: 500
+```
+
+- `max_memories_to_recall` limits selected memories per NPC or party member in base context. Values below `1` fall back to `10`.
+- `party_generate_memory_interval` controls the party-memory generation cadence.
+- `autosaves_to_retain` is the autosave retention count; `0` disables autosaves.
+- `summaries.enabled` gates automatic summarization. `summaries.summarize_on_load` controls load-time summarization.
+- `batch_size`, `summary_word_length`, `max_unsummarized_log_entries`, and `max_summarized_log_entries` tune summary batching and base-context history windows.
+- `scene_summary_max_entries_per_prompt` must be a positive integer when provided and defaults to `500`.
 
 ## Base-context prompt caching hint
 
@@ -815,13 +888,13 @@ Rules:
 - Must be a boolean when present.
 - Default is `false`.
 - When `true`, prompt-level omissions inside `prompts/base-context.xml.njk` are ignored so the prompt shape stays more stable for cache reuse experiments.
-- Currently this affects the template-level `omitGameHistory` flag, causing `<olderStoryHistory>` to remain present even for prompt families that would normally suppress it.
+- This affects the template-level `omitGameHistory` flag, causing `<olderStoryHistory>` to remain present for prompt families that would otherwise suppress it.
 - When `true`, slop-remover also switches from the standalone `prompts/slop-remover.xml.njk` template to the base-context include path (`prompts/base-context.xml.njk` with `promptType: slop-remover`). Legacy attack precheck still skips the cheap precheck when this is true, but can run the full legacy attack check when `use_legacy_prompt_checks` is enabled.
 - This does **not** override lower-level base-context builder exclusions such as `base_context.omit_inventory_items`, `base_context.omit_abilities`, `base_context.omit_craft_history`, or per-call `omitEventSummaryHistory`.
 
 ## Legacy prompt checks
 
-`use_legacy_prompt_checks` switches player/NPC action attack and skill checks back to the older separate prompt flow.
+`use_legacy_prompt_checks` switches player/NPC action attack and skill checks to the legacy separate prompt flow.
 
 ```yaml
 use_legacy_prompt_checks: false
@@ -844,15 +917,54 @@ npc_turns:
   npcTurnFrequency: 0.3
 combat_npc_turns:
   enabled: true
-  maxFriendlyNpcsToAct: 1
-  maxHostileNpcsToAct: 1
+  maxNpcsToAct: 2
   npcTurnFrequency: 1
 ```
 
 Rules:
 - The two enabled flags are independent. Disabling `npc_turns.enabled` does not disable combat NPC turns when `combat_npc_turns.enabled` is true.
-- In combat, friendly and hostile NPC actor limits and turn frequency come from `combat_npc_turns`.
+- In combat, the enabled flag and turn frequency come from `combat_npc_turns`.
 - Outside combat, actor limits and frequency come from `npc_turns`.
+- The combat execution path reads `combat_npc_turns.maxFriendlyNpcsToAct` and `combat_npc_turns.maxHostileNpcsToAct` when present. If those keys are absent, the friendly limit falls back to `npc_turns.maxNpcsToAct` and the hostile limit stays `0`; `combat_npc_turns.maxNpcsToAct` is present in `config.default.yaml` but is not read by the turn-selection path.
+
+## Generation and parser controls
+
+These keys are exposed by the `/config` page and are mainly used for world generation, checks, and development-time parsing:
+
+```yaml
+plausibility_checks:
+  enabled: true
+quest_completion_prose:
+  enabled: true
+regions:
+  minLocations: 2
+  maxLocations: 3
+locations:
+  maxNpcs: 4
+  maxHostiles: 4
+  maxItems: 4
+  maxScenery: 4
+  levelVariation: 3
+events_to_check_concurrently: 10
+check_move_plausibility: unexplored_locations
+omit_npc_generation: false
+omit_item_generation: false
+deduplicate_item_names: true
+strictXMLParsing: false
+base_context:
+  omit_inventory_items: false
+  omit_abilities: false
+```
+
+- `plausibility_checks.enabled: false` disables plausibility/combat activation checks; event checks can still apply damage and world mutations when `event_checks.enabled` is true.
+- `quest_completion_prose.enabled: false` suppresses prose generated for completed quests without disabling quest checks or rewards.
+- `regions.*` and `locations.*` set generation count limits and location level variation for generated worlds.
+- `events_to_check_concurrently` limits event-check batching; omit it or leave it blank to check all event categories together.
+- `check_move_plausibility` accepts `never`, `unexplored_regions`, `unexplored_locations`, or `always`.
+- `omit_npc_generation` and `omit_item_generation` skip those generation paths for faster testing/development flows.
+- `deduplicate_item_names` controls generated item-name deduplication.
+- `strictXMLParsing` makes XML parse failures surface instead of being tolerated by permissive parsing paths.
+- `base_context.omit_inventory_items`, `base_context.omit_abilities`, and the supported but not default-listed `base_context.omit_craft_history` remove those sections from base-context prompt assembly unless a caller overrides them.
 
 ## Tool-call chat debugging
 
@@ -913,12 +1025,12 @@ Rules:
 `hide_hide_checks` controls whether failed automatic hide/perception checks for hidden NPCs are omitted from client-visible chat payloads.
 
 ```yaml
-hide_hide_checks: false
+hide_hide_checks: true
 ```
 
 Rules:
 - Must be a boolean when present.
-- Default is `false`.
+- Default config sets this to `true`.
 - Automatic checks still run and are logged/stored as `check-results`; this option only marks failed automatic hidden-NPC checks as hidden from the client when set to `true`.
 - Successful checks remain visible because they reveal the NPC and refresh location state.
 

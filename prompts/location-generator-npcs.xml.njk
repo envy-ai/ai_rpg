@@ -53,88 +53,82 @@ Finally, check each newly generated NPC against the banned names, banned concept
 
 Format your response as follows:
 
-<response>
-{#<existingNpcs>
-<npcName>Exact name of an existing NPC</npcName>
-<npcName>Exact name of an existing NPC</npcName>
-<!-- ...and so on. Every existing NPC in the gameState should be listed here. -->
-</existingNpcs>
-#}
-<brainstorming>
-<!-- Think about what NPCs you'll generate, with special consideration to making things varied and interesting. For hostiles, make a brief lost of hostile toes encountered recently and think about how to change things up. If half of the recent encounters have been centipedes, it's time to come up with something else. -->
-</brainstorming>
-<npcs>
-<npc>
-<quantity>Positive integer number of NPCs that share this same profile. Usually 1, but can be more for groups of identical or near-identical NPCs, like a group of soldiers in the same faction wearing the same uniform and armor and sharing the same stats and role in the location. The name and description of NPCs of any quantity should always be singular; a plural entry will be expanded to individuals.</quantity>
-<name>Full name of the NPC.  If this is part of a group of generic enemies, make the name singular.</name>
-<description>3 sentence description of the NPC, including their role in the location and any notable characteristics or behaviors. Replace their name with %NAME%.</description>
-<shortDescription>10 words or less description of the NPC. Replace their name with %NAME%.</shortDescription>
-<isHostile>true or false</isHostile>
-<class>RPG class like warrior or cyberninja, job like blacksmith or cashier, or osmething generic like townsperson, peasant or citizen</class>
+<response><!-- you must wrap everything in the response tag; do not omit it -->
+    <brainstorming>
+    <!-- Think about what NPCs you'll generate, with special consideration to making things varied and interesting. For hostiles, make a brief lost of hostile toes encountered recently and think about how to change things up. If half of the recent encounters have been centipedes, it's time to come up with something else. -->
+    </brainstorming>
+    <npcs>
+        <npc>
+            <quantity>Positive integer number of NPCs that share this same profile. Usually 1, but can be more for groups of identical or near-identical NPCs, like a group of soldiers in the same faction wearing the same uniform and armor and sharing the same stats and role in the location. The name and description of NPCs of any quantity should always be singular; a plural entry will be expanded to individuals.</quantity>
+            <name>Full name of the NPC.  If this is part of a group of generic enemies, make the name singular.</name>
+            <description>3 sentence description of the NPC, including their role in the location and any notable characteristics or behaviors. Replace their name with %NAME%.</description>
+            <shortDescription>10 words or less description of the NPC. Replace their name with %NAME%.</shortDescription>
+            <isHostile>true or false</isHostile>
+            <class>RPG class like warrior or cyberninja, job like blacksmith or cashier, or osmething generic like townsperson, peasant or citizen</class>
 
-<faction>Full faction name from the list or "None"</faction>
-<race>their race (human, elf, android, etc)</race>
+            <faction>Full faction name from the list or "None"</faction>
+            <race>their race (human, elf, android, etc)</race>
 
-<!-- Only list things for resistances and vulnerabilities if they would differ significantly from a typical human. For example, if the NPC is a fire elemental, you might list "fire" under resistances and "cold" under vulnerabilities. If the NPC is a normal human with no particular resistances or vulnerabilities, leave these blank. For instance, humans aren't considered vulnerable to fire, as they take standard damage from it.-->
-<resistances><!--Any specific resistances, immunities, or things that are ineffective against them, and how resistant they are in parentheses ("resistant" or "immune"). "None" if none. Example: "slashing (resistant), cold (immune), charm effects (resistant)" --></resistances>
-<vulnerabilities><!--Any specific vulnerabilities, weaknesses, or things that can be used against them, and how vulnerable they are in parentheses ("vulnerable" or "extremely vulnerable"). "None" if none. Example: "fire (extremely vulnerable), light (vulnerable), any magic (vulnerable)" --></vulnerabilities>
+            <!-- Only list things for resistances and vulnerabilities if they would differ significantly from a typical human. For example, if the NPC is a fire elemental, you might list "fire" under resistances and "cold" under vulnerabilities. If the NPC is a normal human with no particular resistances or vulnerabilities, leave these blank. For instance, humans aren't considered vulnerable to fire, as they take standard damage from it.-->
+            <resistances><!--Any specific resistances, immunities, or things that are ineffective against them, and how resistant they are in parentheses ("resistant" or "immune"). "None" if none. Example: "slashing (resistant), cold (immune), charm effects (resistant)" --></resistances>
+            <vulnerabilities><!--Any specific vulnerabilities, weaknesses, or things that can be used against them, and how vulnerable they are in parentheses ("vulnerable" or "extremely vulnerable"). "None" if none. Example: "fire (extremely vulnerable), light (vulnerable), any magic (vulnerable)" --></vulnerabilities>
 
-<gender>male, female, none, or other</gender>
-<relativeLevel>Integer from -3 to +3. Larger quantities of NPCs should typically have a lower relativeLevel to compensate for their numbers.</relativeLevel>
-<currency>Integer amount of currency the NPC has on hand, based on setting norms.</currency>
-<attributes>
-{% for attrName, attrDef in attributeDefinitions %}  <attribute name="{{ attrName }}">rating (see above)</attribute>
-{% endfor %}
-</attributes>
-<hiddenFromPlayer>true for an entity that's not immediately obvious to the player; false otherwise.</hiddenFromPlayer>
-<startingHealthPercentage>{% if npc.startingHealthPercentage is defined %}{{ npc.startingHealthPercentage }}{% else %}<!--Integer from 0 to 100 representing the NPC's starting health as a percentage of their maximum health. Usually 100, but may be lower if the NPC is injured or otherwise not at full health. 0 if for some reason the NPC is incapacitated. 'deceased' if the NPC is dead.-->{% endif %}</startingHealthPercentage>
-<startingNeeds>
-    {% for need in needBarDefinitions -%}
-    <needBar>
-        <id>{{ need.id }}</id>                    
-        <isApplicable><!-- True if this need makes sense for this character, even if not quite literally (e.g., a non-human NPC might have a "hunger" need that represents a different kind of sustenance, like blood for a vampire). False otherwise, or if it's inappropriate (Sexual needs for a child NPC or non-sentient entity, for example) --></isApplicable>
-        <startingLevel><!-- Initial level of the need bar, from 0% (empty) to 100% (fully satisfied). Should usually be 100% unless there's a reason for it not to be. Omit this entirely if not applicable. --></startingLevel>
-    </needBar>
-    {% endfor -%}
-</startingNeeds>
-<personality>
-    <type>-dere archetype, Enneagram type, Expanded 5x5 alignment (Lawful-Social-Neutral-Rebel-Chaotic and Good-Moral-Neutral-Impure-Evil), or similar short description. Optionally, 2 types separated by commas, so long as they make sense together. Then a short 2 sentence description of how they aren't just the stereotype of that personality.</type>
-    <traits>optionally, any neurodivergences or mental health conditions (e.g. ADHD, autism, anxiety, depression, bipolar, PTSD, sociopathy, psychopathy, etc). Comma separated, usually none, no more than 3</traits>
-    <characterArc>
-        <shortTerm>A brief description of the NPC's short-term active personal growth arc</shortTerm>
-        <longTerm>A brief description of the NPC's long-term personal growth arc or development over the course of the campaign or story</longTerm>
-    </characterArc>
-    <goals>
-        <goal>A specific, long-term goal the character is working towards</goal>
-        <goal>Another specific, long-term goal the character is working towards</goal>
-        <goal>A specific, short-term goal the character is actively pursuing</goal>
-        <goal>Another specific, short-term goal the character is actively pursuing</goal>
-    </goals>
-    <notes>0 to 2 sentences of additional information not covered by the above</notes>
-</personality>
-<healthAttribute>Name of the attribute (from the list) that determines health gained at level up. Usually something related to toughness or stamina, but may differ for particularly strange npcs or creatures</healthAttribute>
-<aiNotes>One or two brief sentences about things that might trigger the character to take action, like healing an injured ally, fleeing at low health, protecting a specific person, or pursuing a specific goal.</aiNotes>
-</npc>
-[… more NPCs …]
+            <gender>male, female, none, or other</gender>
+            <relativeLevel>Integer from -3 to +3. Larger quantities of NPCs should typically have a lower relativeLevel to compensate for their numbers.</relativeLevel>
+            <currency>Integer amount of currency the NPC has on hand, based on setting norms.</currency>
+            <attributes>
+            {% for attrName, attrDef in attributeDefinitions %}  <attribute name="{{ attrName }}">rating (see above)</attribute>
+            {% endfor %}
+            </attributes>
+            <hiddenFromPlayer>true for an entity that's not immediately obvious to the player; false otherwise.</hiddenFromPlayer>
+            <startingHealthPercentage>{% if npc.startingHealthPercentage is defined %}{{ npc.startingHealthPercentage }}{% else %}<!--Integer from 0 to 100 representing the NPC's starting health as a percentage of their maximum health. Usually 100, but may be lower if the NPC is injured or otherwise not at full health. 0 if for some reason the NPC is incapacitated. 'deceased' if the NPC is dead.-->{% endif %}</startingHealthPercentage>
+            <startingNeeds>
+                {% for need in needBarDefinitions -%}
+                <needBar>
+                    <id>{{ need.id }}</id>                    
+                    <isApplicable><!-- True if this need makes sense for this character, even if not quite literally (e.g., a non-human NPC might have a "hunger" need that represents a different kind of sustenance, like blood for a vampire). False otherwise, or if it's inappropriate (Sexual needs for a child NPC or non-sentient entity, for example) --></isApplicable>
+                    <startingLevel><!-- Initial level of the need bar, from 0% (empty) to 100% (fully satisfied). Should usually be 100% unless there's a reason for it not to be. Omit this entirely if not applicable. --></startingLevel>
+                </needBar>
+                {% endfor -%}
+            </startingNeeds>
+            <personality>
+                <type>-dere archetype, Enneagram type, Expanded 5x5 alignment (Lawful-Social-Neutral-Rebel-Chaotic and Good-Moral-Neutral-Impure-Evil), or similar short description. Optionally, 2 types separated by commas, so long as they make sense together. Then a short 2 sentence description of how they aren't just the stereotype of that personality.</type>
+                <traits>optionally, any neurodivergences or mental health conditions (e.g. ADHD, autism, anxiety, depression, bipolar, PTSD, sociopathy, psychopathy, etc). Comma separated, usually none, no more than 3</traits>
+                <characterArc>
+                    <shortTerm>A brief description of the NPC's short-term active personal growth arc</shortTerm>
+                    <longTerm>A brief description of the NPC's long-term personal growth arc or development over the course of the campaign or story</longTerm>
+                </characterArc>
+                <goals>
+                    <goal>A specific, long-term goal the character is working towards</goal>
+                    <goal>Another specific, long-term goal the character is working towards</goal>
+                    <goal>A specific, short-term goal the character is actively pursuing</goal>
+                    <goal>Another specific, short-term goal the character is actively pursuing</goal>
+                </goals>
+                <notes>0 to 2 sentences of additional information not covered by the above</notes>
+            </personality>
+            <healthAttribute>Name of the attribute (from the list) that determines health gained at level up. Usually something related to toughness or stamina, but may differ for particularly strange npcs or creatures</healthAttribute>
+            <aiNotes>One or two brief sentences about things that might trigger the character to take action, like healing an injured ally, fleeing at low health, protecting a specific person, or pursuing a specific goal.</aiNotes>
+        </npc>
+        [… more NPCs …]
 
-</npcs>
-<memories>
-    <npcMemories>
-        <npcName>Exact name of the NPC these memories belong to</npcName>
-        <memory>Short memory of a significant recent event from the NPC's perspective, in the style of a diary entry or personal note. No more than 2 sentences long. Memories should include interactions with other NPCs, places, things, etc.</memory>
-        [... total of 3 memories ...]
-    </npcMemories>
-    [... an npcMemories record for each generated NPC ...]
-</memories>
+    </npcs>
+    <memories>
+        <npcMemories>
+            <npcName>Exact name of the NPC these memories belong to</npcName>
+            <memory>Short memory of a significant recent event from the NPC's perspective, in the style of a diary entry or personal note. No more than 2 sentences long. Memories should include interactions with other NPCs, places, things, etc.</memory>
+            [... total of 3 memories ...]
+        </npcMemories>
+        [... an npcMemories record for each generated NPC ...]
+    </memories>
 
-<bannedNpcs>
-<!-- For each NPC you created above, check if it matches one of the banned names, banned concepts or existing NPCs. If it does, generate a new NPC to replace it here. -->
-<npc>
-<oldNpcName><!-- Exact name of the NPC being replaced --></oldNpcName>
-<whichBannedThing><!-- Which banned name or concept this NPC matched; omit if existing NPC --></whichBannedThing>
-<!-- The other fields are the same as in the main npc block above -->
-<!-- ... -->
-</npc>
-<!-- more npcs as needed -->
-</bannedNpcs>
+    <bannedNpcs>
+    <!-- For each NPC you created above, check if it matches one of the banned names, banned concepts or existing NPCs. If it does, generate a new NPC to replace it here. -->
+        <npc>
+            <oldNpcName><!-- Exact name of the NPC being replaced --></oldNpcName>
+            <whichBannedThing><!-- Which banned name or concept this NPC matched; omit if existing NPC --></whichBannedThing>
+        <!-- The other fields are the same as in the main npc block above -->
+        <!-- ... -->
+        </npc>
+    <!-- more npcs as needed -->
+    </bannedNpcs>
 </response>

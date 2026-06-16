@@ -154,3 +154,60 @@ test('extractFinalXmlBlockFromResponse supports attributes on the final root ope
         '<editedText mode="final">final</editedText>'
     );
 });
+
+test('extractFinalXmlBlockFromResponse returns the outer final block when the root tag is nested inside it', () => {
+    const response = [
+        '<region>',
+        '  <regionName>Northern Mountain Range</regionName>',
+        '  <locations>',
+        '    <location>',
+        '      <name>Western Slope Landing Shelf</name>',
+        '      <vehicles>',
+        '        <vehicle>',
+        '          <destinations>',
+        '            <destination>',
+        '              <region>Vehicle Bay Theta-7</region>',
+        '              <location>Primary Cradle Gallery</location>',
+        '            </destination>',
+        '          </destinations>',
+        '        </vehicle>',
+        '      </vehicles>',
+        '    </location>',
+        '  </locations>',
+        '</region>'
+    ].join('\n');
+
+    assert.equal(
+        Utils.extractFinalXmlBlockFromResponse(response),
+        response
+    );
+});
+
+test('extractFinalXmlBlockFromResponse ignores unmatched earlier opening tags when matching the final close', () => {
+    const response = [
+        '<finalProse> since the vehicle is just completing its normal journey to its preset destination.',
+        '',
+        '<finalProse>',
+        'Fifteen minutes. The Windcutter completes its approach.',
+        '<hidden>Windcutter has landed.</hidden>',
+        '<timePassed>',
+        '<reasoning>15 minutes of remaining flight time.</reasoning>',
+        '<duration>15 minutes</duration>',
+        '</timePassed>',
+        '</finalProse>'
+    ].join('\n');
+
+    assert.equal(
+        Utils.extractFinalXmlBlockFromResponse(response),
+        [
+            '<finalProse>',
+            'Fifteen minutes. The Windcutter completes its approach.',
+            '<hidden>Windcutter has landed.</hidden>',
+            '<timePassed>',
+            '<reasoning>15 minutes of remaining flight time.</reasoning>',
+            '<duration>15 minutes</duration>',
+            '</timePassed>',
+            '</finalProse>'
+        ].join('\n')
+    );
+});

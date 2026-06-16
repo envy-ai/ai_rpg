@@ -1,3 +1,8 @@
+const fs = require("fs");
+const path = require("path");
+
+let randomWordCache = null;
+
 function addEvalFilter(env) {
     if (!env || typeof env.addFilter !== "function") {
         throw new Error("addEvalFilter requires a Nunjucks environment.");
@@ -24,6 +29,39 @@ function addEvalFilter(env) {
     });
 }
 
+function loadRandomWords() {
+    if (randomWordCache) {
+        return randomWordCache;
+    }
+
+    const wordsPath = path.join(__dirname, "data", "words.txt");
+    const fileContent = fs.readFileSync(wordsPath, "utf8");
+    const words = fileContent
+        .split(/\r?\n/)
+        .map(line => line.trim())
+        .filter(Boolean);
+
+    if (words.length === 0) {
+        throw new Error(`Random word list is empty: ${wordsPath}`);
+    }
+
+    randomWordCache = words;
+    return randomWordCache;
+}
+
+function addRandomWordGlobal(env) {
+    if (!env || typeof env.addGlobal !== "function") {
+        throw new Error("addRandomWordGlobal requires a Nunjucks environment.");
+    }
+
+    env.addGlobal("randomword", function () {
+        const words = loadRandomWords();
+        const index = Math.floor(Math.random() * words.length);
+        return words[index];
+    });
+}
+
 module.exports = {
     addEvalFilter,
+    addRandomWordGlobal,
 };

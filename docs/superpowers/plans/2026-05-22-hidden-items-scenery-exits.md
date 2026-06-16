@@ -1,16 +1,26 @@
-# Hidden Items, Scenery, and Exits Implementation Plan
+# Hidden Items, Scenery, and Exits Implementation Plan (Archived)
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use `superpowers:subagent-driven-development` (recommended) or `superpowers:executing-plans` to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking. Repo rule: do not run git commands unless the user explicitly authorizes them.
+> **Archive status:** This is a historical implementation plan, not a description of current runtime behavior. As of this documentation refresh, current hidden-visibility support is implemented for living NPCs only. `Thing.js` and `LocationExit.js` do not expose persisted `hiddenFromPlayer`, `discoveryDifficulty`, `hiddenSource`, or `hiddenReason` fields; `HiddenDiscovery.js` and the hidden item/exit tests named below do not exist; and the current XML event schema documents hidden-NPC reveal/hide events, not hidden thing/exit reveal/hide events.
+>
+> **If this work is resumed:** Treat unchecked tasks as proposed work and refresh code locations before editing. Keep documentation updates durable and behavioral; do not add recency notes or changelog entries. Repo rule: do not run git commands unless the user explicitly authorizes them.
 
-**Goal:** Add persisted hidden-state, difficulty-label-based discovery, reveal/hide events/tools, and client UI controls for hidden items, scenery, and exits.
+**Historical Goal:** Add persisted hidden-state, difficulty-label-based discovery, reveal/hide events/tools, and client UI controls for hidden items, scenery, and exits.
 
-**Architecture:** Mirror the existing hidden-NPC model at the data/API/UI layers, but replace NPC opposed checks with unopposed standard difficulty checks built in code and resolved through `resolveActionOutcome`. Hidden things/exits remain in server/client payloads and base-context with `<hidden>true</hidden>`, while the Adventure UI hides them by default and disables normal interaction until revealed. Generated hidden things/exits must carry a normalized discovery difficulty label.
+**Proposed Architecture:** Mirror the existing hidden-NPC model at the data/API/UI layers, but replace NPC opposed checks with unopposed standard difficulty checks built in code and resolved through `resolveActionOutcome`. Hidden things/exits would remain in server/client payloads and base-context with `<hidden>true</hidden>`, while the Adventure UI would hide them by default and disable normal interaction until revealed. Generated hidden things/exits would carry a normalized discovery difficulty label.
 
 **Tech Stack:** Node.js CommonJS, Express routes in `api.js`, Nunjucks prompts, browser UI in `views/index.njk`, SCSS in `public/css/main.scss`, Node test runner.
 
 ---
 
-## Key Decisions
+## Current Project Baseline
+
+- Current persisted hidden visibility is NPC-only. `Player.hiddenFromPlayer` is documented in `docs/classes/Player.md`, `docs/api/npcs.md`, `docs/api/common.md`, and `docs/ui/chat_interface.md`; dead NPCs/corpses are normalized or treated as visible.
+- `Events.js` currently has hidden-NPC checks (`hiddenNpcChecks`) and XML `<revealHiddenNpc>` / `<hideVisibleNpc>` support. It does not currently parse or process `<revealHiddenThing>`, `<hideVisibleThing>`, `<revealHiddenExit>`, or `<hideVisibleExit>`.
+- `Thing.js` and `docs/classes/Thing.md` cover items/scenery, containers, flags, effects, generation, APIs, and mod fields. They do not currently include hidden-discovery fields for items or scenery.
+- `LocationExit.js` and `docs/classes/LocationExit.md` cover directed graph edges, travel time, vehicle edges, images, and map/travel semantics. They do not currently include hidden-discovery fields for exits.
+- The Adventure UI currently has hidden-NPC show/hide controls and styling. It does not currently have show-hidden controls or disabled revealed-state behavior for hidden items, scenery, or exits.
+
+## Proposed Key Decisions
 
 - Store these fields on `Thing` and `LocationExit`:
   - `hiddenFromPlayer: boolean`
@@ -23,9 +33,9 @@
 - Do not add a new LLM prompt. Do not call a plausibility prompt for hidden-object discovery.
 - Hidden exits are visible in payloads but not rendered as normal travel buttons unless the user enables `show hidden`; even then, hidden exit travel buttons remain disabled until revealed.
 - Hidden items/scenery are visible in payloads but not rendered in normal item/scenery panels unless the user enables `show hidden`; even then, hidden item interactions that would use the object in-world remain disabled until revealed.
-- Prompt context includes hidden objects/exits with `<hidden>true</hidden>` and `<discoveryDifficulty>...</discoveryDifficulty>`, plus instruction text that hidden entries are GM-known, not player-available until revealed.
+- Prompt context would include hidden objects/exits with `<hidden>true</hidden>` and `<discoveryDifficulty>...</discoveryDifficulty>`, plus instruction text that hidden entries are GM-known, not player-available until revealed.
 
-## Included Scope From Brainstorm
+## Proposed Scope From Brainstorm
 
 - Generated hidden items, scenery, and exits get a difficulty label at generation/parse time; invalid or missing labels fail loudly for hidden generated content.
 - Reveal/hide support covers XML events, legacy events, prose tools, manual UI toggles, API payloads, and save/load persistence.
@@ -34,7 +44,7 @@
 - Discovery checks reuse the standard unopposed difficulty-check pipeline directly in code, with no plausibility/difficulty prompt and no circumstance modifiers.
 - No automatic ambient room scan is included in v1; explicit prose/event/tool discovery drives reveal attempts so hidden content does not roll every time the player enters a location.
 
-## File Map
+## Proposed File Map
 
 - Create `HiddenDiscovery.js`: shared normalization and prompt-free discovery-check helpers.
 - Modify `Thing.js`: add hidden fields, accessors, JSON persistence, metadata hydration compatibility, copy behavior.
@@ -68,7 +78,6 @@
   - `docs/api/locations.md`
   - `docs/server_llm_notes.md`
   - `docs/ui/chat_interface.md`
-  - `docs/README.md`
 
 ---
 
@@ -1529,7 +1538,8 @@ Document:
 
 - `docs/ui/chat_interface.md`: show-hidden toggles for exits/items/scenery, disabled hidden exits, translucent hidden cards.
 - `docs/server_llm_notes.md`: prompt-free discovery checks via `resolveActionOutcome`, no LLM prompt, no circumstance modifiers.
-- `docs/README.md`: add a recent hidden objects/exits note and list updated docs.
+
+Do not add recency notes or changelog-style summaries. Keep documentation updates focused on durable class/API/UI behavior and current project indexing conventions at implementation time.
 
 - [ ] **Step 5: Run doc/static tests**
 
@@ -1537,7 +1547,7 @@ Run:
 
 ```bash
 node --test tests/hidden_discovery_models.test.js tests/hidden_discovery_generation.test.js tests/hidden_discovery_events.test.js tests/chat_tool_hidden_objects.test.js tests/ui.hidden_things_exits.test.js
-rg -n "hiddenFromPlayer|discoveryDifficulty|revealHiddenThing|revealHiddenExit" docs
+rg -n "hiddenFromPlayer|discoveryDifficulty|revealHiddenThing|revealHiddenExit" docs --glob '!all.md'
 ```
 
 Expected: tests pass; docs search shows all expected references.
@@ -1630,4 +1640,4 @@ Expected: corresponding CSS output is updated and no Sass errors occur.
   - API support and interaction gating: Task 8.
   - Documentation: Task 11.
 - Placeholder scan: no plan step depends on unspecified fields or unnamed files.
-- Type consistency: `hiddenFromPlayer`, `discoveryDifficulty`, `hiddenSource`, and `hiddenReason` are used consistently across models, prompts, API, events, tools, and docs.
+- Planned type consistency: `hiddenFromPlayer`, `discoveryDifficulty`, `hiddenSource`, and `hiddenReason` are used consistently across proposed models, prompts, API, events, tools, and docs.

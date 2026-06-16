@@ -11,9 +11,11 @@ const {
 const MysteryBox = require('./MysteryBox.js');
 const MysteryThread = require('./MysteryThread.js');
 const Faction = require('./Faction.js');
+const Tracker = require('./Tracker.js');
 
 const MORE_INFO_MAX_MATCHES = 50;
 const CACHED_CHECK_TOOL_CALL_NOTE = 'You already made this tool call. Do not re-run tool calls for the same checks that you made in earlier drafts.';
+const TRACKER_TYPE_VALUES = Object.freeze(Tracker.validTypes);
 const UPDATE_MYSTERY_BOX_FIELD_NAMES = Object.freeze([
     'name',
     'keys',
@@ -1116,6 +1118,81 @@ const CHAT_TOOL_DEFINITIONS = Object.freeze([
                     }
                 },
                 required: ['thing'],
+                additionalProperties: false
+            }
+        }
+    },
+    {
+        type: 'function',
+        function: {
+            name: 'addTracker',
+            description: 'Create a persisted plot tracker for an important changing value. Available to regular prose, generic/scheduled mutation, and plot-analysis prompts. For countdown trackers, provide a concrete duration until the deadline; the game stores the absolute target time and displays remaining time automatically. Include concrete LLM guidance for when future tool calls should update it.',
+            parameters: {
+                type: 'object',
+                properties: {
+                    name: {
+                        type: 'string',
+                        description: 'Short display name for the tracked plot value.'
+                    },
+                    type: {
+                        type: 'string',
+                        enum: TRACKER_TYPE_VALUES,
+                        description: 'Tracker value type.'
+                    },
+                    value: {
+                        type: 'string',
+                        description: 'Initial value. For countdown use a concrete duration such as "29 days", "1 hour 30 minutes", or "00:45"; use x/total for x_out_of_total, a number followed by % for percentage, and at most three words for short_string.'
+                    },
+                    hiddenFromPlayer: {
+                        type: 'boolean',
+                        description: 'Optional. Set true when the player should not normally see this tracker.'
+                    },
+                    description: {
+                        type: 'string',
+                        description: 'One paragraph of private LLM guidance explaining what the tracker means and exactly when to update it.'
+                    }
+                },
+                required: ['name', 'type', 'value', 'description'],
+                additionalProperties: false
+            }
+        }
+    },
+    {
+        type: 'function',
+        function: {
+            name: 'updateTracker',
+            description: 'Update only the value of an existing plot tracker and stamp its last-updated time. Countdown tracker values reset the stored deadline to current game time plus the supplied duration; do not update countdowns just to tick time down. Use the tracker id when possible; ambiguous names must be retried with an id.',
+            parameters: {
+                type: 'object',
+                properties: {
+                    tracker: {
+                        type: 'string',
+                        description: 'Tracker ID or exact/unique tracker name.'
+                    },
+                    value: {
+                        type: 'string',
+                        description: 'New value using the tracker type format. For countdown, provide a concrete duration until the new deadline.'
+                    }
+                },
+                required: ['tracker', 'value'],
+                additionalProperties: false
+            }
+        }
+    },
+    {
+        type: 'function',
+        function: {
+            name: 'removeTracker',
+            description: 'Remove an existing plot tracker that is no longer active. Use the tracker id when possible; ambiguous names must be retried with an id.',
+            parameters: {
+                type: 'object',
+                properties: {
+                    tracker: {
+                        type: 'string',
+                        description: 'Tracker ID or exact/unique tracker name.'
+                    }
+                },
+                required: ['tracker'],
                 additionalProperties: false
             }
         }
@@ -2272,6 +2349,9 @@ const createChatToolRuntime = ({
     resolvePlausibilityCheck = null,
     resolveOpposedPlausibilityCheck = null,
     scheduleEvent = null,
+    getCurrentWorldMinute = null,
+    formatTrackerLastUpdated = null,
+    formatTrackerCountdownValue = null,
     deleteThingById = null,
     LLMClient,
     Player,
@@ -2311,6 +2391,15 @@ const createChatToolRuntime = ({
     }
     if (scheduleEvent !== null && scheduleEvent !== undefined) {
         ensureFunction(scheduleEvent, 'scheduleEvent');
+    }
+    if (getCurrentWorldMinute !== null && getCurrentWorldMinute !== undefined) {
+        ensureFunction(getCurrentWorldMinute, 'getCurrentWorldMinute');
+    }
+    if (formatTrackerLastUpdated !== null && formatTrackerLastUpdated !== undefined) {
+        ensureFunction(formatTrackerLastUpdated, 'formatTrackerLastUpdated');
+    }
+    if (formatTrackerCountdownValue !== null && formatTrackerCountdownValue !== undefined) {
+        ensureFunction(formatTrackerCountdownValue, 'formatTrackerCountdownValue');
     }
     if (deleteThingById !== null && deleteThingById !== undefined) {
         ensureFunction(deleteThingById, 'deleteThingById');
@@ -9697,6 +9786,226 @@ const createChatToolRuntime = ({
         };
     };
 
+    const getTrackerCurrentWorldMinute = (functionName) => {
+        if (typeof getCurrentWorldMinute !== 'function') {
+            throw new Error(`${functionName} requires getCurrentWorldMinute to be configured.`);
+        }
+        const minute = getCurrentWorldMinute();
+        if (!Number.isInteger(minute) || minute < 0) {
+            throw new Error(`${functionName} getCurrentWorldMinute must return a non-negative integer.`);
+        }
+        return minute;
+    };
+
+    const formatTrackerUpdatedAt = (worldMinute) => {
+        if (typeof formatTrackerLastUpdated === 'function') {
+            const formatted = toTrimmedString(formatTrackerLastUpdated(worldMinute));
+            if (formatted) {
+                return formatted;
+            }
+        }
+        return `${worldMinute} minutes from game start`;
+    };
+
+    const formatTrackerCountdown = (worldMinute) => {
+        if (typeof formatTrackerCountdownValue === 'function') {
+            const formatted = toTrimmedString(formatTrackerCountdownValue(worldMinute));
+            if (formatted) {
+                return formatted;
+            }
+        }
+        return '';
+    };
+
+    const buildTrackerCandidate = (tracker) => {
+        const data = typeof tracker?.toJSON === 'function' ? tracker.toJSON() : tracker;
+        return {
+            id: toTrimmedString(data?.id) || null,
+            name: toTrimmedString(data?.name) || null,
+            type: toTrimmedString(data?.type) || null,
+            value: toTrimmedString(data?.value) || null,
+            hiddenFromPlayer: data?.hiddenFromPlayer === true,
+            countdownUntilWorldMinute: Number.isInteger(data?.countdownUntilWorldMinute)
+                ? data.countdownUntilWorldMinute
+                : null,
+            toJSON: serializeUpdateObjectRecord(tracker)
+        };
+    };
+
+    const resolveTrackerTarget = (rawQuery, { functionName } = {}) => {
+        const query = normalizeRequiredString(rawQuery, {
+            functionName,
+            fieldName: 'tracker'
+        });
+        const exactMatch = Tracker.getById(query);
+        if (exactMatch) {
+            return exactMatch;
+        }
+
+        const matches = Tracker.findByNameOrKey(query);
+        if (!matches.length) {
+            throw new ToolVisibleError(
+                `No tracker matches "${query}".`,
+                { code: 'tracker_not_found' }
+            );
+        }
+        if (matches.length > 1) {
+            throw new ToolVisibleError(
+                `Multiple trackers match "${query}". Call ${functionName} again with the exact id from one candidate.`,
+                {
+                    code: 'ambiguous_tracker',
+                    candidates: matches
+                        .map(buildTrackerCandidate)
+                        .sort(candidateSort)
+                }
+            );
+        }
+        return matches[0];
+    };
+
+    const buildTrackerResultLines = (resultTag, tracker) => {
+        const data = tracker.toClientJSON({
+            formatLastUpdated: formatTrackerUpdatedAt,
+            formatCountdownValue: formatTrackerCountdown
+        });
+        return {
+            data,
+            lines: [
+                `<${resultTag}>`,
+                '  <status>success</status>',
+                '  <tracker>',
+                `    <id>${xmlEscapeText(data.id)}</id>`,
+                `    <name>${xmlEscapeText(data.name)}</name>`,
+                `    <type>${xmlEscapeText(data.type)}</type>`,
+                `    <value>${xmlEscapeText(data.value)}</value>`,
+                `    <hiddenFromPlayer>${data.hiddenFromPlayer === true}</hiddenFromPlayer>`,
+                `    <lastUpdated>${xmlEscapeText(data.lastUpdated)}</lastUpdated>`,
+                `    <lastUpdatedWorldMinute>${data.lastUpdatedWorldMinute}</lastUpdatedWorldMinute>`,
+                data.countdownUntilWorldMinute === null || data.countdownUntilWorldMinute === undefined
+                    ? ''
+                    : `    <countdownUntilWorldMinute>${data.countdownUntilWorldMinute}</countdownUntilWorldMinute>`,
+                '  </tracker>',
+                `</${resultTag}>`
+            ].filter(line => line !== '')
+        };
+    };
+
+    const executeAddTrackerTool = ({
+        name,
+        type,
+        value,
+        hiddenFromPlayer = false,
+        description
+    } = {}) => {
+        const functionName = 'addTracker';
+        const normalizedName = normalizeRequiredString(name, { functionName, fieldName: 'name' });
+        const normalizedType = normalizeRequiredString(type, { functionName, fieldName: 'type' });
+        const normalizedValue = normalizeRequiredString(value, { functionName, fieldName: 'value' });
+        const normalizedDescription = normalizeRequiredString(description, { functionName, fieldName: 'description' });
+        const normalizedHidden = normalizeOptionalBoolean(hiddenFromPlayer, {
+            functionName,
+            fieldName: 'hiddenFromPlayer'
+        }) === true;
+        const worldMinute = getTrackerCurrentWorldMinute(functionName);
+
+        let tracker = null;
+        try {
+            tracker = new Tracker({
+                name: normalizedName,
+                type: normalizedType,
+                value: normalizedValue,
+                hiddenFromPlayer: normalizedHidden,
+                lastUpdatedWorldMinute: worldMinute,
+                deriveCountdownUntilWorldMinute: normalizedType === 'countdown',
+                description: normalizedDescription
+            });
+        } catch (error) {
+            throw new ToolVisibleError(
+                `Failed to add tracker: ${error?.message || error}`,
+                { code: 'invalid_tracker' }
+            );
+        }
+
+        const { data, lines } = buildTrackerResultLines('addTrackerResult', tracker);
+        return {
+            content: lines.join('\n'),
+            metadata: {
+                status: 'success',
+                id: data.id,
+                name: data.name,
+                type: data.type,
+                value: data.value,
+                hiddenFromPlayer: data.hiddenFromPlayer === true,
+                lastUpdated: data.lastUpdated,
+                lastUpdatedWorldMinute: data.lastUpdatedWorldMinute,
+                countdownUntilWorldMinute: data.countdownUntilWorldMinute
+            }
+        };
+    };
+
+    const executeUpdateTrackerTool = ({ tracker, value } = {}) => {
+        const functionName = 'updateTracker';
+        const target = resolveTrackerTarget(tracker, { functionName });
+        const normalizedValue = normalizeRequiredString(value, { functionName, fieldName: 'value' });
+        const worldMinute = getTrackerCurrentWorldMinute(functionName);
+        try {
+            target.updateValue(normalizedValue, { worldMinute });
+        } catch (error) {
+            throw new ToolVisibleError(
+                `Failed to update tracker "${target.name || target.id || tracker}": ${error?.message || error}`,
+                { code: 'invalid_tracker_value' }
+            );
+        }
+
+        const { data, lines } = buildTrackerResultLines('updateTrackerResult', target);
+        return {
+            content: lines.join('\n'),
+            metadata: {
+                status: 'success',
+                id: data.id,
+                name: data.name,
+                type: data.type,
+                value: data.value,
+                hiddenFromPlayer: data.hiddenFromPlayer === true,
+                lastUpdated: data.lastUpdated,
+                lastUpdatedWorldMinute: data.lastUpdatedWorldMinute,
+                countdownUntilWorldMinute: data.countdownUntilWorldMinute
+            }
+        };
+    };
+
+    const executeRemoveTrackerTool = ({ tracker } = {}) => {
+        const functionName = 'removeTracker';
+        const target = resolveTrackerTarget(tracker, { functionName });
+        const removed = Tracker.removeById(target.id);
+        if (!removed) {
+            throw new Error(`Tracker "${target.id}" disappeared during removeTracker.`);
+        }
+        const data = typeof removed.toClientJSON === 'function'
+            ? removed.toClientJSON({
+                formatLastUpdated: formatTrackerUpdatedAt,
+                formatCountdownValue: formatTrackerCountdown
+            })
+            : buildTrackerCandidate(removed);
+        const lines = [
+            '<removeTrackerResult>',
+            '  <status>success</status>',
+            '  <tracker>',
+            `    <id>${xmlEscapeText(data.id)}</id>`,
+            `    <name>${xmlEscapeText(data.name)}</name>`,
+            '  </tracker>',
+            '</removeTrackerResult>'
+        ];
+        return {
+            content: lines.join('\n'),
+            metadata: {
+                status: 'success',
+                id: data.id,
+                name: data.name
+            }
+        };
+    };
+
     const hasProvidedScheduleTimingValue = (value) => {
         if (value === null || value === undefined) {
             return false;
@@ -9900,6 +10209,12 @@ const createChatToolRuntime = ({
                 toolResult = executeDeleteThingTool(argumentsObject, {
                     requestUserInputHandler
                 });
+            } else if (toolCall.functionName === 'addTracker') {
+                toolResult = executeAddTrackerTool(argumentsObject);
+            } else if (toolCall.functionName === 'updateTracker') {
+                toolResult = executeUpdateTrackerTool(argumentsObject);
+            } else if (toolCall.functionName === 'removeTracker') {
+                toolResult = executeRemoveTrackerTool(argumentsObject);
             } else if (toolCall.functionName === 'scheduleEvent') {
                 toolResult = executeScheduleEventTool(argumentsObject);
             } else if (toolCall.functionName === 'alterThing') {
