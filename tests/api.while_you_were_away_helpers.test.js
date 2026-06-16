@@ -4,7 +4,7 @@ const fs = require('fs');
 const vm = require('vm');
 const { DOMParser } = require('@xmldom/xmldom');
 
-function normalizeTravelProseDestinationField(value) {
+function normalizemoveTurnResultDestinationField(value) {
     if (typeof value !== 'string') {
         return null;
     }
@@ -82,7 +82,7 @@ function getDirectChildTextByTagName(parentNode, tagName) {
     return typeof childNode.textContent === 'string' ? childNode.textContent : '';
 }
 
-function parseStructuredTravelProseDestination(destinationNode, { fieldLabel = 'travel destination' } = {}) {
+function parseStructuredmoveTurnResultDestination(destinationNode, { fieldLabel = 'travel destination' } = {}) {
     if (!destinationNode) {
         return null;
     }
@@ -90,15 +90,15 @@ function parseStructuredTravelProseDestination(destinationNode, { fieldLabel = '
     const locationNode = getDirectChildElementByTagName(destinationNode, 'location');
     const regionNode = getDirectChildElementByTagName(destinationNode, 'region');
     if (!locationNode && !regionNode) {
-        const destinationText = normalizeTravelProseDestinationField(destinationNode.textContent || '');
+        const destinationText = normalizemoveTurnResultDestinationField(destinationNode.textContent || '');
         if (destinationText) {
             throw new Error(`${fieldLabel} must use <location> and <region> child tags.`);
         }
         return null;
     }
 
-    const locationText = normalizeTravelProseDestinationField(locationNode ? (locationNode.textContent || '') : '');
-    const regionText = normalizeTravelProseDestinationField(regionNode ? (regionNode.textContent || '') : '');
+    const locationText = normalizemoveTurnResultDestinationField(locationNode ? (locationNode.textContent || '') : '');
+    const regionText = normalizemoveTurnResultDestinationField(regionNode ? (regionNode.textContent || '') : '');
     if (!locationText && !regionText) {
         return null;
     }
@@ -315,8 +315,8 @@ function loadWhileYouWereAwayHelpers({
         stripToXmlPayload,
         getDirectChildElementByTagName,
         getDirectChildTextByTagName,
-        parseStructuredTravelProseDestination,
-        normalizeTravelProseDestinationField,
+        parseStructuredmoveTurnResultDestination,
+        normalizemoveTurnResultDestinationField,
         normalizeNpcNameKey,
         resolveLocationByIdOrName,
         resolveLocationInRegionByName,

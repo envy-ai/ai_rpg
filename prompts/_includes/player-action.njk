@@ -98,17 +98,17 @@ Follow these steps:
 
 4. Analyze the second draft and make sure everything in it makes sense and is continuous with the story so far (the second draft should not reference things that were removed from the first draft, as important context will be missing, so make sure that context is present in the second draft itself!). Identify any issues to fix in the final prose. Don't add any additional things to the final prose beyond what was in the second draft.
 
-Write your final, refined prose inside the <finalProse><prose>...</prose></finalProse> tags below, using what you determined above.
+Write your final, refined prose inside the <turnResult><prose>...</prose></turnResult> tags below, using what you determined above.
 
 Use this format: 
 1. ...
 2. ...
 3. ...
 4. ...
-<finalProse>
+<turnResult>
   <prose>story prose here</prose>
-  <hidden>any hidden notes here; omit if none. Must be inside finalProse tags.</hidden>
-</finalProse>
+  <hidden>any hidden notes here; omit if none. Must be inside turnResult tags.</hidden>
+</turnResult>
 {% endif %}
 {% else %}
 {#
@@ -226,14 +226,14 @@ Follow these steps:
 4. Write a second draft based on the above, using no more than {{ config.prose_length }}. Adhere to any skill-check, opposed skill-check, and attack outcomes you received tool results for in your first draft. If you omitted any skill checks for the first draft, make them here and adjust your prose to account for them. Don't call any ones again that you already made in the first draft. Fix any formatting issues. Use <hidden>...</hidden> tags to make any notes to save to your context for later without revealing them to the reader. Hidden tags do not count toward the length limit. In <hidden>...</hidden> notes, only track items/plot details/etc that are NEW or have CHANGED since the previous turn. Do not include things that are already visible to you (the LLM) in the prompt context. Do not copy forward unchanged states (even if unchanged states have been copied forward in the past). If an item hasn't changed since last turn, omit it entirely from the hidden notes. The existing hidden note will still be visible in the context.
 {% endif %}
 
-5. Analyze the second draft and make sure everything in it makes sense and is continuous with the story so far (the second draft should not reference things that were removed from the first draft, as important context will be missing, so make sure that context is present in the second draft itself!). Identify any issues to fix in the final prose. Don't add any additional things to the final prose beyond what was in the second draft. Finally, consider whether the player is traveling (to a new scene, region, or location). If ANY of those, which parts of the prose happen before, during, or after travel? NOTE: When thinking about XML tags outside of your final response, use %lt; and %gt; instead of angle brackets to avoid confusing the XML parser. You should retain any Use <hidden>...</hidden> text inside the finalProse or travelProse tags so they remain in your context for later.
+5. Analyze the second draft and make sure everything in it makes sense and is continuous with the story so far (the second draft should not reference things that were removed from the first draft, as important context will be missing, so make sure that context is present in the second draft itself!). Identify any issues to fix in the final prose. Don't add any additional things to the final prose beyond what was in the second draft. Finally, consider whether the player is traveling (to a new scene, region, or location). If ANY of those, which parts of the prose happen before, during, or after travel? NOTE: When thinking about XML tags outside of your final response, use %lt; and %gt; instead of angle brackets to avoid confusing the XML parser. You should retain any Use <hidden>...</hidden> text inside the turnResult or moveTurnResult tags so they remain in your context for later.
 
 6. Consider whether any new trackers or scheduled events should be added that would be relevant, make things more interesting, add to tension, or help the player keep track of important information. If so, use the tool calls `addTracker` for new trackers and `scheduleEvent` for new timed events. Don't attempt to update or remove any existing trackers or scheduled events.
 
 {% if config.use_legacy_prompt_checks %}
-Write your final, refined prose inside the finalProse or travelProse tags below, using what you determined above, using no more than {{ config.prose_length }}. Strictly adhere to the success_or_failure level provided and any attack outcome provided above.
+Write your final, refined prose inside the turnResult or moveTurnResult tags below, using what you determined above, using no more than {{ config.prose_length }}. Strictly adhere to the success_or_failure level provided and any attack outcome provided above.
 {% else %}
-Write your final, refined prose inside the finalProse or travelProse tags below, using what you determined above, using no more than {{ config.prose_length }}. Adhere to any skill-check, opposed skill-check, and attack outcomes you received tool results for in your first draft. Don't call them again.
+Write your final, refined prose inside the turnResult or moveTurnResult tags below, using what you determined above, using no more than {{ config.prose_length }}. Adhere to any skill-check, opposed skill-check, and attack outcomes you received tool results for in your first draft. Don't call them again.
 {% endif %}
 
 Use this format: 
@@ -247,17 +247,17 @@ Use this format:
 5. ...
 6. ...
 
-<finalProse>
+<turnResult>
   <prose>story prose here</prose>
-  <hidden>any hidden notes here; omit if none. Must be inside finalProse tags.</hidden>
+  <hidden>any hidden notes here; omit if none. Must be inside turnResult tags.</hidden>
   <timePassed>
-    Required. Use reasoning and duration to report how much elapsed in-world wall-clock time the concrete non-travel actions in the text realistically consumed. Estimate elapsed wall-clock time, not reading time and not the sum of each participant's labor when characters work in parallel. Must be inside finalProse tags.
+    Required. Use reasoning and duration to report how much elapsed in-world wall-clock time the concrete non-travel actions in the text realistically consumed. Estimate elapsed wall-clock time, not reading time and not the sum of each participant's labor when characters work in parallel. Must be inside turnResult tags.
     <reasoning>Brief breakdown of time-consuming actions</reasoning>
     <duration>Exact duration rounded to the nearest minute, 1 minute minimum (typical for conversation and quick scenes). No time ranges, unknowns, or other nonspecific answers. Format with one of: "HH:MM", "[INTEGER] [minutes/hours]", or "[INTEGER] hours, [INTEGER] minutes".</duration>
   </timePassed>
-</finalProse>
+</turnResult>
 
-OR, if the player travels to a place that would constitute a different location or region (even if that location or region doesn't exist yet), indicate that this happened by answering instead with a <travelProse>...</travelProse> block, as follows (note that a vehicle's arrival at its destination is tracked by the system, so you don't need to worry about counting vehicle arrivals as travel):
+OR, if the player travels to a place that would constitute a different location or region (even if that location or region doesn't exist yet), indicate that this happened by answering instead with a <moveTurnResult>...</moveTurnResult> block, as follows (note that a vehicle's arrival at its destination is tracked by the system, so you don't need to worry about counting vehicle arrivals as travel):
 
 1a. ...
 1b. ...

@@ -1,4 +1,5 @@
 [./developer_overview.md]
+
 # Developer Overview
 
 This doc is a quick-start map to catch up at the beginning of a session. It summarizes the game, the server architecture, and where to look next for details.
@@ -51,8 +52,8 @@ This doc is a quick-start map to catch up at the beginning of a session. It summ
 
 - `/api/attributes` is defined twice; Express binds the first definition (see `docs/api/attributes.md`).
 
-
 [./README.md]
+
 # Docs Table of Contents
 
 This index lists every other Markdown file under `docs/` with a brief description.
@@ -154,46 +155,55 @@ This index lists every other Markdown file under `docs/` with a brief descriptio
 - [slashcommands/TeleportCommand.md](slashcommands/TeleportCommand.md) — `/teleport` command to move the player to a location by id or name.
 - [slashcommands/WorldOutlineCommand.md](slashcommands/WorldOutlineCommand.md) — `/world_outline` command to list regions, locations, and pending stubs.
 
-
 [./api/attributes.md]
+
 # Attributes API
 
 These routes are both defined in `api.js`. Express binds the **first** definition, so the second is currently unreachable unless the duplication is removed.
 
 ## GET /api/attributes (definition 1 - active)
+
 Returns attribute definitions and generation metadata.
 
 Request:
+
 - No params
 
 Response:
+
 - 200: `{ success: true, attributes, generationMethods, systemConfig }`
   - When no current player exists, a temporary `Player` instance is created to supply these values.
 - 500 not used here; errors are not explicitly handled.
 
 ## GET /api/attributes (definition 2 - unreachable)
+
 Returns a simplified list of attribute definitions.
 
 Request:
+
 - No params
 
 Response:
+
 - 200: `{ success: true, attributes: Array<{ key, label, description, abbreviation }> }`
 - 500: `{ success: false, error, details }`
 
 Notes:
+
 - This definition appears later in `api.js`, so it is shadowed by the first route and will not be served unless the duplication is resolved.
 
-
 [./api/chat.md]
+
 # Chat API
 
 Entries are sorted by path. Common payloads (ChatEntry, ActionResolution, etc.) are defined in `docs/api/common.md`.
 
 ## POST /api/chat
+
 Primary turn-resolution endpoint.
 
 Request:
+
 - Body:
   - `messages` (required): array of chat messages; at minimum the last entry should be `{ role, content }`.
   - `clientId` (optional string): enables realtime streaming events.
@@ -216,6 +226,7 @@ Request:
       - `regionName` (string | null)
 
 Response (200):
+
 - Base fields:
   - `response`: string (final prose)
   - `messages`: ChatEntry[] (new entries appended this request)
@@ -242,69 +253,85 @@ Response (200):
   - `commentLogged`: boolean (comment-only actions)
 
 Variants:
+
 - Comment-only action: if the user message begins with `#`, the response is `{ response: '', commentLogged: true, messages: [...] }` (no turn resolution).
 - Forced-event action: user message begins with `!!`; creative action begins with `!`. These alter processing but do not change the base response shape.
 - When realtime streaming is enabled, the final response may omit `eventChecks`, `events`, and other event artifacts (they are stripped for streaming clients).
 
 Errors:
+
 - 400: `{ error: string, requestId?, streamMeta? }` (missing `messages`, invalid `travelMetadata`, etc.)
 - 408: `{ error: string, requestId?, streamMeta? }` (timeout)
 - 503: `{ error: string, requestId?, streamMeta? }` (connection issues)
 - 500: `{ error: string, requestId?, streamMeta? }`
 
 ## GET /api/chat/history
+
 Returns pruned chat history (system entries and some summaries filtered).
 
 Response (200):
+
 - `{ history: ChatEntry[], count: number }` (no `success` flag)
 
 ## DELETE /api/chat/history
+
 Clears chat history.
 
 Response (200):
+
 - `{ message: 'Chat history cleared', count: 0 }` (no `success` flag)
 
 ## PUT /api/chat/message
+
 Edits a single chat entry by id or timestamp.
 
 Request:
+
 - Body: `{ content: string, id?: string, timestamp?: string }` (must include `content` and either `id` or `timestamp`)
 
 Response:
+
 - 200: `{ success: true, entry }`
 - 400: `{ success: false, error }` (missing content/id)
 - 404: `{ success: false, error: 'Message not found' }`
 
 Notes:
+
 - Editing an `event-summary` entry clears `summaryItems` and normalizes `summaryTitle`.
 
 ## DELETE /api/chat/message
+
 Deletes a chat entry by id or timestamp and removes orphaned children.
 
 Request:
+
 - Body: `{ id?: string, timestamp?: string }`
 
 Response:
+
 - 200: `{ success: true, removed: ChatEntry, orphaned: ChatEntry[] }`
 - 400: `{ success: false, error }`
 - 404: `{ success: false, error: 'Message not found' }`
 
-
 [./api/common.md]
+
 # Common Shapes & Conventions
 
 This file collects shared response shapes referenced by multiple endpoints in `api.js`. When a route includes a serialized object, its fields appear here so you do not have to chase helper implementations.
 
 ## Conventions
+
 - Unless a route explicitly says otherwise, JSON responses include a `success` boolean.
 - Error responses are usually `{ success: false, error: string }` with an appropriate HTTP status.
 - Timestamps are ISO 8601 strings unless noted.
 - Optional fields are only present when the underlying data exists.
 
 ## ChatEntry
+
 Normalized via `normalizeChatEntry` and enriched by `pushChatEntry`.
 
 Fields:
+
 - `id`: string (generated if missing)
 - `role`: string (`user`, `assistant`, `system`, or custom)
 - `content`: string
@@ -321,9 +348,11 @@ Fields:
 - `metadata`: object (always includes `locationId`; may include `requestId`, `npcNames`, `traveledToLocationId` for travel turns, quest metadata, etc.)
 
 ## ActionResolution (resolveActionOutcome)
+
 Used by `/api/chat` (`actionResolution`) and `/api/craft` (`outcome`).
 
 Base shape:
+
 - `label`: string
 - `degree`: string (examples: `automatic_success`, `success`, `failure`, `implausible_failure`)
 - `success`: boolean
@@ -341,6 +370,7 @@ Base shape:
 When `type` is `trivial` or `implausible`, `roll`, `difficulty`, `skill`, `attribute`, and `margin` are `null`.
 
 `roll` fields (when present):
+
 - `die`: number
 - `detail`: string
 - `skillValue`: number
@@ -351,13 +381,16 @@ When `type` is `trivial` or `implausible`, `roll`, `difficulty`, `skill`, `attri
 - `total`: number
 
 `difficulty` fields (when present):
+
 - `label`: string | null
 - `dc`: number | null
 
 ## StatusEffect
+
 Serialized via `StatusEffect.toJSON()`.
 
 Fields:
+
 - `name`: string
 - `description`: string
 - `attributes`: array of `{ attribute, modifier }`
@@ -366,9 +399,11 @@ Fields:
 - `duration`: number | null (1 = instant, -1 = permanent)
 
 ## NpcProfile (serializeNpcForClient)
+
 Returned in many player/NPC endpoints and location responses.
 
 Fields:
+
 - `id`, `name`, `description`, `shortDescription`
 - `class`, `race`, `level`
 - `health`, `maxHealth`, `healthAttribute`
@@ -399,9 +434,11 @@ Fields:
 - `partyMembers` (array of NpcProfile) **only** when `includePartyMembers` is true
 
 ## PlayerStatus / NPC Status (Player.getStatus)
+
 Used by `GET /api/npcs/:id` for full status.
 
 Highlights beyond `Player.toJSON()`:
+
 - `alive` (boolean)
 - `modifiers`, `attributeInfo`, `attributeDefinitions`, `systemConfig`
 - `inventory` is expanded into full Thing JSON (with equip flags), plus `inventoryIds`
@@ -414,7 +451,9 @@ Highlights beyond `Player.toJSON()`:
 - `quests`, `personality`, `goals`, `characterArc`
 
 ## Thing (Thing.toJSON)
+
 Fields:
+
 - `id`, `name`, `description`, `shortDescription`
 - `thingType` (`item` or `scenery`)
 - `imageId`, `createdAt`, `lastUpdated`
@@ -430,9 +469,11 @@ Fields:
 Optional fields may be omitted when empty/undefined.
 
 ## ThingProfile (buildThingProfiles)
+
 Included in `LocationResponse.things`.
 
 Fields:
+
 - `id`, `name`, `description`, `thingType`, `imageId`
 - `rarity`, `itemTypeDetail`, `slot`, `attributeBonuses`
 - `causeStatusEffectOnTarget`, `causeStatusEffectOnEquipper`
@@ -440,14 +481,18 @@ Fields:
 - Boolean flags: `isVehicle`, `isCraftingStation`, `isProcessingStation`, `isHarvestable`, `isSalvageable`
 
 ## LocationExit (LocationExit.toJSON)
+
 Fields:
+
 - `id`, `description`, `destination`, `destinationRegion`
 - `name`, `bidirectional`, `imageId`
 - `isVehicle`, `vehicleType`, `type` (`two-way`/`one-way`)
 - `createdAt`, `lastUpdated`
 
 ## LocationDetails (Location.getDetails)
+
 Fields:
+
 - `id`, `name`, `description`, `shortDescription`
 - `baseLevel`, `imageId`, `visited`
 - `exits`: object keyed by direction; each entry includes
@@ -462,7 +507,9 @@ Fields:
 - `randomEvents`, `statusEffects`, `characterConcepts`, `enemyConcepts`
 
 ## LocationResponse (buildLocationResponse)
+
 Extends `LocationDetails` with:
+
 - `pendingImageJobId`
 - `regionName` (resolved name)
 - `region` (object: `id`, `name`, `description`, `parentRegionId`, `averageLevel`)
@@ -475,7 +522,9 @@ Extends `LocationDetails` with:
 - `things` (ThingProfile[])
 
 ## Region (Region.toJSON)
+
 Fields:
+
 - `id`, `name`, `description`, `shortDescription`
 - `locationBlueprints`, `locationIds`, `entranceLocationId`
 - `parentRegionId`, `createdAt`, `lastUpdated`
@@ -484,7 +533,9 @@ Fields:
 - `randomEvents`, `characterConcepts`, `enemyConcepts`, `secrets`
 
 ## NeedBar (normalizeNeedBarResponse)
+
 Fields:
+
 - `id`, `name`, `description`, `icon`, `color`
 - `min`, `max`, `value`, `changePerTurn`, `initialValue`
 - `playerOnly`
@@ -495,7 +546,9 @@ Fields:
 - `relatedAttribute`, `relativeToLevel`
 
 ## DispositionSnapshot (buildNpcDispositionSnapshot)
+
 Fields:
+
 - `npc`: `{ id, name, isNPC }`
 - `player`: `{ id, name }` | null
 - `range`: `{ min, max, typicalStep, typicalBigStep }`
@@ -504,7 +557,9 @@ Fields:
   - `thresholds`, `moveUp`, `moveDown`, `moveWayDown`
 
 ## SettingInfo (SettingInfo.toJSON)
+
 Core fields:
+
 - `id`, `name`, `description`, `theme`, `genre`
 - `startingLocationType`, `magicLevel`, `techLevel`, `tone`, `difficulty`
 - `currencyName`, `currencyNamePlural`, `currencyValueNotes`
@@ -516,7 +571,9 @@ Core fields:
 - `createdAt`, `lastUpdated`
 
 ## Quest (Quest.toJSON)
+
 Fields:
+
 - `id`, `name`, `description`
 - `objectives` (array of `{ id, description, completed, optional }`)
 - `rewardItems`, `rewardCurrency`, `rewardXp`
@@ -525,13 +582,17 @@ Fields:
 - `completed`
 
 ## Skill (Skill.toJSON)
+
 Fields:
+
 - `name`, `description`, `attribute`
 
 ## MapLocationSummary (buildMapLocationSummary)
+
 Used by map endpoints.
 
 Fields:
+
 - `id`, `name`, `isStub`, `visited`, `regionId`
 - `exits`: array of
   - `id`, `destination`, `destinationRegion`, `destinationRegionName`, `destinationRegionExpanded`
@@ -540,31 +601,38 @@ Fields:
 - `image` (optional): `{ id, url }`
 
 ## Image Job
+
 `GET /api/jobs` returns `JobSummary[]`:
+
 - `id`, `status`, `progress`, `message`
 - `createdAt`, `startedAt`, `completedAt`
 - `prompt` (truncated preview)
 
 `GET /api/jobs/:jobId` returns:
+
 - `job`: same fields as summary
 - `result` (when completed): `{ imageId, images, metadata }`
 - `error` (when failed/timeout)
 
 ## Save Metadata
+
 `GET /api/saves` returns entries seeded with:
+
 - `saveName`, `timestamp`, `playerName`, `playerLevel`, `source`, `isAutosave`
 - Additional fields from each save's `metadata.json` are merged in when present.
 
-
 [./api/crafting.md]
+
 # Crafting API
 
 Common payloads: see `docs/api/common.md` (ActionResolution, Thing).
 
 ## POST /api/craft
+
 Resolve crafting/processing/salvage/harvest actions.
 
 Request:
+
 - Body:
   - `slots` (required): array of `{ thingId: string, slotIndex?: number }`
   - `mode`: `craft` | `process` | `salvage` | `harvest` (default `craft`)
@@ -576,6 +644,7 @@ Request:
   - Harvest info (used for harvest): `harvestItemId`, `harvestItemName`, `harvestItemDescription`, `harvestNotes`
 
 Response:
+
 - 200: `{ success: true, outcome, resultLevel, craftedItem, craftedItems, recoveredItems, consumedThingIds, narrative, plausibility, unmatchedConsumedNames }`
   - `outcome`: ActionResolution
   - `resultLevel`: string mapping the success degree (e.g., `success`, `failure`, `major_success`)
@@ -590,79 +659,98 @@ Response:
 - 500: `{ success: false, error }`
 
 Notes:
+
 - Salvage/harvest require exactly one slot item.
 - When `actionType` is supplied, it overrides `mode` in some cases.
 
-
 [./api/factions.md]
+
 # Factions API
 
 ## GET /api/factions
+
 List all factions and current player standings.
 
 Response:
+
 - 200: `{ success: true, factions: Faction[], playerStandings: Record<factionId, number>, playerId }`
 - 500: `{ success: false, error }`
 
 ## POST /api/factions
+
 Create a new faction.
 
 Request:
+
 - Body: `{ name: string, shortDescription?: string|null, description?: string|null, tags?: string[]|string, goals?: string[]|string, homeRegionName?: string, assets?: Array<{ name: string, type?: string, description?: string }>, relations?: Record<factionId, { status: 'allied'|'neutral'|'hostile'|'rival', notes: string }>, reputationTiers?: Array<{ threshold: number, label?: string, perks?: string[]|string, penalties?: string[]|string }> }`
 
 Response:
+
 - 201: `{ success: true, faction: Faction }`
 - 400: `{ success: false, error }`
 - 500: `{ success: false, error }`
 
 Notes:
+
 - Faction name `"None"` is reserved and cannot be created.
 
 ## PUT /api/factions/:id
+
 Update a faction.
 
 Request:
+
 - Path: `id` (faction id)
 - Body supports: `name`, `shortDescription`, `description`, `tags`, `goals`, `homeRegionName`, `assets`, `relations`, `reputationTiers`
 
 Response:
+
 - 200: `{ success: true, faction: Faction }`
 - 400/404/500 with `{ success: false, error }`
 
 Notes:
+
 - Faction name `"None"` is reserved and cannot be set.
 
 ## DELETE /api/factions/:id
+
 Delete a faction, remove relations pointing to it, and clear affiliations/standings.
 
 Response:
+
 - 200: `{ success: true, removed: Faction }`
 - 400/404/500 with `{ success: false, error }`
 
 ## PUT /api/player/factions/:id/standing
+
 Set or clear the current player's standing with a faction.
 
 Request:
+
 - Path: `id` (faction id)
 - Body: `{ value: number | null }` (`null` removes the standing entry)
 
 Response:
+
 - 200: `{ success: true, factionId, standings: Record<factionId, number> }`
 - 400/404/500 with `{ success: false, error }`
 
-
 [./api/game.md]
+
 # Game Lifecycle API
 
 Common payloads: see `docs/api/common.md`.
 
 ## POST /api/new-game
+
 Start a new game session.
 
 Request:
+
 - Body supports: `playerName`, `playerDescription`, `playerClass`, `playerRace`, `startingLocation`, `numSkills`, `existingSkills`, `startingCurrency`, `clientId`, `requestId`
 
 Response:
+
 - 200: `{ success: true, message, player, startingLocation, region, skills, gameState }`
   - `player`: `Player.toJSON()` (not NpcProfile)
   - `startingLocation`: LocationDetails + `pendingImageJobId` + `npcs`
@@ -674,146 +762,184 @@ Response:
 - 500: `{ success: false, error, details }`
 
 Notes:
+
 - When `clientId` is provided, realtime status events are emitted during generation.
 
 ## POST /api/save
+
 Save the current game.
 
 Response:
+
 - 200: `{ success: true, saveName, saveDir, metadata, message }`
 - 400/500 with `{ success: false, error }`
 
 ## POST /api/load
+
 Load a saved game.
 
 Request:
+
 - Body: `{ saveName: string, saveType?: 'autosaves'|'saves', clientId?: string }`
 
 Response:
+
 - 200: `{ success: true, saveName, source, metadata, loadedData, message }`
   - `loadedData`: `{ currentPlayer: NpcProfile|null, totalPlayers, totalThings, totalLocations, totalLocationExits, chatHistoryLength, totalGeneratedImages, currentSetting }`
 - 400/404/500 with `{ success: false, error }`
 
 ## GET /api/saves
+
 List available saves.
 
 Request:
+
 - Query: `type` (`saves` or `autosaves`, default `saves`)
 
 Response:
+
 - 200: `{ success: true, type, saves, count, message }`
   - `saves` entries include baseline metadata and fields from each save's `metadata.json`.
 - 400/500 with `{ success: false, error }`
 
 ## DELETE /api/save/:saveName
+
 Delete a save.
 
 Response:
+
 - 200: `{ success: true, saveName, message }`
 - 404/500 with `{ success: false, error }`
 
 ## POST /api/summaries/style
+
 Update summary style in save metadata.
 
 Request:
+
 - Body: `{ style: 'line' | 'scene' }`
 
 Response:
+
 - 200: `{ success: true, summaryStyle, persisted }`
 - 400/500 with `{ success: false, error }`
 
 ## GET /api/short-descriptions/pending
+
 Check for pending short-description backfill work.
 
 Request:
+
 - Query: `clientId` (required)
 
 Response:
+
 - 200: `{ success: true, pending, plan }`
   - `plan` includes counts/prompts/batch size per entity type.
 - 400/500 with `{ success: false, error }`
 
 ## POST /api/short-descriptions/process
+
 Run or skip short-description backfill.
 
 Request:
+
 - Body: `{ clientId: string, action: 'run'|'process'|'skip'|'dismiss' }`
 
 Response:
+
 - 200: `{ success: true, processed: true }` or `{ success: true, skipped: true }`
 - 400/404/409/500 with `{ success: false, error }`
 
-
 [./api/images.md]
+
 # Images & Jobs API
 
 Common payloads: see `docs/api/common.md` (Job shapes).
 
 ## POST /api/images/request
+
 Unified image generation entry point.
 
 Request:
+
 - Body: `{ entityType: 'player'|'npc'|'location'|'exit'|'location-exit'|'thing'|'item'|'scenery', entityId: string, force?: boolean, clientId?: string }`
 
 Response:
+
 - 200: `{ success, entityType, entityId, jobId?, job?, imageId?, skipped, reason, message, existingJob }`
 - 202: same payload when `skipped` is true
 - 409: same payload when generation failed and no existing job
 - 400/404/500 with `{ success: false, error }`
 
 Notes:
+
 - If an existing job is found, the endpoint returns 200 with `success: false` and `existingJob: true`.
 
 ## POST /api/generate-image
+
 Legacy custom image generation endpoint.
 
 Request:
+
 - Body: `{ prompt: string, width?, height?, seed?, negative_prompt?, async?: boolean, clientId?: string }`
 
 Response:
+
 - 200 (async, default): `{ success: true, jobId, status, message, estimatedTime }`
 - 200 (sync, legacy mode when `async=false`): `{ success: true, imageId, images, metadata, processingTime }`
 - 400/500 with `{ success: false, error }`
 
 Notes:
+
 - The sync mode is explicitly marked as legacy in code.
 
 ## GET /api/jobs/:jobId
+
 Fetch job status.
 
 Response:
+
 - 200: `{ success: true, job, result?, error? }`
 - 404: `{ success: false, error }`
 
 ## DELETE /api/jobs/:jobId
+
 Cancel a job.
 
 Response:
+
 - 200: `{ success: true, message }`
 - 400: `{ success: false, error }` (job already completed/failed)
 - 404: `{ success: false, error }`
 
 ## GET /api/jobs
+
 List all jobs.
 
 Response:
+
 - 200: `{ success: true, jobs: JobSummary[], queue: { pending, processing } }`
 
 ## GET /api/images/:imageId
+
 Fetch image metadata.
 
 Response:
+
 - 200: `{ success: true, metadata }`
 - 404: `{ success: false, error }`
 
 ## GET /api/images
+
 List all generated images.
 
 Response:
+
 - 200: `{ success: true, images, count }`
 
-
 [./api/locations.md]
+
 # Location & Exit API (from api.js)
 
 See `docs/api/serialization.md` for shared shapes.
@@ -821,9 +947,11 @@ See `docs/api/serialization.md` for shared shapes.
 ## GET /api/exits/options
 
 Request:
+
 - Query: `originLocationId` (optional)
 
 Responses:
+
 - 200: `{ success: true, regions, originRegionId? }`
   - `regions` is a list of region option groups:
     - `{ id, name, isStub, locations: Array<{ id, name, isStub, regionId, isRegionEntryStub }> }`
@@ -832,9 +960,11 @@ Responses:
 ## GET /api/locations
 
 Request:
+
 - Query: `scope=current|named|names` (optional)
 
 Responses:
+
 - 200 (scope=current): `{ success: true, location: LocationResponse }`
 - 200 (default list): `{ success: true, locations: Array<{ id, name, regionId, regionName, label }> }`
 - 404: `{ success: false, error }` (scope=current with no current location)
@@ -843,9 +973,11 @@ Responses:
 ## POST /api/locations/generate
 
 Request:
+
 - Body: `{ clientId?, requestId?, locationStyle? }` plus optional generation inputs.
 
 Responses:
+
 - 200: `{ success: true, location, locationId, locationName, gameWorldStats, generationInfo, message, requestId? }`
   - `location` matches `LocationResponse` with `pendingImageJobId`, `npcs`, and `things` populated.
 - 408: `{ success: false, error, details, requestId? }` (AI timeout)
@@ -853,15 +985,18 @@ Responses:
 - 500: `{ success: false, error, details, requestId? }`
 
 Notes:
+
 - Emits realtime events when `clientId` is provided (`generation_status`, `location_generated`).
 
 ## GET /api/locations/:id
 
 Request:
+
 - Path: `id`
 - Query: `expandStubs` (default true; `0|false|no|off` disables)
 
 Responses:
+
 - 200: `{ success: true, location: LocationResponse }`
 - 404: `{ success: false, error }`
 - 500: `{ success: false, error, trace? }` (stub expansion failures may include `trace`)
@@ -869,6 +1004,7 @@ Responses:
 ## PUT /api/locations/:id
 
 Request:
+
 - Body:
   - `description` (required string)
   - `level` (required number)
@@ -878,15 +1014,18 @@ Request:
   - `statusEffects` (array or null, optional)
 
 Responses:
+
 - 200: `{ success: true, message, location: LocationResponse, imageCleared: boolean, changes: { name, description, level } }`
 - 400/404/500: `{ success: false, error }`
 
 Notes:
+
 - `controllingFactionId` must reference an existing faction id or be `null` to clear.
 
 ## POST /api/locations/:id/exits
 
 Request:
+
 - Body supports:
   - `type` (`location` or `region`)
   - `name`, `description`
@@ -898,6 +1037,7 @@ Request:
   - `imageDataUrl`, `imageDataUrlOriginal` (PNG data URLs for reference images; only for new stubs)
 
 Responses:
+
 - 200: `{ success: true, message, location: LocationResponse, created }`
   - `created` varies:
     - Region stub: `{ type: 'region', stubId, regionId, name, parentRegionId, isVehicle, vehicleType }`
@@ -908,9 +1048,11 @@ Responses:
 ## DELETE /api/locations/:id/exits/:exitId
 
 Request:
+
 - Optional Body or Query: `clientId`, `requestId` (used for realtime notifications)
 
 Responses:
+
 - 200: `{ success: true, message, location: LocationResponse, removed, reverseRemoved?, deletedStub?, preservedStub? }`
   - `removed`: `{ exitId, direction }`
   - `reverseRemoved`: `{ exitId, direction }` when a reverse exit is removed
@@ -921,458 +1063,579 @@ Responses:
 ## POST /api/locations/:id/npcs
 
 Request:
+
 - Body supports seed fields: `name` (required), `description`, `shortDescription`, `role`, `class`, `race`,
   `currency`, `level`, `isHostile`, `notes`, plus optional `imageDataUrl` + `imageDataUrlOriginal` (PNG data URLs)
 
 Responses:
+
 - 200: `{ success: true, npc: NpcProfile, location: LocationResponse, message }`
 - 400/404/500: `{ success: false, error }`
 
 ## POST /api/locations/:id/things
 
 Request:
+
 - Body: `{ seed: { name (required), description?, shortDescription?, type?, slot?, rarity?, itemOrScenery?, value?, weight?, level?, relativeLevel?, isVehicle?, isHarvestable?, isCraftingStation?, isProcessingStation?, isSalvageable?, notes? }, level? }`
 
 Responses:
+
 - 200: `{ success: true, thing: ThingJson, location: LocationResponse, message }`
 - 400/404/500: `{ success: false, error }`
 
 ## GET /api/stubs/:id
 
 Responses:
+
 - 200: `{ success: true, stub: { id, name, isRegionEntryStub, targetRegionId, targetRegionName, controllingFactionId, npcs } }`
 - 400/404/500: `{ success: false, error }`
 
 ## PUT /api/stubs/:id
 
 Request:
+
 - Body: `name` (required), `description` (required), `relativeLevel?` (number), `controllingFactionId?` (string or null)
 
 Responses:
+
 - 200: `{ success: true, stub: { id, name, description, relativeLevel, isRegionEntryStub, targetRegionId, targetRegionName, controllingFactionId } }`
 - 400/404/500: `{ success: false, error }`
 
 Notes:
+
 - `controllingFactionId` must reference an existing faction id or be `null` to clear.
 
 ## DELETE /api/stubs/:id
 
 Responses:
+
 - 200: `{ success: true, stubId, targetRegionId, removedExitIds, deletedNpcIds, npcSummaries }`
 - 400/404/500: `{ success: false, error }`
 
-
 [./api/lorebooks.md]
+
 # Lorebooks API
 
 ## GET /api/lorebooks
+
 List all lorebooks with metadata.
 
 Response:
+
 - 200: `{ success: true, lorebooks }`
   - `lorebooks` entries: `{ filename, name, entryCount, tokenEstimate, enabled }`
 - 503/500 with `{ success: false, error }`
 
 ## GET /api/lorebooks/:filename
+
 Fetch a lorebook with entries.
 
 Response:
+
 - 200: `{ success: true, lorebook }`
   - `lorebook` fields: `filename`, `name`, `entryCount`, `tokenEstimate`, `enabled`, `entries`
   - `entries` elements: `{ uid, key, content, comment, enabled, constant, priority, insertion_order }`
 - 404/503/500 with `{ success: false, error }`
 
 ## POST /api/lorebooks/:filename/enable
+
 Enable a lorebook.
 
 Response:
+
 - 200: `{ success: true, message, activeEntries }`
 - 404/503/500 with `{ success: false, error }`
 
 ## POST /api/lorebooks/:filename/disable
+
 Disable a lorebook.
 
 Response:
+
 - 200: `{ success: true, message, activeEntries }`
 - 503/500 with `{ success: false, error }`
 
 ## DELETE /api/lorebooks/:filename
+
 Delete a lorebook.
 
 Response:
+
 - 200: `{ success: true, message }`
 - 404/503/500 with `{ success: false, error }`
 
 ## POST /api/lorebooks/upload
+
 Upload a new lorebook.
 
 Request:
+
 - Body: `{ filename: string, content: string }`
 
 Response:
+
 - 200: `{ success: true, message, entryCount }`
 - 400/503 with `{ success: false, error }`
 
-
 [./api/map.md]
+
 # Map API (legacy index)
 
 Map endpoints are documented under:
+
 - `docs/api/locations.md` (see the Map API section)
 - Shared shapes used by map responses are in `docs/api/common.md`
 
 This file is retained for backward references and intentionally contains no duplicated schemas.
 
-
 [./api/misc.md]
+
 # Misc & Utility API
 
 ## GET /api/features/location-image-generation
+
 Return image-generation feature flag.
 
 Response:
+
 - 200: `{ enabled: boolean }` (no `success` flag)
 - 500: `{ error }`
 
 ## GET /api/hello
+
 Simple health check.
 
 Response:
+
 - 200: `{ message: 'Hello World!', timestamp, port }` (no `success` flag)
 
 ## POST /api/test-config
+
 Test AI endpoint configuration.
 
 Request:
+
 - Body: `{ endpoint: string, apiKey: string, model: string }`
 
 Response:
+
 - 200: `{ success: true, message: 'Configuration test successful' }`
 - 400/408/503/500: `{ error }` (no `success` flag)
 
 ## POST /api/prompts/:promptId/cancel
+
 Cancel an in-flight LLM prompt.
 
 Response:
+
 - 200: `{ success: true, message }`
 - 400/404: `{ success: false, error }`
 
 ## POST /api/slash-command
+
 Execute a registered slash command.
 
 Request:
+
 - Body: `{ command: string, args?: object, argsText?: string, userId?: string }`
 
 Response:
+
 - 200: `{ success: true, replies: array }`
 - 400/404/500 with `{ success: false, error | errors }`
 
-
 [./api/npcs.md]
+
 # NPC API
 
 Common payloads: see `docs/api/common.md`.
 
 ## GET /api/npcs/:id
+
 Fetch full NPC status (uses `Player.getStatus()`).
 
 Response:
+
 - 200: `{ success: true, npc }` (PlayerStatus shape; may include `intrinsicStatusEffects`)
 - 400/404/500 with `{ success: false, error }`
 
 ## PUT /api/npcs/:id
+
 Update an NPC's core data.
 
 Request:
+
 - Path: `id`
 - Body supports: `name`, `description`, `shortDescription`, `race`, `class`, `factionId`, `level`, `health`, `healthAttribute`, `attributes`, `skills`, `abilities`, `unspentSkillPoints`, `currency`, `experience`, `isDead`, `personalityType`, `personalityTraits`, `personalityNotes`, `statusEffects`
 
 Response:
+
 - 200: `{ success: true, npc: NpcProfile, message }`
 - 400/404/500 with `{ success: false, error }`
 
 Notes:
+
 - Unknown skills may trigger skill generation; canonical names are normalized before assignment.
 - `factionId` must reference an existing faction id or be `null` to clear membership.
 
 ## POST /api/npcs/:id/equipment
+
 Equip or unequip an item in an NPC's inventory.
 
 Request:
+
 - Body: `{ itemId: string, action?: 'equip'|'unequip'|false, slotName?: string, slotType?: string }`
 
 Response:
+
 - 200: `{ success: true, npc: NpcProfile, message }`
 - 400/404/500 with `{ success: false, error }`
 
 ## GET /api/npcs/:id/needs
+
 Fetch need bars for an NPC.
 
 Response:
+
 - 200: `{ success: true, needs: NeedBar[], includePlayerOnly, npc, player? }`
 - 400/404/500 with `{ success: false, error }`
 
 ## PUT /api/npcs/:id/needs
+
 Update need bars for an NPC.
 
 Request:
+
 - Body: `{ needs: Array<{ id: string, value: number }> }`
 
 Response:
+
 - 200: `{ success: true, message, needs: NeedBar[], includePlayerOnly, npc, applied: NeedBar[] }`
 - 400/404/500 with `{ success: false, error }`
 
 ## GET /api/npcs/:id/dispositions
+
 Fetch disposition values toward the current player.
 
 Response:
+
 - 200: `{ success: true, npc, player, range, dispositions }`
 - 400/404/500 with `{ success: false, error }`
 
 ## PUT /api/npcs/:id/dispositions
+
 Update disposition values.
 
 Request:
+
 - Body: `{ dispositions?: Array<{ key, value }> }`
 
 Response:
+
 - 200: `{ success: true, message, npc, player, range, dispositions, applied }`
 - 400/404/500 with `{ success: false, error }`
 
 Notes:
+
 - If `dispositions` is omitted, the endpoint returns the snapshot with an empty `applied` array.
 
 ## PUT /api/npcs/:id/memories
+
 Replace important memories.
 
 Request:
+
 - Body: `{ memories: string[] }`
 
 Response:
+
 - 200: `{ success: true, npc: NpcProfile, message }`
 - 400/404/500 with `{ success: false, error }`
 
 ## PUT /api/npcs/:id/goals
+
 Replace NPC goals.
 
 Request:
+
 - Body: `{ goals: string[] }`
 
 Response:
+
 - 200: `{ success: true, npc: NpcProfile, message }`
 - 400/404/500 with `{ success: false, error }`
 
 ## POST /api/npcs/:id/teleport
+
 Teleport an NPC to another location.
 
 Request:
+
 - Body: `{ locationId: string }`
 
 Response:
+
 - 200: `{ success: true, npc: NpcProfile, destination: LocationResponse, previousLocation: LocationResponse, locationIds: string[], message }`
 - 400/404/500 with `{ success: false, error }`
 
 ## DELETE /api/npcs/:id
+
 Delete an NPC.
 
 Response:
+
 - 200: `{ success: true, message, locationId, regionId }`
 - 400/404/500 with `{ success: false, error }`
 
 ## POST /api/npcs/:id/portrait
+
 Trigger portrait generation for an NPC.
 
 Request:
+
 - Path: `id`
 - Body: `{ clientId?: string }`
 
 Response:
+
 - 200: `{ success: true, npc: { id, name, imageId }, imageGeneration, message }`
 - 202: `{ success: false, npc: { ... }, imageGeneration, message }` (existing job)
 - 409: `{ success: false, error, reason, npc: { ... } }` (skipped)
 - 503: `{ success: false, error }`
 - 404/500 with `{ success: false, error }`
 
-
 [./api/players.md]
+
 # Players & Party API
 
 Common payloads: see `docs/api/common.md`.
 
 ## POST /api/player
+
 Create a new player and set as current.
 
 Request:
+
 - Body (optional): `{ name?: string, attributes?: object, level?: number }`
 
 Response:
+
 - 200: `{ success: true, player: NpcProfile, message }`
 - 400: `{ success: false, error }`
 
 ## GET /api/player
+
 Get the current player.
 
 Response:
+
 - 200: `{ success: true, player: NpcProfile }`
 - 404: `{ success: false, error: 'No current player found' }`
 
 ## GET /api/players
+
 List all players.
 
 Response:
+
 - 200: `{ success: true, players: NpcProfile[], count, currentPlayer }`
 
 ## POST /api/player/set-current
+
 Set the current player.
 
 Request:
+
 - Body: `{ playerId: string }`
 
 Response:
+
 - 200: `{ success: true, currentPlayer: NpcProfile, message }`
 - 400/404/500 with `{ success: false, error }`
 
 ## GET /api/player/party
+
 List party members for current player.
 
 Response:
+
 - 200: `{ success: true, members: NpcProfile[], count }`
 - 404: `{ success: false, error }`
 
 ## POST /api/player/party
+
 Add a party member by id.
 
 Request:
+
 - Body: `{ ownerId: string, memberId: string }`
 
 Response:
+
 - 200: `{ success: true, message, members }`
   - `members` is an array of **member ids** (not profiles).
 - 400/404/500 with `{ success: false, error }`
 
 ## DELETE /api/player/party
+
 Remove a party member by id.
 
 Request:
+
 - Body: `{ ownerId: string, memberId: string }`
 
 Response:
+
 - 200: `{ success: true, message, members }` (`members` is an array of ids)
 - 400/404/500 with `{ success: false, error }`
 
 ## PUT /api/player/attributes
+
 Update player attributes.
 
 Request:
+
 - Body: `{ attributes: Record<string, number> }`
 
 Response:
+
 - 200: `{ success: true, player: NpcProfile, message }`
 - 400/404 with `{ success: false, error }`
 
 ## PUT /api/player/health
+
 Modify player health.
 
 Request:
+
 - Body: `{ amount: number, reason?: string }`
 
 Response:
+
 - 200: `{ success: true, healthChange, player: NpcProfile, message }`
 - 400/404 with `{ success: false, error }`
 
 ## POST /api/player/levelup
+
 Level up the current player.
 
 Response:
+
 - 200: `{ success: true, player: NpcProfile, message }`
 - 400/404 with `{ success: false, error }`
 
 ## GET /api/player/needs
+
 Get need bars for the current player.
 
 Response:
+
 - 200: `{ success: true, needs: NeedBar[], includePlayerOnly, player }`
 - 404/500 with `{ success: false, error }`
 
 ## PUT /api/player/needs
+
 Update need bars.
 
 Request:
+
 - Body: `{ needs: Array<{ id: string, value: number }> }`
 
 Response:
+
 - 200: `{ success: true, message, needs: NeedBar[], includePlayerOnly, player, applied: NeedBar[] }`
 - 400/404 with `{ success: false, error }`
 
 ## POST /api/player/generate-attributes
+
 Generate new attributes for current player.
 
 Request:
+
 - Body: `{ method?: string }`
 
 Response:
+
 - 200: `{ success: true, player: NpcProfile, generatedAttributes, method, message }`
 - 400/404 with `{ success: false, error }`
 
 ## POST /api/player/update-stats
+
 Update player stats (admin-style edit).
 
 Request:
+
 - Body supports: `name`, `description`, `level`, `health`, `attributes`, `skills`, `unspentSkillPoints`, `statusEffects`
 
 Response:
+
 - 200: `{ success: true, player: NpcProfile, message, imageNeedsUpdate }`
 - 400/404/500 with `{ success: false, error }`
 
 ## PUT /api/player/status
+
 Update player status effects directly.
 
 Request:
+
 - Body: `{ statusEffects: array | null }` (required)
 
 Response:
+
 - 200: `{ success: true, message, player: NpcProfile }`
 - 400/404 with `{ success: false, error }`
 
 ## POST /api/player/create-from-stats
+
 Create a new player from a stats form and set as current.
 
 Request:
+
 - Body requires `name`; supports `description`, `level`, `health`, `attributes`, `skills`, `unspentSkillPoints`, `statusEffects`
 
 Response:
+
 - 200: `{ success: true, player: NpcProfile, message }`
 - 400/500 with `{ success: false, error }`
 
 ## POST /api/player/skills/:skillName/increase
+
 Increase a skill rank.
 
 Request:
+
 - Path: `skillName`
 - Body: `{ amount?: number }` (defaults to 1)
 
 Response:
+
 - 200: `{ success: true, player: NpcProfile, skill: { name, rank }, amount }`
 - 400/404 with `{ success: false, error }`
 
 ## POST /api/player/equip
+
 Equip/unequip an item in a specific slot for the current player.
 
 Request:
+
 - Body: `{ slotName: string, itemId?: string }`
   - If `itemId` is omitted, the slot is cleared (unequipped).
 
 Response:
+
 - 200: `{ success: true, player: NpcProfile, message }`
 - 400/404/500 with `{ success: false, error }`
 
 ## POST /api/players/:id/portrait
+
 Trigger portrait generation for a player.
 
 Request:
+
 - Path: `id`
 
 Response:
+
 - 200: `{ success: true, player: { id, name, imageId }, imageGeneration, message }`
 - 202: `{ success: false, player: { ... }, imageGeneration, message: 'Portrait job already in progress' }`
 - 409: `{ success: false, error, reason, player: { ... } }` (skipped)
@@ -1380,22 +1643,26 @@ Response:
 - 404/500 with `{ success: false, error }`
 
 ## GET /api/gear-slots
+
 List gear slot types.
 
 Response:
+
 - 200: `{ success: true, slotTypes: string[] }`
 - 500: `{ success: false, error, details }`
 
-
 [./api/quests.md]
+
 # Quest API
 
 Common payloads: see `docs/api/common.md`.
 
 ## POST /api/quests/confirm
+
 Resolve a quest confirmation prompt.
 
 Request:
+
 - Body:
   - `confirmationId` (string, required)
   - `clientId` (string, required)
@@ -1405,42 +1672,50 @@ Request:
     - `accept` (string: true/false/yes/no)
 
 Response:
+
 - 200: `{ success: true, accepted: boolean }`
 - 400: `{ success: false, error }`
 - 503: `{ success: false, error }` (confirmation service unavailable)
 
 ## POST /api/quest/edit
+
 Edit a quest on the current player.
 
 Request:
+
 - Body:
   - `questId` (required)
   - Optional: `name`, `description`, `secretNotes`, `rewardCurrency`, `rewardXp`, `rewardItems`, `objectives`, `rewardClaimed`, `paused`, `giverName`
   - `objectives` entries must include `{ description }` and may include `id`, `completed`, `optional`
 
 Response:
+
 - 200: `{ success: true, quest: Quest, player: NpcProfile }`
 - 400/404 with `{ success: false, error }`
 
 ## DELETE /api/player/quests/:questId
+
 Remove a quest from the current player.
 
 Response:
+
 - 200: `{ success: true, message, player: NpcProfile }`
 - 400/404 with `{ success: false, error }`
 
-
 [./API_README.md]
+
 # API Routes From `api.js`
 
 This is the high-level index for every Express route registered in `api.js`. The detailed, low-level reference lives in `docs/api/` and is intended to give an accurate picture of request/response shapes and variants without scanning the source.
 
 ## How This Reference Is Organized
+
 - High-level index (this file): quick map of endpoints by domain.
 - Low-level docs (`docs/api/`): per-domain route specs, sorted by path, with response variants and edge cases.
 - Common shapes: shared payloads such as `NpcProfile`, `LocationResponse`, `ActionResolution`, etc.
 
 ## Low-Level Index
+
 - `docs/api/common.md` - shared payload shapes and conventions
 - `docs/api/serialization.md` - legacy pointer to shared shapes
 - `docs/api/attributes.md` - duplicate `/api/attributes` definitions
@@ -1461,326 +1736,409 @@ This is the high-level index for every Express route registered in `api.js`. The
 - `docs/api/misc.md` - feature flags, health check, slash commands, prompt cancel, config test
 
 ## Duplicate / Legacy Notes
+
 - Duplicate route: `GET /api/attributes` is defined twice. Express binds the first definition (attribute definitions + generation methods). The later definition is unreachable until the duplication is removed; both behaviors are documented in `docs/api/attributes.md`.
 - Legacy behavior: `POST /api/generate-image` includes a legacy sync mode when `async=false`. See `docs/api/images.md`.
 
 ## Conventions
+
 - Most JSON responses include a `success` boolean. Some endpoints do not (noted in the low-level docs).
 - Error responses typically follow `{ success: false, error: string }`, but a few endpoints return `{ error }` without `success`.
 
-
 [./api/regions.md]
+
 # Regions API
 
 Common payloads: see `docs/api/common.md`.
 
 ## GET /api/regions
+
 List regions or fetch current region details.
 
 Request:
+
 - Query: `scope=current` to return the active region with parent options.
 
 Response (list):
+
 - 200: `{ success: true, regions: Array<{ id, name, parentRegionId, averageLevel }> }`
 
 Response (scope=current):
+
 - 200: `{ success: true, region, parentOptions }`
   - `region`: `{ id, name, description, shortDescription, parentRegionId, parentRegionName?, averageLevel, controllingFactionId, secrets }`
   - `parentOptions`: array of `{ id, name, description, parentRegionId }`
 - 404: `{ success: false, error }` if no current region
 
 ## GET /api/regions/:id
+
 Fetch a region by id.
 
 Response:
+
 - 200: `{ success: true, region, parentOptions }`
   - `region`: `{ id, name, description, shortDescription, parentRegionId, parentRegionName?, averageLevel, controllingFactionId, secrets }`
 - 400/404/500 with `{ success: false, error }`
 
 ## PUT /api/regions/:id
+
 Update a region.
 
 Request:
+
 - Body: `{ name: string, description: string, shortDescription?: string|null, parentRegionId?: string|null, averageLevel?: number|null, controllingFactionId?: string|null }`
 
 Response:
+
 - 200: `{ success: true, message, region, parentOptions }`
 - 400/404/500 with `{ success: false, error }`
 
 Notes:
+
 - Parent cycles are rejected.
 - `averageLevel` accepts numeric values or `null`/empty string to clear.
 - `controllingFactionId` must reference an existing faction id or be `null` to clear.
 
 ## POST /api/regions/generate
+
 Generate a region using AI.
 
 Request:
+
 - Body: `{ regionName?, regionDescription?, regionNotes?, clientId?, requestId? }`
 
 Response:
+
 - 200: `{ success: true, region: Region, createdLocationIds, createdLocations, entranceLocationId, message, requestId? }`
 - 500: `{ success: false, error, requestId? }`
 
 Notes:
+
 - When `clientId` is provided, realtime events are emitted during generation.
 
-
 [./api/serialization.md]
+
 # Serialization & Shared Shapes (legacy index)
 
 This file is kept for backward references. The authoritative, up-to-date shared shapes now live in:
+
 - `docs/api/common.md`
 
 If you are looking for:
+
 - ChatEntry, NpcProfile, LocationResponse, NeedBar, etc. -> `docs/api/common.md`
 - Map endpoint responses -> `docs/api/locations.md`
 
 This file intentionally avoids duplicating the full schemas to prevent drift.
 
-
 [./api/settings.md]
+
 # Settings API
 
 Common payloads: see `docs/api/common.md`.
 
 ## GET /api/settings
+
 List all settings.
 
 Response:
+
 - 200: `{ success: true, settings: SettingInfo[], count }`
 - 500: `{ success: false, error }`
 
 ## POST /api/settings
+
 Create a new setting.
 
 Request:
+
 - Body: SettingInfo fields (at minimum `name`)
 
 Response:
+
 - 201: `{ success: true, setting: SettingInfo, message }`
 - 400/409 with `{ success: false, error }`
 
 ## POST /api/settings/fill-missing
+
 Fill missing setting fields via AI.
 
 Request:
+
 - Body:
   - `setting` (required object)
   - `instructions` (optional string)
   - `imageDataUrl` (optional base64 data URL)
 
 Response:
+
 - 200: `{ success: true, setting, raw }` (merged setting values and raw AI XML)
 - 400/500 with `{ success: false, error }`
 
 ## GET /api/settings/current
+
 Return the current applied setting.
 
 Response:
+
 - 200: `{ success: true, setting: SettingInfo | null, promptVariables?, message? }`
 - 500: `{ success: false, error }`
 
 ## GET /api/settings/:id
+
 Fetch a setting by id.
 
 Response:
+
 - 200: `{ success: true, setting: SettingInfo }`
 - 404/500 with `{ success: false, error }`
 
 ## PUT /api/settings/:id
+
 Update a setting.
 
 Request:
+
 - Body: SettingInfo fields
 
 Response:
+
 - 200: `{ success: true, setting: SettingInfo, message }`
 - 201: `{ success: true, setting: SettingInfo, created: true, message }` (if not found; new setting created)
 - 400/404/409 with `{ success: false, error }`
 
 ## DELETE /api/settings/:id
+
 Delete a setting.
 
 Response:
+
 - 200: `{ success: true, message }`
 - 404/500 with `{ success: false, error }`
 
 ## POST /api/settings/:id/clone
+
 Clone a setting.
 
 Request:
+
 - Body: `{ newName?: string }`
 
 Response:
+
 - 201: `{ success: true, setting: SettingInfo, message }`
 - 400/404/409 with `{ success: false, error }`
 
 ## POST /api/settings/save
+
 Save all settings to disk.
 
 Response:
+
 - 200: `{ success: true, result, message }`
   - `result`: `{ count, files, directory }`
 - 500: `{ success: false, error }`
 
 ## POST /api/settings/load
+
 Load all settings from disk.
 
 Response:
+
 - 200: `{ success: true, result, message }`
   - `result`: `{ count, settings, directory, files }`
 - 500: `{ success: false, error }`
 
 ## GET /api/settings/saved
+
 List saved setting files.
 
 Response:
+
 - 200: `{ success: true, savedSettings, count }`
   - `savedSettings` entries include: `filename`, `filepath`, `name`, `theme`, `genre`, `lastModified`, `size`, `error?`
 - 500: `{ success: false, error }`
 
 ## POST /api/settings/:id/save
+
 Save a single setting to disk.
 
 Response:
+
 - 200: `{ success: true, filepath, message }`
 - 404/500 with `{ success: false, error }`
 
 ## POST /api/settings/:id/apply
+
 Apply a setting as current.
 
 Response:
+
 - 200: `{ success: true, setting: SettingInfo, message, promptVariables }`
 - 404/500 with `{ success: false, error }`
 
 ## DELETE /api/settings/current
+
 Clear the current setting.
 
 Response:
+
 - 200: `{ success: true, message, previousSetting: SettingInfo | null }`
 - 500: `{ success: false, error }`
 
-
 [./api/things.md]
+
 # Things & Inventory API
 
 Common payloads: see `docs/api/common.md`.
 
 ## POST /api/things
+
 Create a new thing.
 
 Request:
+
 - Body supports: `name`, `description`, `shortDescription`, `thingType`, `imageId`, `rarity`, `itemTypeDetail`, `metadata`, `slot`, `attributeBonuses`, `causeStatusEffect`, `causeStatusEffectOnTarget`, `causeStatusEffectOnEquipper`, `level`, `relativeLevel`, `statusEffects`, plus boolean flags (`isVehicle`, `isCraftingStation`, `isProcessingStation`, `isHarvestable`, `isSalvageable`).
 
 Response:
+
 - 200: `{ success: true, thing: Thing, message, imageNeedsGeneration }`
 - 400: `{ success: false, error }`
 
 Notes:
+
 - When `causeStatusEffectOnTarget`/`causeStatusEffectOnEquipper` are supplied, `causeStatusEffect` is treated as legacy input.
 
 ## GET /api/things
+
 List all things (optionally by type).
 
 Request:
+
 - Query: `type` (`item` or `scenery`)
 
 Response:
+
 - 200: `{ success: true, things: Thing[], count }`
 - 400/500 with `{ success: false, error }`
 
 ## GET /api/things/:id
+
 Fetch a thing by id.
 
 Response:
+
 - 200: `{ success: true, thing: Thing }`
 - 404: `{ success: false, error }`
 
 ## PUT /api/things/:id
+
 Update a thing.
 
 Request:
+
 - Body supports: `name`, `description`, `shortDescription`, `thingType`, `imageId`, `rarity`, `itemTypeDetail`, `metadata`, `slot`, `attributeBonuses`, `causeStatusEffect`, `causeStatusEffectOnTarget`, `causeStatusEffectOnEquipper`, `level`, `relativeLevel`, `statusEffects`, plus boolean flags.
 
 Response:
+
 - 200: `{ success: true, thing: Thing, message, imageNeedsUpdate }`
 - 400/404 with `{ success: false, error }`
 
 Notes:
+
 - `causeStatusEffect` is treated as a legacy payload and mapped internally when provided.
 
 ## POST /api/things/:id/give
+
 Move an item into an inventory.
 
 Request:
+
 - Body: `{ ownerId: string, ownerType?: string, locationId?: string }`
 
 Response:
+
 - 200: `{ success: true, thing: Thing, owner: NpcProfile, location?: LocationResponse, message }`
 - 400/404/409/500 with `{ success: false, error }`
 
 ## POST /api/things/:id/drop
+
 Drop an item into a location.
 
 Request:
+
 - Body: `{ ownerId?: string, ownerType?: string, locationId?: string }`
 
 Response:
+
 - 200: `{ success: true, thing: Thing, location: LocationResponse, message, owner?: NpcProfile }`
 - 400/404/500 with `{ success: false, error }`
 
 ## POST /api/things/:id/teleport
+
 Teleport a thing to a location (removing from inventories).
 
 Request:
+
 - Body: `{ locationId: string }`
 
 Response:
+
 - 200: `{ success: true, thing: Thing, destination: LocationResponse, previousLocation: LocationResponse, removedOwnerIds: string[], locationIds: string[], message }`
 - 400/404/500 with `{ success: false, error }`
 
 ## DELETE /api/things/:id
+
 Delete a thing.
 
 Response:
+
 - 200: `{ success: true, message, locationIds, playerIds, npcIds }`
 - 400/404/500 with `{ success: false, error }`
 
 ## GET /api/things/scenery
+
 List all scenery things.
 
 Response:
+
 - 200: `{ success: true, things: Thing[], count }`
 - 500: `{ success: false, error }`
 
 ## GET /api/things/items
+
 List all item things.
 
 Response:
+
 - 200: `{ success: true, things: Thing[], count }`
 - 500: `{ success: false, error }`
 
 ## POST /api/things/:id/image
+
 Trigger image generation for a thing.
 
 Response:
+
 - 200: `{ success: true, thing: Thing, imageGeneration, message }`
 - 202: `{ success: false, thing: Thing, imageGeneration, message }` (existing job)
 - 409: `{ success: false, error, reason?, thing }` (not eligible or skipped)
 - 404/500 with `{ success: false, error }`
 
-
 [./classes/ComfyUIClient.md]
+
 # ComfyUIClient
 
 ## Purpose
+
 Client for a ComfyUI server. Queues workflows, polls status, downloads images, and saves them locally.
 
 ## Construction
+
 - `new ComfyUIClient(config)`: reads `config.imagegen.server.host`/`port` and builds base URL.
 
 ## Instance API
+
 - `generatePromptId()`: UUID for prompts.
 - `queuePrompt(workflow, promptId)`: POSTs to `/prompt`, returns `{ success, promptId, data|error }`.
 - `getHistory(promptId)`: GETs `/history/:id`, returns `{ success, data, isComplete }`.
@@ -1791,26 +2149,30 @@ Client for a ComfyUI server. Queues workflows, polls status, downloads images, a
 - `saveImage(imageData, imageId, originalFilename, saveDirectory)`: writes file and returns `{ success, filename, filepath, size }`.
 
 ## Notes
+
 - `queuePrompt` and `getHistory` catch and return errors instead of throwing.
 - `saveImage` ensures output directory exists.
 
-
 [./classes/Events.md]
+
 # Events
 
 ## Purpose
+
 Runs LLM-based event checks on narrative text, parses structured outcomes, and applies those outcomes to the game world (locations, items, NPCs, quests, and status effects). Tracks discovered/altered entities to avoid duplicates.
 
 ## Key State (Static)
+
 - Dependency container: `_deps` (promptEnv, parseXMLTemplate, prepareBasePromptContext, Location, players, things, findRegionByLocationId, config accessors, etc).
 - Parsers/aggregators/handlers: `_parsers`, `_aggregators`, `_handlers`.
 - Tracking sets: `animatedItems`, `alteredItems`, `newItems`, `obtainedItems`, `destroyedItems`, `droppedItems`, `alteredCharacters`, `newCharacters`, `arrivedCharacters`, `departedCharacters`, `defeatedEnemies`, `movedLocations`.
 - Timeouts and durations: `_baseTimeout`, `DEFAULT_STATUS_DURATION`, `MAJOR_STATUS_DURATION`.
 
 ## Public API (Static)
+
 - `initialize(deps)`: registers dependencies and builds parsers/aggregators/handlers.
 - `runEventChecks({ textToCheck, stream, allowEnvironmentalEffects, isNpcTurn, _depth, followupQueue })`:
-    - Renders event-check prompts, calls `LLMClient.chatCompletion`, parses `<final>` block responses, applies results.
+  - Renders event-check prompts, calls `LLMClient.chatCompletion`, parses `<final>` block responses, applies results.
 - `runQuestChecks({ allowWithoutEventChecks })`: LLM check for quest objective completion.
 - `applyEventOutcomes(parsedEvents, context)`: applies structured changes to world state.
 - `processQuestObjectiveCompletionEntries(entries, context)`: applies quest objective completion and rewards.
@@ -1822,11 +2184,13 @@ Runs LLM-based event checks on narrative text, parses structured outcomes, and a
 - `logEventCheck({ systemPrompt, generationPrompt, responseText, label, requestPayload, responsePayload })`.
 
 ## Accessors (Static)
+
 - `get config()`.
 - `get currentPlayer()`.
 - `get players()` / `get things()`.
 
 ## Private Helpers (Grouped)
+
 - Tracking helpers: `_resetTrackingSets`, `_isItemAlreadyTracked`, `_trackItemsFromParsing`, `_pruneExcludedItemEntries`.
 - Prompt helpers: `_enqueueFollowupEventCheck`, `_runEventChecksForRewardProse`.
 - Parser helpers: `_buildParsers`, `_parseEventPromptResponse`, `_extractNumberedResponses`.
@@ -1841,6 +2205,7 @@ Runs LLM-based event checks on narrative text, parses structured outcomes, and a
 - Scene helpers: `_buildSceneItemNameSet`.
 
 ## Notes
+
 - Event prompts are grouped (locations, items, NPCs, misc) and run sequentially with structured parsing.
 - Event check responses must include a `<final>` block; `runEventChecks` enforces this via `requiredRegex` so the LLM client retries when it is missing.
 - Combined answers across groups are stitched into a single numbered list and parsed as the final block text (no extra `<final>` wrapper).
@@ -1849,14 +2214,16 @@ Runs LLM-based event checks on narrative text, parses structured outcomes, and a
 - Many helpers are defensive and throw on missing dependencies to avoid silent corruption.
 - Item alteration updates `Thing.shortDescription` when provided by the alteration prompt, otherwise preserving the existing value.
 
-
 [./classes/Faction.md]
+
 # Faction
 
 ## Purpose
+
 Represents a faction with goals, tags, relations to other factions, assets, and reputation tiers. Maintains static indexes for lookup by id and name.
 
 ## Key State
+
 - `#id`, `#name`.
 - `#tags`, `#goals`.
 - `#description`, `#shortDescription`.
@@ -1868,13 +2235,16 @@ Represents a faction with goals, tags, relations to other factions, assets, and 
 - Static indexes: `#indexById`, `#indexByName`.
 
 ## Construction
+
 - `new Faction({ id, name, tags, goals, description, shortDescription, homeRegionName, relations, assets, reputationTiers })`.
 
 ## Accessors
+
 - Getters: `id`, `name`, `tags`, `goals`, `description`, `shortDescription`, `homeRegionName`, `relations`, `assets`, `reputationTiers`, `createdAt`, `lastUpdated`.
 - Setters: `name`, `tags`, `goals`, `description`, `shortDescription`, `homeRegionName`, `relations`, `assets`, `reputationTiers`.
 
 ## Instance API
+
 - `update(updates)`: applies updates via setters (skips id/timestamps).
 - `getRelation(factionId)` returns `{ status, notes }` or `null`.
 - `setRelation(factionId, relation)` expects `{ status, notes }`.
@@ -1883,6 +2253,7 @@ Represents a faction with goals, tags, relations to other factions, assets, and 
 - `toJSON()`.
 
 ## Static API
+
 - `fromJSON(data)`.
 - `create(options)`.
 - `getById(id)` / `getByName(name)` / `getAll()`.
@@ -1890,17 +2261,20 @@ Represents a faction with goals, tags, relations to other factions, assets, and 
 - `indexById` / `indexByName` getters.
 
 ## Notes
+
 - Relations are normalized and validated against `allied|neutral|hostile|rival` and require notes.
 - `reputationTiers` are sorted by threshold ascending.
 
-
 [./classes/Globals.md]
+
 # Globals
 
 ## Purpose
+
 Centralized static state and helpers used across the server. Provides access to the current player, locations, regions, realtime hub, and prompt/context wiring.
 
 ## Key State (Static)
+
 - `config`, `baseDir`, `gameLoaded`, `inCombat`, `realtimeHub`.
 - `currentSaveVersion`, `saveFileSaveVersion`.
 - `sceneSummaries`, `saveMetadata`, `currentSaveInfo`.
@@ -1908,6 +2282,7 @@ Centralized static state and helpers used across the server. Provides access to 
 - `#currentPlayerOverride` (private override for `currentPlayer`).
 
 ## Static API
+
 - `setSaveMetadata(metadata)` / `getSaveMetadata()`.
 - `setCurrentSaveInfo(info)` / `getCurrentSaveInfo()`.
 - `getBasePromptContext`, `getPromptEnv`, `parseXMLTemplate`: placeholders that must be assigned.
@@ -1924,22 +2299,26 @@ Centralized static state and helpers used across the server. Provides access to 
 - `updateSpinnerText({ clientId, message, scope, requestId, includeServerTime })`: emits chat spinner updates.
 
 ## Notes
+
 - Many getters warn if `Globals.config` is missing to avoid silent failures.
 - `currentPlayer` setter also installs a resolver in `Player` when available.
 
-
 [./classes/LLMClient.md]
+
 # LLMClient
 
 ## Purpose
+
 Centralized client for LLM chat completions with concurrency limits, streaming progress reporting, retry logic, prompt logging, and optional image preprocessing. Also exposes prompt cancellation and log utilities.
 
 ## Internal Class: Semaphore
+
 - `constructor(maxConcurrent)`: sets concurrency limit.
 - `acquire()` / `release()`: manage async access.
 - `setLimit(newLimit)` / `dispatch()`: adjust and drain queued acquisitions.
 
 ## Key State (Static)
+
 - `#semaphores`: per-key Semaphore instances.
 - `#semaphoreLimit`: current global limit.
 - `#streamProgress`: active stream tracking and ticker state.
@@ -1947,6 +2326,7 @@ Centralized client for LLM chat completions with concurrency limits, streaming p
 - `#canceledStreams`: set of canceled stream ids.
 
 ## Public API (Static)
+
 - `cancelPrompt(streamId, reason)`: aborts an in-flight request.
 - `ensureAiConfig()`: validates `Globals.config.ai`.
 - `getMaxConcurrent(aiConfigOverride)`: reads `max_concurrent_requests`.
@@ -1960,6 +2340,7 @@ Centralized client for LLM chat completions with concurrency limits, streaming p
   - Uses `LLMClient.logPrompt` and emits prompt progress via `Globals.realtimeHub`.
 
 ## Private Helpers (Selected)
+
 - Stream tracking: `#isInteractive`, `#renderStreamProgress`, `#ensureProgressTicker`, `#trackStreamStart`, `#trackStreamBytes`, `#trackStreamEnd`, `#broadcastProgress`.
 - Concurrency: `#ensureSemaphore`.
 - Formatting: `#formatMessageContent`, `#cloneAiConfig`.
@@ -1967,30 +2348,36 @@ Centralized client for LLM chat completions with concurrency limits, streaming p
 - Image handling: `#getSharp`, `#parseImageDataUrl`, `#convertImageDataUrlToWebp`, `#convertMessagesToWebp`.
 
 ## Notes
+
 - Streaming progress is broadcast through `Globals.realtimeHub` when available.
 - Retries are built in; stream timeouts are incrementally increased on retry.
 - `logPrompt` is the standard logging path for prompts throughout the codebase.
 
-
 [./classes/LocationExit.md]
+
 # LocationExit
 
 ## Purpose
+
 Represents a connection between locations (or regions), with optional vehicle semantics and bidirectional travel.
 
 ## Key State
+
 - `#id`, `#description`, `#destination`, `#destinationRegion`.
 - `#bidirectional`, `#isVehicle`, `#vehicleType`.
 - `#imageId`, `#createdAt`, `#lastUpdated`.
 
 ## Construction
+
 - `new LocationExit({ description, destination, destinationRegion, bidirectional, id, imageId, isVehicle, vehicleType })`.
 
 ## Accessors
+
 - Getters: `id`, `description`, `destination`, `destinationRegion`, `associatedRegionStub`, `region`, `location`, `name`, `relativeName`, `bidirectional`, `isVehicle`, `vehicleType`, `createdAt`, `imageId`, `lastUpdated`.
 - Setters: `description`, `destination`, `destinationRegion` (no-op with warning), `bidirectional`, `imageId`, `isVehicle`, `vehicleType`.
 
 ## Instance API
+
 - `isReversible()`: alias of `bidirectional`.
 - `createReverse(reverseDescription)`: creates a reverse exit (requires caller to supply source id).
 - `update({ description, destination, destinationRegion, bidirectional, isVehicle, vehicleType })`.
@@ -1999,21 +2386,25 @@ Represents a connection between locations (or regions), with optional vehicle se
 - `toString()`: human-readable representation.
 
 ## Static API
+
 - `createBidirectionalPair({ location1Id, location2Id, description1to2, description2to1 })`.
 - `createOneWay({ description, destination })`.
 
 ## Notes
+
 - `destinationRegion` is derived from the destination location; direct setting is intentionally disabled.
 - `associatedRegionStub` and `location` fall back to server stub data when full objects are not yet generated.
 
-
 [./classes/Location.md]
+
 # Location
 
 ## Purpose
+
 Represents a game location, including description, exits, NPCs, items/scenery, and status effects. Supports stub locations that can be promoted to fully generated locations.
 
 ## Key State
+
 - Core fields: `#id`, `#name`, `#description`, `#shortDescription`, `#baseLevel`, `#imageId`.
 - Region linkage: `#regionId`, `#controllingFactionId`.
 - Exits: `#exits` (Map of direction -> LocationExit).
@@ -2026,16 +2417,19 @@ Represents a game location, including description, exits, NPCs, items/scenery, a
 - Static indexes: `#indexById`, `#indexByName`.
 
 ## Construction
+
 - `new Location({...})` validates required fields, links to a `Region`, initializes indexes, and normalizes status effects and hints.
 - `static fromXMLSnippet(xmlSnippet, options)` parses XML and constructs a Location with normalized hints and events.
 
 ## Static API
+
 - `get(id)` / `getById(id)` / `getByName(name)` / `findByName(name)`.
 - `getAll()`.
 - `get indexById()` / `get indexByName()`.
 - `removeFromIndex(locationOrId)` to prevent stale lookups.
 
 ## Accessors
+
 - `regionId` (get/set) and `region` (get).
 - `controllingFactionId` (get/set).
 - Basic fields: `id`, `name`, `description`, `shortDescription`, `baseLevel`, `imageId`, `createdAt`, `lastUpdated`.
@@ -2047,6 +2441,7 @@ Represents a game location, including description, exits, NPCs, items/scenery, a
 - Concepts: `characterConcepts` (get/set), `enemyConcepts` (get/set).
 
 ## Instance API
+
 - Stub lifecycle: `promoteFromStub(...)`, `markStubsGenerated()`, `resetStubGeneration()`.
 - Exit management: `addExit(direction, exit)`, `removeExit(direction)`, `getExit(direction)`, `getAvailableDirections()`, `hasExit(direction)`, `clearExits()`.
 - Summaries: `getSummary()`, `getDetails()`, `toJSON()`.
@@ -2057,33 +2452,39 @@ Represents a game location, including description, exits, NPCs, items/scenery, a
 - `toString()`.
 
 ## Private/Static Helpers
+
 - `#generateId()`.
 - `#normalizeStatusEffects(effects)`.
 - `#normalizeRandomEvents(events)`.
 - `#normalizeGenerationHints(hints)`.
 
 ## Notes
+
 - Stub locations seed `shortDescription` from stub metadata at creation, and that value persists through promotion unless overwritten by generated output.
 - Adding/removing thing ids updates Thing metadata (location ownership) and removes from other locations via `Thing.removeFromWorldById`.
 - Status effects are stored as `StatusEffect` instances; getters return JSON snapshots.
 
-
 [./classes/LorebookManager.md]
+
 # LorebookManager
 
 ## Purpose
+
 Manages SillyTavern-compatible lorebooks stored as JSON files. Handles loading, enabling/disabling, keyword matching, and prompt injection formatting.
 
 ## Key State
+
 - `lorebooksPath`, `stateFile`.
 - `lorebooks`: `Map<filename, normalizedLorebook>`.
 - `enabledBooks`: `Set<filename>`.
 - `allEntries`: flattened list of entries from enabled books.
 
 ## Construction
+
 - `new LorebookManager(lorebooksPath = './lorebooks')`.
 
 ## Instance API
+
 - `initialize()`: ensures directory, loads state, loads all lorebooks.
 - `ensureDirectory()`: creates lorebook directory if missing.
 - `loadState()` / `saveState()`: read/write `lorebook-state.json` for enabled books.
@@ -2103,29 +2504,35 @@ Manages SillyTavern-compatible lorebooks stored as JSON files. Handles loading, 
 - `reload()`: re-reads state and lorebooks.
 
 ## Module Helpers
+
 - `getLorebookManager()`: returns the singleton instance (or null).
 - `initializeLorebookManager(lorebooksPath)`: creates and initializes the singleton.
 
 ## Notes
+
 - Normalization uses an estimated 4 chars per token to manage token budgets.
 - All matching is simple substring match with optional case sensitivity per entry.
 
-
 [./classes/ModLoader.md]
+
 # ModLoader
 
 ## Purpose
+
 Loads and initializes mods from the `mods/` directory. Provides per-mod scope helpers, exposes mod configs, and supports client asset discovery.
 
 ## Key State
+
 - `baseDir`, `modsDir`.
 - `loadedMods`: `Map<modName, { name, dir, mod, meta }>`.
 - `modPromptEnvs`: `Map<modName, NunjucksEnvironment>` for mod prompt templates.
 
 ## Construction
+
 - `new ModLoader(baseDir)`: sets base paths and initializes internal maps.
 
 ## Instance API
+
 - `getModDirectories()`: returns valid mod directory names (must contain `mod.js`).
 - `loadMods(scope)`: loads all mods, calls `register`, returns `{ loaded, failed, total }`.
 - `loadMod(modName, scope)`: loads a single mod, validates `register` exists, stores metadata.
@@ -2142,23 +2549,27 @@ Loads and initializes mods from the `mods/` directory. Provides per-mod scope he
 - `getModClientStyles()`: returns mod public CSS file paths.
 
 ## Notes
+
 - `loadMod` clears the require cache to allow hot reload during development.
 - `registerModRoute` namespaces routes under `/api/mods/<modName>/...`.
 
-
 [./classes/NanoGPTImageClient.md]
+
 # NanoGPTImageClient
 
 ## Purpose
+
 Calls the NanoGPT image generation API and saves returned base64 images to disk.
 
 ## Construction
+
 - `new NanoGPTImageClient(config)`:
   - Reads `imagegen.apiKey` or `NANOGPT_API_KEY`.
   - Reads `imagegen.endpoint` (defaults to `https://nano-gpt.com/`).
   - Requires `imagegen.model`.
 
 ## Instance API
+
 - `generatePromptId()`: UUID for request tracking.
 - `generateImage({ prompt, negativePrompt, width, height, seed })`:
   - POSTs to `/api/generate-image` with model, prompts, size, and optional seed.
@@ -2167,22 +2578,26 @@ Calls the NanoGPT image generation API and saves returned base64 images to disk.
   - Validates inputs and writes image to disk, returning `{ filename, filepath, size }`.
 
 ## Notes
+
 - Unlike OpenAI, `saveImage` does not create the directory; callers should ensure it exists.
 
-
 [./classes/OpenAIImageClient.md]
+
 # OpenAIImageClient
 
 ## Purpose
+
 Calls OpenAI image generation API and saves returned base64 images to disk.
 
 ## Construction
+
 - `new OpenAIImageClient(config)`:
   - Reads `imagegen.apiKey` or `OPENAI_API_KEY`.
   - Reads `imagegen.endpoint` (defaults to `https://api.openai.com/v1/images/generations`).
   - Requires `imagegen.model`.
 
 ## Instance API
+
 - `generateRequestId()`: UUID for request tracking.
 - `generateImage({ prompt, negativePrompt, width, height })`:
   - Sends a generation request; returns `{ requestId, imageBuffer, mimeType }`.
@@ -2191,16 +2606,19 @@ Calls OpenAI image generation API and saves returned base64 images to disk.
   - Validates inputs, ensures directory exists, writes image, returns `{ filename, filepath, size }`.
 
 ## Notes
+
 - Prompts are combined with a `Negative prompt:` suffix when provided.
 
-
 [./classes/Player.md]
+
 # Player
 
 ## Purpose
+
 Represents a player or NPC with attributes, skills, inventory, gear, status effects, need bars, dispositions, party membership, quests, and progression. Maintains static indexes and shared definitions (gear slots, dispositions, need bars).
 
 ## Key State
+
 - Identity: `#id`, `#name`, `#description`, `#shortDescription`, `#imageId`, `#class`, `#race`, `#gender`, `#isNPC`.
 - Core stats: `#attributes`, `#level`, `#experience`, `#health`, `#healthAttribute`.
 - Inventory/gear: `#inventory`, `#gearSlots`, `#gearSlotsByType`, `#gearSlotNameIndex`.
@@ -2214,9 +2632,11 @@ Represents a player or NPC with attributes, skills, inventory, gear, status effe
 - Static indexes: `#indexById`, `#indexByName`.
 
 ## Construction
+
 - `new Player(options)` loads definitions, validates input, initializes attributes, inventory, gear, skills, dispositions, need bars, and registers in indexes.
 
 ## Static API
+
 - Lookup and registry:
   - `getAll()`, `getById(id)`, `get(id)`, `getByName(name)`, `getByNames(names)`, `unregister(target)`.
   - `resolvePlayerId(playerLike)`.
@@ -2234,6 +2654,7 @@ Represents a player or NPC with attributes, skills, inventory, gear, status effe
   - `setNpcInventoryChangeHandler(handler)`, `setLevelUpHandler(handler)`.
 
 ## Accessors (Grouped)
+
 - Identity and descriptors: `id`, `name`, `description`, `shortDescription`, `imageId`, `class`, `race`, `gender`, `personalityType`, `personalityTraits`, `personalityNotes`.
 - Factions: `factionId`.
 - State: `level`, `experience`, `health`, `maxHealth`, `healthAttribute`, `isDead`, `isDisabled`, `inCombat`, `isHostile`, `corpseCountdown`, `elapsedTime`, `createdAt`, `lastUpdated`.
@@ -2243,6 +2664,7 @@ Represents a player or NPC with attributes, skills, inventory, gear, status effe
 - Need bars/memory: `turnsSincePartyMemoryGeneration`, `importantMemories`.
 
 ## Instance API (Highlights)
+
 - Quests/goals:
   - `addGoal(goal)`, `removeGoal(goal)`.
   - `addQuest(quest)`, `removeQuest(questId)`, `getQuestById(questId)`.
@@ -2299,6 +2721,7 @@ Represents a player or NPC with attributes, skills, inventory, gear, status effe
   - `toString()`.
 
 ## Private Helpers (Selected)
+
 - Initialization: `#loadDefinitions`, `#initializeAttributes`, `#initializeInventory`, `#initializeGear`, `#initializeSkills`, `#initializeDispositions`, `#initializeNeedBars`.
 - Gear helpers: `#resolveItemIdFromGearValue`, `#normalizeSlotType`, `#resolveSlotName`, `#syncGearWithInventory`, `#preserveHealthRatioAfterGearChange`.
 - Need bar helpers: `#normalizeNeedBarChangeList`, `#normalizeNeedMagnitudeKey`, `#normalizeNeedValueMap`, `#buildNeedBarDefinition`, `#cloneNeedBarDefinition`, `#formatNeedBarForContext`, `#resolveNeedBarByIdentifier`, `#resolveNeedBarMagnitudeDelta`, `#resolveNeedBarThreshold`, `#applyNeedBarValue`.
@@ -2309,21 +2732,25 @@ Represents a player or NPC with attributes, skills, inventory, gear, status effe
 - XP: `#skillPointsPerLevel`, `#processExperienceOverflow`.
 
 ## Notes
+
 - The class supports NPCs and players; many behaviors are shared with `isNPC` gating certain flows.
 - Gear and inventory are tightly coupled; equip/unequip flows update health and modifiers.
 - Need bar logic includes per-turn decay and magnitude-based adjustments.
 
-
 [./classes/QuestConfirmationManager.md]
+
 # QuestConfirmationManager
 
 ## Purpose
+
 Manages async quest confirmation prompts and responses per client. Emits requests through `Globals.emitToClient` and resolves or rejects pending promises.
 
 ## Construction
+
 - `new QuestConfirmationManager({ timeoutMs })`: sets a global timeout (null or 0 disables). Initializes `pending` map.
 
 ## Instance API
+
 - `requestConfirmation({ clientId, quest, requestId })`:
   - Validates inputs, normalizes quest payload, emits `quest_confirmation_request`.
   - Returns a Promise that resolves to `true/false` on acceptance or rejects on timeout or delivery failure.
@@ -2332,20 +2759,24 @@ Manages async quest confirmation prompts and responses per client. Emits request
 - `rejectAllForClient(clientId, reason)`: rejects all pending confirmations for a client (e.g. disconnect).
 
 ## Private Helpers
+
 - `#normalizeQuestPayload(quest)`: sanitizes quest fields into a safe, minimal payload for the client.
 
 ## Notes
+
 - The manager stores pending confirmations as `{ resolve, reject, timeout, clientId }` keyed by a UUID.
 - Errors are explicit and descriptive to surface mismatches early.
 
-
 [./classes/Quest.md]
+
 # Quest
 
 ## Purpose
+
 Tracks a quest with objectives, rewards, giver info, and completion state. Maintains static indexes for lookup by id and name.
 
 ## Key State
+
 - `#id`: quest id (generated if not provided).
 - `objectives`: array of QuestObjective instances.
 - `name`, `description`, `secretNotes`.
@@ -2354,9 +2785,11 @@ Tracks a quest with objectives, rewards, giver info, and completion state. Maint
 - `paused`: whether the quest is paused.
 
 ## Construction
+
 - `new Quest(options)` validates name and normalizes objectives and reward fields. Adds to static indexes by id and name.
 
 ## Instance API
+
 - `get id()`: returns quest id.
 - `get giver()`: resolves giver via `Player.getById`.
 - `set giver(player)`: updates `giverId`/`giverName`.
@@ -2366,36 +2799,43 @@ Tracks a quest with objectives, rewards, giver info, and completion state. Maint
 - `toJSON()`: serializes quest state.
 
 ## Static API
+
 - `getByName(name)`, `getById(id)`: lookup from indexes.
 - `fromJSON(data)`: validates, normalizes, and constructs a Quest, then hydrates objectives.
 - `filterActiveQuests(quests, { includePaused })`: filters out completed quests and optionally paused ones.
 
 ## Internal Class: QuestObjective
+
 - `new QuestObjective(description, optional)`: creates an objective with generated id.
 - `static generateId()`: generates objective ids.
 - `toJSON()` / `fromJSON(data)`: serialization helpers.
 - `get id()`: returns objective id.
 
 ## Notes
+
 - `Quest.QuestObjective` is assigned for external access to the helper class.
 - The class uses `SanitizedStringMap` for case-insensitive name lookups.
 
-
 [./classes/RealtimeHub.md]
+
 # RealtimeHub
 
 ## Purpose
+
 Manages WebSocket connections for real-time client updates. Tracks clients by `clientId`, supports targeted send, broadcast, and typed emits.
 
 ## Key State
+
 - `path`: WebSocket path (default `/ws`).
 - `wss`: WebSocketServer instance.
 - `clients`: `Map<clientId, Set<WebSocket>>`.
 
 ## Construction
+
 - `new RealtimeHub({ logger, path })`.
 
 ## Instance API
+
 - `attach(server, { path })`: attaches a WebSocket server to an HTTP server, handles connect/ping/close.
 - `extractClientId(requestUrl)`: parses `clientId` query param.
 - `registerClient(clientId, socket)` / `unregisterClient(clientId, socket)`.
@@ -2406,17 +2846,20 @@ Manages WebSocket connections for real-time client updates. Tracks clients by `c
 - `emit(clientId, type, payload)`: convenience wrapper around send/broadcast.
 
 ## Notes
+
 - `emit` with `clientId = null` broadcasts to all clients.
 - Clients without a provided id get an auto-generated id.
 
-
 [./classes/Region.md]
+
 # Region
 
 ## Purpose
+
 Represents a region containing multiple locations, with metadata like average level, random events, and status effects. Maintains static indexes for lookup by id and name.
 
 ## Key State
+
 - `#id`, `#name`, `#description`, `#shortDescription`.
 - `#locationBlueprints`: blueprint definitions for generated locations.
 - `#locationIds`: ids for instantiated locations in the region.
@@ -2426,9 +2869,11 @@ Represents a region containing multiple locations, with metadata like average le
 - `#lastVisitedTime`.
 
 ## Construction
+
 - `new Region({...})` validates name/description and normalizes blueprints, events, levels, and status effects. Adds to static indexes.
 
 ## Static API
+
 - `get(id)` / `getByName(name)` / `getAll()`.
 - `get indexById()` / `get indexByName()` / `getIndexById()` / `getIndexByName()`.
 - `clear()`.
@@ -2436,6 +2881,7 @@ Represents a region containing multiple locations, with metadata like average le
 - `get stubRegionCount()`: count of regions without location ids.
 
 ## Accessors
+
 - `name`, `description`, `shortDescription` (get/set).
 - `locationBlueprints`, `locationIds` (get/set).
 - `entranceLocationId`, `parentRegionId` (get/set).
@@ -2448,81 +2894,97 @@ Represents a region containing multiple locations, with metadata like average le
 - Relationship helpers: `childRegions`, `siblingRegions`, `parentRegion`, `parentHierarchy`.
 
 ## Instance API
+
 - `toJSON()`: serializes region state.
 - Status effects: `getStatusEffects()`, `setStatusEffects(effects)`, `addStatusEffect(effect, defaultDuration)`, `removeStatusEffect(description)`, `tickStatusEffects()`, `clearExpiredStatusEffects()`.
 - NPC discovery: `getNPCs()`, `getNPCIds()`, `get locations()`.
 - Location tracking: `addLocationId(id)` / `addLocation(id)`.
 
 ## Private Helpers
+
 - `#generateId()`.
 - `#normalizeBlueprint(blueprint)`.
 - `#normalizeImportantNpcCount(value)`.
 - `#normalizeStatusEffects(effects)`.
 
 ## Notes
+
 - Region stub expansion expects a `<shortDescription>` in the stub response and persists it on the generated `Region`.
 - `fromXMLSnippet` accepts both `<region>` and mixed tag variants (name/description/shortDescription).
 - `parentHierarchy` throws on circular references to surface data errors early.
 
-
 [./classes/SanitizedStringMap.md]
+
 # SanitizedStringMap
 
 ## Purpose
+
 A Map wrapper that normalizes string keys so lookups are case- and punctuation-insensitive. Keys are normalized by replacing punctuation/underscores with spaces, collapsing whitespace, trimming, and lowercasing.
 
 ## Construction
+
 - `new SanitizedStringMap()`: creates an empty map.
 
 ## Static Helpers
+
 - `#sanitizeKey(key)`: validates input is a string, normalizes it, and throws on non-strings.
 
 ## Instance API
+
 - `set(key, value)`: normalizes the key before storing.
 - `get(key)`: normalized lookup.
 - `has(key)`: normalized existence check.
 - `delete(key)`: normalized delete.
 
 ## Notes
+
 - All key access passes through sanitization; non-string keys raise errors.
 
-
 [./classes/SanitizedStringSet.md]
+
 # SanitizedStringSet
 
 ## Purpose
+
 A Set wrapper that normalizes string values so lookups are case- and punctuation-insensitive. Values are normalized by replacing punctuation/underscores with spaces, collapsing whitespace, trimming, and lowercasing.
 
 ## Construction
+
 - `new SanitizedStringSet()`: creates an empty set.
 
 ## Static Helpers
+
 - `#sanitizeValue(value)`: validates input is a string, normalizes it, and throws on non-strings.
 - `fromArray(arr)`: builds a new set by calling `add` on each array entry.
 
 ## Instance API
+
 - `add(value)`: normalizes and stores a string; ignores non-strings.
 - `has(value)`: normalized lookup; returns false for non-strings.
 - `delete(value)`: normalized delete; returns false for non-strings.
 - `keys()`: returns an array copy of the set contents.
 
 ## Notes
+
 - Sanitization is always applied; the original string value is not stored.
 
-
 [./classes/SceneSummaries.md]
+
 # SceneSummaries
 
 ## Purpose
+
 Stores and manages scene summaries extracted from chat history. Tracks scene ranges, entry id mappings, and per-entry NPC names to support gap detection and absence checks.
 
 ## Key State
+
 - `_scenes`: list of normalized scene objects `{ startIndex, endIndex, startEntryId, endEntryId, summary, quotes }`.
 - `_entryIdToIndex`: map from entry id to index.
 - `_entryIdToNpcNames`: map from entry id to NPC names.
 - `_metadata`: `{ version, updatedAt, lastSummarizedRange }`.
 
 ## Instance API
+
 - `clear()`: resets all stored data.
 - `addSummaryResult(summaryResult)`: validates and merges a summary payload (scenes + entryIndexMap).
 - `containsEntry(entryId)`: checks if an entry index falls within any scene range.
@@ -2536,21 +2998,25 @@ Stores and manages scene summaries extracted from chat history. Tracks scene ran
 - `load(data)`: clears and loads from serialized data, validating completeness.
 
 ## Private Helpers
+
 - `#ingestEntryIndexMap(entryIndexMap)`: validates and populates entry id/index and NPC name maps.
 - `#normalizeScene(scene)`: validates and normalizes scene shape.
 - `#cloneScene(scene)`: deep-ish copy used by `getScenes`.
 
 ## Notes
+
 - All validation is strict; missing fields throw explicit errors to avoid silent corruption.
 
-
 [./classes/SettingInfo.md]
+
 # SettingInfo
 
 ## Purpose
+
 Represents a game setting/world configuration, including theme, genre, prompts, and defaults used to generate a game session. Tracks instances via static indexes and supports file persistence.
 
 ## Key State
+
 - Core fields: `#id`, `#name`, `#description`, `#theme`, `#genre`, `#tone`, `#difficulty`, `#startingLocationType`.
 - Prompt and style fields: `#currencyName`, `#currencyNamePlural`, `#currencyValueNotes`, `#writingStyleNotes`, `#baseContextPreamble`, `#characterGenInstructions`, `#imagePromptPrefix*`.
 - Defaults: `#playerStartingLevel`, `#defaultStartingCurrency`, `#defaultPlayerName`, `#defaultPlayerDescription`, `#defaultStartingLocation`, `#defaultNumSkills`, `#defaultExistingSkills`.
@@ -2559,12 +3025,15 @@ Represents a game setting/world configuration, including theme, genre, prompts, 
 - Static indexes: `#indexByID`, `#indexByName`.
 
 ## Construction
+
 - `new SettingInfo(options)` validates required fields and normalizes lists and numeric defaults. Adds the instance to static indexes.
 
 ## Accessors
+
 - Getters and setters exist for all fields above. Setters normalize strings and update `#lastUpdated`.
 
 ## Instance API
+
 - `update(updates)`: applies updates via setters, skipping id and timestamps.
 - `getStatus()`: returns a full snapshot of all fields.
 - `toJSON()`: alias of `getStatus()`.
@@ -2575,6 +3044,7 @@ Represents a game setting/world configuration, including theme, genre, prompts, 
 - `deleteSavedFile(saveDir)`: deletes the file for this setting.
 
 ## Static API
+
 - `create(options)`.
 - `getById(id)` / `getByName(name)` / `getAll()` / `exists(id)` / `delete(id)` / `count()` / `clear()`.
 - `fromJSON(data)`.
@@ -2583,42 +3053,51 @@ Represents a game setting/world configuration, including theme, genre, prompts, 
 - `listSavedSettings(saveDir)`: returns metadata for available settings on disk.
 
 ## Private Helpers
+
 - `#generateId()`: unique id generator.
 - `#normalizeExistingSkills(value)` / `#normalizeStringList(value)`.
 - `#updateTimestamp()`.
 
 ## Notes
+
 - Many setters normalize line endings to `\n` for prompt fields.
 - List normalization accepts string (newline-delimited) or array input.
 
-
 [./classes/Skill.md]
+
 # Skill
 
 ## Purpose
+
 Represents a character skill with a name, description, and optional attribute association.
 
 ## Construction
+
 - `new Skill({ name, description, attribute })`: requires a non-empty string name. Description/attribute are optional strings.
 
 ## Instance API
+
 - `update({ name, description, attribute })`: updates fields in place, trimming strings; ignores invalid or empty names.
 - `toJSON()`: returns a plain object `{ name, description, attribute }`.
 
 ## Static API
+
 - `fromJSON(data)`: validates and constructs a Skill from a plain object.
 
 ## Notes
+
 - Input validation is strict: missing or non-string names throw errors.
 
-
 [./classes/StatusEffect.md]
+
 # StatusEffect
 
 ## Purpose
+
 Represents a temporary or permanent modifier applied to an entity, including attribute/skill modifiers, need bar deltas, and duration semantics.
 
 ## Construction
+
 - `new StatusEffect({ name, description, attributes, skills, needBars, duration })`
   - `description` is required and must be a non-empty string.
   - `attributes` and `skills` are arrays of `{ attribute|skill, modifier }`.
@@ -2626,10 +3105,12 @@ Represents a temporary or permanent modifier applied to an entity, including att
   - `duration` accepts numbers, `'instant'` (treated as 1), `'permanent'` (treated as -1), or null.
 
 ## Instance API
+
 - `update({ name, description, attributes, skills, needBars, duration })`: normalizes and updates fields in place.
 - `toJSON()`: returns a plain object snapshot.
 
 ## Static API
+
 - `fromJSON(data)`: validates and constructs a StatusEffect from a plain object.
 - `generateFromDescriptions(descriptions, { promptEnv, parseXMLTemplate, prepareBasePromptContext })`:
   - Takes a list of text descriptions (strings or objects with `description`, optional `name`, `level`).
@@ -2638,22 +3119,26 @@ Represents a temporary or permanent modifier applied to an entity, including att
   - Logs prompts through `LLMClient.logPrompt` when available.
 
 ## Private Helpers
+
 - `#normalizeModifiers(list, keyName)`: validates and normalizes attribute/skill modifier lists.
 - `#normalizeNeedBars(list)`: validates and normalizes need bar deltas.
 - `#normalizeDuration(value)`: converts duration inputs to integer turns or null.
 
 ## Notes
+
 - All normalizers throw clear errors on invalid structures or missing data.
 - `generateFromDescriptions` fails loudly on malformed XML or missing effect elements.
 
-
 [./classes/Thing.md]
+
 # Thing
 
 ## Purpose
+
 Represents items and scenery in the game world. Supports rarity metadata, attribute bonuses, status effects (including AI enrichment), and placement in locations or inventories. Maintains indexes by id and name.
 
 ## Key State
+
 - Core fields: `#id`, `#name`, `#description`, `#shortDescription`, `#thingType`, `#imageId`.
 - Metadata: `#metadata` (mirrors slot, bonuses, cause effects, flags, levels).
 - Rarity and level: `#rarity`, `#itemTypeDetail`, `#level`, `#relativeLevel`.
@@ -2662,9 +3147,11 @@ Represents items and scenery in the game world. Supports rarity metadata, attrib
 - Static indexes: `#indexByID`, `#indexByName`.
 
 ## Construction
+
 - `new Thing({...})` validates required fields, normalizes metadata, initializes status effects, and registers in indexes.
 
 ## Static API (Rarity)
+
 - `loadRarityDefinitions({ forceReload })`, `getAllRarityDefinitions()`, `generateRandomRarityDefinition()`.
 - `getRarityDefinition(rarity, { fallbackToDefault })` and convenience getters for multipliers and color.
 - `getDefaultRarityKey()` / `getDefaultRarityLabel()`.
@@ -2672,6 +3159,7 @@ Represents items and scenery in the game world. Supports rarity metadata, attrib
 - `normalizeRarityKey(value)`.
 
 ## Static API (Lookup)
+
 - `getAll()` / `getById(id)` / `getByName(name)`.
 - `getAllByName(name)` / `getByNameAndLocation(name, location)`.
 - `getByType(type)` / `getAllScenery()` / `getAllItems()`.
@@ -2680,6 +3168,7 @@ Represents items and scenery in the game world. Supports rarity metadata, attrib
 - `get validTypes()`.
 
 ## Accessors
+
 - Basic getters: `id`, `name`, `description`, `shortDescription`, `thingType`, `imageId`, `createdAt`, `lastUpdated`.
 - Equipment helpers: `equippedBy`, `isEquipped`, `equippedSlot`.
 - Flags: `isVehicle`, `isCraftingStation`, `isProcessingStation`, `isHarvestable`, `isSalvageable` (get/set).
@@ -2688,6 +3177,7 @@ Represents items and scenery in the game world. Supports rarity metadata, attrib
 - Cause effects: `causeStatusEffect` (get/set), `causeStatusEffectOnTarget`, `causeStatusEffectOnEquipper`.
 
 ## Instance API
+
 - Flag helpers: `hasFlag(flag)`, `setFlag(flag, enabled)`.
 - Bonuses: `getAttributeBonus(attributeName)`.
 - Cause effects: `setCauseStatusEffects({ target, equipper, legacy })`.
@@ -2698,6 +3188,7 @@ Represents items and scenery in the game world. Supports rarity metadata, attrib
 - `toString()`.
 
 ## Static Inventory/World Helpers
+
 - `whoseInventoryById(thingId)`.
 - `removeFromWorldById(thingId)`.
 - `dropById(thingId)`.
@@ -2706,6 +3197,7 @@ Represents items and scenery in the game world. Supports rarity metadata, attrib
 - `putInInventoryById(thingId, playerId)`.
 
 ## Private Helpers
+
 - Index helpers: `#getNameBucket`, `#addThingToNameIndex`, `#removeThingFromNameIndex`, `#normalizeNameIndexEntry`.
 - Metadata helpers: `#applyMetadataFieldsFromMetadata`, `#syncFieldsToMetadata`.
 - Normalizers: `#normalizeBooleanFlag`, `#normalizeAttributeBonuses`, `#normalizeStatusEffects`, `#sanitizeSlot`, `#normalizeCauseStatusEffectEntry`.
@@ -2713,17 +3205,20 @@ Represents items and scenery in the game world. Supports rarity metadata, attrib
 - Status enrichment: `#triggerStatusEffectEnrichment`, `#enrichStatusEffectsUsingGlobals`.
 
 ## Notes
+
 - Status effect enrichment calls `StatusEffect.generateFromDescriptions` using `Globals` prompt hooks.
 - Name lookups are location-aware: `getByName` prefers current location/region contexts.
 
-
 [./classes/Utils.md]
+
 # Utils
 
 ## Purpose
+
 Collection of static utility helpers used across the server: set math, text similarity, XML parsing, game-state serialization, pending region stub maintenance, and chat summary queues.
 
 ## Set/Text Helpers
+
 - `intersection(setA, setB)`, `difference(setA, setB)`, `union(setA, setB)`.
 - `roundAwayFromZero(value)`.
 - `longestCommonSubstringLength(a, b)`.
@@ -2735,83 +3230,89 @@ Collection of static utility helpers used across the server: set math, text simi
   - `findKgramOverlap(a, b, { k })`.
 
 ## XML Helpers
+
 - `innerXML(node)`.
 - `parseXmlDocument(xmlContent, mimeType)` with cheerio-based normalization for malformed XML.
 
 ## Game Balance Helpers
+
 - `getMinimumUnmitigatedWeaponDamage(rarity, level)` (uses rarity definitions from `Thing` and `Globals.config.baseWeaponDamage`).
 
 ## Game State Serialization
+
 - `serializeGameState(context)`.
 - `writeSerializedGameState(saveDir, serialized)`.
 - `loadSerializedGameState(saveDir)`.
 - `hydrateGameState(serialized, context)`.
 
 ## Pending Region Stub Maintenance
+
 - `rebuildPendingRegionStubs({ pendingRegionStubs, regions, gameLocations, gameLocationExits })`.
 - `mergeDuplicatePendingRegionStubs({ pendingRegionStubs, regions, gameLocations, gameLocationExits })`.
 
 ## Chat Summary Store/Queue
+
 - `setChatSummary(messageId, summaryPayload)` / `getChatSummary(messageId)` / `hasChatSummary(messageId)`.
 - `serializeChatSummaries()` / `loadChatSummaries(data)` / `getAllChatSummaries()`.
 - `enqueueChatSummaryCandidate(candidate)` / `dequeueChatSummaryBatch(batchSize)`.
 - `getChatSummaryQueueLength()` / `peekChatSummaryQueue()`.
 
 ## Private Helpers (Selected)
+
 - K-gram internals: `#normalizeKgramTokens`, `#buildKgramSet`, `#containsSubgram`.
 - XML internals: `#getDomParserInstance`, `#normalizeXmlWithCheerio`.
 - Lazy module getters: `#getLocationModule`, `#getLocationExitModule`, `#getRegionModule`, `#getThingModule`, `#getPlayerModule`, `#getSkillModule`.
 
 ## Notes
+
 - `serializeGameState` and `hydrateGameState` coordinate `Location`, `Region`, `Thing`, `Player`, `Skill`, and stubs into a consistent save/load flow.
 - Pending region stubs are aggressively validated; missing ids or duplicates throw explicit errors.
 
-
 [./potential_redundancies.md]
+
 # Potential Redundancies and Inconsistencies
 
 This list is based on a quick pass through existing docs plus the current codebase. Each item includes a brief suggested fix.
 
 ## Redundancies
 
-1) Duplicate API route definition for `GET /api/attributes`.
+1. Duplicate API route definition for `GET /api/attributes`.
    - Evidence: `docs/API_README.md` notes the route is defined twice and the later definition is unreachable.
    - Suggested fix: remove or merge the duplicate definition in `api.js`, then update `docs/api/attributes.md` to reflect the single source of truth.
 
-2) Duplicate field definitions and serialization in `Quest`.
+2. Duplicate field definitions and serialization in `Quest`.
    - Evidence: `Quest.js` declares `secretNotes` twice on the class and includes `secretNotes` twice in `toJSON()`.
    - Suggested fix: keep a single `secretNotes` field and serialize it once.
 
-3) Duplicate static and instance methods in `Player`.
+3. Duplicate static and instance methods in `Player`.
    - Evidence: `Player.js` defines `static getById` twice (with slightly different input handling), and also defines `get turnsSincePartyMemoryGeneration`, `incrementTurnsSincePartyMemoryGeneration`, and `resetTurnsSincePartyMemoryGeneration` twice with different side effects.
    - Suggested fix: consolidate each duplicate into a single authoritative implementation and delete the redundant versions.
 
-4) Unexported and apparently unused `NameCache` class.
+4. Unexported and apparently unused `NameCache` class.
    - Evidence: `NameCache.js` defines a class but never exports it; no code references it.
    - Suggested fix: either export and integrate it, or remove the file if it is dead code.
 
 ## Inconsistencies
 
-1) File name typo for `SceneSummaries` implementation.
+1. File name typo for `SceneSummaries` implementation.
    - Evidence: class is `SceneSummaries` but the file is `SceneSummaies.js` and required with the misspelling (e.g., `server.js`). Docs use the correct spelling.
    - Suggested fix: rename the file to `SceneSummaries.js` and update all requires; keep docs aligned with the file name.
 
-2) `Player` exposes a deprecated `isNpc` getter that throws, while `isNPC` is the correct accessor.
+2. `Player` exposes a deprecated `isNpc` getter that throws, while `isNPC` is the correct accessor.
    - Evidence: `Player.js` includes a `get isNpc()` that throws an error directing callers elsewhere.
    - Suggested fix: remove the throwing accessor if it is no longer used, or replace it with a non-throwing alias to reduce runtime surprises.
 
-3) `ComfyUIClient.testConnection` references an undefined timeout variable.
+3. `ComfyUIClient.testConnection` references an undefined timeout variable.
    - Evidence: `ComfyUIClient.js` uses `baseTimeoutMilliseconds` in `testConnection()` but it is not defined in that scope.
    - Suggested fix: use `this.timeout` or a shared helper (e.g., `LLMClient.baseTimeoutMilliseconds()`), and keep the timeout strategy consistent with other methods.
 
-4) Inconsistent save-image behavior between image clients.
+4. Inconsistent save-image behavior between image clients.
    - Evidence: `OpenAIImageClient.saveImage` ensures the output directory exists, while `NanoGPTImageClient.saveImage` does not.
    - Suggested fix: pick a consistent contract (either ensure directory creation in both, or require the caller to pre-create it) and align both implementations and docs.
 
-5) Inconsistent `Player.getById` input normalization.
+5. Inconsistent `Player.getById` input normalization.
    - Evidence: one `getById` trims string ids before comparing; the later duplicate does not.
    - Suggested fix: standardize on trimming and null/empty checks in a single method.
-
 
 [./server_llm_notes.md]
 Server & LLM Notes
@@ -2841,7 +3342,6 @@ Server & LLM Notes
   - Axios-based chat wrapper pulling defaults from `Globals.config.ai`; enforces explicit config (endpoint/apiKey/model) and normalizes `/chat/completions` endpoints. Controls concurrency with semaphores keyed by apiKey+model (`getMaxConcurrent`), supports per-call overrides plus prompt_ai_overrides by metadataLabel.
   - Supports streaming with progress tracking/broadcast (`prompt_progress` via `Globals.realtimeHub`), timeout scaling, retry handling with optional waits, and on-response hooks. Seeds requests unless suppressed, resolves temperature/max_tokens, and merges extra payload/headers.
   - Strips `<think>` blocks from responses after optionally logging; validates XML and required tags when requested, writes errors and prompts to `logs/` via `writeLogFile`/`logPrompt`, and dumps debug payloads when enabled. Exposes helpers for base timeout resolution and progress rendering (interactive terminal friendly but guarded by TTY checks).
-
 
 [./slash_commands.md]
 Slash Commands Quick Guide
@@ -2876,34 +3376,47 @@ Slash Commands Quick Guide
   - Prefer existing helpers on `Globals`/models (e.g., `Location.get`, `playersByName`, `generateLevelUpAbilitiesForCharacter`).
 
 - Adding a new command (example skeleton)
+
   ```js
-  const Globals = require('../Globals.js');
-  const SlashCommandBase = require('../SlashCommandBase.js');
+  const Globals = require("../Globals.js");
+  const SlashCommandBase = require("../SlashCommandBase.js");
 
   class MyCommand extends SlashCommandBase {
-    static get name() { return 'mycmd'; }
-    static get aliases() { return ['mc']; }
-    static get description() { return 'Do a thing.'; }
-    static get args() { return [{ name: 'target', type: 'string', required: true }]; }
+    static get name() {
+      return "mycmd";
+    }
+    static get aliases() {
+      return ["mc"];
+    }
+    static get description() {
+      return "Do a thing.";
+    }
+    static get args() {
+      return [{ name: "target", type: "string", required: true }];
+    }
 
     static async execute(interaction, args = {}) {
-      const target = (args.target || '').trim();
-      if (!target) throw new Error('Target is required.');
+      const target = (args.target || "").trim();
+      if (!target) throw new Error("Target is required.");
       // ...do work...
-      await interaction.reply({ content: `Did the thing to ${target}.`, ephemeral: false });
+      await interaction.reply({
+        content: `Did the thing to ${target}.`,
+        ephemeral: false,
+      });
     }
   }
 
   module.exports = MyCommand;
   ```
+
   - Drop the file in `slashcommands/`; it will auto-register on startup (name + aliases).
 
 - Testing
   - Use `/help` to confirm registration/usage text.
   - Run the command in chat; verify expected replies and that invalid args return clear errors.
 
-
 [./slop_and_repetition.md]
+
 # Slop Checking & Repetition Busting
 
 Quick refresher on where these systems live and how they're wired.
@@ -2911,11 +3424,13 @@ Quick refresher on where these systems live and how they're wired.
 ## Repetition busting (player action prose)
 
 ### What it does
+
 - Default is ON (`config.default.yaml` sets `repetition_buster: true`), but it can be toggled in config.
-- When `config.repetition_buster` is enabled, the player-action prompt runs a multi-step self-correction flow and outputs `<finalProse>...</finalProse>`. The server enforces a `requiredRegex` and extracts `finalProse` for player-action prompts (used for player actions and NPC narratives).
+- When `config.repetition_buster` is enabled, the player-action prompt runs a multi-step self-correction flow and outputs `<turnResult>...</turnResult>`. The server enforces a `requiredRegex` and extracts `turnResult` for player-action prompts (used for player actions and NPC narratives).
 - If `config.repetition_buster` is **disabled**, the server still checks for repetition against recent prose. When overlap is detected, it re-renders the player-action prompt with repetition_buster forced on and re-asks the model.
 
 ### Full step list (current prompt)
+
 1. Draft Response: generate a preliminary response following `config.prose_length`, strictly adhering to `success_or_failure`.
 2. Analysis and planning (any format), including:
    - Repetitive patterns
@@ -2930,39 +3445,45 @@ Quick refresher on where these systems live and how they're wired.
    - Success or failure adherence
    - Remaining guidelines
 3. Write a second draft based on the analysis.
-4. Analyze the second draft for issues, then output final prose inside `<finalProse>...</finalProse>` without introducing new content.
+4. Analyze the second draft for issues, then output final prose inside `<turnResult>...</turnResult>` without introducing new content.
 
 ### Detection logic
+
 - Overlap detection uses `Utils.findKgramOverlap(prior, response, { k: 6 })`.
 - Token normalization lowercases, strips punctuation as word breaks (except apostrophes), and removes common words and contractions before k-gram matching (`COMMON_WORDS` in `Utils.js`).
 - The server logs the offending overlap when detected.
 
 ### Key files / functions
+
 - Prompt template: `prompts/_includes/player-action.njk` (`config.repetition_buster` block)
 - Prompt render + auto-rerun logic:
   - `api.js` → player action flow
   - `renderPlayerActionPrompt(forceRepetitionBuster)`
   - `runActionNarrativeForActor()` (NPC narrative also uses the player-action prompt)
-  - `requiredRegex` + `<finalProse>` extraction
+  - `requiredRegex` + `<turnResult>` extraction
 - K-gram utilities: `Utils.findKgramOverlap`, `Utils.findKgramOverlaps` in `Utils.js`
 
 ### Config switches
-- `config.repetition_buster`: toggles the multi-step prompt + `<finalProse>` output (default true in `config.default.yaml`).
+
+- `config.repetition_buster`: toggles the multi-step prompt + `<turnResult>` output (default true in `config.default.yaml`).
 - `config.ai.dialogue_repetition_penalty`: passed to the LLM request as `repetition_penalty`.
 
 ### Notes
+
 - The rerun is only triggered for `player-action` responses (not NPC turns).
-- When repetition_buster is on, the server extracts `<finalProse>` from the model output for any `player-action` prompt.
-- Attack prose uses the same repetition-buster flow (the attack branch of `prompts/_includes/player-action.njk` now includes the `<finalProse>` instructions).
+- When repetition_buster is on, the server extracts `<turnResult>` from the model output for any `player-action` prompt.
+- Attack prose uses the same repetition-buster flow (the attack branch of `prompts/_includes/player-action.njk` now includes the `<turnResult>` instructions).
 
 ## Slop checking + slop remover
 
 ### What it does
+
 - Detects "slop words" (based on ppm thresholds) and repeated 3+-grams from recent prose history.
 - If either are found, it calls the **slop remover** prompt to rewrite the text while preserving meaning.
 - Results are logged and displayed as a 🧹 insight icon in the chat UI.
 
 ### Detection logic
+
 - Slop words:
   - Source: `defs/slopwords.yaml`
   - Analyzer: `server.js` → `analyzeSlopwordsForText()` computes ppm against the provided text.
@@ -2976,6 +3497,7 @@ Quick refresher on where these systems live and how they're wired.
   - Uses the same punctuation stripping + `COMMON_WORDS` filtering as repetition detection.
 
 ### Slop remover flow
+
 - Entry point: `api.js` → `applySlopRemoval(prose, { returnDiagnostics })`.
 - Prompt: `prompts/slop-remover.xml.njk`.
 - Prompt inputs:
@@ -2988,6 +3510,7 @@ Quick refresher on where these systems live and how they're wired.
 - Diagnostics (`slopWords` + `slopNgrams`) are attached to the response and recorded in chat history.
 
 ### Where it runs
+
 - Player action prose (after LLM response): `api.js` → main player-action flow
 - NPC action text (planned action shown in chat): `api.js` → NPC turn handling
 - NPC narrative prose: `api.js` → NPC turn handling
@@ -2996,6 +3519,7 @@ Quick refresher on where these systems live and how they're wired.
 - Crafting narrative text: `api.js` → craft flow
 
 ### UI + logging
+
 - Chat insight icon: 🧹, rendered from `public/js/chat.js`.
 - Slop removal records:
   - `api.js` → `recordSlopRemovalEntry()` stores an attachment with type `slop-remover`.
@@ -3003,9 +3527,11 @@ Quick refresher on where these systems live and how they're wired.
 - LLM logs for slop remover: `logs/*_slop_remover_*.log`.
 
 ### Config switches
+
 - `config.slop_buster`: enables the slop removal pipeline.
 
 ## Primary code map
+
 - Detection utilities: `Utils.js`
   - `COMMON_WORDS`
   - `findKgramOverlap()` / `findKgramOverlaps()` / `pruneContainedKgrams()`
@@ -3016,11 +3542,12 @@ Quick refresher on where these systems live and how they're wired.
 - Repetition buster prompt: `prompts/_includes/player-action.njk`
 - UI insights: `public/js/chat.js` (🧹 icon)
 
-
 [./ui/assets_styles.md]
+
 # Styling and Assets
 
 ## SCSS/CSS layout
+
 - `public/css/_globals.scss`
   - Color palette, gradient, font family, and mixins.
   - Primary UI palette is defined here (glass background, primary blue, etc).
@@ -3036,17 +3563,21 @@ Quick refresher on where these systems live and how they're wired.
   - Shared container styling for Region and World map tabs.
 
 ## Images
+
 - `public/generated-images/` is the image output directory for entity images.
 - `public/js/image-manager.js` coordinates image job requests and updates.
 - `public/js/lightbox.js` provides the full-screen lightbox viewer.
 
 ## Client templates
+
 - `public/templates/plausibility.njk` is rendered in the browser via Nunjucks
   (used for plausibility insight tooltips).
 - `views/popups/plausibility.njk` is the server-side copy.
 
 ## Vendor libraries (public/vendor)
+
 Loaded on the chat page:
+
 - `cytoscape.min.js` + layout plugins (`cose-base`, `fcose`, `euler`) for maps.
 - `fitty.min.js` for auto-scaling entity name text.
 - `markdown-it.min.js` for chat markdown rendering.
@@ -3054,12 +3585,13 @@ Loaded on the chat page:
 - `vaadin.js` (loaded for UI assets; check usage before removal).
 
 ## Notes
+
 - The chat UI relies on SCSS variables and mixins in `_globals.scss`.
 - `public/js/fitty-init.js` listens for `inventory:updated` and `location:updated`
   to reflow text after dynamic DOM updates.
 
-
 [./ui/chat_interface.md]
+
 # Chat Interface (views/index.njk)
 
 The main UI is rendered by `views/index.njk` and powered by `public/js/chat.js` plus a large inline script block inside the template.
@@ -3174,19 +3706,22 @@ Inline script functions in `views/index.njk` render these tabs:
 - `docs/ui/modals_overlays.md` for the full modal inventory.
 - `docs/ui/maps.md` for map-specific behaviors.
 
-
 [./ui/maps.md]
+
 # Maps (Region + World)
 
 Two map views exist on the chat page: the Region Map and the World Map.
 
 ## Region map (public/js/map.js)
+
 Rendered inside `#mapContainer` in the Map tab.
 
 ### Data source
+
 - `GET /api/map/region` (optional `?regionId=...`) returns the region, its locations, and exits.
 
 ### Rendering model
+
 - Uses Cytoscape for graph rendering.
 - Nodes represent locations; classes include:
   - `current` (active location),
@@ -3196,6 +3731,7 @@ Rendered inside `#mapContainer` in the Map tab.
 - Region exits are rendered as separate "exit nodes" with an icon and dashed styling.
 
 ### Interactions
+
 - Context menu on nodes and edges for edit/delete actions.
 - Link mode for creating new exits (ghost node + edge).
 - New exits call `POST /api/locations/:id/exits` with payload:
@@ -3204,16 +3740,20 @@ Rendered inside `#mapContainer` in the Map tab.
 - Stub expansion hits `/api/stubs/:stubId` (GET/POST) to fill in stub regions/locations.
 
 ### Cross-component hooks
+
 - `openNewExitModalFromMap` is provided by the inline script in `views/index.njk`.
 - `renderEntityImage` is used for node image overlays when available.
 
 ## World map (public/js/world-map.js)
+
 Rendered inside `#worldMapContainer` in the World Map tab.
 
 ### Data source
+
 - `GET /api/map/world` returns regions, locations, and edges.
 
 ### Rendering model
+
 - Cytoscape graph with:
   - region labels,
   - region group nodes,
@@ -3224,12 +3764,13 @@ Rendered inside `#worldMapContainer` in the World Map tab.
 - `window.adjustBubblePadding()` can tweak hull padding and corner radius.
 
 ## Styling
+
 - Shared container styling is in `public/css/map.css`.
 - Per-node styling is in `public/js/map.js` and `public/js/world-map.js`
   (Cytoscape style definitions).
 
-
 [./ui/modals_overlays.md]
+
 # Modals and Overlays (Chat UI)
 
 Most modals live in `views/index.njk` and are wired up by the inline script or `public/js/chat.js`.
@@ -3298,13 +3839,14 @@ Most modals live in `views/index.njk` and are wired up by the inline script or `
 - The inline script in `views/index.njk` contains the open/close logic and field wiring.
 - LLM prompt modals (`#addNpcModal`, `#newExitModal`, `#craftingModal`, `#salvageIntentModal`) close immediately on submit; no visible waiting state is shown, and errors surface via `alert()` after closing.
 
-
 [./ui/pages.md]
+
 # UI Pages and Routes
 
 This page maps routes to templates and the client scripts/styles they load.
 
 ## Main chat interface
+
 - Route: `/`
 - Template: `views/index.njk`
 - Styles: `public/css/main.css`, `public/css/map.css`, plus mod styles if present.
@@ -3322,6 +3864,7 @@ This page maps routes to templates and the client scripts/styles they load.
   - `baseWeaponDamage`, `clientMessageHistory`, `saveMetadata`.
 
 ## New game
+
 - Route: `/new-game`
 - Template: `views/new-game.njk`
 - Styles: `public/css/main.css` + page inline styles.
@@ -3331,6 +3874,7 @@ This page maps routes to templates and the client scripts/styles they load.
 - Notes: submits `/api/new-game` with a keepalive POST, then immediately navigates to `/#tab-adventure` while generation continues; websocket status updates drive the overlay spinner if the page remains visible.
 
 ## Server configuration
+
 - Route: `/config`
 - Template: `views/config.njk`
 - Styles: `public/css/main.css`.
@@ -3339,6 +3883,7 @@ This page maps routes to templates and the client scripts/styles they load.
   - `config`, `modConfigs`, `modelOptions`, `savedMessage`, `errorMessage`.
 
 ## Game settings manager
+
 - Route: `/settings`
 - Template: `views/settings.njk`
 - Styles: `public/css/main.css`, `public/css/settings.css`.
@@ -3347,6 +3892,7 @@ This page maps routes to templates and the client scripts/styles they load.
   - `currentPage` only. Data is loaded via `/api/settings` calls.
 
 ## Lorebooks manager
+
 - Route: `/lorebooks`
 - Template: `views/lorebooks.njk`
 - Styles: `public/css/main.css`, `public/css/lorebooks.css`.
@@ -3355,6 +3901,7 @@ This page maps routes to templates and the client scripts/styles they load.
   - `currentPage` only. Data is loaded via `/api/lorebooks` calls.
 
 ## Debug page
+
 - Route: `/debug`
 - Template: `views/debug.njk`
 - Styles: `public/css/main.css` + inline styles.
@@ -3363,6 +3910,7 @@ This page maps routes to templates and the client scripts/styles they load.
   - `player`, `playerJson`, `allPlayers`, `allLocations`, `gameWorld`, etc.
 
 ## Player stats editor (legacy)
+
 - Route: `/player-stats`
 - Template: `views/player-stats.njk`
 - Styles: `public/css/main.css`.
@@ -3371,16 +3919,18 @@ This page maps routes to templates and the client scripts/styles they load.
   - `player`, `availableSkills`.
 
 ## Shared navigation
+
 - Template partial: `views/_navigation.njk`
 - Appears on all pages; includes Save/Load buttons only on the chat page.
 
-
 [./ui/README.md]
+
 # UI Documentation
 
 This folder documents the core UI (no mod-provided UI) for the AI RPG web client.
 
 ## Scope
+
 - Server-rendered Nunjucks pages in `views/`.
 - Client-side behavior in `public/js/`.
 - Styling in `public/css/`.
@@ -3388,6 +3938,7 @@ This folder documents the core UI (no mod-provided UI) for the AI RPG web client
 - Third-party browser libs in `public/vendor/`.
 
 ## UI entry points
+
 - `/` -> `views/index.njk` (main chat interface).
 - `/new-game` -> `views/new-game.njk`.
 - `/config` -> `views/config.njk`.
@@ -3399,6 +3950,7 @@ This folder documents the core UI (no mod-provided UI) for the AI RPG web client
 Routing is registered in `server.js` (most pages) and `api.js` (debug + player stats).
 
 ## Directory map
+
 - `views/` server-rendered templates.
   - `index.njk` main UI (tabs, chat, panels, modals).
   - `_navigation.njk` shared nav buttons.
@@ -3410,7 +3962,9 @@ Routing is registered in `server.js` (most pages) and `api.js` (debug + player s
 - `public/vendor/` third-party libraries (cytoscape, fitty, markdown-it, nunjucks runtime).
 
 ## Runtime globals injected on the chat page
+
 From `views/index.njk`:
+
 - `window.currentSetting`, `window.rarityDefinitions`, `window.needBarDefinitions`.
 - `window.AIRPG_CONFIG` (including `baseWeaponDamage`).
 - `window.AIRPG_CONFIG.clientMessageHistory`.
@@ -3420,6 +3974,7 @@ From `views/index.njk`:
 - `window.AIRPG_CLIENT_ID` (set by `AIRPGChat` and reused by image jobs).
 
 ## Files in this folder
+
 - `docs/ui/pages.md` routes, templates, scripts, and injected data.
 - `docs/ui/chat_interface.md` main chat UI layout, behaviors, data flow.
 - `docs/ui/modals_overlays.md` modal inventory (chat page).

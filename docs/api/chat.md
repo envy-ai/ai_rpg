@@ -3,9 +3,11 @@
 Entries are sorted by path. Common payloads (ChatEntry, ActionResolution, etc.) are defined in `docs/api/common.md`.
 
 ## POST /api/chat
+
 Primary turn-resolution endpoint.
 
 Request:
+
 - Body:
   - `messages` (required): array of chat messages; at minimum the last entry should be `{ role, content }`.
   - `clientId` (optional string): enables realtime streaming events.
@@ -29,9 +31,10 @@ Request:
 
 `travelMetadata.mode: "fast-travel"` must be direct (`eventDriven: false`). Region Map, World Map, and Favorites use this mode for non-adjacent prompt-backed fast travel after route preview and confirmation; character-menu story-tool teleports do not call `/api/chat`.
 
-Split `<travelProse>` responses can include `<playerDestination><travelTime>...</travelTime></playerDestination>`. The duration is parsed with the shared duration parser and stored on a created origin exit for the player destination; if the relevant exit already exists, the prompt-provided value is ignored.
+Split `<moveTurnResult>` responses can include `<playerDestination><travelTime>...</travelTime></playerDestination>`. The duration is parsed with the shared duration parser and stored on a created origin exit for the player destination; if the relevant exit already exists, the prompt-provided value is ignored.
 
 Response (200):
+
 - Base fields:
   - `response`: string (final prose)
   - `messages`: ChatEntry[] (entries appended this request)
@@ -83,6 +86,7 @@ Response (200):
   - `checkResultsRecorded`: boolean (true when tool-derived skill/attack checks were recorded in a live prompt-excluded `check-results` chat entry, so clients should not duplicate the same check results)
 
 Variants:
+
 - Empty player action: an empty final user message is accepted as a normal player-action continuation. The server skips plausibility and renders the player-action prompt with empty `actionText` so `prompts/_includes/player-action.njk` uses its "continue the previous scene" branch. The default check flow uses tool-based attack and skill checks; setting `use_legacy_prompt_checks: true` switches non-empty player/NPC actions to the legacy separate attack/plausibility prompts.
 - Rejected player-action XML: when repetition-buster player-action/creative-action XML returns `<rejected>...</rejected>`, the server displays the rejection reason as the assistant response, records the rejection as a plausibility attachment, marks both the saved user input and displayed rejection message with `metadata.excludeFromBaseContextHistory: true`, and aborts the turn before slop removal, normal response storage, event checks, random events, or NPC turns. Rejection reasons may be text content or XML comment content inside `<rejected>`.
 - Comment-only action: if the user message begins with `#`, the response is `{ response: '', commentLogged: true, messages: [...] }` (no turn resolution).
@@ -96,7 +100,7 @@ Variants:
   - `\...`: saved in chat history as `user-generic-prompt` + `generic-prompt-response`, marked so those entries are excluded from base-context history assembly, and runs with no chat tools.
 - All generic/no-context prompt variants (`@`, `@@`, `@@@`, `\`) bypass slop-remover processing for that response.
 - Inline roll controls: player action text supports one or more `"<integer>"` tokens (pattern `/<-?\\d+>/`) plus `"<f>"`/`"<F>"`. These tokens are stripped from action text before prompt processing and before the user entry is persisted in chat history. The first integer token is the request-wide die override for legacy prompt checks. When `"<f>"` is present and a skill-check tool call (`resolveSkillCheck` or `resolveOpposedSkillCheck`; the runtime also accepts compatibility aliases `resolvePlausibilityCheck` and `resolveOpposedPlausibilityCheck`) is made during that action or generic prompt, the server opens a `player_input_request` integer prompt for that specific check and injects the supplied die roll into the action outcome. Repeated same-prompt cached check calls reuse the first result and do not ask again. Cancellation, timeout, or missing realtime client state aborts the action with a clear error instead of silently rolling.
-- Creative `!` actions are governed by `repetition_buster`: when enabled, the response is required/parsing-validated as action XML (`<finalProse>`/`<travelProse>`); when disabled, creative actions use free-form prose.
+- Creative `!` actions are governed by `repetition_buster`: when enabled, the response is required/parsing-validated as action XML (`<turnResult>`/`<moveTurnResult>`); when disabled, creative actions use free-form prose.
 - Hidden player-action notes: assistant prose may include `<hidden>...</hidden>` blocks for future LLM context. Stored server history keeps them. Adventure-facing `response`, realtime `player_action` payloads, and ordinary chat-history responses always strip those blocks before sending data to the client. `/api/chat/history?includeAllEntries=true` keeps them only when `show_hidden_notes: true`, which lets Story Tools show the raw notes without exposing them in the Adventure tab.
 - Tool calling is enabled in the chat generation loop. The model can emit `tool_calls`; the server executes each call, appends `role: tool` messages, and continues generation until normal assistant prose is returned.
 - Tool availability is prompt-mode gated:
@@ -121,7 +125,7 @@ Variants:
   - `revealEntity({ name, description? })`: clears `hiddenFromPlayer` on a resolved NPC/entity and requests a location refresh. The prose model is responsible for running any needed opposed check first; this tool does not accept or perform a check.
   - `hideEntity({ name, description? })`: sets `hiddenFromPlayer` on a resolved living NPC/entity and requests a location refresh. Dead NPCs/corpses are visible. The prose model is responsible for running any needed opposed check first; this tool does not accept or perform a check.
   - `addTracker({ name, type, value, hiddenFromPlayer?, description })`: creates a persisted plot tracker with one of `countdown`, `numerical_count`, `x_out_of_total`, `percentage`, or `short_string`. `description` is private LLM guidance for when future turns should update the tracker. New trackers are timestamped with the current absolute world minute. Regular prose prompts can add trackers, but cannot use `updateTracker` or `removeTracker`.
-  - `scheduleEvent({ event, region, location, in? | at? })`: persists a planned future event for a resolved region/location. Provide exactly one timing mode: `in` as a positive duration such as `"2 hours"` or numeric minutes, or `at` as canonical `{ dayIndex, timeMinutes }` from base context. This tool is also available to `plot-analysis` prompts as one of their two narrow creation tools. Due events render `scheduled-event-resolution` with mutation-capable built-in and mod chat tools, excluding generic-prompt-only chat-history mutation tools, then store a hidden `scheduled-event` chat-log summary; if the player is at the event location, a visible `scheduled-event-prose` entry is also stored and pushed to the client. For normal `<finalProse>` player actions with parsed `<timePassed>`, same-location due events inside the action interval are resolved before slop removal and folded into a rewritten player-action XML response instead of creating a separate visible scheduled-event prose row; off-location due events resolve through the normal outside-prose sweep. `requestUserInput` is visible to scheduled-event resolution too, but requires enabled config and an active client context to execute successfully.
+  - `scheduleEvent({ event, region, location, in? | at? })`: persists a planned future event for a resolved region/location. Provide exactly one timing mode: `in` as a positive duration such as `"2 hours"` or numeric minutes, or `at` as canonical `{ dayIndex, timeMinutes }` from base context. This tool is also available to `plot-analysis` prompts as one of their two narrow creation tools. Due events render `scheduled-event-resolution` with mutation-capable built-in and mod chat tools, excluding generic-prompt-only chat-history mutation tools, then store a hidden `scheduled-event` chat-log summary; if the player is at the event location, a visible `scheduled-event-prose` entry is also stored and pushed to the client. For normal `<turnResult>` player actions with parsed `<timePassed>`, same-location due events inside the action interval are resolved before slop removal and folded into a rewritten player-action XML response instead of creating a separate visible scheduled-event prose row; off-location due events resolve through the normal outside-prose sweep. `requestUserInput` is visible to scheduled-event resolution too, but requires enabled config and an active client context to execute successfully.
   - `resolveAttack({ attacker, defender, attackerInfo, defenderInfo, ability, weapon, circumstanceModifiers, damageEffectiveness })`: resolves an attack roll using the same attack fields produced by the attack-check prompt, applies the resulting damage to the defender, and returns only `Damage: N%` plus `Remaining health: N%` as tool content, or `miss` when the attack misses. This is the single-target health-mutating attack tool available to regular prompts. Each call also emits an attack summary and is recorded live in a prompt-excluded `check-results` chat entry. A living hidden attacker is immediately revealed and requests a location refresh even when the attack misses.
   - `resolveAreaAttack({ attacker, targets, attackerInfo, ability, weapon, areaShape, effectDescription, rollMode, circumstanceModifiers, secondaryEffect })`: resolves one shared area effect against multiple explicit targets. The only supported `rollMode` is `"sharedAttackRoll"`. The tool validates every target before applying damage, uses one shared attack die with per-target defense/position/damage-effectiveness outcomes, rejects duplicate targets, and records one grouped `area-attack` `check-results` row whose expanded details reuse the regular attack breakdown for each target when per-target summaries are present. A living hidden attacker is immediately revealed and requests a location refresh even when no targets are hit. Tool-result caching keys include the sorted target names so harmless target-order changes do not re-roll or re-apply damage.
   - `resolveSkillCheck({ actor?, reason, skill, attribute, difficultyLevel, circumstanceModifiers })`: resolves an unopposed skill check for a meaningful uncertain non-attack action by the supplied actor, the acting NPC during `npc_action` when `actor` is omitted, or the current player otherwise. It accepts finite integer circumstance modifiers, returns the outcome label as tool content, emits an `ActionResolution` plus plausibility payload, and records the check live in a prompt-excluded `check-results` chat entry.
@@ -162,21 +166,21 @@ Variants:
 - Realtime `chat_complete` websocket payloads may include `completionSoundPath` (from `chat_completion_sound` config) so clients can play a completion cue; travel actions may defer playback until movement completes.
 - When travel prose is returned and a player destination is present/effective, event checks are split into origin/destination; the response includes `eventChecksOrigin`/`eventsOrigin` and `eventChecksDestination`/`eventsDestination`. Ordinary non-vehicle travel-prose player movement advances world time by the stored shortest graph route after destination resolution, falling back to the parsed `<playerDestination><travelTime>` minutes when no graph route exists; the resulting `timeProgress` is passed into destination event checks so event-check `timePassed` does not duplicate the movement time. If the travel action includes exit metadata, the metadata destination is authoritative for destination-side event context; direct unexplored-exit bypass prompts suppress prose-time player movement and time advancement so `/api/player/move` is the mechanical move/time source.
 - Event-check prompts include the originating `<playerAction>` for ordinary non-empty, non-rejected actions even when the turn did not need a skill/plausibility tool call. If a checked action produced action-resolution results, the action text is only included when at least one result succeeded, or when the action was classified as trivial.
-- Turn-end `event-summary` chat entries append a time-passed summary item when `timeProgress.advancedMinutes > 0`, using natural duration text such as `1 minute passed.`, `4 hours and 3 minutes passed.`, or `1 day, 3 hours, and 4 minutes passed.` Player-action `<finalProse>` requires visible text inside a direct `<prose>` child; direct child `<hidden>` siblings are appended to the parsed final prose, and nested `<hidden>` tags inside `<prose>` are preserved. Direct child `<timePassed><duration>...</duration></timePassed>` is parsed before slop removal and event checks, stripped from visible prose, and treated as authoritative elapsed time for that action; event-check `timePassed` / legacy `time_passed` only advances time when no earlier action time progress exists. If a same-location scheduled event falls inside that elapsed interval, the route splits the action time at the interruption minute, resolves the scheduled event, rewrites the player-action XML through `player_action_interruption_rewrite`, then resumes the regular slop-removal path while preserving the combined elapsed-time summary. When exit-driven travel overrides an LLM-authored `time_passed`, the summary uses the effective exit travel time instead of the discarded prompt duration; zero-minute travel also discards prompt-authored elapsed time and emits no elapsed-time row.
-- `<travelProse><vehicleInfo>` is optional. Vehicle moves are parsed from `<vehicleInfo><name>...</name></vehicleInfo>` plus `<vehicleInfo><vehicleDestination><location>...</location><region>...</region></vehicleDestination></vehicleInfo>` (legacy plain-text `<vehicle>name</vehicle>` and legacy `<vehicle><destination>...</destination>` are rejected). In destination blocks, `<location>` and `<region>` are individually optional but at least one must be present. When a vehicle name and effective vehicle destination are present, that vehicle location/region is resolved against the parsed vehicle destination.
+- Turn-end `event-summary` chat entries append a time-passed summary item when `timeProgress.advancedMinutes > 0`, using natural duration text such as `1 minute passed.`, `4 hours and 3 minutes passed.`, or `1 day, 3 hours, and 4 minutes passed.` Player-action `<turnResult>` requires visible text inside a direct `<prose>` child; direct child `<hidden>` siblings are appended to the parsed final prose, and nested `<hidden>` tags inside `<prose>` are preserved. Direct child `<timePassed><duration>...</duration></timePassed>` is parsed before slop removal and event checks, stripped from visible prose, and treated as authoritative elapsed time for that action; event-check `timePassed` / legacy `time_passed` only advances time when no earlier action time progress exists. If a same-location scheduled event falls inside that elapsed interval, the route splits the action time at the interruption minute, resolves the scheduled event, rewrites the player-action XML through `player_action_interruption_rewrite`, then resumes the regular slop-removal path while preserving the combined elapsed-time summary. When exit-driven travel overrides an LLM-authored `time_passed`, the summary uses the effective exit travel time instead of the discarded prompt duration; zero-minute travel also discards prompt-authored elapsed time and emits no elapsed-time row.
+- `<moveTurnResult><vehicleInfo>` is optional. Vehicle moves are parsed from `<vehicleInfo><name>...</name></vehicleInfo>` plus `<vehicleInfo><vehicleDestination><location>...</location><region>...</region></vehicleDestination></vehicleInfo>` (legacy plain-text `<vehicle>name</vehicle>` and legacy `<vehicle><destination>...</destination>` are rejected). In destination blocks, `<location>` and `<region>` are individually optional but at least one must be present. When a vehicle name and effective vehicle destination are present, that vehicle location/region is resolved against the parsed vehicle destination.
 - When a vehicle name is present, `<vehicleInfo><travelTime>...</travelTime></vehicleInfo>` is parsed into minutes. Positive travel times start an underway trip by setting `vehicleInfo.ETA`/`departureTime`, preserving the vehicle's current outside exit for location tracking, storing the requested target in `vehicleInfo.pendingDestination`, and deferring unknown destination creation plus final `currentDestination` resolution until arrival finalization. Travel prose does not use a top-level `timePassed`; elapsed travel timing comes from `vehicleInfo.travelTime`, `playerDestination.travelTime`, exit metadata, or the fallback event-check `timePassed` when no earlier action time progress exists. Later event-check moves directly to the active in-motion vehicle destination are suppressed, and their `timePassed` entries are available to drive the normal arrival finalizer. `0` or omitted `travelTime` moves the vehicle immediately. For location vehicles traveling across regions, immediate travel and due-arrival finalization reassign the vehicle location itself into the destination region instead of leaving it in the origin region with a cross-region outside exit. Timed trip starts and relevant due-arrival finalization request a final client location refresh after event processing, so streamed pre-event refreshes do not leave stale vehicle exits in the Adventure UI. Until that arrival finalization completes, the tracked outward vehicle exit is hidden even if `ETA` has already elapsed. Providing `travelTime` without a vehicle name is rejected.
-- Player-action/creative XML parsing first extracts the last complete `<finalProse>`, `<travelProse>`, or `<rejected>` root block, so draft analysis that includes earlier copies of those tags does not decide the final prose. Malformed player-action/creative travel XML then gets one shared `xml_fix` retry: the server sends the broken XML plus the first fatal strict-parser error text to `prompts/xml-fix.xml.njk`, then re-parses the repaired XML once. If the retry still fails, the request is rejected with the parse diagnostics instead of falling through to later travel-prose validation errors.
-- `<travelProse><playerDestination>` is interpreted as the optional player destination and must use structured tags (`<playerDestination><location>...</location><region>...</region></playerDestination>`; legacy `<destination>` and plain-text destination content are rejected). In destination blocks, `<location>` and `<region>` are individually optional but at least one must be present. Optional `<travelTime>` inside `playerDestination` is parsed for generated player-destination exits and copied to newly created return exits; existing exits keep their stored travel time. For ordinary non-suppressed player movement, stored graph route time is authoritative for world-time advancement and parsed `playerDestination.travelTime` is the fallback only when no graph route exists. If a region and same-named location are provided but the named region has no location by that name, the location field is treated as blank and the region entrance/stub is used. If omitted, or ignored because vehicle movement takes precedence, or ignored because the player's active vehicle arrived at that location/region earlier in the same turn, all travel prose segments are concatenated and event-checked as a single final-prose pass.
+- Player-action/creative XML parsing first extracts the last complete `<turnResult>`, `<moveTurnResult>`, or `<rejected>` root block, so draft analysis that includes earlier copies of those tags does not decide the final prose. Malformed player-action/creative travel XML then gets one shared `xml_fix` retry: the server sends the broken XML plus the first fatal strict-parser error text to `prompts/xml-fix.xml.njk`, then re-parses the repaired XML once. If the retry still fails, the request is rejected with the parse diagnostics instead of falling through to later travel-prose validation errors.
+- `<moveTurnResult><playerDestination>` is interpreted as the optional player destination and must use structured tags (`<playerDestination><location>...</location><region>...</region></playerDestination>`; legacy `<destination>` and plain-text destination content are rejected). In destination blocks, `<location>` and `<region>` are individually optional but at least one must be present. Optional `<travelTime>` inside `playerDestination` is parsed for generated player-destination exits and copied to newly created return exits; existing exits keep their stored travel time. For ordinary non-suppressed player movement, stored graph route time is authoritative for world-time advancement and parsed `playerDestination.travelTime` is the fallback only when no graph route exists. If a region and same-named location are provided but the named region has no location by that name, the location field is treated as blank and the region entrance/stub is used. If omitted, or ignored because vehicle movement takes precedence, or ignored because the player's active vehicle arrived at that location/region earlier in the same turn, all travel prose segments are concatenated and event-checked as a single final-prose pass.
 - If the player is currently on a location vehicle or inside a region vehicle, travel-prose event checks do not split origin/between/destination segments even when a player destination exists. The server concatenates `originProse`, `betweenProse`, and `destinationProse`, includes the usually ignored `betweenProse`, and runs one event pass at the original onboard location context; player/vehicle movement still uses the existing destination handling.
 - If player and vehicle destinations match, vehicle movement takes precedence and player destination is ignored unless the vehicle is already at that destination and did not just arrive there this turn. On the turn a vehicle arrives, disembark moves to that location/region are deferred until the following turn.
-- For split `<travelProse>` turns, origin/destination event-check passes allow `item_appear` and `scenery_appear` outcomes to be applied even after movement is marked processed.
+- For split `<moveTurnResult>` turns, origin/destination event-check passes allow `item_appear` and `scenery_appear` outcomes to be applied even after movement is marked processed.
 - Travel-prose destination handling unstubs both region-entry stubs and regular location stubs before applying either player or vehicle movement.
 - When a travel-prose vehicle destination requires creating a new destination location/stub, that creation is anchored to the vehicle's source location (not the player's current location). If that origin is a location vehicle, the helper-created plain origin exit is suppressed so the vehicle keeps only its dedicated vehicle exit to the destination, that suppression intent persists through later location-stub expansion, and travel-driven unstub/expansion stamps the suppression flag onto already-existing destination stubs before expansion as well.
 - If a travel-prose destination names an unknown region, the server creates/resolves it through the region-entry stub flow instead of failing. For timed vehicle travel, that creation is deferred until arrival finalization; region-only destinations (`<region>...</region>` with no `<location>`) then resolve to the region's entrance.
 - If a travel-prose vehicle move targets a region-entry stub, the stub is expanded and only the vehicle is moved; the player stays at their current location.
 - When a travel-prose vehicle move changes a vehicle's outside location, including relevant due-arrival finalization completed while responding to the current player action, the server appends an event-themed chat summary entry (`📋 Events – Vehicle Movement`) using that vehicle's icon.
 - Random-event seed pools are not generated while `random_event_frequency.enabled` is `false`. Missing location and region seed pools are generated on the next eligible turn after random events are enabled. Region random-event seed generation (`random_event_seed_region`) is fire-and-forget during turn handling; if the current region has no seeded regional events yet, random-event triggering is skipped for that request.
-- For event-driven travel turns that return `<finalProse>` (not `<travelProse>`), non-travelProse event checks apply narrated movement; metadata destination enforcement only forces the travel destination when no move has already been applied that turn.
+- For event-driven travel turns that return `<turnResult>` (not `<moveTurnResult>`), non-moveTurnResult event checks apply narrated movement; metadata destination enforcement only forces the travel destination when no move has already been applied that turn.
 - If the travel prose destination does not match a known location or region, the server creates the missing destination through the event-driven location/region creation flow instead of failing the turn.
 - Travel actions are guarded by a per-player non-blocking move lock; overlapping move requests for the same player return `409`.
 - If the player has pending level-up ability picks, `/api/chat` returns `409` with `pendingAbilitySelection` and does not resolve the turn.
@@ -201,6 +205,7 @@ Variants:
   - When an offscreen entry marks an NPC as moved (`<moved>true</moved>`), the server attempts to update that NPC's `currentLocation` and location NPC lists using the reported region/location, and logs the result server-side only (no client-facing movement notification).
 
 Errors:
+
 - 400: `{ error: string, requestId?, streamMeta? }` (missing `messages`, invalid `travelMetadata`, etc.)
 - 409: `{ error: string, pendingAbilitySelection?, requestId?, streamMeta? }` (concurrent move lock contention or pending player ability selection)
 - 408: `{ error: string, requestId?, streamMeta? }` (timeout)
@@ -208,12 +213,15 @@ Errors:
 - 500: `{ error: string, requestId?, streamMeta? }`
 
 Client behavior:
+
 - The Play UI renders `/api/chat` errors as system chat entries and opens a `Chat error:` alert. Travel-prose destination/stub expansion failures propagate through this error path instead of being hidden or crashing the Node process.
 
 ## POST /api/chat/user-input-response
+
 Submits, confirms, or cancels a pending `requestUserInput` chat-tool request or an internal confirmation/integer-mode request.
 
 Request:
+
 - Body:
   - `inputRequestId` (required string): id from the realtime `player_input_request` payload.
   - `clientId` (required string): client id of the responding tab; must match the originating prompt client id.
@@ -223,15 +231,18 @@ Request:
   - `cancelled` (optional boolean): when true, cancels the pending tool call instead of answering.
 
 Response:
+
 - `200`: `{ success: true, cancelled?: true, confirmed?: true }`
 - `400`: missing ids or invalid answer
 - `403`: the response client id does not match the pending request
 - `404`: the request id is no longer pending
 
 ## GET /api/chat/history
+
 Returns pruned chat history (system entries and some summaries filtered).
 
 Notes:
+
 - Uses `client_message_history.max_messages` as a turn-based visibility cap for client history.
 - This is independent from `recent_history_turns`, which only affects base-context prompt construction.
 - Query options:
@@ -239,38 +250,49 @@ Notes:
   - Accepted boolean values: `true`, `false`, `1`, `0`, `yes`, `no`, `on`, `off`.
 
 Response (200):
+
 - `{ history: ChatEntry[], count: number, worldTime: object }` (no `success` flag)
 
 Errors:
+
 - 400: `{ error: string }` when `includeAllEntries` is provided but not a valid boolean value.
 
 ## DELETE /api/chat/history
+
 Clears chat history.
 
 Response (200):
+
 - `{ message: 'Chat history cleared', count: 0 }` (no `success` flag)
 
 ## PUT /api/chat/message
+
 Edits a single chat entry by id or timestamp.
 
 Request:
+
 - Body: `{ content: string, id?: string, timestamp?: string }` (must include `content` and either `id` or `timestamp`)
 
 Response:
+
 - 200: `{ success: true, entry }`
 - 400: `{ success: false, error }` (missing content/id)
 - 404: `{ success: false, error: 'Message not found' }`
 
 Notes:
+
 - Editing an `event-summary` entry clears `summaryItems` and normalizes `summaryTitle`.
 
 ## DELETE /api/chat/message
+
 Deletes a chat entry by id or timestamp and removes orphaned children. This is also the deletion path used by Adventure-tab delete controls on prompt-excluded diagnostic entries such as `tool-call-debug`; the client exposes that hover action when either an entry id or timestamp is available.
 
 Request:
+
 - Body: `{ id?: string, timestamp?: string }`
 
 Response:
+
 - 200: `{ success: true, removed: ChatEntry, orphaned: ChatEntry[] }`
 - 400: `{ success: false, error }`
 - 404: `{ success: false, error: 'Message not found' }`

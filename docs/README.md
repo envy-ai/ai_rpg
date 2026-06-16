@@ -4,210 +4,210 @@ Current map of Markdown documentation under `docs/`. This README and the generat
 
 ## Start Here
 
-| Doc | Use for |
-| --- | --- |
-| [developer_overview.md](developer_overview.md) | Session warm-up: project shape, core runtime flow, and first files to inspect. |
-| [API_README.md](API_README.md) | High-level Express route index with pointers into `docs/api/`. |
-| [server_llm_notes.md](server_llm_notes.md) | Detailed server, prompt helpers, LLM, event, travel, save/load, and generation flow notes. |
-| [config.md](config.md) | Runtime/gameplay configuration, overrides, model settings, retry waits, prompt behavior, and mod enablement. |
-| [slash_commands.md](slash_commands.md) | Slash command lifecycle, interaction helpers, reply actions, and implementation conventions. |
-| [slop_and_repetition.md](slop_and_repetition.md) | Slop-word, ngram, regex, forbidden-trope, finalProse parsing, and repetition-removal systems. |
-| [modding.md](modding.md) | Mod discovery, defs overlays, enablement, runtime hooks, bundled mods, and save compatibility. |
-| [modding_hooks.md](modding_hooks.md) | Detailed hook contracts for chat tools, XML events, prompts, UI, settings, and entity extensions. |
-| [playwright.md](playwright.md) | Playwright setup and regression test run notes. |
-| [run_prompts.md](run_prompts.md) | `scripts/run_prompts.js` prompt-runner usage and template helpers. |
-| [run_all_combinations.md](run_all_combinations.md) | Prompt comparison helper under `tmp/glm-5.1_vs_glm-5/`. |
-| [potential_redundancies.md](potential_redundancies.md) | Known doc/code redundancy candidates and cleanup notes. |
+| Doc                                                    | Use for                                                                                                      |
+| ------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------ |
+| [developer_overview.md](developer_overview.md)         | Session warm-up: project shape, core runtime flow, and first files to inspect.                               |
+| [API_README.md](API_README.md)                         | High-level Express route index with pointers into `docs/api/`.                                               |
+| [server_llm_notes.md](server_llm_notes.md)             | Detailed server, prompt helpers, LLM, event, travel, save/load, and generation flow notes.                   |
+| [config.md](config.md)                                 | Runtime/gameplay configuration, overrides, model settings, retry waits, prompt behavior, and mod enablement. |
+| [slash_commands.md](slash_commands.md)                 | Slash command lifecycle, interaction helpers, reply actions, and implementation conventions.                 |
+| [slop_and_repetition.md](slop_and_repetition.md)       | Slop-word, ngram, regex, forbidden-trope, turnResult parsing, and repetition-removal systems.                |
+| [modding.md](modding.md)                               | Mod discovery, defs overlays, enablement, runtime hooks, bundled mods, and save compatibility.               |
+| [modding_hooks.md](modding_hooks.md)                   | Detailed hook contracts for chat tools, XML events, prompts, UI, settings, and entity extensions.            |
+| [playwright.md](playwright.md)                         | Playwright setup and regression test run notes.                                                              |
+| [run_prompts.md](run_prompts.md)                       | `scripts/run_prompts.js` prompt-runner usage and template helpers.                                           |
+| [run_all_combinations.md](run_all_combinations.md)     | Prompt comparison helper under `tmp/glm-5.1_vs_glm-5/`.                                                      |
+| [potential_redundancies.md](potential_redundancies.md) | Known doc/code redundancy candidates and cleanup notes.                                                      |
 
 ## UI Docs
 
-| Doc | Use for |
-| --- | --- |
-| [ui/README.md](ui/README.md) | UI documentation scope and entry-point map. |
-| [ui/pages.md](ui/pages.md) | Server-rendered pages, templates, injected data, app header, settings/config pages, and route notes. |
-| [ui/chat_interface.md](ui/chat_interface.md) | Main Play interface behavior, tabs, panels, chat flow/error alerts, inventory lists, tracker sidebar cards, Story Tools, concurrent distinct dragged-item operations, and client data flow. |
-| [ui/modals_overlays.md](ui/modals_overlays.md) | Chat-page modal, overlay, tooltip, prompt tracker, container, barter, blank stub descriptions, and map confirmation behavior. |
-| [ui/maps.md](ui/maps.md) | Region/world map rendering, map actions, fast-travel confirmation timing, context menus, stubs, and vehicle map state. |
-| [ui/assets_styles.md](ui/assets_styles.md) | SCSS/CSS, assets, shared UI primitives, vendor libraries, icon color conventions, and responsive styling notes. |
+| Doc                                            | Use for                                                                                                                                                                                     |
+| ---------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [ui/README.md](ui/README.md)                   | UI documentation scope and entry-point map.                                                                                                                                                 |
+| [ui/pages.md](ui/pages.md)                     | Server-rendered pages, templates, injected data, app header, settings/config pages, and route notes.                                                                                        |
+| [ui/chat_interface.md](ui/chat_interface.md)   | Main Play interface behavior, tabs, panels, chat flow/error alerts, inventory lists, tracker sidebar cards, Story Tools, concurrent distinct dragged-item operations, and client data flow. |
+| [ui/modals_overlays.md](ui/modals_overlays.md) | Chat-page modal, overlay, tooltip, prompt tracker, container, barter, blank stub descriptions, and map confirmation behavior.                                                               |
+| [ui/maps.md](ui/maps.md)                       | Region/world map rendering, map actions, fast-travel confirmation timing, context menus, stubs, and vehicle map state.                                                                      |
+| [ui/assets_styles.md](ui/assets_styles.md)     | SCSS/CSS, assets, shared UI primitives, vendor libraries, icon color conventions, and responsive styling notes.                                                                             |
 
 ## Mod Docs
 
-| Doc | Use for |
-| --- | --- |
-| [mods/modules.md](mods/modules.md) | Bundled item-module mod: fields, UI, generation guidance, mechanics, tools, and XML events. |
-| [mods/need-bar-lust.md](mods/need-bar-lust.md) | Bundled lust need-bar hybrid mod and its prompt-step guidance. |
+| Doc                                            | Use for                                                                                     |
+| ---------------------------------------------- | ------------------------------------------------------------------------------------------- |
+| [mods/modules.md](mods/modules.md)             | Bundled item-module mod: fields, UI, generation guidance, mechanics, tools, and XML events. |
+| [mods/need-bar-lust.md](mods/need-bar-lust.md) | Bundled lust need-bar hybrid mod and its prompt-step guidance.                              |
 
 ## API Reference
 
-| Doc | Use for |
-| --- | --- |
-| [api/common.md](api/common.md) | Shared payload shapes, chat entries, summary metadata, actor/location/thing/vehicle conventions. |
-| [api/serialization.md](api/serialization.md) | Legacy pointer to shared serialization shapes in `api/common.md`. |
-| [api/attributes.md](api/attributes.md) | Attribute endpoints and the duplicate `/api/attributes` route note. |
-| [api/chat.md](api/chat.md) | `/api/chat`, history, prompt modes, chat tools including player-action and plot-analysis tracker/event creation, event results, travel, time, and streaming payloads. |
-| [api/crafting.md](api/crafting.md) | Crafting, processing, salvage, harvest, input consumption, timing, and generated result contracts. |
-| [api/factions.md](api/factions.md) | Faction CRUD, standings, relation generation, fill-missing, and faction field mutation tool behavior. |
-| [api/game.md](api/game.md) | New/load/save lifecycle, mod mismatch handling, active calendar, config overrides, and game state endpoints. |
-| [api/images.md](api/images.md) | Image generation, image jobs, uploads, serving, prompt batching, and weather/lighting variants. |
-| [api/locations.md](api/locations.md) | Locations, exits, stubs, relocation, favorites, modification, generated things/NPCs, and deletion. |
-| [api/lorebooks.md](api/lorebooks.md) | Lorebook listing and metadata endpoints. |
-| [api/map.md](api/map.md) | Legacy map API pointer. |
-| [api/misc.md](api/misc.md) | Feature flags, health/config tests, prompt cancel/retry controls, and slash-command routes. |
-| [api/mystery-boxes.md](api/mystery-boxes.md) | Story Tools MysteryBox list/get/update routes and persistence. |
-| [api/mystery-threads.md](api/mystery-threads.md) | Story Tools MysteryThread routes, box assignment, active-cap validation, and persistence. |
-| [api/npcs.md](api/npcs.md) | NPC CRUD, aliases, state edits, equipment, teleport, party cleanup, and barter sessions. |
-| [api/players.md](api/players.md) | Player/party endpoints, direct moves, ability selection, stats, inventory serialization, and view preferences. |
-| [api/quests.md](api/quests.md) | Quest edits, confirmations, rewards, reputation, and NPC disposition rewards. |
-| [api/regions.md](api/regions.md) | Region CRUD, generation, vehicle info, weather definitions, and weather state. |
-| [api/scene-summaries.md](api/scene-summaries.md) | Story Tools scene-summary list/update routes and chat-tool rerun path. |
-| [api/settings.md](api/settings.md) | World profile CRUD, AI fill-missing, defaults, factions, calendar drafts, tone scale, and slop words. |
-| [api/things.md](api/things.md) | Items/scenery, inventory transfers, stack operations, containers, module actions, and deletion. |
+| Doc                                              | Use for                                                                                                                                                               |
+| ------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [api/common.md](api/common.md)                   | Shared payload shapes, chat entries, summary metadata, actor/location/thing/vehicle conventions.                                                                      |
+| [api/serialization.md](api/serialization.md)     | Legacy pointer to shared serialization shapes in `api/common.md`.                                                                                                     |
+| [api/attributes.md](api/attributes.md)           | Attribute endpoints and the duplicate `/api/attributes` route note.                                                                                                   |
+| [api/chat.md](api/chat.md)                       | `/api/chat`, history, prompt modes, chat tools including player-action and plot-analysis tracker/event creation, event results, travel, time, and streaming payloads. |
+| [api/crafting.md](api/crafting.md)               | Crafting, processing, salvage, harvest, input consumption, timing, and generated result contracts.                                                                    |
+| [api/factions.md](api/factions.md)               | Faction CRUD, standings, relation generation, fill-missing, and faction field mutation tool behavior.                                                                 |
+| [api/game.md](api/game.md)                       | New/load/save lifecycle, mod mismatch handling, active calendar, config overrides, and game state endpoints.                                                          |
+| [api/images.md](api/images.md)                   | Image generation, image jobs, uploads, serving, prompt batching, and weather/lighting variants.                                                                       |
+| [api/locations.md](api/locations.md)             | Locations, exits, stubs, relocation, favorites, modification, generated things/NPCs, and deletion.                                                                    |
+| [api/lorebooks.md](api/lorebooks.md)             | Lorebook listing and metadata endpoints.                                                                                                                              |
+| [api/map.md](api/map.md)                         | Legacy map API pointer.                                                                                                                                               |
+| [api/misc.md](api/misc.md)                       | Feature flags, health/config tests, prompt cancel/retry controls, and slash-command routes.                                                                           |
+| [api/mystery-boxes.md](api/mystery-boxes.md)     | Story Tools MysteryBox list/get/update routes and persistence.                                                                                                        |
+| [api/mystery-threads.md](api/mystery-threads.md) | Story Tools MysteryThread routes, box assignment, active-cap validation, and persistence.                                                                             |
+| [api/npcs.md](api/npcs.md)                       | NPC CRUD, aliases, state edits, equipment, teleport, party cleanup, and barter sessions.                                                                              |
+| [api/players.md](api/players.md)                 | Player/party endpoints, direct moves, ability selection, stats, inventory serialization, and view preferences.                                                        |
+| [api/quests.md](api/quests.md)                   | Quest edits, confirmations, rewards, reputation, and NPC disposition rewards.                                                                                         |
+| [api/regions.md](api/regions.md)                 | Region CRUD, generation, vehicle info, weather definitions, and weather state.                                                                                        |
+| [api/scene-summaries.md](api/scene-summaries.md) | Story Tools scene-summary list/update routes and chat-tool rerun path.                                                                                                |
+| [api/settings.md](api/settings.md)               | World profile CRUD, AI fill-missing, defaults, factions, calendar drafts, tone scale, and slop words.                                                                 |
+| [api/things.md](api/things.md)                   | Items/scenery, inventory transfers, stack operations, containers, module actions, and deletion.                                                                       |
 
 ## Class Reference
 
-| Doc | Use for |
-| --- | --- |
-| [classes/ActorAttachmentSystem.md](classes/ActorAttachmentSystem.md) | Helper for inventory-backed actor attachments such as implants. |
-| [classes/CodexBridgeClient.md](classes/CodexBridgeClient.md) | Codex CLI bridge backend, prompt wrapping, streaming, structured output, and usage reporting. |
-| [classes/ComfyUIClient.md](classes/ComfyUIClient.md) | ComfyUI image-generation queueing, upload, polling, and result download client. |
-| [classes/Events.md](classes/Events.md) | Event-check parsing and application for world mutations, travel, time, quests, needs, trackers, and summaries. |
-| [classes/EventsEventTypes.md](classes/EventsEventTypes.md) | Event type table with payload shapes and application behavior. |
-| [classes/EventsXmlEventSchema.md](classes/EventsXmlEventSchema.md) | XML event-check schema and LLM-facing event tag guidance. |
-| [classes/Faction.md](classes/Faction.md) | Faction model, indexes, reputation, relations, and direct field upsert behavior. |
-| [classes/Globals.md](classes/Globals.md) | Runtime state, current player/location/region helpers, prompt wiring, realtime emits, and world time. |
-| [classes/IdGenerator.md](classes/IdGenerator.md) | Compact persisted ID allocation and migration counters. |
-| [classes/ItemModuleSystem.md](classes/ItemModuleSystem.md) | Module installation, validation, ownership sync, and installed-module bonuses/effects. |
-| [classes/LLMClient.md](classes/LLMClient.md) | LLM completions, backend selection, streaming progress, retries, cancellation, logging, and prompt stats. |
-| [classes/Location.md](classes/Location.md) | Location model, stubs, visits, favorites, exits, things/NPCs, optional generated metadata, weather hints, and travel routes. |
-| [classes/LocationExit.md](classes/LocationExit.md) | Exit model, vehicle semantics, travel times, reverse-link helpers, and debug backtraces. |
-| [classes/LorebookManager.md](classes/LorebookManager.md) | Lorebook loading, matching, enablement, and prompt injection. |
-| [classes/ModExtensionRegistry.md](classes/ModExtensionRegistry.md) | Registry for mod hooks, tools, XML events, settings fields, UI hooks, entity fields, and validators. |
-| [classes/ModLoader.md](classes/ModLoader.md) | Enabled mod loading, scoped helpers, defs overlays, prompt templates, and public/asset serving. |
-| [classes/ModManager.md](classes/ModManager.md) | Filesystem-backed mod manager, enablement diffs, config writes, and pending load intents. |
-| [classes/MysteryBox.md](classes/MysteryBox.md) | Persisted private mystery/offscreen continuity boxes, lookup tools, mention history, and editing. |
-| [classes/MysteryThread.md](classes/MysteryThread.md) | Persisted mystery threads, active/concluded status, box grouping, and active-context filtering. |
-| [classes/NanoGPTImageClient.md](classes/NanoGPTImageClient.md) | NanoGPT image client and base64 image saving. |
-| [classes/OpenAIImageClient.md](classes/OpenAIImageClient.md) | OpenAI image client and base64 image saving. |
-| [classes/Player.md](classes/Player.md) | Player/NPC model, inventory, needs, dispositions, party, progression, barter, death, and location state. |
-| [classes/Quest.md](classes/Quest.md) | Quest model, objectives, giver info, rewards, completion state, and indexes. |
-| [classes/QuestConfirmationManager.md](classes/QuestConfirmationManager.md) | Async quest confirmation coordination and reward previews. |
-| [classes/RealtimeHub.md](classes/RealtimeHub.md) | WebSocket hub for targeted and broadcast realtime events. |
-| [classes/Region.md](classes/Region.md) | Region model, locations, exits, weather, optional generated metadata, vehicle info, and generation parsing. |
-| [classes/SanitizedStringMap.md](classes/SanitizedStringMap.md) | Case/punctuation-insensitive string-keyed map. |
-| [classes/SanitizedStringSet.md](classes/SanitizedStringSet.md) | Case/punctuation-insensitive string set. |
-| [classes/SceneSummaries.md](classes/SceneSummaries.md) | Scene summary storage, range indexing, Story Tools edits, and scene lookup/rerun tools. |
-| [classes/ScheduledEvent.md](classes/ScheduledEvent.md) | Persisted scheduled events, due ordering, resolution state, and save/load helpers. |
-| [classes/SettingInfo.md](classes/SettingInfo.md) | World profile settings, defaults, calendar, slop words, tone scale, and persistence. |
-| [classes/Skill.md](classes/Skill.md) | Skill model metadata and optional attribute association. |
-| [classes/StatusEffect.md](classes/StatusEffect.md) | Status effect modifiers, duration parsing, applied time, need deltas, and expiry semantics. |
-| [classes/Thing.md](classes/Thing.md) | Item/scenery model, stacks, containers, mod fields, effects, values, checksums, and placement. |
-| [classes/Tracker.md](classes/Tracker.md) | Persisted plot trackers, typed values, countdown deadlines, event updates, hidden sidebar display, prompt context, mutator tools, and save/load helpers. |
-| [classes/UnifiedTonalScale.md](classes/UnifiedTonalScale.md) | Tone-scale loading, half-step options, and prompt markdown rendering. |
-| [classes/Utils.md](classes/Utils.md) | Shared parsing, serialization, duration/time helpers, depth-aware XML extraction helpers, migrations, and diagnostics. |
-| [classes/VehicleInfo.md](classes/VehicleInfo.md) | Vehicle travel metadata, pending destinations, pending-region arrival finalization, fixed routes, ETA/departure, and trip state. |
-| [classes/base_context_history.md](classes/base_context_history.md) | Base-context history inclusion/exclusion helpers for regular and generic prompts. |
+| Doc                                                                        | Use for                                                                                                                                                  |
+| -------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [classes/ActorAttachmentSystem.md](classes/ActorAttachmentSystem.md)       | Helper for inventory-backed actor attachments such as implants.                                                                                          |
+| [classes/CodexBridgeClient.md](classes/CodexBridgeClient.md)               | Codex CLI bridge backend, prompt wrapping, streaming, structured output, and usage reporting.                                                            |
+| [classes/ComfyUIClient.md](classes/ComfyUIClient.md)                       | ComfyUI image-generation queueing, upload, polling, and result download client.                                                                          |
+| [classes/Events.md](classes/Events.md)                                     | Event-check parsing and application for world mutations, travel, time, quests, needs, trackers, and summaries.                                           |
+| [classes/EventsEventTypes.md](classes/EventsEventTypes.md)                 | Event type table with payload shapes and application behavior.                                                                                           |
+| [classes/EventsXmlEventSchema.md](classes/EventsXmlEventSchema.md)         | XML event-check schema and LLM-facing event tag guidance.                                                                                                |
+| [classes/Faction.md](classes/Faction.md)                                   | Faction model, indexes, reputation, relations, and direct field upsert behavior.                                                                         |
+| [classes/Globals.md](classes/Globals.md)                                   | Runtime state, current player/location/region helpers, prompt wiring, realtime emits, and world time.                                                    |
+| [classes/IdGenerator.md](classes/IdGenerator.md)                           | Compact persisted ID allocation and migration counters.                                                                                                  |
+| [classes/ItemModuleSystem.md](classes/ItemModuleSystem.md)                 | Module installation, validation, ownership sync, and installed-module bonuses/effects.                                                                   |
+| [classes/LLMClient.md](classes/LLMClient.md)                               | LLM completions, backend selection, streaming progress, retries, cancellation, logging, and prompt stats.                                                |
+| [classes/Location.md](classes/Location.md)                                 | Location model, stubs, visits, favorites, exits, things/NPCs, optional generated metadata, weather hints, and travel routes.                             |
+| [classes/LocationExit.md](classes/LocationExit.md)                         | Exit model, vehicle semantics, travel times, reverse-link helpers, and debug backtraces.                                                                 |
+| [classes/LorebookManager.md](classes/LorebookManager.md)                   | Lorebook loading, matching, enablement, and prompt injection.                                                                                            |
+| [classes/ModExtensionRegistry.md](classes/ModExtensionRegistry.md)         | Registry for mod hooks, tools, XML events, settings fields, UI hooks, entity fields, and validators.                                                     |
+| [classes/ModLoader.md](classes/ModLoader.md)                               | Enabled mod loading, scoped helpers, defs overlays, prompt templates, and public/asset serving.                                                          |
+| [classes/ModManager.md](classes/ModManager.md)                             | Filesystem-backed mod manager, enablement diffs, config writes, and pending load intents.                                                                |
+| [classes/MysteryBox.md](classes/MysteryBox.md)                             | Persisted private mystery/offscreen continuity boxes, lookup tools, mention history, and editing.                                                        |
+| [classes/MysteryThread.md](classes/MysteryThread.md)                       | Persisted mystery threads, active/concluded status, box grouping, and active-context filtering.                                                          |
+| [classes/NanoGPTImageClient.md](classes/NanoGPTImageClient.md)             | NanoGPT image client and base64 image saving.                                                                                                            |
+| [classes/OpenAIImageClient.md](classes/OpenAIImageClient.md)               | OpenAI image client and base64 image saving.                                                                                                             |
+| [classes/Player.md](classes/Player.md)                                     | Player/NPC model, inventory, needs, dispositions, party, progression, barter, death, and location state.                                                 |
+| [classes/Quest.md](classes/Quest.md)                                       | Quest model, objectives, giver info, rewards, completion state, and indexes.                                                                             |
+| [classes/QuestConfirmationManager.md](classes/QuestConfirmationManager.md) | Async quest confirmation coordination and reward previews.                                                                                               |
+| [classes/RealtimeHub.md](classes/RealtimeHub.md)                           | WebSocket hub for targeted and broadcast realtime events.                                                                                                |
+| [classes/Region.md](classes/Region.md)                                     | Region model, locations, exits, weather, optional generated metadata, vehicle info, and generation parsing.                                              |
+| [classes/SanitizedStringMap.md](classes/SanitizedStringMap.md)             | Case/punctuation-insensitive string-keyed map.                                                                                                           |
+| [classes/SanitizedStringSet.md](classes/SanitizedStringSet.md)             | Case/punctuation-insensitive string set.                                                                                                                 |
+| [classes/SceneSummaries.md](classes/SceneSummaries.md)                     | Scene summary storage, range indexing, Story Tools edits, and scene lookup/rerun tools.                                                                  |
+| [classes/ScheduledEvent.md](classes/ScheduledEvent.md)                     | Persisted scheduled events, due ordering, resolution state, and save/load helpers.                                                                       |
+| [classes/SettingInfo.md](classes/SettingInfo.md)                           | World profile settings, defaults, calendar, slop words, tone scale, and persistence.                                                                     |
+| [classes/Skill.md](classes/Skill.md)                                       | Skill model metadata and optional attribute association.                                                                                                 |
+| [classes/StatusEffect.md](classes/StatusEffect.md)                         | Status effect modifiers, duration parsing, applied time, need deltas, and expiry semantics.                                                              |
+| [classes/Thing.md](classes/Thing.md)                                       | Item/scenery model, stacks, containers, mod fields, effects, values, checksums, and placement.                                                           |
+| [classes/Tracker.md](classes/Tracker.md)                                   | Persisted plot trackers, typed values, countdown deadlines, event updates, hidden sidebar display, prompt context, mutator tools, and save/load helpers. |
+| [classes/UnifiedTonalScale.md](classes/UnifiedTonalScale.md)               | Tone-scale loading, half-step options, and prompt markdown rendering.                                                                                    |
+| [classes/Utils.md](classes/Utils.md)                                       | Shared parsing, serialization, duration/time helpers, depth-aware XML extraction helpers, migrations, and diagnostics.                                   |
+| [classes/VehicleInfo.md](classes/VehicleInfo.md)                           | Vehicle travel metadata, pending destinations, pending-region arrival finalization, fixed routes, ETA/departure, and trip state.                         |
+| [classes/base_context_history.md](classes/base_context_history.md)         | Base-context history inclusion/exclusion helpers for regular and generic prompts.                                                                        |
 
 ## Design Ideas
 
-| Doc | Use for |
-| --- | --- |
-| [ideas/area_attack_tool_plan.md](ideas/area_attack_tool_plan.md) | Implemented plan for `resolveAreaAttack` prose-tool handling. |
-| [ideas/dramatis_personae.md](ideas/dramatis_personae.md) | Brainstorm for recurring setting-agnostic NPC casts. |
-| [ideas/gameplay_improvement_brainstorm.md](ideas/gameplay_improvement_brainstorm.md) | Gameplay improvement ideas from small UX changes to larger systems. |
-| [ideas/pending_region_specific_locations_plan.md](ideas/pending_region_specific_locations_plan.md) | Plan for preserving specific location stubs inside pending region-entry stubs. |
-| [ideas/setting_creation_studio_brainstorm.md](ideas/setting_creation_studio_brainstorm.md) | Guided setting creation studio brainstorm. |
-| [ideas/tactical_battles_brainstorm.md](ideas/tactical_battles_brainstorm.md) | Optional tactical conflict scenes, zones, objectives, and rollout ideas. |
-| [ideas/tactical_map_generation_brainstorm.md](ideas/tactical_map_generation_brainstorm.md) | LLM-assisted tactical map generation and validation ideas. |
-| [ideas/trade_barter_system_plan.md](ideas/trade_barter_system_plan.md) | NPC trade/barter system plan. |
-| [ideas/travel_planner_journey_risk_brainstorm.md](ideas/travel_planner_journey_risk_brainstorm.md) | Travel planning, lodging, foraging, encounters, and journey-risk ideas. |
+| Doc                                                                                                | Use for                                                                            |
+| -------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
+| [ideas/area_attack_tool_plan.md](ideas/area_attack_tool_plan.md)                                   | Implemented plan for `resolveAreaAttack` prose-tool handling.                      |
+| [ideas/dramatis_personae.md](ideas/dramatis_personae.md)                                           | Brainstorm for recurring setting-agnostic NPC casts.                               |
+| [ideas/gameplay_improvement_brainstorm.md](ideas/gameplay_improvement_brainstorm.md)               | Gameplay improvement ideas from small UX changes to larger systems.                |
+| [ideas/pending_region_specific_locations_plan.md](ideas/pending_region_specific_locations_plan.md) | Plan for preserving specific location stubs inside pending region-entry stubs.     |
+| [ideas/setting_creation_studio_brainstorm.md](ideas/setting_creation_studio_brainstorm.md)         | Guided setting creation studio brainstorm.                                         |
+| [ideas/tactical_battles_brainstorm.md](ideas/tactical_battles_brainstorm.md)                       | Optional tactical conflict scenes, zones, objectives, and rollout ideas.           |
+| [ideas/tactical_map_generation_brainstorm.md](ideas/tactical_map_generation_brainstorm.md)         | LLM-assisted tactical map generation and validation ideas.                         |
+| [ideas/trade_barter_system_plan.md](ideas/trade_barter_system_plan.md)                             | NPC trade/barter system plan.                                                      |
+| [ideas/travel_planner_journey_risk_brainstorm.md](ideas/travel_planner_journey_risk_brainstorm.md) | Travel planning, lodging, foraging, encounters, and journey-risk ideas.            |
 | [ideas/user_experience_improvement_brainstorm.md](ideas/user_experience_improvement_brainstorm.md) | UX improvements for player journeys, navigation, diagnostics, and shared patterns. |
-| [ideas/world_inspector_editor_brainstorm.md](ideas/world_inspector_editor_brainstorm.md) | Developer/admin world inspector and editor brainstorm. |
+| [ideas/world_inspector_editor_brainstorm.md](ideas/world_inspector_editor_brainstorm.md)           | Developer/admin world inspector and editor brainstorm.                             |
 
 ## Finished Or Archived Ideas
 
-| Doc | Use for |
-| --- | --- |
-| [ideas/finished/DayNightCycle.md](ideas/finished/DayNightCycle.md) | Day/night cycle design draft. |
-| [ideas/finished/Factions.md](ideas/finished/Factions.md) | Faction system design draft. |
-| [ideas/finished/header_revamp_brainstorm.md](ideas/finished/header_revamp_brainstorm.md) | App header and navigation revamp brainstorm. |
-| [ideas/finished/minute_time_migration.md](ideas/finished/minute_time_migration.md) | Minute-based time migration plan. |
-| [ideas/finished/turn_state_diff_drawer_brainstorm_plan.md](ideas/finished/turn_state_diff_drawer_brainstorm_plan.md) | Turn state-diff drawer brainstorm and implementation plan. |
-| [ideas/finished/vehicles.outdated.md](ideas/finished/vehicles.outdated.md) | Older vehicle concept brainstorm. |
-| [ideas/finished/vehicles2.outdated.md](ideas/finished/vehicles2.outdated.md) | Older setting-agnostic vehicle brainstorm. |
-| [ideas/finished/visible_weather_image_variants_plan.md](ideas/finished/visible_weather_image_variants_plan.md) | Implemented plan for location weather/lighting image variants. |
+| Doc                                                                                                                  | Use for                                                        |
+| -------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------- |
+| [ideas/finished/DayNightCycle.md](ideas/finished/DayNightCycle.md)                                                   | Day/night cycle design draft.                                  |
+| [ideas/finished/Factions.md](ideas/finished/Factions.md)                                                             | Faction system design draft.                                   |
+| [ideas/finished/header_revamp_brainstorm.md](ideas/finished/header_revamp_brainstorm.md)                             | App header and navigation revamp brainstorm.                   |
+| [ideas/finished/minute_time_migration.md](ideas/finished/minute_time_migration.md)                                   | Minute-based time migration plan.                              |
+| [ideas/finished/turn_state_diff_drawer_brainstorm_plan.md](ideas/finished/turn_state_diff_drawer_brainstorm_plan.md) | Turn state-diff drawer brainstorm and implementation plan.     |
+| [ideas/finished/vehicles.outdated.md](ideas/finished/vehicles.outdated.md)                                           | Older vehicle concept brainstorm.                              |
+| [ideas/finished/vehicles2.outdated.md](ideas/finished/vehicles2.outdated.md)                                         | Older setting-agnostic vehicle brainstorm.                     |
+| [ideas/finished/visible_weather_image_variants_plan.md](ideas/finished/visible_weather_image_variants_plan.md)       | Implemented plan for location weather/lighting image variants. |
 
 ## Implementation Plans
 
-| Doc | Use for |
-| --- | --- |
-| [superpowers/plans/2026-05-22-hidden-items-scenery-exits.md](superpowers/plans/2026-05-22-hidden-items-scenery-exits.md) | Hidden items, scenery, exits, reveal/hide events, API gating, and UI controls. |
-| [superpowers/plans/2026-05-23-implants-and-mod-hooks.md](superpowers/plans/2026-05-23-implants-and-mod-hooks.md) | Implant/spell system hooks and mod-owned extension behavior. |
-| [superpowers/plans/2026-05-23-mod-ui-hooks.md](superpowers/plans/2026-05-23-mod-ui-hooks.md) | Mod UI extension layer, manifest, runtime, slots, panels, and bundled examples. |
-| [superpowers/plans/2026-05-24-scheduled-events.md](superpowers/plans/2026-05-24-scheduled-events.md) | Scheduled event tool, persistence, resolution prompt, and visible/hidden logging. |
-| [superpowers/plans/2026-05-26-modular-items.md](superpowers/plans/2026-05-26-modular-items.md) | Modular item system, configurable slots, item UI, mechanics hooks, tests, and docs. |
-| [superpowers/plans/2026-06-05-regen-party-images.md](superpowers/plans/2026-06-05-regen-party-images.md) | `/regen_party_images` command and shared NPC portrait regeneration flow. |
-| [superpowers/plans/2026-06-09-map-fast-travel-confirmation.md](superpowers/plans/2026-06-09-map-fast-travel-confirmation.md) | Region Map, World Map, and Favorites fast-travel confirmation. |
-| [superpowers/plans/2026-06-13-improvement-prompt.md](superpowers/plans/2026-06-13-improvement-prompt.md) | Periodic visible, prompt-excluded game-improvement suggestions. |
-| [superpowers/plans/2026-06-15-needs-modal-simplification.md](superpowers/plans/2026-06-15-needs-modal-simplification.md) | Compact needs edit modal implementation tasks, focused UI test, SCSS compilation, and docs updates. |
-| [superpowers/plans/2026-06-16-trackers.md](superpowers/plans/2026-06-16-trackers.md) | First-class plot tracker implementation: model, save/load, prompt context, mutator tools, sidebar UI, tests, and docs. |
+| Doc                                                                                                                          | Use for                                                                                                                |
+| ---------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| [superpowers/plans/2026-05-22-hidden-items-scenery-exits.md](superpowers/plans/2026-05-22-hidden-items-scenery-exits.md)     | Hidden items, scenery, exits, reveal/hide events, API gating, and UI controls.                                         |
+| [superpowers/plans/2026-05-23-implants-and-mod-hooks.md](superpowers/plans/2026-05-23-implants-and-mod-hooks.md)             | Implant/spell system hooks and mod-owned extension behavior.                                                           |
+| [superpowers/plans/2026-05-23-mod-ui-hooks.md](superpowers/plans/2026-05-23-mod-ui-hooks.md)                                 | Mod UI extension layer, manifest, runtime, slots, panels, and bundled examples.                                        |
+| [superpowers/plans/2026-05-24-scheduled-events.md](superpowers/plans/2026-05-24-scheduled-events.md)                         | Scheduled event tool, persistence, resolution prompt, and visible/hidden logging.                                      |
+| [superpowers/plans/2026-05-26-modular-items.md](superpowers/plans/2026-05-26-modular-items.md)                               | Modular item system, configurable slots, item UI, mechanics hooks, tests, and docs.                                    |
+| [superpowers/plans/2026-06-05-regen-party-images.md](superpowers/plans/2026-06-05-regen-party-images.md)                     | `/regen_party_images` command and shared NPC portrait regeneration flow.                                               |
+| [superpowers/plans/2026-06-09-map-fast-travel-confirmation.md](superpowers/plans/2026-06-09-map-fast-travel-confirmation.md) | Region Map, World Map, and Favorites fast-travel confirmation.                                                         |
+| [superpowers/plans/2026-06-13-improvement-prompt.md](superpowers/plans/2026-06-13-improvement-prompt.md)                     | Periodic visible, prompt-excluded game-improvement suggestions.                                                        |
+| [superpowers/plans/2026-06-15-needs-modal-simplification.md](superpowers/plans/2026-06-15-needs-modal-simplification.md)     | Compact needs edit modal implementation tasks, focused UI test, SCSS compilation, and docs updates.                    |
+| [superpowers/plans/2026-06-16-trackers.md](superpowers/plans/2026-06-16-trackers.md)                                         | First-class plot tracker implementation: model, save/load, prompt context, mutator tools, sidebar UI, tests, and docs. |
 
 ## Design Specs
 
-| Doc | Use for |
-| --- | --- |
-| [superpowers/specs/2026-05-23-mod-ui-hooks-design.md](superpowers/specs/2026-05-23-mod-ui-hooks-design.md) | Registry-backed mod UI pages, navigation, panels, actions, overrides, and lifecycle events. |
-| [superpowers/specs/2026-05-26-modular-items-design.md](superpowers/specs/2026-05-26-modular-items-design.md) | Modular item design: base slots, modules, configured slot types, stats/effects, and UI. |
-| [superpowers/specs/2026-06-05-regen-party-images-design.md](superpowers/specs/2026-06-05-regen-party-images-design.md) | `/regen_party_images` design and shared portrait batching reuse. |
-| [superpowers/specs/2026-06-15-needs-modal-simplification-design.md](superpowers/specs/2026-06-15-needs-modal-simplification-design.md) | Compact needs edit modal with one icon/name, colored slider, and numeric input row per active need. |
-| [superpowers/specs/2026-06-16-trackers-design.md](superpowers/specs/2026-06-16-trackers-design.md) | First-class plot trackers: persistence, prompt context, sidebar display, hidden toggle, and mutator tools. |
+| Doc                                                                                                                                    | Use for                                                                                                    |
+| -------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| [superpowers/specs/2026-05-23-mod-ui-hooks-design.md](superpowers/specs/2026-05-23-mod-ui-hooks-design.md)                             | Registry-backed mod UI pages, navigation, panels, actions, overrides, and lifecycle events.                |
+| [superpowers/specs/2026-05-26-modular-items-design.md](superpowers/specs/2026-05-26-modular-items-design.md)                           | Modular item design: base slots, modules, configured slot types, stats/effects, and UI.                    |
+| [superpowers/specs/2026-06-05-regen-party-images-design.md](superpowers/specs/2026-06-05-regen-party-images-design.md)                 | `/regen_party_images` design and shared portrait batching reuse.                                           |
+| [superpowers/specs/2026-06-15-needs-modal-simplification-design.md](superpowers/specs/2026-06-15-needs-modal-simplification-design.md) | Compact needs edit modal with one icon/name, colored slider, and numeric input row per active need.        |
+| [superpowers/specs/2026-06-16-trackers-design.md](superpowers/specs/2026-06-16-trackers-design.md)                                     | First-class plot trackers: persistence, prompt context, sidebar display, hidden toggle, and mutator tools. |
 
 ## Slash Command Reference
 
-| Doc | Command |
-| --- | --- |
-| [slashcommands/Command.md](slashcommands/Command.md) | `/awardxp` grants exact raw experience points. |
-| [slashcommands/CalendarInfoCommand.md](slashcommands/CalendarInfoCommand.md) | `/calendar_info`, `/calendar` displays in-game calendar details. |
-| [slashcommands/ClearPlotNotesCommand.md](slashcommands/ClearPlotNotesCommand.md) | `/clear_plot_notes` removes hidden plot summary/expander entries. |
-| [slashcommands/ClearSecretsCommand.md](slashcommands/ClearSecretsCommand.md) | `/clear_secrets` removes hidden supplemental/offscreen story info. |
-| [slashcommands/ExitBacktracesCommand.md](slashcommands/ExitBacktracesCommand.md) | `/exit_backtraces` lists current-location exits with creation backtraces. |
-| [slashcommands/ExportHistoryCommand.md](slashcommands/ExportHistoryCommand.md) | `/export_history` exports chat history to text or HTML. |
-| [slashcommands/FillExitTravelTimesCommand.md](slashcommands/FillExitTravelTimesCommand.md) | `/fill_exit_travel_times` fills or regenerates region exit travel times. |
-| [slashcommands/FixExitsCommand.md](slashcommands/FixExitsCommand.md) | `/fix_exits` repairs one-way location exits. |
-| [slashcommands/GameIntroCommand.md](slashcommands/GameIntroCommand.md) | `/game_intro`, `/intro` generates intro narration and autosaves. |
-| [slashcommands/GenerateMissingSkillsCommand.md](slashcommands/GenerateMissingSkillsCommand.md) | `/generate_missing_skills` fills missing skill metadata. |
-| [slashcommands/GetConfigCommand.md](slashcommands/GetConfigCommand.md) | `/get` reads nested config values. |
-| [slashcommands/HealCommand.md](slashcommands/HealCommand.md) | `/heal`, `/resurrect` restores health and clears death. |
-| [slashcommands/HelpCommand.md](slashcommands/HelpCommand.md) | `/help` lists slash commands and usage. |
-| [slashcommands/ImportItemCommand.md](slashcommands/ImportItemCommand.md) | `/import_item` imports XML item/scenery entries. |
-| [slashcommands/IncapacitateCommand.md](slashcommands/IncapacitateCommand.md) | `/incapacitate` applies the Incapacitated status without lowering health. |
-| [slashcommands/KillCommand.md](slashcommands/KillCommand.md) | `/kill` immediately kills a named NPC. |
-| [slashcommands/LocateCommand.md](slashcommands/LocateCommand.md) | `/locate` finds NPCs by exact name or alias. |
-| [slashcommands/NeedBarsCommand.md](slashcommands/NeedBarsCommand.md) | `/needbars` lists or directly edits need bars. |
-| [slashcommands/OrphanedLocationsCommand.md](slashcommands/OrphanedLocationsCommand.md) | `/orphaned_locations` lists locations with missing region links or usable exits. |
-| [slashcommands/PlotAnalysisCommand.md](slashcommands/PlotAnalysisCommand.md) | `/plot_analysis` displays the latest background plot analysis. |
-| [slashcommands/PromptStatsCommand.md](slashcommands/PromptStatsCommand.md) | `/promptstats` inspects or clears prompt output-character averages. |
-| [slashcommands/RandomCommand.md](slashcommands/RandomCommand.md) | `/random` triggers a configured random event. |
-| [slashcommands/RegenPartyImagesCommand.md](slashcommands/RegenPartyImagesCommand.md) | `/regen_party_images` regenerates current party NPC portraits. |
-| [slashcommands/RegexReplaceCommand.md](slashcommands/RegexReplaceCommand.md) | `/regex_replace` runs regex replacement across chat history. |
-| [slashcommands/ReloadConfigCommand.md](slashcommands/ReloadConfigCommand.md) | `/reload_config` reloads config files and definition caches. |
-| [slashcommands/ReloadLorebooksCommand.md](slashcommands/ReloadLorebooksCommand.md) | `/reload_lorebooks` reloads lorebooks from disk. |
-| [slashcommands/RespecAbilitiesCommand.md](slashcommands/RespecAbilitiesCommand.md) | `/respec_abilities` rebuilds ability selections across a level range. |
-| [slashcommands/RespecSkillsCommand.md](slashcommands/RespecSkillsCommand.md) | `/respec_skills` rebuilds NPC skill allocation for current level. |
-| [slashcommands/RpCommand.md](slashcommands/RpCommand.md) | `/rp` toggles roleplay mode and related checks. |
-| [slashcommands/RunPlotExpanderCommand.md](slashcommands/RunPlotExpanderCommand.md) | `/runplotexpander` runs the plot-expander prompt immediately. |
-| [slashcommands/RunPlotSummaryCommand.md](slashcommands/RunPlotSummaryCommand.md) | `/runplotsummary` runs the plot-summary prompt immediately. |
-| [slashcommands/SceneSummariesCommand.md](slashcommands/SceneSummariesCommand.md) | `/scene_summaries`, `/summary_ranges` lists stored scene summaries and gaps. |
-| [slashcommands/SceneSummaryCommand.md](slashcommands/SceneSummaryCommand.md) | `/summarize`, `/scene_summary` exports or rebuilds scene summaries. |
-| [slashcommands/ScheduledCommand.md](slashcommands/ScheduledCommand.md) | `/scheduled` lists pending scheduled events. |
-| [slashcommands/ScrubLegacyDebugCommand.md](slashcommands/ScrubLegacyDebugCommand.md) | `/scrub_legacy_debug` removes old debug pollution from history/summaries. |
-| [slashcommands/SetConfigCommand.md](slashcommands/SetConfigCommand.md) | `/set` updates nested config values at runtime. |
-| [slashcommands/SetLastSeenCommand.md](slashcommands/SetLastSeenCommand.md) | `/set_last_seen` updates NPC last-seen time/location data. |
-| [slashcommands/SetLevelCommand.md](slashcommands/SetLevelCommand.md) | `/setlevel` sets a player or character level while leaving XP unchanged. |
-| [slashcommands/ShortDescriptionCheckCommand.md](slashcommands/ShortDescriptionCheckCommand.md) | `/short_description_check` lists missing short descriptions. |
-| [slashcommands/SlashCommandBase.md](slashcommands/SlashCommandBase.md) | Base class for slash command metadata, validation, overlays, and listing. |
-| [slashcommands/SlopwordsCommand.md](slashcommands/SlopwordsCommand.md) | `/slopwords` reports slop words above configured thresholds. |
-| [slashcommands/TeleportCommand.md](slashcommands/TeleportCommand.md) | `/teleport` moves the player to a location by id or name. |
-| [slashcommands/TimeCommand.md](slashcommands/TimeCommand.md) | `/time` advances or rewinds world time by a signed duration. |
-| [slashcommands/VehicleStatusCommand.md](slashcommands/VehicleStatusCommand.md) | `/vehicle_status` displays current vehicle route/trip status. |
-| [slashcommands/WeatherCommand.md](slashcommands/WeatherCommand.md) | `/weather` displays current-region seasonal weather details. |
-| [slashcommands/WorldOutlineCommand.md](slashcommands/WorldOutlineCommand.md) | `/world_outline` lists regions, locations, and pending stubs. |
+| Doc                                                                                            | Command                                                                          |
+| ---------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------- |
+| [slashcommands/Command.md](slashcommands/Command.md)                                           | `/awardxp` grants exact raw experience points.                                   |
+| [slashcommands/CalendarInfoCommand.md](slashcommands/CalendarInfoCommand.md)                   | `/calendar_info`, `/calendar` displays in-game calendar details.                 |
+| [slashcommands/ClearPlotNotesCommand.md](slashcommands/ClearPlotNotesCommand.md)               | `/clear_plot_notes` removes hidden plot summary/expander entries.                |
+| [slashcommands/ClearSecretsCommand.md](slashcommands/ClearSecretsCommand.md)                   | `/clear_secrets` removes hidden supplemental/offscreen story info.               |
+| [slashcommands/ExitBacktracesCommand.md](slashcommands/ExitBacktracesCommand.md)               | `/exit_backtraces` lists current-location exits with creation backtraces.        |
+| [slashcommands/ExportHistoryCommand.md](slashcommands/ExportHistoryCommand.md)                 | `/export_history` exports chat history to text or HTML.                          |
+| [slashcommands/FillExitTravelTimesCommand.md](slashcommands/FillExitTravelTimesCommand.md)     | `/fill_exit_travel_times` fills or regenerates region exit travel times.         |
+| [slashcommands/FixExitsCommand.md](slashcommands/FixExitsCommand.md)                           | `/fix_exits` repairs one-way location exits.                                     |
+| [slashcommands/GameIntroCommand.md](slashcommands/GameIntroCommand.md)                         | `/game_intro`, `/intro` generates intro narration and autosaves.                 |
+| [slashcommands/GenerateMissingSkillsCommand.md](slashcommands/GenerateMissingSkillsCommand.md) | `/generate_missing_skills` fills missing skill metadata.                         |
+| [slashcommands/GetConfigCommand.md](slashcommands/GetConfigCommand.md)                         | `/get` reads nested config values.                                               |
+| [slashcommands/HealCommand.md](slashcommands/HealCommand.md)                                   | `/heal`, `/resurrect` restores health and clears death.                          |
+| [slashcommands/HelpCommand.md](slashcommands/HelpCommand.md)                                   | `/help` lists slash commands and usage.                                          |
+| [slashcommands/ImportItemCommand.md](slashcommands/ImportItemCommand.md)                       | `/import_item` imports XML item/scenery entries.                                 |
+| [slashcommands/IncapacitateCommand.md](slashcommands/IncapacitateCommand.md)                   | `/incapacitate` applies the Incapacitated status without lowering health.        |
+| [slashcommands/KillCommand.md](slashcommands/KillCommand.md)                                   | `/kill` immediately kills a named NPC.                                           |
+| [slashcommands/LocateCommand.md](slashcommands/LocateCommand.md)                               | `/locate` finds NPCs by exact name or alias.                                     |
+| [slashcommands/NeedBarsCommand.md](slashcommands/NeedBarsCommand.md)                           | `/needbars` lists or directly edits need bars.                                   |
+| [slashcommands/OrphanedLocationsCommand.md](slashcommands/OrphanedLocationsCommand.md)         | `/orphaned_locations` lists locations with missing region links or usable exits. |
+| [slashcommands/PlotAnalysisCommand.md](slashcommands/PlotAnalysisCommand.md)                   | `/plot_analysis` displays the latest background plot analysis.                   |
+| [slashcommands/PromptStatsCommand.md](slashcommands/PromptStatsCommand.md)                     | `/promptstats` inspects or clears prompt output-character averages.              |
+| [slashcommands/RandomCommand.md](slashcommands/RandomCommand.md)                               | `/random` triggers a configured random event.                                    |
+| [slashcommands/RegenPartyImagesCommand.md](slashcommands/RegenPartyImagesCommand.md)           | `/regen_party_images` regenerates current party NPC portraits.                   |
+| [slashcommands/RegexReplaceCommand.md](slashcommands/RegexReplaceCommand.md)                   | `/regex_replace` runs regex replacement across chat history.                     |
+| [slashcommands/ReloadConfigCommand.md](slashcommands/ReloadConfigCommand.md)                   | `/reload_config` reloads config files and definition caches.                     |
+| [slashcommands/ReloadLorebooksCommand.md](slashcommands/ReloadLorebooksCommand.md)             | `/reload_lorebooks` reloads lorebooks from disk.                                 |
+| [slashcommands/RespecAbilitiesCommand.md](slashcommands/RespecAbilitiesCommand.md)             | `/respec_abilities` rebuilds ability selections across a level range.            |
+| [slashcommands/RespecSkillsCommand.md](slashcommands/RespecSkillsCommand.md)                   | `/respec_skills` rebuilds NPC skill allocation for current level.                |
+| [slashcommands/RpCommand.md](slashcommands/RpCommand.md)                                       | `/rp` toggles roleplay mode and related checks.                                  |
+| [slashcommands/RunPlotExpanderCommand.md](slashcommands/RunPlotExpanderCommand.md)             | `/runplotexpander` runs the plot-expander prompt immediately.                    |
+| [slashcommands/RunPlotSummaryCommand.md](slashcommands/RunPlotSummaryCommand.md)               | `/runplotsummary` runs the plot-summary prompt immediately.                      |
+| [slashcommands/SceneSummariesCommand.md](slashcommands/SceneSummariesCommand.md)               | `/scene_summaries`, `/summary_ranges` lists stored scene summaries and gaps.     |
+| [slashcommands/SceneSummaryCommand.md](slashcommands/SceneSummaryCommand.md)                   | `/summarize`, `/scene_summary` exports or rebuilds scene summaries.              |
+| [slashcommands/ScheduledCommand.md](slashcommands/ScheduledCommand.md)                         | `/scheduled` lists pending scheduled events.                                     |
+| [slashcommands/ScrubLegacyDebugCommand.md](slashcommands/ScrubLegacyDebugCommand.md)           | `/scrub_legacy_debug` removes old debug pollution from history/summaries.        |
+| [slashcommands/SetConfigCommand.md](slashcommands/SetConfigCommand.md)                         | `/set` updates nested config values at runtime.                                  |
+| [slashcommands/SetLastSeenCommand.md](slashcommands/SetLastSeenCommand.md)                     | `/set_last_seen` updates NPC last-seen time/location data.                       |
+| [slashcommands/SetLevelCommand.md](slashcommands/SetLevelCommand.md)                           | `/setlevel` sets a player or character level while leaving XP unchanged.         |
+| [slashcommands/ShortDescriptionCheckCommand.md](slashcommands/ShortDescriptionCheckCommand.md) | `/short_description_check` lists missing short descriptions.                     |
+| [slashcommands/SlashCommandBase.md](slashcommands/SlashCommandBase.md)                         | Base class for slash command metadata, validation, overlays, and listing.        |
+| [slashcommands/SlopwordsCommand.md](slashcommands/SlopwordsCommand.md)                         | `/slopwords` reports slop words above configured thresholds.                     |
+| [slashcommands/TeleportCommand.md](slashcommands/TeleportCommand.md)                           | `/teleport` moves the player to a location by id or name.                        |
+| [slashcommands/TimeCommand.md](slashcommands/TimeCommand.md)                                   | `/time` advances or rewinds world time by a signed duration.                     |
+| [slashcommands/VehicleStatusCommand.md](slashcommands/VehicleStatusCommand.md)                 | `/vehicle_status` displays current vehicle route/trip status.                    |
+| [slashcommands/WeatherCommand.md](slashcommands/WeatherCommand.md)                             | `/weather` displays current-region seasonal weather details.                     |
+| [slashcommands/WorldOutlineCommand.md](slashcommands/WorldOutlineCommand.md)                   | `/world_outline` lists regions, locations, and pending stubs.                    |

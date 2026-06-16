@@ -4280,8 +4280,8 @@ module.exports = function registerApiRoutes(scope) {
                 .replace(/<\s*hr\s*>/gi, '<hr/>');
         }
 
-        const playerActionProseRegex = /<finalProse>[\s\S]*\S[\s\S]*<\/finalProse>|<travelProse>[\s\S]*\S[\s\S]*<\/travelProse>|<rejected>[\s\S]*<\/rejected>/i;
-        const playerActionXmlRootTags = ['finalProse', 'travelProse', 'rejected'];
+        const playerActionProseRegex = /<turnResult>[\s\S]*\S[\s\S]*<\/turnResult>|<moveTurnResult>[\s\S]*\S[\s\S]*<\/moveTurnResult>|<rejected>[\s\S]*<\/rejected>/i;
+        const playerActionXmlRootTags = ['turnResult', 'moveTurnResult', 'rejected'];
 
         function stripToXmlPayload(input) {
             if (typeof input !== 'string') {
@@ -4359,7 +4359,7 @@ module.exports = function registerApiRoutes(scope) {
             return lines.join('\n');
         }
 
-        function normalizeTravelProseVehicleField(value) {
+        function normalizemoveTurnResultVehicleField(value) {
             if (typeof value !== 'string') {
                 return null;
             }
@@ -4390,7 +4390,7 @@ module.exports = function registerApiRoutes(scope) {
             return trimmed;
         }
 
-        function normalizeTravelProseTravelTimeField(value) {
+        function normalizemoveTurnResultTravelTimeField(value) {
             if (typeof value !== 'string') {
                 return null;
             }
@@ -4420,11 +4420,11 @@ module.exports = function registerApiRoutes(scope) {
             return trimmed;
         }
 
-        function normalizeTravelProseVehicleTravelTimeField(value) {
-            return normalizeTravelProseTravelTimeField(value);
+        function normalizemoveTurnResultVehicleTravelTimeField(value) {
+            return normalizemoveTurnResultTravelTimeField(value);
         }
 
-        function normalizeTravelProseDestinationField(value) {
+        function normalizemoveTurnResultDestinationField(value) {
             if (typeof value !== 'string') {
                 return null;
             }
@@ -4514,7 +4514,7 @@ module.exports = function registerApiRoutes(scope) {
             return chunks.join('\n').trim();
         }
 
-        function parseStructuredTravelProseDestination(destinationNode, { fieldLabel = 'travelProse destination' } = {}) {
+        function parseStructuredmoveTurnResultDestination(destinationNode, { fieldLabel = 'moveTurnResult destination' } = {}) {
             if (!destinationNode) {
                 return null;
             }
@@ -4522,15 +4522,15 @@ module.exports = function registerApiRoutes(scope) {
             const locationNode = getDirectChildElementByTagName(destinationNode, 'location');
             const regionNode = getDirectChildElementByTagName(destinationNode, 'region');
             if (!locationNode && !regionNode) {
-                const destinationText = normalizeTravelProseDestinationField(destinationNode.textContent || '');
+                const destinationText = normalizemoveTurnResultDestinationField(destinationNode.textContent || '');
                 if (destinationText) {
                     throw new Error(`${fieldLabel} must use <location> and <region> child tags.`);
                 }
                 return null;
             }
 
-            const locationText = normalizeTravelProseDestinationField(locationNode ? (locationNode.textContent || '') : '');
-            const regionText = normalizeTravelProseDestinationField(regionNode ? (regionNode.textContent || '') : '');
+            const locationText = normalizemoveTurnResultDestinationField(locationNode ? (locationNode.textContent || '') : '');
+            const regionText = normalizemoveTurnResultDestinationField(regionNode ? (regionNode.textContent || '') : '');
             if (!locationText && !regionText) {
                 return null;
             }
@@ -4608,19 +4608,19 @@ module.exports = function registerApiRoutes(scope) {
             return node.textContent || '';
         }
 
-        function extractFinalProseContent(finalNode) {
+        function extractturnResultContent(finalNode) {
             if (!finalNode) {
                 return '';
             }
 
             const proseNode = getDirectChildElementByTagName(finalNode, 'prose');
             if (!proseNode) {
-                throw new Error('player action <finalProse> must include a direct <prose> child.');
+                throw new Error('player action <turnResult> must include a direct <prose> child.');
             }
 
             const proseText = extractProseNodeContentPreservingTags(proseNode);
             if (!proseText) {
-                throw new Error('player action <finalProse><prose> must not be empty.');
+                throw new Error('player action <turnResult><prose> must not be empty.');
             }
 
             const directHiddenText = getDirectChildElementsByTagName(finalNode, 'hidden')
@@ -4773,37 +4773,37 @@ module.exports = function registerApiRoutes(scope) {
                     }
                 };
             }
-            const finalNode = doc.getElementsByTagName('finalProse')[0] || null;
+            const finalNode = doc.getElementsByTagName('turnResult')[0] || null;
             if (finalNode) {
                 const finalTimePassedNode = getDirectChildElementByTagName(finalNode, 'timePassed');
                 const finalTimePassedMinutes = parsePlayerActionTimePassedNode(finalTimePassedNode, {
-                    fieldLabel: 'player action <finalProse><timePassed>'
+                    fieldLabel: 'player action <turnResult><timePassed>'
                 });
-                const finalText = extractFinalProseContent(finalNode);
+                const finalText = extractturnResultContent(finalNode);
                 return { prose: finalText, travel: null, timePassedMinutes: finalTimePassedMinutes };
             }
-            const travelNode = doc.getElementsByTagName('travelProse')[0] || null;
+            const travelNode = doc.getElementsByTagName('moveTurnResult')[0] || null;
             if (travelNode) {
                 const legacyPlayerDestinationNode = getDirectChildElementByTagName(travelNode, 'destination');
                 if (legacyPlayerDestinationNode) {
-                    throw new Error('travelProse player destination must use <playerDestination>...</playerDestination>.');
+                    throw new Error('moveTurnResult player destination must use <playerDestination>...</playerDestination>.');
                 }
                 const playerDestinationNode = getDirectChildElementByTagName(travelNode, 'playerdestination');
-                const playerDestinationName = parseStructuredTravelProseDestination(playerDestinationNode, {
-                    fieldLabel: 'travelProse player destination'
+                const playerDestinationName = parseStructuredmoveTurnResultDestination(playerDestinationNode, {
+                    fieldLabel: 'moveTurnResult player destination'
                 });
                 const playerDestinationTravelTimeNode = playerDestinationNode
                     ? getDirectChildElementByTagName(playerDestinationNode, 'travelTime')
                     : null;
-                const playerDestinationTravelTimeCandidate = normalizeTravelProseTravelTimeField(
+                const playerDestinationTravelTimeCandidate = normalizemoveTurnResultTravelTimeField(
                     playerDestinationTravelTimeNode ? (playerDestinationTravelTimeNode.textContent || '') : ''
                 );
                 if (!playerDestinationName && playerDestinationTravelTimeCandidate) {
-                    throw new Error('travelProse player destination travelTime requires a player destination.');
+                    throw new Error('moveTurnResult player destination travelTime requires a player destination.');
                 }
                 const legacyVehicleNode = getDirectChildElementByTagName(travelNode, 'vehicle');
                 if (legacyVehicleNode) {
-                    throw new Error('travelProse vehicle metadata must use <vehicleInfo>...</vehicleInfo>.');
+                    throw new Error('moveTurnResult vehicle metadata must use <vehicleInfo>...</vehicleInfo>.');
                 }
                 const vehicleInfoNode = getDirectChildElementByTagName(travelNode, 'vehicleinfo');
                 const vehicleNameNode = vehicleInfoNode
@@ -4816,29 +4816,29 @@ module.exports = function registerApiRoutes(scope) {
                     ? getDirectChildElementByTagName(vehicleInfoNode, 'destination')
                     : null;
                 if (legacyVehicleDestinationNode) {
-                    throw new Error('travelProse vehicle destination must use <vehicleDestination>...</vehicleDestination>.');
+                    throw new Error('moveTurnResult vehicle destination must use <vehicleDestination>...</vehicleDestination>.');
                 }
                 const vehicleDestinationNode = vehicleInfoNode
                     ? getDirectChildElementByTagName(vehicleInfoNode, 'vehicledestination')
                     : null;
-                const vehicleName = normalizeTravelProseVehicleField(vehicleNameNode ? (vehicleNameNode.textContent || '') : '');
-                const vehicleTravelTimeCandidate = normalizeTravelProseVehicleTravelTimeField(
+                const vehicleName = normalizemoveTurnResultVehicleField(vehicleNameNode ? (vehicleNameNode.textContent || '') : '');
+                const vehicleTravelTimeCandidate = normalizemoveTurnResultVehicleTravelTimeField(
                     travelTimeNode ? (travelTimeNode.textContent || '') : ''
                 );
-                const vehicleDestinationCandidate = parseStructuredTravelProseDestination(vehicleDestinationNode, {
-                    fieldLabel: 'travelProse vehicle destination'
+                const vehicleDestinationCandidate = parseStructuredmoveTurnResultDestination(vehicleDestinationNode, {
+                    fieldLabel: 'moveTurnResult vehicle destination'
                 });
                 if (!vehicleName && vehicleInfoNode && !vehicleNameNode) {
-                    const legacyVehicleName = normalizeTravelProseVehicleField(vehicleInfoNode.textContent || '');
+                    const legacyVehicleName = normalizemoveTurnResultVehicleField(vehicleInfoNode.textContent || '');
                     if (legacyVehicleName) {
-                        throw new Error('travelProse vehicle entries must place vehicle names inside <vehicleInfo><name>...</name></vehicleInfo>.');
+                        throw new Error('moveTurnResult vehicle entries must place vehicle names inside <vehicleInfo><name>...</name></vehicleInfo>.');
                     }
                 }
                 if (!vehicleName && vehicleTravelTimeCandidate) {
-                    throw new Error('travelProse vehicle travelTime requires a vehicle name.');
+                    throw new Error('moveTurnResult vehicle travelTime requires a vehicle name.');
                 }
                 if (!vehicleName && vehicleDestinationCandidate) {
-                    throw new Error('travelProse vehicle destination requires a vehicle name.');
+                    throw new Error('moveTurnResult vehicle destination requires a vehicle name.');
                 }
                 const vehicleTravelTime = vehicleName ? vehicleTravelTimeCandidate : null;
                 const vehicleDestination = vehicleName ? vehicleDestinationCandidate : null;
@@ -4850,7 +4850,7 @@ module.exports = function registerApiRoutes(scope) {
                 const destinationProse = extractProseNodeContentPreservingTags(destinationProseNode);
                 const segments = [origin, between, destinationProse].filter(Boolean);
                 if (!segments.length) {
-                    throw new Error('travelProse requires at least one of originProse, betweenProse, or destinationProse.');
+                    throw new Error('moveTurnResult requires at least one of originProse, betweenProse, or destinationProse.');
                 }
                 return {
                     prose: segments.join('\n\n').trim(),
@@ -4866,7 +4866,7 @@ module.exports = function registerApiRoutes(scope) {
                     }
                 };
             }
-            throw new Error('Player action XML missing finalProse, travelProse, or rejected.');
+            throw new Error('Player action XML missing turnResult, moveTurnResult, or rejected.');
         }
 
         function parseSupplementalStoryInfoResponse(rawResponse) {
@@ -5798,7 +5798,7 @@ module.exports = function registerApiRoutes(scope) {
         }
 
         function resolveWhileYouWereAwayDestination(destinationText, { currentRegion = null } = {}) {
-            const raw = normalizeTravelProseDestinationField(destinationText);
+            const raw = normalizemoveTurnResultDestinationField(destinationText);
             if (!raw) {
                 return null;
             }
@@ -6033,7 +6033,7 @@ module.exports = function registerApiRoutes(scope) {
                 };
             }
 
-            const rawText = normalizeTravelProseDestinationField(destinationNode.textContent || '');
+            const rawText = normalizemoveTurnResultDestinationField(destinationNode.textContent || '');
             const normalizedRawText = typeof rawText === 'string'
                 ? rawText.trim().toLowerCase()
                 : '';
@@ -6045,7 +6045,7 @@ module.exports = function registerApiRoutes(scope) {
             }
 
             return {
-                travelDestination: parseStructuredTravelProseDestination(destinationNode, { fieldLabel }),
+                travelDestination: parseStructuredmoveTurnResultDestination(destinationNode, { fieldLabel }),
                 arrivedHere: false
             };
         }
@@ -7229,7 +7229,7 @@ module.exports = function registerApiRoutes(scope) {
         async function maybeRewritePlayerActionForScheduledEventInterruption({
             actionXmlPayload,
             timePassedMinutes,
-            travelProsePayload = null,
+            moveTurnResultPayload = null,
             locationId,
             entryCollector = null,
             parentEntryId = null,
@@ -7237,7 +7237,7 @@ module.exports = function registerApiRoutes(scope) {
             clientId = null,
             requestId = null
         } = {}) {
-            if (travelProsePayload || !actionXmlPayload) {
+            if (moveTurnResultPayload || !actionXmlPayload) {
                 return null;
             }
 
@@ -8744,7 +8744,7 @@ module.exports = function registerApiRoutes(scope) {
             return null;
         };
 
-        const resolveTravelProseDestination = async (destinationText, {
+        const resolvemoveTurnResultDestination = async (destinationText, {
             allowCreate = false,
             originLocation = null,
             createOriginExit = true,
@@ -8946,7 +8946,7 @@ module.exports = function registerApiRoutes(scope) {
                 .replace(/\s+/g, ' ');
         };
 
-        const parseTravelProseDestinationReference = (destinationText) => {
+        const parsemoveTurnResultDestinationReference = (destinationText) => {
             const comparisonKey = normalizeTravelDestinationComparisonKey(destinationText);
             if (!comparisonKey) {
                 return {
@@ -8967,7 +8967,7 @@ module.exports = function registerApiRoutes(scope) {
             };
         };
 
-        const parseRawTravelProseDestinationReference = (destinationText) => {
+        const parseRawmoveTurnResultDestinationReference = (destinationText) => {
             const raw = typeof destinationText === 'string' ? destinationText.trim() : '';
             if (!raw) {
                 return {
@@ -9013,7 +9013,7 @@ module.exports = function registerApiRoutes(scope) {
             resolvedLocation = null,
             resolvedRegion = null
         } = {}) => {
-            const parsedReference = parseRawTravelProseDestinationReference(destinationText);
+            const parsedReference = parseRawmoveTurnResultDestinationReference(destinationText);
             const locationId = typeof resolvedLocation?.id === 'string' ? resolvedLocation.id.trim() : '';
             const regionId = resolveTravelDestinationRegionId({
                 location: resolvedLocation,
@@ -9127,12 +9127,12 @@ module.exports = function registerApiRoutes(scope) {
             return locationName;
         };
 
-        const buildTravelProseDestinationMatchRecord = ({
+        const buildmoveTurnResultDestinationMatchRecord = ({
             destinationText = null,
             resolvedLocation = null,
             resolvedRegion = null
         } = {}) => {
-            const parsedReference = parseTravelProseDestinationReference(destinationText);
+            const parsedReference = parsemoveTurnResultDestinationReference(destinationText);
             const locationId = typeof resolvedLocation?.id === 'string' ? resolvedLocation.id.trim() : '';
             const regionId = resolveTravelDestinationRegionId({
                 location: resolvedLocation,
@@ -9157,7 +9157,7 @@ module.exports = function registerApiRoutes(scope) {
             destinationRegion = null,
             moveResult = null
         } = {}) => {
-            const parsedReference = parseTravelProseDestinationReference(destinationText);
+            const parsedReference = parsemoveTurnResultDestinationReference(destinationText);
             const locationId = typeof moveResult?.toLocationId === 'string'
                 ? moveResult.toLocationId.trim()
                 : (typeof destinationLocation?.id === 'string' ? destinationLocation.id.trim() : '');
@@ -13877,7 +13877,7 @@ module.exports = function registerApiRoutes(scope) {
             return null;
         };
 
-        const ensureTravelProseDestinationUnstubbed = async (
+        const ensuremoveTurnResultDestinationUnstubbed = async (
             destinationLocation,
             {
                 travelContext = null,
@@ -14007,14 +14007,14 @@ module.exports = function registerApiRoutes(scope) {
                 throw new Error('Vehicle pending destination is missing a resolvable destination reference.');
             }
 
-            return resolveTravelProseDestination(pendingDestinationText, {
+            return resolvemoveTurnResultDestination(pendingDestinationText, {
                 allowCreate: true,
                 originLocation,
                 createOriginExit
             });
         };
 
-        const buildLocationTravelProseVehicleTarget = (locationVehicle, normalizedVehicleName = null) => ({
+        const buildLocationmoveTurnResultVehicleTarget = (locationVehicle, normalizedVehicleName = null) => ({
             kind: 'location',
             label: locationVehicle?.name || locationVehicle?.id || normalizedVehicleName || 'Vehicle',
             getVehicleInfo: () => locationVehicle?.vehicleInfo,
@@ -14029,7 +14029,7 @@ module.exports = function registerApiRoutes(scope) {
             resolveSourceLocation: () => locationVehicle
         });
 
-        const buildRegionTravelProseVehicleTarget = (vehicleRegion, normalizedVehicleName = null) => ({
+        const buildRegionmoveTurnResultVehicleTarget = (vehicleRegion, normalizedVehicleName = null) => ({
             kind: 'region',
             label: vehicleRegion?.name || vehicleRegion?.id || normalizedVehicleName || 'Vehicle',
             getVehicleInfo: () => vehicleRegion?.vehicleInfo,
@@ -14070,7 +14070,7 @@ module.exports = function registerApiRoutes(scope) {
             }
         });
 
-        const resolveTravelProseVehicleTarget = (vehicleName) => {
+        const resolvemoveTurnResultVehicleTarget = (vehicleName) => {
             const normalizedVehicleName = typeof vehicleName === 'string' ? vehicleName.trim() : '';
             if (!normalizedVehicleName) {
                 return null;
@@ -14098,13 +14098,13 @@ module.exports = function registerApiRoutes(scope) {
             }
 
             if (locationVehicle) {
-                return buildLocationTravelProseVehicleTarget(locationVehicle, normalizedVehicleName);
+                return buildLocationmoveTurnResultVehicleTarget(locationVehicle, normalizedVehicleName);
             }
 
-            return buildRegionTravelProseVehicleTarget(regionVehicle, normalizedVehicleName);
+            return buildRegionmoveTurnResultVehicleTarget(regionVehicle, normalizedVehicleName);
         };
 
-        const getTravelProseVehicleTargets = () => {
+        const getmoveTurnResultVehicleTargets = () => {
             const targets = [];
             if (gameLocations instanceof Map) {
                 for (const locationVehicle of gameLocations.values()) {
@@ -14115,7 +14115,7 @@ module.exports = function registerApiRoutes(scope) {
                         || Array.isArray(locationVehicle.vehicleInfo)) {
                         continue;
                     }
-                    targets.push(buildLocationTravelProseVehicleTarget(locationVehicle));
+                    targets.push(buildLocationmoveTurnResultVehicleTarget(locationVehicle));
                 }
             }
             if (regions instanceof Map) {
@@ -14127,13 +14127,13 @@ module.exports = function registerApiRoutes(scope) {
                         || Array.isArray(regionVehicle.vehicleInfo)) {
                         continue;
                     }
-                    targets.push(buildRegionTravelProseVehicleTarget(regionVehicle));
+                    targets.push(buildRegionmoveTurnResultVehicleTarget(regionVehicle));
                 }
             }
             return targets;
         };
 
-        const resolveTravelProseVehicleStateFromTarget = (vehicleTarget) => {
+        const resolvemoveTurnResultVehicleStateFromTarget = (vehicleTarget) => {
             if (!vehicleTarget) {
                 throw new Error('Vehicle target is required for travel prose vehicle movement.');
             }
@@ -14178,9 +14178,9 @@ module.exports = function registerApiRoutes(scope) {
             };
         };
 
-        const resolveTravelProseVehicleState = (vehicleName) => {
-            const vehicleTarget = resolveTravelProseVehicleTarget(vehicleName);
-            return resolveTravelProseVehicleStateFromTarget(vehicleTarget);
+        const resolvemoveTurnResultVehicleState = (vehicleName) => {
+            const vehicleTarget = resolvemoveTurnResultVehicleTarget(vehicleName);
+            return resolvemoveTurnResultVehicleStateFromTarget(vehicleTarget);
         };
 
         const applyVehicleInfoStateUpdate = ({
@@ -14495,7 +14495,7 @@ module.exports = function registerApiRoutes(scope) {
             };
         }
 
-        const moveVehicleForTravelProse = async ({
+        const moveVehicleFormoveTurnResult = async ({
             vehicleName,
             destinationText = null,
             destinationLocation = null,
@@ -14508,7 +14508,7 @@ module.exports = function registerApiRoutes(scope) {
                 sourceLocation,
                 vehicleExit,
                 icon
-            } = resolveTravelProseVehicleState(vehicleName);
+            } = resolvemoveTurnResultVehicleState(vehicleName);
 
             const pendingDestination = buildPendingVehicleDestination({
                 destinationText,
@@ -14643,14 +14643,14 @@ module.exports = function registerApiRoutes(scope) {
             }
 
             const arrivals = [];
-            const vehicleTargets = getTravelProseVehicleTargets();
+            const vehicleTargets = getmoveTurnResultVehicleTargets();
             for (const vehicleTarget of vehicleTargets) {
                 const {
                     normalizedVehicleInfo,
                     sourceLocation,
                     vehicleExit,
                     icon
-                } = resolveTravelProseVehicleStateFromTarget(vehicleTarget);
+                } = resolvemoveTurnResultVehicleStateFromTarget(vehicleTarget);
 
                 if (typeof normalizedVehicleInfo.ETA !== 'number' || normalizedVehicleInfo.ETA > elapsedTime) {
                     continue;
@@ -14677,7 +14677,7 @@ module.exports = function registerApiRoutes(scope) {
                     resolvedDestination = gameLocations.get(destinationId);
                 }
 
-                resolvedDestination = await ensureTravelProseDestinationUnstubbed(resolvedDestination, {
+                resolvedDestination = await ensuremoveTurnResultDestinationUnstubbed(resolvedDestination, {
                     travelContext: null,
                     createOriginExit,
                     regionEntryStub: resolvedPendingDestination?.regionEntryStub || null,
@@ -14742,8 +14742,8 @@ module.exports = function registerApiRoutes(scope) {
             return arrivals;
         };
 
-        async function runTravelProseEventChecks({
-            travelProsePayload,
+        async function runmoveTurnResultEventChecks({
+            moveTurnResultPayload,
             location,
             stream,
             userInput = null,
@@ -14760,7 +14760,7 @@ module.exports = function registerApiRoutes(scope) {
             originLabelFallback = 'Origin',
             destinationLabelFallback = 'Destination'
         } = {}) {
-            if (!travelProsePayload) {
+            if (!moveTurnResultPayload) {
                 return {
                     eventResult: null,
                     originEventResult: null,
@@ -14775,50 +14775,50 @@ module.exports = function registerApiRoutes(scope) {
                 };
             }
 
-            const originProse = typeof travelProsePayload.originProse === 'string'
-                ? stripHiddenNotesFromText(travelProsePayload.originProse).trim()
+            const originProse = typeof moveTurnResultPayload.originProse === 'string'
+                ? stripHiddenNotesFromText(moveTurnResultPayload.originProse).trim()
                 : '';
-            const betweenProse = typeof travelProsePayload.betweenProse === 'string'
-                ? stripHiddenNotesFromText(travelProsePayload.betweenProse).trim()
+            const betweenProse = typeof moveTurnResultPayload.betweenProse === 'string'
+                ? stripHiddenNotesFromText(moveTurnResultPayload.betweenProse).trim()
                 : '';
-            const destinationProse = typeof travelProsePayload.destinationProse === 'string'
-                ? stripHiddenNotesFromText(travelProsePayload.destinationProse).trim()
+            const destinationProse = typeof moveTurnResultPayload.destinationProse === 'string'
+                ? stripHiddenNotesFromText(moveTurnResultPayload.destinationProse).trim()
                 : '';
             const combinedProse = [originProse, betweenProse, destinationProse]
                 .filter(Boolean)
                 .join('\n\n')
                 .trim();
-            const travelVehicleName = normalizeTravelProseVehicleField(travelProsePayload.vehicle || '');
-            const rawVehicleTravelTime = normalizeTravelProseVehicleTravelTimeField(
-                typeof travelProsePayload.vehicleTravelTime === 'string'
-                    ? travelProsePayload.vehicleTravelTime
+            const travelVehicleName = normalizemoveTurnResultVehicleField(moveTurnResultPayload.vehicle || '');
+            const rawVehicleTravelTime = normalizemoveTurnResultVehicleTravelTimeField(
+                typeof moveTurnResultPayload.vehicleTravelTime === 'string'
+                    ? moveTurnResultPayload.vehicleTravelTime
                     : ''
             );
             const vehicleTravelTimeMinutes = rawVehicleTravelTime
                 ? Utils.parseDurationToMinutes(rawVehicleTravelTime, {
-                    fieldName: 'travelProse <vehicleInfo><travelTime>'
+                    fieldName: 'moveTurnResult <vehicleInfo><travelTime>'
                 })
                 : null;
-            const requestedVehicleDestinationText = normalizeTravelProseDestinationField(travelProsePayload.vehicleDestination || '');
-            const promptPlayerDestinationText = normalizeTravelProseDestinationField(
-                typeof travelProsePayload.playerDestination === 'string'
-                    ? travelProsePayload.playerDestination
+            const requestedVehicleDestinationText = normalizemoveTurnResultDestinationField(moveTurnResultPayload.vehicleDestination || '');
+            const promptPlayerDestinationText = normalizemoveTurnResultDestinationField(
+                typeof moveTurnResultPayload.playerDestination === 'string'
+                    ? moveTurnResultPayload.playerDestination
                     : ''
             );
-            const rawPlayerDestinationTravelTime = normalizeTravelProseTravelTimeField(
-                typeof travelProsePayload.playerDestinationTravelTime === 'string'
-                    ? travelProsePayload.playerDestinationTravelTime
+            const rawPlayerDestinationTravelTime = normalizemoveTurnResultTravelTimeField(
+                typeof moveTurnResultPayload.playerDestinationTravelTime === 'string'
+                    ? moveTurnResultPayload.playerDestinationTravelTime
                     : ''
             );
             const playerDestinationTravelTimeMinutes = rawPlayerDestinationTravelTime
                 ? Utils.normalizeGeneratedExitTravelTimeMinutes(
                     Utils.parseDurationToMinutes(rawPlayerDestinationTravelTime, {
-                        fieldName: 'travelProse <playerDestination><travelTime>'
+                        fieldName: 'moveTurnResult <playerDestination><travelTime>'
                     }),
-                    { fieldName: 'travelProse <playerDestination><travelTime>' }
+                    { fieldName: 'moveTurnResult <playerDestination><travelTime>' }
                 )
                 : undefined;
-            const overridePlayerDestinationText = normalizeTravelProseDestinationField(
+            const overridePlayerDestinationText = normalizemoveTurnResultDestinationField(
                 typeof travelDestinationOverride?.destinationText === 'string'
                     ? travelDestinationOverride.destinationText
                     : ''
@@ -14837,7 +14837,7 @@ module.exports = function registerApiRoutes(scope) {
             let vehicleSourceLocationForDestinationResolution = null;
             let vehicleDestinationCreateOriginExit = true;
             if (travelVehicleName) {
-                const vehicleTarget = resolveTravelProseVehicleTarget(travelVehicleName);
+                const vehicleTarget = resolvemoveTurnResultVehicleTarget(travelVehicleName);
                 vehicleDestinationCreateOriginExit = vehicleTarget?.kind !== 'location';
                 const rawVehicleInfo = vehicleTarget?.getVehicleInfo ? vehicleTarget.getVehicleInfo() : null;
                 if (!rawVehicleInfo || typeof rawVehicleInfo !== 'object' || Array.isArray(rawVehicleInfo)) {
@@ -14894,7 +14894,7 @@ module.exports = function registerApiRoutes(scope) {
             let vehicleDestinationResolutionIndex = -1;
             if (requestedPlayerDestinationText && !overridePlayerDestinationLocation) {
                 playerDestinationResolutionIndex = destinationResolutionPromises.push(
-                    resolveTravelProseDestination(requestedPlayerDestinationText, {
+                    resolvemoveTurnResultDestination(requestedPlayerDestinationText, {
                         allowCreate: false,
                         originLocation: location
                     })
@@ -14902,7 +14902,7 @@ module.exports = function registerApiRoutes(scope) {
             }
             if (effectiveVehicleDestinationText) {
                 vehicleDestinationResolutionIndex = destinationResolutionPromises.push(
-                    resolveTravelProseDestination(effectiveVehicleDestinationText, {
+                    resolvemoveTurnResultDestination(effectiveVehicleDestinationText, {
                         allowCreate: false,
                         originLocation: location
                     })
@@ -14988,7 +14988,7 @@ module.exports = function registerApiRoutes(scope) {
                 }
             }
 
-            const playerDestinationMatchRecord = buildTravelProseDestinationMatchRecord({
+            const playerDestinationMatchRecord = buildmoveTurnResultDestinationMatchRecord({
                 destinationText: requestedPlayerDestinationText,
                 resolvedLocation: resolvedPlayerDestination?.location || null,
                 resolvedRegion: resolvedPlayerDestination?.region || null
@@ -15045,12 +15045,12 @@ module.exports = function registerApiRoutes(scope) {
             const effectivePlayerDestinationText = shouldIgnorePlayerDestination
                 ? null
                 : requestedPlayerDestinationText;
-            const travelProseEventLocation = location || null;
-            const travelProseEventLocationRepresentsVehicle = Boolean(
+            const moveTurnResultEventLocation = location || null;
+            const moveTurnResultEventLocationRepresentsVehicle = Boolean(
                 resolveActiveVehicleLabelForLocation(location)
             );
             const hasEffectivePlayerDestination = Boolean(effectivePlayerDestinationText);
-            const shouldSplitEventChecks = hasEffectivePlayerDestination && !travelProseEventLocationRepresentsVehicle;
+            const shouldSplitEventChecks = hasEffectivePlayerDestination && !moveTurnResultEventLocationRepresentsVehicle;
             const suppressOriginTimeAdvance = shouldSplitEventChecks && Boolean(destinationProse);
 
             let destinationLocation = null;
@@ -15091,7 +15091,7 @@ module.exports = function registerApiRoutes(scope) {
                     if (!vehicleWillStartTimedTrip) {
                         let resolvedVehicleDestinationForMove = resolvedVehicleDestination;
                         if (!resolvedVehicleDestinationForMove) {
-                            resolvedVehicleDestinationForMove = await resolveTravelProseDestination(effectiveVehicleDestinationText, {
+                            resolvedVehicleDestinationForMove = await resolvemoveTurnResultDestination(effectiveVehicleDestinationText, {
                                 allowCreate: true,
                                 originLocation: vehicleDestinationOriginLocation,
                                 createOriginExit: vehicleDestinationCreateOriginExit
@@ -15102,12 +15102,12 @@ module.exports = function registerApiRoutes(scope) {
                         if (!vehicleDestinationLocation) {
                             throw new Error('Travel prose vehicle destination could not be resolved.');
                         }
-                        vehicleDestinationLocation = await ensureTravelProseDestinationUnstubbed(vehicleDestinationLocation, {
+                        vehicleDestinationLocation = await ensuremoveTurnResultDestinationUnstubbed(vehicleDestinationLocation, {
                             travelContext: null,
                             createOriginExit: vehicleDestinationCreateOriginExit
                         });
                     }
-                    const vehicleMoveResult = await moveVehicleForTravelProse({
+                    const vehicleMoveResult = await moveVehicleFormoveTurnResult({
                         vehicleName: travelVehicleName,
                         destinationText: effectiveVehicleDestinationText,
                         destinationLocation: vehicleDestinationLocation,
@@ -15131,7 +15131,7 @@ module.exports = function registerApiRoutes(scope) {
                             location: overridePlayerDestinationLocation,
                             region: overridePlayerDestinationRegion
                         }
-                        : await resolveTravelProseDestination(effectivePlayerDestinationText, {
+                        : await resolvemoveTurnResultDestination(effectivePlayerDestinationText, {
                             allowCreate: true,
                             originLocation: location,
                             travelTimeMinutes: overridePlayerDestinationLocation
@@ -15145,7 +15145,7 @@ module.exports = function registerApiRoutes(scope) {
                     }
 
                     if (!(suppressPlayerMove && destinationLocation?.isStub && destinationLocation.stubMetadata?.isRegionEntryStub)) {
-                        destinationLocation = await ensureTravelProseDestinationUnstubbed(destinationLocation, {
+                        destinationLocation = await ensuremoveTurnResultDestinationUnstubbed(destinationLocation, {
                             travelContext: null
                         });
                     }
@@ -15158,7 +15158,7 @@ module.exports = function registerApiRoutes(scope) {
                         currentPlayer.setLocation(destinationLocation);
                         location = destinationLocation;
                         playerMoved = true;
-                        const playerMoveTravelTimeMinutes = resolveTravelProsePlayerMoveTimeMinutes({
+                        const playerMoveTravelTimeMinutes = resolvemoveTurnResultPlayerMoveTimeMinutes({
                             originLocation: playerMoveOriginLocation,
                             destinationLocation,
                             promptTravelTimeMinutes: playerDestinationTravelTimeMinutes,
@@ -15200,11 +15200,11 @@ module.exports = function registerApiRoutes(scope) {
                         stream,
                         suppressMoveEvents: Boolean(
                             suppressPlayerMove
-                            || (travelProseEventLocationRepresentsVehicle && hasEffectivePlayerDestination)
+                            || (moveTurnResultEventLocationRepresentsVehicle && hasEffectivePlayerDestination)
                         ),
                         suppressTimeAdvance: Boolean(suppressTimeAdvance),
-                        locationOverride: travelProseEventLocationRepresentsVehicle
-                            ? travelProseEventLocation
+                        locationOverride: moveTurnResultEventLocationRepresentsVehicle
+                            ? moveTurnResultEventLocation
                             : location || null,
                         initialTimeProgress: playerMoveTimeAdjustment?.timeProgress || initialTimeProgress
                     });
@@ -16245,12 +16245,12 @@ module.exports = function registerApiRoutes(scope) {
                 });
 
                 const parsedResponse = parseRandomEventResponse(rawResponse);
-                let travelProsePayload = null;
+                let moveTurnResultPayload = null;
                 let narrativeText = '';
                 if (Globals.config?.repetition_buster) {
                     const parsedProse = await parsePlayerActionProseFromXml(rawResponse, { logJson: true });
                     narrativeText = parsedProse.prose;
-                    travelProsePayload = parsedProse.travel;
+                    moveTurnResultPayload = parsedProse.travel;
                 } else {
                     narrativeText = (parsedResponse?.eventText || rawResponse || '').trim();
                 }
@@ -16310,9 +16310,9 @@ module.exports = function registerApiRoutes(scope) {
                 let vehicleMovement = null;
                 let randomEventLocationRefreshRequested = false;
                 try {
-                    if (travelProsePayload) {
-                        const travelResult = await runTravelProseEventChecks({
-                            travelProsePayload,
+                    if (moveTurnResultPayload) {
+                        const travelResult = await runmoveTurnResultEventChecks({
+                            moveTurnResultPayload,
                             location,
                             stream
                         });
@@ -23512,7 +23512,7 @@ module.exports = function registerApiRoutes(scope) {
                 } else {
                     aiResponse = await LLMClient.chatCompletion(requestOptions);
                 }
-                let travelProsePayload = null;
+                let moveTurnResultPayload = null;
                 let playerActionXmlPayload = null;
                 let playerActionTimePassedMinutes = null;
                 let playerActionTimeProgress = null;
@@ -23629,7 +23629,7 @@ module.exports = function registerApiRoutes(scope) {
                             return respondWithRejectedPlayerActionXml(parsedProse, aiResponse);
                         }
                         aiResponse = parsedProse.prose;
-                        travelProsePayload = parsedProse.travel;
+                        moveTurnResultPayload = parsedProse.travel;
                         playerActionTimePassedMinutes = parsedProse.timePassedMinutes ?? null;
                     }
 
@@ -23680,7 +23680,7 @@ module.exports = function registerApiRoutes(scope) {
                                                 return respondWithRejectedPlayerActionXml(parsedProse, rerunResponse);
                                             }
                                             aiResponse = parsedProse.prose;
-                                            travelProsePayload = parsedProse.travel;
+                                            moveTurnResultPayload = parsedProse.travel;
                                             playerActionTimePassedMinutes = parsedProse.timePassedMinutes ?? null;
                                         } else {
                                             aiResponse = rerunResponse;
@@ -23698,7 +23698,7 @@ module.exports = function registerApiRoutes(scope) {
                     if (playerActionXmlPayload
                         && playerActionTimePassedMinutes !== null
                         && playerActionTimePassedMinutes !== undefined
-                        && !travelProsePayload
+                        && !moveTurnResultPayload
                         && !isQuestionAction
                         && !isGenericPromptAction) {
                         const interruptionLocationId = requireLocationId(
@@ -23708,7 +23708,7 @@ module.exports = function registerApiRoutes(scope) {
                         scheduledEventInterruptionInfo = await maybeRewritePlayerActionForScheduledEventInterruption({
                             actionXmlPayload: playerActionXmlPayload,
                             timePassedMinutes: playerActionTimePassedMinutes,
-                            travelProsePayload,
+                            moveTurnResultPayload,
                             locationId: interruptionLocationId,
                             entryCollector: newChatEntries,
                             parentEntryId: storedUserEntry?.id || null,
@@ -23734,14 +23734,14 @@ module.exports = function registerApiRoutes(scope) {
                                     throw new Error('Scheduled event interruption rewrite must not return a rejected player action.');
                                 }
                                 if (rewrittenParsedProse.travel) {
-                                    throw new Error('Scheduled event interruption rewrite must preserve finalProse and must not return travelProse.');
+                                    throw new Error('Scheduled event interruption rewrite must preserve turnResult and must not return moveTurnResult.');
                                 }
                                 if (rewrittenParsedProse.timePassedMinutes !== playerActionTimePassedMinutes) {
-                                    throw new Error('Scheduled event interruption rewrite must preserve the original finalProse timePassed duration.');
+                                    throw new Error('Scheduled event interruption rewrite must preserve the original turnResult timePassed duration.');
                                 }
                                 playerActionXmlPayload = rewrittenXmlPayload;
                                 aiResponse = rewrittenParsedProse.prose;
-                                travelProsePayload = rewrittenParsedProse.travel;
+                                moveTurnResultPayload = rewrittenParsedProse.travel;
                                 playerActionTimePassedMinutes = rewrittenParsedProse.timePassedMinutes;
                             }
                         }
@@ -24056,7 +24056,7 @@ module.exports = function registerApiRoutes(scope) {
                                 }
                             }
 
-                            if (travelProsePayload) {
+                            if (moveTurnResultPayload) {
                                 const suppressDirectTravelPromptMutation = Boolean(currentActionIsTravel
                                     && travelMetadata
                                     && !travelMetadataIsEventDriven);
@@ -24064,8 +24064,8 @@ module.exports = function registerApiRoutes(scope) {
                                     suppressDirectTravelPromptMutation
                                     || (suppressEventDrivenExitTimeAdvance && eventDrivenTravelWillSucceed)
                                 );
-                                const travelResult = await runTravelProseEventChecks({
-                                    travelProsePayload,
+                                const travelResult = await runmoveTurnResultEventChecks({
+                                    moveTurnResultPayload,
                                     location,
                                     stream,
                                     userInput,
@@ -24117,7 +24117,7 @@ module.exports = function registerApiRoutes(scope) {
                                         ? userInput
                                         : null,
                                     stream,
-                                    // For non-travelProse turns, let event checks apply any narrated movement.
+                                    // For non-moveTurnResult turns, let event checks apply any narrated movement.
                                     suppressMoveEvents: suppressDirectTravelPromptMutation,
                                     suppressTimeAdvance: suppressDirectTravelPromptMutation
                                         || (suppressEventDrivenExitTimeAdvance && eventDrivenTravelWillSucceed),
@@ -35737,7 +35737,7 @@ module.exports = function registerApiRoutes(scope) {
                         { location: currentLocation }
                     );
                     if (activeVehicleArrivalsThisTurn.length > 0) {
-                        const destinationMatchRecord = buildTravelProseDestinationMatchRecord({
+                        const destinationMatchRecord = buildmoveTurnResultDestinationMatchRecord({
                             resolvedLocation: destinationLocation
                         });
                         const arrivedThisTurn = activeVehicleArrivalsThisTurn.some(arrival =>
@@ -46049,7 +46049,7 @@ module.exports = function registerApiRoutes(scope) {
             return shortestTravelTimeMinutes;
         }
 
-        function resolveTravelProsePlayerMoveTimeMinutes({
+        function resolvemoveTurnResultPlayerMoveTimeMinutes({
             originLocation = null,
             destinationLocation = null,
             promptTravelTimeMinutes = null,

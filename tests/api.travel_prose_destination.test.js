@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('fs');
 const vm = require('vm');
 
-function loadTravelProseDestinationResolver({ locations = [], regions = [] } = {}) {
+function loadmoveTurnResultDestinationResolver({ locations = [], regions = [] } = {}) {
     const source = fs.readFileSync(require.resolve('../api.js'), 'utf8');
     const start = source.indexOf('const resolveLocationByIdOrName = (value) => {');
     const end = source.indexOf('\n        const normalizeTravelDestinationComparisonKey', start);
@@ -52,14 +52,14 @@ function loadTravelProseDestinationResolver({ locations = [], regions = [] } = {
     vm.createContext(context);
     vm.runInContext(
         `${source.slice(start, end)}
-this.resolveTravelProseDestination = resolveTravelProseDestination;`,
+this.resolvemoveTurnResultDestination = resolvemoveTurnResultDestination;`,
         context
     );
 
     return context;
 }
 
-test('travelProse same-name region/location resolves existing location inside region', async () => {
+test('moveTurnResult same-name region/location resolves existing location inside region', async () => {
     const location = { id: 'loc-player-farm', name: 'Player Farm' };
     const region = {
         id: 'region-player-farm',
@@ -67,12 +67,12 @@ test('travelProse same-name region/location resolves existing location inside re
         locationIds: [location.id],
         entranceLocationId: null
     };
-    const context = loadTravelProseDestinationResolver({
+    const context = loadmoveTurnResultDestinationResolver({
         locations: [location],
         regions: [region]
     });
 
-    const result = await context.resolveTravelProseDestination('Player Farm|Player Farm', {
+    const result = await context.resolvemoveTurnResultDestination('Player Farm|Player Farm', {
         allowCreate: false
     });
 
@@ -80,7 +80,7 @@ test('travelProse same-name region/location resolves existing location inside re
     assert.equal(result.region, region);
 });
 
-test('travelProse same-name region/location falls back to region entrance when location is absent', async () => {
+test('moveTurnResult same-name region/location falls back to region entrance when location is absent', async () => {
     const entrance = { id: 'loc-entrance', name: 'Farm Gate' };
     const region = {
         id: 'region-player-farm',
@@ -88,12 +88,12 @@ test('travelProse same-name region/location falls back to region entrance when l
         locationIds: [entrance.id],
         entranceLocationId: entrance.id
     };
-    const context = loadTravelProseDestinationResolver({
+    const context = loadmoveTurnResultDestinationResolver({
         locations: [entrance],
         regions: [region]
     });
 
-    const result = await context.resolveTravelProseDestination('Player Farm|Player Farm', {
+    const result = await context.resolvemoveTurnResultDestination('Player Farm|Player Farm', {
         allowCreate: false
     });
 
@@ -101,10 +101,10 @@ test('travelProse same-name region/location falls back to region entrance when l
     assert.equal(result.region, region);
 });
 
-test('travelProse same-name unknown region does not create duplicate same-name location', async () => {
-    const context = loadTravelProseDestinationResolver();
+test('moveTurnResult same-name unknown region does not create duplicate same-name location', async () => {
+    const context = loadmoveTurnResultDestinationResolver();
 
-    const result = await context.resolveTravelProseDestination('New Farm|New Farm', {
+    const result = await context.resolvemoveTurnResultDestination('New Farm|New Farm', {
         allowCreate: true,
         originLocation: { id: 'origin', name: 'Origin' }
     });
@@ -114,10 +114,10 @@ test('travelProse same-name unknown region does not create duplicate same-name l
     assert.equal(context.createLocationCalls.length, 0);
 });
 
-test('travelProse new region with specific location preserves pending region-entry context', async () => {
-    const context = loadTravelProseDestinationResolver();
+test('moveTurnResult new region with specific location preserves pending region-entry context', async () => {
+    const context = loadmoveTurnResultDestinationResolver();
 
-    const result = await context.resolveTravelProseDestination('Northern Mountain Range|Installation Alpha', {
+    const result = await context.resolvemoveTurnResultDestination('Northern Mountain Range|Installation Alpha', {
         allowCreate: true,
         originLocation: { id: 'origin', name: 'Origin' }
     });

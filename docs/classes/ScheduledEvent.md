@@ -1,9 +1,11 @@
 # ScheduledEvent
 
 ## Purpose
+
 `ScheduledEvent` is the persisted record for a planned future event created through the `scheduleEvent` chat tool. The record stores timing, target location, lifecycle state, and resolution text; runtime API hooks perform due-event resolution and any resulting world mutations.
 
 ## Creation
+
 - The `scheduleEvent` chat tool requires `event`, `region`, and `location`, plus exactly one timing mode:
   - `in`: a future duration string or numeric minute count parsed by `Utils.parseDurationToMinutes(...)`.
   - `at`: canonical world time `{ dayIndex, timeMinutes }`.
@@ -14,6 +16,7 @@
 - Successful scheduling creates a `ScheduledEvent` with a compact `sevent_n` id, absolute `targetWorldMinute`, canonical `targetWorldTime`, and creation time copied from the active world clock.
 
 ## Fields
+
 - `id`: compact `sevent_n` identifier allocated by `IdGenerator.next('scheduledEvent')`, or an explicit id loaded from saves.
 - `event`: non-empty description of the planned event.
 - `regionId` / `regionName`: resolved region target.
@@ -28,12 +31,14 @@
 - `createdAt` / `updatedAt`: real ISO timestamps for save and diagnostics.
 
 ## Validation
+
 - The constructor requires an object payload, non-empty event/region/location fields, non-negative integer world-minute fields, world-time objects with non-negative integer `dayIndex` and `timeMinutes`, and one of the valid statuses.
 - `markResolved(...)` requires a non-empty `summary`.
 - `markSkipped(...)` clears `resolutionSummary` and `playerProse`.
 - `loadAll(payload)` clears the in-memory registry, requires an object map, and hydrates each entry through the constructor.
 
 ## Static API
+
 - `clear()`: removes all in-memory scheduled events.
 - `getAll()`: returns all records in insertion/map order.
 - `getById(id)`: returns a record by trimmed id, or `null`.
@@ -45,11 +50,13 @@
 - `loadAll(payload)`: replaces the in-memory registry from an id-keyed object map.
 
 ## Instance API
+
 - `markResolved({ summary, playerProse, worldMinute, worldTime })`: sets `status` to `resolved`, stores trimmed resolution text, records resolution world time, and refreshes `updatedAt`.
 - `markSkipped({ worldMinute, worldTime })`: sets `status` to `skipped`, clears resolution text, records resolution world time, and refreshes `updatedAt`.
 - `toJSON()`: returns the persisted record shape with cloned world-time objects.
 
 ## Save And Load
+
 - `Utils.serializeGameState(...)` writes scheduled events through `ScheduledEvent.serializeAll()`.
 - `Utils.writeSerializedGameState(...)` stores the map in `scheduledEvents.json`.
 - Save metadata includes `totalScheduledEvents`.
@@ -58,6 +65,7 @@
 - Constructors and loaders register scheduled-event ids with `IdGenerator` so loaded ids are not reused.
 
 ## Due-Event Resolution
+
 `api.js` owns runtime processing for due scheduled events:
 
 - `processDueScheduledEvents(...)` guards against re-entrant resolution, reads `ScheduledEvent.getPendingDue(Globals.getTotalWorldMinutes())`, and resolves due events in chronological order.
@@ -74,24 +82,27 @@
 - `markResolved(...)` stores player prose only when the player was present. Off-location resolutions keep `playerProse` empty.
 
 ## Player-Action Interruptions
-Normal player-action `<finalProse>` responses with parsed `<timePassed>` can be interrupted by same-location scheduled events before slop removal:
+
+Normal player-action `<turnResult>` responses with parsed `<timePassed>` can be interrupted by same-location scheduled events before slop removal:
 
 - The chat route skips interruption handling for travel prose, questions, generic prompts, and responses without parsed player-action time.
 - `findScheduledEventInterruptionForPlayerAction(...)` checks `getPendingBetween(turnStart, turnEnd)` and filters to the player's current location.
 - If multiple local events share the earliest due minute inside the action interval, all events at that minute resolve together.
 - The route advances world time to the interruption minute, applies status/need ticking for that elapsed segment, then resolves the local events with source `player_action_interruption` and `suppressVisibleProse: true`.
 - If at least one event happened, `prompts/_includes/scheduled-event-interruption-rewrite.njk` rewrites the original player-action XML so the scheduled-event prose is incorporated into the player-facing action prose.
-- The rewrite must preserve non-prose XML fields, must not convert the response to travel prose, must not reject the action, and must preserve the original `<timePassed>` duration. For `<finalProse>` responses, the rewrite edits the direct `<prose>` child while preserving that wrapper, direct child `<hidden>` notes, and nested hidden notes inside prose.
+- The rewrite must preserve non-prose XML fields, must not convert the response to travel prose, must not reject the action, and must preserve the original `<timePassed>` duration. For `<turnResult>` responses, the rewrite edits the direct `<prose>` child while preserving that wrapper, direct child `<hidden>` notes, and nested hidden notes inside prose.
 - The remaining player-action time advances after the rewrite. Regular slop removal, event checks, quest checks, autosave, and response shaping continue on the rewritten prose.
 - Due events in other locations remain pending during the interruption pass and are eligible for the regular due-event sweep at response time.
 
 ## Diagnostics
+
 - `/scheduled` is a read-only slash command backed by `ScheduledEvent.getPending()`.
 - It replies with `No pending scheduled events.` when none are pending.
 - Otherwise it returns a numbered Markdown list sorted by due time and id, including due date/time, relative time, region name/id, location name/id, and the full event text.
 - Resolved and skipped records are omitted from `/scheduled`.
 
 ## Reference Tests
+
 - `tests/scheduled_event.test.js`: model lifecycle, due ordering, interval bounds, and save/load round-trip.
 - `tests/scheduled_event_runtime.test.js`: scheduler timing, region/location validation, same-name region-scoped lookup, and result XML parsing.
 - `tests/chat_tool_schedule_event.test.js`: chat-tool schema, delegation, result XML, and invalid timing-mode errors.

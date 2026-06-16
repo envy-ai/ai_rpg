@@ -92,23 +92,23 @@ test('player action XML parser extracts rejected reasons from text content', asy
     assert.equal(parsed.rejected?.reason, 'Please enter a complete action.');
 });
 
-test('player action XML parser ignores draft finalProse blocks before the final root', async () => {
+test('player action XML parser ignores draft turnResult blocks before the final root', async () => {
     const context = loadPlayerActionXmlParser();
     const parsed = await context.parsePlayerActionProseFromXml([
         '1. Draft:',
-        '<finalProse><prose>Draft prose that should not be used.</prose></finalProse>',
+        '<turnResult><prose>Draft prose that should not be used.</prose></turnResult>',
         '2. Final:',
-        '<finalProse><prose>Final prose.</prose><hidden>Keep this note.</hidden></finalProse>'
+        '<turnResult><prose>Final prose.</prose><hidden>Keep this note.</hidden></turnResult>'
     ].join('\n'));
 
     assert.equal(parsed.prose, 'Final prose.<hidden>Keep this note.</hidden>');
     assert.equal(parsed.travel, null);
 });
 
-test('player action XML parser extracts finalProse timePassed without exposing it as prose', async () => {
+test('player action XML parser extracts turnResult timePassed without exposing it as prose', async () => {
     const context = loadPlayerActionXmlParser();
     const parsed = await context.parsePlayerActionProseFromXml(
-        '<finalProse><prose>Final prose.</prose><timePassed><reasoning>A short exchange.</reasoning><duration>12 minutes</duration></timePassed><hidden>Keep this note.</hidden></finalProse>'
+        '<turnResult><prose>Final prose.</prose><timePassed><reasoning>A short exchange.</reasoning><duration>12 minutes</duration></timePassed><hidden>Keep this note.</hidden></turnResult>'
     );
 
     assert.equal(parsed.prose, 'Final prose.<hidden>Keep this note.</hidden>');
@@ -119,7 +119,7 @@ test('player action XML parser extracts finalProse timePassed without exposing i
 test('player action XML parser preserves hidden notes inside prose child', async () => {
     const context = loadPlayerActionXmlParser();
     const parsed = await context.parsePlayerActionProseFromXml(
-        '<finalProse><prose>Final prose.<hidden>Nested note.</hidden></prose><timePassed><reasoning>A short exchange.</reasoning><duration>1 minute</duration></timePassed></finalProse>'
+        '<turnResult><prose>Final prose.<hidden>Nested note.</hidden></prose><timePassed><reasoning>A short exchange.</reasoning><duration>1 minute</duration></timePassed></turnResult>'
     );
 
     assert.equal(parsed.prose, 'Final prose.<hidden>Nested note.</hidden>');
@@ -127,19 +127,19 @@ test('player action XML parser preserves hidden notes inside prose child', async
     assert.equal(parsed.timePassedMinutes, 1);
 });
 
-test('player action XML parser requires finalProse prose child', async () => {
+test('player action XML parser requires turnResult prose child', async () => {
     const context = loadPlayerActionXmlParser();
 
     await assert.rejects(
-        () => context.parsePlayerActionProseFromXml('<finalProse>Final prose.</finalProse>'),
-        /<finalProse> must include a direct <prose> child/
+        () => context.parsePlayerActionProseFromXml('<turnResult>Final prose.</turnResult>'),
+        /<turnResult> must include a direct <prose> child/
     );
 });
 
 test('player action XML parser chooses final travelProse after earlier draft prose XML', async () => {
     const context = loadPlayerActionXmlParser();
     const parsed = await context.parsePlayerActionProseFromXml([
-        '<finalProse><prose>Draft prose that should not be used.</prose></finalProse>',
+        '<turnResult><prose>Draft prose that should not be used.</prose></turnResult>',
         '<travelProse>',
         '<originProse>Origin beat.</originProse>',
         '<destinationProse>Destination beat.</destinationProse>',

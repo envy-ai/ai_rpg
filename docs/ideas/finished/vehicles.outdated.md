@@ -19,7 +19,7 @@ The implemented vehicle system is centered on `VehicleInfo`, `Location`, `Region
 - `VehicleInfo` stores `terrainTypes`, `icon`, `currentDestination`, `pendingDestination`, fixed-route `destinations`, `ETA`, `departureTime`, and `vehicleExitId`.
 - A `LocationExit` can be marked with `isVehicle` and optional `vehicleType`, but that marks the edge as a vehicle boarding/disembark/travel edge. It does not by itself make the destination a vehicle.
 - Vehicle locations and vehicle regions can move by retargeting the tracked outside exit referenced by `vehicleInfo.vehicleExitId`.
-- Positive `<travelProse><vehicleInfo><travelTime>` starts a timed trip by setting `pendingDestination`, `departureTime`, and `ETA`; final destination resolution and exit retargeting happen during due-arrival processing.
+- Positive `<moveTurnResult><vehicleInfo><travelTime>` starts a timed trip by setting `pendingDestination`, `departureTime`, and `ETA`; final destination resolution and exit retargeting happen during due-arrival processing.
 - `0` or omitted vehicle travel time moves the vehicle immediately.
 - Due vehicle arrivals are processed through the same positive world-time advancement paths that also handle needs, statuses, and scheduled events.
 - `Player.currentVehicle` exposes the active onboard vehicle, destination label, pending destination, remaining time, and `isUnderway` / `hasArrived` / `isArriving` state for prompts and diagnostics.

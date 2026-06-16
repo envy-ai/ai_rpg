@@ -102,26 +102,26 @@ test('extractXmlNodeContent preserves inner XML for non-CDATA prompt nodes', () 
 test('extractFinalXmlRootBlock returns the last complete requested root block', () => {
     const response = [
         'Draft:',
-        '<finalProse>Draft text.</finalProse>',
+        '<turnResult>Draft text.</turnResult>',
         'Final:',
         '<travelProse><originProse>Origin.</originProse></travelProse>'
     ].join('\n');
 
     assert.equal(
-        Utils.extractFinalXmlRootBlock(response, ['finalProse', 'travelProse']),
+        Utils.extractFinalXmlRootBlock(response, ['turnResult', 'travelProse']),
         '<travelProse><originProse>Origin.</originProse></travelProse>'
     );
 });
 
 test('extractFinalXmlRootBlock supports root attributes', () => {
     const response = [
-        '<finalProse>Draft text.</finalProse>',
-        '<finalProse mode="final">Final text.</finalProse>'
+        '<turnResult>Draft text.</turnResult>',
+        '<turnResult mode="final">Final text.</turnResult>'
     ].join('\n');
 
     assert.equal(
-        Utils.extractFinalXmlRootBlock(response, 'finalProse'),
-        '<finalProse mode="final">Final text.</finalProse>'
+        Utils.extractFinalXmlRootBlock(response, 'turnResult'),
+        '<turnResult mode="final">Final text.</turnResult>'
     );
 });
 
@@ -185,29 +185,29 @@ test('extractFinalXmlBlockFromResponse returns the outer final block when the ro
 
 test('extractFinalXmlBlockFromResponse ignores unmatched earlier opening tags when matching the final close', () => {
     const response = [
-        '<finalProse> since the vehicle is just completing its normal journey to its preset destination.',
+        '<turnResult> since the vehicle is just completing its normal journey to its preset destination.',
         '',
-        '<finalProse>',
+        '<turnResult>',
         'Fifteen minutes. The Windcutter completes its approach.',
         '<hidden>Windcutter has landed.</hidden>',
         '<timePassed>',
         '<reasoning>15 minutes of remaining flight time.</reasoning>',
         '<duration>15 minutes</duration>',
         '</timePassed>',
-        '</finalProse>'
+        '</turnResult>'
     ].join('\n');
 
     assert.equal(
         Utils.extractFinalXmlBlockFromResponse(response),
         [
-            '<finalProse>',
+            '<turnResult>',
             'Fifteen minutes. The Windcutter completes its approach.',
             '<hidden>Windcutter has landed.</hidden>',
             '<timePassed>',
             '<reasoning>15 minutes of remaining flight time.</reasoning>',
             '<duration>15 minutes</duration>',
             '</timePassed>',
-            '</finalProse>'
+            '</turnResult>'
         ].join('\n')
     );
 });

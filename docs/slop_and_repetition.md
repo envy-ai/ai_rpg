@@ -5,21 +5,24 @@ Reference for the systems that reduce repeated phrasing, configured slop words, 
 ## Repetition Busting
 
 ### Runtime Behavior
+
 - `config.default.yaml` enables `repetition_buster: true`. The switch can be disabled in runtime config.
 - `config.repetition_buster_mode` is passed into the prompt template; implemented prompt modes are `glm` and `kimi`, with `glm` as the default config value.
 - When `config.repetition_buster` is enabled, player-action, creative-mode action, NPC action narrative, and random-event prose paths request XML prose roots instead of plain prose.
-- The required action XML roots are `<finalProse>`, `<travelProse>`, and `<rejected>`. `LLMClient.chatCompletion(...)` receives `requiredRegex: playerActionProseRegex` for action XML requests.
+- The required action XML roots are `<turnResult>`, `<moveTurnResult>`, and `<rejected>`. `LLMClient.chatCompletion(...)` receives `requiredRegex: playerActionProseRegex` for action XML requests.
 - The parser extracts the last complete requested XML root with `Utils.extractFinalXmlRootBlock(...)`. Draft analysis text or earlier draft XML roots are ignored.
 - Malformed player-action XML is repaired through the `xml-fix` prompt once before the parser fails the turn with a clear error.
 
 ### Prompt Shape
-- Attack prose uses `<finalProse>` only, with visible prose inside a direct `<prose>` child. The attack branch performs draft, analysis, second draft, final analysis, and final output while enforcing attack outcome details.
-- Non-attack player-action prose can return either `<finalProse>` or `<travelProse>`.
+
+- Attack prose uses `<turnResult>` only, with visible prose inside a direct `<prose>` child. The attack branch performs draft, analysis, second draft, final analysis, and final output while enforcing attack outcome details.
+- Non-attack player-action prose can return either `<turnResult>` or `<moveTurnResult>`.
 - Non-attack player-action prompts can return `<rejected>...</rejected>` for incomplete player actions or attempts to control other characters without enough in-world justification. Rejected actions are stored as excluded-from-base-context responses and do not continue into normal slop removal, event checks, or response storage.
-- `<finalProse>` requires a direct `<prose>` child for the visible story text. Nested `<hidden>...</hidden>` note blocks inside `<prose>` are preserved in place, and direct child `<hidden>...</hidden>` siblings are appended to the parsed final prose. Direct child `<timePassed>` metadata is parsed into minutes and excluded from visible prose.
-- `<travelProse>` contains optional `<vehicleInfo>`, optional `<playerDestination>`, and at least one of `<originProse>`, `<betweenProse>`, or `<destinationProse>`.
+- `<turnResult>` requires a direct `<prose>` child for the visible story text. Nested `<hidden>...</hidden>` note blocks inside `<prose>` are preserved in place, and direct child `<hidden>...</hidden>` siblings are appended to the parsed final prose. Direct child `<timePassed>` metadata is parsed into minutes and excluded from visible prose.
+- `<moveTurnResult>` contains optional `<vehicleInfo>`, optional `<playerDestination>`, and at least one of `<originProse>`, `<betweenProse>`, or `<destinationProse>`.
 
 ### Travel Prose Handling
+
 - Parsed travel prose combines visible origin, between, and destination prose for the chat entry.
 - Hidden notes are preserved in extracted prose but stripped from event-check segment text.
 - Travel prose segments remove leading indentation at paragraph starts before storage and processing.
@@ -28,17 +31,20 @@ Reference for the systems that reduce repeated phrasing, configured slop words, 
 - Vehicle travel metadata can start or retarget timed trips, update vehicle state, and request client location refreshes when vehicle movement or due arrivals affect visible state.
 
 ### Repetition Detection Without Prompt XML
+
 - When `config.repetition_buster` is disabled for the main chat player-action route, the server still checks the response against recent prose history.
 - `findRecentProseEntries(30)` gathers recent assistant entries with no type or `type: "player-action"`.
 - `Utils.findKgramOverlap(prior, response, { k: 6 })` detects overlap after token normalization.
 - If overlap is detected, the route logs the offending k-gram, re-renders the player-action prompt with repetition busting forced on, and reruns the model. NPC turns do not use this rerun path.
 
 ### Token Normalization
+
 - K-gram matching lowercases text, treats punctuation as word breaks except apostrophes, removes `COMMON_WORDS`, and removes tokenized NPC names and aliases by default.
 - Modal verbs such as `could` and `would` are retained because they are not in `COMMON_WORDS`.
 - Configured n-grams and custom multi-token slop entries use the same token normalization but do not exclude NPC names while defining entries.
 
 ### Key Files
+
 - Prompt templates:
   - `prompts/_includes/player-action.njk`
   - `prompts/_includes/creative-mode-action.njk`
@@ -51,7 +57,7 @@ Reference for the systems that reduce repeated phrasing, configured slop words, 
   - `api.js` -> `repairMalformedPlayerActionXml(...)`
   - `api.js` -> `renderPlayerActionPrompt(forceRepetitionBuster)`
   - `api.js` -> `runActionNarrativeForActor(...)`
-  - `api.js` -> `runTravelProseEventChecks(...)`
+  - `api.js` -> `runmoveTurnResultEventChecks(...)`
 - K-gram utilities:
   - `Utils.normalizeKgramTokens(...)`
   - `Utils.findKgramOverlap(...)`
@@ -59,6 +65,7 @@ Reference for the systems that reduce repeated phrasing, configured slop words, 
   - `Utils.pruneContainedKgrams(...)`
 
 ### Config
+
 - `config.repetition_buster`: enables action XML self-correction and final prose extraction.
 - `config.repetition_buster_mode`: selects prompt-mode text for the repetition-buster prompt.
 - `config.ai.dialogue_repetition_penalty`: passed to the LLM backend as `repetition_penalty` when the value is finite and greater than zero.
@@ -66,6 +73,7 @@ Reference for the systems that reduce repeated phrasing, configured slop words, 
 ## Slop Checking And Slop Removal
 
 ### Runtime Behavior
+
 - `config.default.yaml` enables `slop_buster: true`.
 - The slop pipeline checks visible prose for configured slop words, configured regex names, configured n-grams, and repeated n-grams from prose history.
 - When anything is detected, `applySlopRemoval(...)` asks the slop-remover prompt to rewrite the prose while preserving meaning, paragraph breaks, and hidden-note blocks.
@@ -73,6 +81,7 @@ Reference for the systems that reduce repeated phrasing, configured slop words, 
 - Call sites that request and record diagnostics store them as `type: "slop-remover"` chat entries and render them in the chat UI with the broom insight.
 
 ### Slop History
+
 - Slop word, configured n-gram, and positive-ppm regex analysis checks combined slop history plus the current visible prose, then filters results to matches present in the current prose.
 - Slop history entry types are:
   - `player-action`
@@ -84,6 +93,7 @@ Reference for the systems that reduce repeated phrasing, configured slop words, 
 - The slop-remover context prompt uses the last 5 assistant prose-like entries and last 5 player entries, merged back into chronological order.
 
 ### Slop Words
+
 - Source: `defs/slopwords.yaml` -> `slopwords`.
 - Analyzer: `server.js` -> `analyzeSlopwordsForText(...)`.
 - Tokens are lowercased words with apostrophes retained.
@@ -92,6 +102,7 @@ Reference for the systems that reduce repeated phrasing, configured slop words, 
 - `api.js` -> `getFilteredSlopWords(...)` returns only flagged words that are also present in the current prose.
 
 ### Configured N-Grams
+
 - Source: `defs/slopwords.yaml` -> `ngrams`.
 - Analyzer: `server.js` -> `analyzeConfiguredNgramsForText(...)`.
 - Thresholds use `ngram_default` unless an entry supplies a numeric ppm or `default`.
@@ -99,6 +110,7 @@ Reference for the systems that reduce repeated phrasing, configured slop words, 
 - `api.js` -> `getFilteredConfiguredNgrams(...)` filters flagged n-grams to those present in current prose and prunes contained n-grams.
 
 ### Configured Regexes
+
 - Source: `defs/slopwords.yaml` -> `regexes`, an array of `{ pattern, name, ppm }` entries.
 - Patterns use JavaScript `/pattern/flags` literal syntax. Duplicate names, invalid flags, invalid regexes, and malformed entries throw.
 - YAML double-quoted backspace characters produced by `\b` are converted back to regex word-boundary escapes before compilation.
@@ -107,6 +119,7 @@ Reference for the systems that reduce repeated phrasing, configured slop words, 
 - `ppm: 0` regex entries are checked directly against the current prose. Positive-ppm regex entries are analyzed against combined slop history plus current prose, then filtered through current-prose matching.
 
 ### Repeated N-Grams
+
 - Entry point: `api.js` -> `collectSlopNgrams(...)`.
 - Base scan: `collectRepeatedNgrams(prose, { minK: 3, maxEntries: 20 })` over recent slop history.
 - Supplemental scan: `collectRepeatedNgrams(prose, { minK: 6, segments: getRecentAssistantProseHistorySegments(80) })`.
@@ -114,6 +127,7 @@ Reference for the systems that reduce repeated phrasing, configured slop words, 
 - `Utils.pruneContainedKgrams(...)` removes shorter n-grams contained inside longer matches.
 
 ### Slop Remover Prompt
+
 - Entry point: `api.js` -> `applySlopRemoval(prose, { returnDiagnostics })`.
 - Standalone template: `prompts/slop-remover.xml.njk`.
 - Cached/base-context template path: `prompts/base-context.xml.njk` with `promptType: "slop-remover"`, which includes `prompts/_includes/slop-remover.njk`.
@@ -135,6 +149,7 @@ Reference for the systems that reduce repeated phrasing, configured slop words, 
 - With `returnDiagnostics: true`, the result includes `{ text, slopWords, slopRegexes, slopNgrams, ran }`.
 
 ### Where Slop Removal Runs
+
 - Main `/api/chat` player-action and creative-mode action prose after action XML parsing, scheduled-event interruption rewrites, and rejected-action handling.
 - Random-event narrative prose.
 - NPC turn planned action text shown in chat.
@@ -148,17 +163,20 @@ Reference for the systems that reduce repeated phrasing, configured slop words, 
 - While-you-were-away visible reunion prose (`while-you-were-away-player`).
 
 ### Explicit Bypasses
+
 - `/api/chat` question actions beginning with `?` bypass slop removal.
 - `/api/chat` generic and no-context prompt actions beginning with `@`, `@@`, `@@@`, or `\` bypass slop removal.
 - Hidden-only prose does not trigger slop removal because detection checks visible prose after hidden-note stripping.
 
 ### UI And Logging
+
 - Slop diagnostics are recorded by `api.js` -> `recordSlopRemovalEntry(...)` as `type: "slop-remover"` attachment entries.
 - The client renders slop diagnostics through `public/js/chat.js` with the broom insight and tooltip sections for slop words, regex names, and repeated n-grams.
 - Slop remover prompt logs use `LLMClient.logPrompt(...)` with `prefix: "slop_remover"` and `metadataLabel: "slop_remover"`.
 - Log files use the `logs/*_slop_remover_*.log` naming pattern.
 
 ## Primary Code Map
+
 - Definitions and thresholds: `defs/slopwords.yaml`.
 - Config defaults: `config.default.yaml`.
 - Slop analyzers:
@@ -185,6 +203,7 @@ Reference for the systems that reduce repeated phrasing, configured slop words, 
 - UI rendering: `public/js/chat.js`.
 
 ## Reference Tests
+
 - `tests/api.player_action_rejection.test.js`: action XML root extraction, `<rejected>` flow, `<timePassed>` extraction, and scheduled-event rewrite order before slop removal.
 - `tests/utils.xml.test.js`: final XML root/block extraction helpers.
 - `tests/api.slop_regex_filter.test.js`: zero-ppm regex filtering against current prose.

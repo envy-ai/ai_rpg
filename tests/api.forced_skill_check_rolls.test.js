@@ -18,10 +18,10 @@ test('extractInlineRollControls strips forced-roll markers and preserves numeric
 });
 
 test('extractInlineRollControls leaves non-roll angle tags untouched', () => {
-    const result = extractInlineRollControls('Inspect <finalProse> without a forced roll marker.');
+    const result = extractInlineRollControls('Inspect <turnResult> without a forced roll marker.');
 
     assert.deepEqual(result, {
-        text: 'Inspect <finalProse> without a forced roll marker.',
+        text: 'Inspect <turnResult> without a forced roll marker.',
         dieRoll: null,
         forceSkillCheckRolls: false
     });

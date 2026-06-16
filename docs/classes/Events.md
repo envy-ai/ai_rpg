@@ -1,11 +1,13 @@
 # Events
 
 ## Purpose
+
 Runs LLM-based event checks on narrative text, parses structured outcomes, and applies those outcomes to the game world (locations, items, NPCs, quests, and status effects). Tracks discovered/altered entities to avoid duplicates.
 
 For a full reference of non-dummy event type keys, payloads, and application behavior, see [EventsEventTypes.md](EventsEventTypes.md). For the single-prompt XML event format, see [EventsXmlEventSchema.md](EventsXmlEventSchema.md).
 
 ## Key State (Static)
+
 - Dependency container: `_deps` (promptEnv, parseXMLTemplate, prepareBasePromptContext, Location, players, things, findRegionByLocationId, config accessors, etc).
 - Parsers/aggregators/handlers: `_parsers`, `_aggregators`, `_handlers`.
 - Mod extension registry: `Globals.modExtensionRegistry` or `_deps.modExtensionRegistry` for registered XML tags, parsers, and handlers.
@@ -13,10 +15,11 @@ For a full reference of non-dummy event type keys, payloads, and application beh
 - Timeouts and durations: `_baseTimeout`, `DEFAULT_STATUS_DURATION`, `MAJOR_STATUS_DURATION`.
 
 ## Public API (Static)
+
 - `initialize(deps)`: registers dependencies and builds parsers/aggregators/handlers.
 - `runEventChecks({ textToCheck, actionText, stream, allowEnvironmentalEffects, isNpcTurn, suppressMoveEvents, allowMoveTurnAppearances, suppressTimeAdvance, locationOverride, ignoredEventKeys, eventCheckIgnoreInstructions, suppressNeedBarEventChecks, initialTimeProgress, _depth, followupQueue })`:
-    - When `event_checks.use_xml !== false`, renders one `events-xml` base-context prompt for ordinary event categories, launches the dedicated `need-bars` prompt 2 seconds later when need-bar definitions are present, waits for both, parses the required `<events>` block, converts camelCase XML tags into handler-compatible structured event entries, injects parsed need-bar results as `needbar_change` entries, and applies results through the shared handler pipeline. If the XML contains a travel boundary, events before the move are applied at the origin, the move is applied separately, in-transit tags before `<arriveAtLocation/>` are ignored except `thingMoveWithCharacter`, which is deferred to the destination phase, and post-arrival tags are applied at the destination with move-turn appearances allowed.
-    - When `event_checks.use_xml === false`, renders the numbered grouped event-check prompts plus a dedicated parallel need-bar prompt launched after `PROMPT_LAUNCH_STAGGER_MS`, calls `LLMClient.chatCompletion`, parses `<final>` and `<characters>` responses, and applies results through the same handler pipeline. `locationOverride` lets split travel-prose checks run destination prose against the destination location even before the player is mechanically moved.
+  - When `event_checks.use_xml !== false`, renders one `events-xml` base-context prompt for ordinary event categories, launches the dedicated `need-bars` prompt 2 seconds later when need-bar definitions are present, waits for both, parses the required `<events>` block, converts camelCase XML tags into handler-compatible structured event entries, injects parsed need-bar results as `needbar_change` entries, and applies results through the shared handler pipeline. If the XML contains a travel boundary, events before the move are applied at the origin, the move is applied separately, in-transit tags before `<arriveAtLocation/>` are ignored except `thingMoveWithCharacter`, which is deferred to the destination phase, and post-arrival tags are applied at the destination with move-turn appearances allowed.
+  - When `event_checks.use_xml === false`, renders the numbered grouped event-check prompts plus a dedicated parallel need-bar prompt launched after `PROMPT_LAUNCH_STAGGER_MS`, calls `LLMClient.chatCompletion`, parses `<final>` and `<characters>` responses, and applies results through the same handler pipeline. `locationOverride` lets split travel-prose checks run destination prose against the destination location even before the player is mechanically moved.
 - `runQuestChecks({ allowWithoutEventChecks, recentTextOverride })`: LLM check for quest objective completion, including per-objective prompt `statusReason` text for completed objectives. Skips prompt construction and returns `null` when the current player has no active, unpaused quests.
 - `applyEventOutcomes(parsedEvents, context)`: applies structured changes to world state.
 - `processQuestObjectiveCompletionEntries(entries, context)`: applies quest objective completion and rewards (items/xp/currency, per-faction reputation deltas, and per-NPC disposition deltas when configured on the quest), preserving the prompt-supplied completion reason on emitted objective updates. Quest NPC disposition reward intensities are converted through disposition `typicalStep` / `typicalBigStep`; the first-impression multiplier may further multiply the applied delta when the target NPC has no existing nonzero disposition toward the player.
@@ -28,11 +31,13 @@ For a full reference of non-dummy event type keys, payloads, and application beh
 - `logEventCheck({ systemPrompt, generationPrompt, responseText, label, requestPayload, responsePayload })`.
 
 ## Accessors (Static)
+
 - `get config()`.
 - `get currentPlayer()`.
 - `get players()` / `get things()`.
 
 ## Private Helpers (Grouped)
+
 - Tracking helpers: `_resetTrackingSets`, `_isItemAlreadyTracked`, `_trackItemsFromParsing`, `_pruneExcludedItemEntries`, tracker-update normalization/application helpers, `_applyIndependentEventEntries`, `_warnEventEntryFailures`.
 - Prompt helpers: `_enqueueFollowupEventCheck`, `_runEventChecksForRewardProse`, `_runNeedBarEventChecks`, `_runXmlEventChecks`, `_runMysteryThreadCheckPrompt`, `_runMysteryBoxUpdatePrompt`.
 - Parser helpers: `_buildParsers`, `_parseEventPromptResponse`, `_parseXmlEventCheckResponse`, `_extractEventsXmlBlock`, `_extractNumberedResponses`, `_parseNeedBarPromptResponse`, `_serializeNeedBarPromptEntries`.
@@ -47,6 +52,7 @@ For a full reference of non-dummy event type keys, payloads, and application beh
 - Scene helpers: `_buildSceneItemNameSet`.
 
 ## Notes
+
 - The default event-check path is the XML pipeline (`event_checks.use_xml: true`): `runEventChecks` renders `prompts/_includes/events-xml.njk` through `base-context.xml.njk`, logs normal prompt/response files under the `event_checks_xml` prompt prefix while retaining the `event_checks` metadata label for model overrides, writes chat-completion error logs with the `events-xml` prompt label, and requires a parseable `<events>...</events>` block. Surrounding markdown fences are tolerated by extracting only the XML block.
 - Need bars remain separate from the XML schema prompt in normal operation. When need-bar definitions exist, the XML path launches `prompts/_includes/events-xml.njk`, starts `prompts/_includes/need-bars.njk` after `PROMPT_LAUNCH_STAGGER_MS` (2 seconds by default), waits for both prompts, and injects the parsed need-bar entries into the origin phase as ordinary `needbar_change` events before `applyEventOutcomes(...)`.
 - Scoped callers can pass `suppressNeedBarEventChecks: true` to skip the dedicated need-bar prompt, plus `ignoredEventKeys` / `eventCheckIgnoreInstructions` to tell the event prompt to ignore categories and to hard-remove those keys before handlers run. The while-you-were-away integration uses this to run an event pass on return updates while ignoring `needbar_change` and `npc_arrival_departure`, because that prompt already parses need values and NPC arrivals/departures itself.
@@ -91,12 +97,12 @@ For a full reference of non-dummy event type keys, payloads, and application beh
 - `alter_location` can be invoked from event checks, the chat `alterLocation` tool, or API helpers such as current-location modification; when a caller supplies `context.location`, the handler matches that location instead of only the global current location.
 - `alter_location` accepts `context.preserveBaseLevel=true` or an entry-level `preserveBaseLevel=true` for flows that may rewrite the location name, short description, and description while keeping the existing `baseLevel` unchanged. The location-modification UI endpoint uses this option so player-made scenery/environment changes do not silently retune encounter difficulty.
 - `_parseCharacterAlterXml` can parse wrapped or escaped model output by decoding basic entities and extracting the first `<npc>...</npc>` block before XML parsing.
-- `suppressMoveEvents` skips applying `move_location` and `move_new_location` outcomes; this is primarily used for split `<travelProse>` origin/destination checks where movement is handled by the travel pipeline.
+- `suppressMoveEvents` skips applying `move_location` and `move_new_location` outcomes; this is primarily used for split `<moveTurnResult>` origin/destination checks where movement is handled by the travel pipeline.
 - `move_new_location` parsing treats `sublocation` as `location` so sublocations generate full location stubs when move events are applied (unless move events are suppressed).
 - When `move_new_location` entries are present but `context.location` is missing, the handler logs a warning before skipping movement/exit creation.
-- Non-`<travelProse>` turns should generally leave move suppression disabled so narrated movement in event checks can still move the player.
+- Non-`<moveTurnResult>` turns should generally leave move suppression disabled so narrated movement in event checks can still move the player.
 - Follow-up event-check passes inherit `suppressMoveEvents`/`allowMoveTurnAppearances` from the parent check to keep move-handling behavior consistent across queued reward/follow-up prose.
-- `allowMoveTurnAppearances` allows `item_appear` / `scenery_appear` handlers to run even when `Globals.processedMove` is true (used for `<travelProse>` event-check passes). NPC-turn event checks also allow these appearance handlers despite the movement lock, because `/api/chat` sets `Globals.processedMove` before NPC turns only to prevent NPC prose from hijacking player movement.
+- `allowMoveTurnAppearances` allows `item_appear` / `scenery_appear` handlers to run even when `Globals.processedMove` is true (used for `<moveTurnResult>` event-check passes). NPC-turn event checks also allow these appearance handlers despite the movement lock, because `/api/chat` sets `Globals.processedMove` before NPC turns only to prevent NPC prose from hijacking player movement.
 - `move_location` records destination tracking only after a successful `setLocation` write.
 - `movePlayerToDestination(...)` enforces at most one player move per turn (`Globals.processedMove`, unless `allowAdditionalPlayerMoves` is explicitly true in context) and sets `Globals.processedMove` only after verifying the player's `currentLocation` matches the resolved destination id. If an event move targets the active vehicle's scheduled destination while that vehicle is underway, the helper suppresses the move before `setLocation(...)` and leaves `time_passed` available for arrival timing. For non-vehicle player/party event movement, it advances world time using `Location.findShortestTravelTimeMinutes(...)`, immediately resolves time-based need/status ticks, and then suppresses later `time_passed` advancement for that event pass; if no route exists, it uses `1` minute. Any successful player travel suppresses prompt-authored `time_passed` for that event pass even when the effective route/exit duration is `0`.
 - `applyExitDiscovery(...)` skips forbidden event-created exits with `console.warn(...)` diagnostics: any new exit from a location vehicle origin, and any new region exit from a region-vehicle origin. Existing matching exits remain usable by event movement.

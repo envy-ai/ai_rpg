@@ -1,15 +1,15 @@
 {% if currentVehicle.vehicleInfo.isUnderway -%}
-  <!-- Note: The vehicle "{{ currentVehicle.name | trim }}" is currently enroute to "{{ currentVehicle.destination | trim }}" and will arrive in {{ currentVehicle.timeToDestination | trim }}, and the player is on board. Reply with <finalProse> rather than <travelProse> unless:
+  <!-- Note: The vehicle "{{ currentVehicle.name | trim }}" is currently enroute to "{{ currentVehicle.destination | trim }}" and will arrive in {{ currentVehicle.timeToDestination | trim }}, and the player is on board. Reply with <turnResult> rather than <moveTurnResult> unless:
   * The vehicle is making an unplanned stop or changing destinations, OR
   * The player is exiting the vehicle, OR
   * The player is moving around *inside* the vehicle
   
-  In other words, if the vehicle the player is on is just moving toward its destination as normal and the player themselves is not moving, ignore all of the conditions and fields below and use <finalProse> instead. If the player is disembarking, you decide if it makes sense for the vehicle to stop. -->
+  In other words, if the vehicle the player is on is just moving toward its destination as normal and the player themselves is not moving, ignore all of the conditions and fields below and use <turnResult> instead. If the player is disembarking, you decide if it makes sense for the vehicle to stop. -->
 {% endif -%}
-<travelProse>
+<moveTurnResult>
   <!-- The rationale for this section is so that events can be processed separately at the origin and destination locations. betweenProse may be necessary for the flow of the story, is not processed for events. -->
   {% if currentVehicle -%}
-  <!-- If the player is moving inside the vehicle (or disembarking), OMIT the <vehicleInfo> block. If the player isn't moving inside the vehicle and the vehicle isn't stopping or changing destinations, you should be using <finalProse> instead. If a whole region vehicle is about to move inside one of its own locations, you probably shouldn't be pasing vehicleInfo-->
+  <!-- If the player is moving inside the vehicle (or disembarking), OMIT the <vehicleInfo> block. If the player isn't moving inside the vehicle and the vehicle isn't stopping or changing destinations, you should be using <turnResult> instead. If a whole region vehicle is about to move inside one of its own locations, you probably shouldn't be pasing vehicleInfo-->
   <vehicleInfo>
     <name><!-- Exact name of the vehicle, for example: "Bob's Car", "The Starship Intrepid","The Shuttlecraft Hermes", etc. --></name>
     <travelTime><!-- If you included the vehicleInfo tag, specify the travel time in the format: 
@@ -42,4 +42,4 @@
   <originProse><!-- The portion of the prose that contains characters, items, scenery, etc, at the origin location. {% if currentVehicle %}Omit if the vehicle has already departed.{% endif %} --></originProse>
   <betweenProse>{% if currentVehicle %}<!-- The portion of the prose that occurs after the vehicle has departed from the origin but before it arrives at the destination. The vehicle need not arrive at its destination the same turn it departs. Let the player experience the journey, interact with other characters, and observe the surroundings, but also allow them to wait out the whole ride (or the remainder of it) in one turn if they want. If the vehicle does not arrive at its destination this turn, omit the destinationProse tag.-->{% else %}<!-- The portion of the prose that occurs between the origin and destination (generally describing vehicle rides, etc) -->{% endif %}</betweenProse>
   <destinationProse>{% if currentVehicle %}<!-- The portion of the prose that contains characters, items, scenery, etc, at the destination location. Omit if the vehicle has not arrived yet. -->{% else %}<!-- The portion of the prose that contains characters, items, scenery, etc, at the destination location -->{% endif %}</destinationProse>
-</travelProse>
+</moveTurnResult>
