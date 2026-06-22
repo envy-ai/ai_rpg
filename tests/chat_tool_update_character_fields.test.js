@@ -38,6 +38,7 @@ function makeNpc(overrides = {}) {
         skills: { ...(overrides.skills || { Medicine: 1, Stealth: 1 }) },
         statusEffects: Array.isArray(overrides.statusEffects) ? overrides.statusEffects : [],
         needBarApplicability: { ...(overrides.needBarApplicability || {}) },
+        relationships: { ...(overrides.relationships || {}) },
         willingToTrade: overrides.willingToTrade ?? true,
         setName(value) {
             this.name = String(value).trim();
@@ -83,6 +84,10 @@ function makeNpc(overrides = {}) {
             this.needBarApplicability = { ...value };
             return this.needBarApplicability;
         },
+        setRelationships(value) {
+            this.relationships = { ...value };
+            return this.relationships;
+        },
         setWillingToTrade(value) {
             this.willingToTrade = Boolean(value);
             return this.willingToTrade;
@@ -96,6 +101,7 @@ function makeNpc(overrides = {}) {
                 description: this.description,
                 aliases: this.aliases,
                 aiNotes: this.aiNotes,
+                relationships: this.relationships,
                 attributes: this.attributes,
                 skills: this.skills,
                 statusEffects: this.statusEffects
@@ -459,6 +465,34 @@ test('updateCharacterFields applies nested personality fields to persisted NPC p
         'personality.traits',
         'personality.notes',
         'personality.aiNotes'
+    ]);
+});
+
+test('updateCharacterFields applies relationship mappings to an NPC', async () => {
+    const npc = makeNpc();
+    const runtime = makeRuntime({
+        npc,
+        firstResponse: toolResponse({
+            character: 'Neka',
+            fields: {
+                relationships: {
+                    'char-ally': 'old rival'
+                }
+            }
+        })
+    });
+
+    const result = await runtime.runChatCompletionWithToolLoop({
+        requestOptions: { messages: [{ role: 'user', content: '@Update Neka relationships.' }] },
+        metadataLabel: 'test_update_character_fields_relationships'
+    });
+
+    assert.deepEqual(npc.relationships, {
+        'char-ally': 'old rival'
+    });
+    assert.equal(result.toolInvocations[0].metadata.status, 'success');
+    assert.deepEqual(result.toolInvocations[0].metadata.updatedFields, [
+        'relationships'
     ]);
 });
 

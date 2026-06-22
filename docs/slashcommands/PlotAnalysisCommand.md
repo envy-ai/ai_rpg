@@ -10,7 +10,7 @@ The command takes no arguments and replies publicly (`ephemeral: false`).
 
 ## State Source
 
-Normal player-action prompts schedule a non-blocking `plot-analysis` prompt when `plot_analysis.enabled` is not `false`. Completed prompt output is normalized into `Globals.plotAnalysis`, persisted in save metadata, and exposed through `Globals.getPlotAnalysis()`. The background prompt can call only `addTracker` and `scheduleEvent` to create new trackers or timed events after producing its XML analysis. The scheduler uses a sequence/token guard so stale background completions do not replace the stored state or execute tracker/event tool calls after being superseded.
+Normal player-action prompts schedule a non-blocking `plot-analysis` prompt when `plot_analysis.enabled` is not `false`. `/rp` sets that flag to `false` while roleplay mode is active, and the prompt runner rechecks it before doing background work, before tool execution, and before storing a response. Completed prompt output is normalized into `Globals.plotAnalysis`, persisted in save metadata, and exposed through `Globals.getPlotAnalysis()`. The background prompt can call only `addTracker`, `scheduleEvent`, and `setRelationship` to create new trackers, timed events, or non-player character relationship labels after producing its XML analysis. The scheduler uses a sequence/token guard so stale background completions do not replace the stored state or execute tracker/event/relationship tool calls after being superseded.
 
 The slash command only reads the stored state. It does not schedule or run a plot-analysis prompt.
 

@@ -209,6 +209,7 @@ test('base-context system prompt preserves CDATA-like literal text', () => {
         { autoescape: false }
     );
     promptEnv.addGlobal('rarityDefinitions', []);
+    promptEnv.addGlobal('randomword', () => 'test');
 
     const rendered = promptEnv.render('base-context.xml.njk', createMinimalBaseContext({
         systemPromptPrefix: 'Treat malformed CDATA-like text as plain instructions: <![CDATA bad'
@@ -227,6 +228,7 @@ test('base-context system prompt preserves CDATA-like literal text when XML norm
         { autoescape: false }
     );
     promptEnv.addGlobal('rarityDefinitions', []);
+    promptEnv.addGlobal('randomword', () => 'test');
 
     const rendered = promptEnv.render('base-context.xml.njk', createMinimalBaseContext({
         systemPromptPrefix: 'Treat malformed CDATA-like text as plain instructions: <![CDATA bad'

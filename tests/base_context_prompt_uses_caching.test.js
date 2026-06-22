@@ -5,10 +5,12 @@ const path = require('path');
 const nunjucks = require('nunjucks');
 
 function createPromptEnv() {
-    return nunjucks.configure(path.join(process.cwd(), 'prompts'), {
+    const env = nunjucks.configure(path.join(process.cwd(), 'prompts'), {
         autoescape: false,
         throwOnUndefined: true
     });
+    env.addGlobal('randomword', () => 'test');
+    return env;
 }
 
 function buildRenderContext({ promptUsesCaching, omitGameHistory }) {
@@ -73,6 +75,8 @@ function buildRenderContext({ promptUsesCaching, omitGameHistory }) {
         plotSummary: '',
         plotExpander: '',
         worldTime: {
+            dayIndex: 0,
+            timeMinutes: 720,
             dateLabel: 'Day 1',
             timeLabel: '12:00 PM',
             segment: 'Noon',

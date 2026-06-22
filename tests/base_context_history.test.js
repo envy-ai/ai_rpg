@@ -135,6 +135,37 @@ test('game improvement suggestions are excluded even in all-entry mode', () => {
     );
 });
 
+test('housekeeping tracker and relationship update entries are excluded even in all-entry mode', () => {
+    const entries = [
+        {
+            type: 'tracker-updates',
+            role: 'assistant',
+            content: '## Tracker Updates\n\n- Added **Gate Stability**: 60%'
+        },
+        {
+            type: 'relationship-updates',
+            role: 'assistant',
+            content: '## Relationship Updates\n\n- Added **Mira** -> **Neka**: trusted ally'
+        }
+    ];
+
+    for (const entry of entries) {
+        assert.equal(
+            shouldIncludeEntryInBaseContextHistory(entry, {
+                hasRenderableContent: true
+            }),
+            false
+        );
+        assert.equal(
+            shouldIncludeEntryInBaseContextHistory(entry, {
+                includeAllEntryTypes: true,
+                hasRenderableContent: true
+            }),
+            false
+        );
+    }
+});
+
 test('generic prompt route requests full-entry-type base context while no-context prompt stays isolated', () => {
     const source = fs.readFileSync(require.resolve('../api.js'), 'utf8');
     assert.match(

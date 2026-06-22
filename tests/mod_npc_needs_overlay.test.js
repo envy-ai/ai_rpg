@@ -14,9 +14,11 @@ const {
 test('defs-only party-needs mod enables food and rest need bars for the player and party members only when explicitly enabled', () => {
     const previousBaseDir = Globals.baseDir;
     const previousConfig = Globals.config;
+    const previousCurrentPlayer = Globals.currentPlayer;
     const repoBaseDir = path.resolve(__dirname, '..');
 
     Player.clearRuntimeRegistries();
+    Globals.currentPlayer = null;
     Globals.baseDir = repoBaseDir;
     Globals.config = {
         ...(previousConfig && typeof previousConfig === 'object' ? previousConfig : {}),
@@ -41,6 +43,7 @@ test('defs-only party-needs mod enables food and rest need bars for the player a
             id: 'npc-needs-demo-player-test',
             name: 'Baato'
         });
+        Globals.currentPlayer = player;
         const npc = new Player({
             id: 'npc-needs-demo-test',
             name: 'Quartermaster Sola',
@@ -55,12 +58,12 @@ test('defs-only party-needs mod enables food and rest need bars for the player a
         assert.ok(!nonPartyNeedBarIds.includes('food'));
         assert.ok(!nonPartyNeedBarIds.includes('rest'));
 
-        npc.setInPlayerParty(true);
+        assert.equal(player.addPartyMember(npc.id), true);
         const partyNeedBarIds = npc.getNeedBars({ scope: 'active' }).map(bar => bar.id);
         assert.ok(partyNeedBarIds.includes('food'));
         assert.ok(partyNeedBarIds.includes('rest'));
 
-        npc.setInPlayerParty(false);
+        player.clearPartyMembers();
         const historicalNeedBarIds = npc.getNeedBars({ scope: 'active' }).map(bar => bar.id);
         assert.ok(historicalNeedBarIds.includes('food'));
         assert.ok(historicalNeedBarIds.includes('rest'));
@@ -69,6 +72,7 @@ test('defs-only party-needs mod enables food and rest need bars for the player a
         clearFrozenEnabledModManifests(repoBaseDir);
         Globals.baseDir = previousBaseDir;
         Globals.config = previousConfig;
+        Globals.currentPlayer = previousCurrentPlayer;
         Player.reloadDefinitionCaches({ refreshInstances: false });
     }
 });
@@ -76,6 +80,7 @@ test('defs-only party-needs mod enables food and rest need bars for the player a
 test('Player.reloadDefinitionCaches reapplies merged need-bar defs to already loaded party NPCs', () => {
     const previousBaseDir = Globals.baseDir;
     const previousConfig = Globals.config;
+    const previousCurrentPlayer = Globals.currentPlayer;
     const tempBaseDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ai-rpg-npc-needs-'));
 
     const writeFile = (relativePath, content) => {
@@ -118,6 +123,7 @@ need_bars:
 `);
 
     Player.clearRuntimeRegistries();
+    Globals.currentPlayer = null;
     Globals.baseDir = tempBaseDir;
     Globals.config = {
         ...(previousConfig && typeof previousConfig === 'object' ? previousConfig : {}),
@@ -129,6 +135,11 @@ need_bars:
     Player.reloadDefinitionCaches({ refreshInstances: false });
 
     try {
+        const player = new Player({
+            id: 'npc-merged-needs-player',
+            name: 'Baato'
+        });
+        Globals.currentPlayer = player;
         const npc = new Player({
             id: 'npc-merged-needs-test',
             name: 'Dockworker Bren',
@@ -157,7 +168,7 @@ need_bars:
         assert.ok(!nonPartyAfterIds.includes('food'));
         assert.ok(!nonPartyAfterIds.includes('rest'));
 
-        npc.setInPlayerParty(true);
+        assert.equal(player.addPartyMember(npc.id), true);
         const partyAfterIds = npc.getNeedBars({ scope: 'active' }).map(bar => bar.id);
         assert.ok(partyAfterIds.includes('food'));
         assert.ok(partyAfterIds.includes('rest'));
@@ -166,6 +177,7 @@ need_bars:
         clearFrozenEnabledModManifests(tempBaseDir);
         Globals.baseDir = previousBaseDir;
         Globals.config = previousConfig;
+        Globals.currentPlayer = previousCurrentPlayer;
         Player.reloadDefinitionCaches({ refreshInstances: false });
         fs.rmSync(tempBaseDir, { recursive: true, force: true });
     }

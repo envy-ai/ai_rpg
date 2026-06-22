@@ -38,6 +38,22 @@ Response:
 - 200: `{ success: true, thing: Thing }`
 - 404: `{ success: false, error }`
 
+## POST /api/things/ai-search
+Run `prompts/ai-item-search.xml.njk` against a caller-supplied item list and search criteria.
+
+Request:
+- Body: `{ criteria: string, mode?: "strict" | "lenient", items: [{ id, name, description?, level?, quality?, quantity?, equipmentSlot? }] }`.
+
+Response:
+- 200: `{ success: true, criteria, mode, resultNames, matchedIds, unmatchedNames, response }`
+- 400: `{ success: false, error }` for missing criteria, missing item arrays, or malformed item records.
+- 500: `{ success: false, error }` when prompt rendering, transport, or result XML parsing fails.
+
+Notes:
+- The endpoint requires a parseable `<results>` block from the prompt and logs the prompt/response through `LLMClient.logPrompt()` with metadata label `ai_item_search`.
+- `resultNames` are the exact `<item>` names returned by the model. `matchedIds` contains all supplied item ids whose supplied names match those returned names case-insensitively after trimming, so duplicate item names all remain visible.
+- The route does not read from the global Thing registry; callers are responsible for sending the item list that should be searched.
+
 ## POST /api/mod-thing-context-actions/:actionId
 Execute a registered mod-owned Thing context-menu action.
 

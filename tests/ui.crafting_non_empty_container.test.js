@@ -68,6 +68,43 @@ this.isNonEmptyCraftingContainer = isNonEmptyCraftingContainer;`,
     };
 }
 
+function loadFetchContainedThingDetailsForContainers({ things = new Map() } = {}) {
+    const start = viewSource.indexOf('        async function fetchContainedThingDetailsForContainers(rootThings = [])');
+    const end = viewSource.indexOf('\n        const thingMenuState = {', start);
+    assert.notEqual(start, -1, 'Could not locate fetchContainedThingDetailsForContainers in views/index.njk');
+    assert.notEqual(end, -1, 'Could not locate end of fetchContainedThingDetailsForContainers in views/index.njk');
+
+    const context = {
+        Array,
+        Boolean,
+        Map,
+        Promise,
+        Set,
+        async fetchThingDetails(thingId) {
+            return things.get(thingId) || null;
+        },
+        cloneThingRecord(thing) {
+            return thing && typeof thing === 'object'
+                ? JSON.parse(JSON.stringify(thing))
+                : thing;
+        },
+        resolveThingBooleanFlag(thing, fieldName) {
+            const value = thing?.[fieldName] ?? thing?.metadata?.[fieldName];
+            if (typeof value === 'string') {
+                return ['true', '1', 'yes', 'y', 'on'].includes(value.trim().toLowerCase());
+            }
+            return Boolean(value);
+        }
+    };
+    vm.createContext(context);
+    vm.runInContext(
+        `${viewSource.slice(start, end)}
+this.fetchContainedThingDetailsForContainers = fetchContainedThingDetailsForContainers;`,
+        context
+    );
+    return context.fetchContainedThingDetailsForContainers;
+}
+
 test('crafting UI greys out non-empty containers and blocks assignment', () => {
     assertIncludes(viewSource, 'function isCraftingNonEmptyContainer(thing)');
     assertIncludes(viewSource, "card.classList.add('is-non-empty-container');");
@@ -140,6 +177,10 @@ test('crafting UI includes current-location items and scenery in the available p
     assertIncludes(viewSource, 'function getCurrentLocationContainerCraftingItems()');
     assertIncludes(viewSource, 'async function fetchContainedThingDetailsForContainers(rootThings = [])');
     assertIncludes(viewSource, 'function buildCraftingAvailableItems(playerInventoryItems = [], { includeLocationSources = true } = {})');
+    assertIncludes(viewSource, 'const inventoryContainerContents = await fetchContainedThingDetailsForContainers(inventoryItems);');
+    assertIncludes(viewSource, 'const availablePlayerItems = inventoryContainerContents.length');
+    assertIncludes(viewSource, 'const refreshedInventoryContainerContents = await fetchContainedThingDetailsForContainers(updatedInventory);');
+    assertIncludes(viewSource, 'const refreshedPlayerItems = refreshedInventoryContainerContents.length');
     assertIncludes(viewSource, "appendItems(playerInventoryItems, 'player');");
     assertIncludes(viewSource, "appendItems(getCurrentLocationCraftingItems(), 'location');");
     assertIncludes(viewSource, "appendItems(getCurrentLocationCraftingScenery(), 'location');");
@@ -147,6 +188,51 @@ test('crafting UI includes current-location items and scenery in the available p
     assertIncludes(viewSource, 'includeLocationSources: currentCraftingMode !== \'modify-location\'');
     assertIncludes(viewSource, 'renderCraftingInventory(availableCraftingItems);');
     assertIncludes(viewSource, "craftingSourceType !== 'location'");
+});
+
+test('crafting UI fetches only unlocked container contents for crafting pickers without generating pending contents', async () => {
+    const unlockedContainer = {
+        id: 'unlocked-cabinet',
+        name: 'Unlocked Cabinet',
+        thingType: 'scenery',
+        isContainer: true,
+        containedThingIds: ['visible-wire', 'locked-box']
+    };
+    const lockedContainer = {
+        id: 'locked-crate',
+        name: 'Locked Crate',
+        thingType: 'item',
+        isContainer: true,
+        requiresCheckToOpen: true,
+        containedThingIds: ['hidden-gear']
+    };
+    const lockedNestedContainer = {
+        id: 'locked-box',
+        name: 'Locked Box',
+        thingType: 'item',
+        isContainer: true,
+        metadata: {
+            requiresCheckToOpen: 'true'
+        },
+        containedThingIds: ['hidden-spring']
+    };
+    const things = new Map([
+        ['visible-wire', { id: 'visible-wire', name: 'Visible Wire', thingType: 'item' }],
+        ['hidden-gear', { id: 'hidden-gear', name: 'Hidden Gear', thingType: 'item' }],
+        ['locked-box', lockedNestedContainer],
+        ['hidden-spring', { id: 'hidden-spring', name: 'Hidden Spring', thingType: 'item' }]
+    ]);
+    const fetchContainedThingDetailsForContainers = loadFetchContainedThingDetailsForContainers({ things });
+
+    const contents = await fetchContainedThingDetailsForContainers([unlockedContainer, lockedContainer]);
+    const ids = Array.from(contents, thing => thing.id);
+    const helperStart = viewSource.indexOf('        async function fetchContainedThingDetailsForContainers(rootThings = [])');
+    const helperEnd = viewSource.indexOf('\n        const thingMenuState = {', helperStart);
+    const helperSource = viewSource.slice(helperStart, helperEnd);
+
+    assert.deepEqual(ids.sort(), ['locked-box', 'visible-wire']);
+    assert.equal(things.has('hidden-spring'), true, 'test fixture remains unchanged; no generated item is created');
+    assert.doesNotMatch(helperSource, /\/api\/things\/\$\{encodeURIComponent\(containerId\)\}\/container/);
 });
 
 test('crafting API rejects non-empty containers submitted as inputs', () => {
@@ -171,18 +257,20 @@ test('crafting API rejects non-empty containers submitted as inputs', () => {
 });
 
 test('crafting API accepts only player-inventory or current-location inputs', () => {
+    assertIncludes(apiSource, 'function collectPlayerInventoryCraftingThingIds(player, { thingLookup = null } = {})');
     assertIncludes(apiSource, 'function collectLocationCraftingThingIds(location, { thingLookup = null } = {})');
     assertIncludes(apiSource, 'const locationThingIds = collectLocationCraftingThingIds(locationRecord);');
+    assertIncludes(apiSource, 'const playerInventoryThingIds = collectPlayerInventoryCraftingThingIds(currentPlayer);');
     assertIncludes(apiSource, 'const isThingInCurrentPlayerInventory = (thing) => (');
     assertIncludes(apiSource, 'const isThingInCurrentLocation = (thing) => {');
-    assertIncludes(apiSource, "is not in the current player's inventory, current location, or a container in the current location.");
+    assertIncludes(apiSource, "is not in the current player's inventory, a container in the current player's inventory, current location, or a container in the current location.");
     assertIncludes(apiSource, 'must be unequipped before it can be used for crafting.');
 });
 
 test('crafting docs describe non-empty container handling', () => {
     assertIncludes(craftingDocs, 'Non-empty containers cannot be selected as crafting inputs');
-    assertIncludes(craftingDocs, 'Selected inputs may come from the active player inventory, loose current-location items or scenery, or item contents inside containers in the current location');
-    assertIncludes(chatDocs, 'crafting picker lists active player inventory items, current-location items and scenery, and item contents inside current-location containers');
+    assertIncludes(craftingDocs, 'Selected inputs may come from the active player inventory, existing item contents inside unlocked containers in that inventory, loose current-location items or scenery, or existing item contents inside unlocked containers in the current location');
+    assertIncludes(chatDocs, 'crafting picker lists active player inventory items, existing item contents inside unlocked player-inventory containers, current-location items and scenery, and existing item contents inside unlocked current-location containers');
     assertIncludes(chatDocs, 'non-empty containers are greyed out');
 });
 

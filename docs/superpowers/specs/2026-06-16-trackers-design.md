@@ -48,28 +48,28 @@ New games and loaded games should clear and hydrate the runtime tracker registry
 
 ```xml
 <trackers>
-tracker_1 | Name | type=countdown | value=3 turns | hidden=false | lastUpdated=18 minutes ago | guidance=Update when the ritual advances, stalls, or is interrupted.
-tracker_2 | Name | type=percentage | value=45% | hidden=true | lastUpdated=2 hours ago | guidance=Update when the conspiracy's influence visibly grows or shrinks.
+tracker_1 | Name | type=countdown | value=3 turns | hidden=false | lastUpdated=18 minutes ago | guidance=Update when the ritual advances, stalls, or is interrupted. | note=Three turns remain because the second rite just completed.
+tracker_2 | Name | type=percentage | value=45% | hidden=true | lastUpdated=2 hours ago | guidance=Update when the conspiracy's influence visibly grows or shrinks. | note=Influence is below half because only two councilors have been compromised.
 </trackers>
 ```
 
-The prompt context should use plain text inside the tag, not a nested XML node per tracker. The LLM-facing base context includes `id`, `name`, `type`, `value`, `hidden`, formatted last-updated time, and the tracker description as compact `guidance=` text. Including guidance is necessary because the description tells the LLM how and when to update the tracker.
+The prompt context should use plain text inside the tag, not a nested XML node per tracker. The LLM-facing base context includes `id`, `name`, `type`, `value`, `hidden`, formatted last-updated time, the tracker description as compact `guidance=` text, and a private `note=` explaining why the current value is what it is. Including guidance is necessary because the description tells the LLM how and when to update the tracker.
 
 ## Chat Tools
 
 Add these built-in tools to `chat_tool_calls.js` and make them available wherever existing world-state mutators are available:
 
-- `addTracker({ name, type, value, hiddenFromPlayer, description })`
+- `addTracker({ name, type, value, hiddenFromPlayer, description, note? })`
 - `removeTracker({ tracker })`
-- `updateTracker({ tracker, value })`
+- `updateTracker({ tracker, value, note? })`
 
-`tracker` resolves by exact id first, then exact/loose name. Ambiguous name matches return visible candidate errors with ids. Tool results return compact XML with the tracker id, name, type, value, hidden flag, and last-updated display text.
+`tracker` resolves by exact id first, then exact/loose name. Ambiguous name matches return visible candidate errors with ids. Tool results return compact XML with the tracker id, name, type, value, hidden flag, last-updated display text, and private note.
 
 Tool behavior:
 
 - `addTracker` creates a tracker and stamps `lastUpdatedWorldMinute` to current world time.
 - `removeTracker` deletes exactly one existing tracker.
-- `updateTracker` only changes `value` and `lastUpdatedWorldMinute`.
+- `updateTracker` changes `value`, `lastUpdatedWorldMinute`, and optionally replaces `note`.
 
 Description and hidden flag are creation-only for this pass. If future editing is needed, it can be added as a fourth mutator without broadening the current tools.
 

@@ -71,11 +71,17 @@ Output exactly in this XML structure:
 </npcs>
 {% else %}
 {% if playerAbilitySelection and playerAbilitySelection.enabled %}
-Generate abilities only for this character.
 
-Generate exactly {{ playerAbilitySelection.optionsToGenerate }} abilities for level {{ playerAbilitySelection.targetLevel }}.
-All generated abilities must be unique, level-appropriate, and relevant to the character's class/race/history/personality.
-Every generated `<ability>` must set `<level>{{ playerAbilitySelection.targetLevel }}</level>`.
+<declinedAbilities>
+{% for abilityName in playerAbilitySelection.declinedAbilityNames %}  <name>{{ abilityName }}</name>
+  <description>One to two sentence description of the declined ability, including any special effects or conditions.</description>
+  {% endfor %}</declinedAbilities>
+   
+Considering the character's current abilities, class, race, recent actions, and personality, make a text-based list of {{ playerAbilitySelection.optionsToGenerate * 2 }} potential abilities that would be appropriate for this character to gain at level {{ playerAbilitySelection.targetLevel }}, each with a sentence comparing their similarity to the character's existing abilities. Then, choose {{ playerAbilitySelection.optionsToGenerate }} of those abilities to actually grant to the player, picking the ones that are the least similar to their existing abilities, and output them in the format below. Do not replicate any abilities listed in declinedAbilities (and don't create basically the same ability with a different name; that defeats the purpose of the player being able to decline abilities).
+
+{#Generate exactly {{ playerAbilitySelection.optionsToGenerate }} abilities for level {{ playerAbilitySelection.targetLevel }}.
+All generated abilities should be unique, level-appropriate, and relevant to the character's class/race/history/personality.
+#}Every generated `<ability>` must set `<level>{{ playerAbilitySelection.targetLevel }}</level>`.
 
 Do not generate abilities that duplicate any of these names (case-insensitive):
 <excludedAbilityNames>

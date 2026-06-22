@@ -64,6 +64,22 @@ The below context is an account of the current game state, including the setting
           {% endfor %}
         </containerContents>
   {%- endmacro %}
+  {% macro renderRelationshipPromptSections(character) -%}
+  {%- set outgoingRelationships = character.relationships | default([], true) -%}
+  {%- set incomingRelationships = character.reciprocalRelationships | default([], true) -%}
+  {%- if outgoingRelationships and outgoingRelationships | length %}
+    <relationships>
+      <!-- This is how this character relates to other characters -->
+{% for relationship in outgoingRelationships %}      {{ relationship.name }}: {{ relationship.label }}
+{% endfor %}    </relationships>
+  {%- endif %}
+  {%- if incomingRelationships and incomingRelationships | length %}
+    <reciprocalRelationships>
+      <!-- This is how other characters relate to this character -->
+{% for relationship in incomingRelationships %}      {{ relationship.name }}: {{ relationship.label }}
+{% endfor %}    </reciprocalRelationships>
+  {%- endif %}
+  {%- endmacro %}
   <setting>
     <name>{{ setting.name }}</name>
     <description>{{ setting.description }}</description>
@@ -235,6 +251,7 @@ The below context is an account of the current game state, including the setting
           </dispositionTowardsPlayer>
           {% endfor %}
         </dispositionsTowardsPlayer>
+        {{ renderRelationshipPromptSections(npc) }}
         <importantMemories>
           {% for entry in npc.selectedImportantMemories %}
           <memory>{{ entry.memory }}</memory>
@@ -448,6 +465,7 @@ The below context is an account of the current game state, including the setting
     <needs>
 {% for sentence in currentPlayer.needs %}      - {{ sentence }}
 {% endfor %}    </needs>
+    {{ renderRelationshipPromptSections(currentPlayer) }}
     {% if currentPlayer.modStatusSections and currentPlayer.modStatusSections.length %}
     <modStatus>
       {% for section in currentPlayer.modStatusSections %}
@@ -515,6 +533,7 @@ The below context is an account of the current game state, including the setting
         </dispositionTowardsPlayer>
         {% endfor %}
       </dispositionsTowardsPlayer>
+      {{ renderRelationshipPromptSections(member) }}
       <importantMemories>
         {% for entry in member.selectedImportantMemories %}
         <memory>{{ entry.memory }}</memory>
@@ -646,7 +665,7 @@ The below context is an account of the current game state, including the setting
   {% if trackers and trackers.length %}
   <trackers>
     {% for tracker in trackers %}
-    {{ tracker.id }} | {{ tracker.name }} | type={{ tracker.type }} | value={{ tracker.value }} | hidden={{ tracker.hidden }} | lastUpdated={{ tracker.lastUpdated }} | guidance={{ tracker.guidance }}
+    {{ tracker.id }} | {{ tracker.name }} | type={{ tracker.type }} | value={{ tracker.value }} | hidden={{ tracker.hidden }} | lastUpdated={{ tracker.lastUpdated }} | guidance={{ tracker.guidance }} | note={{ tracker.note | default("") }}
     {% endfor %}
   </trackers>
   {% endif %}

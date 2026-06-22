@@ -957,6 +957,13 @@ class CodexBridgeClient {
                 errors.push('AI model not specified');
             }
             if (
+                aiConfig.prefill !== undefined
+                && aiConfig.prefill !== null
+                && typeof aiConfig.prefill !== 'string'
+            ) {
+                errors.push('AI prefill must be a string or null when provided');
+            }
+            if (
                 aiConfig.reasoning_effort !== undefined
                 && aiConfig.reasoning_effort !== null
                 && aiConfig.reasoning_effort !== ''
@@ -964,12 +971,35 @@ class CodexBridgeClient {
             ) {
                 errors.push('AI reasoning_effort must be a string when provided');
             }
+            if (
+                aiConfig.sysprompt_append !== undefined
+                && aiConfig.sysprompt_append !== null
+                && typeof aiConfig.sysprompt_append !== 'string'
+            ) {
+                errors.push('AI sysprompt_append must be a string or null when provided');
+            }
             return errors;
         }
 
         const errors = [];
         if (!aiConfig.model) {
             errors.push('AI model not specified');
+        }
+        if (
+            aiConfig.prefill !== undefined
+            && aiConfig.prefill !== null
+            && typeof aiConfig.prefill !== 'string'
+        ) {
+            errors.push('AI prefill must be a string or null when provided');
+        } else if (typeof aiConfig.prefill === 'string' && aiConfig.prefill.trim()) {
+            errors.push('AI prefill is not supported with codex_cli_bridge');
+        }
+        if (
+            aiConfig.sysprompt_append !== undefined
+            && aiConfig.sysprompt_append !== null
+            && typeof aiConfig.sysprompt_append !== 'string'
+        ) {
+            errors.push('AI sysprompt_append must be a string or null when provided');
         }
         const bridgeConfig = aiConfig.codex_bridge;
         if (bridgeConfig !== undefined && bridgeConfig !== null && !isPlainObject(bridgeConfig)) {

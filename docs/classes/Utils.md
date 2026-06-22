@@ -50,7 +50,7 @@ Static utility helpers used across the server for set math, title casing, durati
   - Runs save migrations before object hydration, resets and seeds `IdGenerator`, restores `metadata.plotAnalysis` through `Globals.setPlotAnalysis(...)`, restores world time/calendar through `Globals.hydrateWorldTime(...)`, and loads chat and scene summaries.
   - Clears transient queues/maps supplied in `context` (`jobQueue`, image jobs, pending image work, NPC generation promises, generated images) and clears live registries/maps before re-instantiating saved entities.
   - Hydrates skills first, then factions, mystery boxes, mystery threads, scheduled events, things, players, generated images, chat history, locations, location exits, regions, and pending region stubs. Invalid skill/faction/thing/player/region entries are skipped with warnings.
-  - Calls `Player.clearRuntimeRegistries()` before rebuilding actors so stale in-memory instances do not survive a load.
+  - Calls `Player.clearRuntimeRegistries()` and clears static indexes for `Quest`, `Thing`, `Location`, `Region`, `Faction`, `MysteryBox`, `MysteryThread`, `ScheduledEvent`, and `Tracker` before rebuilding records so stale in-memory instances do not survive a load.
   - Normalizes non-string saved location descriptions to an empty string, restores saved `visited` and `favorite` flags, defaults missing `favorite` to false, and infers `visited` as true for non-stub legacy locations and false for stub legacy locations.
   - Defaults missing saved exit `travelTimeMinutes` values to `0`; invalid saved exit minute values throw.
   - Loads mystery boxes through `MysteryBox.loadAll(...)`, mystery threads through `MysteryThread.loadAll(...)`, and scheduled events through `ScheduledEvent.loadAll(...)`. Legacy saves with boxes but no threads hydrate those boxes into one inactive `Legacy Mystery Boxes` thread.
@@ -80,7 +80,7 @@ Static utility helpers used across the server for set math, title casing, durati
 - K-gram internals: `#normalizeKgramTokens`, `#buildKgramSet`, `#containsSubgram`.
 - XML internals: `#getDomParserInstance`, `#normalizeXmlWithCheerio`, parse diagnostic formatting, and bounded parse-failure diagnostics.
 - Save migration internals: hour-to-minute migration helpers, need-bar scaling helpers, and domain-ID migration helpers.
-- Lazy module getters: `#getLocationModule`, `#getLocationExitModule`, `#getRegionModule`, `#getThingModule`, `#getPlayerModule`, `#getSkillModule`, `#getFactionModule`, `#getMysteryBoxModule`, `#getMysteryThreadModule`, `#getScheduledEventModule`.
+- Lazy module getters: `#getLocationModule`, `#getLocationExitModule`, `#getRegionModule`, `#getThingModule`, `#getPlayerModule`, `#getSkillModule`, `#getFactionModule`, `#getQuestModule`, `#getMysteryBoxModule`, `#getMysteryThreadModule`, `#getScheduledEventModule`.
 
 ## Notes
 

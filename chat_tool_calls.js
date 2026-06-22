@@ -1,4 +1,5 @@
 const path = require('path');
+const { randomBytes } = require('crypto');
 const nunjucks = require('nunjucks');
 const { addEvalFilter } = require('./nunjucks_filters.js');
 const {
@@ -16,6 +17,8 @@ const Tracker = require('./Tracker.js');
 const MORE_INFO_MAX_MATCHES = 50;
 const CACHED_CHECK_TOOL_CALL_NOTE = 'You already made this tool call. Do not re-run tool calls for the same checks that you made in earlier drafts.';
 const TRACKER_TYPE_VALUES = Object.freeze(Tracker.validTypes);
+const RELATIONSHIP_LABEL_MAX_WORDS = 6;
+const RELATIONSHIP_LABEL_MAX_WORDS_TEXT = 'six';
 const UPDATE_MYSTERY_BOX_FIELD_NAMES = Object.freeze([
     'name',
     'keys',
@@ -81,6 +84,7 @@ const UPDATE_CHARACTER_FIELD_NAMES = Object.freeze([
     'skills',
     'statusEffects',
     'needBarApplicability',
+    'relationships',
     'willingToTrade'
 ]);
 const UPDATE_CHARACTER_FIELD_SET = new Set(UPDATE_CHARACTER_FIELD_NAMES);
@@ -230,6 +234,28 @@ const UPDATE_OBJECT_FIELD_NAMES_BY_TYPE = Object.freeze({
     ])
 });
 const CHAT_TOOL_DEFINITIONS = Object.freeze([
+    {
+        type: 'function',
+        function: {
+            name: 'generateRandomInteger',
+            description: 'Generate one random integer in an inclusive range where min <= result <= max.',
+            parameters: {
+                type: 'object',
+                properties: {
+                    min: {
+                        type: 'integer',
+                        description: 'Inclusive minimum integer result.'
+                    },
+                    max: {
+                        type: 'integer',
+                        description: 'Inclusive maximum integer result. Must be greater than or equal to min.'
+                    }
+                },
+                required: ['min', 'max'],
+                additionalProperties: false
+            }
+        }
+    },
     {
         type: 'function',
         function: {
@@ -1125,6 +1151,63 @@ const CHAT_TOOL_DEFINITIONS = Object.freeze([
     {
         type: 'function',
         function: {
+            name: 'setRelationship',
+            description: 'Set a short persisted relationship label from one non-player character to another. Neither character may be the current player. Available to regular prose, generic/scheduled mutation, and plot-analysis prompts. Provide reciprocalRelationship only when the reverse relationship should also be set; omit it to leave the reverse edge unchanged.',
+            parameters: {
+                type: 'object',
+                properties: {
+                    characterA: {
+                        type: 'string',
+                        description: 'Source character ID or exact/unique character name. Must not be the current player.'
+                    },
+                    characterB: {
+                        type: 'string',
+                        description: 'Target character ID or exact/unique character name. Must not be the current player.'
+                    },
+                    relationship: {
+                        type: 'string',
+                        description: 'Short label for how characterA relates to characterB. Must be six words or fewer.'
+                    },
+                    reciprocalRelationship: {
+                        type: 'string',
+                        description: 'Optional short label for how characterB relates to characterA. Must be six words or fewer. Omit or leave blank to leave the reverse edge unchanged.'
+                    },
+                    items: {
+                        type: 'array',
+                        minItems: 1,
+                        description: 'Optional batch mode. Each item is one relationship update with characterA, characterB, relationship, and optional reciprocalRelationship. When provided, every item is attempted and item-level errors are reported without blocking later items.',
+                        items: {
+                            type: 'object',
+                            properties: {
+                                characterA: {
+                                    type: 'string',
+                                    description: 'Source character ID or exact/unique character name. Must not be the current player.'
+                                },
+                                characterB: {
+                                    type: 'string',
+                                    description: 'Target character ID or exact/unique character name. Must not be the current player.'
+                                },
+                                relationship: {
+                                    type: 'string',
+                                    description: 'Short label for how characterA relates to characterB. Must be six words or fewer.'
+                                },
+                                reciprocalRelationship: {
+                                    type: 'string',
+                                    description: 'Optional short label for how characterB relates to characterA. Must be six words or fewer. Omit or leave blank to leave the reverse edge unchanged.'
+                                }
+                            },
+                            required: ['characterA', 'characterB', 'relationship'],
+                            additionalProperties: false
+                        }
+                    }
+                },
+                additionalProperties: false
+            }
+        }
+    },
+    {
+        type: 'function',
+        function: {
             name: 'addTracker',
             description: 'Create a persisted plot tracker for an important changing value. Available to regular prose, generic/scheduled mutation, and plot-analysis prompts. For countdown trackers, provide a concrete duration until the deadline; the game stores the absolute target time and displays remaining time automatically. Include concrete LLM guidance for when future tool calls should update it.',
             parameters: {
@@ -1141,7 +1224,7 @@ const CHAT_TOOL_DEFINITIONS = Object.freeze([
                     },
                     value: {
                         type: 'string',
-                        description: 'Initial value. For countdown use a concrete duration such as "29 days", "1 hour 30 minutes", or "00:45"; use x/total for x_out_of_total, a number followed by % for percentage, and at most three words for short_string.'
+                        description: 'Initial value. For countdown use a concrete duration such as "29 days", "1 hour 30 minutes", or "00:45"; use x/total for x_out_of_total, a number with optional % for percentage, and at most the configured word limit for short_string.'
                     },
                     hiddenFromPlayer: {
                         type: 'boolean',
@@ -1150,9 +1233,49 @@ const CHAT_TOOL_DEFINITIONS = Object.freeze([
                     description: {
                         type: 'string',
                         description: 'One paragraph of private LLM guidance explaining what the tracker means and exactly when to update it.'
+                    },
+                    note: {
+                        type: 'string',
+                        description: 'Optional private LLM note explaining why the initial value is what it is. Must be 100 words or fewer.'
+                    },
+                    items: {
+                        type: 'array',
+                        minItems: 1,
+                        description: 'Optional batch mode. Each item is one tracker creation with name, type, value, hiddenFromPlayer, description, and optional note. When provided, every item is attempted and item-level errors are reported without blocking later items.',
+                        items: {
+                            type: 'object',
+                            properties: {
+                                name: {
+                                    type: 'string',
+                                    description: 'Short display name for the tracked plot value.'
+                                },
+                                type: {
+                                    type: 'string',
+                                    enum: TRACKER_TYPE_VALUES,
+                                    description: 'Tracker value type.'
+                                },
+                                value: {
+                                    type: 'string',
+                                    description: 'Initial value. For countdown use a concrete duration such as "29 days", "1 hour 30 minutes", or "00:45"; use x/total for x_out_of_total, a number with optional % for percentage, and at most the configured word limit for short_string.'
+                                },
+                                hiddenFromPlayer: {
+                                    type: 'boolean',
+                                    description: 'Optional. Set true when the player should not normally see this tracker.'
+                                },
+                                description: {
+                                    type: 'string',
+                                    description: 'One paragraph of private LLM guidance explaining what the tracker means and exactly when to update it.'
+                                },
+                                note: {
+                                    type: 'string',
+                                    description: 'Optional private LLM note explaining why the initial value is what it is. Must be 100 words or fewer.'
+                                }
+                            },
+                            required: ['name', 'type', 'value', 'description'],
+                            additionalProperties: false
+                        }
                     }
                 },
-                required: ['name', 'type', 'value', 'description'],
                 additionalProperties: false
             }
         }
@@ -1171,10 +1294,37 @@ const CHAT_TOOL_DEFINITIONS = Object.freeze([
                     },
                     value: {
                         type: 'string',
-                        description: 'New value using the tracker type format. For countdown, provide a concrete duration until the new deadline.'
+                        description: 'New value using the tracker type format. For countdown, provide a concrete duration until the new deadline. For percentage, use a number with optional %.'
+                    },
+                    note: {
+                        type: 'string',
+                        description: 'Optional replacement private LLM note explaining why the new value is what it is. Must be 100 words or fewer. Omit to keep the current note unchanged.'
+                    },
+                    items: {
+                        type: 'array',
+                        minItems: 1,
+                        description: 'Optional batch mode. Each item is one tracker update with tracker, value, and optional note. When provided, every item is attempted and item-level errors are reported without blocking later items.',
+                        items: {
+                            type: 'object',
+                            properties: {
+                                tracker: {
+                                    type: 'string',
+                                    description: 'Tracker ID or exact/unique tracker name.'
+                                },
+                                value: {
+                                    type: 'string',
+                                    description: 'New value using the tracker type format. For countdown, provide a concrete duration until the new deadline. For percentage, use a number with optional %.'
+                                },
+                                note: {
+                                    type: 'string',
+                                    description: 'Optional replacement private LLM note explaining why the new value is what it is. Must be 100 words or fewer. Omit to keep the current note unchanged.'
+                                }
+                            },
+                            required: ['tracker', 'value'],
+                            additionalProperties: false
+                        }
                     }
                 },
-                required: ['tracker', 'value'],
                 additionalProperties: false
             }
         }
@@ -1190,9 +1340,46 @@ const CHAT_TOOL_DEFINITIONS = Object.freeze([
                     tracker: {
                         type: 'string',
                         description: 'Tracker ID or exact/unique tracker name.'
+                    },
+                    items: {
+                        type: 'array',
+                        minItems: 1,
+                        description: 'Optional batch mode. Each item is one tracker removal with tracker. When provided, every item is attempted and item-level errors are reported without blocking later items.',
+                        items: {
+                            type: 'object',
+                            properties: {
+                                tracker: {
+                                    type: 'string',
+                                    description: 'Tracker ID or exact/unique tracker name.'
+                                }
+                            },
+                            required: ['tracker'],
+                            additionalProperties: false
+                        }
                     }
                 },
-                required: ['tracker'],
+                additionalProperties: false
+            }
+        }
+    },
+    {
+        type: 'function',
+        function: {
+            name: 'createQuest',
+            description: 'Create or update a player quest from a concise quest summary using the same quest-generation and confirmation path as received_quest events. Requires an active client when a new quest needs player confirmation.',
+            parameters: {
+                type: 'object',
+                properties: {
+                    summary: {
+                        type: 'string',
+                        description: 'Concise description of the quest or task the player has taken on.'
+                    },
+                    giver: {
+                        type: 'string',
+                        description: 'Optional quest giver ID or exact/unique character name. Omit or leave blank when no giver applies.'
+                    }
+                },
+                required: ['summary'],
                 additionalProperties: false
             }
         }
@@ -1900,10 +2087,27 @@ const applyRegisteredThingFieldsToToolDefinition = (toolDefinition, {
     return toolDefinition;
 };
 
+const applyConfiguredTrackerLimitsToToolDefinition = (toolDefinition) => {
+    if (toolDefinition?.function?.name !== 'addTracker') {
+        return toolDefinition;
+    }
+
+    const valueSchema = toolDefinition.function.parameters.properties.value;
+    const description = `Initial value. For countdown use a concrete duration such as "29 days", "1 hour 30 minutes", or "00:45"; use x/total for x_out_of_total, a number with optional % for percentage, and at most ${Tracker.shortStringMaxWordsText()} words for short_string.`;
+    valueSchema.description = description;
+    const batchValueSchema = toolDefinition.function.parameters.properties.items?.items?.properties?.value;
+    if (batchValueSchema) {
+        batchValueSchema.description = description;
+    }
+    return toolDefinition;
+};
+
 const getChatToolDefinitions = ({ modExtensionRegistry = null, getActiveSettingSnapshot = null } = {}) => CHAT_TOOL_DEFINITIONS
-    .map(toolDefinition => applyRegisteredThingFieldsToToolDefinition(
-        cloneToolDefinition(toolDefinition),
-        { modExtensionRegistry, getActiveSettingSnapshot }
+    .map(toolDefinition => applyConfiguredTrackerLimitsToToolDefinition(
+        applyRegisteredThingFieldsToToolDefinition(
+            cloneToolDefinition(toolDefinition),
+            { modExtensionRegistry, getActiveSettingSnapshot }
+        )
     ));
 
 const ensureFunction = (value, name) => {
@@ -1977,6 +2181,67 @@ const renderXmlNode = (tagName, value, level = 0, attributes = null) => {
     }
     lines.push(`${xmlIndent(level)}</${tag}>`);
     return lines;
+};
+
+const randomBigIntBelow = (exclusiveUpperBound) => {
+    if (typeof exclusiveUpperBound !== 'bigint' || exclusiveUpperBound <= 0n) {
+        throw new Error('randomBigIntBelow requires a positive BigInt upper bound.');
+    }
+
+    const bitLength = exclusiveUpperBound.toString(2).length;
+    const byteLength = Math.ceil(bitLength / 8);
+    const sampleSpace = 1n << BigInt(byteLength * 8);
+    const rejectionCutoff = sampleSpace - (sampleSpace % exclusiveUpperBound);
+
+    for (let attempt = 0; attempt < 1024; attempt += 1) {
+        const sample = BigInt(`0x${randomBytes(byteLength).toString('hex')}`);
+        if (sample < rejectionCutoff) {
+            return sample % exclusiveUpperBound;
+        }
+    }
+
+    throw new Error('Unable to generate an unbiased random integer after 1024 attempts.');
+};
+
+const executeGenerateRandomIntegerTool = (args = {}) => {
+    const min = args?.min;
+    const max = args?.max;
+    if (!Number.isSafeInteger(min)) {
+        throw new ToolVisibleError('generateRandomInteger "min" must be a safe integer.', {
+            code: 'invalid_arguments'
+        });
+    }
+    if (!Number.isSafeInteger(max)) {
+        throw new ToolVisibleError('generateRandomInteger "max" must be a safe integer.', {
+            code: 'invalid_arguments'
+        });
+    }
+    if (min > max) {
+        throw new ToolVisibleError('generateRandomInteger requires min <= max.', {
+            code: 'invalid_arguments'
+        });
+    }
+
+    const minBigInt = BigInt(min);
+    const range = BigInt(max) - minBigInt + 1n;
+    const value = Number(minBigInt + randomBigIntBelow(range));
+    const lines = [
+        '<randomIntegerResult>',
+        `  <min>${xmlEscapeText(min)}</min>`,
+        `  <max>${xmlEscapeText(max)}</max>`,
+        `  <value>${xmlEscapeText(value)}</value>`,
+        '</randomIntegerResult>'
+    ];
+
+    return {
+        content: lines.join('\n'),
+        metadata: {
+            status: 'success',
+            min,
+            max,
+            value
+        }
+    };
 };
 
 const normalizeToolCallsForExecution = (toolCalls = [], { sourceLabel = 'tool response' } = {}) => {
@@ -2349,6 +2614,7 @@ const createChatToolRuntime = ({
     resolvePlausibilityCheck = null,
     resolveOpposedPlausibilityCheck = null,
     scheduleEvent = null,
+    createQuestFromEvent = null,
     getCurrentWorldMinute = null,
     formatTrackerLastUpdated = null,
     formatTrackerCountdownValue = null,
@@ -2391,6 +2657,9 @@ const createChatToolRuntime = ({
     }
     if (scheduleEvent !== null && scheduleEvent !== undefined) {
         ensureFunction(scheduleEvent, 'scheduleEvent');
+    }
+    if (createQuestFromEvent !== null && createQuestFromEvent !== undefined) {
+        ensureFunction(createQuestFromEvent, 'createQuestFromEvent');
     }
     if (getCurrentWorldMinute !== null && getCurrentWorldMinute !== undefined) {
         ensureFunction(getCurrentWorldMinute, 'getCurrentWorldMinute');
@@ -5699,6 +5968,14 @@ const createChatToolRuntime = ({
                     addOperation(fieldName, () => targetNpc.setNeedBarApplicability(value));
                     break;
                 }
+                case 'relationships': {
+                    const value = normalizeCharacterFieldMap(rawValue, { functionName, fieldName });
+                    if (typeof targetNpc.setRelationships !== 'function') {
+                        throw new ToolVisibleError(`${functionName} cannot update "relationships" on this NPC.`, { code: 'unsupported_field' });
+                    }
+                    addOperation(fieldName, () => targetNpc.setRelationships(value));
+                    break;
+                }
                 default:
                     throw new ToolVisibleError(
                         `${functionName} cannot update field "${fieldName}".`,
@@ -6165,6 +6442,7 @@ const createChatToolRuntime = ({
         ]);
         const objectFields = new Set([
             'needBarApplicability',
+            'relationships',
             'generationHints',
             'weatherState',
             'relations',
@@ -9868,6 +10146,7 @@ const createChatToolRuntime = ({
             formatLastUpdated: formatTrackerUpdatedAt,
             formatCountdownValue: formatTrackerCountdown
         });
+        data.note = typeof tracker?.note === 'string' ? tracker.note : '';
         return {
             data,
             lines: [
@@ -9881,6 +10160,7 @@ const createChatToolRuntime = ({
                 `    <hiddenFromPlayer>${data.hiddenFromPlayer === true}</hiddenFromPlayer>`,
                 `    <lastUpdated>${xmlEscapeText(data.lastUpdated)}</lastUpdated>`,
                 `    <lastUpdatedWorldMinute>${data.lastUpdatedWorldMinute}</lastUpdatedWorldMinute>`,
+                `    <note>${xmlEscapeText(data.note)}</note>`,
                 data.countdownUntilWorldMinute === null || data.countdownUntilWorldMinute === undefined
                     ? ''
                     : `    <countdownUntilWorldMinute>${data.countdownUntilWorldMinute}</countdownUntilWorldMinute>`,
@@ -9890,18 +10170,339 @@ const createChatToolRuntime = ({
         };
     };
 
-    const executeAddTrackerTool = ({
+    const buildBatchItemError = (functionName, error) => {
+        const visibleError = error instanceof ToolVisibleError
+            ? error
+            : new ToolVisibleError(
+                error?.message || `${functionName} item failed.`,
+                { code: 'tool_execution_error' }
+            );
+        return {
+            status: 'error',
+            code: visibleError.code,
+            message: visibleError.message,
+            candidates: Array.isArray(visibleError.candidates) ? visibleError.candidates : []
+        };
+    };
+
+    const executeBatchToolItems = ({ functionName, resultTag, items, executeItem }) => {
+        if (!Array.isArray(items)) {
+            throw new ToolVisibleError(
+                `${functionName} "items" must be a non-empty array when provided.`,
+                { code: 'invalid_arguments' }
+            );
+        }
+        if (!items.length) {
+            throw new ToolVisibleError(
+                `${functionName} "items" must include at least one item.`,
+                { code: 'invalid_arguments' }
+            );
+        }
+        if (typeof executeItem !== 'function') {
+            throw new Error(`${functionName} batch executor is not configured.`);
+        }
+
+        const itemResults = [];
+        for (let index = 0; index < items.length; index += 1) {
+            const item = items[index];
+            if (!item || typeof item !== 'object' || Array.isArray(item)) {
+                itemResults.push({
+                    index,
+                    status: 'error',
+                    code: 'invalid_arguments',
+                    message: `${functionName} item ${index + 1} must be an object.`,
+                    candidates: []
+                });
+                continue;
+            }
+
+            try {
+                const result = executeItem(item);
+                const metadata = result?.metadata && typeof result.metadata === 'object'
+                    ? result.metadata
+                    : {};
+                itemResults.push({
+                    index,
+                    ...metadata,
+                    status: 'success'
+                });
+            } catch (error) {
+                itemResults.push({
+                    index,
+                    ...buildBatchItemError(functionName, error)
+                });
+            }
+        }
+
+        const successCount = itemResults.filter(item => item.status === 'success').length;
+        const failureCount = itemResults.length - successCount;
+        const status = failureCount
+            ? (successCount ? 'partial_success' : 'failed')
+            : 'success';
+        const lines = [
+            `<${resultTag}>`,
+            `  <status>${xmlEscapeText(status)}</status>`,
+            `  <successCount>${successCount}</successCount>`,
+            `  <failureCount>${failureCount}</failureCount>`,
+            '  <items>'
+        ];
+        for (const itemResult of itemResults) {
+            lines.push(...renderXmlNode('item', itemResult, 2, {
+                index: itemResult.index,
+                status: itemResult.status
+            }));
+        }
+        lines.push('  </items>');
+        lines.push(`</${resultTag}>`);
+
+        return {
+            content: lines.join('\n'),
+            metadata: {
+                status,
+                successCount,
+                failureCount,
+                items: itemResults
+            }
+        };
+    };
+
+    const normalizeToolRelationshipLabel = (value, { functionName, fieldName, required = true } = {}) => {
+        if (!required && (value === null || value === undefined || value === '')) {
+            return null;
+        }
+        const normalized = normalizeRequiredString(value, { functionName, fieldName });
+        if (normalized.split(/\s+/).length > RELATIONSHIP_LABEL_MAX_WORDS) {
+            throw new ToolVisibleError(
+                `${functionName} "${fieldName}" must be ${RELATIONSHIP_LABEL_MAX_WORDS_TEXT} words or fewer.`,
+                { code: 'invalid_relationship' }
+            );
+        }
+        return normalized;
+    };
+
+    const buildRelationshipCharacterSummary = (character) => ({
+        id: normalizeOptionalString(character?.id),
+        name: normalizeOptionalString(character?.name)
+    });
+
+    const isCurrentPlayerRelationshipCharacter = (character, summary, currentPlayer) => {
+        if (!character) {
+            return false;
+        }
+        if (currentPlayer && character === currentPlayer) {
+            return true;
+        }
+        const currentPlayerId = normalizeOptionalString(currentPlayer?.id);
+        const characterId = normalizeOptionalString(summary?.id || character?.id);
+        if (currentPlayerId && characterId) {
+            return currentPlayerId === characterId;
+        }
+        return !currentPlayerId && character?.isNPC === false;
+    };
+
+    const assertRelationshipCharactersExcludeCurrentPlayer = ({
+        sourceCharacter,
+        targetCharacter,
+        sourceSummary,
+        targetSummary
+    }) => {
+        const currentPlayer = getCurrentPlayer();
+        if (
+            isCurrentPlayerRelationshipCharacter(sourceCharacter, sourceSummary, currentPlayer)
+            || isCurrentPlayerRelationshipCharacter(targetCharacter, targetSummary, currentPlayer)
+        ) {
+            throw new ToolVisibleError(
+                'setRelationship cannot involve the current player; both characterA and characterB must be non-player characters.',
+                { code: 'invalid_relationship' }
+            );
+        }
+    };
+
+    const executeSingleSetRelationshipTool = ({
+        action = null,
+        characterA,
+        characterB,
+        relationship,
+        reciprocalRelationship = null
+    } = {}, {
+        allowRelationshipRemoval = false
+    } = {}) => {
+        const functionName = 'setRelationship';
+        const normalizedAction = (normalizeOptionalString(action) || 'set').toLowerCase();
+        if (!['add', 'update', 'set', 'remove', 'delete'].includes(normalizedAction)) {
+            throw new ToolVisibleError(
+                'setRelationship "action" must be add, update, set, remove, or delete when provided.',
+                { code: 'invalid_relationship' }
+            );
+        }
+        const shouldRemoveRelationship = normalizedAction === 'remove' || normalizedAction === 'delete';
+        if (shouldRemoveRelationship && allowRelationshipRemoval !== true) {
+            throw new ToolVisibleError(
+                'setRelationship action "remove" is only available to parser-driven housekeeping.',
+                { code: 'unsupported_relationship_action' }
+            );
+        }
+        const characterAQuery = normalizeRequiredString(characterA, {
+            functionName,
+            fieldName: 'characterA'
+        });
+        const characterBQuery = normalizeRequiredString(characterB, {
+            functionName,
+            fieldName: 'characterB'
+        });
+        const relationshipLabel = shouldRemoveRelationship
+            ? null
+            : normalizeToolRelationshipLabel(relationship, {
+                functionName,
+                fieldName: 'relationship'
+            });
+        const reciprocalRelationshipLabel = shouldRemoveRelationship
+            ? null
+            : normalizeToolRelationshipLabel(reciprocalRelationship, {
+                functionName,
+                fieldName: 'reciprocalRelationship',
+                required: false
+            });
+
+        const sourceCharacter = resolveCharacterReference(characterAQuery, { fieldName: 'characterA' });
+        const targetCharacter = resolveCharacterReference(characterBQuery, { fieldName: 'characterB' });
+        const sourceSummary = buildRelationshipCharacterSummary(sourceCharacter);
+        const targetSummary = buildRelationshipCharacterSummary(targetCharacter);
+
+        assertRelationshipCharactersExcludeCurrentPlayer({
+            sourceCharacter,
+            targetCharacter,
+            sourceSummary,
+            targetSummary
+        });
+
+        if (sourceSummary.id && targetSummary.id && sourceSummary.id === targetSummary.id) {
+            throw new ToolVisibleError(
+                'setRelationship requires two different characters.',
+                { code: 'invalid_relationship' }
+            );
+        }
+        if (shouldRemoveRelationship && typeof sourceCharacter?.removeRelationship !== 'function') {
+            throw new ToolVisibleError(
+                `setRelationship cannot remove relationships on "${sourceSummary.name || characterAQuery}".`,
+                { code: 'unsupported_field' }
+            );
+        }
+        if (!shouldRemoveRelationship && typeof sourceCharacter?.setRelationship !== 'function') {
+            throw new ToolVisibleError(
+                `setRelationship cannot update relationships on "${sourceSummary.name || characterAQuery}".`,
+                { code: 'unsupported_field' }
+            );
+        }
+        if (reciprocalRelationshipLabel !== null && typeof targetCharacter?.setRelationship !== 'function') {
+            throw new ToolVisibleError(
+                `setRelationship cannot update reciprocal relationships on "${targetSummary.name || characterBQuery}".`,
+                { code: 'unsupported_field' }
+            );
+        }
+
+        const previousRelationship = typeof sourceCharacter?.getRelationship === 'function'
+            ? normalizeOptionalString(sourceCharacter.getRelationship(targetCharacter))
+            : null;
+        const previousReciprocalRelationship = reciprocalRelationshipLabel !== null
+            && typeof targetCharacter?.getRelationship === 'function'
+            ? normalizeOptionalString(targetCharacter.getRelationship(sourceCharacter))
+            : null;
+        let storedRelationship;
+        let storedReciprocalRelationship = null;
+        if (shouldRemoveRelationship) {
+            if (!previousRelationship) {
+                throw new ToolVisibleError(
+                    `No relationship from "${sourceSummary.name || characterAQuery}" to "${targetSummary.name || characterBQuery}" exists to remove.`,
+                    { code: 'relationship_not_found' }
+                );
+            }
+            try {
+                sourceCharacter.removeRelationship(targetCharacter);
+                storedRelationship = null;
+            } catch (error) {
+                throw new ToolVisibleError(
+                    `Failed to remove relationship from "${sourceSummary.name || characterAQuery}" to "${targetSummary.name || characterBQuery}": ${error?.message || error}`,
+                    { code: 'invalid_relationship' }
+                );
+            }
+        } else {
+            try {
+                storedRelationship = sourceCharacter.setRelationship(targetCharacter, relationshipLabel);
+                if (reciprocalRelationshipLabel !== null) {
+                    storedReciprocalRelationship = targetCharacter.setRelationship(sourceCharacter, reciprocalRelationshipLabel);
+                }
+            } catch (error) {
+                throw new ToolVisibleError(
+                    `Failed to set relationship between "${sourceSummary.name || characterAQuery}" and "${targetSummary.name || characterBQuery}": ${error?.message || error}`,
+                    { code: 'invalid_relationship' }
+                );
+            }
+        }
+
+        const lines = [
+            '<setRelationshipResult>',
+            '  <status>success</status>',
+            '  <characterA>',
+            `    <id>${xmlEscapeText(sourceSummary.id || '')}</id>`,
+            `    <name>${xmlEscapeText(sourceSummary.name || '')}</name>`,
+            '  </characterA>',
+            '  <characterB>',
+            `    <id>${xmlEscapeText(targetSummary.id || '')}</id>`,
+            `    <name>${xmlEscapeText(targetSummary.name || '')}</name>`,
+            '  </characterB>',
+            `  <relationship>${xmlEscapeText(storedRelationship || '')}</relationship>`,
+            `  <relationshipAction>${shouldRemoveRelationship ? 'deleted' : (previousRelationship ? 'updated' : 'added')}</relationshipAction>`
+        ];
+        if (storedReciprocalRelationship !== null) {
+            lines.push(`  <reciprocalRelationship>${xmlEscapeText(storedReciprocalRelationship)}</reciprocalRelationship>`);
+        }
+        lines.push('</setRelationshipResult>');
+
+        return {
+            content: lines.join('\n'),
+            metadata: {
+                status: 'success',
+                characterA: sourceSummary,
+                characterB: targetSummary,
+                previousRelationship,
+                relationship: storedRelationship,
+                relationshipAction: shouldRemoveRelationship ? 'deleted' : (previousRelationship ? 'updated' : 'added'),
+                previousReciprocalRelationship,
+                reciprocalRelationship: storedReciprocalRelationship,
+                reciprocalRelationshipAction: storedReciprocalRelationship !== null
+                    ? (previousReciprocalRelationship ? 'updated' : 'added')
+                    : null
+            }
+        };
+    };
+
+    const executeSetRelationshipTool = (args = {}, options = {}) => {
+        if (Object.prototype.hasOwnProperty.call(args || {}, 'items')) {
+            return executeBatchToolItems({
+                functionName: 'setRelationship',
+                resultTag: 'setRelationshipBatchResult',
+                items: args.items,
+                executeItem: item => executeSingleSetRelationshipTool(item, options)
+            });
+        }
+        return executeSingleSetRelationshipTool(args, options);
+    };
+
+    const executeSingleAddTrackerTool = ({
         name,
         type,
         value,
         hiddenFromPlayer = false,
-        description
+        description,
+        note
     } = {}) => {
         const functionName = 'addTracker';
         const normalizedName = normalizeRequiredString(name, { functionName, fieldName: 'name' });
         const normalizedType = normalizeRequiredString(type, { functionName, fieldName: 'type' });
         const normalizedValue = normalizeRequiredString(value, { functionName, fieldName: 'value' });
         const normalizedDescription = normalizeRequiredString(description, { functionName, fieldName: 'description' });
+        const normalizedNote = normalizeOptionalString(note) || '';
         const normalizedHidden = normalizeOptionalBoolean(hiddenFromPlayer, {
             functionName,
             fieldName: 'hiddenFromPlayer'
@@ -9917,7 +10518,8 @@ const createChatToolRuntime = ({
                 hiddenFromPlayer: normalizedHidden,
                 lastUpdatedWorldMinute: worldMinute,
                 deriveCountdownUntilWorldMinute: normalizedType === 'countdown',
-                description: normalizedDescription
+                description: normalizedDescription,
+                note: normalizedNote
             });
         } catch (error) {
             throw new ToolVisibleError(
@@ -9938,18 +10540,36 @@ const createChatToolRuntime = ({
                 hiddenFromPlayer: data.hiddenFromPlayer === true,
                 lastUpdated: data.lastUpdated,
                 lastUpdatedWorldMinute: data.lastUpdatedWorldMinute,
-                countdownUntilWorldMinute: data.countdownUntilWorldMinute
+                countdownUntilWorldMinute: data.countdownUntilWorldMinute,
+                note: data.note
             }
         };
     };
 
-    const executeUpdateTrackerTool = ({ tracker, value } = {}) => {
+    const executeAddTrackerTool = (args = {}) => {
+        if (Object.prototype.hasOwnProperty.call(args || {}, 'items')) {
+            return executeBatchToolItems({
+                functionName: 'addTracker',
+                resultTag: 'addTrackerBatchResult',
+                items: args.items,
+                executeItem: executeSingleAddTrackerTool
+            });
+        }
+        return executeSingleAddTrackerTool(args);
+    };
+
+    const executeSingleUpdateTrackerTool = ({ tracker, value, note } = {}) => {
         const functionName = 'updateTracker';
         const target = resolveTrackerTarget(tracker, { functionName });
         const normalizedValue = normalizeRequiredString(value, { functionName, fieldName: 'value' });
+        const hasNote = note !== undefined;
+        const normalizedNote = hasNote ? normalizeOptionalString(note) || '' : null;
         const worldMinute = getTrackerCurrentWorldMinute(functionName);
         try {
-            target.updateValue(normalizedValue, { worldMinute });
+            target.updateValue(normalizedValue, {
+                worldMinute,
+                ...(hasNote ? { note: normalizedNote } : {})
+            });
         } catch (error) {
             throw new ToolVisibleError(
                 `Failed to update tracker "${target.name || target.id || tracker}": ${error?.message || error}`,
@@ -9969,12 +10589,25 @@ const createChatToolRuntime = ({
                 hiddenFromPlayer: data.hiddenFromPlayer === true,
                 lastUpdated: data.lastUpdated,
                 lastUpdatedWorldMinute: data.lastUpdatedWorldMinute,
-                countdownUntilWorldMinute: data.countdownUntilWorldMinute
+                countdownUntilWorldMinute: data.countdownUntilWorldMinute,
+                note: data.note
             }
         };
     };
 
-    const executeRemoveTrackerTool = ({ tracker } = {}) => {
+    const executeUpdateTrackerTool = (args = {}) => {
+        if (Object.prototype.hasOwnProperty.call(args || {}, 'items')) {
+            return executeBatchToolItems({
+                functionName: 'updateTracker',
+                resultTag: 'updateTrackerBatchResult',
+                items: args.items,
+                executeItem: executeSingleUpdateTrackerTool
+            });
+        }
+        return executeSingleUpdateTrackerTool(args);
+    };
+
+    const executeSingleRemoveTrackerTool = ({ tracker } = {}) => {
         const functionName = 'removeTracker';
         const target = resolveTrackerTarget(tracker, { functionName });
         const removed = Tracker.removeById(target.id);
@@ -10001,7 +10634,103 @@ const createChatToolRuntime = ({
             metadata: {
                 status: 'success',
                 id: data.id,
-                name: data.name
+                name: data.name,
+                type: data.type,
+                value: data.value,
+                hiddenFromPlayer: data.hiddenFromPlayer === true,
+                lastUpdated: data.lastUpdated,
+                lastUpdatedWorldMinute: data.lastUpdatedWorldMinute,
+                countdownUntilWorldMinute: data.countdownUntilWorldMinute,
+                note: data.note
+            }
+        };
+    };
+
+    const executeRemoveTrackerTool = (args = {}) => {
+        if (Object.prototype.hasOwnProperty.call(args || {}, 'items')) {
+            return executeBatchToolItems({
+                functionName: 'removeTracker',
+                resultTag: 'removeTrackerBatchResult',
+                items: args.items,
+                executeItem: executeSingleRemoveTrackerTool
+            });
+        }
+        return executeSingleRemoveTrackerTool(args);
+    };
+
+    const executeCreateQuestTool = async ({ summary, giver = null } = {}, { promptStream = null } = {}) => {
+        const functionName = 'createQuest';
+        if (typeof createQuestFromEvent !== 'function') {
+            throw new Error('createQuest handler is not configured.');
+        }
+
+        const normalizedSummary = normalizeRequiredString(summary, {
+            functionName,
+            fieldName: 'summary'
+        });
+        const normalizedGiver = normalizeOptionalString(giver);
+        const request = { summary: normalizedSummary };
+        if (normalizedGiver) {
+            request.giver = normalizedGiver;
+        }
+        if (promptStream) {
+            request.stream = promptStream;
+        }
+
+        const result = await createQuestFromEvent(request);
+        if (!result || typeof result !== 'object') {
+            throw new Error('createQuest handler must return quest creation details.');
+        }
+
+        const questsAwarded = Array.isArray(result.questsAwarded)
+            ? result.questsAwarded
+            : [];
+        const updatedQuests = Array.isArray(result.updatedQuests)
+            ? result.updatedQuests
+            : [];
+        const status = questsAwarded.length || updatedQuests.length
+            ? 'success'
+            : 'not_created';
+        const lines = [
+            '<createQuestResult>',
+            `  <status>${xmlEscapeText(status)}</status>`,
+            '  <questsAwarded>'
+        ];
+        for (const quest of questsAwarded) {
+            lines.push('    <quest>');
+            lines.push(`      <id>${xmlEscapeText(toTrimmedString(quest?.id))}</id>`);
+            lines.push(`      <name>${xmlEscapeText(toTrimmedString(quest?.name))}</name>`);
+            if (toTrimmedString(quest?.summary)) {
+                lines.push(`      <summary>${xmlEscapeText(toTrimmedString(quest.summary))}</summary>`);
+            }
+            if (toTrimmedString(quest?.giver)) {
+                lines.push(`      <giver>${xmlEscapeText(toTrimmedString(quest.giver))}</giver>`);
+            }
+            if (typeof quest?.accepted === 'boolean') {
+                lines.push(`      <accepted>${quest.accepted ? 'true' : 'false'}</accepted>`);
+            }
+            lines.push('    </quest>');
+        }
+        lines.push('  </questsAwarded>');
+        lines.push('  <updatedQuests>');
+        for (const quest of updatedQuests) {
+            lines.push('    <quest>');
+            lines.push(`      <id>${xmlEscapeText(toTrimmedString(quest?.id))}</id>`);
+            lines.push(`      <name>${xmlEscapeText(toTrimmedString(quest?.name))}</name>`);
+            if (toTrimmedString(quest?.summary)) {
+                lines.push(`      <summary>${xmlEscapeText(toTrimmedString(quest.summary))}</summary>`);
+            }
+            lines.push('    </quest>');
+        }
+        lines.push('  </updatedQuests>');
+        lines.push('</createQuestResult>');
+
+        return {
+            content: lines.join('\n'),
+            metadata: {
+                status,
+                questsAwarded,
+                updatedQuests
             }
         };
     };
@@ -10124,7 +10853,9 @@ const createChatToolRuntime = ({
             defaultActorName = null,
             includeAllHistoryEntryTypes = false,
             requestUserInputHandler = null,
-            forcedSkillCheckRoll = null
+            forcedSkillCheckRoll = null,
+            promptStream = null,
+            allowRelationshipRemoval = false
         } = {}
     ) => {
         if (!toolCall || typeof toolCall !== 'object') {
@@ -10167,6 +10898,8 @@ const createChatToolRuntime = ({
                 toolResult = executeRequestUserInputTool(argumentsObject, {
                     requestUserInputHandler
                 });
+            } else if (toolCall.functionName === 'generateRandomInteger') {
+                toolResult = executeGenerateRandomIntegerTool(argumentsObject);
             } else if (toolCall.functionName === 'listMysteryBoxes') {
                 toolResult = executeListMysteryBoxesTool(argumentsObject);
             } else if (toolCall.functionName === 'findMysteryBoxes') {
@@ -10209,12 +10942,20 @@ const createChatToolRuntime = ({
                 toolResult = executeDeleteThingTool(argumentsObject, {
                     requestUserInputHandler
                 });
+            } else if (toolCall.functionName === 'setRelationship') {
+                toolResult = executeSetRelationshipTool(argumentsObject, {
+                    allowRelationshipRemoval
+                });
             } else if (toolCall.functionName === 'addTracker') {
                 toolResult = executeAddTrackerTool(argumentsObject);
             } else if (toolCall.functionName === 'updateTracker') {
                 toolResult = executeUpdateTrackerTool(argumentsObject);
             } else if (toolCall.functionName === 'removeTracker') {
                 toolResult = executeRemoveTrackerTool(argumentsObject);
+            } else if (toolCall.functionName === 'createQuest') {
+                toolResult = executeCreateQuestTool(argumentsObject, {
+                    promptStream
+                });
             } else if (toolCall.functionName === 'scheduleEvent') {
                 toolResult = executeScheduleEventTool(argumentsObject);
             } else if (toolCall.functionName === 'alterThing') {
@@ -10449,6 +11190,20 @@ const createChatToolRuntime = ({
                 delete roundOptions.parallel_tool_calls;
                 roundOptions.tool_choice = 'none';
                 roundOptions.function_call = 'none';
+                if (
+                    roundOptions.additionalPayload
+                    && typeof roundOptions.additionalPayload === 'object'
+                    && !Array.isArray(roundOptions.additionalPayload)
+                ) {
+                    roundOptions.additionalPayload = {
+                        ...roundOptions.additionalPayload
+                    };
+                    delete roundOptions.additionalPayload.tools;
+                    delete roundOptions.additionalPayload.functions;
+                    delete roundOptions.additionalPayload.parallel_tool_calls;
+                    roundOptions.additionalPayload.tool_choice = 'none';
+                    roundOptions.additionalPayload.function_call = 'none';
+                }
             }
 
             aiResponse = await LLMClient.chatCompletion(roundOptions);
@@ -10553,7 +11308,8 @@ const createChatToolRuntime = ({
                             defaultActorName,
                             includeAllHistoryEntryTypes,
                             requestUserInputHandler,
-                            forcedSkillCheckRoll
+                            forcedSkillCheckRoll,
+                            promptStream: streamEmitter
                         });
                     if (!toolResult || typeof toolResult.content !== 'string' || !toolResult.content.trim()) {
                         throw new Error(`Tool "${toolCall.functionName}" returned empty content.`);

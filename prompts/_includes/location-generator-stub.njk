@@ -70,7 +70,7 @@ Return ONLY the following fields, in this format:
     <!-- Briefly describe 5 random story events that are specifically relevant to this location. Each event should be 1-2 sentences long. Have some be favorable, some unfavorable, and some neutral. -->
     <event><!-- 1-2 sentence description of an event --></event>
     <event><!-- 1-2 sentence description of an event --></event>
-  </randomStoryEvents>
+  </randomStoryEvents>#}
   <characterConcepts>
     <!-- If the location is not abandoned, generate 10 interesting character concepts appropriate for this location (if it's abandoned, just leave this section empty). These are not full NPCs, just brief concepts that could be used to create NPCs later. Format them one per line, as follows: -->
     - <!-- 1-2 sentence description of a character concept -->
@@ -81,5 +81,5 @@ Return ONLY the following fields, in this format:
     - <!-- 1-2 sentence description of an enemy concept -->
     - <!-- 1-2 sentence description of an enemy concept -->
   </enemyConcepts>
-  #}{% if not stubHasShortDescription -%}<shortDescription><!--5-10 word summary to reduce context vs full XML. Try to get the essence of the location across clearly and concisely. Don't mention the location by name.--></shortDescription>{% endif %}
+  {% if not stubHasShortDescription -%}<shortDescription><!--5-10 word summary to reduce context vs full XML. Try to get the essence of the location across clearly and concisely. Don't mention the location by name.--></shortDescription>{% endif %}
 </location>

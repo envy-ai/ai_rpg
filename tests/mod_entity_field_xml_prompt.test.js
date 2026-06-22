@@ -8,6 +8,9 @@ const nunjucks = require('nunjucks');
 const Globals = require('../Globals.js');
 const ModExtensionRegistry = require('../ModExtensionRegistry.js');
 const Utils = require('../Utils.js');
+const {
+    buildActorRelationshipPromptContext
+} = require('../base_context_relationships.js');
 
 function createPromptEnv() {
     return nunjucks.configure(path.join(process.cwd(), 'prompts'), {
@@ -109,6 +112,8 @@ function loadBuildBasePromptContext(registry) {
         },
         buildActiveMysteryThreadsForPrompt: () => [],
         buildNpcRepresentationSummaryForPrompt: () => '',
+        buildActorRelationshipPromptContext,
+        buildTrackersForPrompt: () => [],
         buildSettingPromptContext: () => ({
             name: 'Test Setting',
             description: 'A test setting.',

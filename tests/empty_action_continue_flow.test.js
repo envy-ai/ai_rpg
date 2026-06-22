@@ -32,6 +32,6 @@ test('empty input opens confirmation and confirmed empty action submits intentio
 test('empty player actions skip attack and plausibility checks before prompt rendering', () => {
     assert.match(apiSource, /const isEmptyPlayerAction\s*=\s*!isPromptOnlyAction[\s\S]*?sanitizedUserContent\.trim\(\)\.length === 0/);
     assert.match(apiSource, /emptyPlayerAction(?:\s*:|\s*=)\s*Boolean\(isEmptyPlayerAction\)/);
-    assert.match(apiSource, /if\s*\(\s*!isEmptyPlayerAction\s*&&\s*!isCreativeModeAction\s*&&\s*!isForcedEventAction\s*&&\s*plausibilityChecksEnabled\s*\)/);
+    assert.match(apiSource, /if\s*\(\s*!isEmptyPlayerAction\s*&&\s*!isCreativeModeAction\s*&&\s*!isForcedEventAction\s*&&\s*plausibilityChecksEnabled\s*&&\s*legacyPromptChecksEnabled\s*\)/);
     assert.doesNotMatch(apiSource, /runAttackCheckPrompt\(\{[\s\S]{0,500}?isEmptyPlayerAction[\s\S]{0,500}?runPlausibilityCheck/);
 });

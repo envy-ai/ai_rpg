@@ -37,6 +37,7 @@ Represents a player-owned quest with objectives, reward metadata, giver metadata
 ## Static API
 - `getByName(name)`: sanitized, case/punctuation-insensitive lookup from the construction-time name index.
 - `getById(id)`: trimmed id lookup from the construction-time id index.
+- `clear()`: clears the static quest name/id indexes. New-game reset and save hydration call this so quests from a previous game cannot resolve by stale id or name.
 - `fromJSON(data)`: validates saved quest data, constructs a `Quest`, then replaces the objective list with `QuestObjective.fromJSON(...)` results. Invalid objectives are skipped with a console warning.
 - `filterActiveQuests(quests, { includePaused })`: requires an array and filters out completed quests; paused quests are excluded unless `includePaused` is true.
 - `normalizeRewardNpcDispositions(value)`: validates and copies NPC disposition reward entries into the stored shape.
@@ -68,6 +69,7 @@ Represents a player-owned quest with objectives, reward metadata, giver metadata
 - `DELETE /api/player/quests/:questId` removes a quest from the current player's stored quest list and does not move it to completed quests.
 - The quest panel reads `/api/player`, renders active and completed quest sections, supports edit/pause/abandon controls for active quests, and displays reward summaries. NPC disposition reward reasons are stored for reward application but omitted from quest-list disposition pills.
 - Chat tool field updates include quest and objective targets from the player's current and completed quests, with `rewardItems`, `rewardFactionReputation`, `rewardNpcDispositions`, `rewardClaimed`, `paused`, `completed`, and `optional` among the allowed persisted fields.
+- `createQuest({ summary, giver? })` is a mutation-capable chat tool for generic prompts and scheduled-event resolution. Parser-only housekeeping can still create quests by returning `<quests>` XML, which is converted afterward into `createQuest` executor calls. The executor feeds the supplied summary/giver into the same `received_quest` event handler used by event checks, including the quest-generation prompt, duplicate/update handling, reward normalization, and player confirmation for new quests.
 
 ## Operational Notes
 - `Quest.QuestObjective` is assigned for external access to the helper class.

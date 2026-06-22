@@ -233,3 +233,67 @@ test('fill_exit_travel_times force=true regenerates populated exit times', async
         Region.clear();
     }
 });
+
+test('fill_exit_travel_times reports nonfatal prompt failures and continues', async () => {
+    const previousGameLoaded = Globals.gameLoaded;
+    const createdLocations = [];
+
+    Region.clear();
+    try {
+        Globals.gameLoaded = true;
+
+        const region = new Region({
+            id: 'fill-exit-times-prompt-failure-region',
+            name: 'Glass Harbor',
+            description: 'A polished port full of mirrored bridges.'
+        });
+
+        const origin = new Location({
+            id: 'fill-exit-times-prompt-failure-origin',
+            name: 'South Pier',
+            description: 'A long pier lined with steel pylons.',
+            regionId: region.id
+        });
+        const destination = new Location({
+            id: 'fill-exit-times-prompt-failure-destination',
+            name: 'Customs Arch',
+            description: 'An archway of scanners and guards.',
+            regionId: region.id
+        });
+        createdLocations.push(origin, destination);
+
+        origin.addExit('north', new LocationExit({
+            id: 'fill-exit-times-prompt-failure-north',
+            description: 'To customs',
+            destination: destination.id,
+            travelTimeMinutes: 0,
+            bidirectional: true
+        }));
+
+        let replyPayload = null;
+
+        await FillExitTravelTimesCommand.execute({
+            backfillRegionExitTravelTimes: async ({ region: passedRegion }) => ({
+                regionId: passedRegion.id,
+                regionName: passedRegion.name,
+                promptFailed: true,
+                promptError: 'prompt parse failed',
+                promptedExitCount: 1,
+                generatedExitCount: 0,
+                mirroredReverseCount: 0,
+                copiedFromReverseCount: 0
+            }),
+            reply: async (payload) => {
+                replyPayload = payload;
+            }
+        });
+
+        assert.ok(replyPayload);
+        assert.match(replyPayload.content, /Prompt failures: 1/);
+        assert.match(replyPayload.content, /- Glass Harbor: prompt failed: prompt parse failed/);
+    } finally {
+        Globals.gameLoaded = previousGameLoaded;
+        removeLocationsFromIndex(createdLocations);
+        Region.clear();
+    }
+});

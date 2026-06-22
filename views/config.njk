@@ -90,6 +90,7 @@
                     {% set codexReasoningEffortValue = codexBridgeConfig.reasoning_effort or '' %}
                     {% set codexProfileValue = codexBridgeConfig.profile or '' %}
                     {% set codexPromptPreambleValue = codexBridgeConfig.prompt_preamble or '' %}
+                    {% set aiSyspromptAppendValue = config.ai.sysprompt_append or '' %}
                     <div class="form-grid">
                         <div class="form-group full-width">
                             <label for="ai-backend">Backend:</label>
@@ -253,6 +254,14 @@
                             <label for="model-options">Model Swap Options (JSON Array):</label>
                             <textarea id="model-options" name="model_swap_options::string-array" rows="4">{{ modelOptions | dump }}</textarea>
                             <span class="help-text">Edit as JSON array of model names, e.g. ["model-a","model-b"]</span>
+                        </div>
+
+                        <div class="form-group full-width">
+                            <label for="ai-syspromptAppend">System Prompt Append:</label>
+                            <textarea id="ai-syspromptAppend"
+                                      name="ai.sysprompt_append::string"
+                                      rows="4">{{ aiSyspromptAppendValue }}</textarea>
+                            <span class="help-text">Optional model-specific system instructions appended to every outbound prompt.</span>
                         </div>
                         
                         <div class="form-group">

@@ -17,14 +17,14 @@ This page maps server-rendered routes to templates, shared page chrome, injected
 - Styles: `/css/main.css`, `/css/map.css`, plus mod styles from `ModLoader.getModClientStyles()`.
 - Scripts:
   - Vendor/domain libraries: `/vendor/cytoscape.min.js`, `/vendor/layout-base.js`, `/vendor/cose-base.js`, `/vendor/cytoscape-fcose.js`, `/vendor/cytoscape-euler.js`, `/vendor/nunjucks.js`, `/vendor/markdown-it.min.js`, `/vendor/json-viewer.js`.
-  - App scripts: `/js/cytoscape-convex-hull.js`, `/js/lightbox.js`, `/js/image-manager.js`, `/js/currency-utils.js`, `/js/formula-evaluator.js`, `/js/attribute-skill-allocator.js`, `/js/turn-state-diff-drawer.js`, `/js/chat.js`, `/js/map.js`, `/js/world-map.js`, `/js/player-stats.js`.
+  - App scripts: `/js/cytoscape-convex-hull.js`, `/js/lightbox.js`, `/js/image-manager.js`, `/js/currency-utils.js`, `/js/formula-evaluator.js`, `/js/attribute-skill-allocator.js`, `/js/turn-state-diff-drawer.js`, `/js/chat.js`, `/js/map.js`, `/js/world-map.js`, `/js/relationship-graph.js`, `/js/player-stats.js`.
   - Mod client scripts from `ModLoader.getModClientScripts()`.
 - Data injected by `server.js`:
   - `chatHistory`, `currentPage`, `gameLoaded`, `player`, `availableSkills`, `currentSetting`.
   - `pointPoolFormulas`, `rarityDefinitions`, `needBarDefinitions`, `checkMovePlausibility`, `baseWeaponDamage`, `clientMessageHistory`.
   - `saveMetadata`, `vehicleDebugEnabled`, `thingImageBadges`, `thingContextActions`, `thingEditFields`, `modScripts`, `modStyles`.
 - Inline script responsibilities:
-  - Tab switching (`initTabs`), map triggers, party/faction/quest panels, Story Tools history paging/editor panels, Story Tools search/filter/highlighting, Scene Summaries, and Mystery Boxes.
+  - Tab switching (`initTabs`), map and relationship graph triggers, party/faction/quest panels, Story Tools history paging/editor panels, Story Tools search/filter/highlighting, Scene Summaries, and Mystery Boxes.
   - Location display, location/stub edit modals, NPC/player/thing edit flows, crafting/salvage/harvest modals, save/load modals, and turn state UI wiring.
   - Region edit modal fields for name, description, short description, parent region, average level, controlling faction, shared vehicle info, and `Region Secrets`.
   - Region weather edit modal from location/map context menus; it edits `Region.weather` through `/api/regions/:id` with dynamic-weather, per-season weather groups, and weather-type name/description/frequency/duration fields.
@@ -65,7 +65,7 @@ This page maps server-rendered routes to templates, shared page chrome, injected
 - Data injected by `server.js`: `config`, `modConfigs`, `modelOptions`, `savedMessage`, `errorMessage`, `gameConfigOverrideYaml`, `gameLoaded`.
 - The app header nav label is `System`; the page title is `System Configuration`.
 - The page has `Server Configuration` and `Game Configuration` tabs.
-- The AI section has a backend selector. `openai_compatible` displays endpoint/API-key inputs. `codex_cli_bridge` displays command, home, model/session settings, sandbox, reasoning effort, profile, skip-git-check, prompt preamble, and session-id validation for `resume_id`.
+- The AI section has a backend selector. `openai_compatible` displays endpoint/API-key inputs. `codex_cli_bridge` displays command, home, model/session settings, sandbox, reasoning effort, profile, skip-git-check, prompt preamble, and session-id validation for `resume_id`. Shared AI controls include model swap options and the global `ai.sysprompt_append` textarea for model-specific system instructions.
 - Image Generation includes prompt batching controls for enablement, delay, and maximum compatible prompts per batch.
 - Gameplay Tuning includes Debug Tool Calls, Show Hidden Notes in Story Tools, and the compatibility prompt-check toggle for attack/skill checks.
 - The `Game Configuration` tab exposes a fixed-width YAML textarea for the loaded game's runtime config override. It saves through `PUT /api/game-config-override`, reloads merged config on change, persists to the save as `gameConfigOverride.yaml`, and is disabled until a game is loaded.

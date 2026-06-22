@@ -3,6 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('fs');
 const vm = require('vm');
 const { DOMParser } = require('@xmldom/xmldom');
+const ProjectUtils = require('../Utils.js');
 
 function normalizemoveTurnResultDestinationField(value) {
     if (typeof value !== 'string') {
@@ -297,7 +298,8 @@ function loadWhileYouWereAwayHelpers({
         Map,
         console,
         Utils: {
-            parseXmlDocument: (xml, mimeType) => new DOMParser().parseFromString(xml, mimeType)
+            parseXmlDocument: (xml, mimeType) => new DOMParser().parseFromString(xml, mimeType),
+            formatAbsoluteWorldMinutesAgo: ProjectUtils.formatAbsoluteWorldMinutesAgo
         },
         config,
         Globals: {
@@ -1037,6 +1039,7 @@ test('runWhileYouWereAwayPrompt runs scoped event checks while ignoring handled 
     assert.match(eventCheckCalls[0].textToCheck, /Mira repaired the old notice board/);
     assert.match(eventCheckCalls[0].textToCheck, /The notice board has a fresh brace/);
     assert.equal(eventCheckCalls[0].suppressNeedBarEventChecks, true);
+    assert.equal(eventCheckCalls[0].suppressHousekeeping, true);
     assert.equal(eventCheckCalls[0].suppressMoveEvents, true);
     assert.equal(eventCheckCalls[0].suppressTimeAdvance, true);
     assert.deepEqual(Array.from(eventCheckCalls[0].ignoredEventKeys).sort(), ['needbar_change', 'npc_arrival_departure', 'thing_move_with_character'].sort());
@@ -1417,6 +1420,113 @@ test('runWhileYouWereAwayPrompt includes NPC candidates regardless of individual
     assert.match(result.hiddenEntry.content, /Mira only just ducked out of sight\./);
     assert.equal(result.visibleEntry.type, 'while-you-were-away-player');
     assert.equal(result.visibleEntry.content, 'The square has gone quiet since you last passed through.');
+});
+
+test('runWhileYouWereAwayPrompt synthesizes current-location candidates from pre-arrival location visit time', async () => {
+    const square = createLocation({
+        id: 'square',
+        name: 'Town Square',
+        regionId: 'alpha',
+        npcIds: ['mira', 'toma', 'shade'],
+        visited: true,
+        lastVisitedTime: 120
+    });
+    const regions = new Map([
+        ['alpha', { id: 'alpha', name: 'Alpha', locationIds: ['square'], entranceLocationId: 'square' }]
+    ]);
+    const gameLocations = new Map([[square.id, square]]);
+
+    const mira = {
+        id: 'mira',
+        isNPC: true,
+        name: 'Mira',
+        currentLocation: 'square',
+        getNeedBars() {
+            return [];
+        }
+    };
+    const toma = {
+        id: 'toma',
+        isNPC: true,
+        name: 'Toma',
+        currentLocation: 'square',
+        getNeedBars() {
+            return [];
+        }
+    };
+    const shade = {
+        id: 'shade',
+        isNPC: true,
+        name: 'Shade',
+        currentLocation: 'square',
+        getNeedBars() {
+            return [];
+        }
+    };
+
+    const { runWhileYouWereAwayPrompt } = loadWhileYouWereAwayHelpers({
+        currentPlayer: {
+            id: 'player',
+            name: 'Baato',
+            currentLocation: 'square',
+            elapsedTime: 360
+        },
+        players: new Map([
+            [mira.id, mira],
+            [toma.id, toma],
+            [shade.id, shade]
+        ]),
+        gameLocations,
+        regions,
+        globalsElapsedTime: 360,
+        globalsTotalWorldMinutes: 360,
+        prepareBasePromptContext: async () => ({
+            whileYouWereAwayNpcs: [],
+            npcs: [
+                {
+                    id: 'mira',
+                    name: 'Mira',
+                    was_in_player_location_previous_round: false
+                },
+                {
+                    id: 'toma',
+                    name: 'Toma',
+                    was_in_player_location_previous_round: true
+                },
+                {
+                    id: 'shade',
+                    name: 'Shade',
+                    hiddenFromPlayer: true,
+                    was_in_player_location_previous_round: false
+                }
+            ]
+        }),
+        llmResponse: `
+<response>
+  <characterUpdates>
+    <characterUpdate>
+      <name>Mira</name>
+      <update>Mira kept the square orderly while Baato was away.</update>
+    </characterUpdate>
+  </characterUpdates>
+  <proseForPlayer>Mira is waiting by the fountain.</proseForPlayer>
+</response>
+`
+    });
+
+    const result = await runWhileYouWereAwayPrompt({
+        locationOverride: square,
+        locationId: square.id,
+        locationWasVisitedBeforeArrival: true,
+        locationLastVisitedTimeBeforeArrival: square.lastVisitedTime,
+        returnEntries: true
+    });
+
+    assert.equal(result.hiddenEntry.type, 'while-you-were-away');
+    assert.match(result.hiddenEntry.content, /Update on Mira since Baato last saw them 4 hours ago:/);
+    assert.match(result.hiddenEntry.content, /Mira kept the square orderly while Baato was away\./);
+    assert.doesNotMatch(result.hiddenEntry.content, /Toma/);
+    assert.doesNotMatch(result.hiddenEntry.content, /Shade/);
 });
 
 test('runWhileYouWereAwayPrompt moves listed origin things to the arrival location only when not inventoried', async () => {

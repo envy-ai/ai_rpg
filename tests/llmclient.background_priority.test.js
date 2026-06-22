@@ -109,3 +109,147 @@ test('background LLM requests leave one configured slot available for foreground
         Globals.config = originalConfig;
     }
 });
+
+test('root max_concurrent_requests_all_models caps requests across model semaphore keys', { concurrency: false }, async () => {
+    const originalAxiosPost = axios.post;
+    const originalConfig = Globals.config;
+    const modelOne = `global-cap-one-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    const modelTwo = `global-cap-two-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    const started = [];
+    const firstRequest = createDeferred();
+
+    Globals.config = {
+        max_concurrent_requests_all_models: 1,
+        ai: {
+            backend: 'openai_compatible',
+            endpoint: 'https://example.invalid/v1/chat/completions',
+            apiKey: 'test-key',
+            model: modelOne,
+            stream: false,
+            retryAttempts: 0,
+            max_concurrent_requests: 2
+        }
+    };
+
+    axios.post = async (_endpoint, payload) => {
+        const label = payload?.messages?.[0]?.content || '';
+        started.push(`${payload?.model || ''}:${label}`);
+        if (label === 'first model request') {
+            await firstRequest.promise;
+        }
+        return {
+            status: 200,
+            statusText: 'OK',
+            headers: {},
+            config: {},
+            data: {
+                id: `response-${label.replace(/\s+/g, '-')}`,
+                object: 'chat.completion',
+                created: 1,
+                model: payload?.model || modelOne,
+                choices: [
+                    {
+                        index: 0,
+                        finish_reason: 'stop',
+                        message: {
+                            role: 'assistant',
+                            content: `<final>${label}</final>`
+                        }
+                    }
+                ]
+            }
+        };
+    };
+
+    try {
+        const first = LLMClient.chatCompletion({
+            messages: [{ role: 'user', content: 'first model request' }],
+            model: modelOne,
+            metadataLabel: 'global_cap_first',
+            validateXML: false,
+            output: 'silent'
+        });
+        const second = LLMClient.chatCompletion({
+            messages: [{ role: 'user', content: 'second model request' }],
+            model: modelTwo,
+            metadataLabel: 'global_cap_second',
+            validateXML: false,
+            output: 'silent'
+        });
+
+        await flushTurn();
+        assert.deepEqual(started, [`${modelOne}:first model request`]);
+
+        firstRequest.resolve();
+        await Promise.all([first, second]);
+        assert.deepEqual(started, [
+            `${modelOne}:first model request`,
+            `${modelTwo}:second model request`
+        ]);
+    } finally {
+        firstRequest.resolve();
+        axios.post = originalAxiosPost;
+        Globals.config = originalConfig;
+    }
+});
+
+test('root max_concurrent_requests_all_models rejects invalid values loudly', { concurrency: false }, async () => {
+    const originalAxiosPost = axios.post;
+    const originalConfig = Globals.config;
+    let axiosCalled = false;
+
+    Globals.config = {
+        max_concurrent_requests_all_models: 0,
+        ai: {
+            backend: 'openai_compatible',
+            endpoint: 'https://example.invalid/v1/chat/completions',
+            apiKey: 'test-key',
+            model: `invalid-global-cap-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+            stream: false,
+            retryAttempts: 0,
+            max_concurrent_requests: 2
+        }
+    };
+
+    axios.post = async () => {
+        axiosCalled = true;
+        return {
+            status: 200,
+            statusText: 'OK',
+            headers: {},
+            config: {},
+            data: {
+                id: 'invalid-global-cap-response',
+                object: 'chat.completion',
+                created: 1,
+                model: Globals.config.ai.model,
+                choices: [
+                    {
+                        index: 0,
+                        finish_reason: 'stop',
+                        message: {
+                            role: 'assistant',
+                            content: '<final>unexpected</final>'
+                        }
+                    }
+                ]
+            }
+        };
+    };
+
+    try {
+        await assert.rejects(
+            () => LLMClient.chatCompletion({
+                messages: [{ role: 'user', content: 'invalid global cap' }],
+                metadataLabel: 'invalid_global_cap',
+                validateXML: false,
+                output: 'silent'
+            }),
+            /max_concurrent_requests_all_models must be a positive integer/
+        );
+        assert.equal(axiosCalled, false);
+    } finally {
+        axios.post = originalAxiosPost;
+        Globals.config = originalConfig;
+    }
+});

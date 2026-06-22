@@ -5,7 +5,10 @@ const path = require('path');
 
 const rootDir = path.join(__dirname, '..');
 const viewSource = fs.readFileSync(path.join(rootDir, 'views', 'index.njk'), 'utf8');
+const apiSource = fs.readFileSync(path.join(rootDir, 'api.js'), 'utf8');
+const serverSource = fs.readFileSync(path.join(rootDir, 'server.js'), 'utf8');
 const scssSource = fs.readFileSync(path.join(rootDir, 'public', 'css', 'main.scss'), 'utf8');
+const imageApiDocs = fs.readFileSync(path.join(rootDir, 'docs', 'api', 'images.md'), 'utf8');
 const chatDocs = fs.readFileSync(path.join(rootDir, 'docs', 'ui', 'chat_interface.md'), 'utf8');
 const modalDocs = fs.readFileSync(path.join(rootDir, 'docs', 'ui', 'modals_overlays.md'), 'utf8');
 
@@ -59,4 +62,23 @@ test('entity image upload modal has styling and docs', () => {
     assertIncludes(scssSource, '.entity-image-upload-status');
     assertIncludes(chatDocs, 'Upload Image');
     assertIncludes(modalDocs, '#entityImageUploadModal');
+});
+
+test('entity image prompt regeneration modal requests and submits editable prompts', () => {
+    assertIncludes(viewSource, 'id="entityImagePromptModal"');
+    assertIncludes(viewSource, 'id="entityImagePromptTextarea"');
+    assertIncludes(viewSource, "fetch('/api/images/prompt'");
+    assertIncludes(viewSource, 'payload.prompt = finalImagePrompt.trim();');
+    assertIncludes(viewSource, 'locationImageRegeneratePromptButton');
+    assertIncludes(viewSource, 'mapLocationMenuRegeneratePromptButton');
+    assertIncludes(viewSource, "regenerateImagePromptButton.textContent = 'Regenerate Image +';");
+    assertIncludes(viewSource, 'submitHandler: (prompt) => regenerateCharacterImage(latestNpc, prompt)');
+    assertIncludes(viewSource, 'submitHandler: (prompt) => regenerateThingImage(cachedThing, options, prompt)');
+    assertIncludes(apiSource, "app.post('/api/images/prompt'");
+    assertIncludes(apiSource, 'generatorOptions.finalImagePrompt = confirmedPrompt.prompt;');
+    assertIncludes(serverSource, 'async function generateEditableEntityImagePrompt(entity, entityType)');
+    assertIncludes(scssSource, '.entity-image-prompt-textarea');
+    assertIncludes(imageApiDocs, '## POST /api/images/prompt');
+    assertIncludes(chatDocs, 'Regenerate Image +');
+    assertIncludes(modalDocs, '#entityImagePromptModal');
 });

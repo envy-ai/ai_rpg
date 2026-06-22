@@ -564,7 +564,7 @@ Use this when the player's reputation with a faction should significantly increa
 
 ### `tracker_updates`
 
-Optional container for plot tracker mutations. Omit `<trackerUpdates>` when no tracker values changed. If present, each `<trackerUpdate>` is parsed independently; malformed entries are skipped and logged to the console without dropping the whole event block. Percentage values may include or omit the percent sign. Countdown values are concrete durations until the deadline; the handler stores an absolute target minute and display code renders the remaining time automatically.
+Optional container for plot tracker mutations. Omit `<trackerUpdates>` when no tracker values changed. If present, each `<trackerUpdate>` is parsed independently; malformed entries are skipped and logged to the console without dropping the whole event block. Percentage values may include or omit the percent sign. Countdown values are concrete durations until the deadline; the handler stores an absolute target minute and display code renders the remaining time automatically. `short_string` values may use up to `trackers.short_string_max_words`, defaulting to four words.
 
 ```xml
 <trackerUpdates>

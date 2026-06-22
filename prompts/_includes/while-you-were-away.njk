@@ -14,13 +14,16 @@ Need bar instructions:{% for bar in needBarDefinitions or [] %}
 {% endfor %}
 
 These instructions take precedence over existing game state descriptions, which described the characters at the time they were last seen and are not intended to lock characters in that state. Even if a character is narratively 'starving,' if food is available in the scene, their food bar should be at least 50%, etc.
+{% else -%}
+No current-location NPCs require individual while-you-were-away character updates.
+Always write proseForPlayer describing what the player sees, learns, or experiences upon returning to this location, even when there are no listed characters.
 {% endif -%}
 
 Return a response in this format:
 
 <response>
   <proseForPlayer>
-    <!-- Story purpose describing what the player sees, learns, or experiences upon returning to this location after being away. The player is not omniscient, so describe events and changes from their perspective. -->
+    <!-- A few paragraphs describing what the player sees, learns, or experiences upon returning to this location after being away. The player is not omniscient, so describe events and changes from their perspective. -->
   </proseForPlayer>
   <characterUpdates>
     {% for npc in listedNpcs -%}

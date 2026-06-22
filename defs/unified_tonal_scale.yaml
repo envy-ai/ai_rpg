@@ -82,3 +82,24 @@ axes:
       - level: 5
         name: Romance-Dominant
         description: Pure relationship focus. Adventure is minimal window dressing. Lots of focus on transactionality, the main character being unique in that they stay, etc. Love interests are lonely before meeting MC. MC is idealized and a uniquely decent person.
+
+  dialogue_uniqueness:
+    title: Dialogue Uniqueness
+    abbreviation: U
+    framing: Dialogue Repetitiveness vs. Uniqueness
+    levels:
+      - level: 1
+        name: Formulaic
+        description: Dialogue is deliberately repetitive and trope-forward. Characters share stock phrasing, familiar beats, and interchangeable cadence. They often repeat dialogue from previous scenes, like a video game.
+      - level: 2
+        name: Familiar
+        description: Dialogue follows genre patterns with some individual color. Character voices differ lightly, but common phrases and rhythms recur. They sometimes say the same thing between scenes.
+      - level: 3
+        name: Varied
+        description: Dialogue is broadly varied. Most recurring characters have distinct priorities, vocabulary, and rhythms while still speaking naturally. They never say the same thing between scenes, but may paraphrasse things they said recently in cases where emphasis is necessary.
+      - level: 4
+        name: Distinctive
+        description: Dialogue is strongly character-specific. Word choice, humor, subtext, silences, and conversational tactics reveal who is speaking. NPCs do not repeat themselves from scene to scene, paraphrased or otherwise, unless specifically asked.
+      - level: 5
+        name: Idiosyncratic
+        description: Dialogue is unmistakably individualized. Major speakers have hard-to-swap voices shaped by worldview, metaphor, obsession, and social strategy. NPCs do not repeat themselves from scene to scene, paraphrased or otherwise, unless specifically asked.

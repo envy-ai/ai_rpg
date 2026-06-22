@@ -17,8 +17,11 @@ Backend aliases and backend-specific configuration validation are centralized th
 - `ai.custom_args` injects provider-specific top-level payload fields. Reserved core payload keys are rejected in configured custom args.
 - `ai.headers`, override-profile headers, and per-call `headers` are merged for HTTP requests. OAuth-backed requests always set `Authorization` from the refreshed access token.
 - `ai.cachebuster: true` prepends `[cachebuster:<uuid>]` to the final user message in the outbound payload copy. Caller-provided message objects are not mutated.
+- `ai.prefill` adds a final assistant message for OpenAI-compatible requests so providers that support assistant prefill can continue from that text. Matching `ai_model_overrides` profiles can replace it or set it to `null`; per-call `prefill`/`assistantResponseSeed` takes precedence. Prefill is rejected for Codex bridge and tool-call requests.
+- `ai.sysprompt_append` adds an additional model-specific system-instruction message to the outbound payload copy. Matching `ai_model_overrides` profiles replace it or set it to `null`; the caller-provided `messages` array is not mutated.
 - `ai.reasoning_effort`, override-profile `reasoning_effort`, payload `reasoning_effort`, or per-call `reasoningEffort` opt into OpenAI-compatible reasoning by sending `reasoning: true` and `reasoning_effort`.
 - `ai.force_outputs_file` or `LLM_FORCE_OUTPUTS_FILE` supplies deterministic fixture output buckets for tests and scripted runs.
+- Root `max_concurrent_requests_all_models` optionally adds a positive-integer cap across all real chat-completion requests, independent of model/backend/auth semaphore keys.
 
 ## Public API
 - `chatCompletion(options)`: runs one completion request and returns assistant text.
@@ -26,7 +29,7 @@ Backend aliases and backend-specific configuration validation are centralized th
 - `retryPrompt(streamId, reason)`: aborts one tracked attempt and restarts the same `chatCompletion(...)` loop without consuming an automatic retry attempt.
 - `cancelAllPrompts(reason)`: aborts all prompts currently registered in the abort-controller map and returns cancellation counts.
 - `waitForPromptDrain({ timeoutMs, pollIntervalMs })`: waits until prompt-progress entries and abort-controller entries are empty.
-- `ensureAiConfig()`, `resolveBackend(aiConfigOverride)`, `getConfigurationErrors(aiConfigOverride)`, `isConfigured(aiConfigOverride)`, `getMaxConcurrent(aiConfigOverride)`: configuration helpers used by settings and tests.
+- `ensureAiConfig()`, `resolveBackend(aiConfigOverride)`, `getConfigurationErrors(aiConfigOverride)`, `isConfigured(aiConfigOverride)`, `getMaxConcurrent(aiConfigOverride)`, `resolveMaxConcurrentAllModels(configOverride)`: configuration helpers used by settings and tests.
 - `resolveChatEndpoint(endpoint)`, `baseTimeoutMilliseconds()`, `resolveTimeout(timeoutMs, multiplier)`, `resolveTemperature(explicit, fallback)`, `resolveOutput(output, fallback)`: request utility helpers.
 - `calculatePromptProgressFraction(receivedCharacters, targetCharacters)` and `resolvePromptProgressCharacterTarget(label, config)`: prompt-progress math and configured target lookup.
 - `getPromptOutputCharacterStats(label)`, `listPromptOutputCharacterStats(options)`, `recordPromptOutputCharacters(label, outputCharacters)`, `clearPromptOutputCharacterStats()`: persistent output-character statistics helpers used by `/promptstats`.
@@ -41,9 +44,10 @@ Important options:
 - `messages`: required OpenAI-style chat messages.
 - `metadataLabel`: prompt label used for override matching, logging, prompt progress, stats, and Codex usage labels.
 - `errorLogLabel`: optional error-log label. Error logs otherwise prefer `metadata.promptName`, then `metadata.promptType`, then `metadataLabel`.
-- `additionalPayload`: extra request body fields such as `tools`, `tool_choice`, or provider-specific parameters.
+- `additionalPayload`: extra request body fields such as `tools`, `tool_choice`, or provider-specific parameters. Provider-visible fields must be placed here unless `chatCompletion(...)` has an explicit top-level option for them.
 - `headers`: per-call HTTP headers.
 - `model`, `apiKey`, `endpoint`, `temperature`, `maxTokens`, `topP`, `frequencyPenalty`, `presencePenalty`, `seed`: per-call request overrides.
+- `prefill` or `assistantResponseSeed`: optional OpenAI-compatible assistant response prefill. `null` suppresses configured `ai.prefill` for that call.
 - `timeoutMs`, `timeoutScale`, `retryAttempts`, `waitAfterError`, `waitAfterRateLimitError`, `waitAfterNetworkError`: timeout and retry controls.
 - `stream`: OpenAI-compatible streaming control. Codex bridge requests are sent through the bridge with `stream: false` while bridge events feed prompt progress.
 - `runInBackground`: marks the request as background for progress display and lower semaphore priority.
@@ -59,11 +63,11 @@ Request flow:
 1. Convert any `image_url` data URLs in message content to WebP through `sharp`. Non-data image URLs in this preprocessing path fail with an explicit error.
 2. Resolve deterministic output from `forceOutput` or a forced-output fixture, if configured.
 3. Resolve retry count from the call option or `ai.retryAttempts`.
-4. For each attempt, clone AI config, apply `ai_model_overrides`, merge custom args/headers, apply cachebuster, resolve model/temperature/token/top-p/reasoning settings, resolve backend, and choose a semaphore key.
-5. Acquire the semaphore. Background requests share the same semaphore but foreground requests are dispatched first; with a limit above one, background work leaves one slot available for foreground prompts.
+4. For each attempt, clone AI config, apply `ai_model_overrides`, merge custom args/headers, resolve backend, append configured system-prompt text, apply cachebuster, append OpenAI-compatible assistant prefill when configured, resolve model/temperature/token/top-p/reasoning settings, and choose a semaphore key.
+5. Acquire the per-key semaphore, then the optional all-model semaphore from root `max_concurrent_requests_all_models`. Background requests share the same semaphores but foreground requests are dispatched first; with a limit above one, background work leaves one slot available for foreground prompts.
 6. Start prompt-progress tracking when the request is trackable and output is not `silent`.
 7. Dispatch through `axios.post(...)` or `CodexBridgeClient.chatCompletion(...)`.
-8. Normalize the response into an OpenAI-style `chat.completion` payload, call capture/on-response hooks, strip `<think>...</think>` blocks from returned text, validate output, update prompt stats, and return assistant text.
+8. Normalize the response into an OpenAI-style `chat.completion` payload, merge assistant prefill into returned text exactly once, call capture/on-response hooks, strip `<think>...</think>` blocks from returned text, validate output, update prompt stats, and return assistant text.
 
 ## Response Normalization And Validation
 - Streaming OpenAI-compatible responses are assembled from SSE `data:` chunks. Text deltas are concatenated and `delta.tool_calls` chunks are assembled into complete function calls.
@@ -89,11 +93,12 @@ Cold-start targets come from `config.prompt_progress.character_targets`. Label m
 High-frequency progress broadcasts are coalesced to at most one active update every 500 ms. Completion sends an immediate `progressFraction: 1` update, holds the completed entry for 250 ms, then emits the clear event. Prompt-progress `id` values are the ids accepted by `cancelPrompt(...)` and `retryPrompt(...)`.
 
 ## Concurrency
-`LLMClient` keeps a semaphore per backend/model/auth/session key.
+`LLMClient` keeps a semaphore per backend/model/auth/session key, plus an optional process-wide semaphore when root `max_concurrent_requests_all_models` is set.
 
 - OpenAI-compatible keys use the resolved API credential or OAuth cache key plus model.
 - Codex fresh-mode keys use backend plus model and honor `ai.max_concurrent_requests`.
 - Codex resumed-session keys serialize by Codex home and, for `resume_id`, session id.
+- The all-model semaphore caps real outbound text-generation attempts across every key. It is acquired only after the per-key permit so a request waiting on a busy model does not occupy an all-model slot.
 - `runInBackground: true` lowers queue priority and limits concurrent background occupancy so foreground gameplay prompts can start ahead of queued background prompts.
 
 ## Prompt Logging
@@ -126,8 +131,9 @@ When a rate-limit snapshot contains multiple buckets, reporting prefers an exact
 
 ## Current Call Patterns
 - `/api/chat` uses `player_action`, `question`, `generic_prompt`, and `generic_prompt_nocontext` labels, passes chat tools through `additionalPayload`, and uses `metadata.__codexQuotaCountAsTurn` only for player-action turns.
+- Silent housekeeping prompts call `LLMClient.chatCompletion` as plain XML generation without mutation tool schemas. The returned `<housekeeping>` XML is parsed and applied afterward by `Events.js`, so tracker, quest, and relationship maintenance no longer depends on provider-emitted tool calls.
 - `chat_tool_calls.js` relies on `onResponse` to inspect normalized tool calls across multiple tool-loop rounds, and logs tool-loop rounds with `LLMClient.logPrompt(...)`.
 - `Events.js` uses labels such as `event_checks`, `need_bar_event_checks`, `quest_check`, `mystery_thread_check`, `mystery_box_update`, `alter_location`, and `alter_npc`, with regex/XML validation on structured prompts.
-- `server.js` uses the client for generation, summaries, image-prompt writing, NPC/item/location/region creation, and background prompts. Background prompt callers set `runInBackground: true`.
+- `server.js` uses the client for generation, summaries, image-prompt writing, NPC/item/location/region creation, and background prompts. Region/location/item/character generation prompts that can use random integers go through the chat-tool loop with only `generateRandomInteger` exposed. Background prompt callers set `runInBackground: true`.
 - `StatusEffect.js` uses `status_effect_generate` and logs the rendered prompt/response through `LLMClient.logPrompt(...)`.
 - `scripts/run_prompts.js` disables XML validation, accepts an optional required regex, and logs each run through `LLMClient.logPrompt(...)`.

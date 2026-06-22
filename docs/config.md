@@ -57,6 +57,18 @@ The web UI and slash commands expose different config write paths:
 - `/get <path>` reads a dotted path from `Globals.config`.
 - `/set <path> <value>` mutates the in-memory `Globals.config` object only. It parses `true`/`false` as booleans and leaves other values as strings. It does not write YAML or reload definitions.
 
+## Prompt concurrency and stagger
+
+Two root-level values tune concurrent text prompts:
+
+```yaml
+max_concurrent_requests_all_models: null
+stagger_concurrent_prompts: 4
+```
+
+- `max_concurrent_requests_all_models` is optional. When set to a positive integer, `LLMClient` enforces that cap across all real text-generation requests regardless of backend, model, API key, OAuth identity, or Codex bridge session key. Each request still also honors the existing per-model/API-key semaphore from `ai.max_concurrent_requests`.
+- `stagger_concurrent_prompts` is the number of seconds between staggered prompt launches. It defaults to `4` when omitted or blank. Event checks launch immediately, need-bar event checks launch after one interval, and quest checks launch after two intervals. Values must be non-negative finite numbers.
+
 ## Mod enablement
 
 You can enable or disable discovered mods from the merged YAML config:
@@ -118,6 +130,17 @@ chat_tools:
 
 The value defaults to `true` and must be a boolean when provided. When disabled, `requestUserInput` is removed from regular and generic chat-tool payloads.
 
+## Trackers
+
+`trackers.short_string_max_words` controls the maximum number of whitespace-delimited words allowed for `short_string` tracker values.
+
+```yaml
+trackers:
+  short_string_max_words: 4
+```
+
+The value defaults to `4` and must be an integer greater than or equal to `1` when provided. The limit is enforced by direct tracker creation, chat-tool tracker creation, and XML/legacy `tracker_updates` parsing, and the XML event prompt receives the same configured limit.
+
 ## Plot analysis
 
 `plot_analysis.enabled` controls whether normal player actions schedule the non-blocking background `plot-analysis` prompt.
@@ -129,7 +152,7 @@ plot_analysis:
   max_plot_complications: 3
 ```
 
-`enabled` defaults to `true` and must be a boolean when provided. When disabled, new player turns do not schedule background plot-analysis work; the latest saved `Globals.plotAnalysis` value still loads, persists, appears in base-context prompts, and remains visible through `/plot_analysis`.
+`enabled` defaults to `true` and must be a boolean when provided. When disabled, new player turns do not schedule background plot-analysis work; queued or in-flight plot-analysis work rechecks the gate before tool execution and response storage. The latest saved `Globals.plotAnalysis` value still loads, persists, appears in base-context prompts, and remains visible through `/plot_analysis`. `/rp` temporarily sets this flag to `false` while roleplay mode is active.
 
 `max_plot_threads` and `max_plot_complications` default to the values shown in `config.default.yaml`. `prompts/_includes/plot-analysis-blurb.njk` uses `max_plot_complications`; `max_plot_threads` is available to prompt include customizations.
 
@@ -252,6 +275,8 @@ ai:
   temperature: 0.6
   highTemperature: 1.0
   top_p: 1.0
+  prefill: null
+  sysprompt_append: ""
   max_concurrent_requests: 6
   stream: true
   stream_start_timeout: 45
@@ -267,9 +292,11 @@ model_swap_options:
 - `maxTokens` becomes `max_tokens` when a prompt call does not provide a positive `maxTokens`; server helpers may also use it as a minimum when resolving prompt-specific token caps.
 - `temperature`, `top_p`, and `stream` map to chat-completion payload fields. The Codex bridge forces `stream: false` at the normalized `LLMClient` payload layer because Codex streaming is handled by the bridge client.
 - `lowTemperature` and `highTemperature` are available to caller code that chooses bounded temperature variants.
+- `prefill` can be `null` or a string. When set for `openai_compatible`, `LLMClient` appends the string as a final assistant message and returns `prefill + generated continuation`, avoiding duplicate text when the provider echoes the prefill. This is rejected for tool-call requests and for `codex_cli_bridge`.
+- `sysprompt_append` can be `null`, blank, or a string. A non-empty string is inserted into the outbound request as an additional `system` message after existing system messages, or before the first user message when the prompt did not already include a system message. This applies to both text backends and does not mutate caller-provided message objects.
 - `stream_start_timeout` and `stream_continue_timeout` are seconds. Retry attempts add `increment_start_timeout` and `increment_continue_timeout`, also in seconds.
 - `supress_seed: true` omits the `seed` payload field. The key name is spelled `supress_seed` in the config file and code.
-- `max_concurrent_requests` controls the per-model/API-key semaphore for OpenAI-compatible requests and the fresh-session concurrency limit for the Codex bridge.
+- `max_concurrent_requests` controls the per-model/API-key semaphore for OpenAI-compatible requests and the fresh-session concurrency limit for the Codex bridge. The root `max_concurrent_requests_all_models` setting can add a process-wide cap across those per-key semaphores.
 - `model_swap_options` drives the `/config` page model selector and is saved as a JSON string-array field by that page.
 
 ## OAuth Refresh-Token Auth
@@ -356,7 +383,7 @@ prompt_progress:
     player_action*: 5000
 ```
 
-Prompt labels are normalized the same way as `metadataLabel`; keys ending in `*` match prefixes, and exact labels win over prefix matches. Missing target coverage for a tracked prompt label throws a clear error instead of falling back to a placeholder. The default config gives region-related prompts `20000`, location-related and NPC-generation prompts `10000`, and other known prompt families, including `scheduled_event_resolution` and `scene_illustration_prompt`, `5000`. Once `logs/prompt-output-character-stats.json` has a positive average output-character count for a label, that average becomes the prompt's progress target instead of the configured value; the config value remains the cold-start target before a usable average exists. Character-appended labels for inventory generation, NPC memories, NPC progression, NPC abilities, and NPC alias assignment use the base prompt label's average. Use `/promptstats` to inspect stored averages and `/promptstats clear` to clear them.
+Prompt labels are normalized the same way as `metadataLabel`; keys ending in `*` match prefixes, and exact labels win over prefix matches. Missing target coverage for a tracked prompt label throws a clear error instead of falling back to a placeholder. The default config gives region-related prompts `20000`, location-related and NPC-generation prompts `10000`, and other known prompt families, including `scheduled_event_resolution`, `scene_illustration_prompt`, and `set_travel_times`, `5000`. Once `logs/prompt-output-character-stats.json` has a positive average output-character count for a label, that average becomes the prompt's progress target instead of the configured value; the config value remains the cold-start target before a usable average exists. Character-appended labels for inventory generation, NPC memories, NPC progression, NPC abilities, and NPC alias assignment use the base prompt label's average. Use `/promptstats` to inspect stored averages and `/promptstats clear` to clear them.
 
 Progress uses decoded JavaScript characters, not tokens or UTF-8 bytes. Up to the target `X`, the bar advances linearly through 75% of its width. After `X`, it approaches the end asymptotically: each additional `X` characters consumes half of the remaining 25%.
 
@@ -373,6 +400,28 @@ ai:
 Blank or omitted `reasoning_effort` preserves the current request payload shape: `LLMClient` does not send `reasoning` or `reasoning_effort` just because `config.ai.reasoning` is `false`. When `reasoning_effort` is a non-empty string, `LLMClient.chatCompletion()` sends `reasoning: true` and `reasoning_effort: "<value>"`. Per-call `LLMClient.chatCompletion({ reasoningEffort })` takes precedence over the merged AI config value.
 
 The field must be a string when provided. It can also be set through `ai_model_overrides` for selected prompt labels. This is separate from `ai.codex_bridge.reasoning_effort`, which controls Codex app-server `turn/start.effort`.
+
+## AI system prompt append
+
+`config.ai.sysprompt_append` appends provider- or model-specific instructions to the system prompt without editing every prompt template.
+
+```yaml
+ai:
+  sysprompt_append: ""
+
+ai_model_overrides:
+  qwen_event_checks:
+    prompts:
+      - event_checks
+    model: qwen-specific-model
+    sysprompt_append: "Follow this model's XML-formatting guidance exactly."
+```
+
+Rules:
+- Blank, omitted, or `null` disables the append.
+- Non-empty values must be strings.
+- Matching `ai_model_overrides` profiles replace the inherited scalar value. Use `sysprompt_append: null` or `sysprompt_append: ""` in a profile to clear a global append for that prompt label.
+- The appended text appears in prompt-progress snapshots and chat-completion error logs because it is added before dispatch.
 
 ## AI custom args
 
@@ -408,6 +457,8 @@ Merge semantics:
 - Non-object values replace inherited values.
 - Arrays replace inherited arrays.
 - `null` deletes the targeted key from the inherited `custom_args` tree.
+
+Override profiles can also set scalar AI fields directly. For example, a string `prefill` replaces the default assistant prefill for matching prompt labels, `prefill: null` clears an inherited `ai.prefill`, and `sysprompt_append` behaves the same way for appended system instructions.
 
 ## AI request headers
 
@@ -968,7 +1019,7 @@ base_context:
 
 ## Tool-call chat debugging
 
-`debug_tool_calls` controls whether prose-prompt tool calls are mirrored into the visible chat history while the prompt is still running.
+`debug_tool_calls` controls whether supported prompt tool calls are mirrored into the visible chat history while the prompt is still running.
 
 ```yaml
 debug_tool_calls: false
@@ -977,7 +1028,7 @@ debug_tool_calls: false
 Rules:
 - Must be a boolean when present.
 - Default is `false`.
-- When `true`, `/api/chat` creates one `tool-call-debug` chat entry per prose prompt that uses tools, updates that same entry as each tool starts and completes, and emits the existing `chat_history_updated` realtime event after each update.
+- When `true`, `/api/chat` creates one `tool-call-debug` chat entry per supported prompt that uses tools, including prose prompts and silent housekeeping prompts. It updates that same entry as each tool starts and completes, and emits the existing `chat_history_updated` realtime event after each update.
 - The debug entry stores the tool name, parameters, result content, and result metadata in structured `toolCalls` records. It is marked with `metadata.excludeFromBaseContextHistory: true`, so it is visible in the chat log but excluded from future prompt context.
 - The chat client renders each tool call as its own collapsible sub-box, marks cached results as `cache hit`, and uses `@andypf/json-viewer` to format the parameters/result JSON. Result/Error `content` fields are XML-entity-decoded for display only and shown as separate preformatted text blocks, with the JSON tree retaining a `[shown below]` marker at those fields; the stored tool payload remains unchanged.
 
@@ -1061,7 +1112,7 @@ Rules:
 - Must be an integer `>= 0` when present.
 - Default is `30`.
 - The prompt runs only when the movement path captured an affirmative pre-arrival visit snapshot. Non-NPC `Player.setLocation(...)` records that snapshot before marking the destination visited, so player-action event-check movement and explicit travel paths share the same gate. If the destination's pre-arrival `lastVisitedTime` is known, it must be at least this many in-game minutes old when compared with `Globals.getTotalWorldMinutes()`. `0` runs the prompt for any destination that was explicitly known to be previously visited before the move. Missing pre-arrival snapshots skip the prompt instead of trusting the destination's current `visited` flag after movement.
-- The prompt input includes current-location NPCs that have persisted `last_seen_time` / `last_seen_location` and were not in the same location as the player on the previous round, so already-present reunion NPCs stay in the candidate list instead of being misclassified as arrivals.
+- The prompt input includes current-location NPCs that have persisted `last_seen_time` / `last_seen_location` and were not in the same location as the player on the previous round, so already-present reunion NPCs stay in the candidate list instead of being misclassified as arrivals. When a qualifying destination has visible current-location NPCs without per-NPC last-seen metadata, the prompt synthesizes candidate entries from the destination's pre-arrival visit state so the structured update list is not empty solely because the save lacks newer last-seen fields; the synthesized elapsed text uses the pre-arrival `lastVisitedTime` when known and `some time ago` otherwise.
 - The prompt input includes each need-bar definition's `while_you_were_away_prompt_notes` when provided, letting need-bar defs guide how offscreen NPCs tend to satisfy or lose that bar.
 - The threshold does not filter individual NPC candidates; once the destination qualifies, all current-location reunion candidates are listed for possible `<characterUpdate>` entries.
 - The LLM response must include a complete `<response>...</response>` wrapper before `LLMClient` returns it to the while-you-were-away parser, so truncated completed responses trigger the configured retry flow.

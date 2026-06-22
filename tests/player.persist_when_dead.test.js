@@ -33,8 +33,10 @@ function withTempPlayerEnvironment(run) {
     const tempBaseDir = createTempPlayerDefs();
     const previousBaseDir = Globals.baseDir;
     const previousConfig = Globals.config;
+    const previousCurrentPlayer = Globals.currentPlayer;
 
     Player.clearRuntimeRegistries();
+    Globals.currentPlayer = null;
     Globals.baseDir = tempBaseDir;
     Globals.config = {
         ...(previousConfig && typeof previousConfig === 'object' ? previousConfig : {}),
@@ -56,6 +58,7 @@ function withTempPlayerEnvironment(run) {
         run();
     } finally {
         Player.clearRuntimeRegistries();
+        Globals.currentPlayer = previousCurrentPlayer;
         Globals.baseDir = previousBaseDir;
         Globals.config = previousConfig;
         Player.reloadDefinitionCaches({ refreshInstances: false });
@@ -127,6 +130,7 @@ test('party joins, party leaves, and party-member deaths all enable persistWhenD
             id: 'persist-owner',
             name: 'Baato'
         });
+        Globals.currentPlayer = player;
         const member = new Player({
             id: 'persist-member',
             name: 'Cabnia',
@@ -156,7 +160,8 @@ test('party joins, party leaves, and party-member deaths all enable persistWhenD
             name: 'Kess',
             isNPC: true
         });
-        memberWhoDies.setInPlayerParty(true);
+        assert.equal(player.addPartyMember(memberWhoDies.id), true);
+        memberWhoDies.persistWhenDead = false;
         memberWhoDies.isDead = true;
 
         assert.equal(memberWhoDies.persistWhenDead, true);

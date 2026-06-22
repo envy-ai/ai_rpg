@@ -42,8 +42,9 @@ Response:
 
 - Craft/process can run with no selected slot inputs; the prompts judge the attempt from the station, current scene, player abilities, and notes.
 - Salvage/harvest require exactly one selected slot target.
-- Selected inputs may come from the active player inventory, loose current-location items or scenery, or item contents inside containers in the current location. Player-owned selected inputs must be unequipped; offscreen/nonlocal thing ids are rejected.
-- Current-location container contents are available even when the container itself is scenery. Nested container contents are accepted by the server through the recursive current-location availability set.
+- Selected inputs may come from the active player inventory, existing item contents inside unlocked containers in that inventory, loose current-location items or scenery, or existing item contents inside unlocked containers in the current location. Player-owned selected inputs must be unequipped; offscreen/nonlocal thing ids are rejected.
+- Current-location container contents are available even when the container itself is scenery. Nested current-location and player-inventory container contents are accepted by the server through recursive availability sets, but traversal stops at any container that still has `requiresCheckToOpen: true`.
+- Crafting availability only walks already-instantiated `containedThingIds`. It does not open containers or generate pending `containerContents` seeds for either location containers or player-inventory containers.
 - Non-empty containers cannot be selected as crafting inputs. Empty the container first if the container itself should be consumed or processed. Container emptiness is based on normalized, nonblank `containedThingIds`, so blank placeholder entries do not make a container count as non-empty.
 
 ## Roll Controls

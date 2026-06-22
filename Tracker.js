@@ -1,5 +1,6 @@
 const IdGenerator = require('./IdGenerator.js');
 const Utils = require('./Utils.js');
+const Globals = require('./Globals.js');
 
 const VALID_TYPES = new Set([
   'countdown',
@@ -8,6 +9,20 @@ const VALID_TYPES = new Set([
   'percentage',
   'short_string'
 ]);
+const DEFAULT_SHORT_STRING_MAX_WORDS = 4;
+const NOTE_MAX_WORDS = 100;
+const WORD_COUNT_LABELS = Object.freeze({
+  1: 'one',
+  2: 'two',
+  3: 'three',
+  4: 'four',
+  5: 'five',
+  6: 'six',
+  7: 'seven',
+  8: 'eight',
+  9: 'nine',
+  10: 'ten'
+});
 
 function normalizeText(value) {
   return typeof value === 'string' ? value.trim() : '';
@@ -43,6 +58,37 @@ function normalizeType(value) {
   return type;
 }
 
+function resolveShortStringMaxWords(config = Globals.config) {
+  const rawValue = config?.trackers?.short_string_max_words;
+  if (rawValue === undefined || rawValue === null || rawValue === '') {
+    return DEFAULT_SHORT_STRING_MAX_WORDS;
+  }
+  const value = Number(rawValue);
+  if (!Number.isInteger(value) || value < 1) {
+    throw new Error('config.trackers.short_string_max_words must be an integer greater than or equal to 1.');
+  }
+  return value;
+}
+
+function formatWordCount(value) {
+  return WORD_COUNT_LABELS[value] || String(value);
+}
+
+function normalizeNote(value) {
+  if (value === undefined || value === null || value === '') {
+    return '';
+  }
+  if (typeof value !== 'string') {
+    throw new Error('Tracker note must be a string when provided.');
+  }
+  const note = value.trim();
+  const words = note ? note.split(/\s+/).filter(Boolean) : [];
+  if (words.length > NOTE_MAX_WORDS) {
+    throw new Error(`Tracker note must be ${NOTE_MAX_WORDS} words or fewer.`);
+  }
+  return note;
+}
+
 function normalizeValueForType(value, type) {
   const text = normalizeText(value);
   if (!text) {
@@ -51,8 +97,9 @@ function normalizeValueForType(value, type) {
 
   if (type === 'short_string') {
     const words = text.split(/\s+/).filter(Boolean);
-    if (words.length > 3) {
-      throw new Error('Tracker short_string value must be three words or fewer.');
+    const maxWords = resolveShortStringMaxWords();
+    if (words.length > maxWords) {
+      throw new Error(`Tracker short_string value must be ${formatWordCount(maxWords)} words or fewer.`);
     }
   }
 
@@ -69,10 +116,11 @@ function normalizeValueForType(value, type) {
   }
 
   if (type === 'percentage') {
-    const match = text.match(/^([+-]?(?:\d+(?:\.\d+)?|\.\d+))%$/);
+    const match = text.match(/^([+-]?(?:\d+(?:\.\d+)?|\.\d+))\s*%?$/);
     if (!match || !Number.isFinite(Number(match[1]))) {
-      throw new Error('Tracker percentage value must be a finite number followed by %.');
+      throw new Error('Tracker percentage value must be a finite number with optional %.');
     }
+    return `${match[1]}%`;
   }
 
   return text;
@@ -139,6 +187,7 @@ class Tracker {
       }
     }
     this.description = description;
+    this.note = normalizeNote(options.note);
     this.createdAt = normalizeText(options.createdAt) || new Date().toISOString();
     this.updatedAt = normalizeText(options.updatedAt) || this.createdAt;
 
@@ -148,6 +197,22 @@ class Tracker {
 
   static get validTypes() {
     return Array.from(VALID_TYPES);
+  }
+
+  static get defaultShortStringMaxWords() {
+    return DEFAULT_SHORT_STRING_MAX_WORDS;
+  }
+
+  static shortStringMaxWords(config = Globals.config) {
+    return resolveShortStringMaxWords(config);
+  }
+
+  static shortStringMaxWordsText(config = Globals.config) {
+    return formatWordCount(resolveShortStringMaxWords(config));
+  }
+
+  static get noteMaxWords() {
+    return NOTE_MAX_WORDS;
   }
 
   static clear() {
@@ -219,7 +284,7 @@ class Tracker {
     return tracker;
   }
 
-  updateValue(value, { worldMinute, countdownUntilWorldMinute } = {}) {
+  updateValue(value, { worldMinute, countdownUntilWorldMinute, note } = {}) {
     this.value = normalizeValueForType(value, this.type);
     this.lastUpdatedWorldMinute = normalizeWorldMinute(worldMinute, 'lastUpdatedWorldMinute');
     if (this.type === 'countdown') {
@@ -230,6 +295,58 @@ class Tracker {
         );
       } else {
         this.countdownUntilWorldMinute = resolveCountdownUntilWorldMinute(this.value, {
+          currentWorldMinute: this.lastUpdatedWorldMinute
+        });
+      }
+    }
+    if (note !== undefined) {
+      this.note = normalizeNote(note);
+    }
+    this.updatedAt = new Date().toISOString();
+    return this;
+  }
+
+  updateEditableFields({
+    name,
+    type,
+    value,
+    hiddenFromPlayer = false,
+    lastUpdatedWorldMinute,
+    countdownUntilWorldMinute,
+    description,
+    note
+  } = {}) {
+    const normalizedName = normalizeText(name);
+    if (!normalizedName) {
+      throw new Error('Tracker requires a non-empty name.');
+    }
+
+    const normalizedType = normalizeType(type);
+    const normalizedValue = normalizeValueForType(value, normalizedType);
+    const normalizedDescription = normalizeText(description);
+    if (!normalizedDescription) {
+      throw new Error('Tracker requires a non-empty description.');
+    }
+
+    this.name = normalizedName;
+    this.type = normalizedType;
+    this.value = normalizedValue;
+    this.hiddenFromPlayer = hiddenFromPlayer === true;
+    this.lastUpdatedWorldMinute = normalizeWorldMinute(
+      lastUpdatedWorldMinute,
+      'lastUpdatedWorldMinute'
+    );
+    this.description = normalizedDescription;
+    this.note = normalizeNote(note);
+    this.countdownUntilWorldMinute = null;
+    if (normalizedType === 'countdown') {
+      if (countdownUntilWorldMinute !== undefined && countdownUntilWorldMinute !== null) {
+        this.countdownUntilWorldMinute = normalizeOptionalWorldMinute(
+          countdownUntilWorldMinute,
+          'countdownUntilWorldMinute'
+        );
+      } else {
+        this.countdownUntilWorldMinute = resolveCountdownUntilWorldMinute(normalizedValue, {
           currentWorldMinute: this.lastUpdatedWorldMinute
         });
       }
@@ -265,7 +382,8 @@ class Tracker {
       lastUpdated,
       lastUpdatedWorldMinute: this.lastUpdatedWorldMinute,
       countdownUntilWorldMinute: this.countdownUntilWorldMinute,
-      guidance: this.description
+      guidance: this.description,
+      note: this.note
     };
   }
 
@@ -294,7 +412,8 @@ class Tracker {
       `value=${context.value}`,
       `hidden=${context.hidden}`,
       `lastUpdated=${context.lastUpdated}`,
-      `guidance=${context.guidance}`
+      `guidance=${context.guidance}`,
+      `note=${context.note}`
     ].join(' | ');
   }
 
@@ -307,6 +426,7 @@ class Tracker {
       hiddenFromPlayer: this.hiddenFromPlayer,
       lastUpdatedWorldMinute: this.lastUpdatedWorldMinute,
       description: this.description,
+      note: this.note,
       createdAt: this.createdAt,
       updatedAt: this.updatedAt
     };

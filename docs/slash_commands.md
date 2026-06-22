@@ -10,8 +10,8 @@ This guide covers the runtime slash-command path: registration, request parsing,
 - Chat input beginning with `/` is handled by `public/js/chat.js`. The client records the slash command as a user message, splits the command name from raw `argsText`, parses `key=value` pairs into `args`, and posts to `/api/slash-command`.
 - `/api/slash-command` resolves the command by name or alias, fills declared positional args from `argsText`, validates the final args object, builds an interaction context, and calls `CommandModule.execute(interaction, args)`.
 - Command replies are normalized by the API and rendered by the chat client as local system messages with markdown enabled. A reply with `ephemeral: true` uses the client error style; it is not a privacy boundary.
-- Commands can request a client refresh through `interaction.requestClientRefresh(...)`. When the request includes `clientId`, the server emits a targeted `chat_history_updated` event to the invoking browser tab.
-- Commands can return typed reply actions. The supported action type is `request_file_upload`, which opens the shared chat upload modal and posts selected text file contents to `/api/slash-command/upload`.
+- Commands can request a client refresh through `interaction.requestClientRefresh(...)`. When the request includes `clientId`, the server emits a targeted `chat_history_updated` event to the invoking browser tab with requested refresh flags such as `locationRefreshRequested` or `relationshipGraphRefreshRequested`.
+- Commands can return typed reply actions. Supported action types are `request_file_upload`, which opens the shared chat upload modal and posts selected text file contents to `/api/slash-command/upload`, and `reload_page`, which schedules a browser page reload.
 - `/api/slash-command/upload` runs the same request normalization and command lookup, requires the target command to implement `handleUpload(interaction, args, uploads)`, and passes normalized upload entries to that handler.
 
 ## Command Module Contract
@@ -61,14 +61,15 @@ This guide covers the runtime slash-command path: registration, request parsing,
 - `interaction.findRegionByLocationId(locationId)`: region lookup helper.
 - `interaction.runPlotSummaryPrompt({ parentEntryId?, locationId? })`: runs the plot-summary prompt for a resolved location.
 - `interaction.runPlotExpanderPrompt({ parentEntryId?, locationId?, specificPlot? })`: runs the plot-expander prompt for a resolved location.
+- `interaction.runHousekeepingPrompt({ instructions? })`: runs the parser-based housekeeping prompt with optional manual `housekeepingInstructions`. The helper requires an active `clientId` so realtime status, quest confirmation, and tool-call debug updates can target the invoking browser tab.
 - `interaction.generateSkillsByNames(options)`: shared skill metadata generation helper.
 - `interaction.generatePlayerImage(player, { force?, clientId? })`: shared player/NPC portrait generation helper.
 - `interaction.getActiveSettingSnapshot()`: returns the active setting snapshot.
 - `interaction.describeSettingForPrompt(snapshot)`: renders setting context for prompt helpers.
-- `interaction.backfillRegionExitTravelTimes({ region?, regionId?, force? })`: prompt-fills exit travel times for a region; `force: true` regenerates populated values and rewrites bidirectional pairs from the prompted side.
+- `interaction.backfillRegionExitTravelTimes({ region?, regionId?, force?, locationOverride? })`: prompt-fills exit travel times for a region; `force: true` regenerates populated values and rewrites bidirectional pairs from the prompted side. Automatic cross-region arrivals pass the destination location as `locationOverride` so the base-context prompt is grounded in the new location. Prompt failures are returned as nonfatal `promptFailed` results.
 - `interaction.skillRegistry`: live `skills` map, or `null`.
 - `interaction.thingRegistry`: live `things` map, or `null`.
-- `interaction.requestClientRefresh({ locationRefreshRequested? })`: marks the invoking tab for a post-command refresh.
+- `interaction.requestClientRefresh({ locationRefreshRequested?, relationshipGraphRefreshRequested? })`: marks the invoking tab for a post-command refresh.
 - `interaction.getRequestedClientRefresh()`: returns accumulated refresh flags.
 - `interaction.reply(payload)`: appends a normalized command reply.
 
@@ -82,8 +83,8 @@ Helpers that can be unavailable are exposed as `null`. Commands should check req
 {
   content: 'Markdown-capable response text',
   ephemeral: false,
-  action: {
-    type: 'request_file_upload',
+    action: {
+      type: 'request_file_upload',
     title: 'Upload File',
     description: 'Choose a file to continue.',
     accept: '.xml,text/xml',
@@ -91,7 +92,7 @@ Helpers that can be unavailable are exposed as `null`. Commands should check req
     uploadMessage: 'Uploading file...',
     submitLabel: 'Upload',
     cancelLabel: 'Cancel'
-  }
+    }
 }
 ```
 
@@ -103,6 +104,7 @@ Helpers that can be unavailable are exposed as `null`. Commands should check req
 - `request_file_upload` opens `#slashUploadModal` from `views/index.njk`. `public/js/chat.js` reads selected files as text and posts `{ filename, content, mimeType, size }` entries to `/api/slash-command/upload`.
 - Upload submissions require at least one file. The API requires a non-empty filename and string content for each upload entry.
 - `executionOptions.showExecutionOverlay` is returned by `/api/slash-command`. The client starts a delayed `Executing command...` overlay for slash commands and cancels it before processing reply actions when the command sets `showExecutionOverlay` to `false`.
+- `reload_page` actions accept optional `delayMs`, which must be a non-negative integer. When omitted, the client reloads immediately.
 
 ## Registered Commands
 
@@ -111,7 +113,9 @@ Helpers that can be unavailable are exposed as `null`. Commands should check req
 | `/awardxp` | - | Grants experience points to the invoking player or named character. |
 | `/calendar_info` | `/calendar` | Displays calendar and world-time details. |
 | `/clear_plot_notes` | `/clear_plot_summaries`, `/clear_plot_expander` | Removes hidden plot-summary and plot-expander entries from chat history. |
+| `/clear_relationships` | - | Removes every stored character relationship edge. |
 | `/clear_secrets` | - | Removes hidden supplemental/offscreen NPC story info entries from chat history. |
+| `/clear_tool_call_debug` | `/clear_tool_calls`, `/clear_tool_debug` | Removes tool-call debug entries from chat history and reloads the page. |
 | `/exit_backtraces` | - | Lists current-location exits with captured creation backtraces. |
 | `/export_history` | - | Exports full story history to text or HTML. |
 | `/fill_exit_travel_times` | - | Fills missing region exit travel times, or regenerates them with `force=true`. |
@@ -121,6 +125,7 @@ Helpers that can be unavailable are exposed as `null`. Commands should check req
 | `/get` | - | Reads a nested runtime config value. |
 | `/heal` | `/resurrect` | Restores a character to full health and clears death state. |
 | `/help` | - | Lists available slash commands and usage. |
+| `/housekeeping` | `/runhousekeeping` | Runs the housekeeping prompt immediately with optional instructions. |
 | `/import_item` | - | Opens XML upload and imports parsed item/scenery entries into the current location. |
 | `/incapacitate` | - | Applies incapacitation to an NPC without killing them. |
 | `/kill` | - | Kills a named NPC. |
@@ -130,13 +135,14 @@ Helpers that can be unavailable are exposed as `null`. Commands should check req
 | `/plot_analysis` | - | Displays the latest background plot analysis. |
 | `/promptstats` | - | Displays or clears prompt output-character averages. |
 | `/random` | - | Triggers a configured random event type. |
+| `/refill_needs` | - | Refills stored need bars for one NPC or every NPC. |
 | `/regen_party_images` | - | Queues forced portrait regeneration for current party NPCs. |
 | `/regex_replace` | - | Runs regex replacement across story history. |
 | `/reload_config` | `/reloadconfig`, `/rcfg` | Reloads config files and definition caches. |
 | `/reload_lorebooks` | `/reloadlorebooks`, `/rlb` | Reloads lorebooks from disk. |
 | `/respec_abilities` | - | Rebuilds a character's ability selections across a level range. |
 | `/respec_skills` | - | Rebuilds an NPC's skill allocation for their current level. |
-| `/rp` | - | Toggles roleplay mode and related checks. |
+| `/rp` | - | Toggles roleplay mode and related automated checks, including plot analysis. |
 | `/runplotexpander` | - | Runs the plot-expander prompt and stores the result. |
 | `/runplotsummary` | - | Runs the plot-summary prompt and stores the result. |
 | `/scene_summaries` | `/summary_ranges` | Lists stored scene summaries and the entry ranges they cover. |

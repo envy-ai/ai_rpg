@@ -139,7 +139,7 @@ Fields:
 - `isNPC`, `isPlayer`, `isHostile`, `isDead`
 - `hiddenFromPlayer` (boolean, effective only for living NPCs; hidden corpses serialize as visible)
 - `persistWhenDead`
-- `isInPlayerParty`, `wasEverInPlayerParty`, `isHostileToPlayer`
+- `isInPlayerParty` (derived from the current player's `partyMembers` list), `wasEverInPlayerParty`, `isHostileToPlayer`
 - `locationId`
 - `last_seen_time` (absolute world-minute timestamp | null), `last_seen_location` (location id | null), `was_in_player_location_previous_round` (boolean)
 - `corpseCountdown`
@@ -186,7 +186,7 @@ Highlights beyond `Player.toJSON()`:
 - `statusEffects` (active effects), plus route-supplied `intrinsicStatusEffects` when available
 - `modStatusSections` from registered mod actor-status contributors, so detailed character refreshes preserve mod-owned systems
 - `gear`, `gearSlotsByType`, `gearSlotDefinitions`
-- `needBars`, `needBarApplicability`, `corpseCountdown`, `persistWhenDead`, `wasEverInPlayerParty`, `last_seen_time`, `last_seen_location`, `was_in_player_location_previous_round`, `importantMemories`
+- `needBars`, `needBarApplicability`, `corpseCountdown`, `persistWhenDead`, `isInPlayerParty` (derived), `wasEverInPlayerParty`, `last_seen_time`, `last_seen_location`, `was_in_player_location_previous_round`, `importantMemories`
 - `resistances`, `vulnerabilities`
 - `quests`, `personality`, `goals`, `characterArc`
 

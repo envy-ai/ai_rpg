@@ -113,6 +113,8 @@ class Semaphore {
 class LLMClient {
     static #semaphores = new Map();
     static #semaphoreLimit = null;
+    static #allModelsSemaphore = null;
+    static #allModelsSemaphoreLimit = null;
     static #forcedOutputFixtureSource = null;
     static #forcedOutputFixtureData = null;
     static #forcedOutputLabelCounters = new Map();
@@ -1248,6 +1250,18 @@ class LLMClient {
         return 1;
     }
 
+    static resolveMaxConcurrentAllModels(configOverride = Globals?.config) {
+        const raw = configOverride?.max_concurrent_requests_all_models;
+        if (raw === undefined || raw === null || raw === '') {
+            return null;
+        }
+        const numeric = Number(raw);
+        if (!Number.isInteger(numeric) || numeric < 1) {
+            throw LLMClient.#configurationError('max_concurrent_requests_all_models must be a positive integer when provided.');
+        }
+        return numeric;
+    }
+
     static #isRetryableNetworkError(error, errorStatus = undefined) {
         const normalizedStatus = Number(errorStatus ?? error?.status ?? error?.response?.status);
         if (Number.isFinite(normalizedStatus)) {
@@ -1607,6 +1621,30 @@ class LLMClient {
         return existing;
     }
 
+    static #ensureAllModelsSemaphore(log = null) {
+        const limit = LLMClient.resolveMaxConcurrentAllModels();
+        if (limit === null) {
+            return null;
+        }
+        const logFn = typeof log === 'function' ? log : null;
+        if (!LLMClient.#allModelsSemaphore) {
+            LLMClient.#allModelsSemaphore = new Semaphore(limit);
+            LLMClient.#allModelsSemaphoreLimit = limit;
+            if (logFn) {
+                logFn(`🔒 LLMClient all-model semaphore initialized with maxConcurrent=${limit}`);
+            }
+            return LLMClient.#allModelsSemaphore;
+        }
+        if (LLMClient.#allModelsSemaphoreLimit !== limit) {
+            LLMClient.#allModelsSemaphoreLimit = limit;
+            LLMClient.#allModelsSemaphore.setLimit(limit);
+            if (logFn) {
+                logFn(`🔒 LLMClient all-model semaphore limit updated to maxConcurrent=${limit}`);
+            }
+        }
+        return LLMClient.#allModelsSemaphore;
+    }
+
     static writeLogFile({
         prefix = 'log',
         metadataLabel = '',
@@ -1886,6 +1924,49 @@ class LLMClient {
             )
         };
         return modifiedMessages;
+    }
+
+    static #resolveSystemPromptAppend(configured) {
+        if (configured === undefined || configured === null || configured === '') {
+            return null;
+        }
+        if (typeof configured !== 'string') {
+            throw LLMClient.#configurationError('ai.sysprompt_append must be a string or null when provided.');
+        }
+        const trimmed = configured.trim();
+        return trimmed || null;
+    }
+
+    static #applySystemPromptAppend(messages, configuredAppend) {
+        const appendText = LLMClient.#resolveSystemPromptAppend(configuredAppend);
+        if (!appendText) {
+            return messages;
+        }
+        if (!Array.isArray(messages) || messages.length === 0) {
+            throw LLMClient.#configurationError('ai.sysprompt_append requires at least one request message.');
+        }
+
+        const appendedMessages = messages.slice();
+        const appendMessage = {
+            role: 'system',
+            content: appendText
+        };
+        let lastSystemMessageIndex = -1;
+        for (let index = 0; index < appendedMessages.length; index += 1) {
+            const role = typeof appendedMessages[index]?.role === 'string'
+                ? appendedMessages[index].role.trim().toLowerCase()
+                : '';
+            if (role === 'system') {
+                lastSystemMessageIndex = index;
+            }
+        }
+
+        if (lastSystemMessageIndex >= 0) {
+            appendedMessages.splice(lastSystemMessageIndex + 1, 0, appendMessage);
+        } else {
+            appendedMessages.unshift(appendMessage);
+        }
+        return appendedMessages;
     }
 
     static logPrompt({
@@ -3101,6 +3182,89 @@ class LLMClient {
         return trimmed || null;
     }
 
+    static #assistantPrefillError(message) {
+        const error = new Error(message);
+        error.isAssistantPrefillError = true;
+        return error;
+    }
+
+    static #configurationError(message) {
+        const error = new Error(message);
+        error.isConfigurationError = true;
+        return error;
+    }
+
+    static #resolveAssistantPrefill({
+        prefill,
+        assistantResponseSeed,
+        configured
+    } = {}) {
+        const hasPrefillOption = prefill !== undefined;
+        const hasAssistantResponseSeedOption = assistantResponseSeed !== undefined;
+        if (
+            hasPrefillOption
+            && hasAssistantResponseSeedOption
+            && prefill !== assistantResponseSeed
+        ) {
+            throw LLMClient.#assistantPrefillError(
+                'chatCompletion received both prefill and assistantResponseSeed with different values.'
+            );
+        }
+
+        const candidate = hasAssistantResponseSeedOption
+            ? assistantResponseSeed
+            : (hasPrefillOption ? prefill : configured);
+        if (candidate === undefined || candidate === null || candidate === '') {
+            return null;
+        }
+        if (typeof candidate !== 'string') {
+            throw LLMClient.#assistantPrefillError(
+                'chatCompletion prefill/assistantResponseSeed must be a string or null when provided.'
+            );
+        }
+        return candidate.trim() ? candidate : null;
+    }
+
+    static #payloadHasToolDefinitions(payload) {
+        if (!payload || typeof payload !== 'object') {
+            return false;
+        }
+        return (Array.isArray(payload.tools) && payload.tools.length > 0)
+            || (Array.isArray(payload.functions) && payload.functions.length > 0);
+    }
+
+    static #appendAssistantPrefillMessage(messages, prefill) {
+        if (!prefill) {
+            return messages;
+        }
+        if (!Array.isArray(messages) || messages.length === 0) {
+            throw LLMClient.#assistantPrefillError(
+                'Assistant response prefill requires at least one request message.'
+            );
+        }
+        return [
+            ...messages,
+            {
+                role: 'assistant',
+                content: prefill
+            }
+        ];
+    }
+
+    static #mergeAssistantPrefillWithResponse(prefill, responseContent) {
+        if (!prefill) {
+            return responseContent;
+        }
+        const text = typeof responseContent === 'string' ? responseContent : '';
+        if (!text) {
+            return prefill;
+        }
+        if (text.startsWith(prefill)) {
+            return text;
+        }
+        return `${prefill}${text}`;
+    }
+
     static #generateSeed() {
         return Math.floor(Math.random() * 1e12) + 1;
     }
@@ -3529,6 +3693,8 @@ class LLMClient {
         forceOutput = null,
         logStreamChunksToConsole = false,
         reasoningEffort = null,
+        prefill = undefined,
+        assistantResponseSeed = undefined,
     } = {}) {
         const resolvedOutput = LLMClient.resolveOutput(output);
         const isSilent = resolvedOutput === 'silent';
@@ -3607,6 +3773,8 @@ class LLMClient {
                 topP,
                 multimodal,
                 reasoningEffort,
+                prefill,
+                assistantResponseSeed,
                 forceOutput: forceOutput !== null && forceOutput !== undefined ? '[provided]' : null
             });
         }
@@ -3699,9 +3867,31 @@ class LLMClient {
                     ...effectiveCustomArgs,
                     ...basePayload
                 };
-                const requestMessages = LLMClient.#applyPromptCachebuster(
+                const resolvedPrefill = LLMClient.#resolveAssistantPrefill({
+                    prefill,
+                    assistantResponseSeed,
+                    configured: aiConfig.prefill
+                });
+                if (resolvedPrefill && resolvedBackend === CodexBridgeClient.backendName) {
+                    throw LLMClient.#assistantPrefillError(
+                        'Assistant response prefill is only supported by the openai_compatible backend.'
+                    );
+                }
+                if (resolvedPrefill && LLMClient.#payloadHasToolDefinitions(payload)) {
+                    throw LLMClient.#assistantPrefillError(
+                        'Assistant response prefill cannot be used with tool-call request payloads.'
+                    );
+                }
+                const systemAppendedMessages = LLMClient.#applySystemPromptAppend(
                     messages,
-                    LLMClient.#isPromptCachebusterEnabled(aiConfig.cachebuster)
+                    aiConfig.sysprompt_append
+                );
+                const requestMessages = LLMClient.#appendAssistantPrefillMessage(
+                    LLMClient.#applyPromptCachebuster(
+                        systemAppendedMessages,
+                        LLMClient.#isPromptCachebusterEnabled(aiConfig.cachebuster)
+                    ),
+                    resolvedPrefill
                 );
                 payload.messages = requestMessages;
 
@@ -3888,6 +4078,7 @@ class LLMClient {
                         bridgeConfig: CodexBridgeClient.resolveBridgeConfig(aiConfig),
                         payload,
                         requestMessages,
+                        resolvedPrefill,
                         resolvedModel,
                         resolvedEndpoint,
                         resolvedApiKey,
@@ -3940,6 +4131,7 @@ class LLMClient {
                     bridgeConfig: null,
                     payload,
                     requestMessages,
+                    resolvedPrefill,
                     resolvedModel,
                     resolvedEndpoint,
                     resolvedApiKey,
@@ -4003,9 +4195,12 @@ class LLMClient {
                 let responseFinishReason = null;
                 let attemptSemaphore = null;
                 let attemptSemaphorePermit = null;
+                let attemptAllModelsSemaphore = null;
+                let attemptAllModelsSemaphorePermit = null;
                 let attemptRuntime = null;
                 let payload = null;
                 let requestMessages = messages;
+                let resolvedPrefill = null;
                 let resolvedBackend = null;
                 let resolvedModel = null;
                 let resolvedEndpoint = null;
@@ -4019,9 +4214,26 @@ class LLMClient {
                 let response = null;
                 try {
                     if (hasForcedOutput) {
-                        requestMessages = LLMClient.#applyPromptCachebuster(
+                        resolvedPrefill = LLMClient.#resolveAssistantPrefill({
+                            prefill,
+                            assistantResponseSeed,
+                            configured: Globals?.config?.ai?.prefill
+                        });
+                        if (resolvedPrefill && LLMClient.#payloadHasToolDefinitions(basePayload)) {
+                            throw LLMClient.#assistantPrefillError(
+                                'Assistant response prefill cannot be used with tool-call request payloads.'
+                            );
+                        }
+                        const systemAppendedMessages = LLMClient.#applySystemPromptAppend(
                             messages,
-                            LLMClient.#isPromptCachebusterEnabled(Globals?.config?.ai?.cachebuster)
+                            Globals?.config?.ai?.sysprompt_append
+                        );
+                        requestMessages = LLMClient.#appendAssistantPrefillMessage(
+                            LLMClient.#applyPromptCachebuster(
+                                systemAppendedMessages,
+                                LLMClient.#isPromptCachebusterEnabled(Globals?.config?.ai?.cachebuster)
+                            ),
+                            resolvedPrefill
                         );
                         payload = {
                             forceOutput: resolvedForcedOutput,
@@ -4058,6 +4270,7 @@ class LLMClient {
                         resolvedModel = attemptRuntime.resolvedModel;
                         resolvedEndpoint = attemptRuntime.resolvedEndpoint;
                         resolvedTimeout = attemptRuntime.resolvedTimeout;
+                        resolvedPrefill = attemptRuntime.resolvedPrefill;
                         waitAfterErrorSeconds = attemptRuntime.resolvedWaitAfterError;
                         waitAfterRateLimitErrorSeconds = attemptRuntime.resolvedWaitAfterRateLimitError;
                         waitAfterNetworkErrorSeconds = attemptRuntime.resolvedWaitAfterNetworkError;
@@ -4080,6 +4293,12 @@ class LLMClient {
                         attemptSemaphorePermit = await attemptSemaphore.acquire({
                             background: Boolean(runInBackground)
                         });
+                        attemptAllModelsSemaphore = LLMClient.#ensureAllModelsSemaphore(log);
+                        if (attemptAllModelsSemaphore) {
+                            attemptAllModelsSemaphorePermit = await attemptAllModelsSemaphore.acquire({
+                                background: Boolean(runInBackground)
+                            });
+                        }
 
                         const shouldTrackPromptProgress = !isSilent
                             && (payload.stream || resolvedBackend === CodexBridgeClient.backendName);
@@ -4297,6 +4516,16 @@ class LLMClient {
                         responseFinishReason = firstChoice?.finish_reason || null;
                     }
 
+                    if (resolvedPrefill && responseToolCalls.length > 0) {
+                        throw LLMClient.#assistantPrefillError(
+                            'Assistant response prefill cannot be applied to a tool-call response.'
+                        );
+                    }
+                    responseContent = LLMClient.#mergeAssistantPrefillWithResponse(
+                        resolvedPrefill,
+                        responseContent
+                    );
+
                     if (resolvedBackend === CodexBridgeClient.backendName && responseUsage) {
                         await LLMClient.#reportCodexUsage({
                             metadataLabel,
@@ -4503,6 +4732,9 @@ class LLMClient {
                         warn(`Prompt '${metadataLabel || 'unknown'}' canceled by user.`);
                         return '';
                     }
+                    if (error?.isAssistantPrefillError || error?.isConfigurationError) {
+                        throw error;
+                    }
                     errorLog(`Error occurred during chat completion (attempt ${attempt + 1}): `, error.message);
                     //console.debug(error);
 
@@ -4588,6 +4820,9 @@ class LLMClient {
                         startTimer = null;
                     }
                     if (attemptSemaphore) {
+                        if (attemptAllModelsSemaphore) {
+                            attemptAllModelsSemaphore.release(attemptAllModelsSemaphorePermit);
+                        }
                         attemptSemaphore.release(attemptSemaphorePermit);
                     }
                 }

@@ -10,6 +10,12 @@ server:
 
 max_memories_to_recall: 10
 
+# Optional positive integer cap across all simultaneous text-generation requests, regardless of model/backend key.
+max_concurrent_requests_all_models: null
+
+# Seconds between staggered concurrent prompt launches such as event checks, need bars, and quest checks.
+stagger_concurrent_prompts: 4
+
 # Short description generation
 short_description:
   # Max items to include per short-description prompt
@@ -22,6 +28,10 @@ dispositions:
 chat_tools:
   # Allows LLM chat-tool prompts to ask the player one direct follow-up question through a non-modal client panel.
   request_user_input_enabled: true
+
+trackers:
+  # Maximum number of whitespace-delimited words allowed for short_string tracker values.
+  short_string_max_words: 4
 
 plot_analysis:
   # Schedules the non-blocking background plot-analysis prompt after player actions.
@@ -88,6 +98,10 @@ ai:
   lowTemperature: 0.0
   temperature: 0.6
   highTemperature: 1.0
+  # Optional assistant-message prefill for OpenAI-compatible backends. Override per prompt with ai_model_overrides.
+  prefill: null
+  # Optional text appended to the outbound system prompt. Override per prompt with ai_model_overrides.
+  sysprompt_append: ""
   # Optional: extra HTTP headers sent with each chat-completion request
   # headers:
   #   User-Agent: "Firefox 99.0"
@@ -139,6 +153,7 @@ ai_multimodal:
 #   creative:
 #     model: "moonshotai/kimi-k2.5"
 #     temperature: 0.9
+#     sysprompt_append: "Follow this provider-specific system guidance."
 #     headers:
 #       User-Agent: "Firefox 99.0"
 #     prompts:
@@ -175,6 +190,7 @@ prompt_progress:
 
     # Other known prompt families
     action*: 5000
+    ai_item_search: 5000
     alter_thing: 5000
     attack_*: 5000
     barter_prices: 5000
@@ -219,6 +235,7 @@ prompt_progress:
     scene_illustration_prompt: 5000
     scene_summarize: 5000
     separate_thing: 5000
+    set_travel_times: 5000
     setting_*: 5000
     short_description_*: 5000
     skill_*: 5000
@@ -231,6 +248,7 @@ prompt_progress:
     tool_*: 5000
     while_you_were_away: 5000
     xml_fix: 5000
+    housekeeping: 5000
 model_swap_options:
   - "zai-org/glm-4.7"
   - "z-ai/glm-4.6"

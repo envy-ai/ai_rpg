@@ -3,6 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('fs');
 const path = require('path');
 const Events = require('../Events.js');
+const Globals = require('../Globals.js');
 
 const apiSource = fs.readFileSync(path.join(__dirname, '..', 'api.js'), 'utf8');
 
@@ -25,23 +26,26 @@ test('player-action event, need-bar, and quest checks launch concurrently with s
     assert.notEqual(eventPromiseIndex, -1, 'Unable to locate immediate event-check promise.');
     assert.notEqual(questPromiseIndex, -1, 'Unable to locate delayed quest-check promise.');
     assert.ok(eventPromiseIndex < questPromiseIndex, 'event checks should be launched before delayed quest checks are scheduled.');
-    assert.match(source, /Events\.PROMPT_LAUNCH_STAGGER_MS \* 2/);
+    assert.match(source, /const promptLaunchStaggerMs = Events\.resolvePromptLaunchStaggerMs\(\);/);
+    assert.match(source, /promptLaunchStaggerMs \* 2/);
     assert.match(source, /const \[eventCheckOutcome, questCheckOutcome\] = await Promise\.all\(\[/);
     assert.match(source, /eventResult = eventCheckOutcome;/);
     assert.match(source, /questResult = questCheckOutcome;/);
 });
 
-test('XML event path schedules need-bar prompt two seconds after events-xml launch', () => {
+test('XML event path schedules need-bar prompt after configured stagger', () => {
     const eventsSource = fs.readFileSync(path.join(__dirname, '..', 'Events.js'), 'utf8');
     const source = eventsSource.slice(
         eventsSource.indexOf('    static async _runXmlEventChecks({'),
         eventsSource.indexOf('        this.logEventCheck({', eventsSource.indexOf('    static async _runXmlEventChecks({'))
     );
 
-    assert.match(eventsSource, /static PROMPT_LAUNCH_STAGGER_MS = 2000;/);
+    assert.match(eventsSource, /static PROMPT_LAUNCH_STAGGER_MS = 4000;/);
+    assert.match(eventsSource, /static resolvePromptLaunchStaggerMs\(configOverride = Globals\?\.config\)/);
     assert.match(eventsSource, /static runAfterPromptLaunchDelay\(delayMs, task\)/);
     assert.match(source, /const eventCheckPromise = LLMClient\.chatCompletion\(\{/);
-    assert.match(source, /const needBarEventCheckPromise = suppressNeedBarEventChecks[\s\S]*?this\.runAfterPromptLaunchDelay\(\s*this\.PROMPT_LAUNCH_STAGGER_MS,/);
+    assert.match(source, /const promptLaunchStaggerMs = this\.resolvePromptLaunchStaggerMs\(\);/);
+    assert.match(source, /const needBarEventCheckPromise = suppressNeedBarEventChecks[\s\S]*?this\.runAfterPromptLaunchDelay\(\s*promptLaunchStaggerMs,/);
     assert.match(source, /const \[responseText, needBarEventCheck\] = await Promise\.all\(\[/);
 });
 
@@ -52,7 +56,65 @@ test('legacy event path also staggers need-bar prompt launch', () => {
         eventsSource.indexOf('        const groupResponsesPromise = Promise.all(', eventsSource.indexOf('        const promptGroups = EVENT_PROMPT_ORDER;'))
     );
 
-    assert.match(source, /const needBarEventCheckPromise = suppressNeedBarEventChecks[\s\S]*?this\.runAfterPromptLaunchDelay\(\s*this\.PROMPT_LAUNCH_STAGGER_MS,/);
+    assert.match(source, /const promptLaunchStaggerMs = this\.resolvePromptLaunchStaggerMs\(\);/);
+    assert.match(source, /const needBarEventCheckPromise = suppressNeedBarEventChecks[\s\S]*?this\.runAfterPromptLaunchDelay\(\s*promptLaunchStaggerMs,/);
+});
+
+test('event housekeeping prompt is silent, logged, and mutation-capable', () => {
+    const source = sourceBetween(
+        'async function startHousekeepingPrompt({',
+        'Events.setHousekeepingPromptRunner(runHousekeepingPrompt);'
+    );
+
+    assert.match(source, /promptType:\s*'housekeeping'/);
+    assert.match(source, /housekeepingInstructions\s*=\s*''/);
+    assert.match(source, /housekeepingInstructions:\s*typeof housekeepingInstructions === 'string'\s*\?\s*housekeepingInstructions\s*:\s*''/);
+    assert.match(apiSource, /const \{\s*collectHistoryMatches,\s*runChatCompletionWithToolLoop,\s*executeChatToolCall\s*\} = createChatToolRuntime\(\{/);
+    assert.match(source, /const rawResponsePromise = LLMClient\.chatCompletion\(requestOptions\)/);
+    assert.match(source, /async function finishHousekeepingPrompt\(pendingHousekeepingPrompt,/);
+    assert.match(source, /const rawResponseResult = await pending\.rawResponsePromise;/);
+    assert.doesNotMatch(source, /getAllChatToolDefinitions/);
+    assert.doesNotMatch(source, /housekeepingTools/);
+    assert.doesNotMatch(source, /tool_choice/);
+    assert.doesNotMatch(source, /additionalPayload/);
+    assert.match(source, /metadataLabel:\s*'housekeeping'/);
+    assert.match(source, /Globals\.config\?\.debug_tool_calls === true[\s\S]*?createPromptToolCallDebugRecorder\(\{/);
+    assert.match(source, /promptLabel:\s*'housekeeping'/);
+    assert.match(source, /entryCollector:\s*housekeepingToolCallDebugEntries/);
+    assert.match(source, /Events\._applyHousekeepingXmlResponse\(rawResponse,\s*\{/);
+    assert.match(source, /executeChatToolCall,/);
+    assert.match(source, /startingSequence:\s*0,/);
+    assert.match(source, /onToolCallDebug:\s*toolCallDebugRecorder[\s\S]*?toolCallDebugRecorder\.record\(event\)/);
+    assert.match(source, /LLMClient\.logPrompt\(\{\s*prefix:\s*'housekeeping'/);
+    assert.match(source, /runHousekeepingPrompt\.start = function startHousekeepingPromptForDeferredApply/);
+    assert.match(source, /runHousekeepingPrompt\.finish = function finishHousekeepingPromptForDeferredApply/);
+    assert.doesNotMatch(source, /toolLoopResult/);
+    assert.doesNotMatch(source, /newChatEntries/);
+});
+
+test('event checks start housekeeping concurrently and apply it after outcomes', () => {
+    const eventsSource = fs.readFileSync(path.join(__dirname, '..', 'Events.js'), 'utf8');
+    const source = eventsSource.slice(
+        eventsSource.indexOf('        const baseContext = await prepareBasePromptContext({'),
+        eventsSource.indexOf('        const promptGroups = EVENT_PROMPT_ORDER;')
+    );
+
+    assert.match(source, /const pendingHousekeepingPrompt = this\._startHousekeepingForEventChecks\(\{/);
+    assert.match(source, /pendingHousekeepingPrompt,/);
+    assert.match(eventsSource, /static async _runHousekeepingAfterEventChecks\(\{\s*[\s\S]*?pendingHousekeepingPrompt = null,/);
+    assert.match(eventsSource, /if \(pendingHousekeepingPrompt\) \{[\s\S]*?return runner\.finish\(pending,/);
+});
+
+test('slash command context exposes housekeeping prompt runner with instructions and stream', () => {
+    const source = sourceBetween(
+        'function buildSlashCommandInteractionContext({',
+        "\n        app.post('/api/slash-command', async (req, res) => {"
+    );
+
+    assert.match(source, /runHousekeepingPrompt:\s*async\s*\(\{\s*instructions\s*=\s*''\s*\} = \{\}\) => \{/);
+    assert.match(source, /Housekeeping slash command requires an active client connection\./);
+    assert.match(source, /createStreamEmitter\(\{\s*clientId:\s*normalizedClientId/);
+    assert.match(source, /housekeepingInstructions:\s*instructions/);
 });
 
 test('prompt launch delay helper rejects invalid delay requests loudly', async () => {
@@ -71,4 +133,26 @@ test('prompt launch delay helper rejects invalid delay requests loudly', async (
 
     const result = await Events.runAfterPromptLaunchDelay(0, () => 'launched');
     assert.equal(result, 'launched');
+});
+
+test('prompt launch stagger resolves from root config seconds', { concurrency: false }, () => {
+    const originalConfig = Globals.config;
+    try {
+        Globals.config = { stagger_concurrent_prompts: 5 };
+        assert.equal(Events.resolvePromptLaunchStaggerMs(), 5000);
+
+        Globals.config = { stagger_concurrent_prompts: 0.25 };
+        assert.equal(Events.resolvePromptLaunchStaggerMs(), 250);
+
+        Globals.config = {};
+        assert.equal(Events.resolvePromptLaunchStaggerMs(), 4000);
+
+        Globals.config = { stagger_concurrent_prompts: -1 };
+        assert.throws(
+            () => Events.resolvePromptLaunchStaggerMs(),
+            /stagger_concurrent_prompts must be a non-negative finite number of seconds/
+        );
+    } finally {
+        Globals.config = originalConfig;
+    }
 });

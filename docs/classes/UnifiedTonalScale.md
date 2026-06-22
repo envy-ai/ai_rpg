@@ -27,7 +27,7 @@
 - Empty selections render as an empty string.
 - Non-empty selections must contain one entry for every merged definition axis and no unknown axis keys.
 - Selected levels may be exact definition levels or generated half-step midpoints. Half-step labels combine the upper and lower adjacent names, and their descriptions begin with `Between <lower> and <upper>:`.
-- Rendered markdown starts with `## Unified Tonal Scale`, includes notation such as `I#-G#-S#-F#`, emits a table for each axis, then emits a `### THIS STORY: ...` summary table with selected meanings and setting-specific comments.
+- Rendered markdown starts with `## Unified Tonal Scale`, includes notation such as `I#-G#-S#-F#-U#`, emits a table for each axis, then emits a `### THIS STORY: ...` summary table with selected meanings and setting-specific comments.
 - Markdown table cells are whitespace-normalized and pipe characters are escaped.
 
 ## Runtime Integration

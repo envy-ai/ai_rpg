@@ -39,6 +39,11 @@ Most modals live in `views/index.njk` and are wired up by the inline script or `
 - `#entityImageUploadModal`: reusable image upload modal opened from `Upload Image` context menu actions on locations, things, NPCs, and the player. It accepts PNG, JPEG, WebP, and GIF files, previews the selected file, posts its data URL to `/api/images/upload`, and replaces the target entity's current `imageId` with the returned upload image.
 - Location uploads clear client-side weather/lighting variant display cache for that location so cached variants do not cover the uploaded base image.
 
+## Editable image regeneration prompt
+
+- `#entityImagePromptModal`: reusable prompt-edit modal opened from `Regenerate Image +` context menu actions on locations, things, NPCs, and the player. The client first posts the entity target to `/api/images/prompt`; the returned final prefixed prompt is placed in a white-text textarea with a translucent black-tint background for editing. The current image is not cleared during this prompt-generation phase.
+- Submitting the modal posts the edited prompt to `/api/images/request` with `force: true`. After the request is accepted, the same placeholder/cache refresh paths used by immediate regeneration run for the target entity.
+
 ## Empty action confirmation
 
 - `#emptyActionConfirmModal`: opened when the user submits the chat input with no text.
@@ -100,6 +105,7 @@ Most modals live in `views/index.njk` and are wired up by the inline script or `
 
 ## Location and region editing
 
+- `#locationRegionFixerModal`: blocking movement repair modal shown when preflight or `/api/player/move` reports `code: "location_region_membership_conflict"`. It displays the affected location as `name (id)`, lists each containing region as `name (id)`, posts the selected region to `/api/location-region-membership-conflicts/:locationId/resolve`, then resumes the original movement flow after the duplicate memberships are removed.
 - `#locationEditModal`: edit location name/description/level/status effects, controlling faction, vehicle fields, and the containing region. Stub descriptions may be left empty, which clears existing stub presentation text. Changing the Region selector for a hydrated location saves normal location edits first, then calls `POST /api/locations/:id/relocate` to move the location server-side so `location.regionId` and the source/destination `Region.locationIds` stay in sync. Pending regions are shown as disabled `unstub first` options for hydrated locations. Ordinary location stubs also show the Region selector and save it through `PUT /api/stubs/:id` as `targetRegionId`, allowing live or pending-region ownership changes without exit cleanup; region-entry stubs keep the selector hidden because their target region is their identity. When a hydrated selected region differs from the current one, the modal shows a relocation-cleanup section with inbound/outbound direct exits from `GET /api/locations/:id/relocation-options`; selected exits are removed during relocation and a checkbox can make the moved location the target region entrance.
 - `#regionEditModal`: edit region name/description/parent/level, controlling faction, and vehicle fields.
   - Both include a short description field directly under the main description.
@@ -135,6 +141,8 @@ Most modals live in `views/index.njk` and are wired up by the inline script or `
 - Applies a dynamic top offset below header/tab controls so top-row UI buttons stay clickable during generation.
 - Renders card options for one level at a time and requires exactly `player_abilities_per_level` selections.
 - Existing level abilities appear preselected and toggleable; generated options fill up to `player_ability_options_per_level`.
+- Each option card includes an upper-right square `👎` toggle. Selecting an option clears its declined state, and declining an option clears its selected state before submit.
+- Ability descriptions sit on a full-width row below the name/type row.
 - Submit button is horizontally centered with `1.5em` bottom spacing.
 - Submit advances to the next missing level (if any) and keeps gameplay blocked until all missing levels are filled.
 

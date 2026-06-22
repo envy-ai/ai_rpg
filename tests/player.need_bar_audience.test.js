@@ -105,14 +105,21 @@ test('NPC need bars keep party-audience bars active after leaving the party when
     const previousBaseDir = Globals.baseDir;
     const previousConfig = Globals.config;
     const previousWorldTime = Globals.worldTime;
+    const previousCurrentPlayer = Globals.currentPlayer;
     const tempBaseDir = createTempNeedBarDefs();
 
     Player.clearRuntimeRegistries();
+    Globals.currentPlayer = null;
     Globals.baseDir = tempBaseDir;
     Globals.config = withBaseHealthAndFormulas(previousConfig);
     Player.reloadDefinitionCaches({ refreshInstances: false });
 
     try {
+        const player = new Player({
+            id: 'need-audience-player',
+            name: 'Baato'
+        });
+        Globals.currentPlayer = player;
         const npc = new Player({
             id: 'need-audience-npc',
             name: 'Dockhand Pell',
@@ -134,7 +141,7 @@ test('NPC need bars keep party-audience bars active after leaving the party when
         assert.equal(npc.getNeedBarValue('suspicion'), 43);
         assert.equal(npc.getNeedBarValue('stamina'), 99);
 
-        npc.setInPlayerParty(true);
+        assert.equal(player.addPartyMember(npc.id), true);
         assert.deepEqual(
             npc.getNeedBars({ scope: 'active' }).map(bar => bar.id).sort(),
             ['morale', 'stamina']
@@ -151,7 +158,7 @@ test('NPC need bars keep party-audience bars active after leaving the party when
         assert.equal(npc.getNeedBarValue('suspicion'), 43);
         assert.equal(npc.getNeedBarValue('stamina'), 98);
 
-        npc.setInPlayerParty(false);
+        player.clearPartyMembers();
         assert.deepEqual(
             npc.getNeedBars({ scope: 'active' }).map(bar => bar.id).sort(),
             ['morale', 'stamina', 'suspicion']
@@ -170,6 +177,7 @@ test('NPC need bars keep party-audience bars active after leaving the party when
         Globals.baseDir = previousBaseDir;
         Globals.config = previousConfig;
         Globals.worldTime = previousWorldTime;
+        Globals.currentPlayer = previousCurrentPlayer;
         Player.reloadDefinitionCaches({ refreshInstances: false });
         fs.rmSync(tempBaseDir, { recursive: true, force: true });
     }

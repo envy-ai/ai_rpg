@@ -10,7 +10,7 @@
 - Avoid adding "fallback" or "best effort" flows unless the user has explicitly asked for them.
 - When creating a new prompt, don't specify <maxTokens/>; just allow it to use the default.
 - Game object properties and global variables should generally be persisted in saves unless there's a good reason not to.
-- When in doubt, fail loudly so the issue surfaces during development rather than being hidden.
+- When in doubt, fail loudly but gracefully so the issue surfaces during development rather than being hidden. "Gracefully" in this case means popping up an error modal on the client side with a backtrace, not crashing the program.
 - At the start of a coding session, inform the user that you have seen this file.
 - Do not add clamping of any numeric values unless specifically asked.
 - Use VS code's internal functions when possible.

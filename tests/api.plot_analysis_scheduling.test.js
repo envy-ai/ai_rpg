@@ -45,6 +45,21 @@ test('plot analysis scheduling is enabled by default and gated by config', () =>
     );
 });
 
+test('plot analysis runner rechecks the config gate before doing background work', () => {
+    const runStart = apiSource.indexOf('async function runPlotAnalysisPrompt(');
+    const runEnd = apiSource.indexOf('\n        function schedulePlotAnalysisPrompt', runStart);
+
+    assert.notEqual(runStart, -1, 'Unable to locate plot-analysis prompt runner.');
+    assert.notEqual(runEnd, -1, 'Unable to locate plot-analysis prompt runner boundary.');
+
+    const runSource = apiSource.slice(runStart, runEnd);
+
+    assert.match(
+        runSource,
+        /if \(!isPlotAnalysisPromptEnabled\(\)\) \{\s*return null;\s*\}/
+    );
+});
+
 test('plot analysis prompt runs through a narrow tracker and timed-event tool loop', () => {
     const runStart = apiSource.indexOf('async function runPlotAnalysisPrompt(');
     const runEnd = apiSource.indexOf('\n        function schedulePlotAnalysisPrompt', runStart);
@@ -56,7 +71,7 @@ test('plot analysis prompt runs through a narrow tracker and timed-event tool lo
 
     assert.match(
         apiSource,
-        /const PLOT_ANALYSIS_CHAT_TOOL_NAMES = new Set\(\[\s*'addTracker',\s*'scheduleEvent'\s*\]\);/
+        /const PLOT_ANALYSIS_CHAT_TOOL_NAMES = new Set\(\[\s*'addTracker',\s*'scheduleEvent',\s*'setRelationship'\s*\]\);/
     );
     assert.match(apiSource, /function getPlotAnalysisChatToolDefinitions\(\{/);
     assert.match(runSource, /const plotAnalysisTools = getPlotAnalysisChatToolDefinitions\(\{\s*modExtensionRegistry\s*\}\);/);
@@ -65,7 +80,7 @@ test('plot analysis prompt runs through a narrow tracker and timed-event tool lo
     assert.doesNotMatch(runSource, /await LLMClient\.chatCompletion\(requestOptions\)/);
 });
 
-test('regular player-action prompts can create trackers and scheduled events', () => {
+test('regular player-action prompts can create trackers, scheduled events, and relationship labels', () => {
     const toolSetStart = apiSource.indexOf('const INFORMATION_GATHERING_CHAT_TOOL_NAMES = new Set([');
     const toolSetEnd = apiSource.indexOf(']);', toolSetStart);
     assert.notEqual(toolSetStart, -1, 'Unable to locate regular prose chat tool set.');
@@ -74,8 +89,10 @@ test('regular player-action prompts can create trackers and scheduled events', (
     const toolSetSource = apiSource.slice(toolSetStart, toolSetEnd);
     assert.match(toolSetSource, /'addTracker'/);
     assert.match(toolSetSource, /'scheduleEvent'/);
+    assert.match(toolSetSource, /'setRelationship'/);
     assert.match(playerActionPrompt, /`addTracker`/);
     assert.match(playerActionPrompt, /`scheduleEvent`/);
+    assert.match(playerActionPrompt, /`setRelationship`/);
 });
 
 test('improvement prompt defaults disabled, local config enables it, and config is validated', () => {

@@ -115,9 +115,9 @@
 
         const originalCreateMessageActions = chat.createMessageActions.bind(chat);
         
-        chat.createMessageActions = function(entry) {
+        chat.createMessageActions = function(entry, options) {
             // Call original to get the wrapper with standard buttons (edit, delete)
-            const wrapper = originalCreateMessageActions(entry);
+            const wrapper = originalCreateMessageActions(entry, options);
             
             // If wrapper is null (e.g. key system messages), return null
             if (!wrapper) {

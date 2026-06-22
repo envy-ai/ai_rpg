@@ -367,7 +367,7 @@ Studio expansion:
 Current implementation provides the shared axes and per-setting selections. A
 studio layer should focus on making that behavior easier to reason about:
 
-- Show compact notation such as `I4-G2-S3-F2`.
+- Show compact notation such as `I4-G2-S3-F2-U3`.
 - Show all axis levels with selected levels highlighted.
 - Show the exact prompt block that will be injected.
 - Generate a short "what this means for this setting" explanation.

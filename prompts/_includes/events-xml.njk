@@ -690,7 +690,7 @@ Use this to indicate whether the player should currently be considered in physic
   <value>true|false</value>
 </inCombat>
 ```
-
+{#
 ### `tracker_updates` (OPTIONAL FIELD, 0-1x)
 
 Use this to report any changes to the values of existing trackers, or to add new trackers for things that should be tracked but don't have them yet. Include only trackers that changed or that should be added or removed; omit unchanged trackers.
@@ -700,11 +700,11 @@ Use this to report any changes to the values of existing trackers, or to add new
     <trackerName>Exact tracker name</trackerName>
     <type>countdown|numerical_count|x_out_of_total|percentage|short_string</type>
     <action>update|add|remove</action>
-    <newValue>New tracker value, if add or update; use "none" for remove. Strictly format depending on type: 'countdown' → concrete duration until the deadline, such as "HH:MM", "[INTEGER] [days/minutes/hours]", or "[INTEGER] days, [INTEGER] hours, [INTEGER] minutes" (the game stores an absolute deadline and displays remaining time automatically); 'numerical_count' → integer; 'x_out_of_total' → "[NUMBER]/[NUMBER]"; 'percentage' → integer between 0 and 100, with or without a percent sign; 'short_string' → string no more than 3 words. No approximate values (2-3 days, about 10 minutes, etc) allowed; no units except as specified</newValue>
+    <newValue>New tracker value, if add or update; use "none" for remove. Strictly format depending on type: 'countdown' → concrete duration until the deadline, such as "HH:MM", "[INTEGER] [days/minutes/hours]", or "[INTEGER] days, [INTEGER] hours, [INTEGER] minutes" (the game stores an absolute deadline and displays remaining time automatically); 'numerical_count' → integer; 'x_out_of_total' → "[NUMBER]/[NUMBER]"; 'percentage' → integer between 0 and 100, with or without a percent sign; 'short_string' → string no more than {{ shortStringTrackerMaxWords | default(4) }} words. No approximate values (2-3 days, about 10 minutes, etc) allowed; no units except as specified</newValue>
     <reason>One sentence reason for the update</reason>
   </trackerUpdate>
   <!-- Repeat trackerUpdate for each updated, added, or removed tracker. If no trackers are updated, omit the trackerUpdates block or leave it empty. -->
-</trackerUpdates>
+</trackerUpdates>#}
 
 ## End XML schema
 

@@ -6,10 +6,12 @@ const Utils = require('../Utils.js');
 const Globals = require('../Globals.js');
 
 function createPromptEnv() {
-    return nunjucks.configure(path.join(process.cwd(), 'prompts'), {
+    const env = nunjucks.configure(path.join(process.cwd(), 'prompts'), {
         autoescape: false,
         throwOnUndefined: true
     });
+    env.addGlobal('randomword', () => 'test');
+    return env;
 }
 
 function buildRenderContext() {
@@ -314,6 +316,78 @@ test('base-context current location NPC list omits party members', () => {
     assert.match(currentLocationNpcBlock, /<name>Tessa<\/name>/);
 });
 
+test('base-context renders character relationship sections with comments', () => {
+    const promptEnv = createPromptEnv();
+    const context = buildRenderContext();
+    context.npcs = [
+        {
+            id: 'npc-alice',
+            name: 'Alice',
+            description: 'A visible ally.',
+            class: 'Guide',
+            race: 'Human',
+            resistances: '',
+            vulnerabilities: '',
+            hiddenFromPlayer: false,
+            personality: { type: '', traits: '', goals: [], notes: '', aiNotes: '' },
+            aiNotes: '',
+            dispositionsTowardsPlayer: [],
+            selectedImportantMemories: [],
+            inventory: [],
+            skills: [],
+            abilities: [],
+            statusEffects: [],
+            needs: [],
+            relationships: [
+                { targetId: 'npc-bob', name: 'Bob', label: 'bitter rival' }
+            ],
+            reciprocalRelationships: [
+                { sourceId: 'npc-carol', name: 'Carol', label: 'mentor' }
+            ]
+        }
+    ];
+
+    const rendered = promptEnv.render('base-context.xml.njk', context);
+
+    assert.match(rendered, /<relationships>\s*<!-- This is how this character relates to other characters -->\s*Bob: bitter rival\s*<\/relationships>/);
+    assert.match(rendered, /<reciprocalRelationships>\s*<!-- This is how other characters relate to this character -->\s*Carol: mentor\s*<\/reciprocalRelationships>/);
+    assert.doesNotMatch(rendered, /recipricalRelationships/);
+});
+
+test('base-context omits empty character relationship sections', () => {
+    const promptEnv = createPromptEnv();
+    const context = buildRenderContext();
+    context.npcs = [
+        {
+            id: 'npc-empty',
+            name: 'Empty',
+            description: 'A character with no relationship labels.',
+            class: 'Guide',
+            race: 'Human',
+            resistances: '',
+            vulnerabilities: '',
+            hiddenFromPlayer: false,
+            personality: { type: '', traits: '', goals: [], notes: '', aiNotes: '' },
+            aiNotes: '',
+            dispositionsTowardsPlayer: [],
+            selectedImportantMemories: [],
+            inventory: [],
+            skills: [],
+            abilities: [],
+            statusEffects: [],
+            needs: [],
+            relationships: [],
+            reciprocalRelationships: []
+        }
+    ];
+
+    const rendered = promptEnv.render('base-context.xml.njk', context);
+    const emptyNpcBlock = rendered.match(/<npc>\s*<id>npc-empty<\/id>[\s\S]*?<\/npc>/)?.[0] || '';
+
+    assert.doesNotMatch(emptyNpcBlock, /<relationships>/);
+    assert.doesNotMatch(emptyNpcBlock, /<reciprocalRelationships>/);
+});
+
 test('base-context includes character hidden field only when true', () => {
     const promptEnv = createPromptEnv();
     const context = buildRenderContext();
@@ -419,7 +493,8 @@ test('base-context includes trackers as compact plain text lines', () => {
             value: '3 hours',
             hidden: true,
             lastUpdated: '12 minutes ago',
-            guidance: 'Update when the cult ritual advances, stalls, or is interrupted.'
+            guidance: 'Update when the cult ritual advances, stalls, or is interrupted.',
+            note: 'Three hours remain because the first bell has already sounded.'
         },
         {
             id: 'tracker_2',
@@ -428,7 +503,8 @@ test('base-context includes trackers as compact plain text lines', () => {
             value: '45%',
             hidden: false,
             lastUpdated: 'just now',
-            guidance: 'Update when the guards gain or lose evidence.'
+            guidance: 'Update when the guards gain or lose evidence.',
+            note: 'Alert is below half because the patrol found footprints but no intruder.'
         }
     ];
 
@@ -437,11 +513,11 @@ test('base-context includes trackers as compact plain text lines', () => {
     assert.match(rendered, /<trackers>/);
     assert.match(
         rendered,
-        /tracker_1 \| Ritual Completion \| type=countdown \| value=3 hours \| hidden=true \| lastUpdated=12 minutes ago \| guidance=Update when the cult ritual advances, stalls, or is interrupted\./
+        /tracker_1 \| Ritual Completion \| type=countdown \| value=3 hours \| hidden=true \| lastUpdated=12 minutes ago \| guidance=Update when the cult ritual advances, stalls, or is interrupted\. \| note=Three hours remain because the first bell has already sounded\./
     );
     assert.match(
         rendered,
-        /tracker_2 \| Guard Alert \| type=percentage \| value=45% \| hidden=false \| lastUpdated=just now \| guidance=Update when the guards gain or lose evidence\./
+        /tracker_2 \| Guard Alert \| type=percentage \| value=45% \| hidden=false \| lastUpdated=just now \| guidance=Update when the guards gain or lose evidence\. \| note=Alert is below half because the patrol found footprints but no intruder\./
     );
     assert.doesNotMatch(rendered, /<tracker id=/);
 });

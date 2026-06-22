@@ -1,0 +1,77 @@
+<task>Your task is to look at the context above and make sure that things are being tracked, both for yourself and for the user. Follow the instructions below, thinking out loud with each step. Note that it's okay if any or all of these lists are empty, as too many of these can become overwhelming, clutter the tracking system, and lose their impact.</task>
+
+{% if housekeepingActionText or housekeepingEventText %}
+<latestEventContext>
+{% if housekeepingActionText %}<playerAction>{{ housekeepingActionText }}</playerAction>{% endif %}
+{% if housekeepingEventText %}<eventText>{{ housekeepingEventText }}</eventText>{% endif %}
+</latestEventContext>
+{% endif %}
+
+{% if housekeepingInstructions %}Follow these instructions when determining what to track and how to update trackers, and then output the housekeeping XML as specified below:
+{{ housekeepingInstructions }}
+
+Proceed with the following steps:{% endif %}
+1. In plain text, list any things that the player is currently doing that ought to be a quest but aren't already listed as one. Keep your answers concise.
+
+2. In plain text, list any things that ought to be tracked, either as hidden trackers or player-visible ones. Trackers can and should be used to build tension as well as acknowledge the player's progress. Looming deadlines, ticking clocks, building progress, crop growth, system statuses, and so on can all be tracked. Check the existing trackers and don't duplicate anything already being tracked. Progress on things should almost always be tracked as a percentage or an X of total (if there's a specific number of things that need to be done), rather than a string. Strings should usually be used for statuses that might change and then change back again. As a rule, do not add more than 15 trackers, and don't create trackers for things that aren't important, or will play out over the course of one scene. Trackers should be reserved for long-term things and not for characters' mental states, etc, that can be conveyed through prose and dialogue.
+
+Do NOT use trackers to track character health, needs (hunger,  exhaustion, etc), status effects, relationships, objects, ongoing combat, and so on.
+
+3. In plain text, list any existing trackers that should be removed, such as completed countdowns, things that are no longer relevant, missed or completed opportunities, unimportant trackers that shouldn't have been added, and so on. Removing trackers is just as important as adding them, but must be done carefully. If there are 15 or more, consider whether any of them can be removed to make room for new ones. Trackers that are already at 100%, have reached their deadline, or are otherwise completed as of the previous turn should generally be removed.
+
+4. In plain text, list any existing trackers that should be updated, such as updating the progress of a task, and so on. Be sure to update trackers in a way that makes sense with the passage of time and the player's actions. Note that countdown trackers will count down automatically with the passage of time and don't need to be listed here.
+
+5. In plain text, list any relationships between non-player characters that should be added, changed, or removed from the relationship tracking system. This can include new relationships that have been observed, changes in existing relationships, or the end of relationships. In one sentence, explain each change you're making.
+
+6. Output formal XML in this format describing the changes.
+
+<housekeeping>
+  <quests>
+    <quest>
+      <summary>One sentence quest or task summary</summary>
+      <giver>Exact quest giver name, if any</giver>
+    </quest>
+  </quests>
+
+  <trackers>
+    <!-- Here are examples of tracker XML blocks for adding, updating, and removing trackers. You should include as many of these blocks as necessary to track everything you listed above. Omit any blocks that aren't relevant. -->
+    <tracker>
+      <action>add</action>
+      <name>New tracker display name</name>
+      <type>countdown|numerical_count|x_out_of_total|percentage|short_string</type>
+      <value>Initial tracker value, if add or update; use "none" for remove. Strictly format depending on type: 'countdown' → concrete duration until the deadline, such as "HH:MM", "[INTEGER] [days/minutes/hours]", or "[INTEGER] days, [INTEGER] hours, [INTEGER] minutes" (the game stores an absolute deadline and displays remaining time automatically); 'numerical_count' → integer; 'x_out_of_total' → "[NUMBER]/[NUMBER]"; 'percentage' → integer between 0 and 100, with or without a percent sign; 'short_string' → string no more than {{ shortStringTrackerMaxWords | default(4) }} words. No approximate values (2-3 days, about 10 minutes, etc) allowed; no units except as specified</value>
+      <hiddenFromPlayer>true|false</hiddenFromPlayer>
+      <description>Private guidance explaining what this tracker means and when future turns should update it.</description>
+      <note>Why the current value is what it is, in 100 words or less.</note>
+    </tracker>
+
+    <tracker>
+      <action>update</action>
+      <target>Existing tracker id or exact tracker name</target>
+      <value>New tracker value, if update; use "none" for remove. Strictly format depending on type: 'countdown' → concrete duration until the deadline, such as "HH:MM", "[INTEGER] [days/minutes/hours]", or "[INTEGER] days, [INTEGER] hours, [INTEGER] minutes" (the game stores an absolute deadline and displays remaining time automatically); 'numerical_count' → integer; 'x_out_of_total' → "[NUMBER]/[NUMBER]"; 'percentage' → integer between 0 and 100, with or without a percent sign; 'short_string' → string no more than {{ shortStringTrackerMaxWords | default(4) }} words. No approximate values (2-3 days, about 10 minutes, etc) allowed; no units except as specified. May be omitted if unchanged.</value>
+      <note>Why the new value is what it is, in 100 words or less</note>
+    </tracker>
+
+    <tracker>
+      <action>remove</action>
+      <target>Existing tracker id or exact tracker name</target>
+    </tracker>
+  </trackers>
+
+	  <relationships>
+	    <relationship>
+	      <action>add|update</action>
+	      <characterA>Exact non-player character name or id</characterA>
+	      <characterB>Exact non-player character name or id</characterB>
+	      <relationshipLabel>6 words or fewer, describing the relationship from characterA's perspective (if characterA is characterB's father, this would be "father")</relationshipLabel>
+	      <reciprocalRelationship>Optional reverse label, six words or fewer, describing the relationship from characterB's perspective (if characterB is characterA's child, this would be "child")</reciprocalRelationship>
+	    </relationship>
+	    <relationship>
+	      <action>remove</action>
+	      <characterA>Exact non-player character name or id whose outgoing relationship should be removed</characterA>
+	      <characterB>Exact non-player character name or id that characterA's removed relationship points to</characterB>
+	    </relationship>
+	  </relationships>
+</housekeeping>
+
+Omit empty entries. If a section has no entries, either omit that section or leave it empty.

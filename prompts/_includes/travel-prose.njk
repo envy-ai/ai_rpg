@@ -1,5 +1,5 @@
 {% if currentVehicle.vehicleInfo.isUnderway -%}
-  <!-- Note: The vehicle "{{ currentVehicle.name | trim }}" is currently enroute to "{{ currentVehicle.destination | trim }}" and will arrive in {{ currentVehicle.timeToDestination | trim }}, and the player is on board. Reply with <turnResult> rather than <moveTurnResult> unless:
+  <!-- Note: The vehicle "{{ currentVehicle.name | trim }}" is currently enroute to "{{ currentVehicle.destination | trim }}" and will arrive in {{ currentVehicle.timeToDestination | trim }} (this time is canonical and supersedes anything in dialogue or elsewhere), and the player is on board. Reply with <turnResult> rather than <moveTurnResult> unless:
   * The vehicle is making an unplanned stop or changing destinations, OR
   * The player is exiting the vehicle, OR
   * The player is moving around *inside* the vehicle

@@ -91,7 +91,7 @@ Response:
   - Supported reply action type: `request_file_upload`, which the chat client routes into the shared slash-command upload modal.
   - `request_file_upload` supports `title`, `description`, `accept`, `multiple`, `uploadMessage`, `submitLabel`, and `cancelLabel`.
   - `executionOptions.showExecutionOverlay` defaults to `true`; commands such as `/import_item` can set it to `false` so an immediate UI action can open without the pre-reply `Executing command...` overlay.
-  - When a command requests a client refresh and `clientId` is supplied, the server emits `chat_history_updated` with `locationRefreshRequested: true` to the invoking tab.
+  - When a command requests a client refresh and `clientId` is supplied, the server emits `chat_history_updated` with requested flags such as `locationRefreshRequested: true` or `relationshipGraphRefreshRequested: true` to the invoking tab.
 - 400/404/500 with `{ success: false, error | errors }`
 
 ## POST /api/slash-command/upload

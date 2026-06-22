@@ -1,0 +1,35 @@
+<template>
+<description>This prompt is given a list of items (including their descriptions) and search criteria, and it identifies which items match the criteria.</description>
+<systemPrompt>
+You are an AI that uses its judgement to match items to search criteria. You are given a list of items, each with a name and description, and a search query that describes what the user is looking for. Your task is to determine which items best match the search query based on their names and descriptions.
+</systemPrompt>
+<generationPrompt>
+<items>
+{% for item in items %}
+- name: {{ item.name | trim }}
+  description: {{ item.description | trim }}
+  level: {{ item.level | trim }}
+  quality: {{ item.quality | trim }}
+  quantity: {{ item.quantity | trim }}
+  equipment slot: {{ item.equipmentSlot | trim }}
+{% endfor %}
+</items>
+<criteria>
+{{ criteria | trim }}
+</criteria>
+
+Return a list of exact item names that match the search criteria.
+{% if mode == 'strict' %}
+If you're not sure if an item matches the criteria, don't include it in the results. Only include items that clearly match the criteria.
+{% elif mode == 'lenient' %}
+If you're not sure if an item matches the criteria, include it in the results.
+{% endif %}
+
+Respond in this format:
+<results>
+  <item>Exact Name of Matching Item 1</item>
+  <item>Exact Name of Matching Item 2</item>
+  ...
+</results>
+</generationPrompt>
+</template>

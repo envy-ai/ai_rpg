@@ -117,3 +117,89 @@ test('location relocation controls have dedicated styling hooks', () => {
     assert.match(scssSource, /\.location-edit-relocation-exit-list/);
     assert.match(scssSource, /\.location-edit-relocation-exit-option/);
 });
+
+test('API exposes location region membership conflict inspection and repair', () => {
+    const inspectRouteStart = apiSource.indexOf("app.get('/api/location-region-membership-conflicts'");
+    const repairRouteStart = apiSource.indexOf("app.post('/api/location-region-membership-conflicts/:locationId/resolve'");
+    const locationFetchRouteStart = apiSource.indexOf("app.get('/api/locations/:id'", repairRouteStart);
+
+    assert.notEqual(inspectRouteStart, -1, 'conflict inspection route should exist');
+    assert.notEqual(repairRouteStart, -1, 'conflict repair route should exist');
+    assert.ok(repairRouteStart > inspectRouteStart, 'repair route should follow inspection route');
+    assert.ok(locationFetchRouteStart > repairRouteStart, 'conflict routes should be registered before /api/locations/:id');
+
+    const helperSource = apiSource.slice(
+        apiSource.indexOf('const LOCATION_REGION_MEMBERSHIP_CONFLICT_CODE'),
+        apiSource.indexOf('const reconcileNonStubLocationRegionIntegrity')
+    );
+    assert.match(helperSource, /location_region_membership_conflict/);
+    assert.match(helperSource, /formatNameIdLabel/);
+    assert.match(helperSource, /`\$\{normalizedName\} \(\$\{normalizedId\}\)`/);
+    assert.match(helperSource, /findLocationRegionMembershipConflicts/);
+    assert.match(helperSource, /buildLocationRegionMembershipConflictResponse/);
+
+    const repairRouteSource = apiSource.slice(repairRouteStart, locationFetchRouteStart);
+    assert.match(repairRouteSource, /Selected region must be one of the listed regions/);
+    assert.match(repairRouteSource, /region\.removeLocationId\(locationId\)/);
+    assert.match(repairRouteSource, /location\.regionId = selectedRegionId/);
+    assert.match(repairRouteSource, /removedRegions/);
+    assert.match(repairRouteSource, /selectedRegion/);
+});
+
+test('player movement preflights location region membership conflicts', () => {
+    const routeStart = apiSource.indexOf("app.post('/api/player/move'");
+    const routeEnd = apiSource.indexOf('function resolveVehicleIconFromInfoForMap', routeStart);
+
+    assert.notEqual(routeStart, -1, 'player move route should exist');
+    assert.notEqual(routeEnd, -1, 'player move route end marker should exist');
+
+    const routeSource = apiSource.slice(routeStart, routeEnd);
+    assert.match(routeSource, /const preMoveRegionMembershipConflict = findFirstLocationRegionMembershipConflict\(\);/);
+    assert.match(routeSource, /buildLocationRegionMembershipConflictResponse\(preMoveRegionMembershipConflict\)/);
+    assert.match(routeSource, /error\?\.code === LOCATION_REGION_MEMBERSHIP_CONFLICT_CODE/);
+    assert.match(routeSource, /buildLocationRegionMembershipConflictResponse\(error\.conflict\)/);
+});
+
+test('movement UI has a blocking location region fixer modal', () => {
+    assert.match(viewSource, /id="locationRegionFixerModal"/);
+    assert.match(viewSource, /id="locationRegionFixerLocationLabel"/);
+    assert.match(viewSource, /id="locationRegionFixerRegionList"/);
+    assert.match(viewSource, /id="locationRegionFixerConfirmBtn"/);
+    assert.match(viewSource, /function fetchFirstLocationRegionMembershipConflict/);
+    assert.match(viewSource, /function requestLocationRegionFix/);
+    assert.match(viewSource, /function ensureLocationRegionMembershipReadyForMovement/);
+    assert.match(viewSource, /window\.ensureLocationRegionMembershipReadyForMovement = ensureLocationRegionMembershipReadyForMovement/);
+    assert.match(viewSource, /\/api\/location-region-membership-conflicts\/\$\{encodeURIComponent\(conflict\.location\.id\)\}\/resolve/);
+    assert.match(viewSource, /text\.textContent = region\.label \|\| `\$\{region\.name \|\| 'Unknown Region'\} \(\$\{regionId\}\)`;/);
+    assert.match(viewSource, /elements\.locationLabel\.textContent = conflict\.location\.label/);
+});
+
+test('exit and map travel pause for location region conflict repair before dispatch', () => {
+    const moveSource = viewSource.slice(
+        viewSource.indexOf('async function moveToLocation'),
+        viewSource.indexOf('async function performDirectMove')
+    );
+    const directMoveSource = viewSource.slice(
+        viewSource.indexOf('async function performDirectMove'),
+        viewSource.indexOf('function collectExitEntries')
+    );
+    const mapTravelStart = viewSource.indexOf('async function travelToAdjacentLocationFromMap');
+    const mapTravelSource = viewSource.slice(
+        mapTravelStart,
+        viewSource.indexOf('window.travelToAdjacentLocationFromMap', mapTravelStart)
+    );
+
+    assert.match(moveSource, /await ensureLocationRegionMembershipReadyForMovement\(\)/);
+    assert.match(moveSource, /Move paused:/);
+    assert.match(directMoveSource, /isLocationRegionMembershipConflictPayload\(result\)/);
+    assert.match(directMoveSource, /const repaired = await requestLocationRegionFix\(result\.conflict\);/);
+    assert.match(directMoveSource, /return performDirectMove\(destinationId, destinationName\);/);
+    assert.match(mapTravelSource, /await ensureLocationRegionMembershipReadyForMovement\(\)/);
+});
+
+test('location region fixer modal has dedicated styling hooks', () => {
+    assert.match(scssSource, /\.location-region-fixer-modal/);
+    assert.match(scssSource, /\.location-region-fixer-summary/);
+    assert.match(scssSource, /\.location-region-fixer-region-option/);
+    assert.match(scssSource, /\.location-region-fixer-status\[data-type="error"\]/);
+});

@@ -48,7 +48,7 @@ Fresh requests use a semaphore key of `codex_cli_bridge::fresh::<model>` and can
 - `chatCompletion(...)`: top-level bridge entry used by `LLMClient`; returns a normalized response object shaped like an OpenAI chat-completion response and accepts optional signal/progress callbacks.
 
 ## Chat Completion Flow
-1. `chatCompletion(...)` resolves and validates bridge config, then splits incoming messages into ordered `system` messages and non-system conversation messages. At least one non-system message is required.
+1. `chatCompletion(...)` resolves and validates bridge config, then splits incoming messages into ordered `system` messages and non-system conversation messages. `LLMClient` has already inserted any configured `ai.sysprompt_append` text as an additional system message before this point. At least one non-system message is required.
 2. System messages, the bridge wrapper, optional `prompt_preamble`, metadata label, and tool definitions become Codex `developerInstructions`.
 3. Non-system messages become a text `Conversation:` prompt. Content arrays are flattened into text, remote image URLs are rendered as markers, and inline image data URLs are replaced with an unsupported-content marker.
 4. `runCodexAppServer(...)` launches `codex app-server --listen stdio://`, sets `CODEX_HOME` when a bridge home is configured, sends `initialize`, starts or resumes a thread, then sends `turn/start`.
@@ -74,7 +74,7 @@ Fresh requests use a semaphore key of `codex_cli_bridge::fresh::<model>` and can
 - `LLMClient` reports Codex usage from the normalized response and queries `readRateLimits(...)` for counted quota turns.
 
 ## Error And Abort Behavior
-- Invalid backend values, malformed `ai.codex_bridge`, invalid session mode, missing `session_id` for `resume_id`, empty command, invalid sandbox, invalid reasoning effort, and non-positive `idle_timeout_ms` produce explicit configuration errors.
+- Invalid backend values, non-string `ai.sysprompt_append`, malformed `ai.codex_bridge`, invalid session mode, missing `session_id` for `resume_id`, empty command, invalid sandbox, invalid reasoning effort, and non-positive `idle_timeout_ms` produce explicit configuration errors.
 - `resolveBridgeConfig(...)` throws the joined configuration errors instead of returning a partial bridge config.
 - `resume_last` throws when no prior thread is visible under the configured Codex home.
 - Empty assistant messages, invalid JSON, missing response keys, both content and tool calls in the same parsed response, empty tool-call arguments, and non-object parsed tool-call arguments throw.

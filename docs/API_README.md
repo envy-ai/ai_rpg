@@ -28,6 +28,7 @@ This is the high-level index for the project's HTTP API documentation. Most `/ap
 - `docs/api/scene-summaries.md` - Story Tools scene-summary editor routes
 - `docs/api/settings.md` - setting CRUD, AI fill-missing, faction defaults, and world-profile calendar drafts
 - `docs/api/things.md` - items/scenery CRUD and inventory transfers
+- `docs/api/trackers.md` - browser-facing tracker CRUD routes
 - `docs/api/misc.md` - feature flags, health check, slash commands, prompt cancellation/retry, config test
 
 ## Compatibility Notes

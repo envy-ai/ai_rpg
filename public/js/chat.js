@@ -2060,6 +2060,27 @@ class AIRPGChat {
         return normalized;
     }
 
+    isModelBoundChatRequestMessage(entry) {
+        if (!entry || typeof entry !== 'object') {
+            return false;
+        }
+        const role = typeof entry.role === 'string' ? entry.role.trim().toLowerCase() : '';
+        if (!role) {
+            return false;
+        }
+        if (typeof entry.content === 'string') {
+            return true;
+        }
+        return role === 'assistant' && Array.isArray(entry.tool_calls);
+    }
+
+    buildModelBoundChatHistory() {
+        if (!Array.isArray(this.chatHistory)) {
+            return [];
+        }
+        return this.chatHistory.filter(entry => this.isModelBoundChatRequestMessage(entry));
+    }
+
     createMarkdownRenderer() {
         if (typeof window === 'undefined' || typeof window.markdownit !== 'function') {
             return null;
@@ -2513,6 +2534,10 @@ class AIRPGChat {
         senderDiv.className = 'message-sender';
         if (entry.type === 'tool-call-debug') {
             senderDiv.textContent = 'Tool Calls';
+        } else if (entry.type === 'tracker-updates') {
+            senderDiv.textContent = 'Tracker Updates';
+        } else if (entry.type === 'relationship-updates') {
+            senderDiv.textContent = 'Relationship Updates';
         } else if (entry.role === 'user') {
             senderDiv.textContent = '👤 You';
         } else if (entry.isNpcTurn) {
@@ -2602,7 +2627,7 @@ class AIRPGChat {
         messageDiv.appendChild(contentDiv);
         messageDiv.appendChild(timestampDiv);
 
-        const actions = this.createMessageActions(entry, { allowSystem: true, allowEdit: false });
+        const actions = this.createMessageActions(entry, { allowSystem: true, allowEdit: false, persistent: true });
         if (actions) {
             messageDiv.appendChild(actions);
         }
@@ -3528,7 +3553,7 @@ class AIRPGChat {
         return container;
     }
 
-    createMessageActions(entry, { allowSystem = false, allowEdit = true } = {}) {
+    createMessageActions(entry, { allowSystem = false, allowEdit = true, persistent = false } = {}) {
         if (!entry || (entry.role === 'system' && !allowSystem)) {
             return null;
         }
@@ -3538,6 +3563,9 @@ class AIRPGChat {
 
         const wrapper = document.createElement('div');
         wrapper.className = 'message-actions';
+        if (persistent) {
+            wrapper.classList.add('message-actions--persistent');
+        }
 
         if (this.shouldShowRedoAction(entry)) {
             const redoButton = document.createElement('button');
@@ -4124,6 +4152,11 @@ class AIRPGChat {
         if (payload && payload.locationRefreshRequested && typeof window.loadCurrentLocation === 'function') {
             Promise.resolve(window.loadCurrentLocation()).catch((error) => {
                 console.warn('Failed to refresh location after chat_history_updated:', error);
+            });
+        }
+        if (payload && payload.relationshipGraphRefreshRequested && typeof window.loadRelationshipGraph === 'function') {
+            Promise.resolve(window.loadRelationshipGraph()).catch((error) => {
+                console.warn('Failed to refresh relationship graph after chat_history_updated:', error);
             });
         }
         this.refreshChatHistory();
@@ -9616,12 +9649,10 @@ class AIRPGChat {
         const requestMessages = (() => {
             const rawUserMessage = { role: 'user', content };
             if (isNoLogGenericPromptEntry) {
-                return [...this.chatHistory, rawUserMessage];
+                return [...this.buildModelBoundChatHistory(), rawUserMessage];
             }
 
-            const history = Array.isArray(this.chatHistory)
-                ? [...this.chatHistory]
-                : [];
+            const history = this.buildModelBoundChatHistory();
             if (!history.length) {
                 return [rawUserMessage];
             }
@@ -9869,9 +9900,25 @@ class AIRPGChat {
             case 'request_file_upload':
                 await this.requestSlashCommandUpload(action, { requestBody, commandName });
                 return;
+            case 'reload_page':
+                this.scheduleSlashCommandPageReload(action);
+                return;
             default:
                 throw new Error(`Unsupported slash command action type: ${action.type}`);
         }
+    }
+
+    scheduleSlashCommandPageReload(action) {
+        const delayMs = action.delayMs === undefined ? 0 : action.delayMs;
+        if (!Number.isInteger(delayMs) || delayMs < 0) {
+            throw new Error('Slash command reload action delayMs must be a non-negative integer.');
+        }
+        if (!window.location || typeof window.location.reload !== 'function') {
+            throw new Error('Browser reload is unavailable for slash command action.');
+        }
+        window.setTimeout(() => {
+            window.location.reload();
+        }, delayMs);
     }
 
     async requestSlashCommandUpload(action, { requestBody = null, commandName = '' } = {}) {

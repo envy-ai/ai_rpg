@@ -23,6 +23,10 @@ function captureConsoleError(callback) {
 }
 
 test('XML trackerUpdates parses valid entries and skips malformed entries', () => {
+    const previousConfig = Globals.config;
+    Globals.config = { trackers: { short_string_max_words: 4 } };
+
+    try {
     const { result: parsed, messages } = captureConsoleError(() => Events._parseXmlEventCheckResponse(`
 <events>
   <trackerUpdates>
@@ -37,8 +41,15 @@ test('XML trackerUpdates parses valid entries and skips malformed entries', () =
       <trackerName>Oracle Mood</trackerName>
       <type>short_string</type>
       <action>update</action>
-      <newValue>deeply worried</newValue>
+      <newValue>deeply worried tonight now</newValue>
       <reason>The oracle saw the omen.</reason>
+    </trackerUpdate>
+    <trackerUpdate>
+      <trackerName>Oracle Mood</trackerName>
+      <type>short_string</type>
+      <action>update</action>
+      <newValue>one two three four five</newValue>
+      <reason>Five words should exceed the configured default.</reason>
     </trackerUpdate>
     <trackerUpdate>
       <type>percentage</type>
@@ -62,12 +73,15 @@ test('XML trackerUpdates parses valid entries and skips malformed entries', () =
             trackerName: 'Oracle Mood',
             type: 'short_string',
             action: 'update',
-            newValue: 'deeply worried',
+            newValue: 'deeply worried tonight now',
             reason: 'The oracle saw the omen.'
         }
     ]);
-    assert.equal(messages.length, 1);
+    assert.equal(messages.length, 2);
     assert.match(messages[0], /tracker_updates/i);
+    } finally {
+        Globals.config = previousConfig;
+    }
 });
 
 test('omitted trackerUpdates block produces no tracker update entries', () => {
@@ -81,10 +95,15 @@ test('omitted trackerUpdates block produces no tracker update entries', () => {
 });
 
 test('legacy tracker_updates parser normalizes percentages and skips bad entries', () => {
+    const previousConfig = Globals.config;
+    Globals.config = { trackers: { short_string_max_words: 4 } };
+
+    try {
     const parser = Events._buildParsers().tracker_updates;
     const { result, messages } = captureConsoleError(() => parser([
         'Gate Stability → percentage → update → 45 → The gate destabilized.',
-        'Oracle Mood → short_string → update → deeply worried → The oracle saw the omen.',
+        'Oracle Mood → short_string → update → deeply worried tonight now → The oracle saw the omen.',
+        'Oracle Mood → short_string → update → one two three four five → Five words should exceed the configured default.',
         'Gate Stability → percentage → remove → The gate closed.',
         'Broken Entry → percentage → noop → 10 → Invalid action.'
     ].join(' | ')));
@@ -101,7 +120,7 @@ test('legacy tracker_updates parser normalizes percentages and skips bad entries
             trackerName: 'Oracle Mood',
             type: 'short_string',
             action: 'update',
-            newValue: 'deeply worried',
+            newValue: 'deeply worried tonight now',
             reason: 'The oracle saw the omen.'
         },
         {
@@ -111,8 +130,11 @@ test('legacy tracker_updates parser normalizes percentages and skips bad entries
             reason: 'The gate closed.'
         }
     ]);
-    assert.equal(messages.length, 1);
+    assert.equal(messages.length, 2);
     assert.match(messages[0], /tracker_updates/i);
+    } finally {
+        Globals.config = previousConfig;
+    }
 });
 
 test('tracker_updates handler applies valid mutations and logs per-entry failures', async () => {

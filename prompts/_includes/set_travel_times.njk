@@ -1,18 +1,8 @@
-<template>
-    <role>Region Travel Time Planner</role>
+<task>
+Estimate plausible travel times for the exits listed below. Every exit in <pendingExits> currently has a travel time of 0 minutes and needs a nonzero replacement. Exits that already have nonzero travel times are intentionally not listed.
+</task>
 
-    <systemPrompt>
-You are an AI role-playing gamemaster. Estimate plausible traversal times for existing exits in a region. Use the region theme, the source and destination location descriptions, and any already-known exit travel times to keep the new values internally consistent. These are ordinary traversal times between connected places, not abstract plot pacing. Always return at least 1 minute for every exit. Never return 0 minutes.
-    </systemPrompt>
-
-    <generationPrompt>
 <context>
-  <setting>
-    <name>{{ setting.name }}</name>
-    <genre>{{ setting.genre }}</genre>
-    <tone>{{ setting.tone }}</tone>
-    <theme>{{ setting.theme }}</theme>
-  </setting>
   <region>
     <id>{{ region.id }}</id>
     <name>{{ region.name }}</name>
@@ -27,20 +17,6 @@ You are an AI role-playing gamemaster. Estimate plausible traversal times for ex
     </location>
 {% endfor %}
   </locations>
-  <knownExits>
-{% for exit in knownExits %}
-    <exit>
-      <sourceLocationId>{{ exit.sourceLocationId }}</sourceLocationId>
-      <sourceLocationName>{{ exit.sourceLocationName }}</sourceLocationName>
-      <destinationLocationId>{{ exit.destinationLocationId }}</destinationLocationId>
-      <destinationLocationName>{{ exit.destinationLocationName }}</destinationLocationName>
-      {% if exit.destinationRegionName %}<destinationRegionName>{{ exit.destinationRegionName }}</destinationRegionName>{% endif %}
-      <travelTime>{{ exit.travelTimeMinutes }} minutes</travelTime>
-      <isVehicle>{{ exit.isVehicle | default(false) }}</isVehicle>
-      {% if exit.vehicleType %}<vehicleType>{{ exit.vehicleType }}</vehicleType>{% endif %}
-    </exit>
-{% endfor %}
-  </knownExits>
   <pendingExits>
 {% for exit in pendingExits %}
     <exit>
@@ -60,9 +36,8 @@ You are an AI role-playing gamemaster. Estimate plausible traversal times for ex
 
 Guidelines:
 - Output exactly one <exit> for every entry under <pendingExits>, using the exact source and destination ids provided there.
-- Preserve consistency with <knownExits> when a pending route seems comparable in scale or terrain.
-- Tiny adjacent spaces in the same structure are usually around 1-5 minutes.
-- Nearby places in a compact settlement are usually around 5-15 minutes.
+- Tiny adjacent spaces in the same structure are usually around 1-2 minutes.
+- Nearby places in a compact settlement are usually around 2-15 minutes.
 - Large facilities, districts, or sprawling settlements are often around 15-60 minutes.
 - Difficult wilderness, long roads, and cross-region overland routes can take much longer.
 - If an exit uses a vehicle, estimate the actual time for that short transit route, not the time to prepare a whole journey.
@@ -78,5 +53,3 @@ Output ONLY in this format:
   </exit>
   <!-- Repeat once per pending exit and do not omit any. -->
 </response>
-    </generationPrompt>
-</template>

@@ -13,7 +13,7 @@ class RpCommand extends SlashCommandBase {
   }
 
   static get description() {
-    return 'Toggle RP mode: disable/restore event checks, plausibility checks, random events, and NPC turns.';
+    return 'Toggle RP mode: disable/restore event checks, plausibility checks, random events, NPC turns, and plot analysis.';
   }
 
   static get args() {
@@ -44,6 +44,7 @@ class RpCommand extends SlashCommandBase {
     const plausibilityChecks = this.ensureSection(config, 'plausibility_checks');
     const randomEvents = this.ensureSection(config, 'random_event_frequency');
     const npcTurns = this.ensureSection(config, 'npc_turns');
+    const plotAnalysis = this.ensureSection(config, 'plot_analysis');
 
     const restoring = savedConfig !== null;
 
@@ -52,10 +53,11 @@ class RpCommand extends SlashCommandBase {
       plausibilityChecks.enabled = savedConfig.plausibilityChecksEnabled;
       randomEvents.enabled = savedConfig.randomEventsEnabled;
       npcTurns.enabled = savedConfig.npcTurnsEnabled;
+      plotAnalysis.enabled = savedConfig.plotAnalysisEnabled;
       savedConfig = null;
 
       return interaction.reply({
-        content: 'RP mode disabled. Restored event checks, plausibility checks, random events, and NPC turns to their previous settings.',
+        content: 'RP mode disabled. Restored event checks, plausibility checks, random events, NPC turns, and plot analysis to their previous settings.',
         ephemeral: false
       });
     }
@@ -64,16 +66,18 @@ class RpCommand extends SlashCommandBase {
       eventChecksEnabled: Boolean(eventChecks.enabled),
       plausibilityChecksEnabled: Boolean(plausibilityChecks.enabled),
       randomEventsEnabled: Boolean(randomEvents.enabled),
-      npcTurnsEnabled: Boolean(npcTurns.enabled)
+      npcTurnsEnabled: Boolean(npcTurns.enabled),
+      plotAnalysisEnabled: Boolean(plotAnalysis.enabled)
     };
 
     eventChecks.enabled = false;
     plausibilityChecks.enabled = false;
     randomEvents.enabled = false;
     npcTurns.enabled = false;
+    plotAnalysis.enabled = false;
 
     return interaction.reply({
-      content: 'RP mode enabled. Event checks, plausibility checks, random events, and NPC turns are now disabled. Run /rp again to restore previous values.',
+      content: 'RP mode enabled. Event checks, plausibility checks, random events, NPC turns, and plot analysis are now disabled. Run /rp again to restore previous values.',
       ephemeral: false
     });
   }

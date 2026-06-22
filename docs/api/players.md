@@ -2,7 +2,7 @@
 
 Common payloads: see `docs/api/common.md`.
 
-Player endpoints generally return `NpcProfile` payloads from `serializeNpcForClient`. Those profiles include expanded inventory items, active need bars, abilities, formula-derived unspent point totals, faction standings, active/completed quests, mod status sections, and `partyMembers` unless the route intentionally suppresses nested party serialization.
+Player endpoints generally return `NpcProfile` payloads from `serializeNpcForClient`. Those profiles include expanded inventory items, active need bars, abilities, formula-derived unspent point totals, faction standings, sparse `relationships` maps (`target character id -> label of at most six words`), active/completed quests, mod status sections, and `partyMembers` unless the route intentionally suppresses nested party serialization. Chat prompts can set individual non-player character relationship edges through `setRelationship({ characterA, characterB, relationship, reciprocalRelationship? })`; that tool rejects calls where either character is the current player.
 
 ## POST /api/player
 
@@ -67,6 +67,7 @@ Notes:
 - `abilitySelection.pending` indicates whether gameplay is blocked by missing player ability picks.
 - Pending state is computed from levels `1..currentLevel` and the config keys `player_abilities_per_level` and `player_ability_options_per_level`.
 - When pending, `abilitySelection.selection` includes `level`, `requiredSelections`, `optionsPerLevel`, `optionsReady`, `optionsToGenerate`, `options`, and `preselectedAbilityNames`.
+- Generated option prompts exclude the player's current ability names and persisted `declinedAbilities` names.
 - `/api/chat` and `/api/player/move` reject gameplay with `409` while this state is pending.
 
 ## POST /api/player/ability-selection/submit
@@ -74,7 +75,7 @@ Notes:
 Submit selected abilities for the next pending player level.
 
 Request:
-- Body: `{ level: number, selectedAbilityNames: string[], clientId?: string, requestId?: string }`
+- Body: `{ level: number, selectedAbilityNames: string[], declinedAbilityNames?: string[], clientId?: string, requestId?: string }`
 
 Response:
 - 200: `{ success: true, pending: boolean, abilitySelection, player: NpcProfile, gameIntroGenerated: boolean }`
@@ -83,6 +84,7 @@ Response:
 Notes:
 - The submitted `level` must match the next pending level.
 - `selectedAbilityNames` must contain exactly the configured number of unique names and each name must match one of the available option cards.
+- `declinedAbilityNames`, when provided, must be unique option-card names. Unselected declined options are persisted on the player as `declinedAbilities`; selected names take precedence and are not stored as declined.
 - If a deferred new-game intro is waiting and this submit clears the pending draft state, the route attempts the `game-intro` prompt. `gameIntroGenerated` is `true` only when that prompt succeeds.
 
 ## DELETE /api/player/quests/:questId
@@ -140,7 +142,7 @@ Response:
 
 Notes:
 - Re-adding an existing member returns 200 with `message: 'Player already in party'`.
-- `Player.addPartyMember(...)` marks the member as having party history, marks the actor to persist when dead, removes the actor from all location NPC lists, and clears the actor's explicit location.
+- `Player.addPartyMember(...)` stores the member id on the party owner, marks the member as having party history, marks the actor to persist when dead, removes the actor from all location NPC lists, and clears the actor's explicit location. Member `isInPlayerParty` payloads are derived from the current player's `partyMembers` list.
 
 ## DELETE /api/player/party
 
@@ -155,7 +157,7 @@ Response:
 - 400/404/500: `{ success: false, error }`
 
 Notes:
-- `Player.removePartyMember(...)` marks the member to persist when dead, clears active party membership flags, and places the actor at the owner player's current location.
+- `Player.removePartyMember(...)` removes the member id from the party owner, marks the member to persist when dead, and places the actor at the owner player's current location.
 - Generic and scheduled chat prompts can call `updatePartyMembers({ add?, remove? })` for validated multi-member party mutations. It accepts arrays of NPC ids, exact names, or aliases; validates the whole request before mutation; lets `add` targets resolve from any location; and places `remove` targets at the current player location.
 
 ## GET /api/player/fast-travel-preview
@@ -196,7 +198,9 @@ Response:
 Notes:
 - Move requests use a per-player non-blocking server lock.
 - The route rejects movement while player ability selection is pending, while another move is in progress for the same player, when origin verification fails, or when vehicle boarding/disembark rules block the exit.
+- Before movement side effects, the route checks for non-stub locations listed in multiple live regions. When found, it returns `409` with `code: "location_region_membership_conflict"` and a `conflict` payload whose location and region labels are formatted as `name (id)`; the client fixer modal can resolve it and retry the move.
 - Region-entry and ordinary location stubs are expanded before movement completes.
+- Before resolving move duration, cross-region arrivals run the shared exit travel-time backfill for the destination region. That helper updates `0`-minute legacy exits, renders only pending zero-minute exits through the `set_travel_times` prompt, skips same-region moves, and treats prompt failures as warning-only so movement can continue.
 - Positive exit travel time advances world time unless the source location context represents a vehicle. The response includes `worldTime` and `timeProgress`; `timeProgress` is `null` when no time is advanced.
 - Gameplay arrival runs the while-you-were-away prompt only when the destination had a recorded pre-arrival visited state and passes the configured revisit threshold. First visits, missing pre-arrival snapshots, and too-soon revisits skip that prompt.
 - Direct moves persist a travel event-summary row and parent it to visible arrival prose, prior travel prose, or the travel user/comment entry so the client can render it in the turn-state drawer.

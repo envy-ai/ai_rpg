@@ -886,6 +886,11 @@ class Location {
     return Array.from(Location.#indexById.values());
   }
 
+  static clear() {
+    Location.#indexById.clear();
+    Location.#indexByName.clear();
+  }
+
   static findShortestTravelTimeMinutes(startLocationOrId, endLocationOrId) {
     const route = Location.findShortestTravelRoute(startLocationOrId, endLocationOrId);
     return route ? route.travelTimeMinutes : null;

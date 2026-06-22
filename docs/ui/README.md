@@ -24,14 +24,14 @@ Routing is registered in `server.js` for Play, New Game, Worlds, Mods, Lorebooks
 
 ## Directory map
 - `views/` contains server-rendered templates.
-  - `index.njk` is the Play UI: Adventure, maps, Favorites, Character, Quests, Factions, Party, Story Tools, chat, panels, and modals.
+  - `index.njk` is the Play UI: Adventure, maps, Relationships, Favorites, Character, Quests, Factions, Party, Story Tools, chat, panels, and modals.
   - `new-game.njk`, `settings.njk`, `mods.njk`, `lorebooks.njk`, `config.njk`, `debug.njk`, and `player-stats.njk` are top-level pages.
   - `_includes/head-common.njk` supplies shared head markup, favicon, `main.css`, and `pending-load.js`.
   - `_includes/app-header.njk` and `_includes/app-header-nav.njk` implement the shared app header and primary navigation.
   - `_includes/attribute-allocation.njk`, `_includes/skill-allocation.njk`, `_includes/thing-list-filter-toggle.njk`, and `_includes/vehicle-info-fields.njk` provide reusable UI fragments.
   - `_navigation.njk` delegates to the shared app header for template compatibility.
   - `views/popups/plausibility.njk` mirrors the plausibility tooltip markup used by the browser template.
-- `public/js/` contains client scripts for chat, maps, image jobs, lightbox behavior, allocation controls, new-game setup, configuration, lorebooks, pending-load handling, player stats, and turn state-diff rendering.
+- `public/js/` contains client scripts for chat, maps, the relationship graph, image jobs, lightbox behavior, allocation controls, new-game setup, configuration, lorebooks, pending-load handling, player stats, and turn state-diff rendering.
 - `public/css/` contains SCSS sources (`_globals.scss`, `main.scss`, `settings.scss`, `config.scss`) and compiled CSS outputs (`main.css`, `settings.css`, `config.css`, `map.css`, `lorebooks.css`).
 - `public/templates/` contains browser-side Nunjucks templates such as `plausibility.njk`.
 - `public/vendor/` contains browser libraries including Cytoscape and layouts, Nunjucks runtime, Markdown-It, JSON viewer, Fitty, and Vaadin assets.
@@ -51,4 +51,5 @@ From `views/index.njk`:
 - `docs/ui/chat_interface.md` covers the main Play interface layout, tabs, panels, chat flow, inventory views, Story Tools, and client data flow.
 - `docs/ui/modals_overlays.md` covers chat-page modals, overlays, tooltips, prompt tracker windows, containers, barter, and map confirmations.
 - `docs/ui/maps.md` covers Region Map and World Map rendering, controls, fast travel, context menus, stubs, and vehicle map state.
+- `docs/ui/relationships.md` covers the Play Relationships tab, Cytoscape graph rendering, hidden-character filtering, missing-id placeholders, and reload behavior.
 - `docs/ui/assets_styles.md` covers SCSS/CSS, shared styling primitives, assets, icons, generated images, and vendor libraries.

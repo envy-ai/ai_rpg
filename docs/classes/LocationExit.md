@@ -81,6 +81,7 @@ Exits can point at fully generated locations, location stubs, or region-entry st
 - `/api/locations/:id/exits/:exitId` removes the requested exit, removes a reverse exit to the origin when present, and can delete orphaned destination stubs or pending-region stubs.
 - `/fix_exits` scans loaded exits and calls `ensureExitConnection(...)` to repair missing reverse links while preserving vehicle-edge markers.
 - `/fill_exit_travel_times` treats `0`-minute exits as unpopulated unless run in force mode, copies positive reverse times when available, and can prompt for missing region-exit travel times.
+- Direct player movement, player teleports, move-turn prose movement, and event-check travel run the same destination-region backfill before resolving travel duration when the arrival crosses into a different region. The `set_travel_times` prompt lists only exits still needing nonzero travel times; already-populated exits are excluded from the prompt. Prompt failures are warning-only for automatic movement so travel can continue with existing route times.
 
 ## Image Generation
 - `imageId` stores the generated passage-scene image id for the exit.

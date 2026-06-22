@@ -6,7 +6,7 @@ const vm = require('vm');
 function loadLocationMovePolicyHelpers(movePolicy = 'unexplored_locations') {
     const source = fs.readFileSync(require.resolve('../views/index.njk'), 'utf8');
     const start = source.indexOf('function isUnexploredRegionExit(exit) {');
-    const end = source.indexOf('\n            const locationOverlay = document.getElementById(', start);
+    const end = source.indexOf('\n            const chatSpinnerStatusBar = document.getElementById(', start);
     if (start < 0 || end < 0) {
         throw new Error('Unable to locate location move policy helpers in views/index.njk');
     }

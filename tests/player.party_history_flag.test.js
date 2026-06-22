@@ -33,8 +33,10 @@ function withTempPlayerEnvironment(run) {
     const tempBaseDir = createTempPlayerDefs();
     const previousBaseDir = Globals.baseDir;
     const previousConfig = Globals.config;
+    const previousCurrentPlayer = Globals.currentPlayer;
 
     Player.clearRuntimeRegistries();
+    Globals.currentPlayer = null;
     Globals.baseDir = tempBaseDir;
     Globals.config = {
         ...(previousConfig && typeof previousConfig === 'object' ? previousConfig : {}),
@@ -56,6 +58,7 @@ function withTempPlayerEnvironment(run) {
         run();
     } finally {
         Player.clearRuntimeRegistries();
+        Globals.currentPlayer = previousCurrentPlayer;
         Globals.baseDir = previousBaseDir;
         Globals.config = previousConfig;
         Player.reloadDefinitionCaches({ refreshInstances: false });
@@ -98,6 +101,7 @@ test('adding a party member permanently marks that actor as having been in the p
             id: 'party-history-owner',
             name: 'Baato'
         });
+        Globals.currentPlayer = player;
         const member = new Player({
             id: 'party-history-member',
             name: 'Cabnia',
@@ -125,7 +129,7 @@ test('adding a party member permanently marks that actor as having been in the p
     });
 });
 
-test('loading an actor already marked as in the party sets the historical party flag', () => {
+test('loading a stale isInPlayerParty save field does not create active or historical party membership', () => {
     withTempPlayerEnvironment(() => {
         const loaded = Player.fromJSON({
             id: 'party-history-load-member',
@@ -134,8 +138,52 @@ test('loading an actor already marked as in the party sets the historical party 
             isInPlayerParty: true
         });
 
-        assert.equal(loaded.isInPlayerParty, true);
-        assert.equal(loaded.wasEverInPlayerParty, true);
+        assert.equal(loaded.isInPlayerParty, false);
+        assert.equal(loaded.wasEverInPlayerParty, false);
+    });
+});
+
+test('current player partyMembers is the source of truth for active party membership', () => {
+    withTempPlayerEnvironment(() => {
+        const member = Player.fromJSON({
+            id: 'party-history-derived-member',
+            name: 'Mira',
+            isNPC: true,
+            isInPlayerParty: false
+        });
+        const owner = new Player({
+            id: 'party-history-derived-owner',
+            name: 'Baato',
+            partyMembers: [member.id]
+        });
+        Globals.currentPlayer = owner;
+
+        assert.equal(member.isInPlayerParty, true);
+
+        owner.clearPartyMembers();
+        assert.equal(member.isInPlayerParty, false);
+        assert.equal(member.wasEverInPlayerParty, true);
+    });
+});
+
+test('direct isInPlayerParty mutation throws because membership is derived', () => {
+    withTempPlayerEnvironment(() => {
+        const member = new Player({
+            id: 'party-history-direct-set-member',
+            name: 'Sela',
+            isNPC: true
+        });
+
+        assert.throws(
+            () => member.setInPlayerParty(true),
+            /isInPlayerParty is derived/
+        );
+        assert.throws(
+            () => {
+                member.isInPlayerParty = true;
+            },
+            /isInPlayerParty is derived/
+        );
     });
 });
 
@@ -154,6 +202,7 @@ test('constructing a player with existing party members marks already-loaded mem
             name: 'Baato',
             partyMembers: [member.id]
         });
+        Globals.currentPlayer = owner;
 
         assert.equal(owner.getPartyMembers().includes(member.id), true);
         assert.equal(member.wasEverInPlayerParty, true);

@@ -14,6 +14,7 @@ let cachedThingModule = null;
 let cachedPlayerModule = null;
 let cachedSkillModule = null;
 let cachedFactionModule = null;
+let cachedQuestModule = null;
 let cachedMysteryBoxModule = null;
 let cachedMysteryThreadModule = null;
 let cachedScheduledEventModule = null;
@@ -1096,6 +1097,13 @@ class Utils {
     return cachedFactionModule;
   }
 
+  static #getQuestModule() {
+    if (!cachedQuestModule) {
+      cachedQuestModule = require('./Quest.js');
+    }
+    return cachedQuestModule;
+  }
+
   static #getMysteryBoxModule() {
     if (!cachedMysteryBoxModule) {
       cachedMysteryBoxModule = require('./MysteryBox.js');
@@ -2047,6 +2055,7 @@ class Utils {
     const Player = this.#getPlayerModule();
     const Skill = this.#getSkillModule();
     const Faction = this.#getFactionModule();
+    const Quest = this.#getQuestModule();
     const MysteryBox = this.#getMysteryBoxModule();
     const MysteryThread = this.#getMysteryThreadModule();
     const ScheduledEvent = this.#getScheduledEventModule();
@@ -2153,6 +2162,9 @@ class Utils {
     if (typeof Player.clearRuntimeRegistries === 'function') {
       Player.clearRuntimeRegistries();
     }
+    if (typeof Quest.clear === 'function') {
+      Quest.clear();
+    }
     const playersData = serialized.players || {};
     for (const [id, payload] of Object.entries(playersData)) {
       try {
@@ -2185,6 +2197,9 @@ class Utils {
     }
     if (regions?.clear) {
       regions.clear();
+    }
+    if (typeof Location?.clear === 'function') {
+      Location.clear();
     }
     if (Region?.clear) {
       Region.clear();

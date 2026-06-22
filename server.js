@@ -54,6 +54,9 @@ const {
 const {
     shouldIncludeEntryInBaseContextHistory
 } = require('./base_context_history.js');
+const {
+    buildActorRelationshipPromptContext
+} = require('./base_context_relationships.js');
 const { getCurrencyLabel } = require('./public/js/currency-utils.js');
 const SanitizedStringSet = require('./SanitizedStringSet.js');
 const StatusEffect = require('./StatusEffect.js');
@@ -112,7 +115,11 @@ const RealtimeHub = require('./RealtimeHub.js');
 const QuestConfirmationManager = require('./QuestConfirmationManager.js');
 const ModLoader = require('./ModLoader.js');
 const ModExtensionRegistry = require('./ModExtensionRegistry.js');
-const { CHAT_TOOL_DEFINITIONS } = require('./chat_tool_calls.js');
+const {
+    CHAT_TOOL_DEFINITIONS,
+    createChatToolRuntime,
+    getChatToolDefinitions
+} = require('./chat_tool_calls.js');
 const { diffFrozenEnabledModDirectoryNames } = require('./ModDiscovery.js');
 const { buildModManagerState } = require('./ModManager.js');
 const { initializeLorebookManager, getLorebookManager } = require('./lorebook.js');
@@ -807,6 +814,7 @@ const jobQueue = []; // Queue of pending jobs
 const activeImageJobs = new Set(); // Track currently processing job IDs
 const maxConcurrentImageJobs = config.imagegen?.maxConcurrentJobs || 1; // Allow up to 3 concurrent jobs
 let isProcessingJob = false; // Legacy flag for backward compatibility
+let runtimeGenerationId = 0;
 
 // Job status constants
 const JOB_STATUS = {
@@ -819,6 +827,26 @@ const JOB_STATUS = {
 
 const KNOWN_IMAGE_EXTENSIONS = ['.png', '.jpg', '.jpeg', '.webp', '.gif'];
 const entityImageJobs = new Map(); // Track active jobs per entity key
+
+function advanceRuntimeGeneration(reason = 'runtime-reset') {
+    runtimeGenerationId += 1;
+    console.log(`🧹 Runtime generation advanced to ${runtimeGenerationId} (${reason})`);
+    return runtimeGenerationId;
+}
+
+function isImageJobRuntimeStale(job) {
+    const jobRuntimeGenerationId = job?.payload?.runtimeGenerationId;
+    return Number.isInteger(jobRuntimeGenerationId) && jobRuntimeGenerationId !== runtimeGenerationId;
+}
+
+function discardStaleImageJobMetadata(result) {
+    if (!result?.imageId || !result?.metadata) {
+        return;
+    }
+    if (generatedImages.get(result.imageId) === result.metadata) {
+        generatedImages.delete(result.imageId);
+    }
+}
 
 function sanitizePersonalityValue(value) {
     const collectValues = (input) => {
@@ -1632,6 +1660,9 @@ function createImageJob(jobId, payload = {}) {
         }
         normalizedPayload.prompt = prependBaseContextPreamble(normalizedPayload.prompt);
     }
+    if (!Number.isInteger(normalizedPayload.runtimeGenerationId)) {
+        normalizedPayload.runtimeGenerationId = runtimeGenerationId;
+    }
 
     const job = {
         id: jobId,
@@ -1819,6 +1850,16 @@ async function processJobQueue() {
 // Process a single job (extracted from original processJobQueue)
 async function processSingleJob(job) {
     try {
+        if (isImageJobRuntimeStale(job)) {
+            job._skipRuntimeCleanup = true;
+            job.status = JOB_STATUS.FAILED;
+            job.error = 'Image job ignored after game reset.';
+            job.message = 'Image generation ignored because a new game started.';
+            job.completedAt = new Date().toISOString();
+            emitJobUpdate(job, { phase: 'stale' });
+            return;
+        }
+
         // Update job status
         job.status = JOB_STATUS.PROCESSING;
         job.startedAt = new Date().toISOString();
@@ -1840,6 +1881,17 @@ async function processSingleJob(job) {
             const result = await processImageGeneration(job);
 
             clearTimeout(timeoutId);
+
+            if (isImageJobRuntimeStale(job)) {
+                discardStaleImageJobMetadata(result);
+                job._skipRuntimeCleanup = true;
+                job.status = JOB_STATUS.FAILED;
+                job.error = 'Image job ignored after game reset.';
+                job.message = 'Image generation completed after a new game started and was ignored.';
+                job.completedAt = new Date().toISOString();
+                emitJobUpdate(job, { phase: 'stale' });
+                return;
+            }
 
             if (job.status !== JOB_STATUS.TIMEOUT) {
                 job.status = JOB_STATUS.COMPLETED;
@@ -1944,6 +1996,9 @@ async function processSingleJob(job) {
 
     } finally {
         const currentJob = job;
+        if (currentJob?._skipRuntimeCleanup === true) {
+            return;
+        }
         if (currentJob?.payload?.isLocationScene && currentJob.payload.locationId && currentJob.status !== JOB_STATUS.PROCESSING) {
             pendingLocationImages.delete(currentJob.payload.locationId);
         }
@@ -2240,6 +2295,15 @@ async function processImageGeneration(job) {
         imageMetadata.conditions = job.payload.conditions || null;
     }
 
+    if (isImageJobRuntimeStale(job)) {
+        return {
+            imageId: imageId,
+            images: savedImages,
+            metadata: null,
+            staleRuntimeGeneration: true
+        };
+    }
+
     generatedImages.set(imageId, imageMetadata);
 
     return {
@@ -2415,6 +2479,16 @@ async function validateConfiguration() {
 
     // Validate AI configuration
     validationErrors.push(...LLMClient.getConfigurationErrors(config.ai));
+    try {
+        LLMClient.resolveMaxConcurrentAllModels(config);
+    } catch (error) {
+        validationErrors.push(error.message);
+    }
+    try {
+        Events.resolvePromptLaunchStaggerMs(config);
+    } catch (error) {
+        validationErrors.push(error.message);
+    }
 
     if (config.prompt_uses_caching !== undefined && typeof config.prompt_uses_caching !== 'boolean') {
         validationErrors.push('prompt_uses_caching must be a boolean when provided');
@@ -2440,6 +2514,21 @@ async function validateConfiguration() {
             && typeof chatToolsConfig.request_user_input_enabled !== 'boolean'
         ) {
             validationErrors.push('chat_tools.request_user_input_enabled must be a boolean when provided');
+        }
+    }
+    if (config.trackers !== undefined) {
+        const trackersConfig = config.trackers;
+        if (!trackersConfig || typeof trackersConfig !== 'object' || Array.isArray(trackersConfig)) {
+            validationErrors.push('trackers must be an object when provided');
+        } else if (
+            trackersConfig.short_string_max_words !== undefined
+            && trackersConfig.short_string_max_words !== null
+            && trackersConfig.short_string_max_words !== ''
+        ) {
+            const shortStringMaxWords = Number(trackersConfig.short_string_max_words);
+            if (!Number.isInteger(shortStringMaxWords) || shortStringMaxWords < 1) {
+                validationErrors.push('trackers.short_string_max_words must be an integer greater than or equal to 1 when provided');
+            }
         }
     }
     if (config.plot_analysis !== undefined) {
@@ -2649,6 +2738,14 @@ let baseContextMemoryCache = {
     selections: new Map()
 };
 let chooseImportantMemoriesInFlight = null;
+
+function resetBaseContextMemoryCache() {
+    baseContextMemoryCache = {
+        turnKey: null,
+        selections: new Map()
+    };
+    chooseImportantMemoriesInFlight = null;
+}
 
 // In-memory player storage (temporary - will be replaced with persistent storage later)
 let currentPlayer = null;
@@ -2977,6 +3074,95 @@ const locationImageGenerationPromises = new Map(); // Store pre-job location ima
 const npcGenerationPromises = new Map(); // Track in-flight NPC generations by normalized explicit name
 const levelUpAbilityPromises = new Map(); // Track in-flight level-up ability generations per character
 const playerAbilitySelectionPromises = new Map(); // Track in-flight player ability option generation per level
+
+const GENERATION_RANDOM_TOOL_NAMES = new Set(['generateRandomInteger']);
+let generationPromptToolRuntime = null;
+
+function getGenerationPromptToolDefinitions() {
+    const allDefinitions = getChatToolDefinitions({ modExtensionRegistry: null });
+    const selectedDefinitions = allDefinitions.filter(toolDefinition => (
+        GENERATION_RANDOM_TOOL_NAMES.has(toolDefinition?.function?.name)
+    ));
+    const selectedNames = new Set(selectedDefinitions.map(toolDefinition => toolDefinition?.function?.name));
+    const missingNames = Array.from(GENERATION_RANDOM_TOOL_NAMES)
+        .filter(toolName => !selectedNames.has(toolName));
+    if (missingNames.length) {
+        throw new Error(`Generation prompt tool definition missing: ${missingNames.join(', ')}`);
+    }
+    return selectedDefinitions;
+}
+
+function unavailableGenerationToolFunction(functionName) {
+    return () => {
+        throw new Error(`${functionName} is unavailable during generation prompt tool calls.`);
+    };
+}
+
+function getGenerationPromptToolRuntime() {
+    if (!generationPromptToolRuntime) {
+        generationPromptToolRuntime = createChatToolRuntime({
+            getConfig: () => config,
+            getChatHistory: () => chatHistory,
+            isAssistantProseLikeEntry: () => true,
+            serializeNpcForClient,
+            buildLocationResponse: () => ({}),
+            getCurrentPlayer: () => currentPlayer,
+            createLocationFromEvent: unavailableGenerationToolFunction('createLocationFromEvent'),
+            createRegionStubFromEvent: unavailableGenerationToolFunction('createRegionStubFromEvent'),
+            generateItemsByNames: unavailableGenerationToolFunction('generateItemsByNames'),
+            generateNpcFromEvent: unavailableGenerationToolFunction('generateNpcFromEvent'),
+            ensureExitConnection: unavailableGenerationToolFunction('ensureExitConnection'),
+            findRegionByLocationId,
+            LLMClient,
+            Player,
+            Thing,
+            Location,
+            Region,
+            getGameLocations: () => gameLocations,
+            getFactions: () => factions,
+            getRegionsMap: () => regions,
+            getPendingRegionStubs: () => pendingRegionStubs,
+            getModExtensionRegistry: () => null
+        });
+    }
+    return generationPromptToolRuntime;
+}
+
+async function runGenerationPromptCompletion({
+    requestOptions,
+    metadataLabel
+} = {}) {
+    if (!requestOptions || typeof requestOptions !== 'object') {
+        throw new Error('runGenerationPromptCompletion requires requestOptions.');
+    }
+    if (!Array.isArray(requestOptions.messages) || !requestOptions.messages.length) {
+        throw new Error('runGenerationPromptCompletion requires non-empty requestOptions.messages.');
+    }
+    if (
+        requestOptions.additionalPayload !== undefined
+        && requestOptions.additionalPayload !== null
+        && (typeof requestOptions.additionalPayload !== 'object' || Array.isArray(requestOptions.additionalPayload))
+    ) {
+        throw new Error('runGenerationPromptCompletion additionalPayload must be an object when provided.');
+    }
+    const existingAdditionalPayload = requestOptions.additionalPayload && typeof requestOptions.additionalPayload === 'object'
+        ? requestOptions.additionalPayload
+        : {};
+    const toolChoice = requestOptions.tool_choice || existingAdditionalPayload.tool_choice || 'auto';
+    const toolLoopResult = await getGenerationPromptToolRuntime().runChatCompletionWithToolLoop({
+        requestOptions: {
+            ...requestOptions,
+            prefill: null,
+            additionalPayload: {
+                ...existingAdditionalPayload,
+                tools: getGenerationPromptToolDefinitions(),
+                tool_choice: toolChoice
+            }
+        },
+        metadataLabel
+    });
+    return toolLoopResult.aiResponse;
+}
 
 function generateChatMessageId() {
     if (typeof randomUUID === 'function') {
@@ -4034,6 +4220,17 @@ function serializeNpcForClient(npc, options = {}) {
         factionStandings = {};
     }
 
+    let relationships = {};
+    try {
+        if (typeof npc.getRelationships === 'function') {
+            relationships = npc.getRelationships() || {};
+        } else if (npc.relationships && typeof npc.relationships === 'object' && !Array.isArray(npc.relationships)) {
+            relationships = { ...npc.relationships };
+        }
+    } catch (_) {
+        relationships = {};
+    }
+
     let unspentSkillPoints = null;
     try {
         if (typeof npc.getUnspentSkillPoints === 'function') {
@@ -4187,8 +4384,6 @@ function serializeNpcForClient(npc, options = {}) {
         isHostile: Boolean(npc.isHostile),
         isDead: Boolean(npc.isDead),
         isInPlayerParty: (() => {
-            const direct = Boolean(npc.isInPlayerParty);
-            if (direct) return true;
             if (currentPlayer && typeof currentPlayer.getPartyMembers === 'function') {
                 try {
                     const ids = currentPlayer.getPartyMembers();
@@ -4242,7 +4437,8 @@ function serializeNpcForClient(npc, options = {}) {
         aiNotes: personality?.aiNotes ?? null,
         createdAt: npc.createdAt,
         lastUpdated: npc.lastUpdated,
-        dispositionsTowardPlayer
+        dispositionsTowardPlayer,
+        relationships
     };
 
     if (factionId) {
@@ -6082,6 +6278,34 @@ function buildBasePromptContext({
         playerStatus,
         playerStatus?.name || currentPlayer?.name || 'Unknown Adventurer'
     );
+    const rawPartyMemberIds = currentPlayer && typeof currentPlayer.getPartyMembers === 'function'
+        ? currentPlayer.getPartyMembers()
+        : [];
+    const partyMemberIds = Array.isArray(rawPartyMemberIds)
+        ? rawPartyMemberIds
+        : (rawPartyMemberIds && typeof rawPartyMemberIds.forEach === 'function'
+            ? Array.from(rawPartyMemberIds)
+            : []);
+    const partyMemberIdSet = new Set(
+        partyMemberIds
+            .map(id => (typeof id === 'string' ? id.trim() : ''))
+            .filter(Boolean)
+    );
+    const locationNpcIds = location
+        ? (Array.isArray(location.npcIds)
+            ? location.npcIds
+            : (Array.isArray(locationDetails?.npcIds) ? locationDetails.npcIds : []))
+        : [];
+    const listedRelationshipCharacterIds = [
+        currentPlayer?.id,
+        ...partyMemberIds,
+        ...locationNpcIds
+    ].filter(id => typeof id === 'string' && id.trim());
+    const relationshipPromptContextFor = (actor) => buildActorRelationshipPromptContext({
+        actor,
+        playersById: players,
+        listedCharacterIds: listedRelationshipCharacterIds
+    });
 
     const gearSnapshot = playerStatus?.gear && typeof playerStatus.gear === 'object'
         ? Object.entries(playerStatus.gear).map(([slotName, slotData]) => ({
@@ -6113,6 +6337,7 @@ function buildBasePromptContext({
         needs: currentPlayerNeeds,
         modStatusSections: collectActorModStatusSections(currentPlayer),
         currentQuests: currentPlayer.currentQuests,
+        ...relationshipPromptContextFor(currentPlayer)
     };
 
     function computeDispositionsTowardsPlayer(actor) {
@@ -6143,20 +6368,6 @@ function buildBasePromptContext({
         return dispositions;
     }
 
-    const rawPartyMemberIds = currentPlayer && typeof currentPlayer.getPartyMembers === 'function'
-        ? currentPlayer.getPartyMembers()
-        : [];
-    const partyMemberIds = Array.isArray(rawPartyMemberIds)
-        ? rawPartyMemberIds
-        : (rawPartyMemberIds && typeof rawPartyMemberIds.forEach === 'function'
-            ? Array.from(rawPartyMemberIds)
-            : []);
-    const partyMemberIdSet = new Set(
-        partyMemberIds
-            .map(id => (typeof id === 'string' ? id.trim() : ''))
-            .filter(Boolean)
-    );
-
     const npcs = [];
     const dispositionDefinitions = Player.getDispositionDefinitions();
     const dispositionTypes = Object.values(dispositionDefinitions?.types || {});
@@ -6169,9 +6380,7 @@ function buildBasePromptContext({
         move_way_down: Array.isArray(type.moveWayDown) ? type.moveWayDown : []
     }));
     if (location) {
-        const npcIds = Array.isArray(location.npcIds)
-            ? location.npcIds
-            : (Array.isArray(locationDetails?.npcIds) ? locationDetails.npcIds : []);
+        const npcIds = locationNpcIds;
         for (const npcId of npcIds) {
             if (partyMemberIdSet.has(npcId)) {
                 continue;
@@ -6224,7 +6433,8 @@ function buildBasePromptContext({
                 selectedImportantMemories: [],
                 last_seen_time: npc.last_seen_time,
                 last_seen_location: npc.last_seen_location,
-                was_in_player_location_previous_round: Boolean(npc.was_in_player_location_previous_round)
+                was_in_player_location_previous_round: Boolean(npc.was_in_player_location_previous_round),
+                ...relationshipPromptContextFor(npc)
             });
         }
     }
@@ -6276,7 +6486,8 @@ function buildBasePromptContext({
                 needs,
                 modStatusSections: collectActorModStatusSections(member),
                 importantMemories,
-                selectedImportantMemories: []
+                selectedImportantMemories: [],
+                ...relationshipPromptContextFor(member)
             });
         }
     }
@@ -11320,10 +11531,13 @@ async function expandRegionEntryStub(stubLocation) {
 
             try {
                 console.log(`🌐 Generating locations for region stub ${regionName} (${targetRegionId})...`);
-                stubResponse = await LLMClient.chatCompletion({
-                    messages,
-                    metadataLabel: 'region_stub_locations',
-                    multimodal: Boolean(resolvedImageDataUrl)
+                stubResponse = await runGenerationPromptCompletion({
+                    requestOptions: {
+                        messages,
+                        metadataLabel: 'region_stub_locations',
+                        multimodal: Boolean(resolvedImageDataUrl)
+                    },
+                    metadataLabel: 'region_stub_locations'
                 });
                 LLMClient.logPrompt({
                     prefix: 'region_stub_locations',
@@ -12865,9 +13079,12 @@ async function generateInventoryForCharacter({
         timeoutScale = Math.max(1, Number(timeoutScale) || 1);
 
         const inventoryMetadataLabel = `inventory_generation_${character.name.replace(/[^A-Za-z0-9]/g, '')}`;
-        const inventoryContent = await LLMClient.chatCompletion({
-            messages,
-            timeoutScale,
+        const inventoryContent = await runGenerationPromptCompletion({
+            requestOptions: {
+                messages,
+                timeoutScale,
+                metadataLabel: inventoryMetadataLabel
+            },
             metadataLabel: inventoryMetadataLabel
         });
 
@@ -13348,10 +13565,14 @@ async function generateItemsByNames({
 
                 const requestStart = Date.now();
                 let requestPayloadForLog = null;
-                const inventoryContent = await LLMClient.chatCompletion({
-                    messages,
-                    metadataLabel: `thing_generation_${requestLabel.replace(/[^a-z0-9]+/gi, '_').replace(/^_+|_+$/g, '').toLowerCase() || `auto_${index + 1}`}`,
-                    captureRequestPayload: (payload) => { requestPayloadForLog = payload; }
+                const generationMetadataLabel = `thing_generation_${requestLabel.replace(/[^a-z0-9]+/gi, '_').replace(/^_+|_+$/g, '').toLowerCase() || `auto_${index + 1}`}`;
+                const inventoryContent = await runGenerationPromptCompletion({
+                    requestOptions: {
+                        messages,
+                        metadataLabel: generationMetadataLabel,
+                        captureRequestPayload: (payload) => { requestPayloadForLog = payload; }
+                    },
+                    metadataLabel: generationMetadataLabel
                 });
 
                 if (!inventoryContent || !inventoryContent.trim()) {
@@ -13647,10 +13868,14 @@ async function generateContainerContentsForThing({
 
     const requestStart = Date.now();
     let requestPayloadForLog = null;
-    const responseText = await LLMClient.chatCompletion({
-        messages,
-        metadataLabel: `thing_generator_contents_${String(container.name || container.id || 'container').replace(/[^a-z0-9]+/gi, '_').replace(/^_+|_+$/g, '').toLowerCase() || 'container'}`,
-        captureRequestPayload: (payload) => { requestPayloadForLog = payload; }
+    const contentsMetadataLabel = `thing_generator_contents_${String(container.name || container.id || 'container').replace(/[^a-z0-9]+/gi, '_').replace(/^_+|_+$/g, '').toLowerCase() || 'container'}`;
+    const responseText = await runGenerationPromptCompletion({
+        requestOptions: {
+            messages,
+            metadataLabel: contentsMetadataLabel,
+            captureRequestPayload: (payload) => { requestPayloadForLog = payload; }
+        },
+        metadataLabel: contentsMetadataLabel
     });
 
     if (!responseText || !responseText.trim()) {
@@ -15882,10 +16107,13 @@ async function generateNpcFromEvent({
         ];
 
         const requestStart = Date.now();
-        const npcResponse = await LLMClient.chatCompletion({
-            messages,
-            metadataLabel: 'npc_generation_single',
-            multimodal: Boolean(normalizedImageDataUrl)
+        const npcResponse = await runGenerationPromptCompletion({
+            requestOptions: {
+                messages,
+                metadataLabel: 'npc_generation_single',
+                multimodal: Boolean(normalizedImageDataUrl)
+            },
+            metadataLabel: 'npc_generation_single'
         });
 
         if (!npcResponse || !npcResponse.trim()) {
@@ -18827,6 +19055,19 @@ function getCharacterAbilities(character) {
     return abilities;
 }
 
+function getCharacterDeclinedAbilityNames(character) {
+    if (!character || typeof character.getDeclinedAbilityNames !== 'function') {
+        throw new Error('Character ability selection requires getDeclinedAbilityNames().');
+    }
+    const names = character.getDeclinedAbilityNames();
+    if (!Array.isArray(names)) {
+        throw new Error('Character getDeclinedAbilityNames() must return an array.');
+    }
+    return names
+        .map(name => (typeof name === 'string' ? name.trim() : ''))
+        .filter(Boolean);
+}
+
 function sortAbilitiesByLevelAndName(abilities = []) {
     return abilities.sort((a, b) => {
         const levelA = Number(a?.level) || 0;
@@ -19201,21 +19442,29 @@ async function generatePlayerAbilityOptionsForLevel(character, {
     if (!Number.isInteger(parsedCount) || parsedCount < 0) {
         throw new Error(`Invalid option count for player ability options: ${optionsToGenerate}`);
     }
+    if (!Array.isArray(excludedAbilityNames)) {
+        throw new Error('excludedAbilityNames must be an array.');
+    }
     if (parsedCount === 0) {
         return [];
     }
 
+    const declinedAbilityNames = getCharacterDeclinedAbilityNames(character);
+    const promiseExcludedKeys = [...excludedAbilityNames, ...declinedAbilityNames]
+        .map(normalizeAbilityNameForLookup)
+        .filter(Boolean)
+        .sort();
     const characterKey = (typeof character.id === 'string' && character.id.trim())
         ? character.id.trim()
         : (typeof character.name === 'string' ? character.name.trim().toLowerCase() : 'player');
-    const promiseKey = `${characterKey}:${parsedLevel}:${parsedCount}`;
+    const promiseKey = `${characterKey}:${parsedLevel}:${parsedCount}:${promiseExcludedKeys.join('|')}`;
     if (playerAbilitySelectionPromises.has(promiseKey)) {
         return playerAbilitySelectionPromises.get(promiseKey);
     }
 
     const generationPromise = (async () => {
         const excludedKeys = new Set();
-        for (const rawName of excludedAbilityNames) {
+        for (const rawName of [...excludedAbilityNames, ...declinedAbilityNames]) {
             const key = normalizeAbilityNameForLookup(rawName);
             if (key) {
                 excludedKeys.add(key);
@@ -19238,6 +19487,7 @@ async function generatePlayerAbilityOptionsForLevel(character, {
                         enabled: true,
                         targetLevel: parsedLevel,
                         optionsToGenerate: remaining,
+                        declinedAbilityNames,
                         excludedAbilityNames: Array.from(excludedKeys)
                     }
                 }
@@ -19435,13 +19685,17 @@ async function resolvePlayerAbilitySelectionState(character, { ensureOptionsForN
 
 async function applyPlayerAbilitySelection(character, {
     level,
-    selectedAbilityNames
+    selectedAbilityNames,
+    declinedAbilityNames = []
 } = {}) {
     if (!character || character.isNPC) {
         throw new Error('Ability selection can only be applied to a player character.');
     }
     if (!Array.isArray(selectedAbilityNames)) {
         throw new Error('selectedAbilityNames must be an array.');
+    }
+    if (!Array.isArray(declinedAbilityNames)) {
+        throw new Error('declinedAbilityNames must be an array.');
     }
 
     const parsedLevel = Number.parseInt(level, 10);
@@ -19483,6 +19737,22 @@ async function applyPlayerAbilitySelection(character, {
         throw new Error('Duplicate ability names were submitted.');
     }
 
+    const normalizedDeclinedKeys = declinedAbilityNames.map(name => {
+        if (typeof name !== 'string') {
+            throw new Error('declinedAbilityNames must contain only strings.');
+        }
+        const trimmed = name.trim();
+        if (!trimmed) {
+            throw new Error('declinedAbilityNames cannot contain blank values.');
+        }
+        return trimmed.toLowerCase();
+    });
+
+    const uniqueDeclinedKeys = new Set(normalizedDeclinedKeys);
+    if (uniqueDeclinedKeys.size !== normalizedDeclinedKeys.length) {
+        throw new Error('Duplicate declined ability names were submitted.');
+    }
+
     if (uniqueSelectionKeys.size !== selection.requiredSelections) {
         throw new Error(
             `Exactly ${selection.requiredSelections} abilities must be selected `
@@ -19497,6 +19767,21 @@ async function applyPlayerAbilitySelection(character, {
             continue;
         }
         optionLookup.set(key, ability);
+    }
+
+    const declinedAbilitiesToSave = [];
+    for (const key of uniqueDeclinedKeys) {
+        if (uniqueSelectionKeys.has(key)) {
+            continue;
+        }
+        const match = optionLookup.get(key);
+        if (!match) {
+            throw new Error(`Declined ability "${key}" is not one of the available options.`);
+        }
+        declinedAbilitiesToSave.push({
+            ...match,
+            level: parsedLevel
+        });
     }
 
     const selectedAbilities = [];
@@ -19529,7 +19814,13 @@ async function applyPlayerAbilitySelection(character, {
     if (typeof character.setAbilities !== 'function') {
         throw new Error('Character is missing setAbilities().');
     }
+    if (declinedAbilitiesToSave.length && typeof character.addDeclinedAbilities !== 'function') {
+        throw new Error('Character is missing addDeclinedAbilities().');
+    }
     character.setAbilities(mergedAbilities);
+    if (declinedAbilitiesToSave.length) {
+        character.addDeclinedAbilities(declinedAbilitiesToSave);
+    }
     character.clearPendingAbilityOptionsForLevel(parsedLevel);
 
     return resolvePlayerAbilitySelectionState(character, {
@@ -22284,9 +22575,12 @@ async function generateLocationThingsForLocation({ location } = {}) {
         { role: 'user', content: parsedTemplate.generationPrompt }
     ];
 
-    const aiResponse = await LLMClient.chatCompletion({
-        messages,
-        temperature: parsedTemplate.temperature,
+    const aiResponse = await runGenerationPromptCompletion({
+        requestOptions: {
+            messages,
+            temperature: parsedTemplate.temperature,
+            metadataLabel: 'location_things_generation'
+        },
         metadataLabel: 'location_things_generation'
     });
 
@@ -24434,9 +24728,12 @@ async function generateLocationNPCs({ location, systemPrompt, generationPrompt, 
         ];
 
         console.log('🧑‍🤝‍🧑 Requesting NPC generation for location', location.id);
-        const npcResponse = await LLMClient.chatCompletion({
-            messages,
-            timeoutScale: npcCountHint,
+        const npcResponse = await runGenerationPromptCompletion({
+            requestOptions: {
+                messages,
+                timeoutScale: npcCountHint,
+                metadataLabel: 'location_npc_generation'
+            },
             metadataLabel: 'location_npc_generation'
         });
 
@@ -24859,9 +25156,12 @@ async function generateRegionNPCs({ region, systemPrompt, generationPrompt, aiRe
 
         Globals.updateSpinnerText({ message: `Generating NPCs for region ${region.name || region.id}...` });
         console.log('🏘️ Requesting important NPC generation for region', region.id);
-        const npcResponse = await LLMClient.chatCompletion({
-            messages,
-            timeoutScale: regionLocations.length,
+        const npcResponse = await runGenerationPromptCompletion({
+            requestOptions: {
+                messages,
+                timeoutScale: regionLocations.length,
+                metadataLabel: 'region_npc_generation'
+            },
             metadataLabel: 'region_npc_generation'
         });
 
@@ -25893,6 +26193,17 @@ async function generatePlayerImage(player, options = {}) {
     }
     try {
         const { force = false, clientId = null } = options || {};
+        const hasFinalImagePrompt = Object.prototype.hasOwnProperty.call(options || {}, 'finalImagePrompt');
+        let finalImagePromptOverride = null;
+        if (hasFinalImagePrompt) {
+            if (typeof options.finalImagePrompt !== 'string') {
+                throw new TypeError('Confirmed character image prompt must be a string.');
+            }
+            finalImagePromptOverride = options.finalImagePrompt.trim();
+            if (!finalImagePromptOverride) {
+                throw new Error('Confirmed character image prompt cannot be empty.');
+            }
+        }
 
         if (!player) {
             throw new Error('Player object is required');
@@ -25924,7 +26235,7 @@ async function generatePlayerImage(player, options = {}) {
         }
 
         const existingGenerationPromise = playerImageGenerationPromises.get(player.id);
-        if (existingGenerationPromise) {
+        if (!finalImagePromptOverride && existingGenerationPromise) {
             console.log(`🎨 Portrait prompt generation already in progress for ${player.name}, joining existing request`);
             const existingResult = await existingGenerationPromise;
             const existingJobId = existingResult?.jobId || getEntityJob('player', player.id) || player.pendingImageJobId || null;
@@ -25980,15 +26291,19 @@ async function generatePlayerImage(player, options = {}) {
 
         const generationPromise = Promise.resolve().then(async () => {
             // Generate the portrait prompt
-            const portraitPrompt = renderPlayerPortraitPrompt(player);
             let finalImagePrompt;
-            try {
-                ({ prompt: finalImagePrompt } = await generateImagePromptFromTemplate(portraitPrompt, { prefixType: 'character' }));
-            } catch (error) {
-                if (isImagePromptGenerationFailure(error)) {
-                    return buildImagePromptSkippedResult(error);
+            if (finalImagePromptOverride) {
+                finalImagePrompt = finalImagePromptOverride;
+            } else {
+                const portraitPrompt = renderPlayerPortraitPrompt(player);
+                try {
+                    ({ prompt: finalImagePrompt } = await generateImagePromptFromTemplate(portraitPrompt, { prefixType: 'character' }));
+                } catch (error) {
+                    if (isImagePromptGenerationFailure(error)) {
+                        return buildImagePromptSkippedResult(error);
+                    }
+                    throw error;
                 }
-                throw error;
             }
 
             // Create image generation job with player-specific settings
@@ -26558,10 +26873,71 @@ async function generateImagePromptFromTemplate(prompts, options = {}) {
     }
 }
 
+async function generateEditableEntityImagePrompt(entity, entityType) {
+    if (!entity || typeof entity !== 'object') {
+        throw new Error('Image prompt target entity is required.');
+    }
+
+    const normalizedType = typeof entityType === 'string'
+        ? entityType.trim().toLowerCase()
+        : '';
+    switch (normalizedType) {
+        case 'player':
+        case 'npc': {
+            if (!currentSetting) {
+                throw new Error('No active setting is available for character image prompt generation.');
+            }
+            const portraitPrompt = renderPlayerPortraitPrompt(entity);
+            const { prompt } = await generateImagePromptFromTemplate(portraitPrompt, { prefixType: 'character' });
+            return {
+                prompt,
+                promptType: 'character',
+                renderedTemplate: portraitPrompt.renderedTemplate || null
+            };
+        }
+        case 'location': {
+            const promptTemplate = renderLocationImagePrompt(entity);
+            const { prompt: generatedImagePrompt } = await generateImagePromptFromTemplate(promptTemplate, { prefixType: 'location' });
+            const prompt = renderLocationFinalImagePrompt(entity, generatedImagePrompt);
+            return {
+                prompt,
+                promptType: 'location',
+                generatedPrompt: generatedImagePrompt,
+                renderedTemplate: promptTemplate.renderedTemplate || null
+            };
+        }
+        case 'thing':
+        case 'item':
+        case 'scenery': {
+            const promptTemplate = renderThingImagePrompt(entity);
+            const thingPrefixType = entity.thingType === 'item' ? 'item' : 'scenery';
+            const { prompt } = await generateImagePromptFromTemplate(promptTemplate, { prefixType: thingPrefixType });
+            return {
+                prompt,
+                promptType: thingPrefixType,
+                renderedTemplate: promptTemplate.renderedTemplate || null
+            };
+        }
+        default:
+            throw new Error(`Editable image prompts are not supported for entity type '${entityType}'.`);
+    }
+}
+
 // Function to generate location scene image
 async function generateLocationImage(location, options = {}) {
     try {
         const { force = false, clientId = null } = options || {};
+        const hasFinalImagePrompt = Object.prototype.hasOwnProperty.call(options || {}, 'finalImagePrompt');
+        let finalImagePromptOverride = null;
+        if (hasFinalImagePrompt) {
+            if (typeof options.finalImagePrompt !== 'string') {
+                throw new TypeError('Confirmed location image prompt must be a string.');
+            }
+            finalImagePromptOverride = options.finalImagePrompt.trim();
+            if (!finalImagePromptOverride) {
+                throw new Error('Confirmed location image prompt cannot be empty.');
+            }
+        }
         // Check if image generation is enabled
         if (!config.imagegen || !config.imagegen.enabled) {
             //console.log('Image generation is not enabled, skipping location scene generation');
@@ -26629,7 +27005,7 @@ async function generateLocationImage(location, options = {}) {
         }
 
         const existingGenerationPromise = locationImageGenerationPromises.get(location.id);
-        if (existingGenerationPromise) {
+        if (!finalImagePromptOverride && existingGenerationPromise) {
             console.log(`🏞️ Location ${location.id} already has image prompt generation in progress, joining existing request`);
             const existingResult = await existingGenerationPromise;
             const existingJobId = existingResult?.jobId || pendingLocationImages.get(location.id) || null;
@@ -26652,16 +27028,21 @@ async function generateLocationImage(location, options = {}) {
 
         const generationPromise = Promise.resolve().then(async () => {
             // Generate the location scene prompt using LLM
-            const promptTemplate = renderLocationImagePrompt(location);
             let finalImagePrompt;
-            try {
-                const { prompt: generatedImagePrompt } = await generateImagePromptFromTemplate(promptTemplate, { prefixType: 'location' });
-                finalImagePrompt = renderLocationFinalImagePrompt(location, generatedImagePrompt);
-            } catch (error) {
-                if (isImagePromptGenerationFailure(error)) {
-                    return buildImagePromptSkippedResult(error);
+            let promptTemplate = null;
+            if (finalImagePromptOverride) {
+                finalImagePrompt = finalImagePromptOverride;
+            } else {
+                promptTemplate = renderLocationImagePrompt(location);
+                try {
+                    const { prompt: generatedImagePrompt } = await generateImagePromptFromTemplate(promptTemplate, { prefixType: 'location' });
+                    finalImagePrompt = renderLocationFinalImagePrompt(location, generatedImagePrompt);
+                } catch (error) {
+                    if (isImagePromptGenerationFailure(error)) {
+                        return buildImagePromptSkippedResult(error);
+                    }
+                    throw error;
                 }
-                throw error;
             }
 
             // Create image generation job with location-specific settings
@@ -26679,7 +27060,7 @@ async function generateLocationImage(location, options = {}) {
                 megapixels: resolveMegapixels(locationImageSettings.megapixels),
                 // Track which location this image is for
                 locationId: location.id,
-                renderedTemplate: promptTemplate.renderedTemplate,
+                renderedTemplate: promptTemplate?.renderedTemplate || null,
                 isLocationScene: true,
                 force,
                 entityType: 'location',
@@ -27042,6 +27423,17 @@ async function generateLocationExitImage(locationExit, options = {}) {
 async function generateThingImage(thing, options = {}) {
     try {
         const { force = false, clientId = null } = options || {};
+        const hasFinalImagePrompt = Object.prototype.hasOwnProperty.call(options || {}, 'finalImagePrompt');
+        let finalImagePromptOverride = null;
+        if (hasFinalImagePrompt) {
+            if (typeof options.finalImagePrompt !== 'string') {
+                throw new TypeError('Confirmed thing image prompt must be a string.');
+            }
+            finalImagePromptOverride = options.finalImagePrompt.trim();
+            if (!finalImagePromptOverride) {
+                throw new Error('Confirmed thing image prompt cannot be empty.');
+            }
+        }
         //console.log(`Starting image generation process for thing ${thing.id}: ${thing.name}`);
         // Check if image generation is enabled
         if (!config.imagegen || !config.imagegen.enabled) {
@@ -27103,16 +27495,21 @@ async function generateThingImage(thing, options = {}) {
         }
 
         // Generate the thing image prompt using LLM
-        const promptTemplate = renderThingImagePrompt(thing);
-        const thingPrefixType = thing.thingType === 'item' ? 'item' : 'scenery';
+        let promptTemplate = null;
         let finalImagePrompt;
-        try {
-            ({ prompt: finalImagePrompt } = await generateImagePromptFromTemplate(promptTemplate, { prefixType: thingPrefixType }));
-        } catch (error) {
-            if (isImagePromptGenerationFailure(error)) {
-                return buildImagePromptSkippedResult(error);
+        if (finalImagePromptOverride) {
+            finalImagePrompt = finalImagePromptOverride;
+        } else {
+            promptTemplate = renderThingImagePrompt(thing);
+            const thingPrefixType = thing.thingType === 'item' ? 'item' : 'scenery';
+            try {
+                ({ prompt: finalImagePrompt } = await generateImagePromptFromTemplate(promptTemplate, { prefixType: thingPrefixType }));
+            } catch (error) {
+                if (isImagePromptGenerationFailure(error)) {
+                    return buildImagePromptSkippedResult(error);
+                }
+                throw error;
             }
-            throw error;
         }
 
         // Create image generation job with thing-specific settings
@@ -27132,7 +27529,7 @@ async function generateThingImage(thing, options = {}) {
             megapixels: getDefaultMegapixels(),
             // Track which thing this image is for
             thingId: thing.id,
-            renderedTemplate: promptTemplate.renderedTemplate,
+            renderedTemplate: promptTemplate?.renderedTemplate || null,
             isThingImage: true,
             force,
             entityType: thing.thingType || thing.type || 'thing',
@@ -27521,10 +27918,13 @@ async function generateLocationFromPrompt(options = {}) {
         //console.log('📝 System Prompt:', systemPrompt);
         //console.log('📤 Full Request Payload:', JSON.stringify({ messages }, null, 2));
 
-        const aiResponse = await LLMClient.chatCompletion({
-            messages,
-            metadataLabel: 'location_generation',
-            multimodal: Boolean(resolvedImageDataUrl)
+        const aiResponse = await runGenerationPromptCompletion({
+            requestOptions: {
+                messages,
+                metadataLabel: 'location_generation',
+                multimodal: Boolean(resolvedImageDataUrl)
+            },
+            metadataLabel: 'location_generation'
         });
 
         if (!aiResponse || !aiResponse.trim()) {
@@ -27875,45 +28275,61 @@ async function chooseExistingRegionExit({
     }
 }
 
-function renderRegionExitTravelTimesPrompt({
+async function renderRegionExitTravelTimesPrompt({
     region,
     allLocationsInRegion = [],
     knownExits = [],
-    pendingExits = []
+    pendingExits = [],
+    locationOverride = null
 } = {}) {
-    try {
-        if (!region || typeof region !== 'object') {
-            throw new Error('Region exit travel-time prompt requires a region object.');
-        }
-        if (!Array.isArray(pendingExits) || pendingExits.length === 0) {
-            throw new Error('Region exit travel-time prompt requires at least one pending exit.');
-        }
-
-        const templateName = 'region-exit-travel-times.xml.njk';
-        const renderedTemplate = promptEnv.render(templateName, {
-            setting: buildSettingPromptContext(getActiveSettingSnapshot()),
-            region: {
-                id: region.id || null,
-                name: region.name || region.id || 'Unknown Region',
-                description: region.description || 'No description provided.'
-            },
-            allLocationsInRegion,
-            knownExits,
-            pendingExits
-        });
-        const parsed = parseXMLTemplate(renderedTemplate);
-        const systemPrompt = parsed.systemPrompt ? parsed.systemPrompt.trim() : null;
-        const generationPrompt = parsed.generationPrompt ? parsed.generationPrompt.trim() : null;
-
-        if (!systemPrompt || !generationPrompt) {
-            throw new Error('Region exit travel-time template missing systemPrompt or generationPrompt.');
-        }
-
-        return { systemPrompt, generationPrompt };
-    } catch (error) {
-        console.error('Error rendering region exit travel-time template:', error);
-        return null;
+    if (!region || typeof region !== 'object') {
+        throw new Error('Region exit travel-time prompt requires a region object.');
     }
+    if (!Array.isArray(pendingExits) || pendingExits.length === 0) {
+        throw new Error('Region exit travel-time prompt requires at least one pending exit.');
+    }
+
+    const baseContext = await prepareBasePromptContext({
+        locationOverride: locationOverride && typeof locationOverride === 'object'
+            ? locationOverride
+            : null
+    });
+    const regionContext = {
+        ...(baseContext.currentRegion || {}),
+        id: region.id || null,
+        name: region.name || region.id || 'Unknown Region',
+        description: region.description || 'No description provided.',
+        locations: allLocationsInRegion,
+        connectedRegions: Array.isArray(baseContext.currentRegion?.connectedRegions)
+            ? baseContext.currentRegion.connectedRegions
+            : [],
+        secrets: Array.isArray(baseContext.currentRegion?.secrets)
+            ? baseContext.currentRegion.secrets
+            : []
+    };
+    const renderedTemplate = promptEnv.render('base-context.xml.njk', {
+        ...baseContext,
+        promptType: 'set_travel_times',
+        currentRegion: regionContext,
+        contextRegion: regionContext,
+        region: {
+            id: region.id || null,
+            name: region.name || region.id || 'Unknown Region',
+            description: region.description || 'No description provided.'
+        },
+        allLocationsInRegion,
+        knownExits,
+        pendingExits
+    });
+    const parsed = parseXMLTemplate(renderedTemplate);
+    const systemPrompt = parsed.systemPrompt ? parsed.systemPrompt.trim() : null;
+    const generationPrompt = parsed.generationPrompt ? parsed.generationPrompt.trim() : null;
+
+    if (!systemPrompt || !generationPrompt) {
+        throw new Error('Region exit travel-time template missing systemPrompt or generationPrompt.');
+    }
+
+    return { systemPrompt, generationPrompt };
 }
 
 function parseRegionExitTravelTimesResponse(xmlSnippet, { expectedExits = [] } = {}) {
@@ -28011,7 +28427,7 @@ function parseRegionExitTravelTimesResponse(xmlSnippet, { expectedExits = [] } =
     return results;
 }
 
-async function backfillRegionExitTravelTimes({ region = null, regionId = null, force = false } = {}) {
+async function backfillRegionExitTravelTimes({ region = null, regionId = null, force = false, locationOverride = null } = {}) {
     const resolvedRegion = region
         || (typeof regionId === 'string' && regionId.trim() ? Region.get(regionId.trim()) : null);
     if (!resolvedRegion || typeof resolvedRegion !== 'object') {
@@ -28178,69 +28594,95 @@ async function backfillRegionExitTravelTimes({ region = null, regionId = null, f
         };
     }
 
-    const prompt = renderRegionExitTravelTimesPrompt({
-        region: resolvedRegion,
-        allLocationsInRegion: regionLocations.map(summarizeLocation),
-        knownExits,
-        pendingExits
-    });
-    if (!prompt?.systemPrompt || !prompt?.generationPrompt) {
-        throw new Error(`Failed to render exit travel-time prompt for region "${resolvedRegion.name || resolvedRegion.id}".`);
-    }
+    const promptLocationOverride = locationOverride && typeof locationOverride === 'object'
+        ? locationOverride
+        : (
+            typeof resolvedRegion.entranceLocationId === 'string' && resolvedRegion.entranceLocationId.trim()
+                ? (gameLocations.get(resolvedRegion.entranceLocationId.trim()) || Location.get(resolvedRegion.entranceLocationId.trim()) || null)
+                : (regionLocations[0] || null)
+        );
 
-    const aiResponse = await LLMClient.chatCompletion({
-        messages: [
-            { role: 'system', content: prompt.systemPrompt },
-            { role: 'user', content: prompt.generationPrompt }
-        ],
-        metadataLabel: 'region_exit_travel_times'
-    });
-    const normalizedResponse = typeof aiResponse === 'string' ? aiResponse.trim() : '';
-    if (!normalizedResponse) {
-        throw new Error(`Exit travel-time prompt returned an empty response for region "${resolvedRegion.name || resolvedRegion.id}".`);
-    }
-
-    LLMClient.logPrompt({
-        prefix: 'region_exit_travel_times',
-        metadataLabel: 'region_exit_travel_times',
-        systemPrompt: prompt.systemPrompt || '',
-        generationPrompt: prompt.generationPrompt || '',
-        response: normalizedResponse
-    });
-
-    const parsedExits = parseRegionExitTravelTimesResponse(normalizedResponse, {
-        expectedExits: pendingExits
-    });
-
-    let mirroredReverseCount = 0;
-    for (const parsedExit of parsedExits) {
-        const key = `${parsedExit.sourceLocationId}::${parsedExit.destinationLocationId}`;
-        const pendingState = pendingExitState.get(key);
-        if (!pendingState) {
-            throw new Error(`Parsed exit travel-time response referenced unknown exit "${key}".`);
-        }
-
-        setExitTravelTimeMinutes(pendingState.sourceExit, parsedExit.travelTimeMinutes, {
-            context: `generated exit travel-time update for "${key}"`
+    try {
+        const prompt = await renderRegionExitTravelTimesPrompt({
+            region: resolvedRegion,
+            allLocationsInRegion: regionLocations.map(summarizeLocation),
+            knownExits,
+            pendingExits,
+            locationOverride: promptLocationOverride
         });
-        if (pendingState.reverseExit && (force || Number(pendingState.reverseExit.travelTimeMinutes) === 0)) {
-            setExitTravelTimeMinutes(pendingState.reverseExit, parsedExit.travelTimeMinutes, {
-                context: `mirrored reverse exit travel-time update for "${key}"`
-            });
-            mirroredReverseCount += 1;
+        if (!prompt?.systemPrompt || !prompt?.generationPrompt) {
+            throw new Error(`Failed to render exit travel-time prompt for region "${resolvedRegion.name || resolvedRegion.id}".`);
         }
-    }
 
-    return {
-        regionId: resolvedRegion.id,
-        regionName: resolvedRegion.name || resolvedRegion.id,
-        force,
-        promptUsed: true,
-        promptedExitCount: pendingExits.length,
-        generatedExitCount: parsedExits.length,
-        mirroredReverseCount,
-        copiedFromReverseCount
-    };
+        const aiResponse = await LLMClient.chatCompletion({
+            messages: [
+                { role: 'system', content: prompt.systemPrompt },
+                { role: 'user', content: prompt.generationPrompt }
+            ],
+            metadataLabel: 'set_travel_times'
+        });
+        const normalizedResponse = typeof aiResponse === 'string' ? aiResponse.trim() : '';
+        if (!normalizedResponse) {
+            throw new Error(`Exit travel-time prompt returned an empty response for region "${resolvedRegion.name || resolvedRegion.id}".`);
+        }
+
+        LLMClient.logPrompt({
+            prefix: 'set_travel_times',
+            metadataLabel: 'set_travel_times',
+            systemPrompt: prompt.systemPrompt || '',
+            generationPrompt: prompt.generationPrompt || '',
+            response: normalizedResponse
+        });
+
+        const parsedExits = parseRegionExitTravelTimesResponse(normalizedResponse, {
+            expectedExits: pendingExits
+        });
+
+        let mirroredReverseCount = 0;
+        for (const parsedExit of parsedExits) {
+            const key = `${parsedExit.sourceLocationId}::${parsedExit.destinationLocationId}`;
+            const pendingState = pendingExitState.get(key);
+            if (!pendingState) {
+                throw new Error(`Parsed exit travel-time response referenced unknown exit "${key}".`);
+            }
+
+            setExitTravelTimeMinutes(pendingState.sourceExit, parsedExit.travelTimeMinutes, {
+                context: `generated exit travel-time update for "${key}"`
+            });
+            if (pendingState.reverseExit && (force || Number(pendingState.reverseExit.travelTimeMinutes) === 0)) {
+                setExitTravelTimeMinutes(pendingState.reverseExit, parsedExit.travelTimeMinutes, {
+                    context: `mirrored reverse exit travel-time update for "${key}"`
+                });
+                mirroredReverseCount += 1;
+            }
+        }
+
+        return {
+            regionId: resolvedRegion.id,
+            regionName: resolvedRegion.name || resolvedRegion.id,
+            force,
+            promptUsed: true,
+            promptedExitCount: pendingExits.length,
+            generatedExitCount: parsedExits.length,
+            mirroredReverseCount,
+            copiedFromReverseCount
+        };
+    } catch (error) {
+        const promptError = error?.message || String(error);
+        console.warn(`Exit travel-time prompt failed for region "${resolvedRegion.name || resolvedRegion.id}"; continuing without generated exit times: ${promptError}`);
+        return {
+            regionId: resolvedRegion.id,
+            regionName: resolvedRegion.name || resolvedRegion.id,
+            force,
+            promptUsed: false,
+            promptFailed: true,
+            promptError: promptError,
+            promptedExitCount: pendingExits.length,
+            generatedExitCount: 0,
+            mirroredReverseCount: 0,
+            copiedFromReverseCount
+        };
+    }
 }
 
 
@@ -30128,11 +30570,14 @@ async function generateRegionFromPrompt(options = {}) {
         report('region:request', { message: 'Requesting region layout from AI...' });
 
         console.log('🗺️ Requesting region generation from AI...');
-        const aiResponse = await LLMClient.chatCompletion({
-            messages,
-            //temperature: parsedTemplate.temperature,
-            metadataLabel: 'region_generation',
-            multimodal: Boolean(normalizedImageDataUrl)
+        const aiResponse = await runGenerationPromptCompletion({
+            requestOptions: {
+                messages,
+                //temperature: parsedTemplate.temperature,
+                metadataLabel: 'region_generation',
+                multimodal: Boolean(normalizedImageDataUrl)
+            },
+            metadataLabel: 'region_generation'
         });
 
         if (!aiResponse || !aiResponse.trim()) {
@@ -30772,8 +31217,9 @@ Events.initialize({
     queueNpcAssetsForLocation,
     queueLocationThingImages,
     generateLocationExitImage,
-    ensureExitConnection,
-    directionKeyFromName,
+	    ensureExitConnection,
+	    backfillRegionExitTravelTimes,
+	    directionKeyFromName,
     generateStubName,
     ensureNpcByName,
     generateThingImage,
@@ -30836,6 +31282,7 @@ const apiScope = {
     generateLocationImage,
     generateLocationWeatherVariant,
     generatePlayerImage,
+    generateEditableEntityImagePrompt,
     generateRegionFromPrompt,
     backfillRegionExitTravelTimes,
     createLocationFromEvent,
@@ -30904,13 +31351,19 @@ const apiScope = {
     pendingRegionStubs,
     regionEntryExpansionPromises,
     pendingLocationImages,
+    playerImageGenerationPromises,
+    locationImageGenerationPromises,
     npcGenerationPromises,
     levelUpAbilityPromises,
     playerAbilitySelectionPromises,
     stubExpansionPromises,
     imageJobs,
+    activeImageJobs,
+    entityImageJobs,
     jobQueue,
     generatedImages,
+    advanceRuntimeGeneration,
+    resetBaseContextMemoryCache,
     baseTimeoutMilliseconds,
     imageFileExists,
     resolveImageFilePath,

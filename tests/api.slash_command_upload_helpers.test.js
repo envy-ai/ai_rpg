@@ -72,6 +72,40 @@ test('slash command reply action rejects unsupported action types', () => {
     );
 });
 
+test('slash command reply payload accepts delayed page reload actions', () => {
+    const { normalizeSlashCommandReplyPayload } = loadSlashCommandUploadHelpers();
+
+    const payload = normalizeSlashCommandReplyPayload({
+        content: 'Reloading...',
+        action: {
+            type: 'reload_page',
+            delayMs: 250
+        }
+    });
+
+    assert.deepEqual(JSON.parse(JSON.stringify(payload)), {
+        content: 'Reloading...',
+        ephemeral: false,
+        action: {
+            type: 'reload_page',
+            delayMs: 250
+        }
+    });
+});
+
+test('slash command reload action rejects invalid delay values', () => {
+    const { normalizeSlashCommandReplyAction } = loadSlashCommandUploadHelpers();
+
+    assert.throws(
+        () => normalizeSlashCommandReplyAction({ type: 'reload_page', delayMs: 12.5 }),
+        /delayMs/
+    );
+    assert.throws(
+        () => normalizeSlashCommandReplyAction({ type: 'reload_page', delayMs: -1 }),
+        /delayMs/
+    );
+});
+
 test('slash command upload normalization trims names and validates required content', () => {
     const { normalizeSlashCommandUploads } = loadSlashCommandUploadHelpers();
 

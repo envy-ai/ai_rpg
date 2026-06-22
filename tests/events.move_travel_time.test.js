@@ -4,7 +4,13 @@ const assert = require('node:assert/strict');
 const Events = require('../Events.js');
 const Globals = require('../Globals.js');
 
-function createMoveFixture({ shortestTravelTimeMinutes, sourceRegion = null } = {}) {
+function createMoveFixture({
+    shortestTravelTimeMinutes,
+    sourceRegion = null,
+    destinationRegion = null,
+    backfillRegionExitTravelTimes = null,
+    onShortestTravelTimeLookup = null
+} = {}) {
     const originLocation = {
         id: 'loc_origin',
         name: 'Origin',
@@ -59,14 +65,26 @@ function createMoveFixture({ shortestTravelTimeMinutes, sourceRegion = null } = 
                 return value === destinationLocation.name ? destinationLocation : null;
             },
             findShortestTravelTimeMinutes(source, destination) {
+                if (typeof onShortestTravelTimeLookup === 'function') {
+                    onShortestTravelTimeLookup();
+                }
                 assert.equal(source, originLocation.id);
                 assert.equal(destination, destinationLocation.id);
                 return shortestTravelTimeMinutes;
             }
         },
         findLocationByNameLoose: () => destinationLocation,
-        findRegionByLocationId: () => sourceRegion,
-        createLocationFromEvent: async () => destinationLocation
+        findRegionByLocationId: (locationId) => {
+            if (locationId === originLocation.id) {
+                return sourceRegion;
+            }
+            if (locationId === destinationLocation.id) {
+                return destinationRegion || sourceRegion;
+            }
+            return null;
+        },
+        createLocationFromEvent: async () => destinationLocation,
+        backfillRegionExitTravelTimes
     });
 
     return {
@@ -114,6 +132,61 @@ test('event-driven player movement advances time by shortest route and suppresse
             { minutes: 17, options: { source: 'event_move_travel' } }
         ]);
         assert.equal(context.timeProgress.advancedMinutes, 17);
+    } finally {
+        fixture.cleanup();
+    }
+});
+
+test('event-driven player movement backfills destination-region travel times before duration lookup', async () => {
+    const callOrder = [];
+    const destinationRegion = { id: 'region_destination', name: 'Destination Region' };
+    const fixture = createMoveFixture({
+        shortestTravelTimeMinutes: 23,
+        sourceRegion: { id: 'region_origin', name: 'Origin Region' },
+        destinationRegion,
+        backfillRegionExitTravelTimes: async (payload) => {
+            callOrder.push({ type: 'backfill', payload });
+            return { promptUsed: true };
+        },
+        onShortestTravelTimeLookup: () => {
+            callOrder.push({ type: 'duration_lookup' });
+        }
+    });
+    try {
+        await fixture.moveWithOptionalTimePassed();
+
+        assert.equal(callOrder[0]?.type, 'backfill');
+        assert.deepEqual(callOrder[0]?.payload, {
+            region: destinationRegion,
+            locationOverride: fixture.destinationLocation
+        });
+        assert.equal(callOrder[1]?.type, 'duration_lookup');
+    } finally {
+        fixture.cleanup();
+    }
+});
+
+test('event-driven player movement ignores travel-time backfill failures before duration lookup', async () => {
+    const callOrder = [];
+    const destinationRegion = { id: 'region_destination', name: 'Destination Region' };
+    const fixture = createMoveFixture({
+        shortestTravelTimeMinutes: 23,
+        sourceRegion: { id: 'region_origin', name: 'Origin Region' },
+        destinationRegion,
+        backfillRegionExitTravelTimes: async () => {
+            callOrder.push({ type: 'backfill' });
+            throw new Error('prompt parse failed');
+        },
+        onShortestTravelTimeLookup: () => {
+            callOrder.push({ type: 'duration_lookup' });
+        }
+    });
+    try {
+        await fixture.moveWithOptionalTimePassed();
+
+        assert.equal(callOrder[0]?.type, 'backfill');
+        assert.equal(callOrder[1]?.type, 'duration_lookup');
+        assert.equal(fixture.player.currentLocation, fixture.destinationLocation.id);
     } finally {
         fixture.cleanup();
     }

@@ -132,13 +132,15 @@ test('Utils.hydrateGameState normalizes legacy boolean hasWeather fields on save
             pendingRegionStubs: new Map()
         });
 
-        const hydrated = gameLocations.get('legacy-weather-stub');
+        assert.equal(gameLocations.size, 1);
+        const hydrated = Array.from(gameLocations.values())[0];
+        assert.ok(hydrated);
         assert.equal(hydrated.generationHints.hasWeather, 'yes');
         assert.equal(hydrated.stubMetadata.hasWeather, 'yes');
         assert.equal(hydrated.stubMetadata.locationHasWeather, 'no');
     } finally {
         Globals.sceneSummaries = previousSceneSummaries;
-        Location.removeFromIndex('legacy-weather-stub');
+        Location.clear();
         Region.removeFromIndex('legacy-weather-region');
     }
 });

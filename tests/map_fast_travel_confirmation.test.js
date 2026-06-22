@@ -124,16 +124,26 @@ test('shared map fast travel asks for confirmation before gameplay travel side e
   );
   assert.ok(
     helperSource.includes('travelMetadata'),
-    'confirmed map travel action should include travel metadata'
+    'nonblank confirmed map travel action should include travel metadata'
   );
   assert.ok(
     helperSource.includes("throw new Error('AIRPG chat client not available; cannot dispatch fast travel action.')"),
-    'map fast travel should fail loudly when the chat client is unavailable'
+    'prompt-backed map fast travel should fail loudly when the chat client is unavailable'
   );
   assert.match(
     helperSource,
-    /dispatchAutomatedMessage\(actionText,\s*\{[\s\S]*?travel:\s*true,[\s\S]*?travelMetadata,[\s\S]*?suppressTravelCompletionSound:\s*true,[\s\S]*?allowEmptyAction:\s*true/,
-    'map fast travel should dispatch the confirmed action before teleporting, allowing blank text'
+    /const hasPromptText\s*=\s*actionText\.length\s*>\s*0;/,
+    'map fast travel should branch on whether the confirmation text is blank'
+  );
+  assert.match(
+    helperSource,
+    /if \(hasPromptText\) \{[\s\S]*?dispatchAutomatedMessage\(actionText,\s*\{[\s\S]*?travel:\s*true,[\s\S]*?travelMetadata,[\s\S]*?suppressTravelCompletionSound:\s*true[\s\S]*?\}\);[\s\S]*?\}/,
+    'nonblank map fast travel should dispatch the confirmed action before teleporting'
+  );
+  assert.match(
+    helperSource,
+    /else if \(window\.AIRPG_CHAT && typeof window\.AIRPG_CHAT\.dispatchAutomatedMessage === 'function'\) \{[\s\S]*?dispatchAutomatedMessage\(`# \$\{playerName\} moved to \$\{destinationName\}\.`,\s*\{[\s\S]*?travel:\s*true,[\s\S]*?travelMetadata:\s*null,[\s\S]*?suppressTravelCompletionSound:\s*true[\s\S]*?\}\);[\s\S]*?\}/,
+    'blank map fast travel should log only a comment-style travel entry before teleporting'
   );
   assert.match(
     helperSource,
@@ -154,16 +164,15 @@ test('shared map fast travel asks for confirmation before gameplay travel side e
   assert.ok(previewIndex < confirmationIndex, 'travel preview should happen before confirmation');
   assert.ok(confirmationIndex < overlayIndex, 'confirmation should happen before the moving overlay');
   assert.ok(confirmationIndex < tabIndex, 'Adventure should focus when the Travel button is confirmed');
-  assert.ok(tabIndex < messageIndex, 'Adventure should focus before the fast-travel chat prompt starts');
+  assert.ok(tabIndex < messageIndex, 'Adventure should focus before map travel chat logging starts');
   assert.ok(confirmationIndex < messageIndex, 'confirmation should happen before automated travel logging');
   assert.ok(messageIndex < overlayIndex, 'the full action prompt should finish before the moving overlay is shown');
   assert.ok(confirmationIndex < teleportIndex, 'confirmation should happen before the teleport request');
   assert.ok(tabIndex < teleportIndex, 'Adventure should focus before the teleport request starts');
 });
 
-test('map fast travel confirmation starts blank and preserves blank action text', () => {
+test('map fast travel confirmation starts blank and skips the prompt for blank action text', () => {
   const viewSource = read('views/index.njk');
-  const chatSource = read('public/js/chat.js');
   const requestSource = extractFunction(viewSource, 'requestMapFastTravelConfirmation');
   const helperSource = extractFunction(viewSource, 'travelToAdjacentLocationFromMap');
 
@@ -193,9 +202,19 @@ test('map fast travel confirmation starts blank and preserves blank action text'
     'shared map travel helper should preserve a blank confirmed action'
   );
   assert.match(
-    chatSource,
-    /async dispatchAutomatedMessage\(message,\s*\{[\s\S]*?allowEmptyAction\s*=\s*false[\s\S]*?}\s*=\s*\{\}\)\s*\{[\s\S]*?allowEmptyAction:\s*Boolean\(allowEmptyAction\)/,
-    'automated messages should forward explicit empty-action permission'
+    helperSource,
+    /const hasPromptText\s*=\s*actionText\.length\s*>\s*0;/,
+    'shared map travel helper should distinguish blank confirmations from prompt-backed travel'
+  );
+  assert.doesNotMatch(
+    helperSource,
+    /dispatchAutomatedMessage\(actionText,\s*\{[\s\S]*?allowEmptyAction:\s*true/,
+    'blank map travel should not submit an empty player-action prompt'
+  );
+  assert.match(
+    helperSource,
+    /dispatchAutomatedMessage\(`# \$\{playerName\} moved to \$\{destinationName\}\.`,\s*\{[\s\S]*?travelMetadata:\s*null/,
+    'blank map travel should log the same comment-style movement text used by direct exit travel'
   );
 });
 

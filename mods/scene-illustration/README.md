@@ -57,6 +57,8 @@ Navigate to **Configuration** and find the "Scene Illustration" section:
 4. The button shows a number emoji (1️⃣-9️⃣) while processing
 5. Once complete, the image appears in the message and in the Scenes Gallery
 
+The client action hook preserves core chat-log action options, so built-in controls such as diagnostic delete buttons continue to work on non-illustration chat entries.
+
 ## Requirements
 
 - AI RPG game server with mod support

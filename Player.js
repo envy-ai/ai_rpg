@@ -14,6 +14,8 @@ const IdGenerator = require('./IdGenerator.js');
 
 const ATTRIBUTE_POOL_BASELINE_VALUE = 10;
 const SKILL_POOL_BASELINE_VALUE = 1;
+const RELATIONSHIP_LABEL_MAX_WORDS = 6;
+const RELATIONSHIP_LABEL_MAX_WORDS_TEXT = 'six';
 
 let CachedLocationModule = null;
 function getLocationModule() {
@@ -54,6 +56,7 @@ class Player {
     #gearSlotsByType;
     #gearSlotNameIndex;
     #abilities;
+    #declinedAbilities = [];
     #pendingAbilityOptionsByLevel = new Map();
     #needBars;
     #needBarApplicability = new Map();
@@ -88,7 +91,6 @@ class Player {
     #turnsSincePartyMemoryGeneration = 0;
     #pendingPartyMemoryHistory = [];
     #partyMembershipChangedThisTurn = false;
-    #isInPlayerParty = false;
     #wasEverInPlayerParty = false;
     #partyMembersAddedThisTurn = new Set();
     #partyMembersRemovedThisTurn = new Set();
@@ -101,6 +103,7 @@ class Player {
     #lastOutcomeSucceeded = null;
     #factionId = null;
     #factionStandings = new Map();
+    #relationships = new Map();
     #thingListViewPreferences = {};
     #modState = {};
 
@@ -330,6 +333,35 @@ class Player {
         }
         const normalized = value.trim().toLowerCase();
         return this.#thingListViewModes.has(normalized) ? normalized : '';
+    }
+
+    static #partyMemberListIncludes(source, actorId) {
+        const targetId = typeof actorId === 'string' ? actorId.trim() : '';
+        if (!targetId || source === null || source === undefined) {
+            return false;
+        }
+
+        if (Array.isArray(source) || source instanceof Set) {
+            for (const rawId of source) {
+                const memberId = typeof rawId === 'string' ? rawId.trim() : '';
+                if (memberId === targetId) {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        if (typeof source !== 'string' && typeof source[Symbol.iterator] === 'function') {
+            for (const rawId of source) {
+                const memberId = typeof rawId === 'string' ? rawId.trim() : '';
+                if (memberId === targetId) {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        throw new Error('Current player getPartyMembers() must return an array, Set, or iterable of actor ids.');
     }
 
     static #normalizeThingListViewPreferences(source, { onInvalid = 'ignore', context = 'thingListViewPreferences' } = {}) {
@@ -804,6 +836,55 @@ class Player {
         }
         if (typeof source !== 'object') {
             throw new Error('Faction standings must be a Map or object.');
+        }
+        for (const [key, value] of Object.entries(source)) {
+            addEntry(key, value);
+        }
+        return map;
+    }
+
+    static #normalizeRelationshipLabel(value, targetId) {
+        if (typeof value !== 'string') {
+            throw new Error(`Relationship label for "${targetId}" must be a string.`);
+        }
+        const normalized = value.trim().replace(/\s+/g, ' ');
+        if (!normalized) {
+            throw new Error(`Relationship label for "${targetId}" must be a non-empty string.`);
+        }
+        if (normalized.split(/\s+/).length > RELATIONSHIP_LABEL_MAX_WORDS) {
+            throw new Error(`Relationship label for "${targetId}" must be ${RELATIONSHIP_LABEL_MAX_WORDS_TEXT} words or fewer.`);
+        }
+        return normalized;
+    }
+
+    static #normalizeRelationships(source, { ownerId = null } = {}) {
+        const map = new Map();
+        if (source === null || source === undefined) {
+            return map;
+        }
+        const normalizedOwnerId = typeof ownerId === 'string' ? ownerId.trim() : '';
+        const addEntry = (key, value) => {
+            if (typeof key !== 'string') {
+                throw new Error('Relationship target ids must be strings.');
+            }
+            const targetId = key.trim();
+            if (!targetId) {
+                throw new Error('Relationship target ids must be non-empty strings.');
+            }
+            if (normalizedOwnerId && targetId === normalizedOwnerId) {
+                throw new Error('Relationships cannot target the owning character.');
+            }
+            map.set(targetId, Player.#normalizeRelationshipLabel(value, targetId));
+        };
+
+        if (source instanceof Map) {
+            for (const [key, value] of source.entries()) {
+                addEntry(key, value);
+            }
+            return map;
+        }
+        if (typeof source !== 'object' || Array.isArray(source)) {
+            throw new Error('Relationships must be a Map or object.');
         }
         for (const [key, value] of Object.entries(source)) {
             addEntry(key, value);
@@ -2084,6 +2165,7 @@ class Player {
         this.#initializeBarterInventory(options.barterInventory);
         this.#factionId = Player.#normalizeFactionId(options.factionId);
         this.#factionStandings = Player.#normalizeFactionStandings(options.factionStandings);
+        this.#relationships = Player.#normalizeRelationships(options.relationships, { ownerId: this.#id });
         this.#elapsedTime = Number.isFinite(options.elapsedTime) && options.elapsedTime > 0
             ? Math.round(options.elapsedTime)
             : 0;
@@ -2119,9 +2201,6 @@ class Player {
                 const member = Player.getById(memberId);
                 if (member) {
                     member.wasEverInPlayerParty = true;
-                    if (typeof member.setInPlayerParty === 'function') {
-                        member.setInPlayerParty(true);
-                    }
                 }
             }
         }
@@ -2151,11 +2230,7 @@ class Player {
             : [];
 
         this.#partyMembershipChangedThisTurn = Boolean(options.partyMembershipChangedThisTurn);
-        this.#isInPlayerParty = Boolean(options.isInPlayerParty);
         this.#wasEverInPlayerParty = Boolean(options.wasEverInPlayerParty);
-        if (this.#isInPlayerParty) {
-            this.#wasEverInPlayerParty = true;
-        }
 
         const addedThisTurn = Array.isArray(options.partyMembersAddedThisTurn)
             ? options.partyMembersAddedThisTurn.filter(id => typeof id === 'string')
@@ -2170,6 +2245,7 @@ class Player {
         this.#skills = new Map();
         this.#initializeSkills(options.skills);
         this.#abilities = this.#normalizeAbilities(options.abilities);
+        this.#declinedAbilities = this.#normalizeAbilities(options.declinedAbilities);
         this.#pendingAbilityOptionsByLevel = this.#normalizePendingAbilityOptionsByLevel(options.pendingAbilityOptionsByLevel);
         this.#initializeGear(options.gear);
 
@@ -3693,7 +3769,7 @@ class Player {
         this.#isDead = next;
         if (next) {
             this.#hiddenFromPlayer = false;
-            if (this.#isInPlayerParty) {
+            if (this.isInPlayerParty) {
                 this.#persistWhenDead = true;
             }
             this.#health = 0;
@@ -3803,6 +3879,54 @@ class Player {
 
     getFactionStandings() {
         return Object.fromEntries(this.#factionStandings);
+    }
+
+    get relationships() {
+        return this.getRelationships();
+    }
+
+    getRelationships() {
+        return Object.fromEntries(this.#relationships);
+    }
+
+    setRelationships(relationships) {
+        this.#relationships = Player.#normalizeRelationships(relationships, { ownerId: this.#id });
+        this.#lastUpdated = new Date().toISOString();
+        return this.getRelationships();
+    }
+
+    getRelationship(targetId) {
+        const resolvedId = Player.resolvePlayerId(targetId);
+        if (!resolvedId) {
+            return null;
+        }
+        return this.#relationships.get(resolvedId) ?? null;
+    }
+
+    setRelationship(targetId, label) {
+        const resolvedId = Player.resolvePlayerId(targetId);
+        if (!resolvedId) {
+            throw new Error('Relationship target id is required.');
+        }
+        if (resolvedId === this.#id) {
+            throw new Error('Relationships cannot target the owning character.');
+        }
+        const normalizedLabel = Player.#normalizeRelationshipLabel(label, resolvedId);
+        this.#relationships.set(resolvedId, normalizedLabel);
+        this.#lastUpdated = new Date().toISOString();
+        return normalizedLabel;
+    }
+
+    removeRelationship(targetId) {
+        const resolvedId = Player.resolvePlayerId(targetId);
+        if (!resolvedId) {
+            return false;
+        }
+        const removed = this.#relationships.delete(resolvedId);
+        if (removed) {
+            this.#lastUpdated = new Date().toISOString();
+        }
+        return removed;
     }
 
     get thingListViewPreferences() {
@@ -4339,9 +4463,6 @@ class Player {
             if (member) {
                 member.persistWhenDead = true;
                 member.wasEverInPlayerParty = true;
-                if (typeof member.setInPlayerParty === 'function') {
-                    member.setInPlayerParty(true);
-                }
                 if (typeof member.markPartyMembershipChangedThisTurn === 'function') {
                     member.markPartyMembershipChangedThisTurn();
                 }
@@ -4377,9 +4498,6 @@ class Player {
             const member = Player.getById(trimmed);
             if (member) {
                 member.persistWhenDead = true;
-                if (typeof member.setInPlayerParty === 'function') {
-                    member.setInPlayerParty(false);
-                }
                 if (typeof member.markPartyMembershipChangedThisTurn === 'function') {
                     member.markPartyMembershipChangedThisTurn();
                 }
@@ -4424,9 +4542,6 @@ class Player {
             const member = Player.getById(memberId);
             if (member) {
                 member.persistWhenDead = true;
-                if (typeof member.setInPlayerParty === 'function') {
-                    member.setInPlayerParty(false);
-                }
                 if (typeof member.markPartyMembershipChangedThisTurn === 'function') {
                     member.markPartyMembershipChangedThisTurn();
                 }
@@ -4518,19 +4633,27 @@ class Player {
     }
 
     setInPlayerParty(value) {
-        const nextValue = Boolean(value);
-        if (this.#isInPlayerParty === nextValue) {
-            return;
-        }
-        this.#isInPlayerParty = nextValue;
-        if (nextValue) {
-            this.#wasEverInPlayerParty = true;
-        }
-        this.#lastUpdated = new Date().toISOString();
+        throw new Error('isInPlayerParty is derived from the current player partyMembers list; use addPartyMember() or removePartyMember() on the party owner.');
+    }
+
+    set isInPlayerParty(value) {
+        this.setInPlayerParty(value);
     }
 
     get isInPlayerParty() {
-        return this.#isInPlayerParty;
+        if (!this.#isNPC || !this.#id) {
+            return false;
+        }
+
+        const currentPlayer = Player.getCurrentPlayer();
+        if (!currentPlayer || currentPlayer === this || currentPlayer.id === this.#id) {
+            return false;
+        }
+        if (typeof currentPlayer.getPartyMembers !== 'function') {
+            return false;
+        }
+
+        return Player.#partyMemberListIncludes(currentPlayer.getPartyMembers(), this.#id);
     }
 
     get wasEverInPlayerParty() {
@@ -6249,6 +6372,7 @@ class Player {
             was_in_player_location_previous_round: this.#wasInPlayerLocationPreviousRound,
             imageId: this.#imageId,
             isNPC: this.#isNPC,
+            isInPlayerParty: this.isInPlayerParty,
             hiddenFromPlayer: this.#hiddenFromPlayer,
             isHostile: this.#isHostile,
             personalityType: this.#personalityType,
@@ -6277,6 +6401,7 @@ class Player {
             dispositionDefinitions: Player.dispositionDefinitions,
             skills: Object.fromEntries(this.#skills),
             abilities: this.getAbilities(),
+            declinedAbilities: this.getDeclinedAbilities(),
             unspentSkillPoints: this.getUnspentSkillPoints(),
             unspentAttributePoints: this.getUnspentAttributePoints(),
             statusEffects: this.getStatusEffects(),
@@ -6290,7 +6415,8 @@ class Player {
             corpseCountdown: this.#corpseCountdown,
             importantMemories: this.importantMemories,
             factionId: this.#factionId,
-            factionStandings: this.getFactionStandings()
+            factionStandings: this.getFactionStandings(),
+            relationships: this.getRelationships()
         };
         status.pendingAbilityOptionsByLevel = this.getPendingAbilityOptionsByLevel();
 
@@ -6349,6 +6475,7 @@ class Player {
             dispositions: this.#serializeDispositions(),
             skills: Object.fromEntries(this.#skills),
             abilities: this.getAbilities(),
+            declinedAbilities: this.getDeclinedAbilities(),
             unspentSkillPoints: this.getUnspentSkillPoints(),
             unspentAttributePoints: this.getUnspentAttributePoints(),
             statusEffects: this.#getIntrinsicStatusEffects(),
@@ -6382,6 +6509,7 @@ class Player {
             thingListViewPreferences: this.getThingListViewPreferences(),
             modState: this.modState,
             factionStandings: this.getFactionStandings(),
+            relationships: this.getRelationships(),
             importantMemories: this.importantMemories,
             previousLocationId: this.#previousLocationId,
             lastActionWasTravel: this.#lastActionWasTravel,
@@ -6389,7 +6517,6 @@ class Player {
             turnsSincePartyMemoryGeneration: this.#turnsSincePartyMemoryGeneration,
             partyMemoryHistorySegments: this.#pendingPartyMemoryHistory,
             partyMembershipChangedThisTurn: this.#partyMembershipChangedThisTurn,
-            isInPlayerParty: this.#isInPlayerParty,
             wasEverInPlayerParty: this.#wasEverInPlayerParty,
             partyMembersAddedThisTurn: Array.from(this.#partyMembersAddedThisTurn),
             partyMembersRemovedThisTurn: Array.from(this.#partyMembersRemovedThisTurn),
@@ -6432,6 +6559,7 @@ class Player {
             gender: data.gender,
             factionId: data.factionId,
             factionStandings: data.factionStandings,
+            relationships: data.relationships,
             personalityType: data.personality?.type ?? data.personalityType,
             personalityTraits: data.personality?.traits ?? data.personalityTraits,
             personalityNotes: data.personality?.notes ?? data.personalityNotes,
@@ -6456,6 +6584,9 @@ class Player {
             dispositions: data.dispositions && typeof data.dispositions === 'object' ? data.dispositions : {},
             skills: data.skills && typeof data.skills === 'object' ? data.skills : {},
             abilities: Array.isArray(data.abilities) ? data.abilities : (data.abilities && typeof data.abilities === 'object' ? data.abilities : []),
+            declinedAbilities: Array.isArray(data.declinedAbilities)
+                ? data.declinedAbilities
+                : (data.declinedAbilities && typeof data.declinedAbilities === 'object' ? data.declinedAbilities : []),
             unspentSkillPoints: data.unspentSkillPoints,
             unspentAttributePoints: data.unspentAttributePoints,
             statusEffects: Array.isArray(data.statusEffects) ? data.statusEffects : [],
@@ -6532,16 +6663,10 @@ class Player {
         if (typeof data.partyMembershipChangedThisTurn === 'boolean') {
             player.#partyMembershipChangedThisTurn = data.partyMembershipChangedThisTurn;
         }
-        if (typeof data.isInPlayerParty === 'boolean') {
-            player.#isInPlayerParty = data.isInPlayerParty;
-        }
         if (typeof data.wasEverInPlayerParty === 'boolean') {
             player.#wasEverInPlayerParty = data.wasEverInPlayerParty;
         } else {
             player.#wasEverInPlayerParty = false;
-        }
-        if (player.#isInPlayerParty) {
-            player.#wasEverInPlayerParty = true;
         }
         if (Array.isArray(data.partyMembersAddedThisTurn)) {
             player.#partyMembersAddedThisTurn = new Set(
@@ -6879,6 +7004,70 @@ class Player {
 
     getAbilities() {
         return this.#abilities.map(ability => ({ ...ability }));
+    }
+
+    getDeclinedAbilities() {
+        return this.#declinedAbilities.map(ability => ({ ...ability }));
+    }
+
+    getDeclinedAbilityNames() {
+        return this.#declinedAbilities
+            .map(ability => (typeof ability?.name === 'string' ? ability.name.trim() : ''))
+            .filter(Boolean);
+    }
+
+    setDeclinedAbilities(abilitiesInput = []) {
+        const normalizedAbilities = this.#normalizeAbilities(abilitiesInput);
+        const seen = new Set();
+        this.#declinedAbilities = [];
+        for (const ability of normalizedAbilities) {
+            const key = typeof ability?.name === 'string' ? ability.name.trim().toLowerCase() : '';
+            if (!key || seen.has(key)) {
+                continue;
+            }
+            seen.add(key);
+            this.#declinedAbilities.push({ ...ability });
+        }
+        this.#lastUpdated = new Date().toISOString();
+        return this.getDeclinedAbilities();
+    }
+
+    addDeclinedAbility(abilityInput) {
+        const [normalizedAbility] = this.#normalizeAbilities([abilityInput]);
+        const key = typeof normalizedAbility?.name === 'string'
+            ? normalizedAbility.name.trim().toLowerCase()
+            : '';
+        if (!key) {
+            return false;
+        }
+        const exists = this.#declinedAbilities.some(ability => (
+            typeof ability?.name === 'string' && ability.name.trim().toLowerCase() === key
+        ));
+        if (exists) {
+            return false;
+        }
+        this.#declinedAbilities.push({ ...normalizedAbility });
+        this.#lastUpdated = new Date().toISOString();
+        return true;
+    }
+
+    addDeclinedAbilities(abilitiesInput = []) {
+        const entries = Array.isArray(abilitiesInput) ? abilitiesInput : [abilitiesInput];
+        let addedCount = 0;
+        for (const entry of entries) {
+            if (this.addDeclinedAbility(entry)) {
+                addedCount += 1;
+            }
+        }
+        return addedCount;
+    }
+
+    clearDeclinedAbilities() {
+        if (!this.#declinedAbilities.length) {
+            return;
+        }
+        this.#declinedAbilities = [];
+        this.#lastUpdated = new Date().toISOString();
     }
 
     getPendingAbilityOptionsByLevel() {

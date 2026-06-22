@@ -7,6 +7,7 @@ const { getCurrencyLabel } = require('./public/js/currency-utils.js');
 const Utils = require('./Utils.js');
 const { XMLSerializer } = require('@xmldom/xmldom');
 const Location = require('./Location.js');
+const Region = require('./Region.js');
 const VehicleInfo = require('./VehicleInfo.js');
 const Globals = require('./Globals.js');
 const LLMClient = require('./LLMClient.js');
@@ -28,6 +29,9 @@ const {
     validateCriticalThresholdValues
 } = require('./utils/critical-threshold-formulas.js');
 const { createChatToolRuntime, getChatToolDefinitions } = require('./chat_tool_calls.js');
+const {
+    buildHousekeepingUpdateLogEntries
+} = require('./housekeeping_update_log.js');
 const {
     createScheduledEventScheduler,
     parseScheduledEventResultXml
@@ -67,6 +71,7 @@ const INFORMATION_GATHERING_CHAT_TOOL_NAMES = new Set([
     'hideEntity',
     'addTracker',
     'scheduleEvent',
+    'setRelationship',
     'resolveAttack',
     'resolveAreaAttack',
     'resolveSkillCheck',
@@ -85,7 +90,8 @@ const GENERIC_PROMPT_ONLY_BUILT_IN_CHAT_TOOL_NAMES = new Set([
 
 const PLOT_ANALYSIS_CHAT_TOOL_NAMES = new Set([
     'addTracker',
-    'scheduleEvent'
+    'scheduleEvent',
+    'setRelationship'
 ]);
 
 const LEGACY_PROMPT_CHECK_CHAT_TOOL_NAMES = new Set([
@@ -163,6 +169,164 @@ function parseUploadedEntityImageDataUrl(dataUrl) {
         mimeType: normalizedMimeType,
         extension: typeInfo.extension,
         buffer
+    };
+}
+
+function callRequiredClear(label, target, methodName = 'clear') {
+    if (!target || typeof target[methodName] !== 'function') {
+        throw new Error(`${label}.${methodName} is unavailable during new-game reset.`);
+    }
+    target[methodName]();
+}
+
+function clearNewGameRuntimeRegistries() {
+    callRequiredClear('Player', Player, 'clearRuntimeRegistries');
+    callRequiredClear('Thing', Thing);
+    callRequiredClear('Location', Location);
+    callRequiredClear('Quest', Quest);
+    callRequiredClear('Region', Region);
+    callRequiredClear('Faction', Faction);
+    callRequiredClear('MysteryBox', MysteryBox);
+    callRequiredClear('MysteryThread', MysteryThread);
+    callRequiredClear('ScheduledEvent', ScheduledEvent);
+    callRequiredClear('Tracker', Tracker);
+}
+
+function clearRequiredCollection(label, collection) {
+    if (!collection || typeof collection.clear !== 'function') {
+        throw new Error(`${label}.clear is unavailable during new-game reset.`);
+    }
+    collection.clear();
+}
+
+function clearRequiredArray(label, collection) {
+    if (!Array.isArray(collection)) {
+        throw new Error(`${label} must be an array during new-game reset.`);
+    }
+    collection.length = 0;
+}
+
+function resetNewGameRuntimeState(state = {}) {
+    if (!state || typeof state !== 'object' || Array.isArray(state)) {
+        throw new Error('resetNewGameRuntimeState requires a state object.');
+    }
+
+    const {
+        players,
+        things,
+        gameLocations,
+        gameLocationExits,
+        regions,
+        factions,
+        skills,
+        stubExpansionPromises,
+        regionEntryExpansionPromises,
+        pendingRegionStubs,
+        pendingLocationImages,
+        generatedImages,
+        imageJobs,
+        activeImageJobs,
+        entityImageJobs,
+        npcGenerationPromises,
+        playerAbilitySelectionPromises,
+        playerImageGenerationPromises,
+        locationImageGenerationPromises,
+        levelUpAbilityPromises,
+        shortDescriptionBackfillByClient,
+        chatHistory,
+        jobQueue,
+        setCurrentPlayer,
+        setIsProcessingJob,
+        clearCurrentTurnToken,
+        resetBaseContextMemoryCache,
+        cancelPendingPlayerInputRequests,
+        questConfirmationManager,
+        clearPlayerMoveLocks,
+        advanceRuntimeGeneration
+    } = state;
+
+    if (typeof setCurrentPlayer !== 'function') {
+        throw new Error('setCurrentPlayer callback is required during new-game reset.');
+    }
+    if (typeof setIsProcessingJob !== 'function') {
+        throw new Error('setIsProcessingJob callback is required during new-game reset.');
+    }
+    if (typeof clearCurrentTurnToken !== 'function') {
+        throw new Error('clearCurrentTurnToken callback is required during new-game reset.');
+    }
+    if (typeof resetBaseContextMemoryCache !== 'function') {
+        throw new Error('resetBaseContextMemoryCache callback is required during new-game reset.');
+    }
+    if (typeof cancelPendingPlayerInputRequests !== 'function') {
+        throw new Error('cancelPendingPlayerInputRequests callback is required during new-game reset.');
+    }
+    if (!questConfirmationManager || typeof questConfirmationManager.rejectAll !== 'function') {
+        throw new Error('questConfirmationManager.rejectAll is required during new-game reset.');
+    }
+    if (typeof clearPlayerMoveLocks !== 'function') {
+        throw new Error('clearPlayerMoveLocks callback is required during new-game reset.');
+    }
+    if (typeof advanceRuntimeGeneration !== 'function') {
+        throw new Error('advanceRuntimeGeneration callback is required during new-game reset.');
+    }
+
+    const runtimeGenerationId = advanceRuntimeGeneration('new-game');
+    IdGenerator.reset();
+    clearNewGameRuntimeRegistries();
+
+    [
+        ['players', players],
+        ['things', things],
+        ['gameLocations', gameLocations],
+        ['gameLocationExits', gameLocationExits],
+        ['regions', regions],
+        ['factions', factions],
+        ['skills', skills],
+        ['stubExpansionPromises', stubExpansionPromises],
+        ['regionEntryExpansionPromises', regionEntryExpansionPromises],
+        ['pendingRegionStubs', pendingRegionStubs],
+        ['pendingLocationImages', pendingLocationImages],
+        ['generatedImages', generatedImages],
+        ['imageJobs', imageJobs],
+        ['activeImageJobs', activeImageJobs],
+        ['entityImageJobs', entityImageJobs],
+        ['npcGenerationPromises', npcGenerationPromises],
+        ['playerAbilitySelectionPromises', playerAbilitySelectionPromises],
+        ['playerImageGenerationPromises', playerImageGenerationPromises],
+        ['locationImageGenerationPromises', locationImageGenerationPromises],
+        ['levelUpAbilityPromises', levelUpAbilityPromises],
+        ['shortDescriptionBackfillByClient', shortDescriptionBackfillByClient]
+    ].forEach(([label, collection]) => clearRequiredCollection(label, collection));
+
+    clearRequiredArray('chatHistory', chatHistory);
+    clearRequiredArray('jobQueue', jobQueue);
+    Player.setAvailableSkills(new Map());
+    Utils.loadChatSummaries({});
+
+    const sceneSummaries = Globals.getSceneSummaries();
+    if (!sceneSummaries || typeof sceneSummaries.clear !== 'function') {
+        throw new Error('Scene summaries clear helper is unavailable during new-game reset.');
+    }
+    sceneSummaries.clear();
+
+    setCurrentPlayer(null);
+    setIsProcessingJob(false);
+    clearCurrentTurnToken();
+    resetBaseContextMemoryCache();
+    const cancelledPlayerInputRequests = Number(cancelPendingPlayerInputRequests(
+        null,
+        'New game started; previous player input request cancelled.',
+        'new_game_started'
+    )) || 0;
+    const rejectedQuestConfirmations = Number(questConfirmationManager.rejectAll(
+        'New game started; previous quest confirmation cancelled.'
+    )) || 0;
+    clearPlayerMoveLocks();
+
+    return {
+        runtimeGenerationId,
+        cancelledPlayerInputRequests,
+        rejectedQuestConfirmations
     };
 }
 
@@ -1231,6 +1395,70 @@ function resolvePendingRegionEntryStubForTravelDestination({
     }
 
     return null;
+}
+
+function resolveTravelTimeBackfillRegionIdentity(location, { findRegionByLocationId = null } = {}) {
+    if (!location || typeof location !== 'object') {
+        return { id: null, region: null };
+    }
+
+    const locationId = typeof location.id === 'string' && location.id.trim()
+        ? location.id.trim()
+        : '';
+    const resolvedRegion = locationId && typeof findRegionByLocationId === 'function'
+        ? (findRegionByLocationId(locationId) || null)
+        : null;
+    const regionId = typeof resolvedRegion?.id === 'string' && resolvedRegion.id.trim()
+        ? resolvedRegion.id.trim()
+        : (typeof location.regionId === 'string' && location.regionId.trim()
+            ? location.regionId.trim()
+            : (typeof location.stubMetadata?.regionId === 'string' && location.stubMetadata.regionId.trim()
+                ? location.stubMetadata.regionId.trim()
+                : (typeof location.stubMetadata?.targetRegionId === 'string' && location.stubMetadata.targetRegionId.trim()
+                    ? location.stubMetadata.targetRegionId.trim()
+                    : null)));
+
+    return {
+        id: regionId,
+        region: resolvedRegion
+    };
+}
+
+async function maybeBackfillRegionExitTravelTimesForArrival({
+    originLocation = null,
+    destinationLocation = null,
+    findRegionByLocationId = null,
+    backfillRegionExitTravelTimes = null
+} = {}) {
+    if (!destinationLocation || typeof destinationLocation !== 'object') {
+        return null;
+    }
+    if (typeof findRegionByLocationId !== 'function') {
+        throw new Error('Arrival travel-time backfill requires findRegionByLocationId.');
+    }
+    if (typeof backfillRegionExitTravelTimes !== 'function') {
+        throw new Error('Arrival travel-time backfill requires backfillRegionExitTravelTimes.');
+    }
+
+    const destinationRegion = resolveTravelTimeBackfillRegionIdentity(destinationLocation, { findRegionByLocationId });
+    if (!destinationRegion.id && !destinationRegion.region) {
+        return null;
+    }
+
+    const originRegion = resolveTravelTimeBackfillRegionIdentity(originLocation, { findRegionByLocationId });
+    if (originRegion.id && destinationRegion.id && originRegion.id === destinationRegion.id) {
+        return null;
+    }
+
+    try {
+        if (destinationRegion.region) {
+            return await backfillRegionExitTravelTimes({ region: destinationRegion.region, locationOverride: destinationLocation });
+        }
+        return await backfillRegionExitTravelTimes({ regionId: destinationRegion.id, locationOverride: destinationLocation });
+    } catch (error) {
+        console.warn('Arrival travel-time backfill failed; continuing without updated exit travel times:', error?.message || error);
+        return null;
+    }
 }
 
 let aiDebugInterceptorInstalled = false;
@@ -2311,7 +2539,61 @@ module.exports = function registerApiRoutes(scope) {
             findRegionByLocationId
         });
 
-        const { collectHistoryMatches, runChatCompletionWithToolLoop } = createChatToolRuntime({
+        const createQuestFromEvent = async ({ summary, giver = '', stream = null } = {}) => {
+            const normalizedSummary = typeof summary === 'string' ? summary.trim() : '';
+            if (!normalizedSummary) {
+                throw new Error('createQuestFromEvent requires a non-empty summary.');
+            }
+            const questHandler = Events?._handlers?.received_quest;
+            if (typeof questHandler !== 'function') {
+                throw new Error('createQuestFromEvent requires Events received_quest handler.');
+            }
+            if (!currentPlayer || typeof currentPlayer.addQuest !== 'function') {
+                throw new Error('createQuestFromEvent requires an active player.');
+            }
+
+            let questLocation = null;
+            if (currentPlayer.currentLocation) {
+                questLocation = gameLocations.get(currentPlayer.currentLocation) || null;
+                if (!questLocation && typeof Location?.get === 'function') {
+                    questLocation = Location.get(currentPlayer.currentLocation) || null;
+                }
+            }
+
+            const questContext = {
+                player: currentPlayer,
+                location: questLocation || null,
+                stream: stream || null,
+                questsAwarded: [],
+                updatedQuests: []
+            };
+            if (questLocation && typeof findRegionByLocationId === 'function') {
+                try {
+                    questContext.region = findRegionByLocationId(questLocation.id) || null;
+                } catch (error) {
+                    throw new Error(`Failed to resolve quest event region: ${error.message}`);
+                }
+            }
+
+            await questHandler.call(Events, [{
+                summary: normalizedSummary,
+                giver: typeof giver === 'string' ? giver.trim() : ''
+            }], questContext);
+
+            return {
+                questsAwarded: Array.isArray(questContext.questsAwarded)
+                    ? questContext.questsAwarded
+                    : [],
+                updatedQuests: Array.isArray(questContext.updatedQuests)
+                    ? questContext.updatedQuests
+                    : [],
+                lastQuest: questContext.lastQuest && typeof questContext.lastQuest.toJSON === 'function'
+                    ? questContext.lastQuest.toJSON()
+                    : null
+            };
+        };
+
+        const { collectHistoryMatches, runChatCompletionWithToolLoop, executeChatToolCall } = createChatToolRuntime({
             getConfig: () => config,
             getChatHistory: () => chatHistory,
             getSceneSummaries: () => Globals.getSceneSummaries(),
@@ -2344,6 +2626,7 @@ module.exports = function registerApiRoutes(scope) {
             resolvePlausibilityCheck: resolvePlausibilityToolCall,
             resolveOpposedPlausibilityCheck: resolvePlausibilityToolCall,
             scheduleEvent: scheduledEventScheduler.scheduleEvent,
+            createQuestFromEvent,
             getCurrentWorldMinute: () => Globals.getTotalWorldMinutes(),
             formatTrackerLastUpdated: (worldMinute) => Utils.formatAbsoluteWorldMinutesAgo(worldMinute, {
                 currentTotalMinutes: Globals.getTotalWorldMinutes()
@@ -2363,6 +2646,239 @@ module.exports = function registerApiRoutes(scope) {
             getPendingRegionStubs: () => pendingRegionStubs,
             getModExtensionRegistry: () => modExtensionRegistry || Globals.modExtensionRegistry || null
         });
+
+        function recordHousekeepingUpdateLogEntries({
+            toolInvocations = [],
+            locationId = null,
+            stream = null,
+            entryCollector = null,
+            requestId = null,
+            parentEntryId = null
+        } = {}) {
+            if (entryCollector !== null && entryCollector !== undefined && !Array.isArray(entryCollector)) {
+                throw new Error('recordHousekeepingUpdateLogEntries entryCollector must be an array when provided.');
+            }
+            const resolvedLocationId = requireLocationId(locationId, 'housekeeping update entry');
+            const updateEntries = buildHousekeepingUpdateLogEntries(toolInvocations, {
+                locationId: resolvedLocationId,
+                requestId,
+                parentId: parentEntryId
+            });
+            if (!updateEntries.length) {
+                return [];
+            }
+
+            const storedEntries = [];
+            const collector = Array.isArray(entryCollector) ? entryCollector : null;
+            for (const entryPayload of updateEntries) {
+                const storedEntry = pushChatEntry(entryPayload, collector, resolvedLocationId);
+                storedEntries.push(storedEntry);
+                if (stream?.isEnabled) {
+                    stream.emit('chat_history_updated', {
+                        reason: entryPayload.type,
+                        entryId: storedEntry?.id || null,
+                        entryType: entryPayload.type,
+                        locationId: resolvedLocationId
+                    });
+                }
+            }
+            return storedEntries;
+        }
+
+        const HOUSEKEEPING_DEFERRED_ERROR = Symbol('housekeeping_deferred_error');
+
+        function wrapHousekeepingDeferredError(error) {
+            return {
+                type: HOUSEKEEPING_DEFERRED_ERROR,
+                error
+            };
+        }
+
+        function unwrapHousekeepingDeferredError(value) {
+            return value && value.type === HOUSEKEEPING_DEFERRED_ERROR
+                ? value.error
+                : null;
+        }
+
+        async function startHousekeepingPrompt({
+            textToCheck = '',
+            actionText = '',
+            stream = null,
+            locationOverride = null,
+            eventResult = null,
+            housekeepingInstructions = '',
+            entryCollector = null,
+            parentEntryId = null
+        } = {}) {
+            if (!config?.ai) {
+                throw new Error('Housekeeping prompt requires AI configuration.');
+            }
+            if (entryCollector !== null && entryCollector !== undefined && !Array.isArray(entryCollector)) {
+                throw new Error('Housekeeping prompt entryCollector must be an array when provided.');
+            }
+            const housekeepingLocationId = requireLocationId(
+                locationOverride?.id || currentPlayer?.currentLocation || currentPlayer?.locationId || null,
+                'housekeeping update entry'
+            );
+
+            const baseContext = await prepareBasePromptContext({
+                locationOverride: locationOverride || null
+            });
+            const renderedTemplate = promptEnv.render('base-context.xml.njk', {
+                ...baseContext,
+                promptType: 'housekeeping',
+                housekeepingEventText: typeof textToCheck === 'string' ? textToCheck : '',
+                housekeepingActionText: typeof actionText === 'string' ? actionText : '',
+                housekeepingEventResult: eventResult || null,
+                housekeepingInstructions: typeof housekeepingInstructions === 'string' ? housekeepingInstructions : ''
+            });
+            const parsedTemplate = parseXMLTemplate(renderedTemplate);
+            if (!parsedTemplate?.systemPrompt || !parsedTemplate?.generationPrompt) {
+                throw new Error('Housekeeping prompt template is missing prompts.');
+            }
+
+            const requestOptions = {
+                messages: [
+                    { role: 'system', content: parsedTemplate.systemPrompt },
+                    { role: 'user', content: parsedTemplate.generationPrompt }
+                ],
+                metadataLabel: 'housekeeping',
+                validateXML: false
+            };
+            if (typeof parsedTemplate.temperature === 'number') {
+                requestOptions.temperature = parsedTemplate.temperature;
+            }
+
+            const rawResponsePromise = LLMClient.chatCompletion(requestOptions)
+                .then(response => response || '')
+                .catch(error => wrapHousekeepingDeferredError(error));
+
+            return {
+                rawResponsePromise,
+                parsedTemplate,
+                requestOptions,
+                housekeepingLocationId,
+                stream,
+                entryCollector,
+                parentEntryId
+            };
+        }
+
+        async function finishHousekeepingPrompt(pendingHousekeepingPrompt, {
+            stream = undefined,
+            locationOverride = null,
+            entryCollector = undefined,
+            parentEntryId = undefined
+        } = {}) {
+            const pending = await pendingHousekeepingPrompt;
+            const startError = unwrapHousekeepingDeferredError(pending);
+            if (startError) {
+                throw startError;
+            }
+            if (!pending || typeof pending !== 'object') {
+                throw new Error('finishHousekeepingPrompt requires a pending housekeeping prompt object.');
+            }
+
+            const resolvedStream = stream !== undefined ? stream : pending.stream;
+            const resolvedEntryCollector = entryCollector !== undefined
+                ? entryCollector
+                : pending.entryCollector;
+            if (resolvedEntryCollector !== null
+                && resolvedEntryCollector !== undefined
+                && !Array.isArray(resolvedEntryCollector)) {
+                throw new Error('Housekeeping prompt entryCollector must be an array when provided.');
+            }
+            const resolvedParentEntryId = parentEntryId !== undefined
+                ? parentEntryId
+                : pending.parentEntryId;
+            const housekeepingLocationId = requireLocationId(
+                locationOverride?.id
+                    || pending.housekeepingLocationId
+                    || currentPlayer?.currentLocation
+                    || currentPlayer?.locationId
+                    || null,
+                'housekeeping update entry'
+            );
+
+            const housekeepingToolCallDebugEntries = [];
+            const toolCallDebugRecorder = Globals.config?.debug_tool_calls === true
+                ? createPromptToolCallDebugRecorder({
+                    promptLabel: 'housekeeping',
+                    locationId: housekeepingLocationId,
+                    stream: resolvedStream,
+                    entryCollector: housekeepingToolCallDebugEntries,
+                    requestId: resolvedStream?.requestId || null
+                })
+                : null;
+
+            const requestUserInputHandler = resolvedStream
+                ? createRequestUserInputHandler({
+                    stream: resolvedStream,
+                    promptLabel: 'housekeeping'
+                })
+                : null;
+
+            const rawResponseResult = await pending.rawResponsePromise;
+            const responseError = unwrapHousekeepingDeferredError(rawResponseResult);
+            if (responseError) {
+                throw responseError;
+            }
+            const rawResponse = rawResponseResult || '';
+            LLMClient.logPrompt({
+                prefix: 'housekeeping',
+                metadataLabel: 'housekeeping',
+                systemPrompt: pending.parsedTemplate.systemPrompt || '',
+                generationPrompt: pending.parsedTemplate.generationPrompt || '',
+                response: rawResponse,
+                model: pending.requestOptions.model,
+                endpoint: pending.requestOptions.endpoint
+            });
+
+            const housekeepingXmlResult = await Events._applyHousekeepingXmlResponse(rawResponse, {
+                executeChatToolCall,
+                metadataLabel: 'housekeeping',
+                startingSequence: 0,
+                includeAllHistoryEntryTypes: true,
+                requestUserInputHandler,
+                promptStream: resolvedStream || null,
+                onToolCallDebug: toolCallDebugRecorder
+                    ? event => toolCallDebugRecorder.record(event)
+                    : null
+            });
+            const updateLogEntries = recordHousekeepingUpdateLogEntries({
+                toolInvocations: housekeepingXmlResult.toolInvocations,
+                locationId: housekeepingLocationId,
+                stream: resolvedStream,
+                entryCollector: resolvedEntryCollector,
+                requestId: resolvedStream?.requestId || null,
+                parentEntryId: resolvedParentEntryId
+            });
+
+            return {
+                response: rawResponse,
+                toolInvocations: housekeepingXmlResult.toolInvocations,
+                updateLogEntries
+            };
+        }
+
+        async function runHousekeepingPrompt(options = {}) {
+            const pending = await startHousekeepingPrompt(options);
+            return finishHousekeepingPrompt(pending, options);
+        }
+
+        runHousekeepingPrompt.start = function startHousekeepingPromptForDeferredApply(options = {}) {
+            return startHousekeepingPrompt(options)
+                .catch(error => wrapHousekeepingDeferredError(error));
+        };
+
+        runHousekeepingPrompt.finish = function finishHousekeepingPromptForDeferredApply(
+            pendingHousekeepingPrompt,
+            options = {}
+        ) {
+            return finishHousekeepingPrompt(pendingHousekeepingPrompt, options);
+        };
+
+        Events.setHousekeepingPromptRunner(runHousekeepingPrompt);
 
         const shortDescriptionBackfillByClient = new Map();
         const OFFSCREEN_NPC_ACTIVITY_DAILY_MINUTES = [7 * 60, 19 * 60];
@@ -2766,9 +3282,6 @@ module.exports = function registerApiRoutes(scope) {
         function isNpcInCurrentPlayerParty(npc) {
             if (!npc || !currentPlayer || !currentPlayer.id) {
                 return false;
-            }
-            if (Boolean(npc.isInPlayerParty)) {
-                return true;
             }
             if (typeof currentPlayer.getPartyMembers === 'function') {
                 const members = currentPlayer.getPartyMembers();
@@ -6080,9 +6593,6 @@ module.exports = function registerApiRoutes(scope) {
             if (!npcId) {
                 return false;
             }
-            if (npc.isInPlayerParty === true) {
-                return true;
-            }
             if (typeof currentPlayer?.getPartyMembers !== 'function') {
                 return false;
             }
@@ -6568,21 +7078,21 @@ module.exports = function registerApiRoutes(scope) {
                         ? Number(resolvedLocationLastVisitedTimeBeforeArrival)
                         : NaN
                 );
+            const totalWorldMinutes = typeof Globals?.getTotalWorldMinutes === 'function'
+                ? Number(Globals.getTotalWorldMinutes())
+                : NaN;
+            const rawCurrentTime = Number.isFinite(totalWorldMinutes)
+                ? totalWorldMinutes
+                : (
+                    Number.isFinite(Number(Globals?.elapsedTime))
+                        ? Number(Globals.elapsedTime)
+                        : (
+                            Number.isFinite(Number(currentPlayer?.elapsedTime))
+                                ? Number(currentPlayer.elapsedTime)
+                                : NaN
+                        )
+                );
             if (whileYouWereAwayThresholdMinutes > 0 && Number.isFinite(rawLastVisitedTime)) {
-                const totalWorldMinutes = typeof Globals?.getTotalWorldMinutes === 'function'
-                    ? Number(Globals.getTotalWorldMinutes())
-                    : NaN;
-                const rawCurrentTime = Number.isFinite(totalWorldMinutes)
-                    ? totalWorldMinutes
-                    : (
-                        Number.isFinite(Number(Globals?.elapsedTime))
-                            ? Number(Globals.elapsedTime)
-                            : (
-                                Number.isFinite(Number(currentPlayer?.elapsedTime))
-                                    ? Number(currentPlayer.elapsedTime)
-                                    : NaN
-                            )
-                    );
                 if (Number.isFinite(rawCurrentTime)
                     && rawCurrentTime - rawLastVisitedTime < whileYouWereAwayThresholdMinutes) {
                     return returnEntries
@@ -6601,7 +7111,68 @@ module.exports = function registerApiRoutes(scope) {
             const allCandidates = Array.isArray(baseContext?.whileYouWereAwayNpcs)
                 ? baseContext.whileYouWereAwayNpcs
                 : [];
-            const candidates = allCandidates;
+            const candidates = allCandidates.slice();
+            const candidateIds = new Set(
+                candidates
+                    .map(candidate => (typeof candidate?.id === 'string' ? candidate.id.trim() : ''))
+                    .filter(Boolean)
+            );
+            const candidateNameKeys = new Set(
+                candidates
+                    .map(candidate => normalizeNpcNameKey(candidate?.name))
+                    .filter(Boolean)
+            );
+            const fallbackLastSeenTime = Number.isFinite(rawLastVisitedTime) ? rawLastVisitedTime : null;
+            const fallbackLastSeenTimeAgo = (() => {
+                if (fallbackLastSeenTime === null || !Number.isFinite(rawCurrentTime) || rawCurrentTime < fallbackLastSeenTime) {
+                    return 'some time ago';
+                }
+                if (!Utils || typeof Utils.formatAbsoluteWorldMinutesAgo !== 'function') {
+                    return 'some time ago';
+                }
+                return Utils.formatAbsoluteWorldMinutesAgo(fallbackLastSeenTime, {
+                    currentTotalMinutes: rawCurrentTime
+                });
+            })();
+            if (Array.isArray(baseContext?.npcs) && baseContext.npcs.length) {
+                const fallbackLocationId = resolvedLocationIdForVisitCheck || resolvedLocation.id || locationId || null;
+                const fallbackLocationName = typeof resolvedLocation?.name === 'string' && resolvedLocation.name.trim()
+                    ? resolvedLocation.name.trim()
+                    : fallbackLocationId;
+                for (const npc of baseContext.npcs) {
+                    const npcId = typeof npc?.id === 'string' ? npc.id.trim() : '';
+                    const npcName = typeof npc?.name === 'string' ? npc.name.trim() : '';
+                    const nameKey = normalizeNpcNameKey(npcName);
+                    if (!npcName || !nameKey) {
+                        continue;
+                    }
+                    if (npcId && candidateIds.has(npcId)) {
+                        continue;
+                    }
+                    if (candidateNameKeys.has(nameKey)) {
+                        continue;
+                    }
+                    if (npc.was_in_player_location_previous_round === true || npc.hiddenFromPlayer === true) {
+                        continue;
+                    }
+                    candidates.push({
+                        id: npcId || null,
+                        name: npcName,
+                        last_seen_time: fallbackLastSeenTime,
+                        lastSeenAgeMinutes: fallbackLastSeenTime === null || !Number.isFinite(rawCurrentTime)
+                            ? null
+                            : rawCurrentTime - fallbackLastSeenTime,
+                        lastSeenTimeAgo: fallbackLastSeenTimeAgo,
+                        last_seen_location: fallbackLocationId,
+                        lastSeenLocationName: fallbackLocationName,
+                        lastSeenWasEstimatedFromLocationVisit: true
+                    });
+                    if (npcId) {
+                        candidateIds.add(npcId);
+                    }
+                    candidateNameKeys.add(nameKey);
+                }
+            }
             const promptBaseContext = {
                 ...baseContext,
                 whileYouWereAwayNpcs: candidates
@@ -6846,8 +7417,10 @@ module.exports = function registerApiRoutes(scope) {
                         suppressMoveEvents: true,
                         suppressTimeAdvance: true,
                         suppressNeedBarEventChecks: true,
+                        suppressHousekeeping: true,
                         ignoredEventKeys: ['needbar_change', 'npc_arrival_departure', 'thing_move_with_character'],
-                        eventCheckIgnoreInstructions: 'This is a while-you-were-away event pass. Need-bar values, character arrivals/departures, and item/scenery moves with the player or party were already parsed directly from the while-you-were-away response, so ignore needbar_change, npc_arrival_departure, and thing_move_with_character completely.'
+                        eventCheckIgnoreInstructions: 'This is a while-you-were-away event pass. Need-bar values, character arrivals/departures, and item/scenery moves with the player or party were already parsed directly from the while-you-were-away response, so ignore needbar_change, npc_arrival_departure, and thing_move_with_character completely.',
+                        entryCollector
                     });
                 } catch (eventCheckError) {
                     console.warn(
@@ -6962,10 +7535,7 @@ module.exports = function registerApiRoutes(scope) {
                 throw new Error('Scheduled event resolution prompt template is missing prompts.');
             }
 
-            const scheduledEventTools = getAllChatToolDefinitions({
-                modExtensionRegistry,
-                includeGenericPromptOnly: false
-            });
+            const scheduledEventTools = getAllChatToolDefinitions({ modExtensionRegistry });
             const requestOptions = {
                 messages: [
                     { role: 'system', content: parsedTemplate.systemPrompt },
@@ -8126,6 +8696,9 @@ module.exports = function registerApiRoutes(scope) {
             const promptToken = token || plotAnalysisPromptToken;
             const startedAt = new Date().toISOString();
             try {
+                if (!isPlotAnalysisPromptEnabled()) {
+                    return null;
+                }
                 if (promptToken !== plotAnalysisPromptToken) {
                     return null;
                 }
@@ -8176,6 +8749,9 @@ module.exports = function registerApiRoutes(scope) {
                     if (promptToken !== plotAnalysisPromptToken || promptSequence !== plotAnalysisPromptSequence) {
                         throw new Error('Plot analysis prompt became stale before tool execution; aborting tool calls.');
                     }
+                    if (!isPlotAnalysisPromptEnabled()) {
+                        throw new Error('Plot analysis prompt disabled before tool execution; aborting tool calls.');
+                    }
                 };
                 const toolLoopResult = await runChatCompletionWithToolLoop({
                     requestOptions,
@@ -8200,6 +8776,10 @@ module.exports = function registerApiRoutes(scope) {
                 }
                 if (promptToken !== plotAnalysisPromptToken || promptSequence !== plotAnalysisPromptSequence) {
                     console.info('Stale plot analysis response ignored.');
+                    return null;
+                }
+                if (!isPlotAnalysisPromptEnabled()) {
+                    console.info('Plot analysis prompt disabled before response storage; ignoring response.');
                     return null;
                 }
 
@@ -10821,7 +11401,7 @@ module.exports = function registerApiRoutes(scope) {
             };
         }
 
-        function collectLocationCraftingThingIds(location, { thingLookup = null } = {}) {
+        function collectCraftingThingIdsFromRootIds(rootThingIds, { thingLookup = null } = {}) {
             const collectedThingIds = new Set();
             const queuedContainerIds = [];
             const queuedContainerIdSet = new Set();
@@ -10840,9 +11420,34 @@ module.exports = function registerApiRoutes(scope) {
                     || (typeof Thing.getById === 'function' ? Thing.getById(normalizedThingId) : null)
                     || null;
             };
+            const coerceBooleanFlag = (value) => {
+                if (typeof value === 'string') {
+                    const normalized = value.trim().toLowerCase();
+                    return normalized === 'true' || normalized === '1' || normalized === 'yes' || normalized === 'y' || normalized === 'on';
+                }
+                return Boolean(value);
+            };
+            const resolveThingBooleanFlag = (thing, key) => {
+                if (!thing || typeof thing !== 'object') {
+                    return false;
+                }
+                if (thing[key] !== undefined && thing[key] !== null) {
+                    return coerceBooleanFlag(thing[key]);
+                }
+                const metadataValue = thing.metadata?.[key];
+                if (metadataValue !== undefined && metadataValue !== null) {
+                    return coerceBooleanFlag(metadataValue);
+                }
+                return false;
+            };
+            const canUseContainerContentsForCrafting = (thing) => (
+                Boolean(thing)
+                && resolveThingBooleanFlag(thing, 'isContainer')
+                && !resolveThingBooleanFlag(thing, 'requiresCheckToOpen')
+            );
             const queueContainer = (thing) => {
                 const thingId = normalizeThingId(thing?.id);
-                if (!thingId || !thing?.isContainer || queuedContainerIdSet.has(thingId) || visitedContainerIds.has(thingId)) {
+                if (!thingId || !canUseContainerContentsForCrafting(thing) || queuedContainerIdSet.has(thingId) || visitedContainerIds.has(thingId)) {
                     return;
                 }
                 queuedContainerIds.push(thingId);
@@ -10857,9 +11462,7 @@ module.exports = function registerApiRoutes(scope) {
                 queueContainer(resolveThing(normalizedThingId));
             };
 
-            const directThingIds = Array.isArray(location?.thingIds)
-                ? location.thingIds
-                : (typeof location?.thingIds === 'function' ? location.thingIds() : []);
+            const directThingIds = Array.isArray(rootThingIds) ? rootThingIds : [];
             for (const thingId of directThingIds) {
                 addThingId(thingId);
             }
@@ -10873,7 +11476,7 @@ module.exports = function registerApiRoutes(scope) {
                 visitedContainerIds.add(containerId);
 
                 const container = resolveThing(containerId);
-                if (!container?.isContainer) {
+                if (!canUseContainerContentsForCrafting(container)) {
                     continue;
                 }
                 const containedThingIds = Array.isArray(container.containedThingIds)
@@ -10885,6 +11488,28 @@ module.exports = function registerApiRoutes(scope) {
             }
 
             return collectedThingIds;
+        }
+
+        function collectLocationCraftingThingIds(location, { thingLookup = null } = {}) {
+            const directThingIds = Array.isArray(location?.thingIds)
+                ? location.thingIds
+                : (typeof location?.thingIds === 'function' ? location.thingIds() : []);
+            return collectCraftingThingIdsFromRootIds(directThingIds, { thingLookup });
+        }
+
+        function collectPlayerInventoryCraftingThingIds(player, { thingLookup = null } = {}) {
+            const inventoryItems = typeof player?.getInventoryItems === 'function'
+                ? player.getInventoryItems()
+                : (Array.isArray(player?.inventory) ? player.inventory : []);
+            const directThingIds = inventoryItems
+                .map(item => {
+                    if (typeof item === 'string') {
+                        return item.trim();
+                    }
+                    return typeof item?.id === 'string' ? item.id.trim() : '';
+                })
+                .filter(Boolean);
+            return collectCraftingThingIdsFromRootIds(directThingIds, { thingLookup });
         }
 
         function getCraftingContainedThingIds(thing) {
@@ -11358,6 +11983,131 @@ module.exports = function registerApiRoutes(scope) {
             return matches;
         };
 
+        const LOCATION_REGION_MEMBERSHIP_CONFLICT_CODE = 'location_region_membership_conflict';
+
+        const formatNameIdLabel = (name, id, fallbackName = 'Unknown') => {
+            const normalizedId = typeof id === 'string' ? id.trim() : '';
+            const normalizedName = typeof name === 'string' && name.trim()
+                ? name.trim()
+                : fallbackName;
+
+            return normalizedId
+                ? `${normalizedName} (${normalizedId})`
+                : normalizedName;
+        };
+
+        const resolveLocationConflictName = (location) => {
+            if (!location) {
+                return 'Unknown Location';
+            }
+            const candidates = [
+                location.name,
+                location.shortDescription,
+                location.description
+            ];
+            for (const candidate of candidates) {
+                if (typeof candidate === 'string' && candidate.trim()) {
+                    return candidate.trim();
+                }
+            }
+            return 'Unknown Location';
+        };
+
+        const buildRegionMembershipSummary = (regionId, region, declaredRegionId = '') => {
+            const normalizedRegionId = typeof regionId === 'string' ? regionId.trim() : '';
+            const regionName = typeof region?.name === 'string' && region.name.trim()
+                ? region.name.trim()
+                : 'Unknown Region';
+            return {
+                id: normalizedRegionId,
+                name: regionName,
+                label: formatNameIdLabel(regionName, normalizedRegionId, 'Unknown Region'),
+                isDeclared: Boolean(normalizedRegionId && normalizedRegionId === declaredRegionId)
+            };
+        };
+
+        const buildLocationRegionMembershipConflict = ({
+            locationId,
+            location,
+            owningRegions
+        } = {}) => {
+            const normalizedLocationId = typeof locationId === 'string' && locationId.trim()
+                ? locationId.trim()
+                : (typeof location?.id === 'string' ? location.id.trim() : '');
+            if (!normalizedLocationId) {
+                throw new Error('Cannot build location region membership conflict without a location id.');
+            }
+            const locationName = resolveLocationConflictName(location);
+            const declaredRegionId = typeof location?.regionId === 'string'
+                ? location.regionId.trim()
+                : '';
+            const conflictRegions = Array.isArray(owningRegions)
+                ? owningRegions.map(({ regionId, region }) => buildRegionMembershipSummary(regionId, region, declaredRegionId))
+                : [];
+            const locationLabel = formatNameIdLabel(locationName, normalizedLocationId, 'Unknown Location');
+            const regionLabels = conflictRegions.map(region => region.label).join(', ');
+
+            return {
+                code: LOCATION_REGION_MEMBERSHIP_CONFLICT_CODE,
+                location: {
+                    id: normalizedLocationId,
+                    name: locationName,
+                    label: locationLabel
+                },
+                declaredRegionId: declaredRegionId || null,
+                regions: conflictRegions,
+                message: `Location ${locationLabel} is listed in multiple regions: ${regionLabels}.`
+            };
+        };
+
+        const createLocationRegionMembershipConflictError = (conflict, contextLabel = 'movement') => {
+            const error = new Error(
+                `[${contextLabel}] ${conflict?.message || 'A location is listed in multiple regions.'}`
+            );
+            error.code = LOCATION_REGION_MEMBERSHIP_CONFLICT_CODE;
+            error.conflict = conflict || null;
+            return error;
+        };
+
+        const findLocationRegionMembershipConflicts = ({ firstOnly = false } = {}) => {
+            const conflicts = [];
+            if (!(gameLocations instanceof Map) || !(regions instanceof Map)) {
+                return conflicts;
+            }
+
+            for (const [locationId, location] of gameLocations.entries()) {
+                if (!location || location.isStub) {
+                    continue;
+                }
+                const owningRegions = getRegionsContainingLocation(locationId);
+                if (owningRegions.length <= 1) {
+                    continue;
+                }
+
+                conflicts.push(buildLocationRegionMembershipConflict({
+                    locationId,
+                    location,
+                    owningRegions
+                }));
+                if (firstOnly) {
+                    break;
+                }
+            }
+
+            return conflicts;
+        };
+
+        const findFirstLocationRegionMembershipConflict = () => (
+            findLocationRegionMembershipConflicts({ firstOnly: true })[0] || null
+        );
+
+        const buildLocationRegionMembershipConflictResponse = (conflict) => ({
+            success: false,
+            code: LOCATION_REGION_MEMBERSHIP_CONFLICT_CODE,
+            error: conflict?.message || 'A location is listed in multiple regions.',
+            conflict: conflict || null
+        });
+
         const reconcileNonStubLocationRegionIntegrity = ({
             locationId,
             location,
@@ -11381,9 +12131,13 @@ module.exports = function registerApiRoutes(scope) {
             const declaredRegion = declaredRegionId ? (regions.get(declaredRegionId) || null) : null;
             const owningRegions = getRegionsContainingLocation(normalizedLocationId);
             if (owningRegions.length > 1) {
-                const regionList = owningRegions.map(({ regionId }) => `'${regionId}'`).join(', ');
-                throw new Error(
-                    `[${contextLabel}] Non-stub location '${normalizedLocationId}' is listed in multiple regions: ${regionList}.`
+                throw createLocationRegionMembershipConflictError(
+                    buildLocationRegionMembershipConflict({
+                        locationId: normalizedLocationId,
+                        location,
+                        owningRegions
+                    }),
+                    contextLabel
                 );
             }
 
@@ -14746,6 +15500,7 @@ module.exports = function registerApiRoutes(scope) {
             moveTurnResultPayload,
             location,
             stream,
+            entryCollector = null,
             userInput = null,
             includePlayerActionForEventChecks = false,
             travelMetadataIsEventDriven = false,
@@ -15079,7 +15834,8 @@ module.exports = function registerApiRoutes(scope) {
                     allowMoveTurnAppearances: true,
                     suppressTimeAdvance: Boolean(suppressTimeAdvance || suppressOriginTimeAdvance),
                     locationOverride: location || null,
-                    initialTimeProgress
+                    initialTimeProgress,
+                    entryCollector
                 });
             }
 
@@ -15150,11 +15906,17 @@ module.exports = function registerApiRoutes(scope) {
                         });
                     }
 
-                    if (!suppressPlayerMove && currentPlayer && currentPlayer.currentLocation !== destinationLocation.id) {
-                        const playerMoveOriginLocation = location || null;
-                        if (typeof Globals.recordPlayerArrivalVisitState === 'function') {
-                            Globals.recordPlayerArrivalVisitState(destinationLocation);
-                        }
+	                    if (!suppressPlayerMove && currentPlayer && currentPlayer.currentLocation !== destinationLocation.id) {
+	                        const playerMoveOriginLocation = location || null;
+	                        await maybeBackfillRegionExitTravelTimesForArrival({
+	                            originLocation: playerMoveOriginLocation,
+	                            destinationLocation,
+	                            findRegionByLocationId,
+	                            backfillRegionExitTravelTimes
+	                        });
+	                        if (typeof Globals.recordPlayerArrivalVisitState === 'function') {
+	                            Globals.recordPlayerArrivalVisitState(destinationLocation);
+	                        }
                         currentPlayer.setLocation(destinationLocation);
                         location = destinationLocation;
                         playerMoved = true;
@@ -15206,7 +15968,8 @@ module.exports = function registerApiRoutes(scope) {
                         locationOverride: moveTurnResultEventLocationRepresentsVehicle
                             ? moveTurnResultEventLocation
                             : location || null,
-                        initialTimeProgress: playerMoveTimeAdjustment?.timeProgress || initialTimeProgress
+                        initialTimeProgress: playerMoveTimeAdjustment?.timeProgress || initialTimeProgress,
+                        entryCollector
                     });
                 }
                 if (playerMoveTimeAdjustment?.timeProgress
@@ -15247,7 +16010,8 @@ module.exports = function registerApiRoutes(scope) {
                     allowMoveTurnAppearances: true,
                     suppressTimeAdvance: Boolean(suppressTimeAdvance),
                     locationOverride: destinationLocation || null,
-                    initialTimeProgress: playerMoveTimeAdjustment?.timeProgress || initialTimeProgress
+                    initialTimeProgress: playerMoveTimeAdjustment?.timeProgress || initialTimeProgress,
+                    entryCollector
                 });
             }
             let splitEventResult = mergeEventResults([originEventResult, destinationEventResult]);
@@ -16314,7 +17078,8 @@ module.exports = function registerApiRoutes(scope) {
                         const travelResult = await runmoveTurnResultEventChecks({
                             moveTurnResultPayload,
                             location,
-                            stream
+                            stream,
+                            entryCollector
                         });
                         eventChecks = travelResult.eventResult;
                         originEventResult = travelResult.originEventResult;
@@ -16330,7 +17095,8 @@ module.exports = function registerApiRoutes(scope) {
                         eventChecks = await Events.runEventChecks({
                             textToCheck: cleanedNarrative,
                             stream,
-                            suppressTimeAdvance: true
+                            suppressTimeAdvance: true,
+                            entryCollector
                         });
                     }
                 } catch (eventCheckError) {
@@ -21141,7 +21907,8 @@ module.exports = function registerApiRoutes(scope) {
                             stream,
                             allowEnvironmentalEffects: false,
                             isNpcTurn: true,
-                            suppressTimeAdvance: true
+                            suppressTimeAdvance: true,
+                            entryCollector
                         });
                     } catch (error) {
                         console.warn(`Failed to process events for NPC ${npc.name}:`, error.message);
@@ -22414,17 +23181,16 @@ module.exports = function registerApiRoutes(scope) {
                         }
                     }
 
-                    if (currentActionIsTravel && travelMetadata) {
-                        try {
-                            const resolvedTravel = resolveTravelContext();
-                            if (travelMetadataIsEventDriven) {
-                                eventDrivenExitTravelTimeMinutes = resolveExitTravelTimeForTraversal({
-                                    exit: resolvedTravel?.exit || null,
-                                    sourceLocation: resolvedTravel?.originLocation || null
-                                });
-                                suppressEventDrivenExitTimeAdvance = true;
-                            }
-                        } catch (error) {
+	                    if (currentActionIsTravel && travelMetadata) {
+	                        try {
+	                            const resolvedTravel = resolveTravelContext();
+	                            if (travelMetadataIsEventDriven) {
+	                                if (!resolvedTravel) {
+	                                    throw new Error('Travel metadata did not resolve a travel context.');
+	                                }
+	                                suppressEventDrivenExitTimeAdvance = true;
+	                            }
+	                        } catch (error) {
                             const message = error.message || 'Failed to resolve travel metadata.';
                             stream.error({ message });
                             stream.complete({ aborted: true });
@@ -23210,14 +23976,18 @@ module.exports = function registerApiRoutes(scope) {
                             console.log('Using player action template for:', currentPlayer.name);
                         }
                     } catch (templateError) {
-                        console.error('Error rendering player action template:', templateError);
-                        // Fall back to original messages if template fails
-                        debugInfo = {
-                            ...baseDebugInfo,
-                            usedPlayerTemplate: false,
-                            usedCreativeTemplate: isCreativeModeAction,
-                            error: templateError.message
-                        };
+                        const templateKind = isNoContextPromptAction
+                            ? 'no-context generic prompt'
+                            : (isGenericPromptAction
+                                ? 'generic prompt'
+                                : (isQuestionAction
+                                    ? 'question'
+                                    : (isCreativeModeAction ? 'creative action' : 'player action')));
+                        const message = `Error rendering ${templateKind} template: ${templateError?.message || templateError}`;
+                        console.error(message, templateError);
+                        stream.error({ message });
+                        stream.complete({ aborted: true, error: message });
+                        return respond({ error: message }, 500);
                     }
                 } else {
                     if (debugInfo) {
@@ -23247,7 +24017,11 @@ module.exports = function registerApiRoutes(scope) {
                 let forcedEventResult = null;
                 if (isForcedEventAction && forcedEventText && forcedEventText.trim()) {
                     try {
-                        forcedEventResult = await Events.runEventChecks({ textToCheck: forcedEventText, stream });
+                        forcedEventResult = await Events.runEventChecks({
+                            textToCheck: forcedEventText,
+                            stream,
+                            entryCollector: newChatEntries
+                        });
                         if (forcedEventResult && debugInfo) {
                             debugInfo.forcedEventStructured = forcedEventResult.structured || null;
                         }
@@ -24068,6 +24842,7 @@ module.exports = function registerApiRoutes(scope) {
                                     moveTurnResultPayload,
                                     location,
                                     stream,
+                                    entryCollector: newChatEntries,
                                     userInput,
                                     includePlayerActionForEventChecks,
                                     travelMetadataIsEventDriven,
@@ -24121,10 +24896,12 @@ module.exports = function registerApiRoutes(scope) {
                                     suppressMoveEvents: suppressDirectTravelPromptMutation,
                                     suppressTimeAdvance: suppressDirectTravelPromptMutation
                                         || (suppressEventDrivenExitTimeAdvance && eventDrivenTravelWillSucceed),
-                                    initialTimeProgress: playerActionTimeProgress
+                                    initialTimeProgress: playerActionTimeProgress,
+                                    entryCollector: newChatEntries
                                 });
+                                const promptLaunchStaggerMs = Events.resolvePromptLaunchStaggerMs();
                                 const questCheckPromise = Events.runAfterPromptLaunchDelay(
-                                    Events.PROMPT_LAUNCH_STAGGER_MS * 2,
+                                    promptLaunchStaggerMs * 2,
                                     () => Events.runQuestChecks()
                                 );
                                 const [eventCheckOutcome, questCheckOutcome] = await Promise.all([
@@ -24442,12 +25219,24 @@ module.exports = function registerApiRoutes(scope) {
                                         traveledToLocationId = destinationLocation?.id || traveledToLocationId;
                                     }
 
-                                    if (finalLocation) {
-                                        location = finalLocation;
-                                    }
-                                    if (eventDrivenExitTravelTimeMinutes > 0) {
-                                        exitTravelTimeAdjustment = await adjustWorldTimeByMinutes(eventDrivenExitTravelTimeMinutes, {
-                                            source: 'location_exit_travel',
+	                                    if (finalLocation) {
+	                                        location = finalLocation;
+	                                    }
+	                                    if (finalLocation && !moveAlreadyProcessed) {
+	                                        await maybeBackfillRegionExitTravelTimesForArrival({
+	                                            originLocation: travelContext.originLocation || null,
+	                                            destinationLocation: finalLocation,
+	                                            findRegionByLocationId,
+	                                            backfillRegionExitTravelTimes
+	                                        });
+	                                    }
+	                                    eventDrivenExitTravelTimeMinutes = resolveExitTravelTimeForTraversal({
+	                                        exit: travelContext.exit || null,
+	                                        sourceLocation: travelContext.originLocation || null
+	                                    });
+	                                    if (eventDrivenExitTravelTimeMinutes > 0) {
+	                                        exitTravelTimeAdjustment = await adjustWorldTimeByMinutes(eventDrivenExitTravelTimeMinutes, {
+	                                            source: 'location_exit_travel',
                                             emitClientRefresh: false
                                         });
                                         if (Array.isArray(exitTravelTimeAdjustment?.statusNeedAdjustments) && exitTravelTimeAdjustment.statusNeedAdjustments.length) {
@@ -26076,6 +26865,181 @@ module.exports = function registerApiRoutes(scope) {
             }
         });
 
+        function getTrackerWorldMinuteForApi() {
+            const worldMinute = Globals.getTotalWorldMinutes();
+            if (!Number.isInteger(worldMinute) || worldMinute < 0) {
+                throw new Error('Current world minute is unavailable for tracker editing.');
+            }
+            return worldMinute;
+        }
+
+        function normalizeTrackerBooleanField(value, fieldName) {
+            if (value === undefined || value === null || value === '') {
+                return false;
+            }
+            if (typeof value !== 'boolean') {
+                throw new Error(`${fieldName} must be a boolean when provided.`);
+            }
+            return value;
+        }
+
+        function serializeTrackerForEdit(tracker) {
+            const persisted = typeof tracker?.toJSON === 'function' ? tracker.toJSON() : {};
+            const client = typeof tracker?.toClientJSON === 'function'
+                ? tracker.toClientJSON({
+                    formatLastUpdated: (worldMinute) => Utils.formatAbsoluteWorldMinutesAgo(worldMinute, {
+                        currentTotalMinutes: Globals.getTotalWorldMinutes()
+                    }),
+                    formatCountdownValue: (worldMinute) => Utils.formatCountdownUntilWorldMinute(worldMinute, {
+                        currentTotalMinutes: Globals.getTotalWorldMinutes()
+                    })
+                })
+                : {};
+            return {
+                ...persisted,
+                displayValue: client.value || persisted.value || '',
+                lastUpdated: client.lastUpdated || '',
+                countdownUntilWorldMinute: persisted.countdownUntilWorldMinute ?? null
+            };
+        }
+
+        function serializeTrackerSidebarList() {
+            if (!currentPlayer || typeof serializeNpcForClient !== 'function') {
+                return [];
+            }
+            const playerPayload = serializeNpcForClient(currentPlayer);
+            return Array.isArray(playerPayload?.trackers) ? playerPayload.trackers : [];
+        }
+
+        function resolveTrackerForApi(req, res) {
+            const trackerId = typeof req.params.id === 'string' ? req.params.id.trim() : '';
+            if (!trackerId) {
+                res.status(400).json({
+                    success: false,
+                    error: 'Tracker ID is required.'
+                });
+                return null;
+            }
+            const tracker = Tracker.getById(trackerId);
+            if (!tracker) {
+                res.status(404).json({
+                    success: false,
+                    error: `Tracker '${trackerId}' was not found.`
+                });
+                return null;
+            }
+            return { trackerId, tracker };
+        }
+
+        function trackerMutationResponse({ tracker = null, trackerId = null, message }) {
+            return {
+                success: true,
+                message,
+                tracker: tracker ? serializeTrackerForEdit(tracker) : null,
+                trackerId: trackerId || tracker?.id || null,
+                trackers: serializeTrackerSidebarList()
+            };
+        }
+
+        app.get('/api/trackers/:id', (req, res) => {
+            try {
+                const resolved = resolveTrackerForApi(req, res);
+                if (!resolved) {
+                    return;
+                }
+                res.json({
+                    success: true,
+                    tracker: serializeTrackerForEdit(resolved.tracker)
+                });
+            } catch (error) {
+                res.status(400).json({
+                    success: false,
+                    error: error.message || 'Failed to load tracker.'
+                });
+            }
+        });
+
+        app.post('/api/trackers', (req, res) => {
+            try {
+                const body = req.body || {};
+                const type = typeof body.type === 'string' ? body.type.trim() : body.type;
+                const tracker = new Tracker({
+                    name: body.name,
+                    type,
+                    value: body.value,
+                    hiddenFromPlayer: normalizeTrackerBooleanField(body.hiddenFromPlayer, 'hiddenFromPlayer'),
+                    lastUpdatedWorldMinute: getTrackerWorldMinuteForApi(),
+                    deriveCountdownUntilWorldMinute: type === 'countdown',
+                    description: body.description,
+                    note: body.note
+                });
+                res.json(trackerMutationResponse({
+                    tracker,
+                    message: 'Tracker created.'
+                }));
+            } catch (error) {
+                res.status(400).json({
+                    success: false,
+                    error: error.message || 'Failed to create tracker.'
+                });
+            }
+        });
+
+        app.put('/api/trackers/:id', (req, res) => {
+            try {
+                const resolved = resolveTrackerForApi(req, res);
+                if (!resolved) {
+                    return;
+                }
+                const body = req.body || {};
+                resolved.tracker.updateEditableFields({
+                    name: body.name,
+                    type: body.type,
+                    value: body.value,
+                    hiddenFromPlayer: normalizeTrackerBooleanField(body.hiddenFromPlayer, 'hiddenFromPlayer'),
+                    lastUpdatedWorldMinute: getTrackerWorldMinuteForApi(),
+                    description: body.description,
+                    note: body.note
+                });
+                res.json(trackerMutationResponse({
+                    tracker: resolved.tracker,
+                    message: 'Tracker updated.'
+                }));
+            } catch (error) {
+                res.status(400).json({
+                    success: false,
+                    error: error.message || 'Failed to update tracker.'
+                });
+            }
+        });
+
+        app.delete('/api/trackers/:id', (req, res) => {
+            try {
+                const resolved = resolveTrackerForApi(req, res);
+                if (!resolved) {
+                    return;
+                }
+                const trackerId = resolved.trackerId;
+                const removed = Tracker.removeById(trackerId);
+                if (!removed) {
+                    return res.status(404).json({
+                        success: false,
+                        error: `Tracker '${trackerId}' was not found.`
+                    });
+                }
+                res.json(trackerMutationResponse({
+                    tracker: null,
+                    trackerId,
+                    message: 'Tracker deleted.'
+                }));
+            } catch (error) {
+                res.status(400).json({
+                    success: false,
+                    error: error.message || 'Failed to delete tracker.'
+                });
+            }
+        });
+
         app.put('/api/player/thing-list-view-preferences', (req, res) => {
             if (!currentPlayer) {
                 return res.status(404).json({
@@ -26187,10 +27151,11 @@ module.exports = function registerApiRoutes(scope) {
             }
 
             try {
-                const { level, selectedAbilityNames } = req.body || {};
+                const { level, selectedAbilityNames, declinedAbilityNames } = req.body || {};
                 const abilitySelection = await applyPlayerAbilitySelection(currentPlayer, {
                     level,
-                    selectedAbilityNames
+                    selectedAbilityNames,
+                    declinedAbilityNames
                 });
                 const pendingGameIntro = getPendingGameIntroMetadata();
                 let gameIntroGenerated = false;
@@ -29651,13 +30616,22 @@ module.exports = function registerApiRoutes(scope) {
                         locationId: originLocationId
                     })
                     : [];
-                let fastTravelTimeAdjustment = null;
-                const fastTravelTimeMinutes = accountTravelTime
-                    ? resolveFastTravelTimeForTraversal({
-                        sourceLocation: originLocation,
-                        destinationLocation
-                    })
-                    : 0;
+	                if (!isNpc) {
+	                    await maybeBackfillRegionExitTravelTimesForArrival({
+	                        originLocation,
+	                        destinationLocation,
+	                        findRegionByLocationId,
+	                        backfillRegionExitTravelTimes
+	                    });
+	                }
+
+	                let fastTravelTimeAdjustment = null;
+	                const fastTravelTimeMinutes = accountTravelTime
+	                    ? resolveFastTravelTimeForTraversal({
+	                        sourceLocation: originLocation,
+	                        destinationLocation
+	                    })
+	                    : 0;
 
                 if (originLocation && isNpc) {
                     if (typeof originLocation.removeNpcId === 'function') {
@@ -32346,6 +33320,148 @@ module.exports = function registerApiRoutes(scope) {
                 res.status(500).json({
                     success: false,
                     error: error?.message || 'Failed to list locations'
+                });
+            }
+        });
+
+        app.get('/api/location-region-membership-conflicts', (req, res) => {
+            try {
+                const conflicts = findLocationRegionMembershipConflicts();
+                res.json({
+                    success: true,
+                    conflicts,
+                    conflict: conflicts[0] || null
+                });
+            } catch (error) {
+                console.error('Failed to inspect location region membership conflicts:', error);
+                res.status(500).json({
+                    success: false,
+                    error: error?.message || 'Failed to inspect location region membership conflicts.'
+                });
+            }
+        });
+
+        app.post('/api/location-region-membership-conflicts/:locationId/resolve', (req, res) => {
+            try {
+                const locationId = typeof req.params.locationId === 'string'
+                    ? req.params.locationId.trim()
+                    : '';
+                const selectedRegionId = typeof req.body?.regionId === 'string'
+                    ? req.body.regionId.trim()
+                    : '';
+                if (!locationId) {
+                    return res.status(400).json({
+                        success: false,
+                        error: 'Location id is required.'
+                    });
+                }
+                if (!selectedRegionId) {
+                    return res.status(400).json({
+                        success: false,
+                        error: 'Selected region id is required.'
+                    });
+                }
+
+                const location = gameLocations.get(locationId) || Location.get(locationId);
+                if (!location) {
+                    return res.status(404).json({
+                        success: false,
+                        error: `Location "${locationId}" not found.`
+                    });
+                }
+                if (location.isStub) {
+                    return res.status(400).json({
+                        success: false,
+                        error: 'Stub location region membership conflicts must be resolved by unstubbing or editing the stub.'
+                    });
+                }
+
+                const owningRegions = getRegionsContainingLocation(locationId);
+                if (owningRegions.length <= 1) {
+                    return res.json({
+                        success: true,
+                        repaired: false,
+                        message: 'No duplicate region membership remains for this location.',
+                        conflict: null,
+                        location: {
+                            id: location.id,
+                            name: resolveLocationConflictName(location),
+                            label: formatNameIdLabel(resolveLocationConflictName(location), location.id, 'Unknown Location')
+                        },
+                        selectedRegion: null,
+                        removedRegions: []
+                    });
+                }
+
+                const selectedOwnership = owningRegions.find(({ regionId }) => regionId === selectedRegionId);
+                if (!selectedOwnership) {
+                    const conflict = buildLocationRegionMembershipConflict({
+                        locationId,
+                        location,
+                        owningRegions
+                    });
+                    return res.status(400).json({
+                        success: false,
+                        code: LOCATION_REGION_MEMBERSHIP_CONFLICT_CODE,
+                        error: `Selected region must be one of the listed regions for ${conflict.location.label}.`,
+                        conflict
+                    });
+                }
+
+                const removedRegions = [];
+                for (const { regionId, region } of owningRegions) {
+                    if (regionId === selectedRegionId) {
+                        continue;
+                    }
+                    if (!region || typeof region.removeLocationId !== 'function') {
+                        throw new Error(`Region "${regionId}" cannot remove location membership.`);
+                    }
+                    region.removeLocationId(locationId);
+                    removedRegions.push(buildRegionMembershipSummary(regionId, region, selectedRegionId));
+                }
+
+                location.regionId = selectedRegionId;
+                const remainingOwners = getRegionsContainingLocation(locationId);
+                if (remainingOwners.length > 1) {
+                    throw createLocationRegionMembershipConflictError(
+                        buildLocationRegionMembershipConflict({
+                            locationId,
+                            location,
+                            owningRegions: remainingOwners
+                        }),
+                        'location region membership repair'
+                    );
+                }
+                if (!remainingOwners.some(({ regionId }) => regionId === selectedRegionId)) {
+                    throw new Error(`Location ${formatNameIdLabel(resolveLocationConflictName(location), locationId, 'Unknown Location')} was not listed in selected region "${selectedRegionId}" after repair.`);
+                }
+
+                const selectedRegion = buildRegionMembershipSummary(
+                    selectedRegionId,
+                    selectedOwnership.region,
+                    selectedRegionId
+                );
+                res.json({
+                    success: true,
+                    repaired: true,
+                    message: `Kept ${formatNameIdLabel(resolveLocationConflictName(location), locationId, 'Unknown Location')} in ${selectedRegion.label}.`,
+                    conflict: null,
+                    location: {
+                        id: location.id,
+                        name: resolveLocationConflictName(location),
+                        label: formatNameIdLabel(resolveLocationConflictName(location), location.id, 'Unknown Location')
+                    },
+                    selectedRegion,
+                    removedRegions
+                });
+            } catch (error) {
+                console.error('Failed to resolve location region membership conflict:', error);
+                if (error?.code === LOCATION_REGION_MEMBERSHIP_CONFLICT_CODE) {
+                    return res.status(409).json(buildLocationRegionMembershipConflictResponse(error.conflict));
+                }
+                res.status(500).json({
+                    success: false,
+                    error: error?.message || 'Failed to resolve location region membership conflict.'
                 });
             }
         });
@@ -35616,6 +36732,13 @@ module.exports = function registerApiRoutes(scope) {
                     });
                 }
 
+                const preMoveRegionMembershipConflict = findFirstLocationRegionMembershipConflict();
+                if (preMoveRegionMembershipConflict) {
+                    return res.status(409).json(
+                        buildLocationRegionMembershipConflictResponse(preMoveRegionMembershipConflict)
+                    );
+                }
+
                 const vehicleArrivalsThisTurn = await processDueVehicleArrivals();
                 const npcIdsSharingPlayerLocationAtTurnStart = Player.getNpcIdsSharingPlayerLocation({
                     player: currentPlayer,
@@ -35647,14 +36770,9 @@ module.exports = function registerApiRoutes(scope) {
                     });
                 }
 
-                const exitTravelTimeMinutes = resolveExitTravelTimeForTraversal({
-                    exit: matchedExit,
-                    sourceLocation: currentLocation
-                });
-
-                let destinationLocation = gameLocations.get(matchedExit.destination);
-                if (!destinationLocation) {
-                    return res.status(404).json({
+	                let destinationLocation = gameLocations.get(matchedExit.destination);
+	                if (!destinationLocation) {
+	                    return res.status(404).json({
                         success: false,
                         error: 'Destination location not found'
                     });
@@ -35701,9 +36819,9 @@ module.exports = function registerApiRoutes(scope) {
                         destinationRegionId: matchedExit.destinationRegion || null,
                         contextLabel: `Player move exit "${matchedExit.id || matchedDirection || matchedExit.destination}"`
                     });
-                    if (transitBlock.blocked) {
-                        const errorMessage = transitBlock.reason === 'source_underway'
-                            ? 'Cannot disembark while the vehicle is underway.'
+	                    if (transitBlock.blocked) {
+	                        const errorMessage = transitBlock.reason === 'source_underway'
+	                            ? 'Cannot disembark while the vehicle is underway.'
                             : transitBlock.reason === 'source_arrival_pending'
                                 ? 'Cannot disembark while the vehicle arrival is still being processed.'
                                 : transitBlock.reason === 'destination_arrival_pending'
@@ -35714,16 +36832,16 @@ module.exports = function registerApiRoutes(scope) {
                             error: errorMessage
                         });
                     }
-                } catch (vehicleTransitError) {
-                    return res.status(500).json({
-                        success: false,
-                        error: vehicleTransitError?.message || 'Failed to evaluate vehicle transit state.'
-                    });
-                }
+	                } catch (vehicleTransitError) {
+	                    return res.status(500).json({
+	                        success: false,
+	                        error: vehicleTransitError?.message || 'Failed to evaluate vehicle transit state.'
+	                    });
+	                }
 
-                const matchedExitId = typeof matchedExit?.id === 'string' ? matchedExit.id.trim() : '';
-                const currentLocationVehicleExitId = typeof currentLocation?.vehicleInfo?.vehicleExitId === 'string'
-                    ? currentLocation.vehicleInfo.vehicleExitId.trim()
+		                const matchedExitId = typeof matchedExit?.id === 'string' ? matchedExit.id.trim() : '';
+	                const currentLocationVehicleExitId = typeof currentLocation?.vehicleInfo?.vehicleExitId === 'string'
+	                    ? currentLocation.vehicleInfo.vehicleExitId.trim()
                     : '';
                 const matchedTrackedVehicleExit = Boolean(
                     currentLocation?.isVehicle === true
@@ -35748,11 +36866,23 @@ module.exports = function registerApiRoutes(scope) {
                                 success: false,
                                 error: 'Cannot disembark on the same turn the vehicle arrives. Try again next turn.'
                             });
-                        }
-                    }
-                }
+	                        }
+	                    }
+	                }
 
-                const previousLocationIdForMemories = currentPlayer.currentLocation || null;
+	                await maybeBackfillRegionExitTravelTimesForArrival({
+	                    originLocation: currentLocation,
+	                    destinationLocation,
+	                    findRegionByLocationId,
+	                    backfillRegionExitTravelTimes
+	                });
+
+	                const exitTravelTimeMinutes = resolveExitTravelTimeForTraversal({
+	                    exit: matchedExit,
+	                    sourceLocation: currentLocation
+	                });
+
+	                const previousLocationIdForMemories = currentPlayer.currentLocation || null;
                 let exitTravelTimeAdjustment = null;
 
                 if (typeof Globals.recordPlayerArrivalVisitState === 'function') {
@@ -35923,6 +37053,9 @@ module.exports = function registerApiRoutes(scope) {
                 });
             } catch (error) {
                 console.error('Error moving player:', error);
+                if (error?.code === LOCATION_REGION_MEMBERSHIP_CONFLICT_CODE) {
+                    return res.status(409).json(buildLocationRegionMembershipConflictResponse(error.conflict));
+                }
                 res.status(500).json({
                     success: false,
                     error: error.message
@@ -36462,10 +37595,10 @@ module.exports = function registerApiRoutes(scope) {
                     : null;
                 const resolvedLocationId = requireLocationId(locationRecord?.id || locationId, 'crafting action');
                 const locationThingIds = collectLocationCraftingThingIds(locationRecord);
+                const playerInventoryThingIds = collectPlayerInventoryCraftingThingIds(currentPlayer);
                 const isThingInCurrentPlayerInventory = (thing) => (
-                    Boolean(thing)
-                    && typeof currentPlayer.hasInventoryItem === 'function'
-                    && currentPlayer.hasInventoryItem(thing)
+                    Boolean(thing?.id)
+                    && playerInventoryThingIds.has(thing.id)
                 );
                 const isThingInCurrentLocation = (thing) => {
                     if (!thing?.id) {
@@ -36485,7 +37618,7 @@ module.exports = function registerApiRoutes(scope) {
                     if (!inPlayerInventory && !inCurrentLocation) {
                         return res.status(400).json({
                             success: false,
-                            error: `${thing.name || thing.id} is not in the current player's inventory, current location, or a container in the current location.`
+                            error: `${thing.name || thing.id} is not in the current player's inventory, a container in the current player's inventory, current location, or a container in the current location.`
                         });
                     }
                     if (inPlayerInventory && Boolean(thing?.isEquipped || thing?.equippedSlot)) {
@@ -38826,6 +39959,166 @@ module.exports = function registerApiRoutes(scope) {
             }
         });
 
+        function createAiItemSearchValidationError(message) {
+            const error = new Error(message);
+            error.statusCode = 400;
+            return error;
+        }
+
+        function normalizeAiItemSearchText(value, fieldName) {
+            if (value === undefined || value === null) {
+                return '';
+            }
+            if (typeof value === 'string') {
+                return value.trim();
+            }
+            if (typeof value === 'number' || typeof value === 'boolean') {
+                return String(value).trim();
+            }
+            throw createAiItemSearchValidationError(`AI item search ${fieldName} must be a string, number, boolean, or blank value.`);
+        }
+
+        function normalizeAiItemSearchItem(rawItem, index) {
+            if (!rawItem || typeof rawItem !== 'object' || Array.isArray(rawItem)) {
+                throw createAiItemSearchValidationError(`AI item search item ${index + 1} must be an object.`);
+            }
+
+            const id = normalizeAiItemSearchText(rawItem.id, `item ${index + 1} id`);
+            const name = normalizeAiItemSearchText(rawItem.name, `item ${index + 1} name`);
+            if (!id) {
+                throw createAiItemSearchValidationError(`AI item search item ${index + 1} is missing id.`);
+            }
+            if (!name) {
+                throw createAiItemSearchValidationError(`AI item search item ${index + 1} is missing name.`);
+            }
+
+            return {
+                id,
+                name,
+                description: normalizeAiItemSearchText(rawItem.description, `item ${index + 1} description`),
+                level: normalizeAiItemSearchText(rawItem.level, `item ${index + 1} level`),
+                quality: normalizeAiItemSearchText(rawItem.quality, `item ${index + 1} quality`),
+                quantity: normalizeAiItemSearchText(rawItem.quantity, `item ${index + 1} quantity`),
+                equipmentSlot: normalizeAiItemSearchText(rawItem.equipmentSlot, `item ${index + 1} equipment slot`)
+            };
+        }
+
+        function parseAiItemSearchResponse(responseText) {
+            const resultsBlock = Utils.extractFinalXmlRootBlock(responseText || '', 'results');
+            if (!resultsBlock) {
+                throw new Error('AI item search response did not include a <results> block.');
+            }
+
+            const doc = Utils.parseXmlDocument(resultsBlock, 'text/xml');
+            const parserError = doc.getElementsByTagName('parsererror')[0];
+            if (parserError) {
+                throw new Error(`Failed to parse AI item search results: ${parserError.textContent}`);
+            }
+
+            return Array.from(doc.getElementsByTagName('item'))
+                .map(node => (node?.textContent || '').trim())
+                .filter(Boolean);
+        }
+
+        app.post('/api/things/ai-search', async (req, res) => {
+            let parsedTemplate = null;
+            let responseText = '';
+            const metadataLabel = 'ai_item_search';
+            try {
+                const criteria = normalizeAiItemSearchText(req.body?.criteria, 'criteria');
+                if (!criteria) {
+                    return res.status(400).json({
+                        success: false,
+                        error: 'AI item search criteria are required.'
+                    });
+                }
+
+                if (!Array.isArray(req.body?.items)) {
+                    return res.status(400).json({
+                        success: false,
+                        error: 'AI item search items must be an array.'
+                    });
+                }
+
+                const items = req.body.items.map((item, index) => normalizeAiItemSearchItem(item, index));
+                if (!items.length) {
+                    return res.json({
+                        success: true,
+                        criteria,
+                        resultNames: [],
+                        matchedIds: [],
+                        unmatchedNames: [],
+                        response: ''
+                    });
+                }
+
+                const mode = req.body?.mode === 'lenient' ? 'lenient' : 'strict';
+                const renderedTemplate = promptEnv.render('ai-item-search.xml.njk', {
+                    items,
+                    criteria,
+                    mode
+                });
+                parsedTemplate = parseXMLTemplate(renderedTemplate, { metadataLabel });
+                responseText = await LLMClient.chatCompletion({
+                    messages: [
+                        { role: 'system', content: parsedTemplate.systemPrompt },
+                        { role: 'user', content: parsedTemplate.generationPrompt }
+                    ],
+                    temperature: parsedTemplate.temperature,
+                    metadataLabel,
+                    validateXML: false,
+                    requiredRegex: /<results[\s\S]*<\/results>/i
+                });
+
+                LLMClient.logPrompt({
+                    prefix: metadataLabel,
+                    metadataLabel,
+                    systemPrompt: parsedTemplate.systemPrompt,
+                    generationPrompt: parsedTemplate.generationPrompt,
+                    response: responseText
+                });
+
+                const resultNames = parseAiItemSearchResponse(responseText);
+                const normalizedResultNames = new Set(resultNames.map(name => name.toLowerCase()));
+                const matchedIds = items
+                    .filter(item => normalizedResultNames.has(item.name.toLowerCase()))
+                    .map(item => item.id);
+                const availableNames = new Set(items.map(item => item.name.toLowerCase()));
+                const unmatchedNames = resultNames.filter(name => !availableNames.has(name.toLowerCase()));
+
+                res.json({
+                    success: true,
+                    criteria,
+                    mode,
+                    resultNames,
+                    matchedIds,
+                    unmatchedNames,
+                    response: responseText
+                });
+            } catch (error) {
+                if (parsedTemplate) {
+                    LLMClient.logPrompt({
+                        prefix: metadataLabel,
+                        metadataLabel,
+                        systemPrompt: parsedTemplate.systemPrompt || '',
+                        generationPrompt: parsedTemplate.generationPrompt || '',
+                        response: responseText || '',
+                        sections: [
+                            {
+                                title: 'Error',
+                                content: error?.stack || error?.message || String(error)
+                            }
+                        ]
+                    });
+                }
+                const statusCode = Number.isInteger(error?.statusCode) ? error.statusCode : 500;
+                res.status(statusCode).json({
+                    success: false,
+                    error: error.message || 'AI item search failed.'
+                });
+            }
+        });
+
         // Get a specific thing by ID
         app.get('/api/things/:id', (req, res) => {
             try {
@@ -40482,7 +41775,8 @@ module.exports = function registerApiRoutes(scope) {
                     actionText,
                     stream,
                     locationOverride: location || null,
-                    initialTimeProgress: containerOpenTimeProgress
+                    initialTimeProgress: containerOpenTimeProgress,
+                    entryCollector: newChatEntries
                 });
                 if (containerOpenTimeProgress && (!eventResult || !eventResult.timeProgress)) {
                     if (!eventResult || typeof eventResult !== 'object') {
@@ -43218,25 +44512,47 @@ module.exports = function registerApiRoutes(scope) {
 
                 // Clear existing game state
                 Globals.gameLoaded = false;
-                IdGenerator.reset();
-                players.clear();
-                if (typeof Player.clearRuntimeRegistries === 'function') {
-                    Player.clearRuntimeRegistries();
-                }
-                gameLocations.clear();
-                gameLocationExits.clear();
-                regions.clear();
-                Region.clear();
-                factions.clear();
-                if (typeof Faction?.clear === 'function') {
-                    Faction.clear();
-                }
-                MysteryBox.clear();
-                MysteryThread.clear();
-                stubExpansionPromises.clear();
-                chatHistory.length = 0;
-                skills.clear();
-                Player.setAvailableSkills(new Map());
+                resetNewGameRuntimeState({
+                    players,
+                    things,
+                    gameLocations,
+                    gameLocationExits,
+                    regions,
+                    factions,
+                    skills,
+                    stubExpansionPromises,
+                    regionEntryExpansionPromises,
+                    pendingRegionStubs,
+                    pendingLocationImages,
+                    generatedImages,
+                    imageJobs,
+                    activeImageJobs,
+                    entityImageJobs,
+                    npcGenerationPromises,
+                    playerAbilitySelectionPromises,
+                    playerImageGenerationPromises,
+                    locationImageGenerationPromises,
+                    levelUpAbilityPromises,
+                    shortDescriptionBackfillByClient,
+                    chatHistory,
+                    jobQueue,
+                    setCurrentPlayer: setActiveCurrentPlayer,
+                    setIsProcessingJob: (value) => {
+                        isProcessingJob = value;
+                        scope.isProcessingJob = value;
+                    },
+                    clearCurrentTurnToken: () => {
+                        currentTurnToken = null;
+                        scope.currentTurnToken = null;
+                    },
+                    resetBaseContextMemoryCache,
+                    cancelPendingPlayerInputRequests,
+                    questConfirmationManager,
+                    clearPlayerMoveLocks: () => {
+                        activePlayerMoveLocks.clear();
+                    },
+                    advanceRuntimeGeneration
+                });
                 Globals.saveFileSaveVersion = normalizeSaveFileVersion(Globals.currentSaveVersion, 0);
                 Globals.setSaveMetadata({ summaryStyle: 'scene', npcAliasesGenerated: false });
                 Globals.setCurrentSaveInfo(null);
@@ -43451,6 +44767,8 @@ module.exports = function registerApiRoutes(scope) {
                 if (typeof newPlayer.syncSkillsWithAvailable === 'function') {
                     newPlayer.syncSkillsWithAvailable();
                 }
+                setActiveCurrentPlayer(newPlayer);
+                Globals.syncWorldTimeToPlayer(newPlayer);
 
                 report('new_game:player_created', `Forged ${resolvedPlayerName}. Generating starting region...`);
 
@@ -43535,7 +44853,7 @@ module.exports = function registerApiRoutes(scope) {
 
                 // Store new player and set as current
                 players.set(newPlayer.id, newPlayer);
-                currentPlayer = newPlayer;
+                setActiveCurrentPlayer(newPlayer);
                 Globals.syncWorldTimeToPlayer(currentPlayer);
 
                 queueNpcAssetsForLocation(entranceLocation);
@@ -43947,6 +45265,14 @@ module.exports = function registerApiRoutes(scope) {
             return normalizePendingGameIntroMetadata(metadata?.pendingGameIntro);
         };
 
+        const setActiveCurrentPlayer = (player) => {
+            const normalizedPlayer = player || null;
+            currentPlayer = normalizedPlayer;
+            scope.currentPlayer = normalizedPlayer;
+            Globals.currentPlayer = normalizedPlayer;
+            return normalizedPlayer;
+        };
+
         const setPendingGameIntroMetadata = (value) => {
             const normalized = normalizePendingGameIntroMetadata(value);
             updateRuntimeSaveMetadata((nextMetadata) => {
@@ -44109,9 +45435,6 @@ module.exports = function registerApiRoutes(scope) {
                     continue;
                 }
 
-                if (typeof member.setInPlayerParty === 'function') {
-                    member.setInPlayerParty(true);
-                }
                 member.wasEverInPlayerParty = true;
 
                 const removedCount = Player.removeNpcFromAllLocations(member.id);
@@ -44471,11 +45794,7 @@ module.exports = function registerApiRoutes(scope) {
                 throw error;
             }
 
-            currentPlayer = resolvedPlayer;
-            scope.currentPlayer = currentPlayer;
-            if (typeof Player.setCurrentPlayer === 'function') {
-                Player.setCurrentPlayer(currentPlayer);
-            }
+            setActiveCurrentPlayer(resolvedPlayer);
             if (typeof Player.register === 'function') {
                 Player.register(currentPlayer);
             }
@@ -45876,11 +47195,22 @@ module.exports = function registerApiRoutes(scope) {
                 throw new Error('Slash command reply action type is required.');
             }
 
-            if (type !== 'request_file_upload') {
+            if (type !== 'request_file_upload' && type !== 'reload_page') {
                 throw new Error(`Unsupported slash command reply action type "${type}".`);
             }
 
             const normalized = { type };
+
+            if (type === 'reload_page') {
+                if (Object.prototype.hasOwnProperty.call(rawAction, 'delayMs')) {
+                    if (!Number.isInteger(rawAction.delayMs) || rawAction.delayMs < 0) {
+                        throw new Error('Slash command reply action field "delayMs" must be a non-negative integer.');
+                    }
+                    normalized.delayMs = rawAction.delayMs;
+                }
+                return normalized;
+            }
+
             const optionalStringFields = ['title', 'description', 'accept', 'uploadMessage', 'submitLabel', 'cancelLabel'];
             for (const field of optionalStringFields) {
                 if (!Object.prototype.hasOwnProperty.call(rawAction, field)) {
@@ -46232,7 +47562,8 @@ module.exports = function registerApiRoutes(scope) {
                 ? clientId.trim()
                 : null;
             const requestedClientRefresh = {
-                locationRefreshRequested: false
+                locationRefreshRequested: false,
+                relationshipGraphRefreshRequested: false
             };
 
             return {
@@ -46272,6 +47603,19 @@ module.exports = function registerApiRoutes(scope) {
                         specificPlot
                     });
                 },
+                runHousekeepingPrompt: async ({ instructions = '' } = {}) => {
+                    if (!normalizedClientId) {
+                        throw new Error('Housekeeping slash command requires an active client connection.');
+                    }
+                    const housekeepingStream = createStreamEmitter({
+                        clientId: normalizedClientId,
+                        requestId: `slash-housekeeping-${randomUUID()}`
+                    });
+                    return runHousekeepingPrompt({
+                        stream: housekeepingStream,
+                        housekeepingInstructions: instructions
+                    });
+                },
                 generateSkillsByNames: typeof generateSkillsByNames === 'function'
                     ? generateSkillsByNames
                     : null,
@@ -46289,14 +47633,21 @@ module.exports = function registerApiRoutes(scope) {
                     : null,
                 skillRegistry: skills instanceof Map ? skills : null,
                 thingRegistry: things instanceof Map ? things : null,
-                requestClientRefresh({ locationRefreshRequested = false } = {}) {
+                requestClientRefresh({
+                    locationRefreshRequested = false,
+                    relationshipGraphRefreshRequested = false
+                } = {}) {
                     requestedClientRefresh.locationRefreshRequested = Boolean(
                         requestedClientRefresh.locationRefreshRequested || locationRefreshRequested
+                    );
+                    requestedClientRefresh.relationshipGraphRefreshRequested = Boolean(
+                        requestedClientRefresh.relationshipGraphRefreshRequested || relationshipGraphRefreshRequested
                     );
                 },
                 getRequestedClientRefresh() {
                     return {
-                        locationRefreshRequested: Boolean(requestedClientRefresh.locationRefreshRequested)
+                        locationRefreshRequested: Boolean(requestedClientRefresh.locationRefreshRequested),
+                        relationshipGraphRefreshRequested: Boolean(requestedClientRefresh.relationshipGraphRefreshRequested)
                     };
                 },
                 reply(payload) {
@@ -46324,9 +47675,16 @@ module.exports = function registerApiRoutes(scope) {
                 const requestedClientRefresh = typeof interaction.getRequestedClientRefresh === 'function'
                     ? interaction.getRequestedClientRefresh()
                     : null;
-                if (requestedClientRefresh?.locationRefreshRequested && request.clientId) {
+                if (
+                    request.clientId
+                    && (
+                        requestedClientRefresh?.locationRefreshRequested
+                        || requestedClientRefresh?.relationshipGraphRefreshRequested
+                    )
+                ) {
                     Globals.emitToClient(request.clientId, 'chat_history_updated', {
-                        locationRefreshRequested: true
+                        locationRefreshRequested: Boolean(requestedClientRefresh.locationRefreshRequested),
+                        relationshipGraphRefreshRequested: Boolean(requestedClientRefresh.relationshipGraphRefreshRequested)
                     });
                 }
 
@@ -46586,89 +47944,200 @@ module.exports = function registerApiRoutes(scope) {
             }
         });
 
+        function resolveEntityImageGenerationTarget(entityType, entityId) {
+            const normalizedType = typeof entityType === 'string'
+                ? entityType.trim().toLowerCase()
+                : '';
+            const normalizedEntityId = typeof entityId === 'string'
+                ? entityId.trim()
+                : '';
+
+            if (!normalizedType || !normalizedEntityId) {
+                return {
+                    status: 400,
+                    error: 'entityType and entityId are required'
+                };
+            }
+
+            let entity = null;
+            let generator = null;
+            let resolvedType = normalizedType;
+            let editablePromptSupported = true;
+
+            switch (normalizedType) {
+                case 'player':
+                case 'npc': {
+                    entity = players.get(normalizedEntityId);
+                    if (!entity) {
+                        return {
+                            status: 404,
+                            error: `Player with ID '${normalizedEntityId}' not found`
+                        };
+                    }
+                    generator = (options) => generatePlayerImage(entity, options);
+                    resolvedType = entity.isNPC ? 'npc' : 'player';
+                    break;
+                }
+
+                case 'location': {
+                    entity = gameLocations.get(normalizedEntityId);
+                    if (!entity) {
+                        return {
+                            status: 404,
+                            error: `Location with ID '${normalizedEntityId}' not found`
+                        };
+                    }
+                    generator = (options) => generateLocationImage(entity, options);
+                    break;
+                }
+
+                case 'exit':
+                case 'location-exit':
+                case 'location_exit': {
+                    entity = gameLocationExits.get(normalizedEntityId);
+                    if (!entity) {
+                        return {
+                            status: 404,
+                            error: `Location exit with ID '${normalizedEntityId}' not found`
+                        };
+                    }
+                    generator = (options) => generateLocationExitImage(entity, options);
+                    resolvedType = 'location-exit';
+                    editablePromptSupported = false;
+                    break;
+                }
+
+                case 'thing':
+                case 'item':
+                case 'scenery': {
+                    entity = things.get(normalizedEntityId);
+                    if (!entity) {
+                        return {
+                            status: 404,
+                            error: `Thing with ID '${normalizedEntityId}' not found`
+                        };
+                    }
+                    generator = (options) => generateThingImage(entity, options);
+                    resolvedType = entity.thingType || normalizedType;
+                    break;
+                }
+
+                default:
+                    return {
+                        status: 400,
+                        error: `Unsupported entityType '${entityType}'`
+                    };
+            }
+
+            return {
+                entity,
+                entityId: normalizedEntityId,
+                entityType: resolvedType,
+                generator,
+                editablePromptSupported
+            };
+        }
+
+        function normalizeConfirmedEntityImagePrompt(body = {}) {
+            if (!Object.prototype.hasOwnProperty.call(body || {}, 'prompt')) {
+                return {
+                    hasPrompt: false,
+                    prompt: null
+                };
+            }
+            if (typeof body.prompt !== 'string') {
+                throw new TypeError('Confirmed image prompt must be a string.');
+            }
+            const prompt = body.prompt.trim();
+            if (!prompt) {
+                throw new Error('Confirmed image prompt cannot be empty.');
+            }
+            return {
+                hasPrompt: true,
+                prompt
+            };
+        }
+
+        app.post('/api/images/prompt', async (req, res) => {
+            try {
+                const { entityType, entityId } = req.body || {};
+                const target = resolveEntityImageGenerationTarget(entityType, entityId);
+                if (target.error) {
+                    return res.status(target.status || 400).json({
+                        success: false,
+                        error: target.error
+                    });
+                }
+
+                if (!target.editablePromptSupported) {
+                    return res.status(400).json({
+                        success: false,
+                        error: `Regenerate Image + is not supported for entityType '${target.entityType}'.`
+                    });
+                }
+
+                if (!config.imagegen || !config.imagegen.enabled) {
+                    return res.status(503).json({
+                        success: false,
+                        error: 'Image generation is not enabled'
+                    });
+                }
+
+                if (!comfyUIClient) {
+                    return res.status(503).json({
+                        success: false,
+                        error: 'Image generation client not initialized or unavailable'
+                    });
+                }
+
+                if (typeof generateEditableEntityImagePrompt !== 'function') {
+                    return res.status(500).json({
+                        success: false,
+                        error: 'Editable image prompt generator is unavailable'
+                    });
+                }
+
+                const promptResult = await generateEditableEntityImagePrompt(target.entity, target.entityType);
+                if (!promptResult?.prompt || typeof promptResult.prompt !== 'string') {
+                    return res.status(500).json({
+                        success: false,
+                        error: 'Editable image prompt generation did not return a prompt'
+                    });
+                }
+
+                return res.json({
+                    success: true,
+                    entityType: target.entityType,
+                    entityId: target.entityId,
+                    prompt: promptResult.prompt,
+                    promptType: promptResult.promptType || null,
+                    generatedPrompt: promptResult.generatedPrompt || null
+                });
+            } catch (error) {
+                console.error('Editable image prompt request error:', error);
+                const status = error?.code === 'image-prompt-generation-failed' ? 409 : 500;
+                res.status(status).json({
+                    success: false,
+                    error: error.message
+                });
+            }
+        });
+
         // Image generation functionality
         app.post('/api/images/request', async (req, res) => {
             try {
                 const { entityType, entityId, force = false, clientId = null } = req.body || {};
-
-                const normalizedType = typeof entityType === 'string'
-                    ? entityType.trim().toLowerCase()
-                    : '';
-
-                if (!normalizedType || !entityId || typeof entityId !== 'string') {
-                    return res.status(400).json({
+                const confirmedPrompt = normalizeConfirmedEntityImagePrompt(req.body || {});
+                const target = resolveEntityImageGenerationTarget(entityType, entityId);
+                if (target.error) {
+                    return res.status(target.status || 400).json({
                         success: false,
-                        error: 'entityType and entityId are required'
+                        error: target.error
                     });
                 }
 
-                let entity = null;
-                let generator = null;
-                let resolvedType = normalizedType;
-
-                switch (normalizedType) {
-                    case 'player':
-                    case 'npc': {
-                        entity = players.get(entityId);
-                        if (!entity) {
-                            return res.status(404).json({
-                                success: false,
-                                error: `Player with ID '${entityId}' not found`
-                            });
-                        }
-                        generator = (options) => generatePlayerImage(entity, options);
-                        resolvedType = entity.isNPC ? 'npc' : 'player';
-                        break;
-                    }
-
-                    case 'location': {
-                        entity = gameLocations.get(entityId);
-                        if (!entity) {
-                            return res.status(404).json({
-                                success: false,
-                                error: `Location with ID '${entityId}' not found`
-                            });
-                        }
-                        generator = (options) => generateLocationImage(entity, options);
-                        break;
-                    }
-
-                    case 'exit':
-                    case 'location-exit':
-                    case 'location_exit': {
-                        entity = gameLocationExits.get(entityId);
-                        if (!entity) {
-                            return res.status(404).json({
-                                success: false,
-                                error: `Location exit with ID '${entityId}' not found`
-                            });
-                        }
-                        generator = (options) => generateLocationExitImage(entity, options);
-                        resolvedType = 'location-exit';
-                        break;
-                    }
-
-                    case 'thing':
-                    case 'item':
-                    case 'scenery': {
-                        entity = things.get(entityId);
-                        if (!entity) {
-                            return res.status(404).json({
-                                success: false,
-                                error: `Thing with ID '${entityId}' not found`
-                            });
-                        }
-                        generator = (options) => generateThingImage(entity, options);
-                        resolvedType = entity.thingType || normalizedType;
-                        break;
-                    }
-
-                    default:
-                        return res.status(400).json({
-                            success: false,
-                            error: `Unsupported entityType '${entityType}'`
-                        });
-                }
+                const resolvedType = target.entityType;
+                const generator = target.generator;
 
                 if (typeof generator !== 'function') {
                     return res.status(500).json({
@@ -46677,7 +48146,15 @@ module.exports = function registerApiRoutes(scope) {
                     });
                 }
 
-                const generationResult = await generator({ force: Boolean(force), clientId });
+                const generatorOptions = {
+                    force: Boolean(force),
+                    clientId
+                };
+                if (confirmedPrompt.hasPrompt) {
+                    generatorOptions.finalImagePrompt = confirmedPrompt.prompt;
+                }
+
+                const generationResult = await generator(generatorOptions);
 
                 if (!generationResult) {
                     return res.status(500).json({
@@ -46700,7 +48177,7 @@ module.exports = function registerApiRoutes(scope) {
                 const responsePayload = {
                     success: Boolean(generationSuccess),
                     entityType: resolvedType,
-                    entityId,
+                    entityId: target.entityId,
                     skipped: Boolean(skipped),
                     reason,
                     message,
@@ -46728,7 +48205,8 @@ module.exports = function registerApiRoutes(scope) {
 
             } catch (error) {
                 console.error('Image request error:', error);
-                res.status(500).json({
+                const status = /^Confirmed image prompt /.test(error?.message || '') ? 400 : 500;
+                res.status(status).json({
                     success: false,
                     error: error.message
                 });
@@ -47386,8 +48864,12 @@ module.exports.buildBarterItemReferenceIndex = buildBarterItemReferenceIndex;
 module.exports.resolveBarterOfferItemReference = resolveBarterOfferItemReference;
 module.exports.buildBarterCurrencySettlement = buildBarterCurrencySettlement;
 module.exports.sanitizeBarterPricingXmlForParsing = sanitizeBarterPricingXmlForParsing;
+module.exports.clearNewGameRuntimeRegistries = clearNewGameRuntimeRegistries;
 module.exports.shouldIncludePlayerActionForEventChecks = shouldIncludePlayerActionForEventChecks;
 module.exports.extractRegisteredThingBlueprintFields = extractRegisteredThingBlueprintFields;
 module.exports.parseUploadedEntityImageDataUrl = parseUploadedEntityImageDataUrl;
 module.exports.extractInlineRollControls = extractInlineRollControls;
+module.exports.resetNewGameRuntimeState = resetNewGameRuntimeState;
 module.exports.resolvePendingRegionEntryStubForTravelDestination = resolvePendingRegionEntryStubForTravelDestination;
+module.exports.resolveTravelTimeBackfillRegionIdentity = resolveTravelTimeBackfillRegionIdentity;
+module.exports.maybeBackfillRegionExitTravelTimesForArrival = maybeBackfillRegionExitTravelTimesForArrival;

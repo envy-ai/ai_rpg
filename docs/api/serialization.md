@@ -80,7 +80,7 @@ Hydration resets the generator, seeds counters from `metadata.idCounters`, and r
 
 The save format stores canonical server records, not necessarily the expanded client API payloads.
 
-- `Player.toJSON()` stores actor identity, descriptors, aliases, health, attributes, skills, abilities, inventory ids, barter inventory ids, gear, quests, dispositions, faction state, need bars, need-bar applicability, per-minute need/health timestamps, party state, travel memory, hidden/death flags, UI view preferences, and mod state.
+- `Player.toJSON()` stores actor identity, descriptors, aliases, health, attributes, skills, abilities, declined abilities, inventory ids, barter inventory ids, gear, quests, dispositions, faction state, need bars, need-bar applicability, per-minute need/health timestamps, party state, travel memory, hidden/death flags, UI view preferences, and mod state.
 - `Thing.toJSON()` stores item/scenery identity, type, count, image, rarity/level fields, slot/attribute bonuses, target/equipper cause effects, container state, harvest state, boolean flags, metadata, status effects, and registered extension fields at top level.
 - `Location.toJSON()` stores location details including exits, region id, controlling faction id, image variants, visit/favorite state, stubs, generation hints, NPC ids, thing ids, random events, status effects, and vehicle info.
 - `Region.toJSON()` stores region details including blueprints, location ids, entrance, parent, controlling faction, vehicle info, weather/weather state, status effects, random events, concepts, secrets, and average level.
@@ -105,7 +105,7 @@ Registered Thing extension fields must be registered before load for `Thing.from
 8. Resolve the current player from `metadata.playerId` or the first loaded actor.
 9. Return `loadedData` with the client-facing current-player profile and totals.
 
-`hydrateGameState()` migrates compatible save data before registry rebuild, then loads skills, factions, mystery boxes, mystery threads, scheduled events, trackers, things, players, images, chat history, locations, exits, regions, pending region stubs, chat summaries, and scene summaries. Player runtime registries and static model indexes are cleared before re-instantiating saved records.
+`hydrateGameState()` migrates compatible save data before registry rebuild, then loads skills, factions, mystery boxes, mystery threads, scheduled events, trackers, things, players, images, chat history, locations, exits, regions, pending region stubs, chat summaries, and scene summaries. Player runtime registries and static model indexes for quests, locations, things, regions, factions, mystery boxes/threads, scheduled events, and trackers are cleared before re-instantiating saved records.
 
 ## Compatibility And Migrations
 

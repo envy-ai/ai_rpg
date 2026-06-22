@@ -9,7 +9,7 @@
 - The `scheduleEvent` chat tool requires `event`, `region`, and `location`, plus exactly one timing mode:
   - `in`: a future duration string or numeric minute count parsed by `Utils.parseDurationToMinutes(...)`.
   - `at`: canonical world time `{ dayIndex, timeMinutes }`.
-- `scheduleEvent` is available to regular prose prompts, scheduled-event resolution, generic prompt actions, and background `plot-analysis` prompts. Plot analysis receives it only alongside `addTracker`, so it can add new timed events without broader mutation tools.
+- `scheduleEvent` is available to regular prose prompts, scheduled-event resolution, generic prompt actions, and background `plot-analysis` prompts. Plot analysis receives it only alongside `addTracker` and `setRelationship`, so it can add new timed events and non-player character relationship labels without broader mutation tools.
 - `createScheduledEventScheduler(...)` resolves the region by id or exact name, resolves the location by id or name, and validates that the location belongs to the requested region.
 - Region and location ambiguity raises an error instead of selecting an arbitrary match. Same-named locations are resolved inside the requested region when that region identifies a single matching location.
 - Relative timings must be positive. Exact timings must be inside the configured day cycle and strictly after `Globals.getTotalWorldMinutes()`.
@@ -62,6 +62,7 @@
 - Save metadata includes `totalScheduledEvents`.
 - `Utils.loadSerializedGameState(...)` reads `scheduledEvents.json`, defaulting to `{}` when the file is absent or cannot be parsed.
 - `Utils.hydrateGameState(...)` loads scheduled events through `ScheduledEvent.loadAll(...)` before hydrating things, players, chat history, locations, exits, and regions.
+- `/api/new-game` clears the scheduled-event registry during its in-memory reset before generating the starting region, preventing due-event records from an old game from leaking into the new game.
 - Constructors and loaders register scheduled-event ids with `IdGenerator` so loaded ids are not reused.
 
 ## Due-Event Resolution
@@ -73,7 +74,7 @@
 - Negative world-time adjustments move the raw clock backward and do not process due scheduled events.
 - Each due event renders `base-context.xml.njk` with `promptType: 'scheduled-event-resolution'`, which includes `prompts/_includes/scheduled-event-resolution.njk`.
 - Resolution prompts use metadata label `scheduled_event_resolution`, are logged through `LLMClient.logPrompt()`, and use the configured prompt-progress target for that label.
-- Scheduled-event resolution receives built-in chat tools except generic-prompt-only edit/rerun helpers, plus registered mod chat tools. World-mutation tools are available.
+- Scheduled-event resolution receives the full built-in and registered mod chat-tool list, including world-mutation tools. Silent event-check housekeeping uses a mutation-capable scope that excludes generic chat-history edit/rerun helpers and additionally verifies that `createQuest`, `updateTracker`, and `removeTracker` are present before calling the model.
 - `requestUserInput` is in the scheduled-event tool list. It succeeds only with an active client stream/id, realtime delivery, and enabled configuration; otherwise the tool loop returns a visible tool error to the model.
 - The parser uses the final `<scheduledEventResult>` block in the model response. A self-closing result, or a result with no summary and no `proseForPlayer`, skips the event.
 - A happened result must include `summary`. If the player is at the scheduled location, it must also include `proseForPlayer`.

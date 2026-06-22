@@ -8,10 +8,10 @@ Represents a player or NPC with attributes, skills, inventory, gear, status effe
 - Core stats: `#attributes`, `#level`, `#experience`, `#health` (finite float), `#healthAttribute`, `#healthRegenAppliedAt`.
 - Inventory/gear: `#inventory`, `#gearSlots`, `#gearSlotsByType`, `#gearSlotNameIndex`.
 - Barter: `#barterInventory`, `#willingToTrade`, `#tradeRefusalExpiresAt`, `#barterStockUpdatedAt`, `#barterProfile`.
-- Skills/abilities: `#skills`, `#abilities`, `#unspentSkillPoints`, `#unspentAttributePoints`.
+- Skills/abilities: `#skills`, `#abilities`, `#declinedAbilities`, `#unspentSkillPoints`, `#unspentAttributePoints`.
 - Pending level-up ability draft state: `#pendingAbilityOptionsByLevel` (per-level generated options for player-only ability selection flow).
 - Status/needs: `#statusEffects`, `#needBars`, `#needBarApplicability`, `#needBarRatesAppliedAt`.
-- Social: `#dispositions`, `#personalityType`, `#personalityTraits`, `#personalityNotes`, `#aiNotes`, `#resistances`, `#vulnerabilities`, NPC-only `#hiddenFromPlayer`.
+- Social: `#dispositions`, `#relationships` (`target character id -> label of at most six words`), `#personalityType`, `#personalityTraits`, `#personalityNotes`, `#aiNotes`, `#resistances`, `#vulnerabilities`, NPC-only `#hiddenFromPlayer`.
 - Factions: `#factionId`, `#factionStandings` (map of `factionId -> number`).
 - UI state: `#thingListViewPreferences` (per-panel shared thing-list view modes for location/inventory/crafting/barter panels).
 - Mod state: `#modState` (namespaced JSON object persisted for hook-based mods).
@@ -51,7 +51,7 @@ Represents a player or NPC with attributes, skills, inventory, gear, status effe
 - Factions: `factionId`.
 - State: `level`, `experience`, `health`, `maxHealth`, `healthAttribute`, `isDead`, `persistWhenDead`, `isDisabled` (dead, zero-health, or carrying an exact `Incapacitated` status effect), `inCombat`, `isHostile`, `hiddenFromPlayer` / `isHiddenFromPlayer`, `corpseCountdown`, `elapsedTime`, `createdAt`, `lastUpdated`.
 - Locations: `currentLocation`, `location`, `currentVehicle`, `previousLocationId`, `previousLocation`, `currentLocationObject`, `lastVisitedTime`, `last_seen_time`, `last_seen_location`, `was_in_player_location_previous_round` (plus camelCase aliases).
-- Social/party: `partyMembers`, `isInPlayerParty`, `wasEverInPlayerParty`, `partyMembershipChangedThisTurn`, `partyMembersAddedThisTurn`, `partyMembersRemovedThisTurn`.
+- Social/party: `partyMembers`, `relationships`, `isInPlayerParty` (derived from the current player's `partyMembers` list), `wasEverInPlayerParty`, `partyMembershipChangedThisTurn`, `partyMembersAddedThisTurn`, `partyMembersRemovedThisTurn`.
 - Quests/goals: `goals`, `characterArc`, `currentQuests`, `completedQuests`.
 - Need bars/memory: `turnsSincePartyMemoryGeneration`, `importantMemories`. Dead NPC/corpse actors can retain persisted memory state, but NPC memory prompt scheduling skips them while `isDead` is true.
 
@@ -71,6 +71,9 @@ Represents a player or NPC with attributes, skills, inventory, gear, status effe
   - `getDisposition(targetId, type)`, `setDisposition(...)`, `increaseDisposition(...)`, `decreaseDisposition(...)`.
   - `getDispositionTowards(player, type)`, `setDispositionTowards(...)`.
   - `getDispositionIntensityTowards(...)`, `getDispositionTowardsCurrentPlayer(...)`, `setDispositionTowardsCurrentPlayer(...)`.
+- Relationships:
+  - `getRelationships()`, `getRelationship(targetId)`, `setRelationships(mapOrObject)`, `setRelationship(targetId, label)`, `removeRelationship(targetId)`.
+  - Relationship keys are stable character ids resolved through `Player.resolvePlayerId(...)`; labels must be non-empty strings of six words or fewer.
 - Factions:
   - `getFactionStandings()`, `setFactionStandings(mapOrObject)`.
   - `getFactionStanding(factionId)`, `setFactionStanding(factionId, value)`, `removeFactionStanding(factionId)`.
@@ -88,6 +91,7 @@ Represents a player or NPC with attributes, skills, inventory, gear, status effe
   - `getSkillModifiers(name, { includeEquipped })`.
   - `increaseSkill(name, amount)`, `syncSkillsWithAvailable()`.
   - `getAbilities()`, `setAbilities(list)`, `addAbility(ability)`.
+  - `getDeclinedAbilities()`, `getDeclinedAbilityNames()`, `setDeclinedAbilities(list)`, `addDeclinedAbility(ability)`, `addDeclinedAbilities(list)`, `clearDeclinedAbilities()`.
   - Pending player draft options:
     - `getPendingAbilityOptionsByLevel()`, `getPendingAbilityOptionsForLevel(level)`.
     - `setPendingAbilityOptionsForLevel(level, abilities)`.
@@ -126,6 +130,7 @@ Represents a player or NPC with attributes, skills, inventory, gear, status effe
 - Movement:
   - `setLocationByName(name)`, `setLocation(location)`, `moveToLocation(direction, locationMap)`.
   - `setLocation(...)` records the pre-arrival `visited` / `lastVisitedTime` state for non-NPC destination moves before marking the destination visited, preserving the data used by the while-you-were-away arrival gate.
+  - While-you-were-away arrival prompts prefer `last_seen_time` / `last_seen_location` for per-NPC reunion candidates, but can synthesize visible current-location candidates from the destination's pre-arrival visit state when those per-NPC fields are missing.
   - `getCurrentLocationName()`, `getCurrentLocationInfo(locationMap)`, `getAvailableExits(locationMap)`.
   - `updatePreviousLocation()`.
   - `recordLastSeenByPlayer({ time, locationId, wasInPlayerLocationPreviousRound })`.
@@ -151,6 +156,7 @@ Represents a player or NPC with attributes, skills, inventory, gear, status effe
 
 ## Notes
 - The class supports NPCs and players; many behaviors are shared with `isNPC` gating certain flows.
+- Player ability drafts persist thumbs-downed options as `declinedAbilities` records on the player. Future player ability-option prompts receive those names through the existing declined-abilities prompt context so the same options are not offered repeatedly.
 - Gear and inventory are tightly coupled; equip/unequip flows update health and modifiers.
 - Registered mod attribute/status contributors are included in `getModifiedAttribute()` and `getStatusEffects()`. Inventory-backed attachment/module mods should remove stale installed item ids through `registerInventorySyncContributor`; the modules mod contributes installed module bonuses/status effects only when the base item is equipped.
 - NPC/player inventory generation uses the shared base-context prompt wrapper with `promptType: "inventory-generator"` and the task-specific include at `prompts/_includes/inventory-generator.njk`; generated item XML is parsed by the existing inventory item parser and stored as `Thing` records.
@@ -172,7 +178,8 @@ Represents a player or NPC with attributes, skills, inventory, gear, status effe
 - `removeStatusEffect(...)` removes intrinsic effects by exact case-insensitive `name` or exact case-insensitive `description`, preserving legacy description removal while allowing XML event checks to clear effects by listed status-effect name.
 - `isDisabled` treats the explicit `Incapacitated` status effect as disabling even when the actor has positive health.
 - `persistWhenDead` is persisted per actor. When true, dead actors never receive a corpse countdown and are skipped by corpse cleanup; missing save data defaults it to `false`.
-- `wasEverInPlayerParty` is also persisted per actor. It flips to `true` when the actor joins the player party, and load reconciliation also marks currently in-party actors as historical party members so older saves do not lose that history. Missing save data defaults it to `false`.
+- `isInPlayerParty` is not persisted as actor state. It is a derived getter that checks whether the active current player's `getPartyMembers()` list contains the actor id; direct property assignments and `setInPlayerParty(...)` calls throw so party membership changes go through `addPartyMember(...)` / `removePartyMember(...)`.
+- `wasEverInPlayerParty` is persisted per actor. It flips to `true` when the actor joins the player party, and load reconciliation also marks actors listed in the current player's persisted `partyMembers` list as historical party members so older saves do not lose that history. Missing save data defaults it to `false`; legacy saved `isInPlayerParty` fields are ignored as active-membership authority.
 - Joining the player party, leaving the player party, or dying while currently in the player party permanently flips `persistWhenDead` to `true` for that actor.
 - `elapsedTime` is minute-canonical; setter validation requires non-negative integer minutes, and load paths normalize to integer minutes.
 - `currentVehicle` returns `null` unless the actor is in a vehicle location or vehicle region; when present it includes vehicle name/description, `location` (`<regionName>:<locationName>`), the full `vehicleInfo` object, explicit trip-state booleans (`isUnderway`, `hasArrived`, `isArriving`) mirrored onto `vehicleInfo` for prompt compatibility, `destination`, `destinationResolved`, optional `pendingDestination`, numeric `minutesToDestination`, plus a formatted `timeToDestination` string (`X days, Y hours, Z minutes`, omitting all zero-value units except exact `0 minutes`, and appending `ago` when negative). During timed travel, `destination` can come from `pendingDestination` even when `vehicleInfo.currentDestination` is `null`, so prompts can see the intended target without forcing early destination generation. Trip-state booleans are sourced from `VehicleInfo` and distinguish pre-departure, underway, arrival, and arrived states.
@@ -183,6 +190,7 @@ Represents a player or NPC with attributes, skills, inventory, gear, status effe
 - Party XP sharing scales by each recipient's level and derives party shares from the original pre-division gameplay award, so the source actor's own level reduction does not cascade onto other recipients.
 - `getById(id)` is index-backed (`#indexById`) so party XP and other lookups resolve the canonical current instance, not stale insertion-order instances.
 - `unregister(target)` rebuilds indexes after removals to prevent stale id/name registry entries.
+- `relationships` is persisted as a sparse object map of `otherCharacterId -> short label`, separate from numeric dispositions and faction standings. The model rejects invalid maps, empty target ids, self-targeting entries, non-string labels, and labels longer than six words so bad relationship graph data fails during development instead of being silently hidden. Chat prompts can set individual non-player character edges through `setRelationship({ characterA, characterB, relationship, reciprocalRelationship? })`, or multiple edges through `setRelationship({ items: [...] })`; the tool rejects item calls where either character is the current player, and omitting the reciprocal label leaves the reverse edge unchanged. Batch relationship calls attempt every item in order and return per-item success/error records. Successful relationship calls report previous labels and whether each direct or reciprocal edge was added or updated. Parser-driven housekeeping can remove a directed edge with `<relationship><action>remove</action>...</relationship>` and reports that mutation as deleted. Housekeeping summarizes successful relationship label changes in visible player-only `relationship-updates` chat entries, which are excluded from all LLM prompt-history paths. Base-context prompts render non-empty per-character `<relationships>` and `<reciprocalRelationships>` sections with resolved character names. Reciprocal sections omit relationships from characters already present in the scene, party, or player record because those characters list their own outgoing labels.
 - Direct unspent-point mutators (`setUnspent*`/`adjustUnspent*`) throw by design.
 - `setLocation(locationId)` warns with a stack trace and leaves `currentLocation` as-is when the provided string id cannot be resolved. For non-NPC moves to a different destination, it also snapshots the destination's pre-move visit state before `markVisited()` updates `lastVisitedTime`.
 - NPC last-seen state is persisted as snake_case save fields: `last_seen_time` stores an absolute world-minute timestamp, `last_seen_location` stores the location id, and `was_in_player_location_previous_round` records whether the NPC was with the player continuously from the previous round. Chat, direct movement, crafting/processing, and location-modification actions snapshot same-location NPCs at turn start, then update sightings after successful turn resolution so base-context can mention absent NPCs and expose newly present NPCs without implying continuously present NPCs vanished during the turn.

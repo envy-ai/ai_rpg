@@ -24,6 +24,7 @@
                 <button class="tab-button" id="tab-character-tab" data-tab="character" role="tab" aria-selected="false" aria-controls="tab-character" aria-label="Character" title="Character"><img src="/assets/material-icons/game-tab-icons/character.svg" class="tab-button__icon" alt="" aria-hidden="true"></button>
                 <button class="tab-button" id="tab-quests-tab" data-tab="quests" role="tab" aria-selected="false" aria-controls="tab-quests" aria-label="Quests" title="Quests"><img src="/assets/material-icons/game-tab-icons/quests.svg" class="tab-button__icon" alt="" aria-hidden="true"></button>
                 <button class="tab-button" id="tab-factions-tab" data-tab="factions" role="tab" aria-selected="false" aria-controls="tab-factions" aria-label="Factions" title="Factions"><img src="/assets/material-icons/game-tab-icons/factions.svg" class="tab-button__icon" alt="" aria-hidden="true"></button>
+                <button class="tab-button" id="tab-relationships-tab" data-tab="relationships" role="tab" aria-selected="false" aria-controls="tab-relationships" aria-label="Relationships" title="Relationships"><img src="/assets/material-icons/game-tab-icons/relationship.svg" class="tab-button__icon" alt="" aria-hidden="true"></button>
                 <button class="tab-button" id="tab-party-tab" data-tab="party" role="tab" aria-selected="false" aria-controls="tab-party" aria-label="Party" title="Party"><img src="/assets/material-icons/game-tab-icons/party.svg" class="tab-button__icon" alt="" aria-hidden="true"></button>
                 <button class="tab-button" id="tab-story-tools-tab" data-tab="story-tools" role="tab" aria-selected="false" aria-controls="tab-story-tools" aria-label="Story Tools" title="Story Tools"><img src="/assets/material-icons/game-tab-icons/story_tools.svg" class="tab-button__icon" alt="" aria-hidden="true"></button>
             </div>
@@ -79,6 +80,7 @@
                                             <button type="button" class="entity-context-menu-item location-image-menu-item" id="locationSummonThingButton">Summon Item/Scenery</button>
                                             <button type="button" class="entity-context-menu-item location-image-menu-item" id="locationImageUploadButton">Upload Image</button>
                                             <button type="button" class="entity-context-menu-item location-image-menu-item" id="locationImageRegenerateButton">Regenerate Image</button>
+                                            <button type="button" class="entity-context-menu-item location-image-menu-item" id="locationImageRegeneratePromptButton">Regenerate Image +</button>
                                         </div>
                                     </div>
                                     <div class="location-info" id="locationInfo">
@@ -281,6 +283,10 @@
                                                     <div class="message-sender">
                                                         {% if message.role == 'user' %}
                                                             👤 You
+                                                        {% elif message.type == 'tracker-updates' %}
+                                                            Tracker Updates
+                                                        {% elif message.type == 'relationship-updates' %}
+                                                            Relationship Updates
                                                         {% else %}
                                                             🤖 AI Game Master
                                                         {% endif %}
@@ -386,6 +392,7 @@
                                     <div class="chat-trackers-header">
                                         <h3 class="chat-sidebar-heading">Trackers</h3>
                                         <div class="chat-trackers-header-controls">
+                                            <button type="button" class="chat-trackers-add-button" id="chatTrackersAddButton" aria-label="Create tracker" title="Create tracker">+</button>
                                             <span class="chat-trackers-count" id="chatTrackersCount">0</span>
                                             <button type="button" class="chat-trackers-hidden-toggle" id="chatTrackersHiddenToggle" aria-label="Show hidden trackers" aria-pressed="false" title="Show hidden trackers">
                                                 <svg class="chat-trackers-hidden-toggle__icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
@@ -425,6 +432,20 @@
                         <div id="worldMapContainer" class="map-placeholder" aria-live="polite"></div>
                     </div>
                 </section>
+                <section class="tab-panel" id="tab-relationships" role="tabpanel" aria-labelledby="tab-relationships-tab" hidden>
+                    <div class="map-panel relationship-graph-panel">
+                        <div class="map-header">
+                            <h2 id="relationshipGraphTitle" class="map-title">Relationships</h2>
+                            <button type="button"
+                                    class="map-action-button"
+                                    id="relationshipGraphReloadButton"
+                                    aria-label="Reload relationships">
+                                Reload
+                            </button>
+                        </div>
+                        <div id="relationshipGraphContainer" class="map-placeholder relationship-graph-status" aria-live="polite">Open the Relationships tab to load the graph.</div>
+                    </div>
+                </section>
                 <section class="tab-panel" id="tab-favorites" role="tabpanel" aria-labelledby="tab-favorites-tab" hidden>
                     <div class="favorites-panel">
                         <div class="map-header">
@@ -444,6 +465,7 @@
                     <button type="button" class="entity-context-menu-item location-image-menu-item" id="mapLocationMenuSummonThingButton">Summon Item/Scenery</button>
                     <button type="button" class="entity-context-menu-item location-image-menu-item" id="mapLocationMenuUploadImageButton">Upload Image</button>
                     <button type="button" class="entity-context-menu-item location-image-menu-item" id="mapLocationMenuRegenerateImageButton">Regenerate Image</button>
+                    <button type="button" class="entity-context-menu-item location-image-menu-item" id="mapLocationMenuRegeneratePromptButton">Regenerate Image +</button>
                     <button type="button" class="entity-context-menu-item location-image-menu-item" id="mapLocationMenuDeleteButton">Delete Location</button>
                 </div>
                 <div id="setLastSeenModal" class="modal" role="dialog" aria-modal="true" aria-labelledby="setLastSeenModalTitle" aria-hidden="true" hidden>
@@ -1089,6 +1111,37 @@
         </div>
     </div>
 
+    <div id="locationRegionFixerModal" class="modal location-region-fixer-modal" role="dialog" aria-modal="true" aria-labelledby="locationRegionFixerTitle" aria-describedby="locationRegionFixerDescription" aria-hidden="true" hidden>
+        <div class="modal__dialog">
+            <header class="modal__header">
+                <h2 id="locationRegionFixerTitle">Fix Location Region</h2>
+                <button type="button" class="modal__close" id="locationRegionFixerCloseBtn" aria-label="Close location region fixer">
+                    <span aria-hidden="true">X</span>
+                </button>
+            </header>
+            <div class="modal__body location-region-fixer-body">
+                <p id="locationRegionFixerDescription" class="modal__instruction">This location is listed in more than one region. Select the region it should remain in before movement continues.</p>
+                <dl class="location-region-fixer-summary">
+                    <div class="location-region-fixer-summary__row">
+                        <dt>Location</dt>
+                        <dd id="locationRegionFixerLocationLabel">Unknown Location</dd>
+                    </div>
+                </dl>
+                <fieldset class="location-region-fixer-options">
+                    <legend>Keep In Region</legend>
+                    <div id="locationRegionFixerRegionList" class="location-region-fixer-region-list"></div>
+                </fieldset>
+                <div id="locationRegionFixerStatus" class="location-region-fixer-status" role="status" aria-live="polite"></div>
+            </div>
+            <footer class="modal__footer">
+                <div class="button-group">
+                    <button type="button" class="btn btn-secondary" id="locationRegionFixerCancelBtn">Cancel</button>
+                    <button type="button" class="btn btn-primary" id="locationRegionFixerConfirmBtn">Continue</button>
+                </div>
+            </footer>
+        </div>
+    </div>
+
     <div id="slashUploadModal" class="modal" role="dialog" aria-modal="true" aria-labelledby="slashUploadTitle" aria-hidden="true" hidden>
         <div class="modal__dialog">
             <header class="modal__header">
@@ -1139,6 +1192,30 @@
                         <button type="button" class="btn btn-secondary" id="entityImageUploadCancelBtn">Cancel</button>
                         <button type="submit" class="btn btn-primary" id="entityImageUploadSubmitBtn">Upload</button>
                     </div>
+                </footer>
+            </form>
+        </div>
+    </div>
+    <div id="entityImagePromptModal" class="modal entity-image-prompt-modal" role="dialog" aria-modal="true" aria-labelledby="entityImagePromptTitle" aria-hidden="true" hidden>
+        <div class="modal__dialog">
+            <header class="modal__header">
+                <h2 id="entityImagePromptTitle">Regenerate Image +</h2>
+                <button type="button" class="modal__close" id="entityImagePromptCloseBtn" aria-label="Close image prompt dialog">
+                    <span aria-hidden="true">×</span>
+                </button>
+            </header>
+            <form id="entityImagePromptForm">
+                <div class="modal__body">
+                    <p id="entityImagePromptDescription" class="modal__instruction">Edit the generated image prompt before sending it.</p>
+                    <div class="form-group">
+                        <label for="entityImagePromptTextarea">Prompt</label>
+                        <textarea id="entityImagePromptTextarea" class="entity-image-prompt-textarea" rows="14"></textarea>
+                    </div>
+                    <p id="entityImagePromptStatus" class="entity-image-upload-status" hidden></p>
+                </div>
+                <footer class="modal__footer">
+                    <button type="button" class="btn btn-secondary" id="entityImagePromptCancelBtn">Cancel</button>
+                    <button type="submit" class="btn btn-primary" id="entityImagePromptSubmitBtn">Send Prompt</button>
                 </footer>
             </form>
         </div>
@@ -1238,6 +1315,56 @@
 
     <div id="npcModalBackdrop" class="modal-backdrop" hidden></div>
     <div id="questEditBackdrop" class="modal-backdrop" hidden></div>
+    <div id="trackerEditModal" class="modal tracker-edit-modal" role="dialog" aria-modal="true" aria-labelledby="trackerEditModalTitle" aria-hidden="true" hidden>
+        <div class="modal__dialog tracker-edit-modal__dialog">
+            <header class="modal__header">
+                <h2 id="trackerEditModalTitle">Create Tracker</h2>
+                <button type="button" class="modal__close" id="trackerEditCloseBtn" aria-label="Close tracker editor">
+                    <span aria-hidden="true">&times;</span>
+                </button>
+            </header>
+            <form id="trackerEditForm" class="modal__body tracker-edit-form" novalidate>
+                <div class="tracker-edit-meta" id="trackerEditMetadata" hidden></div>
+                <div class="tracker-edit-field">
+                    <label for="trackerEditName">Name</label>
+                    <input type="text" id="trackerEditName" name="name" maxlength="120" required>
+                </div>
+                <div class="tracker-edit-field">
+                    <label for="trackerEditType">Type</label>
+                    <select id="trackerEditType" name="type" required>
+                        <option value="countdown">countdown</option>
+                        <option value="numerical_count">numerical_count</option>
+                        <option value="x_out_of_total">x_out_of_total</option>
+                        <option value="percentage">percentage</option>
+                        <option value="short_string">short_string</option>
+                    </select>
+                </div>
+                <div class="tracker-edit-field">
+                    <label for="trackerEditValue">Value</label>
+                    <input type="text" id="trackerEditValue" name="value" maxlength="240" required>
+                </div>
+                <div class="tracker-edit-field tracker-edit-field--checkbox">
+                    <label class="modal-checkbox" for="trackerEditHiddenFromPlayer">
+                        <input type="checkbox" id="trackerEditHiddenFromPlayer" name="hiddenFromPlayer">
+                        Hidden from player
+                    </label>
+                </div>
+                <div class="tracker-edit-field">
+                    <label for="trackerEditDescription">Update Guidance</label>
+                    <textarea id="trackerEditDescription" name="description" rows="3" required placeholder="When should the LLM update this tracker?"></textarea>
+                </div>
+                <div class="tracker-edit-field">
+                    <label for="trackerEditNote">Value Note</label>
+                    <textarea id="trackerEditNote" name="note" rows="3" placeholder="Why is the current value what it is? 100 words max."></textarea>
+                </div>
+                <div class="tracker-edit-status" id="trackerEditStatus" role="status" aria-live="polite"></div>
+                <footer class="modal__footer tracker-edit-actions">
+                    <button type="button" class="tracker-edit-cancel" id="trackerEditCancelBtn">Cancel</button>
+                    <button type="submit" class="tracker-edit-save" id="trackerEditSaveBtn">Save Tracker</button>
+                </footer>
+            </form>
+        </div>
+    </div>
     <div id="questEditModal" class="modal quest-edit-modal" role="dialog" aria-modal="true" aria-hidden="true" hidden>
         <div class="modal__dialog">
             <header class="modal__header">
@@ -2898,6 +3025,7 @@
     <script src="/js/chat.js"></script>
     <script defer src="/js/map.js"></script>
     <script defer src="/js/world-map.js"></script>
+    <script defer src="/js/relationship-graph.js"></script>
     <script defer src="/js/player-stats.js"></script>
     {% if modScripts %}{% for mod in modScripts %}{% for script in mod.scripts %}
     <script src="{{ script }}"></script>
@@ -4857,8 +4985,28 @@
             trackersList: document.getElementById('chatTrackersList'),
             trackersEmpty: document.getElementById('chatTrackersEmpty'),
             trackersCount: document.getElementById('chatTrackersCount'),
+            trackersAddButton: document.getElementById('chatTrackersAddButton'),
             trackersHiddenToggle: document.getElementById('chatTrackersHiddenToggle')
         };
+
+        const trackerEditElements = {
+            modal: document.getElementById('trackerEditModal'),
+            form: document.getElementById('trackerEditForm'),
+            title: document.getElementById('trackerEditModalTitle'),
+            metadata: document.getElementById('trackerEditMetadata'),
+            name: document.getElementById('trackerEditName'),
+            type: document.getElementById('trackerEditType'),
+            value: document.getElementById('trackerEditValue'),
+            hiddenFromPlayer: document.getElementById('trackerEditHiddenFromPlayer'),
+            description: document.getElementById('trackerEditDescription'),
+            note: document.getElementById('trackerEditNote'),
+            status: document.getElementById('trackerEditStatus'),
+            cancel: document.getElementById('trackerEditCancelBtn'),
+            close: document.getElementById('trackerEditCloseBtn'),
+            save: document.getElementById('trackerEditSaveBtn')
+        };
+        let trackerEditMode = 'create';
+        let trackerEditId = null;
 
         function getLatestPlayerData() {
             const baseData = (window.currentPlayerData && typeof window.currentPlayerData === 'object')
@@ -5324,6 +5472,7 @@
             playerAbilitySelectionState.submitting = false;
             playerAbilitySelectionState.selection = null;
             playerAbilitySelectionState.selectedNames = new Set();
+            playerAbilitySelectionState.declinedNames = new Set();
             playerAbilitySelectionState.level = null;
             playerAbilitySelectionState.requiredSelections = 0;
             playerAbilitySelectionState.optionsPerLevel = 0;
@@ -5359,6 +5508,7 @@
             playerAbilitySelectionState.loading = true;
             playerAbilitySelectionState.selection = null;
             playerAbilitySelectionState.selectedNames = new Set();
+            playerAbilitySelectionState.declinedNames = new Set();
             playerAbilitySelectionState.level = resolvedLevel;
             playerAbilitySelectionState.requiredSelections = resolvedRequiredSelections;
             playerAbilitySelectionState.optionsPerLevel = resolvedOptionsPerLevel;
@@ -5402,15 +5552,26 @@
                     continue;
                 }
                 const selected = playerAbilitySelectionState.selectedNames.has(abilityKey);
-                const card = document.createElement('button');
-                card.type = 'button';
+                const declined = playerAbilitySelectionState.declinedNames.has(abilityKey);
+                const card = document.createElement('div');
                 card.className = 'player-ability-selection-card';
                 card.setAttribute('role', 'listitem');
-                card.setAttribute('aria-pressed', selected ? 'true' : 'false');
                 if (selected) {
                     card.classList.add('is-selected');
                 }
+                if (declined) {
+                    card.classList.add('is-declined');
+                }
                 card.dataset.abilityNameKey = abilityKey;
+
+                const selectButton = document.createElement('button');
+                selectButton.type = 'button';
+                selectButton.className = 'player-ability-selection-card-select';
+                selectButton.setAttribute('aria-pressed', selected ? 'true' : 'false');
+                selectButton.dataset.abilityNameKey = abilityKey;
+
+                const topRow = document.createElement('div');
+                topRow.className = 'player-ability-selection-card-top-row';
 
                 const header = document.createElement('div');
                 header.className = 'player-ability-selection-card-header';
@@ -5442,31 +5603,65 @@
                         ? option.shortDescription.trim()
                         : (typeof option?.description === 'string' && option.description.trim()
                             ? option.description.trim()
-                            : 'No description provided.')
+                    : 'No description provided.')
                 );
 
-                card.appendChild(header);
-                card.appendChild(description);
+                topRow.appendChild(header);
+                selectButton.appendChild(topRow);
+                selectButton.appendChild(description);
 
-                card.addEventListener('click', () => {
+                const declineToggle = document.createElement('button');
+                declineToggle.type = 'button';
+                declineToggle.className = 'player-ability-selection-decline-toggle';
+                if (declined) {
+                    declineToggle.classList.add('is-declined');
+                }
+                declineToggle.textContent = '👎';
+                declineToggle.setAttribute('aria-label', `Thumbs down ${abilityName}`);
+                declineToggle.setAttribute('aria-pressed', declined ? 'true' : 'false');
+
+                const syncCardState = () => {
+                    const isSelected = playerAbilitySelectionState.selectedNames.has(abilityKey);
+                    const isDeclined = playerAbilitySelectionState.declinedNames.has(abilityKey);
+                    card.classList.toggle('is-selected', isSelected);
+                    card.classList.toggle('is-declined', isDeclined);
+                    selectButton.setAttribute('aria-pressed', isSelected ? 'true' : 'false');
+                    declineToggle.classList.toggle('is-declined', isDeclined);
+                    declineToggle.setAttribute('aria-pressed', isDeclined ? 'true' : 'false');
+                };
+
+                selectButton.addEventListener('click', () => {
                     const required = playerAbilitySelectionState.requiredSelections;
                     const alreadySelected = playerAbilitySelectionState.selectedNames.has(abilityKey);
                     if (alreadySelected) {
                         playerAbilitySelectionState.selectedNames.delete(abilityKey);
-                        card.classList.remove('is-selected');
-                        card.setAttribute('aria-pressed', 'false');
                     } else {
                         if (playerAbilitySelectionState.selectedNames.size >= required) {
                             setPlayerAbilitySelectionStatus(`Select exactly ${required} abilities. Deselect one first.`, 'warning');
                             return;
                         }
                         playerAbilitySelectionState.selectedNames.add(abilityKey);
-                        card.classList.add('is-selected');
-                        card.setAttribute('aria-pressed', 'true');
+                        playerAbilitySelectionState.declinedNames.delete(abilityKey);
                     }
+                    syncCardState();
                     updatePlayerAbilitySelectionSubmitState();
                 });
 
+                declineToggle.addEventListener('click', (event) => {
+                    event.stopPropagation();
+                    const alreadyDeclined = playerAbilitySelectionState.declinedNames.has(abilityKey);
+                    if (alreadyDeclined) {
+                        playerAbilitySelectionState.declinedNames.delete(abilityKey);
+                    } else {
+                        playerAbilitySelectionState.declinedNames.add(abilityKey);
+                        playerAbilitySelectionState.selectedNames.delete(abilityKey);
+                    }
+                    syncCardState();
+                    updatePlayerAbilitySelectionSubmitState();
+                });
+
+                card.appendChild(selectButton);
+                card.appendChild(declineToggle);
                 playerAbilitySelectionCards.appendChild(card);
             }
         }
@@ -5493,6 +5688,7 @@
                     .map(normalizeAbilityNameKey)
                     .filter(Boolean)
             );
+            playerAbilitySelectionState.declinedNames = new Set();
 
             const titleLevelText = Number.isInteger(playerAbilitySelectionState.level)
                 ? `Level ${playerAbilitySelectionState.level}`
@@ -5671,6 +5867,16 @@
                 selectedAbilityNames.push(resolvedName);
             }
 
+            const declinedAbilityNames = [];
+            for (const key of playerAbilitySelectionState.declinedNames) {
+                const resolvedName = optionNameByKey.get(key);
+                if (!resolvedName) {
+                    setPlayerAbilitySelectionStatus('One declined ability is no longer valid. Please retry.', 'error');
+                    return;
+                }
+                declinedAbilityNames.push(resolvedName);
+            }
+
             playerAbilitySelectionState.submitting = true;
             updatePlayerAbilitySelectionSubmitState();
             syncPlayerAbilitySelectionInteractionState();
@@ -5682,7 +5888,8 @@
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
                         level: playerAbilitySelectionState.level,
-                        selectedAbilityNames
+                        selectedAbilityNames,
+                        declinedAbilityNames
                     })
                 });
                 const data = await response.json().catch(() => ({}));
@@ -5874,6 +6081,263 @@
             toggle.title = chatTrackersShowHidden ? 'Hide hidden trackers' : 'Show hidden trackers';
         }
 
+        function getTrackerProgressPercent(tracker) {
+            if (!tracker || typeof tracker !== 'object') {
+                return null;
+            }
+
+            const value = typeof tracker.rawValue === 'string' && tracker.rawValue.trim()
+                ? tracker.rawValue.trim()
+                : (typeof tracker.value === 'string' ? tracker.value.trim() : '');
+            let progressPercent = null;
+
+            if (tracker.type === 'percentage') {
+                const match = value.match(/^([+-]?(?:\d+(?:\.\d+)?|\.\d+))%$/);
+                if (match) {
+                    progressPercent = Number(match[1]);
+                }
+            } else if (tracker.type === 'x_out_of_total') {
+                const match = value.match(/^(\d+)\s*\/\s*(\d+)$/);
+                if (match) {
+                    const current = Number.parseInt(match[1], 10);
+                    const total = Number.parseInt(match[2], 10);
+                    if (Number.isFinite(current) && Number.isFinite(total) && total > 0) {
+                        progressPercent = (current / total) * 100;
+                    }
+                }
+            }
+
+            if (!Number.isFinite(progressPercent)) {
+                return null;
+            }
+            return Math.max(0, Math.min(100, progressPercent));
+        }
+
+        function getTrackerModalBackdrop() {
+            return document.getElementById('npcModalBackdrop');
+        }
+
+        function setTrackerEditStatus(message = '', { error = false, success = false } = {}) {
+            const status = trackerEditElements.status;
+            if (!status) {
+                return;
+            }
+            status.textContent = message || '';
+            status.classList.toggle('is-error', Boolean(error));
+            status.classList.toggle('is-success', Boolean(success));
+        }
+
+        function setTrackerEditSubmitting(isSubmitting) {
+            if (trackerEditElements.save) {
+                trackerEditElements.save.disabled = Boolean(isSubmitting);
+            }
+            if (trackerEditElements.cancel) {
+                trackerEditElements.cancel.disabled = Boolean(isSubmitting);
+            }
+        }
+
+        function applyTrackerMutationPayload(data = {}) {
+            const trackers = Array.isArray(data?.trackers) ? data.trackers : null;
+            if (!trackers) {
+                return;
+            }
+            window.currentPlayerData = {
+                ...(window.currentPlayerData || {}),
+                trackers
+            };
+            renderChatTrackersPanel(trackers);
+        }
+
+        function populateTrackerEditForm(tracker = {}) {
+            if (trackerEditElements.name) {
+                trackerEditElements.name.value = typeof tracker.name === 'string' ? tracker.name : '';
+            }
+            if (trackerEditElements.type) {
+                const type = typeof tracker.type === 'string' && tracker.type.trim() ? tracker.type.trim() : 'percentage';
+                trackerEditElements.type.value = Array.from(trackerEditElements.type.options).some(option => option.value === type)
+                    ? type
+                    : 'percentage';
+            }
+            if (trackerEditElements.value) {
+                trackerEditElements.value.value = typeof tracker.value === 'string' ? tracker.value : '';
+            }
+            if (trackerEditElements.hiddenFromPlayer) {
+                trackerEditElements.hiddenFromPlayer.checked = tracker.hiddenFromPlayer === true;
+            }
+            if (trackerEditElements.description) {
+                trackerEditElements.description.value = typeof tracker.description === 'string' ? tracker.description : '';
+            }
+            if (trackerEditElements.note) {
+                trackerEditElements.note.value = typeof tracker.note === 'string' ? tracker.note : '';
+            }
+            if (trackerEditElements.metadata) {
+                const id = typeof tracker.id === 'string' ? tracker.id : '';
+                const metadataParts = [];
+                if (id) {
+                    metadataParts.push(`ID: ${id}`);
+                }
+                if (Number.isInteger(tracker.countdownUntilWorldMinute)) {
+                    metadataParts.push(`Countdown target minute: ${tracker.countdownUntilWorldMinute}`);
+                }
+                trackerEditElements.metadata.textContent = metadataParts.join(' | ');
+                if (metadataParts.length) {
+                    trackerEditElements.metadata.removeAttribute('hidden');
+                } else {
+                    trackerEditElements.metadata.setAttribute('hidden', '');
+                }
+            }
+        }
+
+        function showTrackerEditModal() {
+            if (!trackerEditElements.modal) {
+                return;
+            }
+            const backdrop = getTrackerModalBackdrop();
+            trackerEditElements.modal.removeAttribute('hidden');
+            trackerEditElements.modal.setAttribute('aria-hidden', 'false');
+            if (backdrop) {
+                backdrop.removeAttribute('hidden');
+            }
+            window.setTimeout(() => {
+                trackerEditElements.name?.focus();
+            }, 0);
+        }
+
+        function closeTrackerEditModal() {
+            if (!trackerEditElements.modal) {
+                return;
+            }
+            trackerEditElements.modal.setAttribute('hidden', '');
+            trackerEditElements.modal.setAttribute('aria-hidden', 'true');
+            const backdrop = getTrackerModalBackdrop();
+            if (backdrop) {
+                backdrop.setAttribute('hidden', '');
+            }
+            trackerEditId = null;
+            trackerEditMode = 'create';
+            setTrackerEditSubmitting(false);
+            setTrackerEditStatus('');
+        }
+
+        async function openTrackerEditModal({ mode = 'create', trackerId = null } = {}) {
+            if (!trackerEditElements.modal || !trackerEditElements.form) {
+                return;
+            }
+            trackerEditMode = mode === 'edit' ? 'edit' : 'create';
+            trackerEditId = trackerEditMode === 'edit' && typeof trackerId === 'string' && trackerId.trim()
+                ? trackerId.trim()
+                : null;
+            trackerEditElements.form.reset();
+            setTrackerEditStatus('');
+            setTrackerEditSubmitting(false);
+            if (trackerEditElements.title) {
+                trackerEditElements.title.textContent = trackerEditMode === 'edit' ? 'Edit Tracker' : 'Create Tracker';
+            }
+            if (trackerEditElements.save) {
+                trackerEditElements.save.textContent = trackerEditMode === 'edit' ? 'Update Tracker' : 'Create Tracker';
+            }
+            populateTrackerEditForm({
+                type: 'percentage',
+                hiddenFromPlayer: false
+            });
+            showTrackerEditModal();
+
+            if (trackerEditMode !== 'edit' || !trackerEditId) {
+                return;
+            }
+
+            setTrackerEditSubmitting(true);
+            setTrackerEditStatus('Loading tracker...');
+            try {
+                const trackerId = trackerEditId;
+                const response = await fetch(`/api/trackers/${encodeURIComponent(trackerId)}`, { cache: 'no-store' });
+                const data = await response.json().catch(() => null);
+                if (!response.ok || !data?.success || !data.tracker) {
+                    throw new Error(data?.error || `HTTP ${response.status}`);
+                }
+                populateTrackerEditForm(data.tracker);
+                setTrackerEditStatus('');
+            } catch (error) {
+                setTrackerEditStatus(`Failed to load tracker: ${error.message || error}`, { error: true });
+            } finally {
+                setTrackerEditSubmitting(false);
+            }
+        }
+
+        function buildTrackerEditPayload() {
+            return {
+                name: trackerEditElements.name?.value || '',
+                type: trackerEditElements.type?.value || '',
+                value: trackerEditElements.value?.value || '',
+                hiddenFromPlayer: trackerEditElements.hiddenFromPlayer?.checked === true,
+                description: trackerEditElements.description?.value || '',
+                note: trackerEditElements.note?.value || ''
+            };
+        }
+
+        async function submitTrackerEditForm(event) {
+            event?.preventDefault();
+            if (!trackerEditElements.form) {
+                return;
+            }
+            const payload = buildTrackerEditPayload();
+            const isEdit = trackerEditMode === 'edit' && trackerEditId;
+            setTrackerEditSubmitting(true);
+            setTrackerEditStatus(isEdit ? 'Updating tracker...' : 'Creating tracker...');
+            try {
+                let response;
+                if (isEdit) {
+                    response = await fetch(`/api/trackers/${encodeURIComponent(trackerEditId)}`, {
+                        method: 'PUT',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload)
+                    });
+                } else {
+                    response = await fetch('/api/trackers', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload)
+                    });
+                }
+                const data = await response.json().catch(() => null);
+                if (!response.ok || !data?.success) {
+                    throw new Error(data?.error || `HTTP ${response.status}`);
+                }
+                applyTrackerMutationPayload(data);
+                closeTrackerEditModal();
+            } catch (error) {
+                setTrackerEditStatus(`Failed to save tracker: ${error.message || error}`, { error: true });
+            } finally {
+                setTrackerEditSubmitting(false);
+            }
+        }
+
+        async function deleteTrackerFromSidebar(tracker) {
+            const trackerId = typeof tracker?.id === 'string' && tracker.id.trim() ? tracker.id.trim() : '';
+            if (!trackerId) {
+                return;
+            }
+            const trackerName = typeof tracker?.name === 'string' && tracker.name.trim() ? tracker.name.trim() : trackerId;
+            const confirmed = window.confirm(`Delete tracker "${trackerName}"? This cannot be undone.`);
+            if (!confirmed) {
+                return;
+            }
+            try {
+                const response = await fetch(`/api/trackers/${encodeURIComponent(trackerId)}`, {
+                    method: 'DELETE',
+                    headers: { 'Content-Type': 'application/json' }
+                });
+                const data = await response.json().catch(() => null);
+                if (!response.ok || !data?.success) {
+                    throw new Error(data?.error || `HTTP ${response.status}`);
+                }
+                applyTrackerMutationPayload(data);
+            } catch (error) {
+                console.warn('Failed to delete tracker:', error);
+                alert(`Failed to delete tracker: ${error.message || error}`);
+            }
+        }
+
         function renderChatTrackersPanel(trackers = []) {
             const list = chatSidebarElements.trackersList;
             const emptyState = chatSidebarElements.trackersEmpty;
@@ -5916,6 +6380,11 @@
                 const card = document.createElement('div');
                 card.className = 'chat-tracker-card';
                 card.classList.toggle('is-hidden-from-player', Boolean(tracker.hiddenFromPlayer));
+                const progressPercent = getTrackerProgressPercent(tracker);
+                if (progressPercent !== null && progressPercent > 0) {
+                    card.classList.add('chat-tracker-card--progress');
+                    card.style.setProperty('--tracker-progress-percent', `${progressPercent}%`);
+                }
 
                 const header = document.createElement('div');
                 header.className = 'chat-tracker-card__header';
@@ -5930,8 +6399,51 @@
                 valueEl.textContent = value;
                 header.appendChild(valueEl);
 
+                if (typeof tracker.id === 'string' && tracker.id.trim()) {
+                    const actions = document.createElement('div');
+                    actions.className = 'chat-tracker-card__actions';
+
+                    const editButton = document.createElement('button');
+                    editButton.type = 'button';
+                    editButton.className = 'chat-tracker-card__action chat-tracker-card__edit';
+                    editButton.textContent = '✏️';
+                    editButton.setAttribute('aria-label', `Edit tracker: ${name}`);
+                    editButton.title = `Edit tracker: ${name}`;
+                    editButton.addEventListener('click', (event) => {
+                        event.preventDefault();
+                        event.stopPropagation();
+                        openTrackerEditModal({
+                            mode: 'edit',
+                            trackerId: tracker.id
+                        });
+                    });
+                    actions.appendChild(editButton);
+
+                    const deleteButton = document.createElement('button');
+                    deleteButton.type = 'button';
+                    deleteButton.className = 'chat-tracker-card__action chat-tracker-card__delete';
+                    deleteButton.textContent = '🗑️';
+                    deleteButton.setAttribute('aria-label', `Delete tracker: ${name}`);
+                    deleteButton.title = `Delete tracker: ${name}`;
+                    deleteButton.addEventListener('click', (event) => {
+                        event.preventDefault();
+                        event.stopPropagation();
+                        deleteTrackerFromSidebar(tracker);
+                    });
+                    actions.appendChild(deleteButton);
+
+                    card.appendChild(actions);
+                }
+
                 card.appendChild(header);
                 list.appendChild(card);
+            });
+        }
+
+        if (chatSidebarElements.trackersAddButton) {
+            chatSidebarElements.trackersAddButton.addEventListener('click', (event) => {
+                event.preventDefault();
+                openTrackerEditModal({ mode: 'create' });
             });
         }
 
@@ -5941,6 +6453,22 @@
                 event.preventDefault();
                 chatTrackersShowHidden = !chatTrackersShowHidden;
                 renderChatTrackersPanel(Array.isArray(window.currentPlayerData?.trackers) ? window.currentPlayerData.trackers : []);
+            });
+        }
+
+        if (trackerEditElements.form) {
+            trackerEditElements.form.addEventListener('submit', submitTrackerEditForm);
+        }
+        if (trackerEditElements.cancel) {
+            trackerEditElements.cancel.addEventListener('click', (event) => {
+                event.preventDefault();
+                closeTrackerEditModal();
+            });
+        }
+        if (trackerEditElements.close) {
+            trackerEditElements.close.addEventListener('click', (event) => {
+                event.preventDefault();
+                closeTrackerEditModal();
             });
         }
 
@@ -7252,9 +7780,14 @@
             const queuedContainerIds = new Set();
             const visitedContainerIds = new Set();
 
+            const canUseContainerContentsForCrafting = (thing) => (
+                Boolean(thing)
+                && resolveThingBooleanFlag(thing, 'isContainer')
+                && !resolveThingBooleanFlag(thing, 'requiresCheckToOpen')
+            );
             const queueContainer = (thing) => {
                 const thingId = typeof thing?.id === 'string' ? thing.id.trim() : '';
-                if (!thingId || !resolveThingBooleanFlag(thing, 'isContainer') || queuedContainerIds.has(thingId) || visitedContainerIds.has(thingId)) {
+                if (!thingId || !canUseContainerContentsForCrafting(thing) || queuedContainerIds.has(thingId) || visitedContainerIds.has(thingId)) {
                     return;
                 }
                 queuedContainers.push(thing);
@@ -8225,6 +8758,148 @@
             });
         }
 
+        async function regenerateThingImage(thing, options = {}, finalImagePrompt = null) {
+            const cachedThing = { ...(thingDataCache.get(thing?.id) || thing) };
+            const entityId = String(cachedThing?.id || '');
+            if (!entityId) {
+                console.warn('Unable to regenerate image: missing thing identifier.');
+                return;
+            }
+
+            const context = options.context || 'general';
+            const locationId = options.locationId || null;
+            const npcId = options.npcId || null;
+            const previousImageId = cachedThing.imageId || null;
+            const placeholderAlt = cachedThing.name || 'Location item';
+
+            applyEntityImagePlaceholder('thing', entityId);
+
+            const updatedThing = {
+                ...cachedThing,
+                imageId: null,
+                imageJobId: null,
+                pendingImageJobId: null
+            };
+            thingDataCache.set(entityId, updatedThing);
+            if (thing) {
+                thing.imageId = null;
+                thing.imageJobId = null;
+                thing.pendingImageJobId = null;
+            }
+            updateLocationThingReference(entityId, (entry) => {
+                entry.imageId = null;
+                entry.imageJobId = null;
+                entry.pendingImageJobId = null;
+            });
+
+            const payload = {
+                entityType: 'thing',
+                entityId: entityId,
+                force: true
+            };
+            if (typeof finalImagePrompt === 'string' && finalImagePrompt.trim()) {
+                payload.prompt = finalImagePrompt.trim();
+            }
+            if (context) {
+                payload.context = context;
+            }
+            if (locationId) {
+                payload.locationId = locationId;
+            }
+            if (npcId) {
+                payload.npcId = npcId;
+            }
+            const clientId = window.AIRPG_CLIENT_ID || null;
+            if (clientId) {
+                payload.clientId = clientId;
+            }
+
+            try {
+                const response = await fetch('/api/images/request', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                const data = await response.json().catch(() => ({}));
+
+                if (!response.ok) {
+                    throw new Error(data?.error || `HTTP ${response.status}`);
+                }
+
+                if (data?.skipped) {
+                    thingDataCache.set(entityId, { ...cachedThing });
+                    if (thing) {
+                        thing.imageId = cachedThing?.imageId || thing.imageId || null;
+                        thing.imageJobId = cachedThing?.imageJobId || thing.imageJobId || null;
+                        thing.pendingImageJobId = cachedThing?.pendingImageJobId || null;
+                    }
+                    updateLocationThingReference(entityId, (entry) => {
+                        entry.imageId = cachedThing?.imageId || null;
+                        if ('imageJobId' in cachedThing) {
+                            entry.imageJobId = cachedThing.imageJobId;
+                        }
+                        if ('pendingImageJobId' in cachedThing) {
+                            entry.pendingImageJobId = cachedThing.pendingImageJobId || null;
+                        }
+                    });
+                    renderEntityImages('thing', entityId, {
+                        imageId: previousImageId,
+                        force: false,
+                        altText: placeholderAlt
+                    });
+                    return;
+                }
+
+                if (!data?.success && !data?.existingJob) {
+                    throw new Error(data?.error || 'Image request was not accepted');
+                }
+
+                const nextThing = {
+                    ...updatedThing,
+                    pendingImageJobId: data?.jobId || null
+                };
+                thingDataCache.set(entityId, nextThing);
+                if (thing) {
+                    thing.pendingImageJobId = data?.jobId || null;
+                    if (data?.imageId) {
+                        thing.imageId = data.imageId;
+                    }
+                }
+                updateLocationThingReference(entityId, (entry) => {
+                    entry.pendingImageJobId = data?.jobId || null;
+                });
+
+                renderEntityImages('thing', entityId, {
+                    imageId: null,
+                    force: true,
+                    altText: placeholderAlt
+                });
+            } catch (error) {
+                console.warn('Failed to regenerate image for thing:', error);
+                thingDataCache.set(entityId, { ...cachedThing });
+                if (thing) {
+                    thing.imageId = cachedThing?.imageId || thing.imageId || null;
+                    thing.imageJobId = cachedThing?.imageJobId || thing.imageJobId || null;
+                    thing.pendingImageJobId = cachedThing?.pendingImageJobId || null;
+                }
+                updateLocationThingReference(entityId, (entry) => {
+                    entry.imageId = cachedThing?.imageId || null;
+                    if ('imageJobId' in cachedThing) {
+                        entry.imageJobId = cachedThing.imageJobId;
+                    }
+                    if ('pendingImageJobId' in cachedThing) {
+                        entry.pendingImageJobId = cachedThing.pendingImageJobId || null;
+                    }
+                });
+                renderEntityImages('thing', entityId, {
+                    imageId: previousImageId,
+                    force: false,
+                    altText: placeholderAlt
+                });
+                throw error;
+            }
+        }
+
         function registerThingContextMenu(card, thing, options = {}) {
             if (!card || !thing || !thing.id) {
                 return;
@@ -8348,6 +9023,7 @@
             });
 
             let regenerateImageButton = null;
+            let regenerateImagePromptButton = null;
             const imageGenerationEnabled = runtimeConfig?.imagegen?.enabled !== false;
             if (imageGenerationEnabled) {
                 regenerateImageButton = document.createElement('button');
@@ -8355,6 +9031,12 @@
                 regenerateImageButton.className = 'entity-context-menu-item thing-card-menu-item';
                 regenerateImageButton.textContent = 'Regenerate Image';
                 menu.appendChild(regenerateImageButton);
+
+                regenerateImagePromptButton = document.createElement('button');
+                regenerateImagePromptButton.type = 'button';
+                regenerateImagePromptButton.className = 'entity-context-menu-item thing-card-menu-item';
+                regenerateImagePromptButton.textContent = 'Regenerate Image +';
+                menu.appendChild(regenerateImagePromptButton);
             }
 
             const canDrop = options.context === 'npc-inventory' || options.context === 'npc-equipment';
@@ -8551,6 +9233,18 @@
                 regenerateImageButton.addEventListener('click', async (event) => {
                     event.stopPropagation();
                     closeThingContextMenu();
+                    try {
+                        await regenerateThingImage(thingDataCache.get(thing.id) || thing, options);
+                    } catch (error) {
+                        alert(`Failed to regenerate image: ${error?.message || error}`);
+                    }
+                });
+            }
+
+            if (regenerateImagePromptButton) {
+                regenerateImagePromptButton.addEventListener('click', async (event) => {
+                    event.stopPropagation();
+                    closeThingContextMenu();
 
                     const cachedThing = { ...(thingDataCache.get(thing.id) || thing) };
                     const entityId = String(cachedThing?.id || '');
@@ -8559,125 +9253,16 @@
                         return;
                     }
 
-                    const context = options.context || 'general';
-                    const locationId = options.locationId || null;
-                    const npcId = options.npcId || null;
-                    const previousImageId = cachedThing.imageId || null;
-                    const placeholderAlt = cachedThing.name || 'Location item';
-
-                    applyEntityImagePlaceholder('thing', entityId);
-
-                    const updatedThing = {
-                        ...cachedThing,
-                        imageId: null,
-                        imageJobId: null,
-                        pendingImageJobId: null
-                    };
-                    thingDataCache.set(thing.id, updatedThing);
-                    thing.imageId = null;
-                    thing.imageJobId = null;
-                    thing.pendingImageJobId = null;
-                    updateLocationThingReference(entityId, (entry) => {
-                        entry.imageId = null;
-                        entry.imageJobId = null;
-                        entry.pendingImageJobId = null;
-                    });
-
-                    const payload = {
-                        entityType: 'thing',
-                        entityId: entityId,
-                        force: true
-                    };
-                    if (context) {
-                        payload.context = context;
-                    }
-                    if (locationId) {
-                        payload.locationId = locationId;
-                    }
-                    if (npcId) {
-                        payload.npcId = npcId;
-                    }
-                    const clientId = window.AIRPG_CLIENT_ID || null;
-                    if (clientId) {
-                        payload.clientId = clientId;
-                    }
-
                     try {
-                        const response = await fetch('/api/images/request', {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify(payload)
-                        });
-                        const data = await response.json().catch(() => ({}));
-
-                        if (!response.ok) {
-                            throw new Error(data?.error || `HTTP ${response.status}`);
-                        }
-
-                        if (data?.skipped) {
-                            thingDataCache.set(thing.id, { ...cachedThing });
-                            thing.imageId = cachedThing?.imageId || thing.imageId || null;
-                            thing.imageJobId = cachedThing?.imageJobId || thing.imageJobId || null;
-                            thing.pendingImageJobId = cachedThing?.pendingImageJobId || null;
-                            updateLocationThingReference(entityId, (entry) => {
-                                entry.imageId = cachedThing?.imageId || null;
-                                if ('imageJobId' in cachedThing) {
-                                    entry.imageJobId = cachedThing.imageJobId;
-                                }
-                                if ('pendingImageJobId' in cachedThing) {
-                                    entry.pendingImageJobId = cachedThing.pendingImageJobId || null;
-                                }
-                            });
-                            renderEntityImages('thing', entityId, {
-                                imageId: previousImageId,
-                                force: false,
-                                altText: placeholderAlt
-                            });
-                            return;
-                        }
-
-                        if (!data?.success && !data?.existingJob) {
-                            throw new Error(data?.error || 'Image request was not accepted');
-                        }
-
-                        const nextThing = {
-                            ...updatedThing,
-                            pendingImageJobId: data?.jobId || null
-                        };
-                        thingDataCache.set(thing.id, nextThing);
-                        thing.pendingImageJobId = data?.jobId || null;
-                        if (data?.imageId) {
-                            thing.imageId = data.imageId;
-                        }
-                        updateLocationThingReference(entityId, (entry) => {
-                            entry.pendingImageJobId = data?.jobId || null;
-                        });
-
-                        renderEntityImages('thing', entityId, {
-                            imageId: null,
-                            force: true,
-                            altText: placeholderAlt
+                        await openEditableImagePromptForEntity({
+                            entityType: 'thing',
+                            entityId,
+                            entityName: cachedThing.name || 'Thing',
+                            submitHandler: (prompt) => regenerateThingImage(cachedThing, options, prompt)
                         });
                     } catch (error) {
-                        console.warn('Failed to regenerate image for thing:', error);
-                        thingDataCache.set(thing.id, { ...cachedThing });
-                        thing.imageId = cachedThing?.imageId || thing.imageId || null;
-                        thing.imageJobId = cachedThing?.imageJobId || thing.imageJobId || null;
-                        thing.pendingImageJobId = cachedThing?.pendingImageJobId || null;
-                        updateLocationThingReference(entityId, (entry) => {
-                            entry.imageId = cachedThing?.imageId || null;
-                            if ('imageJobId' in cachedThing) {
-                                entry.imageJobId = cachedThing.imageJobId;
-                            }
-                            if ('pendingImageJobId' in cachedThing) {
-                                entry.pendingImageJobId = cachedThing.pendingImageJobId || null;
-                            }
-                        });
-                        renderEntityImages('thing', entityId, {
-                            imageId: previousImageId,
-                            force: false,
-                            altText: placeholderAlt
-                        });
+                        console.warn('Failed to generate editable thing image prompt:', error);
+                        alert(`Failed to generate image prompt: ${error?.message || 'Unknown error'}`);
                     }
                 });
             }
@@ -9755,6 +10340,7 @@
         const thingListViewStates = new Map();
         const thingListViewPreferencePersistVersions = new Map();
         const thingListRenderedOrderIds = new Map();
+        const thingListAiSearchStates = new Map();
         syncThingListViewStatesFromPlayer(window.currentPlayerData, { replace: true });
         const npcInventoryShowAllRadio = document.getElementById('npcInventoryShowAll');
         const npcInventoryEquippedOnlyRadio = document.getElementById('npcInventoryEquippedOnly');
@@ -9888,6 +10474,7 @@
             requestToken: 0,
             selection: null,
             selectedNames: new Set(),
+            declinedNames: new Set(),
             level: null,
             requiredSelections: 0,
             optionsPerLevel: 0
@@ -9919,6 +10506,7 @@
         const locationSummonThingButton = document.getElementById('locationSummonThingButton');
         const locationImageUploadButton = document.getElementById('locationImageUploadButton');
         const locationImageRegenerateButton = document.getElementById('locationImageRegenerateButton');
+        const locationImageRegeneratePromptButton = document.getElementById('locationImageRegeneratePromptButton');
         const mapLocationContextMenu = document.getElementById('mapLocationContextMenu');
         const worldMapReloadButton = document.getElementById('worldMapReloadButton');
         const favoritesList = document.getElementById('favoritesList');
@@ -9932,6 +10520,7 @@
         const mapLocationMenuSummonThingButton = document.getElementById('mapLocationMenuSummonThingButton');
         const mapLocationMenuUploadImageButton = document.getElementById('mapLocationMenuUploadImageButton');
         const mapLocationMenuRegenerateImageButton = document.getElementById('mapLocationMenuRegenerateImageButton');
+        const mapLocationMenuRegeneratePromptButton = document.getElementById('mapLocationMenuRegeneratePromptButton');
         const mapLocationMenuDeleteButton = document.getElementById('mapLocationMenuDeleteButton');
         const entityImageUploadModal = document.getElementById('entityImageUploadModal');
         const entityImageUploadForm = document.getElementById('entityImageUploadForm');
@@ -9943,6 +10532,15 @@
         const entityImageUploadSubmitBtn = document.getElementById('entityImageUploadSubmitBtn');
         const entityImageUploadCancelBtn = document.getElementById('entityImageUploadCancelBtn');
         const entityImageUploadCloseBtn = document.getElementById('entityImageUploadCloseBtn');
+        const entityImagePromptModal = document.getElementById('entityImagePromptModal');
+        const entityImagePromptForm = document.getElementById('entityImagePromptForm');
+        const entityImagePromptTitle = document.getElementById('entityImagePromptTitle');
+        const entityImagePromptDescription = document.getElementById('entityImagePromptDescription');
+        const entityImagePromptTextarea = document.getElementById('entityImagePromptTextarea');
+        const entityImagePromptStatus = document.getElementById('entityImagePromptStatus');
+        const entityImagePromptSubmitBtn = document.getElementById('entityImagePromptSubmitBtn');
+        const entityImagePromptCancelBtn = document.getElementById('entityImagePromptCancelBtn');
+        const entityImagePromptCloseBtn = document.getElementById('entityImagePromptCloseBtn');
         const setLastSeenModal = document.getElementById('setLastSeenModal');
         const setLastSeenForm = document.getElementById('setLastSeenForm');
         const setLastSeenLocationName = document.getElementById('setLastSeenLocationName');
@@ -10430,6 +11028,13 @@
             entityId: '',
             entityName: ''
         };
+        let entityImagePromptState = {
+            entityType: '',
+            entityId: '',
+            entityName: '',
+            submitHandler: null,
+            submitting: false
+        };
         let setLastSeenSubmitting = false;
 
         function clearLocationMenuContext() {
@@ -10757,6 +11362,9 @@
             });
             if (mapLocationMenuRegenerateImageButton) {
                 mapLocationMenuRegenerateImageButton.hidden = isStub;
+            }
+            if (mapLocationMenuRegeneratePromptButton) {
+                mapLocationMenuRegeneratePromptButton.hidden = isStub;
             }
             if (mapLocationMenuDeleteButton) {
                 mapLocationMenuDeleteButton.hidden = isStub;
@@ -12599,6 +13207,7 @@
             if (moduleWorkbenchInventoryFilterInput) {
                 moduleWorkbenchInventoryFilterInput.value = '';
             }
+            resetThingListAiSearch('moduleWorkbenchInventory');
             setModuleWorkbenchStatus('');
             renderModuleWorkbenchSlots();
             renderModuleWorkbenchInventory();
@@ -12627,6 +13236,7 @@
                 draggedModuleId: null,
                 busy: false
             };
+            resetThingListAiSearch('moduleWorkbenchInventory');
             closeThingListFilterPopoverForPanel(moduleWorkbenchInventoryPanel);
             closeThingListSortPopoverForPanel(moduleWorkbenchInventoryPanel);
             closeThingListViewPopoverForPanel(moduleWorkbenchInventoryPanel);
@@ -15426,6 +16036,7 @@
             if (npcInventoryFilterInput) {
                 npcInventoryFilterInput.value = '';
             }
+            resetThingListAiSearch('npcInventory');
             if (npcInventoryShowAllRadio) {
                 npcInventoryShowAllRadio.checked = true;
             }
@@ -17717,6 +18328,187 @@
             });
         }
 
+        function setEntityImagePromptStatus(message = '', type = null) {
+            if (!entityImagePromptStatus) {
+                return;
+            }
+            entityImagePromptStatus.textContent = message || '';
+            entityImagePromptStatus.classList.remove('is-error', 'is-success');
+            if (type === 'error') {
+                entityImagePromptStatus.classList.add('is-error');
+            } else if (type === 'success') {
+                entityImagePromptStatus.classList.add('is-success');
+            }
+            if (message) {
+                entityImagePromptStatus.removeAttribute('hidden');
+            } else {
+                entityImagePromptStatus.setAttribute('hidden', '');
+            }
+        }
+
+        function setEntityImagePromptControlsEnabled(enabled) {
+            const isEnabled = enabled !== false;
+            if (entityImagePromptTextarea) {
+                entityImagePromptTextarea.disabled = !isEnabled;
+            }
+            if (entityImagePromptSubmitBtn) {
+                entityImagePromptSubmitBtn.disabled = !isEnabled;
+            }
+            if (entityImagePromptCancelBtn) {
+                entityImagePromptCancelBtn.disabled = !isEnabled;
+            }
+            if (entityImagePromptCloseBtn) {
+                entityImagePromptCloseBtn.disabled = !isEnabled;
+            }
+        }
+
+        function closeEntityImagePromptModal() {
+            if (!entityImagePromptModal) {
+                return;
+            }
+            entityImagePromptModal.setAttribute('hidden', '');
+            entityImagePromptModal.setAttribute('aria-hidden', 'true');
+            entityImagePromptState = {
+                entityType: '',
+                entityId: '',
+                entityName: '',
+                submitHandler: null,
+                submitting: false
+            };
+            if (entityImagePromptTextarea) {
+                entityImagePromptTextarea.value = '';
+            }
+            setEntityImagePromptStatus('');
+            setEntityImagePromptControlsEnabled(true);
+            const anyOpenModal = document.querySelector('.modal[aria-hidden="false"]');
+            if (!anyOpenModal) {
+                document.body.classList.remove('modal-open');
+            }
+        }
+
+        function openEntityImagePromptModal({ entityType, entityId, entityName, prompt, submitHandler }) {
+            const normalizedEntityType = typeof entityType === 'string' ? entityType.trim().toLowerCase() : '';
+            const normalizedEntityId = typeof entityId === 'string' ? entityId.trim() : '';
+            if (!entityImagePromptModal || !normalizedEntityType || !normalizedEntityId) {
+                throw new Error('Image prompt target is missing.');
+            }
+            if (typeof prompt !== 'string' || !prompt.trim()) {
+                throw new Error('Generated image prompt is empty.');
+            }
+            if (typeof submitHandler !== 'function') {
+                throw new Error('Image prompt submit handler is missing.');
+            }
+
+            const name = typeof entityName === 'string' && entityName.trim()
+                ? entityName.trim()
+                : normalizedEntityId;
+            entityImagePromptState = {
+                entityType: normalizedEntityType,
+                entityId: normalizedEntityId,
+                entityName: name,
+                submitHandler,
+                submitting: false
+            };
+
+            if (entityImagePromptTitle) {
+                entityImagePromptTitle.textContent = 'Regenerate Image +';
+            }
+            if (entityImagePromptDescription) {
+                entityImagePromptDescription.textContent = `Edit the generated prompt for ${name}, then send it to the image generator.`;
+            }
+            if (entityImagePromptTextarea) {
+                entityImagePromptTextarea.value = prompt.trim();
+            }
+            setEntityImagePromptStatus('');
+            setEntityImagePromptControlsEnabled(true);
+            entityImagePromptModal.removeAttribute('hidden');
+            entityImagePromptModal.setAttribute('aria-hidden', 'false');
+            document.body.classList.add('modal-open');
+            scrollModalToTop(entityImagePromptModal);
+            entityImagePromptTextarea?.focus?.();
+            entityImagePromptTextarea?.select?.();
+        }
+
+        async function openEditableImagePromptForEntity({ entityType, entityId, entityName, submitHandler }) {
+            const normalizedEntityType = typeof entityType === 'string' ? entityType.trim().toLowerCase() : '';
+            const normalizedEntityId = typeof entityId === 'string' ? entityId.trim() : '';
+            if (!normalizedEntityType || !normalizedEntityId) {
+                throw new Error('Image prompt target is missing.');
+            }
+            const name = typeof entityName === 'string' && entityName.trim()
+                ? entityName.trim()
+                : normalizedEntityId;
+            let overlayVisible = false;
+            try {
+                showLocationOverlay(`Generating image prompt for ${name}...`);
+                overlayVisible = true;
+            } catch (_) {
+                // Overlay is optional for this flow.
+            }
+
+            try {
+                const response = await fetch('/api/images/prompt', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        entityType: normalizedEntityType,
+                        entityId: normalizedEntityId
+                    })
+                });
+                const data = await response.json().catch(() => ({}));
+                if (!response.ok || !data?.success) {
+                    throw new Error(data?.error || `HTTP ${response.status}`);
+                }
+                openEntityImagePromptModal({
+                    entityType: data.entityType || normalizedEntityType,
+                    entityId: data.entityId || normalizedEntityId,
+                    entityName: name,
+                    prompt: data.prompt || '',
+                    submitHandler
+                });
+            } finally {
+                if (overlayVisible) {
+                    hideLocationOverlay();
+                }
+            }
+        }
+
+        async function submitEntityImagePrompt(event) {
+            if (event) {
+                event.preventDefault();
+            }
+            if (entityImagePromptState.submitting) {
+                return;
+            }
+            const prompt = typeof entityImagePromptTextarea?.value === 'string'
+                ? entityImagePromptTextarea.value.trim()
+                : '';
+            if (!prompt) {
+                setEntityImagePromptStatus('Prompt cannot be empty.', 'error');
+                return;
+            }
+            const submitHandler = entityImagePromptState.submitHandler;
+            if (typeof submitHandler !== 'function') {
+                setEntityImagePromptStatus('Image prompt submit handler is unavailable.', 'error');
+                return;
+            }
+
+            entityImagePromptState.submitting = true;
+            setEntityImagePromptControlsEnabled(false);
+            setEntityImagePromptStatus('Sending prompt...', null);
+            try {
+                await submitHandler(prompt);
+                setEntityImagePromptStatus('Image prompt sent.', 'success');
+                closeEntityImagePromptModal();
+            } catch (error) {
+                console.warn('Failed to submit image prompt:', error);
+                setEntityImagePromptStatus(`Failed to send prompt: ${error?.message || 'Unknown error'}`, 'error');
+            } finally {
+                entityImagePromptState.submitting = false;
+                setEntityImagePromptControlsEnabled(true);
+            }
+        }
+
         async function submitAddNpc(event) {
             if (event) {
                 event.preventDefault();
@@ -19055,9 +19847,11 @@
                 closeCraftingModal();
             });
         }
-        if (craftingInventoryFilterInput) {
-            craftingInventoryFilterInput.addEventListener('input', () => renderCraftingInventory());
-        }
+        ensureThingListAiSearchControls({
+            panelKey: 'craftingInventory',
+            searchInput: craftingInventoryFilterInput,
+            rerender: () => renderCraftingInventory()
+        });
         const handleCraftingNotesCtrlEnter = (event) => {
             if (!craftingIsOpen) {
                 return;
@@ -19104,9 +19898,11 @@
                 closeModuleWorkbenchModal();
             });
         }
-        if (moduleWorkbenchInventoryFilterInput) {
-            moduleWorkbenchInventoryFilterInput.addEventListener('input', () => renderModuleWorkbenchInventory());
-        }
+        ensureThingListAiSearchControls({
+            panelKey: 'moduleWorkbenchInventory',
+            searchInput: moduleWorkbenchInventoryFilterInput,
+            rerender: () => renderModuleWorkbenchInventory()
+        });
 
         if (salvageIntentSubmitBtn) {
             salvageIntentSubmitBtn.addEventListener('click', () => submitSalvageIntent());
@@ -19756,11 +20552,11 @@
             rerender: () => invokeLocationThingCollectionRerender()
         });
 
-        if (npcInventoryFilterInput) {
-            npcInventoryFilterInput.addEventListener('input', () => {
-                renderNpcInventory(currentNpcInventory);
-            });
-        }
+        ensureThingListAiSearchControls({
+            panelKey: 'npcInventory',
+            searchInput: npcInventoryFilterInput,
+            rerender: () => renderNpcInventory(currentNpcInventory)
+        });
 
         if (npcInventorySlotFilter) {
             npcInventorySlotFilter.addEventListener('change', () => {
@@ -19768,11 +20564,11 @@
             });
         }
 
-        if (containerPlayerInventoryFilterInput) {
-            containerPlayerInventoryFilterInput.addEventListener('input', () => {
-                renderThingContainerModal();
-            });
-        }
+        ensureThingListAiSearchControls({
+            panelKey: 'containerPlayerInventory',
+            searchInput: containerPlayerInventoryFilterInput,
+            rerender: () => renderThingContainerModal()
+        });
 
         if (containerPlayerInventorySlotFilter) {
             containerPlayerInventorySlotFilter.addEventListener('change', () => {
@@ -19780,11 +20576,11 @@
             });
         }
 
-        if (containerContentsFilterInput) {
-            containerContentsFilterInput.addEventListener('input', () => {
-                renderThingContainerModal();
-            });
-        }
+        ensureThingListAiSearchControls({
+            panelKey: 'containerContents',
+            searchInput: containerContentsFilterInput,
+            rerender: () => renderThingContainerModal()
+        });
 
         if (containerContentsSlotFilter) {
             containerContentsSlotFilter.addEventListener('change', () => {
@@ -19792,11 +20588,11 @@
             });
         }
 
-        if (barterPlayerFilterInput) {
-            barterPlayerFilterInput.addEventListener('input', () => {
-                renderBarterModal();
-            });
-        }
+        ensureThingListAiSearchControls({
+            panelKey: 'barterPlayerInventory',
+            searchInput: barterPlayerFilterInput,
+            rerender: () => renderBarterModal()
+        });
 
         if (barterPlayerSlotFilter) {
             barterPlayerSlotFilter.addEventListener('change', () => {
@@ -19810,11 +20606,11 @@
             });
         }
 
-        if (barterMerchantFilterInput) {
-            barterMerchantFilterInput.addEventListener('input', () => {
-                renderBarterModal();
-            });
-        }
+        ensureThingListAiSearchControls({
+            panelKey: 'barterMerchantInventory',
+            searchInput: barterMerchantFilterInput,
+            rerender: () => renderBarterModal()
+        });
 
         if (barterMerchantSlotFilter) {
             barterMerchantSlotFilter.addEventListener('change', () => {
@@ -19828,11 +20624,11 @@
             });
         }
 
-        if (locationSceneryFilterInput) {
-            locationSceneryFilterInput.addEventListener('input', () => {
-                invokeLocationThingCollectionRerender();
-            });
-        }
+        ensureThingListAiSearchControls({
+            panelKey: 'locationScenery',
+            searchInput: locationSceneryFilterInput,
+            rerender: () => invokeLocationThingCollectionRerender()
+        });
 
         if (locationScenerySlotFilter) {
             locationScenerySlotFilter.addEventListener('change', () => {
@@ -19851,11 +20647,11 @@
             });
         });
 
-        if (locationItemsFilterInput) {
-            locationItemsFilterInput.addEventListener('input', () => {
-                invokeLocationThingCollectionRerender();
-            });
-        }
+        ensureThingListAiSearchControls({
+            panelKey: 'locationItems',
+            searchInput: locationItemsFilterInput,
+            rerender: () => invokeLocationThingCollectionRerender()
+        });
 
         if (locationItemsSlotFilter) {
             locationItemsSlotFilter.addEventListener('change', () => {
@@ -21375,18 +22171,342 @@
             return slotEntries;
         }
 
+        function getThingListAiSearchState(panelKey, { searchInput = null } = {}) {
+            const key = typeof panelKey === 'string' && panelKey.trim()
+                ? panelKey.trim()
+                : (typeof searchInput?.id === 'string' && searchInput.id ? searchInput.id : '');
+            if (!key) {
+                return null;
+            }
+            if (!thingListAiSearchStates.has(key)) {
+                thingListAiSearchStates.set(key, {
+                    panelKey: key,
+                    searchInput: null,
+                    checkbox: null,
+                    status: null,
+                    enabled: false,
+                    pending: false,
+                    dirty: false,
+                    confirmedCriteria: '',
+                    matchedIds: new Set(),
+                    resultNames: [],
+                    unmatchedNames: [],
+                    errorMessage: '',
+                    requestSerial: 0,
+                    items: [],
+                    itemsSignature: '',
+                    rerender: null,
+                    inputBound: false
+                });
+            }
+            const state = thingListAiSearchStates.get(key);
+            if (searchInput) {
+                state.searchInput = searchInput;
+            }
+            return state;
+        }
+
+        function normalizeThingListAiSearchValue(value) {
+            if (value === null || value === undefined) {
+                return '';
+            }
+            if (typeof value === 'string') {
+                return value.trim();
+            }
+            if (typeof value === 'number' || typeof value === 'boolean') {
+                return String(value).trim();
+            }
+            try {
+                return JSON.stringify(value);
+            } catch (_) {
+                return String(value).trim();
+            }
+        }
+
+        function buildThingListAiSearchPromptItem(item) {
+            const slotInfo = getThingSlotInfo(item);
+            const descriptionParts = [
+                normalizeThingListAiSearchValue(item?.shortDescription),
+                normalizeThingListAiSearchValue(item?.description)
+            ].filter(Boolean);
+            return {
+                id: normalizeThingListAiSearchValue(item?.id),
+                name: normalizeThingListAiSearchValue(item?.name),
+                description: descriptionParts.join('\n'),
+                level: normalizeThingListAiSearchValue(item?.level ?? item?.relativeLevel),
+                quality: normalizeThingListAiSearchValue(item?.rarity ?? item?.quality ?? item?.metadata?.quality),
+                quantity: normalizeThingListAiSearchValue(item?.count ?? item?.quantity),
+                equipmentSlot: normalizeThingListAiSearchValue(slotInfo?.slotLabel || slotInfo?.rawSlot || slotInfo?.equippedSlot)
+            };
+        }
+
+        function updateThingListAiSearchStatus(state) {
+            if (!state?.status) {
+                return;
+            }
+            state.status.classList.remove('is-error', 'is-pending');
+            if (!state.enabled) {
+                state.status.textContent = '';
+                state.status.hidden = true;
+                return;
+            }
+            if (state.pending) {
+                state.status.textContent = 'Searching...';
+                state.status.classList.add('is-pending');
+                state.status.hidden = false;
+                return;
+            }
+            if (state.errorMessage) {
+                state.status.textContent = state.errorMessage;
+                state.status.classList.add('is-error');
+                state.status.hidden = false;
+                return;
+            }
+            if (state.dirty) {
+                state.status.textContent = state.searchInput?.value?.trim()
+                    ? 'Press Enter to search'
+                    : '';
+                state.status.hidden = !state.status.textContent;
+                return;
+            }
+            if (state.confirmedCriteria) {
+                const count = state.matchedIds instanceof Set ? state.matchedIds.size : 0;
+                state.status.textContent = `${count} AI ${count === 1 ? 'match' : 'matches'}`;
+                state.status.hidden = false;
+                return;
+            }
+            state.status.textContent = state.searchInput?.value?.trim()
+                ? 'Press Enter to search'
+                : '';
+            state.status.hidden = !state.status.textContent;
+        }
+
+        function clearThingListAiSearchResults(state, { keepEnabled = true } = {}) {
+            if (!state) {
+                return;
+            }
+            state.requestSerial += 1;
+            state.pending = false;
+            state.dirty = false;
+            state.confirmedCriteria = '';
+            state.matchedIds = new Set();
+            state.resultNames = [];
+            state.unmatchedNames = [];
+            state.errorMessage = '';
+            if (!keepEnabled) {
+                state.enabled = false;
+                if (state.checkbox) {
+                    state.checkbox.checked = false;
+                }
+            }
+            updateThingListAiSearchStatus(state);
+        }
+
+        function resetThingListAiSearch(panelKey) {
+            const state = getThingListAiSearchState(panelKey);
+            clearThingListAiSearchResults(state, { keepEnabled: false });
+        }
+
+        function findThingListAiSearchInsertAnchor(searchInput) {
+            if (!(searchInput instanceof HTMLElement)) {
+                return null;
+            }
+            return searchInput.closest(
+                '.npc-selection-filter, .npc-inventory-filter-search-wrapper, .npc-inventory-filter-input-wrapper, .crafting-inventory-filter'
+            ) || searchInput;
+        }
+
+        function ensureThingListAiSearchControls({ panelKey, searchInput = null, rerender = null } = {}) {
+            const state = getThingListAiSearchState(panelKey, { searchInput });
+            if (!state || !(searchInput instanceof HTMLElement)) {
+                return state;
+            }
+            if (typeof rerender === 'function') {
+                state.rerender = rerender;
+            }
+
+            if (!state.checkbox) {
+                const label = document.createElement('label');
+                label.className = 'thing-list-ai-search-toggle';
+                const checkbox = document.createElement('input');
+                checkbox.type = 'checkbox';
+                checkbox.className = 'thing-list-ai-search-checkbox';
+                checkbox.setAttribute('aria-label', 'Use AI search');
+                const text = document.createElement('span');
+                text.textContent = 'Use AI search (enter to confirm criteria)';
+                label.appendChild(checkbox);
+                label.appendChild(text);
+
+                const status = document.createElement('span');
+                status.className = 'thing-list-ai-search-status';
+                status.setAttribute('aria-live', 'polite');
+                status.hidden = true;
+
+                const anchor = findThingListAiSearchInsertAnchor(searchInput);
+                if (anchor?.parentNode) {
+                    anchor.parentNode.insertBefore(label, anchor.nextSibling);
+                    label.parentNode.insertBefore(status, label.nextSibling);
+                }
+
+                checkbox.addEventListener('change', () => {
+                    state.requestSerial += 1;
+                    state.enabled = checkbox.checked;
+                    state.pending = false;
+                    state.errorMessage = '';
+                    state.dirty = Boolean(state.enabled && searchInput.value.trim());
+                    state.confirmedCriteria = '';
+                    state.matchedIds = new Set();
+                    state.resultNames = [];
+                    state.unmatchedNames = [];
+                    updateThingListAiSearchStatus(state);
+                    state.rerender?.();
+                });
+
+                state.checkbox = checkbox;
+                state.status = status;
+            }
+
+            if (!state.inputBound) {
+                searchInput.addEventListener('input', () => {
+                    if (state.enabled) {
+                        state.dirty = true;
+                        state.errorMessage = '';
+                        updateThingListAiSearchStatus(state);
+                        return;
+                    }
+                    state.rerender?.();
+                });
+                searchInput.addEventListener('keydown', (event) => {
+                    if (!state.enabled || event.key !== 'Enter' || event.isComposing) {
+                        return;
+                    }
+                    event.preventDefault();
+                    runThingListAiSearch(state).catch(error => {
+                        console.warn('AI item search failed:', error);
+                    });
+                });
+                state.inputBound = true;
+            }
+
+            return state;
+        }
+
+        function syncThingListAiSearchStateForRender(state, items) {
+            if (!state) {
+                return;
+            }
+            const safeItems = Array.isArray(items) ? items : [];
+            const signature = safeItems
+                .map(item => normalizeThingListAiSearchValue(item?.id))
+                .join('\u001f');
+            if (state.itemsSignature && state.itemsSignature !== signature && state.enabled) {
+                state.confirmedCriteria = '';
+                state.matchedIds = new Set();
+                state.resultNames = [];
+                state.unmatchedNames = [];
+                state.errorMessage = '';
+                state.dirty = Boolean(state.searchInput?.value?.trim());
+            }
+            state.itemsSignature = signature;
+            state.items = safeItems;
+            updateThingListAiSearchStatus(state);
+        }
+
+        async function runThingListAiSearch(state) {
+            if (!state?.enabled) {
+                return;
+            }
+            const criteria = state.searchInput?.value?.trim() || '';
+            const requestSerial = state.requestSerial + 1;
+            state.requestSerial = requestSerial;
+            state.errorMessage = '';
+
+            if (!criteria) {
+                clearThingListAiSearchResults(state, { keepEnabled: true });
+                state.rerender?.();
+                return;
+            }
+
+            const items = Array.isArray(state.items)
+                ? state.items.map(buildThingListAiSearchPromptItem).filter(item => item.id && item.name)
+                : [];
+            state.pending = true;
+            state.dirty = false;
+            updateThingListAiSearchStatus(state);
+
+            try {
+                const response = await fetch('/api/things/ai-search', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        criteria,
+                        mode: 'strict',
+                        items
+                    })
+                });
+                const payload = await response.json().catch(() => ({}));
+                if (!response.ok || !payload?.success) {
+                    throw new Error(payload?.error || `Request failed with status ${response.status}`);
+                }
+                if (state.requestSerial !== requestSerial) {
+                    return;
+                }
+                if (!state.enabled) {
+                    return;
+                }
+                if ((state.searchInput?.value?.trim() || '') !== criteria) {
+                    state.pending = false;
+                    state.dirty = true;
+                    updateThingListAiSearchStatus(state);
+                    return;
+                }
+                state.pending = false;
+                state.errorMessage = '';
+                state.confirmedCriteria = criteria;
+                state.resultNames = Array.isArray(payload.resultNames) ? payload.resultNames : [];
+                state.unmatchedNames = Array.isArray(payload.unmatchedNames) ? payload.unmatchedNames : [];
+                state.matchedIds = new Set(
+                    Array.isArray(payload.matchedIds)
+                        ? payload.matchedIds.filter(id => typeof id === 'string' && id.trim())
+                        : []
+                );
+                state.dirty = false;
+                updateThingListAiSearchStatus(state);
+                state.rerender?.();
+            } catch (error) {
+                if (state.requestSerial !== requestSerial) {
+                    return;
+                }
+                state.pending = false;
+                state.errorMessage = `AI search failed: ${error?.message || error}`;
+                updateThingListAiSearchStatus(state);
+                throw error;
+            }
+        }
+
         function getThingListFilterState({
             searchInput = null,
             slotFilter = null,
             showAllRadio = null,
             equippedOnlyRadio = null,
             equippableOnlyRadio = null,
-            nonEquippableOnlyRadio = null
+            nonEquippableOnlyRadio = null,
+            aiSearchState = null
         } = {}) {
+            const aiSearchEnabled = Boolean(aiSearchState?.enabled);
             return {
                 searchText: typeof searchInput?.value === 'string'
                     ? searchInput.value.trim().toLowerCase()
                     : '',
+                aiSearch: aiSearchEnabled
+                    ? {
+                        enabled: true,
+                        confirmedCriteria: aiSearchState.confirmedCriteria || '',
+                        matchedIds: aiSearchState.matchedIds instanceof Set
+                            ? aiSearchState.matchedIds
+                            : new Set()
+                    }
+                    : null,
                 slotFilterValue: typeof slotFilter?.value === 'string'
                     ? slotFilter.value.trim().toLowerCase()
                     : '',
@@ -21538,6 +22658,14 @@
                     if (filters.nonEquippableOnlyActive && slotInfo.canModifyEquipment) {
                         return false;
                     }
+                }
+
+                if (filters.aiSearch?.enabled) {
+                    if (!filters.aiSearch.confirmedCriteria) {
+                        return true;
+                    }
+                    const itemId = typeof item?.id === 'string' ? item.id.trim() : '';
+                    return Boolean(itemId && filters.aiSearch.matchedIds?.has(itemId));
                 }
 
                 if (!filters.searchText) {
@@ -21951,19 +23079,23 @@
             syncThingListSortOptions(sortShell, panelKey);
             const sortedItems = applyThingCollectionSort(safeItems, { panelKey });
             syncThingSlotFilterOptions(slotFilter, sortedItems, { wrapper: slotFilterWrapper });
+            const aiSearchState = getThingListAiSearchState(panelKey, { searchInput });
+            syncThingListAiSearchStateForRender(aiSearchState, sortedItems);
             const filters = getThingListFilterState({
                 searchInput,
                 slotFilter,
                 showAllRadio,
                 equippedOnlyRadio,
                 equippableOnlyRadio,
-                nonEquippableOnlyRadio
+                nonEquippableOnlyRadio,
+                aiSearchState
             });
             const filteredItems = filterThingCollection(sortedItems, filters, { enableEquipmentFilters });
             const applyEquippableFilter = enableEquipmentFilters
                 ? !(filters.equippableOnlyActive && filters.nonEquippableOnlyActive)
                 : false;
-            const filtersApplied = Boolean(filters.searchText)
+            const aiSearchApplied = Boolean(filters.aiSearch?.enabled && filters.aiSearch.confirmedCriteria);
+            const filtersApplied = (filters.aiSearch?.enabled ? aiSearchApplied : Boolean(filters.searchText))
                 || Boolean(filters.slotFilterValue)
                 || (enableEquipmentFilters && (
                     filters.equippedOnlyActive
@@ -22169,7 +23301,11 @@
                 }
 
                 if (updatedCharacter?.id && craftingIsOpen && window.currentPlayerData?.id === updatedCharacter.id) {
-                    const refreshedCraftingItems = buildCraftingAvailableItems(updatedInventory);
+                    const refreshedInventoryContainerContents = await fetchContainedThingDetailsForContainers(updatedInventory);
+                    const refreshedPlayerItems = refreshedInventoryContainerContents.length
+                        ? updatedInventory.concat(refreshedInventoryContainerContents)
+                        : updatedInventory;
+                    const refreshedCraftingItems = buildCraftingAvailableItems(refreshedPlayerItems);
                     craftingInventoryAllItems = refreshedCraftingItems;
                     renderCraftingInventory(refreshedCraftingItems);
                 }
@@ -23214,6 +24350,8 @@
             barterMerchantCart = new Map();
             barterSessionLoading = true;
             barterRequestInFlight = true;
+            resetThingListAiSearch('barterPlayerInventory');
+            resetThingListAiSearch('barterMerchantInventory');
             setBarterStatus('Loading trade prices...');
             barterModal.removeAttribute('hidden');
             barterModal.setAttribute('aria-hidden', 'false');
@@ -23296,6 +24434,8 @@
             barterRequestInFlight = false;
             closeBarterQuantityModal(null);
             closeBarterCurrencyConfirmModal(false);
+            resetThingListAiSearch('barterPlayerInventory');
+            resetThingListAiSearch('barterMerchantInventory');
             currentBarterDragState = null;
             clearBarterDropHighlights();
             setBarterStatus('');
@@ -24135,6 +25275,8 @@
             currentThingContainerVisiblePlayerInventory = [];
             thingContainerContentsLoading = true;
             thingContainerContentsGenerating = thingHasPendingGeneratedContainerContents(thing);
+            resetThingListAiSearch('containerPlayerInventory');
+            resetThingListAiSearch('containerContents');
 
             showThingContainerShell(thing?.name || 'Container');
             renderThingContainerModal();
@@ -24379,6 +25521,8 @@
             closeThingListFilterPopoverForPanel(containerContentsPanel);
             closeThingListSortPopoverForPanel(containerContentsPanel);
             closeThingListViewPopoverForPanel(containerContentsPanel);
+            resetThingListAiSearch('containerPlayerInventory');
+            resetThingListAiSearch('containerContents');
             if (containerPlayerInventoryGrid) {
                 containerPlayerInventoryGrid.innerHTML = '';
             }
@@ -24873,6 +26017,7 @@
             if (npcInventoryFilterInput) {
                 npcInventoryFilterInput.value = '';
             }
+            resetThingListAiSearch('npcInventory');
             if (npcInventorySlotFilter) {
                 npcInventorySlotFilter.value = '';
             }
@@ -24928,7 +26073,7 @@
                 sourceThing = thingDataCache.get(thingId);
             }
             const targetType = mode === 'craft' ? 'item' : null;
-            openCraftingModal({ mode, sourceThing, targetType });
+            return openCraftingModal({ mode, sourceThing, targetType });
         }
 
         function attemptSalvageFromBadge(hostElement) {
@@ -25124,7 +26269,7 @@
             await submitSalvageRequest({ thingId, thing, mode, notes, noProse: Boolean(noProse) });
         }
 
-        function openCraftingModal({ mode = 'craft', sourceThing = null, targetType = null } = {}) {
+        async function openCraftingModal({ mode = 'craft', sourceThing = null, targetType = null } = {}) {
             if (!craftingModal || !craftingModalBackdrop) {
                 return;
             }
@@ -25155,13 +26300,18 @@
                 ? getLatestPlayerData()
                 : (window.currentPlayerData || null);
             const inventoryItems = Array.isArray(playerData?.inventory) ? playerData.inventory : [];
-            const availableCraftingItems = buildCraftingAvailableItems(inventoryItems, {
+            const inventoryContainerContents = await fetchContainedThingDetailsForContainers(inventoryItems);
+            const availablePlayerItems = inventoryContainerContents.length
+                ? inventoryItems.concat(inventoryContainerContents)
+                : inventoryItems;
+            const availableCraftingItems = buildCraftingAvailableItems(availablePlayerItems, {
                 includeLocationSources: currentCraftingMode !== 'modify-location'
             });
 
             if (craftingInventoryFilterInput) {
                 craftingInventoryFilterInput.value = '';
             }
+            resetThingListAiSearch('craftingInventory');
             if (craftingInventorySlotFilter) {
                 craftingInventorySlotFilter.value = '';
             }
@@ -25242,6 +26392,7 @@
             if (craftingInventoryFilterInput) {
                 craftingInventoryFilterInput.value = '';
             }
+            resetThingListAiSearch('craftingInventory');
             if (craftingInventorySlotFilter) {
                 craftingInventorySlotFilter.value = '';
             }
@@ -27025,6 +28176,8 @@
                     }
                 } else if (tabName === 'world-map') {
                     window.loadWorldMap?.();
+                } else if (tabName === 'relationships') {
+                    window.loadRelationshipGraph?.();
                 } else if (tabName === 'favorites') {
                     requestFavoriteLocationsRefresh();
                 } else if (tabName === 'party') {
@@ -27046,6 +28199,8 @@
                     if (button.classList.contains('active')) {
                         if (tabName === 'world-map') {
                             window.loadWorldMap?.();
+                        } else if (tabName === 'relationships') {
+                            window.loadRelationshipGraph?.();
                         } else if (tabName === 'favorites') {
                             requestFavoriteLocationsRefresh();
                         }
@@ -27686,6 +28841,107 @@
                 }
             }
 
+            async function regenerateCharacterImage(npc, finalImagePrompt = null) {
+                const latestNpc = { ...(npcDataCache.get(npc?.id) || npc) };
+                const npcId = String(latestNpc?.id || '');
+                if (!npcId) {
+                    console.warn('Unable to regenerate portrait: character identifier missing.');
+                    return;
+                }
+
+                const entityType = latestNpc.isNPC ? 'npc' : 'player';
+                const previousImageId = latestNpc.imageId || null;
+                const placeholderAlt = latestNpc.name || 'Character portrait';
+
+                applyEntityImagePlaceholder(entityType, npcId);
+
+                const baseNpcRecord = {
+                    ...latestNpc,
+                    imageId: null,
+                    pendingImageJobId: null
+                };
+                npcDataCache.set(npcId, baseNpcRecord);
+                if (!latestNpc.isNPC) {
+                    window.currentPlayerData = {
+                        ...(window.currentPlayerData || {}),
+                        imageId: null
+                    };
+                }
+
+                const payload = {
+                    entityType,
+                    entityId: npcId,
+                    force: true
+                };
+                if (typeof finalImagePrompt === 'string' && finalImagePrompt.trim()) {
+                    payload.prompt = finalImagePrompt.trim();
+                }
+                const clientId = window.AIRPG_CLIENT_ID || null;
+                if (clientId) {
+                    payload.clientId = clientId;
+                }
+
+                try {
+                    const response = await fetch('/api/images/request', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload)
+                    });
+                    const data = await response.json().catch(() => ({}));
+
+                    if (!response.ok) {
+                        throw new Error(data?.error || `HTTP ${response.status}`);
+                    }
+
+                    if (data?.skipped) {
+                        npcDataCache.set(npcId, { ...latestNpc });
+                        if (!latestNpc.isNPC) {
+                            window.currentPlayerData = {
+                                ...(window.currentPlayerData || {}),
+                                imageId: previousImageId || null
+                            };
+                        }
+                        renderEntityImages(entityType, npcId, {
+                            imageId: previousImageId,
+                            force: false,
+                            altText: placeholderAlt
+                        });
+                        return;
+                    }
+
+                    if (!data?.success && !data?.existingJob) {
+                        throw new Error(data?.error || 'Portrait request was not accepted');
+                    }
+
+                    const pendingJobId = data?.jobId || data?.imageGeneration?.jobId || null;
+                    npcDataCache.set(npcId, {
+                        ...baseNpcRecord,
+                        pendingImageJobId: pendingJobId
+                    });
+
+                    renderEntityImages(entityType, npcId, {
+                        imageId: null,
+                        force: true,
+                        altText: placeholderAlt
+                    });
+                } catch (error) {
+                    console.warn('Failed to regenerate character portrait:', error);
+                    npcDataCache.set(npcId, { ...latestNpc });
+                    if (!latestNpc.isNPC) {
+                        window.currentPlayerData = {
+                            ...(window.currentPlayerData || {}),
+                            imageId: previousImageId || null
+                        };
+                    }
+                    renderEntityImages(entityType, npcId, {
+                        imageId: previousImageId,
+                        force: false,
+                        altText: placeholderAlt
+                    });
+                    throw error;
+                }
+            }
+
             function registerNpcContextMenu(card, npc) {
                 if (!card || !npc || !npc.id) {
                     return;
@@ -27733,13 +28989,20 @@
                 menu.appendChild(characterUploadImageButton);
 
                 let regenerateImageButton = null;
-                const canRegeneratePortrait = npc && npc.imageId;
+                let regenerateImagePromptButton = null;
+                const canRegeneratePortrait = Boolean(npc && runtimeConfig?.imagegen?.enabled !== false);
                 if (canRegeneratePortrait) {
                     regenerateImageButton = document.createElement('button');
                     regenerateImageButton.type = 'button';
                     regenerateImageButton.className = 'entity-context-menu-item npc-card-menu-item';
                     regenerateImageButton.textContent = 'Regenerate Image';
                     menu.appendChild(regenerateImageButton);
+
+                    regenerateImagePromptButton = document.createElement('button');
+                    regenerateImagePromptButton.type = 'button';
+                    regenerateImagePromptButton.className = 'entity-context-menu-item npc-card-menu-item';
+                    regenerateImagePromptButton.textContent = 'Regenerate Image +';
+                    menu.appendChild(regenerateImagePromptButton);
                 }
 
                 const editButton = document.createElement('button');
@@ -27894,92 +29157,35 @@
                     regenerateImageButton.addEventListener('click', async (event) => {
                         event.stopPropagation();
                         closeNpcContextMenu();
+                        try {
+                            await regenerateCharacterImage(npcDataCache.get(npc.id) || npc);
+                        } catch (error) {
+                            alert(`Failed to regenerate portrait: ${error?.message || error}`);
+                        }
+                    });
+                }
+
+                if (regenerateImagePromptButton) {
+                    regenerateImagePromptButton.addEventListener('click', async (event) => {
+                        event.stopPropagation();
+                        closeNpcContextMenu();
                         const latestNpc = { ...(npcDataCache.get(npc.id) || npc) };
                         const npcId = String(latestNpc?.id || '');
                         if (!npcId) {
-                            console.warn('Unable to regenerate portrait: NPC identifier missing.');
+                            console.warn('Unable to regenerate portrait: character identifier missing.');
                             return;
                         }
 
-                        const entityType = latestNpc.isNPC ? 'npc' : 'player';
-                        const previousImageId = latestNpc.imageId || null;
-                        const placeholderAlt = latestNpc.name || 'Character portrait';
-
-                        applyEntityImagePlaceholder(entityType, npcId);
-
-                        const baseNpcRecord = {
-                            ...latestNpc,
-                            imageId: null,
-                            pendingImageJobId: null
-                        };
-                        npcDataCache.set(npc.id, baseNpcRecord);
-                        if (!latestNpc.isNPC) {
-                            window.currentPlayerData = {
-                                ...(window.currentPlayerData || {}),
-                                imageId: null
-                            };
-                        }
-
-                        const clientId = window.AIRPG_CLIENT_ID || null;
-                        const requestBody = clientId ? { clientId } : {};
-
                         try {
-                            const response = await fetch(`/api/npcs/${encodeURIComponent(npcId)}/portrait`, {
-                                method: 'POST',
-                                headers: { 'Content-Type': 'application/json' },
-                                body: JSON.stringify(requestBody)
-                            });
-                            const data = await response.json().catch(() => ({}));
-
-                            if (!response.ok) {
-                                throw new Error(data?.error || `HTTP ${response.status}`);
-                            }
-
-                            if (data?.skipped) {
-                                npcDataCache.set(npc.id, { ...latestNpc });
-                                if (!latestNpc.isNPC) {
-                                    window.currentPlayerData = {
-                                        ...(window.currentPlayerData || {}),
-                                        imageId: previousImageId || null
-                                    };
-                                }
-                                renderEntityImages(entityType, npcId, {
-                                    imageId: previousImageId,
-                                    force: false,
-                                    altText: placeholderAlt
-                                });
-                                return;
-                            }
-
-                            if (!data?.success && !data?.existingJob) {
-                                throw new Error(data?.error || 'Portrait request was not accepted');
-                            }
-
-                            const pendingJobId = data?.imageGeneration?.jobId || data?.jobId || null;
-                            npcDataCache.set(npc.id, {
-                                ...baseNpcRecord,
-                                pendingImageJobId: pendingJobId
-                            });
-
-                            renderEntityImages(entityType, npcId, {
-                                imageId: null,
-                                force: true,
-                                altText: placeholderAlt
+                            await openEditableImagePromptForEntity({
+                                entityType: latestNpc.isNPC ? 'npc' : 'player',
+                                entityId: npcId,
+                                entityName: latestNpc.name || 'Character',
+                                submitHandler: (prompt) => regenerateCharacterImage(latestNpc, prompt)
                             });
                         } catch (error) {
-                            console.warn('Failed to regenerate NPC portrait:', error);
-                            npcDataCache.set(npc.id, { ...latestNpc });
-                            if (!latestNpc.isNPC) {
-                                window.currentPlayerData = {
-                                    ...(window.currentPlayerData || {}),
-                                    imageId: previousImageId || null
-                                };
-                            }
-                            renderEntityImages(entityType, npcId, {
-                                imageId: previousImageId,
-                                force: false,
-                                altText: placeholderAlt
-                            });
+                            console.warn('Failed to generate editable character image prompt:', error);
+                            alert(`Failed to generate image prompt: ${error?.message || 'Unknown error'}`);
                         }
                     });
                 }
@@ -32661,8 +33867,8 @@
             }
         }
 
-        async function regenerateLocationImage() {
-            const targetLocation = getLocationMenuContext();
+        async function regenerateLocationImage(options = {}) {
+            const targetLocation = options.targetLocation || getLocationMenuContext();
             if (!targetLocation || !targetLocation.id) {
                 alert('No location is currently loaded.');
                 clearLocationMenuContext();
@@ -32689,6 +33895,9 @@
                 entityId: locationId,
                 force: true
             };
+            if (typeof options.prompt === 'string' && options.prompt.trim()) {
+                payload.prompt = options.prompt.trim();
+            }
 
             const clientId = window.AIRPG_CLIENT_ID || null;
             if (clientId) {
@@ -32750,6 +33959,41 @@
                         altText: placeholderAlt
                     });
                 }
+            } finally {
+                if (options.clearLocationMenuContext !== false) {
+                    clearLocationMenuContext();
+                }
+            }
+        }
+
+        async function openLocationImagePromptModal() {
+            const targetLocation = getLocationMenuContext();
+            if (!targetLocation || !targetLocation.id) {
+                alert('No location is currently loaded.');
+                clearLocationMenuContext();
+                return;
+            }
+            if (locationImageRegenerateButton && locationImageRegenerateButton.disabled && isCurrentLocationContext(targetLocation)) {
+                alert('Image generation is disabled.');
+                clearLocationMenuContext();
+                return;
+            }
+
+            const capturedLocation = JSON.parse(JSON.stringify(targetLocation));
+            try {
+                await openEditableImagePromptForEntity({
+                    entityType: 'location',
+                    entityId: String(capturedLocation.id),
+                    entityName: capturedLocation.name || 'Location',
+                    submitHandler: (prompt) => regenerateLocationImage({
+                        targetLocation: capturedLocation,
+                        prompt,
+                        clearLocationMenuContext: false
+                    })
+                });
+            } catch (error) {
+                console.warn('Failed to generate editable location image prompt:', error);
+                alert(`Failed to generate image prompt: ${error?.message || 'Unknown error'}`);
             } finally {
                 clearLocationMenuContext();
             }
@@ -33007,6 +34251,14 @@
             });
         }
 
+        if (locationImageRegeneratePromptButton) {
+            locationImageRegeneratePromptButton.addEventListener('click', async (event) => {
+                event.stopPropagation();
+                closeLocationImageMenu({ preserveContext: true });
+                await openLocationImagePromptModal();
+            });
+        }
+
         if (entityImageUploadFile) {
             entityImageUploadFile.addEventListener('change', () => {
                 const file = entityImageUploadFile.files?.[0] || null;
@@ -33031,6 +34283,26 @@
             entityImageUploadModal.addEventListener('click', (event) => {
                 if (event.target === entityImageUploadModal) {
                     closeEntityImageUploadModal();
+                }
+            });
+        }
+
+        if (entityImagePromptForm) {
+            entityImagePromptForm.addEventListener('submit', submitEntityImagePrompt);
+        }
+
+        if (entityImagePromptCancelBtn) {
+            entityImagePromptCancelBtn.addEventListener('click', () => closeEntityImagePromptModal());
+        }
+
+        if (entityImagePromptCloseBtn) {
+            entityImagePromptCloseBtn.addEventListener('click', () => closeEntityImagePromptModal());
+        }
+
+        if (entityImagePromptModal) {
+            entityImagePromptModal.addEventListener('click', (event) => {
+                if (event.target === entityImagePromptModal) {
+                    closeEntityImagePromptModal();
                 }
             });
         }
@@ -33118,6 +34390,14 @@
                 event.stopPropagation();
                 closeMapLocationContextMenu({ preserveContext: true });
                 await regenerateLocationImage();
+            });
+        }
+
+        if (mapLocationMenuRegeneratePromptButton) {
+            mapLocationMenuRegeneratePromptButton.addEventListener('click', async (event) => {
+                event.stopPropagation();
+                closeMapLocationContextMenu({ preserveContext: true });
+                await openLocationImagePromptModal();
             });
         }
 
@@ -34898,6 +36178,236 @@
                 }
             });
 
+            const LOCATION_REGION_MEMBERSHIP_CONFLICT_CODE = 'location_region_membership_conflict';
+            let pendingLocationRegionFixer = null;
+
+            function syncLocationRegionFixerModalOpenClass() {
+                if (window.AIRPG_CHAT && typeof window.AIRPG_CHAT.syncBodyModalOpenClass === 'function') {
+                    window.AIRPG_CHAT.syncBodyModalOpenClass();
+                    return;
+                }
+                const hasOpenModal = Boolean(document.querySelector('.modal[aria-hidden="false"], .chat-edit-modal.is-open, .quest-confirmation.is-open, .npc-selection-modal'));
+                document.body.classList.toggle('modal-open', hasOpenModal);
+            }
+
+            function getLocationRegionFixerElements() {
+                const elements = {
+                    modal: document.getElementById('locationRegionFixerModal'),
+                    locationLabel: document.getElementById('locationRegionFixerLocationLabel'),
+                    regionList: document.getElementById('locationRegionFixerRegionList'),
+                    status: document.getElementById('locationRegionFixerStatus'),
+                    confirmButton: document.getElementById('locationRegionFixerConfirmBtn'),
+                    cancelButton: document.getElementById('locationRegionFixerCancelBtn'),
+                    closeButton: document.getElementById('locationRegionFixerCloseBtn')
+                };
+                const missing = Object.entries(elements)
+                    .filter(([, element]) => !element)
+                    .map(([name]) => name);
+                if (missing.length) {
+                    throw new Error(`Location region fixer modal is missing required element(s): ${missing.join(', ')}.`);
+                }
+                return elements;
+            }
+
+            function setLocationRegionFixerStatus(elements, message = '', type = null) {
+                if (!elements?.status) {
+                    return;
+                }
+                elements.status.textContent = message || '';
+                elements.status.dataset.type = type || '';
+            }
+
+            function isLocationRegionMembershipConflictPayload(payload) {
+                return Boolean(
+                    payload
+                    && payload.code === LOCATION_REGION_MEMBERSHIP_CONFLICT_CODE
+                    && payload.conflict
+                    && payload.conflict.location
+                    && Array.isArray(payload.conflict.regions)
+                );
+            }
+
+            async function fetchFirstLocationRegionMembershipConflict() {
+                const response = await fetch(`/api/location-region-membership-conflicts?_=${Date.now()}`, {
+                    cache: 'no-store'
+                });
+                const result = await response.json().catch(() => ({}));
+                if (!response.ok || !result?.success) {
+                    throw new Error(result?.error || `HTTP ${response.status}`);
+                }
+                if (result.conflict) {
+                    return result.conflict;
+                }
+                return Array.isArray(result.conflicts) && result.conflicts.length
+                    ? result.conflicts[0]
+                    : null;
+            }
+
+            async function requestLocationRegionFix(conflict) {
+                if (pendingLocationRegionFixer) {
+                    throw new Error('A location region fixer modal is already open.');
+                }
+                if (!conflict?.location?.id) {
+                    throw new Error('Location region conflict payload is missing a location id.');
+                }
+                if (!Array.isArray(conflict.regions) || conflict.regions.length < 2) {
+                    throw new Error('Location region conflict payload must include at least two listed regions.');
+                }
+
+                const elements = getLocationRegionFixerElements();
+                const previouslyFocused = document.activeElement instanceof HTMLElement
+                    ? document.activeElement
+                    : null;
+
+                elements.locationLabel.textContent = conflict.location.label || `${conflict.location.name || 'Unknown Location'} (${conflict.location.id})`;
+                elements.regionList.innerHTML = '';
+                setLocationRegionFixerStatus(elements, '', null);
+
+                conflict.regions.forEach((region, index) => {
+                    const regionId = typeof region?.id === 'string' ? region.id.trim() : '';
+                    if (!regionId) {
+                        throw new Error('Location region conflict payload includes a region without an id.');
+                    }
+                    const optionId = `locationRegionFixerRegion_${index}`;
+                    const label = document.createElement('label');
+                    label.className = 'location-region-fixer-region-option';
+                    label.setAttribute('for', optionId);
+
+                    const input = document.createElement('input');
+                    input.type = 'radio';
+                    input.name = 'locationRegionFixerRegion';
+                    input.id = optionId;
+                    input.value = regionId;
+                    input.checked = region.isDeclared === true || index === 0;
+
+                    const text = document.createElement('span');
+                    text.textContent = region.label || `${region.name || 'Unknown Region'} (${regionId})`;
+
+                    label.append(input, text);
+                    elements.regionList.appendChild(label);
+                });
+
+                elements.confirmButton.disabled = false;
+                elements.cancelButton.disabled = false;
+                elements.closeButton.disabled = false;
+                elements.modal.removeAttribute('hidden');
+                elements.modal.setAttribute('aria-hidden', 'false');
+                document.body.classList.add('modal-open');
+
+                return new Promise(resolve => {
+                    let settled = false;
+
+                    const cleanup = () => {
+                        elements.confirmButton.removeEventListener('click', confirm);
+                        elements.cancelButton.removeEventListener('click', cancel);
+                        elements.closeButton.removeEventListener('click', cancel);
+                        elements.modal.removeEventListener('click', handleBackdropClick);
+                        document.removeEventListener('keydown', handleKeydown);
+                        elements.confirmButton.disabled = false;
+                        elements.cancelButton.disabled = false;
+                        elements.closeButton.disabled = false;
+                        elements.modal.setAttribute('hidden', '');
+                        elements.modal.setAttribute('aria-hidden', 'true');
+                        pendingLocationRegionFixer = null;
+                        syncLocationRegionFixerModalOpenClass();
+                        if (previouslyFocused && typeof previouslyFocused.focus === 'function') {
+                            previouslyFocused.focus();
+                        }
+                    };
+
+                    const finish = (resolved) => {
+                        if (settled) {
+                            return;
+                        }
+                        settled = true;
+                        cleanup();
+                        resolve(Boolean(resolved));
+                    };
+
+                    async function confirm() {
+                        const selected = elements.regionList.querySelector('input[name="locationRegionFixerRegion"]:checked');
+                        const selectedRegionId = typeof selected?.value === 'string' ? selected.value.trim() : '';
+                        if (!selectedRegionId) {
+                            setLocationRegionFixerStatus(elements, 'Select a region before continuing.', 'error');
+                            return;
+                        }
+
+                        elements.confirmButton.disabled = true;
+                        elements.cancelButton.disabled = true;
+                        elements.closeButton.disabled = true;
+                        setLocationRegionFixerStatus(elements, 'Updating location region...', null);
+
+                        try {
+                            const response = await fetch(`/api/location-region-membership-conflicts/${encodeURIComponent(conflict.location.id)}/resolve`, {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ regionId: selectedRegionId })
+                            });
+                            const result = await response.json().catch(() => ({}));
+                            if (!response.ok || !result?.success) {
+                                throw new Error(result?.error || `HTTP ${response.status}`);
+                            }
+                            finish(true);
+                        } catch (error) {
+                            console.error('Failed to fix location region membership:', error);
+                            elements.confirmButton.disabled = false;
+                            elements.cancelButton.disabled = false;
+                            elements.closeButton.disabled = false;
+                            setLocationRegionFixerStatus(elements, error?.message || 'Failed to update location region.', 'error');
+                        }
+                    }
+
+                    function cancel() {
+                        finish(false);
+                    }
+
+                    function handleBackdropClick(event) {
+                        if (event.target === elements.modal) {
+                            cancel();
+                        }
+                    }
+
+                    function handleKeydown(event) {
+                        if (event.key === 'Escape') {
+                            event.preventDefault();
+                            cancel();
+                        }
+                    }
+
+                    pendingLocationRegionFixer = {
+                        cancel
+                    };
+                    elements.confirmButton.addEventListener('click', confirm);
+                    elements.cancelButton.addEventListener('click', cancel);
+                    elements.closeButton.addEventListener('click', cancel);
+                    elements.modal.addEventListener('click', handleBackdropClick);
+                    document.addEventListener('keydown', handleKeydown);
+                    window.setTimeout(() => {
+                        const checked = elements.regionList.querySelector('input[name="locationRegionFixerRegion"]:checked');
+                        if (checked && typeof checked.focus === 'function') {
+                            checked.focus();
+                        } else {
+                            elements.confirmButton.focus();
+                        }
+                    }, 0);
+                });
+            }
+
+            async function ensureLocationRegionMembershipReadyForMovement() {
+                while (true) {
+                    const conflict = await fetchFirstLocationRegionMembershipConflict();
+                    if (!conflict) {
+                        return true;
+                    }
+                    const repaired = await requestLocationRegionFix(conflict);
+                    if (!repaired) {
+                        return false;
+                    }
+                }
+            }
+
+            window.ensureLocationRegionMembershipReadyForMovement = ensureLocationRegionMembershipReadyForMovement;
+
             async function moveToLocation(moveRequest) {
                 const exit = moveRequest?.exit;
                 if (!exit || !exit.destination) {
@@ -34932,6 +36442,17 @@
                         showLocationOverlay(`Moving to ${destinationName}...`);
                     }
                 };
+
+                try {
+                    const membershipReady = await ensureLocationRegionMembershipReadyForMovement();
+                    if (!membershipReady) {
+                        return;
+                    }
+                } catch (error) {
+                    console.error('Failed to check location region membership before movement:', error);
+                    alert(`Move paused: ${error?.message || error}`);
+                    return;
+                }
 
         const useEventMove = shouldUseEventMove(exit);
 
@@ -35100,6 +36621,14 @@
                             window.loadRegionMap?.();
                         }
                     } else if (result.error) {
+                        if (isLocationRegionMembershipConflictPayload(result)) {
+                            hideLocationOverlay();
+                            const repaired = await requestLocationRegionFix(result.conflict);
+                            if (repaired) {
+                                return performDirectMove(destinationId, destinationName);
+                            }
+                            return false;
+                        }
                         if (result.pendingAbilitySelection && typeof window.handlePendingAbilitySelectionPayload === 'function') {
                             window.handlePendingAbilitySelectionPayload(result.pendingAbilitySelection);
                         }
@@ -35406,6 +36935,11 @@
                 };
 
                 try {
+                    const membershipReady = await ensureLocationRegionMembershipReadyForMovement();
+                    if (!membershipReady) {
+                        return false;
+                    }
+
                     const travelPreview = await fetchMapFastTravelPreview(destinationId);
                     if (travelPreview?.destination?.name) {
                         destinationName = travelPreview.destination.name;
@@ -35425,22 +36959,30 @@
                     }
 
                     const actionText = (confirmation.actionText || '').trim();
-                    const travelMetadata = buildMapFastTravelMetadata({
-                        originLocationId: travelPreview?.origin?.id || lastRenderedLocation?.id || null,
-                        destinationId,
-                        destinationName,
-                        destinationRegionName
-                    });
+                    const hasPromptText = actionText.length > 0;
+                    if (hasPromptText) {
+                        const travelMetadata = buildMapFastTravelMetadata({
+                            originLocationId: travelPreview?.origin?.id || lastRenderedLocation?.id || null,
+                            destinationId,
+                            destinationName,
+                            destinationRegionName
+                        });
 
-                    if (!window.AIRPG_CHAT || typeof window.AIRPG_CHAT.dispatchAutomatedMessage !== 'function') {
-                        throw new Error('AIRPG chat client not available; cannot dispatch fast travel action.');
+                        if (!window.AIRPG_CHAT || typeof window.AIRPG_CHAT.dispatchAutomatedMessage !== 'function') {
+                            throw new Error('AIRPG chat client not available; cannot dispatch fast travel action.');
+                        }
+                        await window.AIRPG_CHAT.dispatchAutomatedMessage(actionText, {
+                            travel: true,
+                            travelMetadata,
+                            suppressTravelCompletionSound: true
+                        });
+                    } else if (window.AIRPG_CHAT && typeof window.AIRPG_CHAT.dispatchAutomatedMessage === 'function') {
+                        await window.AIRPG_CHAT.dispatchAutomatedMessage(`# ${playerName} moved to ${destinationName}.`, {
+                            travel: true,
+                            travelMetadata: null,
+                            suppressTravelCompletionSound: true
+                        });
                     }
-                    await window.AIRPG_CHAT.dispatchAutomatedMessage(actionText, {
-                        travel: true,
-                        travelMetadata,
-                        suppressTravelCompletionSound: true,
-                        allowEmptyAction: true
-                    });
 
                     showMoveOverlay();
                     await teleportNpcToLocation(playerRecord, destinationId, {

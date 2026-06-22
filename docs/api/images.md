@@ -8,11 +8,28 @@ Image jobs use the statuses `queued`, `processing`, `completed`, `failed`, and `
 
 For OpenAI and NanoGPT engines, final image prompts include the active setting's `baseContextPreamble` before job execution. ComfyUI prompts do not receive that preamble. Character, location, item, and scenery prompt prefixes from the active setting are applied where the generation path supports them.
 
+## POST /api/images/prompt
+Generate the final editable prompt for a known entity without queueing image rendering.
+
+Request:
+- Body: `{ entityType: 'player'|'npc'|'location'|'thing'|'item'|'scenery', entityId: string }`
+
+Response:
+- 200: `{ success: true, entityType, entityId, prompt, promptType, generatedPrompt? }`
+- 400/404/409/500/503 with `{ success: false, error }`
+
+Notes:
+- This endpoint is used by the browser's `Regenerate Image +` context-menu action.
+- Player/NPC, location, item, and scenery prompts run the same LLM prompt-writing templates as normal entity image generation.
+- The returned `prompt` is the final text intended for image rendering. Character, location, item, and scenery image prompt prefixes are already prepended as applicable. For locations, the returned prompt also includes the deterministic base location scene wrapper, such as baseline time and weather guidance from `templates/location-image-prompt.njk`.
+- The endpoint does not clear current image ids, set pending image jobs, or queue rendering. The confirmed edited prompt is sent separately to `POST /api/images/request`.
+- Location exits are intentionally unsupported here because their image path does not use the LLM prompt-writing step.
+
 ## POST /api/images/request
 Queue, join, or reuse image generation for a known entity.
 
 Request:
-- Body: `{ entityType: 'player'|'npc'|'location'|'exit'|'location-exit'|'location_exit'|'thing'|'item'|'scenery', entityId: string, force?: boolean, clientId?: string }`
+- Body: `{ entityType: 'player'|'npc'|'location'|'exit'|'location-exit'|'location_exit'|'thing'|'item'|'scenery', entityId: string, force?: boolean, clientId?: string, prompt?: string }`
 
 Response:
 - 200: `{ success, entityType, entityId, jobId?, job?, imageId?, skipped, reason, message, existingJob }`
@@ -28,6 +45,7 @@ Notes:
 - NPC portrait requests without `force` are limited to NPCs at the current player location or in the current player party.
 - Thing image requests can target any known non-null `Thing`; current server eligibility does not require player inventory or current-location ownership.
 - Player/NPC, location, item, and scenery image paths use an LLM prompt-writing step before the image job is queued. Prompt generation retries up to `imagegen.prompt_generation_attempts` times, default `3`; empty final prompts, prompt/context XML, and wrapper text are rejected. Exhausted retries return `skipped: true`, `reason: "image-prompt-failed"`, and no image-rendering job.
+- When `prompt` is provided, it is treated as a user-confirmed final image prompt and must be a non-empty string. The LLM prompt-writing step is skipped, but the normal entity attachment, dimensions, negative prompt, realtime subscription, and forced-regeneration behavior still apply.
 - LLM-authored image-prompt requests are debounced and batched unless `imagegen.prompt_batching.enabled` is `false`. The queue waits `imagegen.prompt_batching.delay_ms` after the last compatible request and sends up to `imagegen.prompt_batching.max_items` prompt-writing requests per batch. Image-rendering jobs are queued independently after prompt text is available.
 - Base location scene prompts are rendered through `templates/location-image-prompt.njk` after the LLM prompt-writing step. The template receives `image.prompt`, the full `location`, `hasLocalWeather`, and `weatherScope`; the default template adds neutral baseline time/weather guidance for the base image.
 - Thing image dimensions use `imagegen.default_settings.image`, with optional overrides from `imagegen.item_settings.image` or `imagegen.scenery_settings.image`. Character, location, and exit images use their respective configured settings or defaults.

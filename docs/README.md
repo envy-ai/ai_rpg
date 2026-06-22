@@ -8,11 +8,11 @@ Current map of Markdown documentation under `docs/`. This README and the generat
 | ------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------ |
 | [developer_overview.md](developer_overview.md)         | Session warm-up: project shape, core runtime flow, and first files to inspect.                               |
 | [API_README.md](API_README.md)                         | High-level Express route index with pointers into `docs/api/`.                                               |
-| [server_llm_notes.md](server_llm_notes.md)             | Detailed server, prompt helpers, LLM, event, travel, save/load, and generation flow notes.                   |
-| [config.md](config.md)                                 | Runtime/gameplay configuration, overrides, model settings, retry waits, prompt behavior, and mod enablement. |
+| [server_llm_notes.md](server_llm_notes.md)             | Detailed server, base-context prompt helpers, LLM, chat tools, event, travel, save/load, and generation flow notes including generation-only random integer tool access. |
+| [config.md](config.md)                                 | Runtime/gameplay configuration, overrides, model settings, assistant prefill, system-prompt append text, tracker limits, retry waits, global prompt concurrency, staggered prompt timing, prompt behavior, and mod enablement. |
 | [slash_commands.md](slash_commands.md)                 | Slash command lifecycle, interaction helpers, reply actions, and implementation conventions.                 |
 | [slop_and_repetition.md](slop_and_repetition.md)       | Slop-word, ngram, regex, forbidden-trope, turnResult parsing, and repetition-removal systems.                |
-| [modding.md](modding.md)                               | Mod discovery, defs overlays, enablement, runtime hooks, bundled mods, and save compatibility.               |
+| [modding.md](modding.md)                               | Mod discovery, defs overlays, enablement, runtime/client hooks, bundled mods, and save compatibility.        |
 | [modding_hooks.md](modding_hooks.md)                   | Detailed hook contracts for chat tools, XML events, prompts, UI, settings, and entity extensions.            |
 | [playwright.md](playwright.md)                         | Playwright setup and regression test run notes.                                                              |
 | [run_prompts.md](run_prompts.md)                       | `scripts/run_prompts.js` prompt-runner usage and template helpers.                                           |
@@ -25,9 +25,10 @@ Current map of Markdown documentation under `docs/`. This README and the generat
 | ---------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | [ui/README.md](ui/README.md)                   | UI documentation scope and entry-point map.                                                                                                                                                 |
 | [ui/pages.md](ui/pages.md)                     | Server-rendered pages, templates, injected data, app header, settings/config pages, and route notes.                                                                                        |
-| [ui/chat_interface.md](ui/chat_interface.md)   | Main Play interface behavior, tabs, panels, chat flow/error alerts, inventory lists, tracker sidebar cards, Story Tools, concurrent distinct dragged-item operations, and client data flow. |
-| [ui/modals_overlays.md](ui/modals_overlays.md) | Chat-page modal, overlay, tooltip, prompt tracker, container, barter, blank stub descriptions, and map confirmation behavior.                                                               |
-| [ui/maps.md](ui/maps.md)                       | Region/world map rendering, map actions, fast-travel confirmation timing, context menus, stubs, and vehicle map state.                                                                      |
+| [ui/chat_interface.md](ui/chat_interface.md)   | Main Play interface behavior, tabs, panels, chat flow/error alerts, model-bound chat request filtering, chat-log action controls, inventory lists including AI-backed item search, tracker sidebar cards/progress fills/top-layer overlay controls, Story Tools, entity image upload/regenerate prompt editing, concurrent distinct dragged-item operations, and client data flow. |
+| [ui/modals_overlays.md](ui/modals_overlays.md) | Chat-page modal, overlay, tooltip, prompt tracker, entity image upload/prompt editing textarea styling, level-up ability draft, container, barter, blank stub descriptions, location-region fixer, and map confirmation behavior.                                      |
+| [ui/maps.md](ui/maps.md)                       | Region/world map rendering, map actions, fast-travel confirmation timing including blank-prompt direct travel, context menus including image prompt editing, stubs, and vehicle map state.                                 |
+| [ui/relationships.md](ui/relationships.md)     | Play Relationships tab rendering, Cytoscape relationship graph data flow, curve-side endpoint offsets, hidden-character filtering, and missing-id placeholders.                             |
 | [ui/assets_styles.md](ui/assets_styles.md)     | SCSS/CSS, assets, shared UI primitives, vendor libraries, icon color conventions, and responsive styling notes.                                                                             |
 
 ## Mod Docs
@@ -44,41 +45,43 @@ Current map of Markdown documentation under `docs/`. This README and the generat
 | [api/common.md](api/common.md)                   | Shared payload shapes, chat entries, summary metadata, actor/location/thing/vehicle conventions.                                                                      |
 | [api/serialization.md](api/serialization.md)     | Legacy pointer to shared serialization shapes in `api/common.md`.                                                                                                     |
 | [api/attributes.md](api/attributes.md)           | Attribute endpoints and the duplicate `/api/attributes` route note.                                                                                                   |
-| [api/chat.md](api/chat.md)                       | `/api/chat`, history, prompt modes, chat tools including player-action and plot-analysis tracker/event creation, event results, travel, time, and streaming payloads. |
-| [api/crafting.md](api/crafting.md)               | Crafting, processing, salvage, harvest, input consumption, timing, and generated result contracts.                                                                    |
+| [api/chat.md](api/chat.md)                       | `/api/chat`, history, prompt modes, model-bound request filtering, prompt-render failure handling, chat tools including tracker notes/event/relationship/quest creation, parser-based silent housekeeping with optional tool-call debug entries, event results, travel with cross-region exit travel-time backfill, while-you-were-away candidate synthesis, time, and streaming payloads. |
+| [api/crafting.md](api/crafting.md)               | Crafting, processing, salvage, harvest, unlocked player/location-container inputs, input consumption, timing, and generated result contracts.                           |
 | [api/factions.md](api/factions.md)               | Faction CRUD, standings, relation generation, fill-missing, and faction field mutation tool behavior.                                                                 |
-| [api/game.md](api/game.md)                       | New/load/save lifecycle, mod mismatch handling, active calendar, config overrides, and game state endpoints.                                                          |
-| [api/images.md](api/images.md)                   | Image generation, image jobs, uploads, serving, prompt batching, and weather/lighting variants.                                                                       |
-| [api/locations.md](api/locations.md)             | Locations, exits, stubs, relocation, favorites, modification, generated things/NPCs, and deletion.                                                                    |
+| [api/game.md](api/game.md)                       | New/load/save lifecycle, new-game runtime reset across world maps/static indexes/async work, mod mismatch handling, active calendar, config overrides, and game state endpoints. |
+| [api/images.md](api/images.md)                   | Image generation, editable prompt generation, image jobs, uploads, serving, prompt batching, and weather/lighting variants.                                                                       |
+| [api/locations.md](api/locations.md)             | Locations, exits, stubs, relocation, region-membership conflict repair, favorites, modification, generated things/NPCs, and deletion.                                  |
 | [api/lorebooks.md](api/lorebooks.md)             | Lorebook listing and metadata endpoints.                                                                                                                              |
 | [api/map.md](api/map.md)                         | Legacy map API pointer.                                                                                                                                               |
 | [api/misc.md](api/misc.md)                       | Feature flags, health/config tests, prompt cancel/retry controls, and slash-command routes.                                                                           |
 | [api/mystery-boxes.md](api/mystery-boxes.md)     | Story Tools MysteryBox list/get/update routes and persistence.                                                                                                        |
 | [api/mystery-threads.md](api/mystery-threads.md) | Story Tools MysteryThread routes, box assignment, active-cap validation, and persistence.                                                                             |
 | [api/npcs.md](api/npcs.md)                       | NPC CRUD, aliases, state edits, equipment, teleport, party cleanup, and barter sessions.                                                                              |
-| [api/players.md](api/players.md)                 | Player/party endpoints, direct moves, ability selection, stats, inventory serialization, and view preferences.                                                        |
+| [api/players.md](api/players.md)                 | Player/party endpoints, direct moves, cross-region exit travel-time backfill, ability selection with declined-option persistence, stats, inventory serialization, and view preferences.                 |
 | [api/quests.md](api/quests.md)                   | Quest edits, confirmations, rewards, reputation, and NPC disposition rewards.                                                                                         |
 | [api/regions.md](api/regions.md)                 | Region CRUD, generation, vehicle info, weather definitions, and weather state.                                                                                        |
 | [api/scene-summaries.md](api/scene-summaries.md) | Story Tools scene-summary list/update routes and chat-tool rerun path.                                                                                                |
 | [api/settings.md](api/settings.md)               | World profile CRUD, AI fill-missing, defaults, factions, calendar drafts, tone scale, and slop words.                                                                 |
-| [api/things.md](api/things.md)                   | Items/scenery, inventory transfers, stack operations, containers, module actions, and deletion.                                                                       |
+| [api/things.md](api/things.md)                   | Items/scenery, AI item search, inventory transfers, stack operations, containers, module actions, and deletion.                                                       |
+| [api/trackers.md](api/trackers.md)               | Browser-facing plot tracker create/load/edit/delete routes for the chat sidebar modal.                                                                                |
 
 ## Class Reference
 
 | Doc                                                                        | Use for                                                                                                                                                  |
 | -------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | [classes/ActorAttachmentSystem.md](classes/ActorAttachmentSystem.md)       | Helper for inventory-backed actor attachments such as implants.                                                                                          |
+| [classes/base_context_relationships.md](classes/base_context_relationships.md) | Prompt-facing character relationship summaries for base-context character records.                                                                        |
 | [classes/CodexBridgeClient.md](classes/CodexBridgeClient.md)               | Codex CLI bridge backend, prompt wrapping, streaming, structured output, and usage reporting.                                                            |
 | [classes/ComfyUIClient.md](classes/ComfyUIClient.md)                       | ComfyUI image-generation queueing, upload, polling, and result download client.                                                                          |
-| [classes/Events.md](classes/Events.md)                                     | Event-check parsing and application for world mutations, travel, time, quests, needs, trackers, and summaries.                                           |
+| [classes/Events.md](classes/Events.md)                                     | Event-check, staggered background-check, and concurrent-launch housekeeping XML parsing/application for world mutations, travel, time, quests, needs, trackers, relationships, and summaries. |
 | [classes/EventsEventTypes.md](classes/EventsEventTypes.md)                 | Event type table with payload shapes and application behavior.                                                                                           |
 | [classes/EventsXmlEventSchema.md](classes/EventsXmlEventSchema.md)         | XML event-check schema and LLM-facing event tag guidance.                                                                                                |
 | [classes/Faction.md](classes/Faction.md)                                   | Faction model, indexes, reputation, relations, and direct field upsert behavior.                                                                         |
 | [classes/Globals.md](classes/Globals.md)                                   | Runtime state, current player/location/region helpers, prompt wiring, realtime emits, and world time.                                                    |
 | [classes/IdGenerator.md](classes/IdGenerator.md)                           | Compact persisted ID allocation and migration counters.                                                                                                  |
 | [classes/ItemModuleSystem.md](classes/ItemModuleSystem.md)                 | Module installation, validation, ownership sync, and installed-module bonuses/effects.                                                                   |
-| [classes/LLMClient.md](classes/LLMClient.md)                               | LLM completions, backend selection, streaming progress, retries, cancellation, logging, and prompt stats.                                                |
-| [classes/Location.md](classes/Location.md)                                 | Location model, stubs, visits, favorites, exits, things/NPCs, optional generated metadata, weather hints, and travel routes.                             |
+| [classes/LLMClient.md](classes/LLMClient.md)                               | LLM completions, backend selection, custom payload forwarding, assistant prefill, streaming progress, retries, cancellation, logging, and prompt stats.   |
+| [classes/Location.md](classes/Location.md)                                 | Location model, stubs, visits, favorites, exits, things/NPCs, optional generated metadata, weather hints, region membership, and travel routes.           |
 | [classes/LocationExit.md](classes/LocationExit.md)                         | Exit model, vehicle semantics, travel times, reverse-link helpers, and debug backtraces.                                                                 |
 | [classes/LorebookManager.md](classes/LorebookManager.md)                   | Lorebook loading, matching, enablement, and prompt injection.                                                                                            |
 | [classes/ModExtensionRegistry.md](classes/ModExtensionRegistry.md)         | Registry for mod hooks, tools, XML events, settings fields, UI hooks, entity fields, and validators.                                                     |
@@ -88,7 +91,7 @@ Current map of Markdown documentation under `docs/`. This README and the generat
 | [classes/MysteryThread.md](classes/MysteryThread.md)                       | Persisted mystery threads, active/concluded status, box grouping, and active-context filtering.                                                          |
 | [classes/NanoGPTImageClient.md](classes/NanoGPTImageClient.md)             | NanoGPT image client and base64 image saving.                                                                                                            |
 | [classes/OpenAIImageClient.md](classes/OpenAIImageClient.md)               | OpenAI image client and base64 image saving.                                                                                                             |
-| [classes/Player.md](classes/Player.md)                                     | Player/NPC model, inventory, needs, dispositions, party, progression, barter, death, and location state.                                                 |
+| [classes/Player.md](classes/Player.md)                                     | Player/NPC model, inventory, needs, dispositions, derived current-party membership, progression including declined ability options, barter, death, and location state.                       |
 | [classes/Quest.md](classes/Quest.md)                                       | Quest model, objectives, giver info, rewards, completion state, and indexes.                                                                             |
 | [classes/QuestConfirmationManager.md](classes/QuestConfirmationManager.md) | Async quest confirmation coordination and reward previews.                                                                                               |
 | [classes/RealtimeHub.md](classes/RealtimeHub.md)                           | WebSocket hub for targeted and broadcast realtime events.                                                                                                |
@@ -101,11 +104,12 @@ Current map of Markdown documentation under `docs/`. This README and the generat
 | [classes/Skill.md](classes/Skill.md)                                       | Skill model metadata and optional attribute association.                                                                                                 |
 | [classes/StatusEffect.md](classes/StatusEffect.md)                         | Status effect modifiers, duration parsing, applied time, need deltas, and expiry semantics.                                                              |
 | [classes/Thing.md](classes/Thing.md)                                       | Item/scenery model, stacks, containers, mod fields, effects, values, checksums, and placement.                                                           |
-| [classes/Tracker.md](classes/Tracker.md)                                   | Persisted plot trackers, typed values, countdown deadlines, event updates, hidden sidebar display, prompt context, mutator tools, and save/load helpers. |
-| [classes/UnifiedTonalScale.md](classes/UnifiedTonalScale.md)               | Tone-scale loading, half-step options, and prompt markdown rendering.                                                                                    |
+| [classes/Tracker.md](classes/Tracker.md)                                   | Persisted plot trackers, typed/canonical values, private value notes, countdown deadlines, event updates, hidden/progress sidebar display, prompt context, mutator tools, browser CRUD edits, and save/load helpers. |
+| [classes/UnifiedTonalScale.md](classes/UnifiedTonalScale.md)               | Tone-scale loading, half-step options, dialogue uniqueness axis data, and prompt markdown rendering.                                                     |
 | [classes/Utils.md](classes/Utils.md)                                       | Shared parsing, serialization, duration/time helpers, depth-aware XML extraction helpers, migrations, and diagnostics.                                   |
 | [classes/VehicleInfo.md](classes/VehicleInfo.md)                           | Vehicle travel metadata, pending destinations, pending-region arrival finalization, fixed routes, ETA/departure, and trip state.                         |
 | [classes/base_context_history.md](classes/base_context_history.md)         | Base-context history inclusion/exclusion helpers for regular and generic prompts.                                                                        |
+| [classes/housekeeping_update_log.md](classes/housekeeping_update_log.md)   | Player-facing housekeeping tracker and relationship update chat-log summaries with heading-free Markdown bodies.                                         |
 
 ## Design Ideas
 
@@ -149,6 +153,7 @@ Current map of Markdown documentation under `docs/`. This README and the generat
 | [superpowers/plans/2026-06-09-map-fast-travel-confirmation.md](superpowers/plans/2026-06-09-map-fast-travel-confirmation.md) | Region Map, World Map, and Favorites fast-travel confirmation.                                                         |
 | [superpowers/plans/2026-06-13-improvement-prompt.md](superpowers/plans/2026-06-13-improvement-prompt.md)                     | Periodic visible, prompt-excluded game-improvement suggestions.                                                        |
 | [superpowers/plans/2026-06-15-needs-modal-simplification.md](superpowers/plans/2026-06-15-needs-modal-simplification.md)     | Compact needs edit modal implementation tasks, focused UI test, SCSS compilation, and docs updates.                    |
+| [superpowers/plans/2026-06-16-player-relationships.md](superpowers/plans/2026-06-16-player-relationships.md)                 | Player/NPC sparse relationship labels, persistence, chat-tool mutation, and docs updates.                              |
 | [superpowers/plans/2026-06-16-trackers.md](superpowers/plans/2026-06-16-trackers.md)                                         | First-class plot tracker implementation: model, save/load, prompt context, mutator tools, sidebar UI, tests, and docs. |
 
 ## Design Specs
@@ -159,6 +164,7 @@ Current map of Markdown documentation under `docs/`. This README and the generat
 | [superpowers/specs/2026-05-26-modular-items-design.md](superpowers/specs/2026-05-26-modular-items-design.md)                           | Modular item design: base slots, modules, configured slot types, stats/effects, and UI.                    |
 | [superpowers/specs/2026-06-05-regen-party-images-design.md](superpowers/specs/2026-06-05-regen-party-images-design.md)                 | `/regen_party_images` design and shared portrait batching reuse.                                           |
 | [superpowers/specs/2026-06-15-needs-modal-simplification-design.md](superpowers/specs/2026-06-15-needs-modal-simplification-design.md) | Compact needs edit modal with one icon/name, colored slider, and numeric input row per active need.        |
+| [superpowers/specs/2026-06-16-player-relationships-design.md](superpowers/specs/2026-06-16-player-relationships-design.md)             | Sparse semantic character relationship labels persisted on `Player` for a future relationship graph.       |
 | [superpowers/specs/2026-06-16-trackers-design.md](superpowers/specs/2026-06-16-trackers-design.md)                                     | First-class plot trackers: persistence, prompt context, sidebar display, hidden toggle, and mutator tools. |
 
 ## Slash Command Reference
@@ -168,16 +174,19 @@ Current map of Markdown documentation under `docs/`. This README and the generat
 | [slashcommands/Command.md](slashcommands/Command.md)                                           | `/awardxp` grants exact raw experience points.                                   |
 | [slashcommands/CalendarInfoCommand.md](slashcommands/CalendarInfoCommand.md)                   | `/calendar_info`, `/calendar` displays in-game calendar details.                 |
 | [slashcommands/ClearPlotNotesCommand.md](slashcommands/ClearPlotNotesCommand.md)               | `/clear_plot_notes` removes hidden plot summary/expander entries.                |
+| [slashcommands/ClearRelationshipsCommand.md](slashcommands/ClearRelationshipsCommand.md)       | `/clear_relationships` removes every stored character relationship edge.         |
 | [slashcommands/ClearSecretsCommand.md](slashcommands/ClearSecretsCommand.md)                   | `/clear_secrets` removes hidden supplemental/offscreen story info.               |
+| [slashcommands/ClearToolCallDebugCommand.md](slashcommands/ClearToolCallDebugCommand.md)       | `/clear_tool_call_debug` removes tool-call debug entries and reloads the page.   |
 | [slashcommands/ExitBacktracesCommand.md](slashcommands/ExitBacktracesCommand.md)               | `/exit_backtraces` lists current-location exits with creation backtraces.        |
 | [slashcommands/ExportHistoryCommand.md](slashcommands/ExportHistoryCommand.md)                 | `/export_history` exports chat history to text or HTML.                          |
-| [slashcommands/FillExitTravelTimesCommand.md](slashcommands/FillExitTravelTimesCommand.md)     | `/fill_exit_travel_times` fills or regenerates region exit travel times.         |
+| [slashcommands/FillExitTravelTimesCommand.md](slashcommands/FillExitTravelTimesCommand.md)     | `/fill_exit_travel_times` fills or regenerates region exit travel times and reports nonfatal prompt failures. |
 | [slashcommands/FixExitsCommand.md](slashcommands/FixExitsCommand.md)                           | `/fix_exits` repairs one-way location exits.                                     |
 | [slashcommands/GameIntroCommand.md](slashcommands/GameIntroCommand.md)                         | `/game_intro`, `/intro` generates intro narration and autosaves.                 |
 | [slashcommands/GenerateMissingSkillsCommand.md](slashcommands/GenerateMissingSkillsCommand.md) | `/generate_missing_skills` fills missing skill metadata.                         |
 | [slashcommands/GetConfigCommand.md](slashcommands/GetConfigCommand.md)                         | `/get` reads nested config values.                                               |
 | [slashcommands/HealCommand.md](slashcommands/HealCommand.md)                                   | `/heal`, `/resurrect` restores health and clears death.                          |
 | [slashcommands/HelpCommand.md](slashcommands/HelpCommand.md)                                   | `/help` lists slash commands and usage.                                          |
+| [slashcommands/HousekeepingCommand.md](slashcommands/HousekeepingCommand.md)                   | `/housekeeping`, `/runhousekeeping` runs housekeeping with optional instructions. |
 | [slashcommands/ImportItemCommand.md](slashcommands/ImportItemCommand.md)                       | `/import_item` imports XML item/scenery entries.                                 |
 | [slashcommands/IncapacitateCommand.md](slashcommands/IncapacitateCommand.md)                   | `/incapacitate` applies the Incapacitated status without lowering health.        |
 | [slashcommands/KillCommand.md](slashcommands/KillCommand.md)                                   | `/kill` immediately kills a named NPC.                                           |
@@ -187,13 +196,14 @@ Current map of Markdown documentation under `docs/`. This README and the generat
 | [slashcommands/PlotAnalysisCommand.md](slashcommands/PlotAnalysisCommand.md)                   | `/plot_analysis` displays the latest background plot analysis.                   |
 | [slashcommands/PromptStatsCommand.md](slashcommands/PromptStatsCommand.md)                     | `/promptstats` inspects or clears prompt output-character averages.              |
 | [slashcommands/RandomCommand.md](slashcommands/RandomCommand.md)                               | `/random` triggers a configured random event.                                    |
+| [slashcommands/RefillNeedsCommand.md](slashcommands/RefillNeedsCommand.md)                     | `/refill_needs` refills stored need bars for one NPC or every NPC.               |
 | [slashcommands/RegenPartyImagesCommand.md](slashcommands/RegenPartyImagesCommand.md)           | `/regen_party_images` regenerates current party NPC portraits.                   |
 | [slashcommands/RegexReplaceCommand.md](slashcommands/RegexReplaceCommand.md)                   | `/regex_replace` runs regex replacement across chat history.                     |
 | [slashcommands/ReloadConfigCommand.md](slashcommands/ReloadConfigCommand.md)                   | `/reload_config` reloads config files and definition caches.                     |
 | [slashcommands/ReloadLorebooksCommand.md](slashcommands/ReloadLorebooksCommand.md)             | `/reload_lorebooks` reloads lorebooks from disk.                                 |
 | [slashcommands/RespecAbilitiesCommand.md](slashcommands/RespecAbilitiesCommand.md)             | `/respec_abilities` rebuilds ability selections across a level range.            |
 | [slashcommands/RespecSkillsCommand.md](slashcommands/RespecSkillsCommand.md)                   | `/respec_skills` rebuilds NPC skill allocation for current level.                |
-| [slashcommands/RpCommand.md](slashcommands/RpCommand.md)                                       | `/rp` toggles roleplay mode and related checks.                                  |
+| [slashcommands/RpCommand.md](slashcommands/RpCommand.md)                                       | `/rp` toggles roleplay mode and related checks, including plot analysis.         |
 | [slashcommands/RunPlotExpanderCommand.md](slashcommands/RunPlotExpanderCommand.md)             | `/runplotexpander` runs the plot-expander prompt immediately.                    |
 | [slashcommands/RunPlotSummaryCommand.md](slashcommands/RunPlotSummaryCommand.md)               | `/runplotsummary` runs the plot-summary prompt immediately.                      |
 | [slashcommands/SceneSummariesCommand.md](slashcommands/SceneSummariesCommand.md)               | `/scene_summaries`, `/summary_ranges` lists stored scene summaries and gaps.     |

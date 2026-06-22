@@ -4,10 +4,12 @@ const path = require('path');
 const nunjucks = require('nunjucks');
 
 function createPromptEnv() {
-    return nunjucks.configure(path.join(process.cwd(), 'prompts'), {
+    const env = nunjucks.configure(path.join(process.cwd(), 'prompts'), {
         autoescape: false,
         throwOnUndefined: true
     });
+    env.addGlobal('randomword', () => 'test');
+    return env;
 }
 
 function buildRenderContext(overrides = {}) {
@@ -89,7 +91,10 @@ function buildRenderContext(overrides = {}) {
             ],
             raw: '<response><plotThreads></plotThreads><currentPlotComplications></currentPlotComplications></response>'
         },
+        plotAnalysisHasContent: true,
         worldTime: {
+            dayIndex: 0,
+            timeMinutes: 720,
             dateLabel: 'Day 1',
             timeLabel: '12:00 PM',
             segment: 'Noon',
@@ -118,10 +123,9 @@ test('base-context includes stored plot analysis for ordinary prompt types', () 
     const promptEnv = createPromptEnv();
     const rendered = promptEnv.render('base-context.xml.njk', buildRenderContext());
 
-    assert.match(rendered, /<plotAnalysis updatedAt="2026-05-20T12:00:00\.000Z">/);
-    assert.match(rendered, /<description>Find the missing courier before the trail goes cold\.<\/description>/);
-    assert.match(rendered, /<isCurrentFocus>true<\/isCurrentFocus>/);
-    assert.match(rendered, /<description>Get access to the locked customs ledger\.<\/description>/);
+    assert.match(rendered, /<plotAnalysis>/);
+    assert.match(rendered, /- \[CURRENT\] Find the missing courier before the trail goes cold\./);
+    assert.match(rendered, /- Get access to the locked customs ledger\./);
 });
 
 test('base-context omits stored plot analysis when it has no thread or complication content', () => {
@@ -132,7 +136,8 @@ test('base-context omits stored plot analysis when it has no thread or complicat
             plotThreads: [],
             currentPlotComplications: [],
             raw: '<response><plotThreads></plotThreads><currentPlotComplications></currentPlotComplications></response>'
-        }
+        },
+        plotAnalysisHasContent: false
     }));
 
     assert.doesNotMatch(rendered, /<plotAnalysis\b/);

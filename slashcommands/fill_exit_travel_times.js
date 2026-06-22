@@ -119,12 +119,16 @@ class FillExitTravelTimesCommand extends SlashCommandBase {
       accumulator.generatedExitCount += Number(result?.generatedExitCount) || 0;
       accumulator.mirroredReverseCount += Number(result?.mirroredReverseCount) || 0;
       accumulator.copiedFromReverseCount += Number(result?.copiedFromReverseCount) || 0;
+      if (result?.promptFailed) {
+        accumulator.promptFailureCount += 1;
+      }
       return accumulator;
     }, {
       promptedExitCount: 0,
       generatedExitCount: 0,
       mirroredReverseCount: 0,
-      copiedFromReverseCount: 0
+      copiedFromReverseCount: 0,
+      promptFailureCount: 0
     });
 
     const lines = [
@@ -133,7 +137,8 @@ class FillExitTravelTimesCommand extends SlashCommandBase {
       `Prompted exits: ${totals.promptedExitCount}`,
       `Generated exits: ${totals.generatedExitCount}`,
       `Mirrored reverse exits: ${totals.mirroredReverseCount}`,
-      `Copied from existing reverse exits: ${totals.copiedFromReverseCount}`
+      `Copied from existing reverse exits: ${totals.copiedFromReverseCount}`,
+      `Prompt failures: ${totals.promptFailureCount}`
     ];
 
     if (perRegionResults.length) {
@@ -145,6 +150,9 @@ class FillExitTravelTimesCommand extends SlashCommandBase {
           + `generated ${result.generatedExitCount || 0}, mirrored ${result.mirroredReverseCount || 0}, `
           + `copied ${result.copiedFromReverseCount || 0}`
         );
+        if (result.promptFailed) {
+          lines.push(`- ${result.regionName || result.regionId}: prompt failed: ${result.promptError || 'unknown error'}`);
+        }
       }
     }
 

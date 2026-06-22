@@ -1346,6 +1346,13 @@ async function movePlayerToDestination(
         return;
     }
 
+    await maybeBackfillEventMoveTravelTimes({
+        eventsInstance,
+        originLocation,
+        destinationLocation: destinationObject,
+        player
+    });
+
     if (!player.isNPC && typeof Globals.recordPlayerArrivalVisitState === "function") {
         Globals.recordPlayerArrivalVisitState(destinationObject);
     }
@@ -1435,6 +1442,67 @@ function getEventLocationRegion(eventsInstance, location) {
         return null;
     }
     return findRegionByLocationId(location.id) || null;
+}
+
+function resolveEventTravelTimeBackfillRegionIdentity(eventsInstance, location) {
+    if (!location || typeof location !== "object") {
+        return { id: null, region: null };
+    }
+
+    const region = getEventLocationRegion(eventsInstance, location);
+    const regionId = typeof region?.id === "string" && region.id.trim()
+        ? region.id.trim()
+        : (typeof location.regionId === "string" && location.regionId.trim()
+            ? location.regionId.trim()
+            : (typeof location.stubMetadata?.regionId === "string" && location.stubMetadata.regionId.trim()
+                ? location.stubMetadata.regionId.trim()
+                : (typeof location.stubMetadata?.targetRegionId === "string" && location.stubMetadata.targetRegionId.trim()
+                    ? location.stubMetadata.targetRegionId.trim()
+                    : null)));
+
+    return {
+        id: regionId,
+        region
+    };
+}
+
+async function maybeBackfillEventMoveTravelTimes({
+    eventsInstance,
+    originLocation = null,
+    destinationLocation = null,
+    player = null
+} = {}) {
+    if (player?.isNPC) {
+        return null;
+    }
+    if (!destinationLocation || typeof destinationLocation !== "object") {
+        return null;
+    }
+
+    const backfillRegionExitTravelTimes = eventsInstance?._deps?.backfillRegionExitTravelTimes;
+    if (typeof backfillRegionExitTravelTimes !== "function") {
+        return null;
+    }
+
+    const destinationRegion = resolveEventTravelTimeBackfillRegionIdentity(eventsInstance, destinationLocation);
+    if (!destinationRegion.id && !destinationRegion.region) {
+        return null;
+    }
+
+    const originRegion = resolveEventTravelTimeBackfillRegionIdentity(eventsInstance, originLocation);
+    if (originRegion.id && destinationRegion.id && originRegion.id === destinationRegion.id) {
+        return null;
+    }
+
+    try {
+        if (destinationRegion.region) {
+            return await backfillRegionExitTravelTimes({ region: destinationRegion.region, locationOverride: destinationLocation });
+        }
+        return await backfillRegionExitTravelTimes({ regionId: destinationRegion.id, locationOverride: destinationLocation });
+    } catch (error) {
+        console.warn('Event travel-time backfill failed; continuing without updated exit travel times:', error?.message || error);
+        return null;
+    }
 }
 
 function vehicleStateIsInMotion(vehicleState) {
@@ -2181,12 +2249,24 @@ function resolveDispositionDirection(beforeText, afterText) {
 class Events {
     static DEFAULT_STATUS_DURATION = DEFAULT_STATUS_DURATION;
     static MAJOR_STATUS_DURATION = MAJOR_STATUS_DURATION;
-    static PROMPT_LAUNCH_STAGGER_MS = 2000;
+    static PROMPT_LAUNCH_STAGGER_MS = 4000;
     static _deps = {};
     static _parsers = {};
     static _aggregators = {};
     static _handlers = {};
     static _baseTimeout = BASE_TIMEOUT_MS;
+
+    static resolvePromptLaunchStaggerMs(configOverride = Globals?.config) {
+        const raw = configOverride?.stagger_concurrent_prompts;
+        if (raw === undefined || raw === null || raw === "") {
+            return this.PROMPT_LAUNCH_STAGGER_MS;
+        }
+        const seconds = Number(raw);
+        if (!Number.isFinite(seconds) || seconds < 0) {
+            throw new Error("stagger_concurrent_prompts must be a non-negative finite number of seconds when provided.");
+        }
+        return seconds * 1000;
+    }
 
     static runAfterPromptLaunchDelay(delayMs, task) {
         if (typeof task !== "function") {
@@ -2853,6 +2933,100 @@ class Events {
         this._handlers = this._buildHandlers();
     }
 
+    static setHousekeepingPromptRunner(runner) {
+        if (runner !== null && runner !== undefined && typeof runner !== "function") {
+            throw new Error("Events.setHousekeepingPromptRunner requires a function or null.");
+        }
+        this._housekeepingPromptRunner = runner || null;
+    }
+
+    static _getHousekeepingPromptRunner() {
+        return typeof this._housekeepingPromptRunner === "function"
+            ? this._housekeepingPromptRunner
+            : (typeof this._deps?.runHousekeepingPrompt === "function"
+                ? this._deps.runHousekeepingPrompt
+                : null);
+    }
+
+    static _startHousekeepingForEventChecks({
+        depth = 0,
+        suppressHousekeeping = false,
+        textToCheck = "",
+        actionText = "",
+        stream = null,
+        location = null,
+        entryCollector = null,
+    } = {}) {
+        if (depth > 0 || suppressHousekeeping) {
+            return null;
+        }
+        const runner = this._getHousekeepingPromptRunner();
+        const starter = typeof runner?.start === "function"
+            ? runner.start.bind(runner)
+            : null;
+        if (!starter) {
+            return null;
+        }
+        return Promise.resolve()
+            .then(() => starter({
+                textToCheck,
+                actionText,
+                stream,
+                locationOverride: location || null,
+                eventResult: null,
+                entryCollector,
+            }))
+            .catch((error) => ({
+                __housekeepingStartError: true,
+                error,
+            }));
+    }
+
+    static async _runHousekeepingAfterEventChecks({
+        depth = 0,
+        suppressHousekeeping = false,
+        textToCheck = "",
+        actionText = "",
+        stream = null,
+        location = null,
+        eventResult = null,
+        entryCollector = null,
+        pendingHousekeepingPrompt = null,
+    } = {}) {
+        if (depth > 0 || suppressHousekeeping) {
+            return null;
+        }
+        const runner = this._getHousekeepingPromptRunner();
+        if (!runner) {
+            return null;
+        }
+        if (pendingHousekeepingPrompt) {
+            const pending = await pendingHousekeepingPrompt;
+            if (pending?.__housekeepingStartError) {
+                throw pending.error;
+            }
+            if (typeof runner.finish !== "function") {
+                throw new Error("Deferred housekeeping prompt requires runner.finish.");
+            }
+            return runner.finish(pending, {
+                textToCheck,
+                actionText,
+                stream,
+                locationOverride: location || null,
+                eventResult,
+                entryCollector,
+            });
+        }
+        return runner({
+            textToCheck,
+            actionText,
+            stream,
+            locationOverride: location || null,
+            eventResult,
+            entryCollector,
+        });
+    }
+
     static async runQuestChecks({
         allowWithoutEventChecks = false,
         recentTextOverride = null,
@@ -3191,7 +3365,10 @@ class Events {
         ignoredEventKeys,
         eventCheckIgnoreInstructions,
         suppressNeedBarEventChecks,
+        suppressHousekeeping,
         initialTimeProgress,
+        entryCollector,
+        pendingHousekeepingPrompt,
     }) {
         const normalizedIgnoredEventKeys =
             this._normalizeIgnoredEventKeys(ignoredEventKeys);
@@ -3200,6 +3377,7 @@ class Events {
             promptType: "events-xml",
             textToCheck,
             actionText: normalizedActionText,
+            shortStringTrackerMaxWords: Tracker.shortStringMaxWords(),
             includePlayerActionBlock,
             eventCheckIgnoredEventKeys: Array.from(normalizedIgnoredEventKeys),
             eventCheckIgnoreInstructions:
@@ -3233,9 +3411,10 @@ class Events {
             // captureRequestPayload: (payload) => { requestPayloadForLog = payload; },
             // captureResponsePayload: (payload) => { responsePayloadForLog = payload; }
         });
+        const promptLaunchStaggerMs = this.resolvePromptLaunchStaggerMs();
         const needBarEventCheckPromise = suppressNeedBarEventChecks
             ? Promise.resolve({ responseText: "", entries: [] })
-            : this.runAfterPromptLaunchDelay(this.PROMPT_LAUNCH_STAGGER_MS, () => this._runNeedBarEventChecks({
+            : this.runAfterPromptLaunchDelay(promptLaunchStaggerMs, () => this._runNeedBarEventChecks({
                 baseContext,
                 textToCheck,
                 actionText: normalizedActionText,
@@ -3500,7 +3679,7 @@ class Events {
             accumulator.questsAwarded,
         );
 
-        return {
+        const eventResult = {
             raw: cleaned,
             html,
             structured: xmlEvents.structured,
@@ -3524,6 +3703,20 @@ class Events {
             hiddenNpcChecks: accumulator.hiddenNpcChecks,
             timeProgress: accumulator.timeProgress,
         };
+
+        await this._runHousekeepingAfterEventChecks({
+            depth,
+            suppressHousekeeping: Boolean(suppressHousekeeping),
+            textToCheck,
+            actionText: normalizedActionText,
+            stream,
+            location: destinationLocation || location || null,
+            eventResult,
+            entryCollector,
+            pendingHousekeepingPrompt,
+        });
+
+        return eventResult;
     }
 
     static async runEventChecks({
@@ -3539,7 +3732,9 @@ class Events {
         ignoredEventKeys = [],
         eventCheckIgnoreInstructions = "",
         suppressNeedBarEventChecks = false,
+        suppressHousekeeping = false,
         initialTimeProgress = null,
+        entryCollector = null,
         _depth = 0,
         followupQueue = null,
     } = {}) {
@@ -3646,6 +3841,15 @@ class Events {
         const baseContext = await prepareBasePromptContext({
             locationOverride: location,
         });
+        const pendingHousekeepingPrompt = this._startHousekeepingForEventChecks({
+            depth,
+            suppressHousekeeping: Boolean(suppressHousekeeping),
+            textToCheck,
+            actionText: normalizedActionText,
+            stream,
+            location,
+            entryCollector,
+        });
 
         if (config?.event_checks?.use_xml !== false) {
             return this._runXmlEventChecks({
@@ -3671,15 +3875,19 @@ class Events {
                 ignoredEventKeys: normalizedIgnoredEventKeys,
                 eventCheckIgnoreInstructions,
                 suppressNeedBarEventChecks: Boolean(suppressNeedBarEventChecks),
+                suppressHousekeeping: Boolean(suppressHousekeeping),
                 initialTimeProgress: normalizedInitialTimeProgress,
+                entryCollector,
+                pendingHousekeepingPrompt,
             });
         }
 
         const promptGroups = EVENT_PROMPT_ORDER;
 
+        const promptLaunchStaggerMs = this.resolvePromptLaunchStaggerMs();
         const needBarEventCheckPromise = suppressNeedBarEventChecks
             ? Promise.resolve({ responseText: "", entries: [] })
-            : this.runAfterPromptLaunchDelay(this.PROMPT_LAUNCH_STAGGER_MS, () => this._runNeedBarEventChecks({
+            : this.runAfterPromptLaunchDelay(promptLaunchStaggerMs, () => this._runNeedBarEventChecks({
                 baseContext,
                 textToCheck,
                 actionText: normalizedActionText,
@@ -4151,7 +4359,7 @@ class Events {
             questsAwarded,
         );
 
-        return {
+        const eventResult = {
             raw: cleaned,
             html,
             structured,
@@ -4170,6 +4378,20 @@ class Events {
             hiddenNpcChecks,
             timeProgress,
         };
+
+        await this._runHousekeepingAfterEventChecks({
+            depth,
+            suppressHousekeeping: Boolean(suppressHousekeeping),
+            textToCheck,
+            actionText: normalizedActionText,
+            stream,
+            location,
+            eventResult,
+            entryCollector,
+            pendingHousekeepingPrompt,
+        });
+
+        return eventResult;
     }
 
     static mergeQuestOutcomesIntoStructured(
@@ -4903,6 +5125,308 @@ class Events {
         return match[0].trim();
     }
 
+    static _extractHousekeepingXmlBlock(responseText) {
+        if (typeof responseText !== "string") {
+            throw new Error("Housekeeping XML response must be a string.");
+        }
+        const match = responseText.match(/<housekeeping\b[\s\S]*<\/housekeeping>/i);
+        if (!match || !match[0] || !match[0].trim()) {
+            throw new Error("Housekeeping XML response missing <housekeeping> block.");
+        }
+        return match[0].trim();
+    }
+
+    static _parseHousekeepingBoolean(value, { fieldName = "value" } = {}) {
+        const normalized = normalizeString(value).toLowerCase();
+        if (normalized === "true") {
+            return true;
+        }
+        if (normalized === "false") {
+            return false;
+        }
+        throw new Error(`Housekeeping ${fieldName} must be true or false.`);
+    }
+
+    static _parseHousekeepingXmlResponse(responseText) {
+        const xml = this._extractHousekeepingXmlBlock(responseText);
+        let doc;
+        try {
+            doc = Utils.parseXmlDocumentStrict(xml, "text/xml");
+        } catch (error) {
+            throw new Error(`Failed to parse housekeeping XML response: ${error.message}`);
+        }
+
+        const root = doc?.documentElement;
+        if (!root || root.tagName !== "housekeeping") {
+            throw new Error("Housekeeping XML response did not parse into a <housekeeping> document.");
+        }
+
+        const rootChildren = this._getXmlElementChildren(root);
+        const allowedRootTags = new Set(["quests", "trackers", "relationships"]);
+        for (const child of rootChildren) {
+            if (!allowedRootTags.has(child.tagName)) {
+                throw new Error(`Unknown <housekeeping> child <${child.tagName}>.`);
+            }
+        }
+
+        const questCalls = [];
+        const trackerAdds = [];
+        const trackerUpdates = [];
+        const trackerRemovals = [];
+        const relationshipItems = [];
+
+        for (const questsNode of rootChildren.filter(child => child.tagName === "quests")) {
+            for (const questNode of this._getXmlElementChildren(questsNode)) {
+                if (questNode.tagName !== "quest") {
+                    throw new Error("<quests> may only contain <quest> entries.");
+                }
+                const summary = this._getXmlDirectChildText(questNode, "summary");
+                const giver = this._getXmlDirectChildText(questNode, "giver");
+                const args = { summary };
+                if (giver) {
+                    args.giver = giver;
+                }
+                questCalls.push({
+                    functionName: "createQuest",
+                    argumentsObject: args,
+                });
+            }
+        }
+
+        for (const trackersNode of rootChildren.filter(child => child.tagName === "trackers")) {
+            for (const trackerNode of this._getXmlElementChildren(trackersNode)) {
+                if (trackerNode.tagName !== "tracker") {
+                    throw new Error("<trackers> may only contain <tracker> entries.");
+                }
+                const action = this._getXmlDirectChildText(trackerNode, "action").toLowerCase();
+                if (!["add", "update", "remove"].includes(action)) {
+                    throw new Error("Housekeeping tracker action must be add, update, or remove.");
+                }
+
+                if (action === "add") {
+                    const item = {
+                        name: this._getXmlDirectChildText(trackerNode, "name"),
+                        type: this._getXmlDirectChildText(trackerNode, "type"),
+                        value: this._getXmlDirectChildText(trackerNode, "value"),
+                        description: this._getXmlDirectChildText(trackerNode, "description"),
+                    };
+                    const hiddenNode = this._getXmlDirectChildNode(trackerNode, "hiddenFromPlayer");
+                    if (hiddenNode) {
+                        item.hiddenFromPlayer = this._parseHousekeepingBoolean(
+                            hiddenNode.textContent,
+                            { fieldName: "hiddenFromPlayer" },
+                        );
+                    }
+                    const noteNode = this._getXmlDirectChildNode(trackerNode, "note");
+                    if (noteNode) {
+                        item.note = normalizeString(noteNode.textContent);
+                    }
+                    trackerAdds.push(item);
+                } else if (action === "update") {
+                    const item = {
+                        tracker: this._getXmlDirectChildText(trackerNode, "target"),
+                        value: this._getXmlDirectChildText(trackerNode, "value"),
+                    };
+                    const noteNode = this._getXmlDirectChildNode(trackerNode, "note");
+                    if (noteNode) {
+                        item.note = normalizeString(noteNode.textContent);
+                    }
+                    trackerUpdates.push(item);
+                } else if (action === "remove") {
+                    trackerRemovals.push({
+                        tracker: this._getXmlDirectChildText(trackerNode, "target"),
+                    });
+                }
+            }
+        }
+
+        for (const relationshipsNode of rootChildren.filter(child => child.tagName === "relationships")) {
+            for (const relationshipNode of this._getXmlElementChildren(relationshipsNode)) {
+                if (relationshipNode.tagName !== "relationship") {
+                    throw new Error("<relationships> may only contain <relationship> entries.");
+                }
+                const rawAction = this._getXmlDirectChildText(relationshipNode, "action").toLowerCase();
+                const action = rawAction || "set";
+                if (!["add", "update", "set", "remove", "delete"].includes(action)) {
+                    throw new Error("Housekeeping relationship action must be add, update, set, remove, or delete.");
+                }
+                const item = {
+                    characterA: this._getXmlDirectChildText(relationshipNode, "characterA"),
+                    characterB: this._getXmlDirectChildText(relationshipNode, "characterB"),
+                };
+                if (action === "remove" || action === "delete") {
+                    item.action = "remove";
+                } else {
+                    item.relationship = this._getXmlDirectChildText(relationshipNode, "relationshipLabel");
+                    const reciprocalRelationship = this._getXmlDirectChildText(
+                        relationshipNode,
+                        "reciprocalRelationship",
+                    );
+                    if (reciprocalRelationship) {
+                        item.reciprocalRelationship = reciprocalRelationship;
+                    }
+                }
+                relationshipItems.push(item);
+            }
+        }
+
+        const toolCalls = [...questCalls];
+        if (trackerAdds.length) {
+            toolCalls.push({
+                functionName: "addTracker",
+                argumentsObject: { items: trackerAdds },
+            });
+        }
+        if (trackerUpdates.length) {
+            toolCalls.push({
+                functionName: "updateTracker",
+                argumentsObject: { items: trackerUpdates },
+            });
+        }
+        if (trackerRemovals.length) {
+            toolCalls.push({
+                functionName: "removeTracker",
+                argumentsObject: { items: trackerRemovals },
+            });
+        }
+        if (relationshipItems.length) {
+            toolCalls.push({
+                functionName: "setRelationship",
+                argumentsObject: { items: relationshipItems },
+            });
+        }
+
+        return { xml, toolCalls };
+    }
+
+    static _escapeHousekeepingXmlText(value) {
+        return String(value ?? "")
+            .replace(/&/g, "&amp;")
+            .replace(/</g, "&lt;")
+            .replace(/>/g, "&gt;");
+    }
+
+    static async _applyHousekeepingXmlResponse(responseText, {
+        executeChatToolCall,
+        onToolCallDebug = null,
+        metadataLabel = "housekeeping",
+        startingSequence = 0,
+        includeAllHistoryEntryTypes = true,
+        requestUserInputHandler = null,
+        promptStream = null,
+    } = {}) {
+        if (typeof executeChatToolCall !== "function") {
+            throw new Error("Housekeeping XML application requires executeChatToolCall.");
+        }
+        if (onToolCallDebug !== null && onToolCallDebug !== undefined && typeof onToolCallDebug !== "function") {
+            throw new Error("Housekeeping XML onToolCallDebug must be a function when provided.");
+        }
+
+        const parsed = this._parseHousekeepingXmlResponse(responseText);
+        const toolInvocations = [];
+        let sequence = Number.isInteger(startingSequence) && startingSequence >= 0
+            ? startingSequence
+            : 0;
+
+        for (const parsedToolCall of parsed.toolCalls) {
+            sequence += 1;
+            const functionName = parsedToolCall.functionName;
+            const argumentsObject = parsedToolCall.argumentsObject || {};
+            const toolCall = {
+                id: `housekeeping_xml_${sequence}`,
+                functionName,
+                argumentsObject,
+                argumentsText: JSON.stringify(argumentsObject),
+            };
+            const debugBase = {
+                metadataLabel,
+                round: null,
+                sequence,
+                id: toolCall.id,
+                name: functionName,
+                parameters: argumentsObject,
+                argumentsText: toolCall.argumentsText,
+            };
+
+            if (typeof onToolCallDebug === "function") {
+                await onToolCallDebug({
+                    ...debugBase,
+                    phase: "started",
+                });
+            }
+
+            let toolResult = null;
+            try {
+                toolResult = await executeChatToolCall(toolCall, {
+                    includeAllHistoryEntryTypes,
+                    requestUserInputHandler,
+                    promptStream,
+                    allowRelationshipRemoval: true,
+                });
+                if (!toolResult || typeof toolResult.content !== "string" || !toolResult.content.trim()) {
+                    throw new Error(`Housekeeping XML tool "${functionName}" returned empty content.`);
+                }
+            } catch (error) {
+                const message = error?.message || String(error);
+                toolResult = {
+                    content: [
+                        "<toolError>",
+                        `  <tool>${this._escapeHousekeepingXmlText(functionName)}</tool>`,
+                        `  <message>${this._escapeHousekeepingXmlText(message)}</message>`,
+                        "</toolError>",
+                    ].join("\n"),
+                    metadata: {
+                        error: true,
+                        functionName,
+                        code: "tool_execution_error",
+                        message,
+                        stack: typeof error?.stack === "string" ? error.stack : null,
+                    },
+                };
+            }
+
+            const metadata = toolResult?.metadata && typeof toolResult.metadata === "object"
+                ? toolResult.metadata
+                : {};
+            if (typeof onToolCallDebug === "function") {
+                if (metadata.error) {
+                    await onToolCallDebug({
+                        ...debugBase,
+                        phase: "error",
+                        error: {
+                            message: metadata.message || `Tool "${functionName}" failed.`,
+                            code: metadata.code || "tool_error",
+                            result: {
+                                content: toolResult.content,
+                                metadata,
+                            },
+                        },
+                    });
+                } else {
+                    await onToolCallDebug({
+                        ...debugBase,
+                        phase: "completed",
+                        result: {
+                            content: toolResult.content,
+                            metadata,
+                        },
+                    });
+                }
+            }
+
+            toolInvocations.push({
+                id: toolCall.id,
+                name: functionName,
+                metadata,
+            });
+        }
+
+        return {
+            ...parsed,
+            toolInvocations,
+        };
+    }
+
     static _getXmlElementChildren(node) {
         return Array.from(node?.childNodes || []).filter(
             (child) => child && child.nodeType === 1,
@@ -5048,8 +5572,9 @@ class Events {
 
         if (normalizedType === "short_string") {
             const words = text.split(/\s+/).filter(Boolean);
-            if (words.length > 3) {
-                throw new Error("tracker short_string update value must be three words or fewer.");
+            const maxWords = Tracker.shortStringMaxWords();
+            if (words.length > maxWords) {
+                throw new Error(`tracker short_string update value must be ${Tracker.shortStringMaxWordsText()} words or fewer.`);
             }
         }
 

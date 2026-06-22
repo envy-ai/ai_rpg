@@ -121,7 +121,7 @@ Current bundled mods under `mods/`:
 - `mods/need-bar-sanity`: defs-only mod that contributes the `sanity` need bar for players and party NPCs.
 - `mods/need-bar-hydration`: defs-only mod that contributes the `hydration` need bar for players and party NPCs.
 - `mods/party-needs`: defs-only mod that makes the root `food` and `rest` need bars apply to players and party NPCs while excluding non-party NPCs.
-- `mods/scene-illustration`: runtime mod with a config schema and public client assets. It registers `/api/mods/scene-illustration/generate`, `/jobs`, and job deletion routes, renders a mod prompt for image-prompt generation, queues image jobs, persists gallery metadata in `mods/scene-illustration/data/sceneIllustrations.json`, and requires `imagegen.enabled` for generation.
+- `mods/scene-illustration`: runtime mod with a config schema and public client assets. It registers `/api/mods/scene-illustration/generate`, `/jobs`, and job deletion routes, renders a mod prompt for image-prompt generation, queues image jobs, persists gallery metadata in `mods/scene-illustration/data/sceneIllustrations.json`, adds an illustration action while preserving core chat-log action options, and requires `imagegen.enabled` for generation.
 
 ## Need-Bar Definitions
 

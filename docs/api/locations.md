@@ -126,6 +126,36 @@ Responses:
 Notes:
 - Favorites can be set on any location record, but `GET /api/locations?scope=favorites` only returns visited, non-stub favorites.
 
+## GET /api/location-region-membership-conflicts
+
+Reports non-stub locations that are listed in more than one live region's `locationIds`.
+
+Responses:
+- 200: `{ success: true, conflicts, conflict }`
+  - `conflicts`: array of `{ code, location, declaredRegionId, regions, message }`
+  - `location`: `{ id, name, label }`, with `label` formatted as `name (id)`.
+  - `regions`: array of `{ id, name, label, isDeclared }`, with `label` formatted as `name (id)`.
+  - `conflict`: first entry in `conflicts`, or `null`.
+- 500: `{ success: false, error }`
+
+## POST /api/location-region-membership-conflicts/:locationId/resolve
+
+Repairs one duplicate region-membership conflict by keeping the location in one of the listed regions and removing it from the rest.
+
+Request:
+- Path: `locationId`
+- Body: `{ regionId }`
+  - `regionId` must be one of the regions currently listing the location.
+
+Responses:
+- 200: `{ success: true, repaired, message, conflict, location, selectedRegion, removedRegions }`
+  - `location`, `selectedRegion`, and `removedRegions` use `name (id)` labels.
+  - `repaired=false` means the conflict was already gone.
+- 400: `{ success: false, error, code?, conflict? }` for missing ids, stub locations, or selecting a region that is not currently listed.
+- 404: `{ success: false, error }`
+- 409: `{ success: false, code: "location_region_membership_conflict", error, conflict }` when repair still leaves duplicate membership.
+- 500: `{ success: false, error }`
+
 ## GET /api/locations/:id/relocation-options
 
 Returns direct exit cleanup candidates for the hydrated-location region selector.

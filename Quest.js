@@ -298,6 +298,11 @@ class Quest {
     return Quest.#indexById.get(id.trim()) || null;
   }
 
+  static clear() {
+    Quest.#indexByName.clear();
+    Quest.#indexById.clear();
+  }
+
   get giver() {
     if (this.giverId) {
       const Player = require('./Player.js');

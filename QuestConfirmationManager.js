@@ -106,6 +106,19 @@ class QuestConfirmationManager {
         }
     }
 
+    rejectAll(reason = 'Quest confirmations cancelled') {
+        let rejected = 0;
+        for (const [id, pending] of Array.from(this.pending.entries())) {
+            if (pending.timeout) {
+                clearTimeout(pending.timeout);
+            }
+            pending.reject(new Error(reason));
+            this.pending.delete(id);
+            rejected += 1;
+        }
+        return rejected;
+    }
+
     #normalizeQuestPayload(quest) {
         if (!quest || typeof quest !== 'object') {
             return null;

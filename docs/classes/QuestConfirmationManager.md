@@ -45,6 +45,12 @@ The manager does not persist quests, grant rewards, or edit quest state. `Events
   - Clears each pending timeout before deleting the entry.
   - The current server wiring does not call this helper from `RealtimeHub` socket close events.
 
+- `rejectAll(reason = 'Quest confirmations cancelled')`:
+  - Rejects every pending confirmation across all clients with `Error(reason)`.
+  - Clears each pending timeout before deleting the entry.
+  - Returns the number of confirmations rejected.
+  - New-game reset uses this to fail loudly and prevent stale quest offers from resolving into the next game.
+
 ## Confirmation Payload
 
 `#normalizeQuestPayload(quest)` returns `null` unless `quest` is an object. String fields are trimmed; non-string values become empty strings.

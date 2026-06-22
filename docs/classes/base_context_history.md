@@ -15,7 +15,7 @@ The prompt-history exclusion helper rejects:
 
 - entries whose normalized `role` is `system`;
 - entries with `ephemeral: true`;
-- diagnostic entry types: `check-results`, `game-improvement-suggestions`, and `tool-call-debug`;
+- player-only or diagnostic entry types: `check-results`, `game-improvement-suggestions`, `relationship-updates`, `tracker-updates`, and `tool-call-debug`;
 - entries with `metadata.debugToolCalls === true` or `metadata.checkResults === true`;
 - entries carrying structured `toolCalls` or `checkResults` arrays;
 - legacy diagnostic text whose `content` or `summary` starts with `Tool calls for`, `Tool call debug: N call(s)`, `Checks for`, or `Checks: N check(s)`.
@@ -37,7 +37,7 @@ Entries that survive those checks can appear in base-context history if the rend
 
 With `includeAllEntryTypes: true`, non-diagnostic stored chat entries with renderable text can pass regardless of entry type or `metadata.excludeFromBaseContextHistory`. This mode allows generic prompt flows to inspect administrative or prompt-excluded story rows such as `@@` generic prompt entries, status summaries, level-up entries, and event summaries.
 
-All-entry mode still honors the always-excluded rules. System entries, ephemeral entries, prompt diagnostics, `game-improvement-suggestions`, structured tool/debug/check rows, and metadata-only entries stay out of prompt history.
+All-entry mode still honors the always-excluded rules. System entries, ephemeral entries, prompt diagnostics, player-only housekeeping `tracker-updates` and `relationship-updates`, `game-improvement-suggestions`, structured tool/debug/check rows, and metadata-only entries stay out of prompt history.
 
 ## Base-Context Assembly
 
@@ -57,6 +57,8 @@ History assembly behavior:
 
 `prompts/base-context.xml.njk` emits `<olderStoryHistory>` from `gameHistory` only when it is non-empty and prompt-level `omitGameHistory` is not active. `config.prompt_uses_caching === true` keeps that prompt-level history block available for cache-stability runs. `<recentStoryHistory>` is emitted from `recentGameHistory`.
 
+Character records in base context also include non-empty relationship sections. `<relationships>` lists how that character relates to other characters by resolved name, and `<reciprocalRelationships>` lists how off-scene/non-party characters relate to that character. Empty sections are omitted, and reciprocal labels from characters already present in the prompt cast are omitted because those characters render their own outgoing labels.
+
 ## Prompt Paths
 
 - Regular player, NPC, question, event, generation, scheduled-event, plot, mystery, barter, crafting, and other base-context prompts use normal base-context history unless a caller passes an omission option.
@@ -66,6 +68,7 @@ History assembly behavior:
 - `@@...` entries are persisted with `metadata.excludeFromBaseContextHistory: true`; `@@@...` entries are not persisted. Both markers still receive all-entry context for the prompt being answered.
 - No-context generic prompt actions `\...` render through `prompts/generic-prompt-nocontext.xml.njk`; they do not call `prepareBasePromptContext()` and do not receive chat tools.
 - Improvement prompts render through the base-context wrapper with `includeAllHistoryEntryTypes: true`; their stored `game-improvement-suggestions` entries are visible to the player but excluded from every future prompt-history path.
+- Housekeeping tracker and relationship update entries are stored visibly for the player as `tracker-updates` and `relationship-updates`, but both types are excluded from every future prompt-history path because current tracker and relationship state already appears in structured base context.
 
 ## History Tool Behavior
 
@@ -74,4 +77,4 @@ History assembly behavior:
 - Regular prompts search assistant prose-like history only.
 - Generic prompts pass `includeAllHistoryEntryTypes: true` into the tool loop, so `getHistory` can search all non-diagnostic stored entry types.
 - Search text prefers `content`. In all-entry mode, entries without content can also expose `summary` or structured fields.
-- Diagnostic exclusions remain in force for tool searches, so `getHistory` does not return `tool-call-debug`, `check-results`, `game-improvement-suggestions`, system entries, or legacy diagnostic text blocks.
+- Diagnostic and player-only exclusions remain in force for tool searches, so `getHistory` does not return `tool-call-debug`, `check-results`, `game-improvement-suggestions`, `tracker-updates`, `relationship-updates`, system entries, or legacy diagnostic text blocks.

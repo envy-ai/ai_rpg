@@ -2,6 +2,8 @@
 
 The chat page exposes a Region Map tab, a World Map tab, and a Favorites tab that reuses the shared map-travel helper. The map graph endpoints are read-only; editing, travel, and stub expansion go through the same route groups and inline helpers used by the Adventure UI.
 
+The Relationships tab uses the same Cytoscape vendor stack for character relationship rendering; its behavior is documented separately in `docs/ui/relationships.md`.
+
 ## Entry points
 
 - `views/index.njk` defines the Map, World Map, and Favorites tab panels, the floating map-location context menu, the Set Last Seen modal, the fast-travel confirmation modal, tab activation, and `window.openNewExitModalFromMap`.
@@ -34,7 +36,7 @@ Rendered inside `#mapContainer` in the Map tab.
 
 - Tapping a visited, non-current location calls `window.travelToAdjacentLocationFromMap(locationId)`.
 - Tapping an expanded region-exit bubble calls `loadRegionMap(targetRegionId)`.
-- Right-clicking a hydrated location opens the shared floating location menu with Edit Location, Edit Region, Edit Weather, Edit Calendar, Set Last Seen, Summon NPC, Summon Item/Scenery, Upload Image, Regenerate Image, and Delete Location actions. Stub locations hide region/weather/calendar/regenerate/delete actions in that shared menu and expose Unstub.
+- Right-clicking a hydrated location opens the shared floating location menu with Edit Location, Edit Region, Edit Weather, Edit Calendar, Set Last Seen, Summon NPC, Summon Item/Scenery, Upload Image, Regenerate Image, Regenerate Image +, and Delete Location actions. `Regenerate Image +` generates the final prompt, opens the shared prompt-edit modal, and only queues image rendering after confirmation. Stub locations hide region/weather/calendar/regenerate/delete actions in that shared menu and expose Unstub.
 - The Set Last Seen map action opens the shared modal and submits `/set_last_seen <location> <time>` through `AIRPG_CHAT.executeSlashCommand`. Accepted time text matches the slash command guidance: exact `H AM/PM`, exact `H:MM AM/PM`, or relative durations such as `2 hours ago`.
 - Right-clicking a stub node in the Region Map opens a compact map menu with Unstub, Edit stub, and Delete stub. Unstub calls `POST /api/stubs/:id/expand`; Edit stub opens `window.openStubEditModal(stubId)`; Delete stub calls `DELETE /api/stubs/:id`.
 - The shared stub editor exposes vehicle metadata controls (`isVehicle` and `vehicleInfo`) for location stubs and region-entry stubs. Ordinary location stubs also expose a Region selector and can move between live or pending regions. Region-entry stubs hide that selector because their target region is fixed.
@@ -76,16 +78,17 @@ Flow:
 - Fetch `GET /api/player/fast-travel-preview?destinationId=<id>` to compute shortest-route travel time without moving the player.
 - Open `#mapFastTravelConfirmModal`, display the destination and travel time, and leave the editable player-action prompt blank by default.
 - Focus the Adventure tab as soon as the Travel confirmation is accepted.
-- Dispatch the confirmed action through `AIRPG_CHAT.dispatchAutomatedMessage(actionText, { travel: true, travelMetadata, suppressTravelCompletionSound: true, allowEmptyAction: true })`; blank action text is valid.
-- Send `travelMetadata.mode: "fast-travel"` and `eventDriven: false` so `/api/chat` resolves origin/destination without requiring a single adjacent exit.
-- After the prompt succeeds, call the player teleport helper with `accountTravelTime: true`.
+- If the confirmed action text is nonblank, dispatch it through `AIRPG_CHAT.dispatchAutomatedMessage(actionText, { travel: true, travelMetadata, suppressTravelCompletionSound: true })`.
+- For nonblank prompts, send `travelMetadata.mode: "fast-travel"` and `eventDriven: false` so `/api/chat` resolves origin/destination without requiring a single adjacent exit.
+- If the confirmed action text is blank, skip the player-action prompt and dispatch only a comment-style travel log (`# <player> moved to <destination>.`) like ordinary explored-exit clicks.
+- After the prompt-backed action or comment log succeeds, call the player teleport helper with `accountTravelTime: true`.
 - Refresh the active Region Map after teleport.
 
 This path is gameplay travel, not a story-tool teleport. The server still applies travel-time accounting, arrival processing, hidden-NPC checks, NPC sighting updates, event summaries, and world-time payload updates.
 
 ## Favorites
 
-The Favorites tab fetches `GET /api/locations?scope=favorites`, renders favorite location cards with computed shortest-route travel times, and calls the shared map-travel helper when a card is selected. Favorite-card travel uses the same preview, confirmation modal, `/api/chat` fast-travel metadata, and travel-time-accounting teleport as the Region Map and World Map.
+The Favorites tab fetches `GET /api/locations?scope=favorites`, renders favorite location cards with computed shortest-route travel times, and calls the shared map-travel helper when a card is selected. Favorite-card travel uses the same preview, confirmation modal, optional nonblank `/api/chat` fast-travel prompt, blank-prompt comment logging, and travel-time-accounting teleport as the Region Map and World Map.
 
 ## API and Mutation Paths
 
