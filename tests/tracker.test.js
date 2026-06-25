@@ -74,7 +74,9 @@ test('Tracker stores active plot tracker records and validates typed values', ()
     assert.equal(countdown.note, 'The cult has completed the first rite and needs one final dusk vigil.');
     assert.equal(countdown.toPromptContext().note, 'The cult has completed the first rite and needs one final dusk vigil.');
     assert.match(countdown.toPromptLine(), /note=The cult has completed the first rite and needs one final dusk vigil\./);
-    assert.equal(Object.prototype.hasOwnProperty.call(countdown.toClientJSON(), 'note'), false);
+    const countdownClientJson = countdown.toClientJSON();
+    assert.equal(countdownClientJson.description, 'Update when the ritual advances, stalls, or is interrupted.');
+    assert.equal(countdownClientJson.note, 'The cult has completed the first rite and needs one final dusk vigil.');
     assert.equal(short.id, 'tracker_2');
     assert.deepEqual(Tracker.getAll().map(tracker => tracker.id), ['tracker_1', 'tracker_2']);
     assert.equal(Tracker.getById('tracker_1'), countdown);

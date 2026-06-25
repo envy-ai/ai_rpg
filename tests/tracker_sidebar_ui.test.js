@@ -14,6 +14,43 @@ function extractCssRule(source, selector) {
     return match[0];
 }
 
+function extractFunction(source, signature) {
+    const start = source.indexOf(signature);
+    assert.notEqual(start, -1, `Expected to find function signature: ${signature}`);
+    const paramsStart = source.indexOf('(', start);
+    assert.notEqual(paramsStart, -1, `Expected to find parameters for: ${signature}`);
+    let parenDepth = 0;
+    let paramsEnd = -1;
+    for (let index = paramsStart; index < source.length; index += 1) {
+        const char = source[index];
+        if (char === '(') {
+            parenDepth += 1;
+        } else if (char === ')') {
+            parenDepth -= 1;
+            if (parenDepth === 0) {
+                paramsEnd = index;
+                break;
+            }
+        }
+    }
+    assert.notEqual(paramsEnd, -1, `Expected to find parameter end for: ${signature}`);
+    const bodyStart = source.indexOf('{', paramsEnd);
+    assert.notEqual(bodyStart, -1, `Expected to find body for: ${signature}`);
+    let depth = 0;
+    for (let index = bodyStart; index < source.length; index += 1) {
+        const char = source[index];
+        if (char === '{') {
+            depth += 1;
+        } else if (char === '}') {
+            depth -= 1;
+            if (depth === 0) {
+                return source.slice(start, index + 1);
+            }
+        }
+    }
+    throw new Error(`Unable to extract function: ${signature}`);
+}
+
 test('chat sidebar template renders tracker section and hidden toggle', () => {
     const source = readRepoFile('views/index.njk');
 
@@ -38,20 +75,33 @@ test('chat sidebar template renders tracker section and hidden toggle', () => {
     assert.match(source, /renderChatTrackersPanel\(Array\.isArray\(window\.currentPlayerData\?\.trackers\) \? window\.currentPlayerData\.trackers : \[\]\);/);
 });
 
-test('chat sidebar tracker rows omit secondary metadata lines', () => {
+test('chat sidebar tracker rows omit secondary metadata lines and bind detail tooltip', () => {
     const source = readRepoFile('views/index.njk');
+    const tooltipSource = extractFunction(source, 'function formatTrackerTooltipHtml(tracker)');
 
     assert.doesNotMatch(source, /chat-tracker-card__meta/);
     assert.doesNotMatch(source, /formatTrackerTypeLabel\(tracker\.type\)/);
-    assert.doesNotMatch(source, /tracker\.lastUpdated/);
+    assert.match(source, /function formatTrackerTooltipHtml\(tracker\)/);
+    assert.match(source, /tracker\.description/);
+    assert.match(source, /tracker\.note/);
+    assert.match(source, /tracker\.lastUpdated/);
+    assert.match(source, /function bindTrackerTooltip\(card,\s*tracker\)/);
+    assert.match(source, /floatingTooltipController\.show\(tooltipHtml,\s*event,\s*\{\s*allowHTML:\s*true\s*\}\)/);
+    assert.match(source, /bindTrackerTooltip\(card,\s*tracker\)/);
+    assert.doesNotMatch(tooltipSource, /tracker\.type/);
+    assert.doesNotMatch(tooltipSource, /tracker\.value/);
 });
 
 test('server attaches serialized trackers only to the player payload', () => {
     const source = readRepoFile('server.js');
+    const trackerSource = readRepoFile('Tracker.js');
+    const toClientJsonSource = extractFunction(trackerSource, 'toClientJSON({ formatLastUpdated, formatCountdownValue } = {})');
 
     assert.match(source, /function serializeTrackersForClient\(\)/);
     assert.match(source, /Tracker\.getAll\(\)\.map\(tracker => tracker\.toClientJSON/);
     assert.match(source, /serialized\.trackers = serializeTrackersForClient\(\);/);
+    assert.match(toClientJsonSource, /description:\s*this\.description/);
+    assert.match(toClientJsonSource, /note:\s*this\.note/);
 });
 
 test('tracker sidebar styles are maintained in SCSS source', () => {

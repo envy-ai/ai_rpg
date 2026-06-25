@@ -54,6 +54,37 @@ Notes:
 - `resultNames` are the exact `<item>` names returned by the model. `matchedIds` contains all supplied item ids whose supplied names match those returned names case-insensitively after trimming, so duplicate item names all remain visible.
 - The route does not read from the global Thing registry; callers are responsible for sending the item list that should be searched.
 
+## POST /api/things/ai-combine-candidates
+Run `prompts/ai-item-combiner.xml.njk` against a caller-supplied visible item-stack list and ask the model for same-quality groups that can reasonably be combined.
+
+Request:
+- Body: `{ items: [{ id, name, description?, level?, quality?, quantity?, equipmentSlot?, statusEffects?, statModifiers? }] }`.
+
+Response:
+- 200: `{ success: true, groups: [{ reason, itemIds, items }], excludedItemIds, response }`
+- 400/404/500 with `{ success: false, error }` for malformed items, stale ids, prompt failure, invalid XML, or AI groups that violate server validation.
+
+Notes:
+- The endpoint resolves every supplied id against the runtime Thing registry, excludes non-item, equipped, container, and installed-module stacks from the prompt, and logs through `LLMClient.logPrompt()` with metadata label `ai_item_combiner`.
+- Prompt context includes compact markdown-list text for status effects, target/equipper cause effects, and direct attribute stat modifiers. The server derives these from the resolved Thing when possible and uses supplied `statusEffects`/`statModifiers` text only as fallback context.
+- Returned groups are validated server-side before being shown to the player: every stack must be item-type, unequipped, non-container, same quality/rarity, and in the same real holder.
+- The route suggests groups only. It does not mutate inventory.
+
+## POST /api/things/combine-stacks
+Combine a user-approved same-quality stack group by keeping one selected stack and deleting the other selected stacks.
+
+Request:
+- Body: `{ keepThingId: string, mergeThingIds: string[] }`.
+
+Response:
+- 200: `{ success: true, keptThingId, sourceThingId, mergedThingIds, things, owner?, container?, contents?, location?, message }`
+- 400/404/500 with `{ success: false, error }`
+
+Notes:
+- This is the authoritative mutation endpoint for the AI-backed item stack combiner. It revalidates all requested stacks before deleting anything.
+- The kept stack preserves its name, image, description, metadata, effects, value, and mechanics. Only its `count` changes.
+- Merge candidates must be item-type, unequipped, non-container stacks with the same quality/rarity and the same real holder: actor inventory, Thing container, or loose location.
+
 ## POST /api/mod-thing-context-actions/:actionId
 Execute a registered mod-owned Thing context-menu action.
 

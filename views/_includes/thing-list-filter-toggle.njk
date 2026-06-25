@@ -3,7 +3,7 @@
         class="thing-list-panel__icon-toggle {{ extraClass }}"
         id="{{ id }}"
         aria-expanded="false"
-        aria-controls="{{ controlsId }}"
+        {% if controlsId %}aria-controls="{{ controlsId }}"{% endif %}
         aria-label="{{ ariaLabel }}"
         title="{{ title }}"
         {% if initiallyHidden %}hidden{% endif %}>
@@ -20,6 +20,17 @@
     "/assets/material-icons/inventory-view-icons/filter.svg",
     "thing-list-filters-toggle",
     true
+) }}
+{% endmacro %}
+
+{% macro thingListCombineButton(id, ariaLabel) %}
+{{ thingListIconToggle(
+    id,
+    "",
+    ariaLabel,
+    "Combine similar item stacks",
+    "/assets/material-icons/misc/merge.svg",
+    "thing-list-combine-toggle"
 ) }}
 {% endmacro %}
 

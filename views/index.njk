@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 {% set pageTitleValue = title | default("AI RPG Play") %}
-{% from "_includes/thing-list-filter-toggle.njk" import thingListFiltersToggle, thingListSortToggle, thingListSortShell, thingListViewToggle, thingListViewShell %}
+{% from "_includes/thing-list-filter-toggle.njk" import thingListFiltersToggle, thingListSortToggle, thingListSortShell, thingListViewToggle, thingListViewShell, thingListCombineButton %}
 <head>
     {% include "_includes/head-common.njk" %}
     <link rel="stylesheet" href="/css/map.css">
@@ -173,6 +173,7 @@
                                                             <span class="inventory-count" id="locationItemsCount">0 items</span>
                                                         </div>
                                                         <div class="thing-list-panel__controls">
+                                                            {{ thingListCombineButton("locationItemsCombineBtn", "Find similar location item stacks to combine") }}
                                                             {{ thingListViewToggle("locationItemsViewToggle", "locationItemsView", "Change location items view") }}
                                                             {{ thingListSortToggle("locationItemsSortToggle", "locationItemsSort", "Sort location items") }}
                                                             {{ thingListFiltersToggle("locationItemsFiltersToggle", "locationItemsFilters", "Search and filter location items") }}
@@ -234,13 +235,41 @@
 
                         <div class="chat-wrapper">
                             <div class="chat-container">
+                                <button
+                                    type="button"
+                                    class="chat-bubble-filter-toggle"
+                                    id="chatBubbleFilterToggle"
+                                    aria-label="Filter chat bubble types"
+                                    title="Filter chat bubble types"
+                                    aria-haspopup="dialog"
+                                    aria-expanded="false"
+                                    aria-controls="chatBubbleFilterPopover"
+                                >
+                                    <img
+                                        id="chatBubbleFilterIcon"
+                                        class="chat-bubble-filter-icon"
+                                        src="/assets/material-icons/misc/visibility.svg"
+                                        alt=""
+                                        aria-hidden="true"
+                                    >
+                                </button>
+                                <div
+                                    class="chat-bubble-filter-popover"
+                                    id="chatBubbleFilterPopover"
+                                    role="dialog"
+                                    aria-label="Chat bubble type visibility"
+                                    hidden
+                                >
+                                    <div class="chat-bubble-filter-popover__title">Chat Bubble Types</div>
+                                    <div class="chat-bubble-filter-options" id="chatBubbleFilterOptions"></div>
+                                </div>
                                 <div class="chat-log" id="chatLog">
                                     {% if chatHistory and chatHistory.length > 0 %}
                                         {% for message in chatHistory %}
                                             {% if message.type == 'event-summary' %}
                                                 {% set summaryTitle = message.summaryTitle or (message.content.split('\n')[0]) %}
                                                 {% set summaryItems = message.summaryItems or [] %}
-                                                <div class="message event-summary-batch">
+                                                <div class="message event-summary-batch" data-chat-bubble-type="event-summary" data-chat-bubble-label="Event Summary">
                                                     <div class="message-sender">{{ summaryTitle }}</div>
                                                     <div>
                                                         <ul class="event-summary-list">
@@ -279,7 +308,7 @@
                                                     <div class="message-timestamp">{{ (message.timestamp or '') | replace('T', ' ') | replace('Z', '') }}</div>
                                                 </div>
                                             {% else %}
-                                                <div class="message {{ 'user-message' if message.role == 'user' else 'ai-message' }}">
+                                                <div class="message {{ 'user-message' if message.role == 'user' else 'ai-message' }}" data-chat-bubble-type="{{ message.type or message.role or 'assistant' }}" data-chat-bubble-label="{{ message.type or ('Player' if message.role == 'user' else 'AI Game Master') }}">
                                                     <div class="message-sender">
                                                         {% if message.role == 'user' %}
                                                             👤 You
@@ -297,7 +326,7 @@
                                             {% endif %}
                                         {% endfor %}
                                     {% else %}
-                                        <div class="message ai-message">
+                                        <div class="message ai-message" data-chat-bubble-type="assistant" data-chat-bubble-label="AI Game Master">
                                             <div class="message-sender">🤖 AI Game Master</div>
                                             <div>Welcome to the AI RPG! I'm your Game Master. Configure your AI settings above and then click the <strong>New Game</strong> link in the upper right.</div>
                                         </div>
@@ -1466,6 +1495,7 @@
                         <span class="inventory-count" id="npcInventoryCount">0 items</span>
                     </div>
                     <div class="thing-list-panel__controls">
+                        {{ thingListCombineButton("npcInventoryCombineBtn", "Find similar inventory item stacks to combine") }}
                         {{ thingListViewToggle("npcInventoryViewToggle", "npcInventoryView", "Change inventory view") }}
                         {{ thingListSortToggle("npcInventorySortToggle", "npcInventorySort", "Sort inventory items") }}
                         {{ thingListFiltersToggle("npcInventoryFiltersToggle", "npcInventoryFilters", "Search and filter inventory items") }}
@@ -1514,6 +1544,31 @@
         </div>
     </div>
 
+    <div id="thingStackCombinerModal" class="modal thing-stack-combiner-modal" role="dialog" aria-modal="true" aria-hidden="true" hidden>
+        <div class="modal__dialog thing-stack-combiner-modal__dialog">
+            <header class="modal__header">
+                <div>
+                    <h2 id="thingStackCombinerTitle">Combine Item Stacks</h2>
+                    <div class="thing-stack-combiner-modal__progress" id="thingStackCombinerProgress">Group 1 of 1</div>
+                </div>
+                <button type="button" class="modal__close" id="thingStackCombinerCloseBtn" aria-label="Close item stack combiner">
+                    <span aria-hidden="true">X</span>
+                </button>
+            </header>
+            <div class="modal__body thing-stack-combiner-modal__body">
+                <div class="thing-stack-combiner-modal__reason" id="thingStackCombinerReason"></div>
+                <div class="thing-stack-combiner-modal__cards" id="thingStackCombinerCards"></div>
+                <div class="thing-stack-combiner-modal__status" id="thingStackCombinerStatus" aria-live="polite"></div>
+                <div class="modal__actions thing-stack-combiner-modal__actions">
+                    <button type="button" class="button button-secondary" id="thingStackCombinerBackBtn">Back</button>
+                    <button type="button" class="button button-secondary" id="thingStackCombinerClearBtn">Clear Selection</button>
+                    <button type="button" class="button button-secondary" id="thingStackCombinerCancelBtn">Cancel</button>
+                    <button type="button" class="button button-primary" id="thingStackCombinerNextBtn">Next</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <div id="thingContainerModal" class="modal thing-container-modal" role="dialog" aria-modal="true" aria-hidden="true" hidden>
         <div class="modal__dialog thing-container-modal__dialog">
             <header class="modal__header">
@@ -1539,6 +1594,7 @@
                             </div>
                             <div class="thing-list-panel__controls">
                                 <button type="button" class="npc-edit-add-btn thing-container-modal__bulk-button" id="containerPlayerInventoryAddAllBtn" disabled>Add all</button>
+                                {{ thingListCombineButton("containerPlayerInventoryCombineBtn", "Find similar player inventory stacks to combine") }}
                                 {{ thingListViewToggle("containerPlayerInventoryViewToggle", "containerPlayerInventoryView", "Change player inventory view") }}
                                 {{ thingListSortToggle("containerPlayerInventorySortToggle", "containerPlayerInventorySort", "Sort player inventory") }}
                                 {{ thingListFiltersToggle("containerPlayerInventoryFiltersToggle", "containerPlayerInventoryFilters", "Search and filter player inventory") }}
@@ -1588,6 +1644,7 @@
                             </div>
                             <div class="thing-list-panel__controls">
                                 <button type="button" class="npc-edit-add-btn thing-container-modal__bulk-button" id="containerContentsRemoveAllBtn" disabled>Remove all</button>
+                                {{ thingListCombineButton("containerContentsCombineBtn", "Find similar container stacks to combine") }}
                                 {{ thingListViewToggle("containerContentsViewToggle", "containerContentsView", "Change container contents view") }}
                                 {{ thingListSortToggle("containerContentsSortToggle", "containerContentsSort", "Sort container contents") }}
                                 {{ thingListFiltersToggle("containerContentsFiltersToggle", "containerContentsFilters", "Search and filter container contents") }}
@@ -6338,6 +6395,71 @@
             }
         }
 
+        function formatTrackerTooltipHtml(tracker) {
+            if (!tracker || typeof tracker !== 'object') {
+                return '';
+            }
+
+            const formatBlock = (label, value) => {
+                const text = typeof value === 'string' && value.trim()
+                    ? value.trim()
+                    : 'None';
+                return `
+                    <div class="tooltip-thing-status">
+                        <div class="tooltip-thing-bonuses-title">${escapeHtml(label)}</div>
+                        <div class="tooltip-status-desc">${escapeHtml(text).replace(/\n/g, '<br>')}</div>
+                    </div>
+                `.trim();
+            };
+
+            const lastUpdatedText = typeof tracker.lastUpdated === 'string' && tracker.lastUpdated.trim()
+                ? tracker.lastUpdated.trim()
+                : 'unknown';
+
+            return `
+                <div class="tooltip-thing is-item">
+                    ${formatBlock('Description', tracker.description)}
+                    ${formatBlock('Notes', tracker.note)}
+                    <div class="tooltip-thing-details">
+                        <div class="tooltip-thing-detail">
+                            <span class="tooltip-thing-detail-label">Last Updated</span>
+                            <span class="tooltip-thing-detail-value">${escapeHtml(lastUpdatedText)}</span>
+                        </div>
+                    </div>
+                </div>
+            `.trim();
+        }
+
+        function bindTrackerTooltip(card, tracker) {
+            if (!card || !tracker) {
+                return;
+            }
+
+            const showTooltip = (event) => {
+                const tooltipHtml = formatTrackerTooltipHtml(tracker);
+                if (!tooltipHtml || !window.floatingTooltipController || typeof window.floatingTooltipController.show !== 'function') {
+                    return;
+                }
+                window.floatingTooltipController.show(tooltipHtml, event, { allowHTML: true });
+            };
+
+            const moveTooltip = (event) => {
+                if (window.floatingTooltipController && typeof window.floatingTooltipController.move === 'function') {
+                    window.floatingTooltipController.move(event);
+                }
+            };
+
+            const hideTooltip = () => {
+                if (window.floatingTooltipController && typeof window.floatingTooltipController.hide === 'function') {
+                    window.floatingTooltipController.hide();
+                }
+            };
+
+            card.addEventListener('mouseenter', showTooltip);
+            card.addEventListener('mousemove', moveTooltip);
+            card.addEventListener('mouseleave', hideTooltip);
+        }
+
         function renderChatTrackersPanel(trackers = []) {
             const list = chatSidebarElements.trackersList;
             const emptyState = chatSidebarElements.trackersEmpty;
@@ -6436,6 +6558,7 @@
                 }
 
                 card.appendChild(header);
+                bindTrackerTooltip(card, tracker);
                 list.appendChild(card);
             });
         }
@@ -8294,6 +8417,18 @@
             if (options.context === 'npc-inventory' && ownerData?.id && ownerData.id === currentNpcInventoryNpcId) {
                 currentNpcInventory = Array.isArray(ownerData.inventory) ? ownerData.inventory : [];
                 renderNpcInventory(currentNpcInventory);
+            }
+
+            if (
+                options.context === 'container-player-inventory'
+                && ownerData?.id
+                && ownerData.id === currentPlayerId
+                && Array.isArray(ownerData.inventory)
+            ) {
+                currentThingContainerPlayerInventory = ownerData.inventory;
+                if (thingContainerModal && !thingContainerModal.hasAttribute('hidden')) {
+                    renderThingContainerModal();
+                }
             }
 
             if (options.context === 'npc-equipment' && ownerData?.id && ownerData.id === currentNpcViewId && typeof showNpcViewModal === 'function') {
@@ -10341,7 +10476,11 @@
         const thingListViewPreferencePersistVersions = new Map();
         const thingListRenderedOrderIds = new Map();
         const thingListAiSearchStates = new Map();
+        const thingListVisibleItemsByPanelKey = new Map();
+        const thingListCombineButtons = new Map();
+        let thingStackCombinerState = null;
         syncThingListViewStatesFromPlayer(window.currentPlayerData, { replace: true });
+        const npcInventoryCombineBtn = document.getElementById('npcInventoryCombineBtn');
         const npcInventoryShowAllRadio = document.getElementById('npcInventoryShowAll');
         const npcInventoryEquippedOnlyRadio = document.getElementById('npcInventoryEquippedOnly');
         const npcInventoryEquippableOnlyRadio = document.getElementById('npcInventoryEquippableOnly');
@@ -10366,6 +10505,7 @@
         const containerPlayerInventoryViewToggle = document.getElementById('containerPlayerInventoryViewToggle');
         const containerPlayerInventorySort = document.getElementById('containerPlayerInventorySort');
         const containerPlayerInventorySortToggle = document.getElementById('containerPlayerInventorySortToggle');
+        const containerPlayerInventoryCombineBtn = document.getElementById('containerPlayerInventoryCombineBtn');
         const containerPlayerInventoryAddAllBtn = document.getElementById('containerPlayerInventoryAddAllBtn');
         const containerPlayerInventorySlotFilterWrapper = document.getElementById('containerPlayerInventorySlotFilterWrapper');
         const containerPlayerInventorySlotFilter = document.getElementById('containerPlayerInventorySlotFilter');
@@ -10385,6 +10525,7 @@
         const containerContentsViewToggle = document.getElementById('containerContentsViewToggle');
         const containerContentsSort = document.getElementById('containerContentsSort');
         const containerContentsSortToggle = document.getElementById('containerContentsSortToggle');
+        const containerContentsCombineBtn = document.getElementById('containerContentsCombineBtn');
         const containerContentsRemoveAllBtn = document.getElementById('containerContentsRemoveAllBtn');
         const containerContentsSlotFilterWrapper = document.getElementById('containerContentsSlotFilterWrapper');
         const containerContentsSlotFilter = document.getElementById('containerContentsSlotFilter');
@@ -10467,6 +10608,18 @@
         const locationItemsViewToggleEl = document.getElementById('locationItemsViewToggle');
         const locationItemsSortEl = document.getElementById('locationItemsSort');
         const locationItemsSortToggleEl = document.getElementById('locationItemsSortToggle');
+        const locationItemsCombineBtn = document.getElementById('locationItemsCombineBtn');
+        const thingStackCombinerModal = document.getElementById('thingStackCombinerModal');
+        const thingStackCombinerTitle = document.getElementById('thingStackCombinerTitle');
+        const thingStackCombinerProgress = document.getElementById('thingStackCombinerProgress');
+        const thingStackCombinerReason = document.getElementById('thingStackCombinerReason');
+        const thingStackCombinerCards = document.getElementById('thingStackCombinerCards');
+        const thingStackCombinerStatus = document.getElementById('thingStackCombinerStatus');
+        const thingStackCombinerBackBtn = document.getElementById('thingStackCombinerBackBtn');
+        const thingStackCombinerClearBtn = document.getElementById('thingStackCombinerClearBtn');
+        const thingStackCombinerCancelBtn = document.getElementById('thingStackCombinerCancelBtn');
+        const thingStackCombinerNextBtn = document.getElementById('thingStackCombinerNextBtn');
+        const thingStackCombinerCloseBtn = document.getElementById('thingStackCombinerCloseBtn');
         const playerAbilitySelectionState = {
             active: false,
             loading: false,
@@ -20462,6 +20615,32 @@
             toggleButton: locationItemsSortToggleEl,
             popoverShell: locationItemsSortEl
         });
+        bindThingListCombineButton({
+            button: npcInventoryCombineBtn,
+            panelKey: 'npcInventory',
+            contextOptions: () => ({
+                context: 'npc-inventory',
+                npcId: currentNpcInventoryNpcId || null
+            })
+        });
+        bindThingListCombineButton({
+            button: containerPlayerInventoryCombineBtn,
+            panelKey: 'containerPlayerInventory',
+            contextOptions: () => ({ context: 'container-player-inventory' })
+        });
+        bindThingListCombineButton({
+            button: containerContentsCombineBtn,
+            panelKey: 'containerContents',
+            contextOptions: () => ({ context: 'container-contents' })
+        });
+        bindThingListCombineButton({
+            button: locationItemsCombineBtn,
+            panelKey: 'locationItems',
+            contextOptions: () => ({
+                context: 'location',
+                locationId: window.lastRenderedLocation?.id || lastRenderedLocation?.id || null
+            })
+        });
 
         bindThingListSortShell({
             panelKey: 'npcInventory',
@@ -22484,6 +22663,559 @@
             }
         }
 
+        function isThingStackCombinerCandidate(item) {
+            return Boolean(
+                item
+                && typeof item.id === 'string'
+                && item.id.trim()
+                && (item.thingType || '').trim().toLowerCase() === 'item'
+                && !resolveThingBooleanFlag(item, 'isContainer')
+                && !item.isEquipped
+                && !item.equippedSlot
+                && !isInstalledModuleThing(item)
+            );
+        }
+
+        function getThingStackCombinerVisibleItems(panelKey) {
+            const items = thingListVisibleItemsByPanelKey.get(panelKey);
+            return Array.isArray(items) ? items.filter(isThingStackCombinerCandidate) : [];
+        }
+
+        function setThingListCombineButtonBusy(panelKey, busy) {
+            const record = thingListCombineButtons.get(panelKey);
+            if (!record?.button) {
+                return;
+            }
+            record.busy = Boolean(busy);
+            record.button.disabled = Boolean(record.busy);
+            record.button.setAttribute('aria-busy', record.busy ? 'true' : 'false');
+        }
+
+        function updateThingListCombineButtonState(panelKey) {
+            const record = thingListCombineButtons.get(panelKey);
+            if (!record?.button) {
+                return;
+            }
+            record.button.disabled = Boolean(record.busy);
+        }
+
+        function resolveThingStackCombinerContextOptions(panelKey) {
+            switch (panelKey) {
+                case 'npcInventory':
+                    return {
+                        context: 'npc-inventory',
+                        npcId: currentNpcInventoryNpcId || null
+                    };
+                case 'containerPlayerInventory':
+                    return { context: 'container-player-inventory' };
+                case 'containerContents':
+                    return { context: 'container-contents' };
+                case 'locationItems':
+                    return {
+                        context: 'location',
+                        locationId: window.lastRenderedLocation?.id || lastRenderedLocation?.id || null
+                    };
+                default:
+                    return { context: 'general' };
+            }
+        }
+
+        function bindThingListCombineButton({ button = null, panelKey = '', contextOptions = null } = {}) {
+            if (!(button instanceof HTMLElement) || !panelKey) {
+                return;
+            }
+            thingListCombineButtons.set(panelKey, {
+                button,
+                busy: false,
+                contextOptions
+            });
+            button.addEventListener('click', () => {
+                startThingStackCombiner(panelKey).catch(error => {
+                    console.warn('Failed to start item stack combiner:', error);
+                    alert(`Failed to find stack combinations: ${error?.message || error}`);
+                });
+            });
+            updateThingListCombineButtonState(panelKey);
+        }
+
+        function formatThingListCombinerModifierValue(value) {
+            const numeric = Number(value);
+            if (Number.isFinite(numeric)) {
+                return numeric > 0 ? `+${numeric}` : `${numeric}`;
+            }
+            return normalizeThingListAiSearchValue(value) || '0';
+        }
+
+        function formatThingListCombinerNamedModifier(entry, nameKeys = [], valueKeys = []) {
+            if (!entry || typeof entry !== 'object') {
+                return '';
+            }
+            const name = nameKeys
+                .map(key => normalizeThingListAiSearchValue(entry[key]))
+                .find(Boolean) || '';
+            if (!name) {
+                return '';
+            }
+            const rawValue = valueKeys
+                .map(key => entry[key])
+                .find(value => value !== undefined && value !== null && value !== '');
+            return `${name} ${formatThingListCombinerModifierValue(rawValue)}`;
+        }
+
+        function formatThingListCombinerStatusEffect(effect, label) {
+            if (!effect) {
+                return '';
+            }
+            if (typeof effect === 'string') {
+                const text = effect.trim();
+                return text ? `- ${label}: ${text}` : '';
+            }
+            if (typeof effect !== 'object') {
+                return '';
+            }
+
+            const name = normalizeThingListAiSearchValue(effect.name);
+            const description = normalizeThingListAiSearchValue(effect.description);
+            const duration = normalizeThingListAiSearchValue(effect.duration);
+            const base = [name, description].filter(Boolean).join(' - ');
+            if (!base) {
+                return '';
+            }
+
+            const details = [];
+            if (duration) {
+                details.push(`duration: ${duration}`);
+            }
+            const attributeModifiers = Array.isArray(effect.attributes)
+                ? effect.attributes
+                    .map(entry => formatThingListCombinerNamedModifier(entry, ['attribute', 'name'], ['modifier', 'bonus', 'value']))
+                    .filter(Boolean)
+                : [];
+            if (attributeModifiers.length) {
+                details.push(`attributes: ${attributeModifiers.join(', ')}`);
+            }
+            const skillModifiers = Array.isArray(effect.skills)
+                ? effect.skills
+                    .map(entry => formatThingListCombinerNamedModifier(entry, ['skill', 'name'], ['modifier', 'bonus', 'value']))
+                    .filter(Boolean)
+                : [];
+            if (skillModifiers.length) {
+                details.push(`skills: ${skillModifiers.join(', ')}`);
+            }
+            const needBarModifiers = Array.isArray(effect.needBars)
+                ? effect.needBars
+                    .map(entry => formatThingListCombinerNamedModifier(entry, ['name'], ['delta', 'modifier', 'bonus', 'value']))
+                    .filter(Boolean)
+                : [];
+            if (needBarModifiers.length) {
+                details.push(`need bars: ${needBarModifiers.join(', ')}`);
+            }
+
+            return `- ${label}: ${base}${details.length ? ` (${details.join('; ')})` : ''}`;
+        }
+
+        function formatThingListCombinerStatusEffects(item) {
+            const metadata = item?.metadata && typeof item.metadata === 'object' ? item.metadata : {};
+            const lines = [];
+            const addLine = (line) => {
+                const text = typeof line === 'string' ? line.trim() : '';
+                if (text && !lines.includes(text)) {
+                    lines.push(text);
+                }
+            };
+
+            const ownEffects = Array.isArray(item?.statusEffects)
+                ? item.statusEffects
+                : (Array.isArray(metadata.statusEffects) ? metadata.statusEffects : []);
+            ownEffects.forEach(effect => addLine(formatThingListCombinerStatusEffect(effect, 'self')));
+
+            const targetEffect = item?.causeStatusEffectOnTarget || metadata.causeStatusEffectOnTarget || null;
+            const equipperEffect = item?.causeStatusEffectOnEquipper || metadata.causeStatusEffectOnEquipper || null;
+            addLine(formatThingListCombinerStatusEffect(targetEffect, 'target'));
+            addLine(formatThingListCombinerStatusEffect(equipperEffect, 'equipper'));
+
+            const legacyEffect = item?.causeStatusEffect || metadata.causeStatusEffect || null;
+            if (legacyEffect && !targetEffect && !equipperEffect) {
+                const appliesToTarget = Boolean(legacyEffect.applyToTarget);
+                const appliesToEquipper = Boolean(legacyEffect.applyToEquipper);
+                const label = appliesToTarget && appliesToEquipper
+                    ? 'target/equipper'
+                    : (appliesToEquipper ? 'equipper' : (appliesToTarget ? 'target' : 'status'));
+                addLine(formatThingListCombinerStatusEffect(legacyEffect, label));
+            }
+
+            return lines.join('\n');
+        }
+
+        function formatThingListCombinerStatModifiers(item) {
+            const metadata = item?.metadata && typeof item.metadata === 'object' ? item.metadata : {};
+            const bonuses = Array.isArray(item?.attributeBonuses)
+                ? item.attributeBonuses
+                : (Array.isArray(metadata.attributeBonuses) ? metadata.attributeBonuses : []);
+            return bonuses
+                .map(entry => formatThingListCombinerNamedModifier(entry, ['attribute', 'name'], ['bonus', 'value', 'modifier']))
+                .filter(Boolean)
+                .map(text => `- ${text}`)
+                .join('\n');
+        }
+
+        function buildThingListCombinerPromptItem(item) {
+            return {
+                ...buildThingListAiSearchPromptItem(item),
+                statusEffects: formatThingListCombinerStatusEffects(item),
+                statModifiers: formatThingListCombinerStatModifiers(item)
+            };
+        }
+
+        function normalizeThingStackCombinerGroup(rawGroup, fallbackItems = []) {
+            const itemIds = Array.isArray(rawGroup?.itemIds)
+                ? rawGroup.itemIds.map(value => (typeof value === 'string' ? value.trim() : '')).filter(Boolean)
+                : [];
+            const payloadItems = Array.isArray(rawGroup?.items) ? rawGroup.items : [];
+            const itemLookup = new Map();
+            fallbackItems.forEach(item => {
+                if (item?.id) {
+                    itemLookup.set(item.id, item);
+                }
+            });
+            payloadItems.forEach(item => {
+                if (item?.id) {
+                    itemLookup.set(item.id, item);
+                    cacheThingData(item);
+                }
+            });
+
+            const items = itemIds.map(itemId => itemLookup.get(itemId) || thingDataCache.get(itemId) || null);
+            if (itemIds.length < 2 || items.some(item => !item)) {
+                return null;
+            }
+            return {
+                itemIds,
+                items,
+                reason: typeof rawGroup?.reason === 'string' ? rawGroup.reason.trim() : ''
+            };
+        }
+
+        async function startThingStackCombiner(panelKey) {
+            const record = thingListCombineButtons.get(panelKey) || {};
+            const visibleItems = getThingStackCombinerVisibleItems(panelKey);
+            if (visibleItems.length < 2) {
+                alert('There are not enough eligible item stacks visible to combine.');
+                return;
+            }
+
+            setThingListCombineButtonBusy(panelKey, true);
+            try {
+                const response = await fetch('/api/things/ai-combine-candidates', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        items: visibleItems.map(buildThingListCombinerPromptItem).filter(item => item.id && item.name)
+                    })
+                });
+                const payload = await response.json().catch(() => ({}));
+                if (!response.ok || !payload?.success) {
+                    throw new Error(payload?.error || `Request failed with status ${response.status}`);
+                }
+
+                const groups = Array.isArray(payload.groups)
+                    ? payload.groups
+                        .map(group => normalizeThingStackCombinerGroup(group, visibleItems))
+                        .filter(Boolean)
+                    : [];
+                if (!groups.length) {
+                    alert('No similar same-quality item stacks were found.');
+                    return;
+                }
+
+                const resolvedContextOptions = typeof record.contextOptions === 'function'
+                    ? record.contextOptions()
+                    : (record.contextOptions || resolveThingStackCombinerContextOptions(panelKey));
+                openThingStackCombinerModal({
+                    groups,
+                    panelKey,
+                    contextOptions: resolvedContextOptions
+                });
+            } finally {
+                setThingListCombineButtonBusy(panelKey, false);
+            }
+        }
+
+        function setThingStackCombinerStatus(message = '', type = '') {
+            if (!thingStackCombinerStatus) {
+                return;
+            }
+            thingStackCombinerStatus.textContent = message || '';
+            thingStackCombinerStatus.classList.remove('is-error', 'is-pending');
+            if (type === 'error') {
+                thingStackCombinerStatus.classList.add('is-error');
+            } else if (type === 'pending') {
+                thingStackCombinerStatus.classList.add('is-pending');
+            }
+        }
+
+        function getThingStackCombinerCurrentGroup() {
+            if (!thingStackCombinerState || !Array.isArray(thingStackCombinerState.groups)) {
+                return null;
+            }
+            return thingStackCombinerState.groups[thingStackCombinerState.index] || null;
+        }
+
+        function getThingStackCombinerSelection(index = thingStackCombinerState?.index ?? 0) {
+            if (!thingStackCombinerState?.selections) {
+                return '';
+            }
+            return thingStackCombinerState.selections.get(index) || '';
+        }
+
+        function getThingStackCombinerEquipmentOwner() {
+            const context = thingStackCombinerState?.contextOptions?.context || '';
+            const npcId = thingStackCombinerState?.contextOptions?.npcId || currentNpcInventoryNpcId || '';
+            if (context === 'npc-inventory' && npcId && window.currentNpcData instanceof Map) {
+                return window.currentNpcData.get(npcId) || window.currentPlayerData || null;
+            }
+            return window.currentPlayerData || null;
+        }
+
+        function createThingStackCombinerCard(item, index, selectedId) {
+            const card = document.createElement('button');
+            card.type = 'button';
+            card.className = 'thing-stack-combiner-card';
+            card.dataset.thingId = item.id || '';
+            card.setAttribute('aria-pressed', selectedId === item.id ? 'true' : 'false');
+            if (selectedId === item.id) {
+                card.classList.add('is-selected');
+            }
+
+            const image = document.createElement('div');
+            image.className = 'thing-stack-combiner-card__image';
+            renderEntityImage({
+                element: image,
+                entityType: 'thing',
+                entityId: item.id || '',
+                imageId: item.imageId || null,
+                altText: item.name || 'Item',
+                placeholderIcon: '🎁',
+                placeholderClass: 'entity-icon-placeholder location-entity-placeholder',
+                badges: getThingPropertyBadges(item),
+                countBadgeText: getThingCountBadgeText(item)
+            });
+
+            const name = document.createElement('div');
+            name.className = 'thing-stack-combiner-card__name';
+            name.textContent = item.name || 'Item';
+
+            card.appendChild(image);
+            card.appendChild(name);
+            card.addEventListener('click', () => {
+                if (thingStackCombinerState?.busy) {
+                    return;
+                }
+                thingStackCombinerState.selections.set(index, item.id);
+                renderThingStackCombinerModal();
+            });
+            bindThingTooltip(card, item, {
+                equipmentOwner: getThingStackCombinerEquipmentOwner
+            });
+            return card;
+        }
+
+        function updateThingStackCombinerActions() {
+            if (!thingStackCombinerState) {
+                return;
+            }
+            const index = thingStackCombinerState.index;
+            const groups = thingStackCombinerState.groups || [];
+            const selectedId = getThingStackCombinerSelection(index);
+            const isLast = index >= groups.length - 1;
+            const busy = Boolean(thingStackCombinerState.busy);
+            if (thingStackCombinerBackBtn) {
+                thingStackCombinerBackBtn.disabled = busy || index <= 0;
+            }
+            if (thingStackCombinerClearBtn) {
+                thingStackCombinerClearBtn.disabled = busy || !selectedId;
+            }
+            if (thingStackCombinerCancelBtn) {
+                thingStackCombinerCancelBtn.disabled = busy;
+            }
+            if (thingStackCombinerCloseBtn) {
+                thingStackCombinerCloseBtn.disabled = busy;
+            }
+            if (thingStackCombinerNextBtn) {
+                thingStackCombinerNextBtn.disabled = busy;
+                if (isLast && selectedId) {
+                    thingStackCombinerNextBtn.textContent = 'Finish';
+                } else if (isLast) {
+                    thingStackCombinerNextBtn.textContent = 'Skip & Finish';
+                } else {
+                    thingStackCombinerNextBtn.textContent = selectedId ? 'Next' : 'Skip';
+                }
+            }
+        }
+
+        function renderThingStackCombinerModal() {
+            const group = getThingStackCombinerCurrentGroup();
+            if (!thingStackCombinerModal || !group) {
+                return;
+            }
+
+            const index = thingStackCombinerState.index;
+            const groups = thingStackCombinerState.groups || [];
+            const selectedId = getThingStackCombinerSelection(index);
+            if (thingStackCombinerTitle) {
+                thingStackCombinerTitle.textContent = 'Combine Item Stacks';
+            }
+            if (thingStackCombinerProgress) {
+                thingStackCombinerProgress.textContent = `Group ${index + 1} of ${groups.length}`;
+            }
+            if (thingStackCombinerReason) {
+                thingStackCombinerReason.textContent = group.reason || 'Choose which stack to keep, or skip this group.';
+            }
+            if (thingStackCombinerCards) {
+                thingStackCombinerCards.innerHTML = '';
+                group.items.forEach(item => {
+                    thingStackCombinerCards.appendChild(createThingStackCombinerCard(item, index, selectedId));
+                });
+            }
+            updateThingStackCombinerActions();
+        }
+
+        function openThingStackCombinerModal({ groups = [], panelKey = '', contextOptions = {} } = {}) {
+            if (!thingStackCombinerModal || !npcModalBackdrop) {
+                throw new Error('Item stack combiner modal is unavailable.');
+            }
+            thingStackCombinerState = {
+                groups: Array.isArray(groups) ? groups : [],
+                index: 0,
+                selections: new Map(),
+                panelKey,
+                contextOptions: contextOptions || {},
+                busy: false
+            };
+            setThingStackCombinerStatus('', '');
+            renderThingStackCombinerModal();
+            thingStackCombinerModal.removeAttribute('hidden');
+            thingStackCombinerModal.setAttribute('aria-hidden', 'false');
+            npcModalBackdrop.removeAttribute('hidden');
+            document.body.classList.add('modal-open');
+            scrollModalToTop(thingStackCombinerModal);
+        }
+
+        function closeThingStackCombinerModal() {
+            if (!thingStackCombinerModal) {
+                return;
+            }
+            thingStackCombinerModal.setAttribute('hidden', '');
+            thingStackCombinerModal.setAttribute('aria-hidden', 'true');
+            thingStackCombinerState = null;
+            setThingStackCombinerStatus('', '');
+            hideNpcBackdropIfNoSharedModalOpen();
+        }
+
+        async function combineThingStackGroup(group, keepThingId, contextOptions = {}) {
+            const mergeThingIds = group.itemIds.filter(itemId => itemId && itemId !== keepThingId);
+            if (!keepThingId || !mergeThingIds.length) {
+                return null;
+            }
+            const response = await fetch('/api/things/combine-stacks', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    keepThingId,
+                    mergeThingIds
+                })
+            });
+            const result = await response.json().catch(() => ({}));
+            if (!response.ok || !result?.success) {
+                throw new Error(result?.error || `Request failed with status ${response.status}`);
+            }
+            return applyThingMutationResult(result, contextOptions, {
+                removeThingIds: Array.isArray(result?.mergedThingIds) ? result.mergedThingIds : mergeThingIds
+            });
+        }
+
+        async function finishThingStackCombiner() {
+            if (!thingStackCombinerState || thingStackCombinerState.busy) {
+                return;
+            }
+            const selectedGroups = [];
+            thingStackCombinerState.groups.forEach((group, index) => {
+                const keepThingId = thingStackCombinerState.selections.get(index) || '';
+                if (keepThingId) {
+                    selectedGroups.push({ group, keepThingId });
+                }
+            });
+
+            if (!selectedGroups.length) {
+                closeThingStackCombinerModal();
+                return;
+            }
+
+            thingStackCombinerState.busy = true;
+            setThingStackCombinerStatus('Combining selected stacks...', 'pending');
+            updateThingStackCombinerActions();
+            try {
+                for (const selection of selectedGroups) {
+                    await combineThingStackGroup(
+                        selection.group,
+                        selection.keepThingId,
+                        thingStackCombinerState.contextOptions || {}
+                    );
+                }
+                closeThingStackCombinerModal();
+            } catch (error) {
+                thingStackCombinerState.busy = false;
+                setThingStackCombinerStatus(`Combine failed: ${error?.message || error}`, 'error');
+                updateThingStackCombinerActions();
+                throw error;
+            }
+        }
+
+        function advanceThingStackCombiner() {
+            if (!thingStackCombinerState || thingStackCombinerState.busy) {
+                return;
+            }
+            const groups = thingStackCombinerState.groups || [];
+            if (thingStackCombinerState.index < groups.length - 1) {
+                thingStackCombinerState.index += 1;
+                setThingStackCombinerStatus('', '');
+                renderThingStackCombinerModal();
+                return;
+            }
+            finishThingStackCombiner().catch(error => {
+                console.warn('Failed to combine selected item stacks:', error);
+            });
+        }
+
+        thingStackCombinerBackBtn?.addEventListener('click', () => {
+            if (!thingStackCombinerState || thingStackCombinerState.busy || thingStackCombinerState.index <= 0) {
+                return;
+            }
+            thingStackCombinerState.index -= 1;
+            setThingStackCombinerStatus('', '');
+            renderThingStackCombinerModal();
+        });
+        thingStackCombinerClearBtn?.addEventListener('click', () => {
+            if (!thingStackCombinerState || thingStackCombinerState.busy) {
+                return;
+            }
+            thingStackCombinerState.selections.delete(thingStackCombinerState.index);
+            renderThingStackCombinerModal();
+        });
+        thingStackCombinerNextBtn?.addEventListener('click', () => {
+            advanceThingStackCombiner();
+        });
+        thingStackCombinerCancelBtn?.addEventListener('click', () => {
+            if (!thingStackCombinerState?.busy) {
+                closeThingStackCombinerModal();
+            }
+        });
+        thingStackCombinerCloseBtn?.addEventListener('click', () => {
+            if (!thingStackCombinerState?.busy) {
+                closeThingStackCombinerModal();
+            }
+        });
+
         function getThingListFilterState({
             searchInput = null,
             slotFilter = null,
@@ -23091,6 +23823,10 @@
                 aiSearchState
             });
             const filteredItems = filterThingCollection(sortedItems, filters, { enableEquipmentFilters });
+            if (panelKey) {
+                thingListVisibleItemsByPanelKey.set(panelKey, filteredItems);
+                updateThingListCombineButtonState(panelKey);
+            }
             const applyEquippableFilter = enableEquipmentFilters
                 ? !(filters.equippableOnlyActive && filters.nonEquippableOnlyActive)
                 : false;
@@ -24880,6 +25616,13 @@
                 if (dropzone === containerPlayerInventoryGrid) {
                     return { element, dropzone, target: 'player' };
                 }
+                const panel = element?.closest?.('#containerPlayerInventoryPanel, #containerContentsPanel') || null;
+                if (panel === containerContentsPanel) {
+                    return { element, dropzone: containerContentsGrid, target: 'container' };
+                }
+                if (panel === containerPlayerInventoryPanel) {
+                    return { element, dropzone: containerPlayerInventoryGrid, target: 'player' };
+                }
                 return { element, dropzone: null, target: '' };
             };
 
@@ -26493,7 +27236,9 @@
                             wireModalInventoryTouchDrag(card, {
                                 thing,
                                 modal: craftingModal,
-                                context: 'crafting-inventory'
+                                context: 'crafting-inventory',
+                                onTouchDragMove: updateCraftingTouchDropHighlight,
+                                onTouchDrop: handleCraftingInventoryTouchDrop
                             });
                             card.addEventListener('dblclick', () => {
                                 if (!assignItemToFirstAvailableSlot(thing.id)) {
@@ -26816,6 +27561,41 @@
                 return;
             }
             await assignDraggedItemToCraftingSlot(slotIndex, thingId);
+        }
+
+        function resolveCraftingTouchDropSlot(state) {
+            const element = document.elementFromPoint(state.currentX, state.currentY);
+            return element?.closest?.('.crafting-slot') || null;
+        }
+
+        function clearCraftingTouchDropHighlights() {
+            craftingSlotsContainer?.querySelectorAll('.crafting-slot--hover').forEach(slot => {
+                slot.classList.remove('crafting-slot--hover');
+            });
+        }
+
+        function updateCraftingTouchDropHighlight(state) {
+            clearCraftingTouchDropHighlights();
+            const slotElement = resolveCraftingTouchDropSlot(state);
+            if (slotElement) {
+                slotElement.classList.add('crafting-slot--hover');
+            }
+        }
+
+        async function handleCraftingInventoryTouchDrop(state) {
+            const slotElement = resolveCraftingTouchDropSlot(state);
+            clearCraftingTouchDropHighlights();
+            if (!slotElement) {
+                const element = document.elementFromPoint(state.currentX, state.currentY);
+                return Boolean(craftingModal && craftingModal.contains(element));
+            }
+
+            const slotIndex = Number(slotElement?.dataset?.slotIndex);
+            if (!Number.isFinite(slotIndex) || !state.thing?.id) {
+                return true;
+            }
+            await assignDraggedItemToCraftingSlot(slotIndex, state.thing.id);
+            return true;
         }
 
         function buildCraftingPayload({ noProse = false } = {}) {

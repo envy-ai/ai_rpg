@@ -190,6 +190,7 @@ prompt_progress:
 
     # Other known prompt families
     action*: 5000
+    ai_item_combiner: 5000
     ai_item_search: 5000
     alter_thing: 5000
     attack_*: 5000

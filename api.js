@@ -15835,6 +15835,7 @@ module.exports = function registerApiRoutes(scope) {
                     suppressTimeAdvance: Boolean(suppressTimeAdvance || suppressOriginTimeAdvance),
                     locationOverride: location || null,
                     initialTimeProgress,
+                    suppressHousekeeping: true,
                     entryCollector
                 });
             }
@@ -16011,6 +16012,7 @@ module.exports = function registerApiRoutes(scope) {
                     suppressTimeAdvance: Boolean(suppressTimeAdvance),
                     locationOverride: destinationLocation || null,
                     initialTimeProgress: playerMoveTimeAdjustment?.timeProgress || initialTimeProgress,
+                    suppressHousekeeping: true,
                     entryCollector
                 });
             }
@@ -16021,6 +16023,18 @@ module.exports = function registerApiRoutes(scope) {
                     splitEventResult = {};
                 }
                 splitEventResult.timeProgress = { ...playerMoveTimeAdjustment.timeProgress };
+            }
+            if (combinedProse) {
+                await runHousekeepingPrompt({
+                    textToCheck: combinedProse,
+                    actionText: (includePlayerActionForEventChecks && userInput)
+                        ? userInput
+                        : null,
+                    stream,
+                    locationOverride: destinationLocation || location || null,
+                    eventResult: splitEventResult,
+                    entryCollector
+                });
             }
 
             return {
@@ -23231,6 +23245,7 @@ module.exports = function registerApiRoutes(scope) {
                             userMessage?.content
                         ).text;
                         const entryPayload = {
+                            id: stream.requestId || undefined,
                             role: 'user',
                             content: isQuestionAction
                                 ? (questionActionText || '')
@@ -40115,6 +40130,548 @@ module.exports = function registerApiRoutes(scope) {
                 res.status(statusCode).json({
                     success: false,
                     error: error.message || 'AI item search failed.'
+                });
+            }
+        });
+
+        function createAiItemCombinerValidationError(message) {
+            const error = new Error(message);
+            error.statusCode = 400;
+            return error;
+        }
+
+        function normalizeAiItemCombinerText(value, fieldName) {
+            if (value === undefined || value === null) {
+                return '';
+            }
+            if (typeof value === 'string') {
+                return value.trim();
+            }
+            if (typeof value === 'number' || typeof value === 'boolean') {
+                return String(value).trim();
+            }
+            throw createAiItemCombinerValidationError(`AI item combiner ${fieldName} must be a string, number, boolean, or blank value.`);
+        }
+
+        function formatAiItemCombinerModifierValue(value) {
+            const numeric = Number(value);
+            if (Number.isFinite(numeric)) {
+                return numeric > 0 ? `+${numeric}` : String(numeric);
+            }
+            const text = normalizeAiItemCombinerText(value, 'modifier value');
+            return text || '0';
+        }
+
+        function formatAiItemCombinerNamedModifier(entry, nameKeys, valueKeys) {
+            if (!entry || typeof entry !== 'object') {
+                return '';
+            }
+            const name = nameKeys
+                .map(key => normalizeAiItemCombinerText(entry[key], key))
+                .find(Boolean) || '';
+            if (!name) {
+                return '';
+            }
+            const rawValue = valueKeys
+                .map(key => entry[key])
+                .find(value => value !== undefined && value !== null && value !== '');
+            return `${name} ${formatAiItemCombinerModifierValue(rawValue)}`;
+        }
+
+        function formatAiItemCombinerStatusEffect(effect, label) {
+            if (!effect) {
+                return '';
+            }
+            if (typeof effect === 'string') {
+                const text = effect.trim();
+                return text ? `- ${label}: ${text}` : '';
+            }
+            if (typeof effect !== 'object') {
+                return '';
+            }
+
+            const name = normalizeAiItemCombinerText(effect.name, 'status effect name');
+            const description = normalizeAiItemCombinerText(effect.description, 'status effect description');
+            const duration = normalizeAiItemCombinerText(effect.duration, 'status effect duration');
+            const base = [name, description].filter(Boolean).join(' - ');
+            if (!base) {
+                return '';
+            }
+
+            const details = [];
+            if (duration) {
+                details.push(`duration: ${duration}`);
+            }
+            const attributeModifiers = Array.isArray(effect.attributes)
+                ? effect.attributes
+                    .map(entry => formatAiItemCombinerNamedModifier(entry, ['attribute', 'name'], ['modifier', 'bonus', 'value']))
+                    .filter(Boolean)
+                : [];
+            if (attributeModifiers.length) {
+                details.push(`attributes: ${attributeModifiers.join(', ')}`);
+            }
+            const skillModifiers = Array.isArray(effect.skills)
+                ? effect.skills
+                    .map(entry => formatAiItemCombinerNamedModifier(entry, ['skill', 'name'], ['modifier', 'bonus', 'value']))
+                    .filter(Boolean)
+                : [];
+            if (skillModifiers.length) {
+                details.push(`skills: ${skillModifiers.join(', ')}`);
+            }
+            const needBarModifiers = Array.isArray(effect.needBars)
+                ? effect.needBars
+                    .map(entry => formatAiItemCombinerNamedModifier(entry, ['name'], ['delta', 'modifier', 'bonus', 'value']))
+                    .filter(Boolean)
+                : [];
+            if (needBarModifiers.length) {
+                details.push(`need bars: ${needBarModifiers.join(', ')}`);
+            }
+
+            return `- ${label}: ${base}${details.length ? ` (${details.join('; ')})` : ''}`;
+        }
+
+        function formatAiItemCombinerStatusEffects(thing, fallbackText = '') {
+            const metadata = thing?.metadata && typeof thing.metadata === 'object' ? thing.metadata : {};
+            const lines = [];
+            const addLine = (line) => {
+                const text = typeof line === 'string' ? line.trim() : '';
+                if (text && !lines.includes(text)) {
+                    lines.push(text);
+                }
+            };
+
+            const ownEffects = typeof thing?.getStatusEffects === 'function'
+                ? thing.getStatusEffects()
+                : (Array.isArray(thing?.statusEffects)
+                    ? thing.statusEffects
+                    : (Array.isArray(metadata.statusEffects) ? metadata.statusEffects : []));
+            ownEffects.forEach(effect => addLine(formatAiItemCombinerStatusEffect(effect, 'self')));
+
+            const targetEffect = thing?.causeStatusEffectOnTarget || metadata.causeStatusEffectOnTarget || null;
+            const equipperEffect = thing?.causeStatusEffectOnEquipper || metadata.causeStatusEffectOnEquipper || null;
+            addLine(formatAiItemCombinerStatusEffect(targetEffect, 'target'));
+            addLine(formatAiItemCombinerStatusEffect(equipperEffect, 'equipper'));
+
+            const legacyEffect = thing?.causeStatusEffect || metadata.causeStatusEffect || null;
+            if (legacyEffect && !targetEffect && !equipperEffect) {
+                const appliesToTarget = Boolean(legacyEffect.applyToTarget);
+                const appliesToEquipper = Boolean(legacyEffect.applyToEquipper);
+                const label = appliesToTarget && appliesToEquipper
+                    ? 'target/equipper'
+                    : (appliesToEquipper ? 'equipper' : (appliesToTarget ? 'target' : 'status'));
+                addLine(formatAiItemCombinerStatusEffect(legacyEffect, label));
+            }
+
+            return lines.length ? lines.join('\n') : normalizeAiItemCombinerText(fallbackText, 'status effects');
+        }
+
+        function formatAiItemCombinerStatModifiers(thing, fallbackText = '') {
+            const metadata = thing?.metadata && typeof thing.metadata === 'object' ? thing.metadata : {};
+            const bonuses = Array.isArray(thing?.attributeBonuses)
+                ? thing.attributeBonuses
+                : (Array.isArray(metadata.attributeBonuses) ? metadata.attributeBonuses : []);
+            const lines = bonuses
+                .map(entry => formatAiItemCombinerNamedModifier(entry, ['attribute', 'name'], ['bonus', 'value', 'modifier']))
+                .filter(Boolean)
+                .map(text => `- ${text}`);
+            return lines.length ? lines.join('\n') : normalizeAiItemCombinerText(fallbackText, 'stat modifiers');
+        }
+
+        function normalizeAiItemCombinerItem(rawItem, index) {
+            if (!rawItem || typeof rawItem !== 'object' || Array.isArray(rawItem)) {
+                throw createAiItemCombinerValidationError(`AI item combiner item ${index + 1} must be an object.`);
+            }
+
+            const id = normalizeAiItemCombinerText(rawItem.id, `item ${index + 1} id`);
+            const name = normalizeAiItemCombinerText(rawItem.name, `item ${index + 1} name`);
+            if (!id) {
+                throw createAiItemCombinerValidationError(`AI item combiner item ${index + 1} is missing id.`);
+            }
+            if (!name) {
+                throw createAiItemCombinerValidationError(`AI item combiner item ${index + 1} is missing name.`);
+            }
+
+            return {
+                id,
+                name,
+                description: normalizeAiItemCombinerText(rawItem.description, `item ${index + 1} description`),
+                level: normalizeAiItemCombinerText(rawItem.level, `item ${index + 1} level`),
+                quality: normalizeAiItemCombinerText(rawItem.quality, `item ${index + 1} quality`),
+                quantity: normalizeAiItemCombinerText(rawItem.quantity, `item ${index + 1} quantity`),
+                equipmentSlot: normalizeAiItemCombinerText(rawItem.equipmentSlot, `item ${index + 1} equipment slot`),
+                statusEffects: normalizeAiItemCombinerText(rawItem.statusEffects, `item ${index + 1} status effects`),
+                statModifiers: normalizeAiItemCombinerText(
+                    rawItem.statModifiers ?? rawItem.statBonuses,
+                    `item ${index + 1} stat modifiers`
+                )
+            };
+        }
+
+        function parseAiItemCombinerResponse(responseText) {
+            const groupsBlock = Utils.extractFinalXmlRootBlock(responseText || '', 'combinationGroups');
+            if (!groupsBlock) {
+                throw new Error('AI item combiner response did not include a <combinationGroups> block.');
+            }
+
+            const doc = Utils.parseXmlDocumentStrict(groupsBlock, 'text/xml');
+            const parserError = doc.getElementsByTagName('parsererror')[0];
+            if (parserError) {
+                throw new Error(`Failed to parse AI item combiner groups: ${parserError.textContent}`);
+            }
+
+            const seenItemIds = new Set();
+            return Array.from(doc.getElementsByTagName('group')).map((groupNode, index) => {
+                const itemIds = Array.from(groupNode.getElementsByTagName('itemId'))
+                    .map(node => (node?.textContent || '').trim())
+                    .filter(Boolean);
+                const uniqueItemIds = Array.from(new Set(itemIds));
+                if (uniqueItemIds.length < 2) {
+                    throw new Error(`AI item combiner group ${index + 1} must include at least two itemId entries.`);
+                }
+
+                for (const itemId of uniqueItemIds) {
+                    if (seenItemIds.has(itemId)) {
+                        throw new Error(`AI item combiner item id "${itemId}" appeared in more than one group.`);
+                    }
+                    seenItemIds.add(itemId);
+                }
+
+                const reasonNode = groupNode.getElementsByTagName('reason')[0];
+                return {
+                    reason: (reasonNode?.textContent || '').trim(),
+                    itemIds: uniqueItemIds
+                };
+            });
+        }
+
+        function getItemCombinerQualityKey(thing) {
+            const metadata = thing?.metadata && typeof thing.metadata === 'object' ? thing.metadata : {};
+            const candidates = [
+                thing?.rarity,
+                thing?.quality,
+                metadata.rarity,
+                metadata.quality
+            ];
+            for (const candidate of candidates) {
+                if (typeof candidate === 'string' && candidate.trim()) {
+                    return candidate.trim().toLowerCase();
+                }
+            }
+            if (typeof Thing !== 'undefined' && Thing && typeof Thing.getDefaultRarityKey === 'function') {
+                const fallback = Thing.getDefaultRarityKey();
+                if (typeof fallback === 'string' && fallback.trim()) {
+                    return fallback.trim().toLowerCase();
+                }
+            }
+            return 'default';
+        }
+
+        function getItemCombinerHolderKey(context) {
+            if (context?.container?.id) {
+                return `container:${context.container.id}`;
+            }
+            if (context?.owner?.id) {
+                return `owner:${context.owner.id}`;
+            }
+            if (context?.location?.id) {
+                return `location:${context.location.id}`;
+            }
+            throw new Error('Item stack does not have a resolvable holder.');
+        }
+
+        function validateItemCombinerMergeSet(keepThing, mergeThings, contextResolver = resolveThingContainerContext) {
+            if (!keepThing?.id) {
+                throw createAiItemCombinerValidationError('A kept item stack id is required.');
+            }
+            if (!Array.isArray(mergeThings) || mergeThings.length === 0) {
+                throw createAiItemCombinerValidationError('At least one item stack to merge is required.');
+            }
+            if (typeof contextResolver !== 'function') {
+                throw new Error('Item combiner holder resolver is unavailable.');
+            }
+
+            const allThings = [keepThing, ...mergeThings];
+            const seenIds = new Set();
+            let qualityKey = null;
+            let holderKey = null;
+            let owner = null;
+            let container = null;
+            let location = null;
+
+            for (const thing of allThings) {
+                if (!thing?.id) {
+                    throw createAiItemCombinerValidationError('Every item stack in a combine request must have an id.');
+                }
+                if (seenIds.has(thing.id)) {
+                    throw createAiItemCombinerValidationError(`Duplicate item stack "${thing.id}" cannot be combined with itself.`);
+                }
+                seenIds.add(thing.id);
+
+                if ((thing.thingType || '').trim().toLowerCase() !== 'item') {
+                    throw createAiItemCombinerValidationError('Only item-type stacks can be combined.');
+                }
+                if (thing.isContainer) {
+                    throw createAiItemCombinerValidationError('Containers cannot be combined.');
+                }
+                if (thing.isEquipped || thing.equippedSlot) {
+                    throw createAiItemCombinerValidationError('Equipped items cannot be combined.');
+                }
+
+                const currentQualityKey = getItemCombinerQualityKey(thing);
+                if (qualityKey === null) {
+                    qualityKey = currentQualityKey;
+                } else if (currentQualityKey !== qualityKey) {
+                    throw createAiItemCombinerValidationError('All item stacks in a combine group must have the same quality level.');
+                }
+
+                const context = contextResolver(thing);
+                const currentHolderKey = getItemCombinerHolderKey(context);
+                if (holderKey === null) {
+                    holderKey = currentHolderKey;
+                    owner = context?.owner || null;
+                    container = context?.container || null;
+                    location = context?.location || null;
+                } else if (currentHolderKey !== holderKey) {
+                    throw createAiItemCombinerValidationError('All item stacks in a combine group must be in the same holder.');
+                }
+            }
+
+            return {
+                qualityKey,
+                holderKey,
+                owner,
+                container,
+                location
+            };
+        }
+
+        function resolveItemCombinerThingById(thingId) {
+            const normalizedId = typeof thingId === 'string' ? thingId.trim() : '';
+            if (!normalizedId) {
+                return null;
+            }
+            return things.get(normalizedId) || Thing.getById(normalizedId) || null;
+        }
+
+        function isItemCombinerCandidateThing(thing) {
+            return Boolean(
+                thing
+                && (thing.thingType || '').trim().toLowerCase() === 'item'
+                && !thing.isContainer
+                && !thing.isEquipped
+                && !thing.equippedSlot
+            );
+        }
+
+        app.post('/api/things/ai-combine-candidates', async (req, res) => {
+            let parsedTemplate = null;
+            let responseText = '';
+            const metadataLabel = 'ai_item_combiner';
+            try {
+                if (!Array.isArray(req.body?.items)) {
+                    return res.status(400).json({
+                        success: false,
+                        error: 'AI item combiner items must be an array.'
+                    });
+                }
+
+                const requestItems = req.body.items.map((item, index) => normalizeAiItemCombinerItem(item, index));
+                const eligiblePromptItems = [];
+                const eligibleThingsById = new Map();
+                const excludedItemIds = [];
+
+                for (const requestItem of requestItems) {
+                    const thing = resolveItemCombinerThingById(requestItem.id);
+                    if (!thing) {
+                        const error = createAiItemCombinerValidationError(`Thing "${requestItem.id}" was not found.`);
+                        error.statusCode = 404;
+                        throw error;
+                    }
+                    if (!isItemCombinerCandidateThing(thing)) {
+                        excludedItemIds.push(requestItem.id);
+                        continue;
+                    }
+                    eligibleThingsById.set(requestItem.id, thing);
+                    eligiblePromptItems.push({
+                        ...requestItem,
+                        quality: getItemCombinerQualityKey(thing),
+                        quantity: normalizeAiItemCombinerText(thing.count ?? requestItem.quantity, `item ${requestItem.id} quantity`),
+                        statusEffects: formatAiItemCombinerStatusEffects(thing, requestItem.statusEffects),
+                        statModifiers: formatAiItemCombinerStatModifiers(thing, requestItem.statModifiers)
+                    });
+                }
+
+                if (eligiblePromptItems.length < 2) {
+                    return res.json({
+                        success: true,
+                        groups: [],
+                        excludedItemIds,
+                        response: ''
+                    });
+                }
+
+                const renderedTemplate = promptEnv.render('ai-item-combiner.xml.njk', {
+                    items: eligiblePromptItems
+                });
+                parsedTemplate = parseXMLTemplate(renderedTemplate, { metadataLabel });
+                responseText = await LLMClient.chatCompletion({
+                    messages: [
+                        { role: 'system', content: parsedTemplate.systemPrompt },
+                        { role: 'user', content: parsedTemplate.generationPrompt }
+                    ],
+                    temperature: parsedTemplate.temperature,
+                    metadataLabel,
+                    validateXML: false,
+                    requiredRegex: /<combinationGroups[\s\S]*<\/combinationGroups>/i
+                });
+
+                LLMClient.logPrompt({
+                    prefix: metadataLabel,
+                    metadataLabel,
+                    systemPrompt: parsedTemplate.systemPrompt,
+                    generationPrompt: parsedTemplate.generationPrompt,
+                    response: responseText
+                });
+
+                const parsedGroups = parseAiItemCombinerResponse(responseText);
+                const groups = parsedGroups.map((group, index) => {
+                    const groupThings = group.itemIds.map(itemId => {
+                        const thing = eligibleThingsById.get(itemId);
+                        if (!thing) {
+                            throw new Error(`AI item combiner group ${index + 1} referenced unknown or ineligible item id "${itemId}".`);
+                        }
+                        return thing;
+                    });
+                    validateItemCombinerMergeSet(groupThings[0], groupThings.slice(1), resolveThingContainerContext);
+                    return {
+                        reason: group.reason || '',
+                        itemIds: group.itemIds,
+                        items: groupThings.map(thing => thing.toJSON())
+                    };
+                });
+
+                res.json({
+                    success: true,
+                    groups,
+                    excludedItemIds,
+                    response: responseText
+                });
+            } catch (error) {
+                if (parsedTemplate) {
+                    LLMClient.logPrompt({
+                        prefix: metadataLabel,
+                        metadataLabel,
+                        systemPrompt: parsedTemplate.systemPrompt || '',
+                        generationPrompt: parsedTemplate.generationPrompt || '',
+                        response: responseText || '',
+                        sections: [
+                            {
+                                title: 'Error',
+                                content: error?.stack || error?.message || String(error)
+                            }
+                        ]
+                    });
+                }
+                const statusCode = Number.isInteger(error?.statusCode) ? error.statusCode : 500;
+                res.status(statusCode).json({
+                    success: false,
+                    error: error.message || 'AI item combiner failed.'
+                });
+            }
+        });
+
+        app.post('/api/things/combine-stacks', (req, res) => {
+            try {
+                const keepThingId = normalizeAiItemCombinerText(req.body?.keepThingId, 'keepThingId');
+                if (!keepThingId) {
+                    return res.status(400).json({
+                        success: false,
+                        error: 'keepThingId is required.'
+                    });
+                }
+                if (!Array.isArray(req.body?.mergeThingIds)) {
+                    return res.status(400).json({
+                        success: false,
+                        error: 'mergeThingIds must be an array.'
+                    });
+                }
+                const mergeThingIds = req.body.mergeThingIds
+                    .map((value, index) => normalizeAiItemCombinerText(value, `mergeThingIds[${index}]`))
+                    .filter(Boolean);
+                if (!mergeThingIds.length) {
+                    return res.status(400).json({
+                        success: false,
+                        error: 'At least one mergeThingIds entry is required.'
+                    });
+                }
+
+                const keepThing = resolveItemCombinerThingById(keepThingId);
+                if (!keepThing) {
+                    return res.status(404).json({
+                        success: false,
+                        error: `Thing "${keepThingId}" was not found.`
+                    });
+                }
+
+                const mergeThings = mergeThingIds.map(thingId => {
+                    const thing = resolveItemCombinerThingById(thingId);
+                    if (!thing) {
+                        const error = createAiItemCombinerValidationError(`Thing "${thingId}" was not found.`);
+                        error.statusCode = 404;
+                        throw error;
+                    }
+                    return thing;
+                });
+
+                const {
+                    owner: sourceOwner,
+                    container: sourceContainer,
+                    location: sourceLocation
+                } = validateItemCombinerMergeSet(keepThing, mergeThings, resolveThingContainerContext);
+
+                let mergedCount = Number.isInteger(keepThing.count) && keepThing.count > 0
+                    ? keepThing.count
+                    : 1;
+                const mergedThingIds = [];
+
+                for (const mergeThing of mergeThings) {
+                    mergedCount += Number.isInteger(mergeThing.count) && mergeThing.count > 0
+                        ? mergeThing.count
+                        : 1;
+                    const deleteResult = deleteThingById(mergeThing.id);
+                    if (!deleteResult?.success) {
+                        throw new Error(deleteResult?.error || `Failed to remove stack "${mergeThing.name || mergeThing.id}" during combine.`);
+                    }
+                    mergedThingIds.push(mergeThing.id);
+                }
+
+                keepThing.count = mergedCount;
+                keepThing.metadata = {
+                    ...(keepThing.metadata && typeof keepThing.metadata === 'object'
+                        ? keepThing.metadata
+                        : {}),
+                    count: keepThing.count
+                };
+
+                return res.json(buildThingMutationResponsePayload({
+                    things: [keepThing],
+                    owner: sourceOwner,
+                    container: sourceContainer,
+                    location: sourceLocation,
+                    message: `${keepThing.name || 'Item'} stacks combined successfully.`,
+                    extra: {
+                        sourceThingId: keepThing.id,
+                        keptThingId: keepThing.id,
+                        mergedThingIds,
+                        noChanges: false
+                    }
+                }));
+            } catch (error) {
+                console.error('Failed to combine item stacks:', error);
+                const statusCode = Number.isInteger(error?.statusCode) ? error.statusCode : 500;
+                return res.status(statusCode).json({
+                    success: false,
+                    error: error?.message || 'Failed to combine item stacks'
                 });
             }
         });

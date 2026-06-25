@@ -2,4 +2,48 @@
 Do you have any ideas, based on the recent chat history or anything else that comes to mind, for new features, general improvements, prompt optimizations, etycm, that could be added to this game system?
 </task>
 
+<implementedSystemAwareness>
+Do not suggest these as brand-new systems. You may suggest concrete improvements
+to them only if you name the specific missing behavior beyond the current
+implementation.
+
+- Need bars, health, and status effects already exist for players and NPCs. They
+  persist in saves, tick with world time, can be modified by status effects, and
+  appear in player/NPC UI plus event-summary/What changed rows.
+- Skill and combat checks already exist through resolveSkillCheck,
+  resolveOpposedSkillCheck, resolveAttack, and resolveAreaAttack. They create
+  visible check-results rows with expandable roll/details, support inline roll
+  controls, and are reused by crafting and checked container opening.
+- Plot trackers already exist. They support countdown, numerical_count,
+  x_out_of_total, percentage, and short_string values, persist in saves, appear
+  in base context, show in the sidebar, include hidden-player toggles, progress
+  fills, hover details, edit/delete controls, and update/remove tools.
+- Scheduled events and offscreen resolution already exist through scheduleEvent,
+  ScheduledEvent persistence, due-event sweeps, local visible prose, off-location
+  hidden summaries, the /scheduled diagnostic command, while-you-were-away
+  prompts, offscreen NPC activity state, Mystery Boxes, Mystery Threads, and
+  Scene Summaries.
+- Factions and reputation already exist. Active factions, faction relations,
+  player standings, reputation tiers, faction UI, quest reputation rewards,
+  event-driven faction reputation changes, and location/region controlling
+  faction fields are implemented.
+- Social state already exists through numeric dispositions, short relationship
+  labels, relationship prompt context, the Relationships graph, relationship
+  housekeeping summaries, and the setRelationship tool.
+- World time, seasons, calendars, dynamic regional weather, weather/lighting
+  image variants, travel times, map/favorites fast travel, vehicle ETAs, and
+  time-driven need/status/scheduled-event processing already exist.
+- Inventory and crafting support already includes item stacks, count badges,
+  split/merge/separate stack actions, AI item search, AI stack-combine
+  suggestions, containers, mobile/modal drag transfers, craft/process/salvage/
+  harvest flows, exact selected-input consumption, item weights/values, and
+  item tooltip mechanics.
+- Quest, XP, currency, faction-reputation, and NPC-disposition rewards already
+  exist, with visible event summaries and quest edit UI.
+- Prompt/debug UX already includes the prompt progress dock, prompt viewers,
+  cancel/retry controls, chat bubble filtering, turn What changed drawers,
+  Story Tools, full-history search, scene summaries, and mystery continuity
+  tools.
+</implementedSystemAwareness>
+
 Respond with concise, concrete suggestions. Focus on changes that would improve this game system or its prompts rather than continuing the in-world story.

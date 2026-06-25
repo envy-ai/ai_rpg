@@ -97,7 +97,7 @@ The player payload includes `trackers` only for the player record. `views/index.
 
 `percentage` and `x_out_of_total` tracker rows render a display-only progress fill behind the name/value row. The fill is computed from the raw tracker value when available, clamped to the `0%` through `100%` display range, and does not alter the persisted tracker value. `x_out_of_total` values with a zero total render without a progress fill.
 
-Tracker cards show edit and delete buttons as hover/focus overlays, without reserving permanent row space for those controls. Those controls use the top tracker-card stacking layer above progress fills and text. The plus button in the tracker header opens the same modal in create mode. The modal edits `name`, `type`, `value`, `hiddenFromPlayer`, `description`, and `note` through `/api/trackers`; sidebar cards continue to show only the tracker name and current value.
+Tracker cards show edit and delete buttons as hover/focus overlays, without reserving permanent row space for those controls. Those controls use the top tracker-card stacking layer above progress fills and text. Hovering a tracker card opens the shared floating tooltip style used by item details and shows only `description`, `note`, and the `lastUpdated` time-ago label. The plus button in the tracker header opens the same modal in create mode. The modal edits `name`, `type`, `value`, `hiddenFromPlayer`, `description`, and `note` through `/api/trackers`; sidebar cards continue to show only the tracker name and current value.
 
 ## Save And Load
 - `Utils.serializeGameState(...)` writes trackers through `Tracker.serializeAll()`.

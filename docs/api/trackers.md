@@ -6,13 +6,15 @@ Tracker tool-call behavior is documented in `docs/classes/Tracker.md` and `docs/
 
 ## Payloads
 
-Sidebar tracker payloads come from `GET /api/player` and intentionally omit private `description` and `note` fields. They include:
+Sidebar tracker payloads come from `GET /api/player`. They include:
 
 - `id`
 - `name`
 - `type`
 - `value`: display value; countdowns show remaining time when a target minute is available.
 - `rawValue`: persisted string value.
+- `description`: tracker guidance shown only in the sidebar hover tooltip.
+- `note`: tracker note shown only in the sidebar hover tooltip.
 - `hiddenFromPlayer`
 - `lastUpdated`: display text.
 - `lastUpdatedWorldMinute`
@@ -24,7 +26,7 @@ The tracker edit payload returned by `GET /api/trackers/:id` and mutation respon
 - `lastUpdated`: display text.
 - `countdownUntilWorldMinute`: present as a number for countdowns or `null` otherwise.
 
-That edit payload includes private `description` and `note` so the modal can edit them. The sidebar cards still render only name and current value.
+The sidebar cards still render only name and current value in the row. Hovering a tracker card shows a floating tooltip with `description`, `note`, and `lastUpdated`.
 
 ## GET /api/trackers/:id
 

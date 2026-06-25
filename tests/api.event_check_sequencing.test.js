@@ -105,6 +105,36 @@ test('event checks start housekeeping concurrently and apply it after outcomes',
     assert.match(eventsSource, /if \(pendingHousekeepingPrompt\) \{[\s\S]*?return runner\.finish\(pending,/);
 });
 
+test('split moveTurnResult runs one merged housekeeping pass after sub-checks', () => {
+    const source = sourceBetween(
+        'async function runmoveTurnResultEventChecks({',
+        '\n        function recordSkillCheckEntry'
+    );
+    const originCallStart = source.indexOf('originEventResult = await Events.runEventChecks({');
+    const destinationCallStart = source.indexOf('destinationEventResult = await Events.runEventChecks({');
+    const mergeStart = source.indexOf('let splitEventResult = mergeEventResults([originEventResult, destinationEventResult]);');
+    const returnStart = source.indexOf('            return {', mergeStart);
+
+    assert.notEqual(originCallStart, -1, 'Unable to locate split origin event-check call.');
+    assert.notEqual(destinationCallStart, -1, 'Unable to locate split destination event-check call.');
+    assert.notEqual(mergeStart, -1, 'Unable to locate split event-result merge.');
+    assert.notEqual(returnStart, -1, 'Unable to locate split movement return.');
+    assert.ok(originCallStart < destinationCallStart, 'origin event checks should run before destination event checks.');
+    assert.ok(destinationCallStart < mergeStart, 'destination event checks should finish before result merge.');
+
+    const originCall = source.slice(originCallStart, source.indexOf('                });', originCallStart));
+    const destinationCall = source.slice(destinationCallStart, source.indexOf('                });', destinationCallStart));
+    const postMerge = source.slice(mergeStart, returnStart);
+
+    assert.match(originCall, /suppressHousekeeping:\s*true/);
+    assert.match(destinationCall, /suppressHousekeeping:\s*true/);
+    assert.match(postMerge, /await runHousekeepingPrompt\(\{/);
+    assert.match(postMerge, /textToCheck:\s*combinedProse,/);
+    assert.match(postMerge, /eventResult:\s*splitEventResult,/);
+    assert.match(postMerge, /locationOverride:\s*destinationLocation \|\| location \|\| null,/);
+    assert.match(postMerge, /entryCollector/);
+});
+
 test('slash command context exposes housekeeping prompt runner with instructions and stream', () => {
     const source = sourceBetween(
         'function buildSlashCommandInteractionContext({',

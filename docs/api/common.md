@@ -12,7 +12,7 @@ This file collects shared response shapes referenced by multiple endpoints in `a
 Normalized via `normalizeChatEntry` and enriched by `pushChatEntry`.
 
 Fields:
-- `id`: string (generated if missing)
+- `id`: string (generated if missing; logged `/api/chat` user entries preserve the request id supplied by the Play UI so an optimistic in-flight row and the stored row share the same edit/delete key)
 - `role`: string (`user`, `assistant`, `system`, or custom)
 - `content`: string
 - `timestamp`: ISO string (generated if missing)

@@ -6,6 +6,7 @@ const vm = require('node:vm');
 
 const rootDir = path.join(__dirname, '..');
 const viewSource = fs.readFileSync(path.join(rootDir, 'views', 'index.njk'), 'utf8');
+const serverSource = fs.readFileSync(path.join(rootDir, 'server.js'), 'utf8');
 const apiSource = fs.readFileSync(path.join(rootDir, 'api.js'), 'utf8');
 const playerSource = fs.readFileSync(path.join(rootDir, 'Player.js'), 'utf8');
 const chatSource = fs.readFileSync(path.join(rootDir, 'public', 'js', 'chat.js'), 'utf8');
@@ -107,6 +108,10 @@ class FakeElement {
         this.children = [];
     }
 
+    get childNodes() {
+        return this.children;
+    }
+
     get classList() {
         const element = this;
         return {
@@ -121,6 +126,9 @@ function createFakeDocument() {
     return {
         createElement(tagName) {
             return new FakeElement(tagName);
+        },
+        createDocumentFragment() {
+            return new FakeElement('#fragment');
         },
         createTextNode(text) {
             const node = new FakeElement('#text');
@@ -156,6 +164,146 @@ function loadDrawerApi(extraContext = {}) {
     return context.window.TurnStateDiffDrawer;
 }
 
+function extractClassMethod(source, methodName) {
+    const start = source.indexOf(`    ${methodName}(`);
+    assert.notEqual(start, -1, `${methodName} should exist`);
+    const paramsStart = source.indexOf('(', start);
+    assert.notEqual(paramsStart, -1, `${methodName} should have parameters`);
+    let parenDepth = 0;
+    let paramsEnd = -1;
+    for (let index = paramsStart; index < source.length; index += 1) {
+        const char = source[index];
+        if (char === '(') {
+            parenDepth += 1;
+        } else if (char === ')') {
+            parenDepth -= 1;
+            if (parenDepth === 0) {
+                paramsEnd = index;
+                break;
+            }
+        }
+    }
+    assert.notEqual(paramsEnd, -1, `${methodName} should close parameters`);
+    const bodyStart = source.indexOf('{', paramsEnd);
+    assert.notEqual(bodyStart, -1, `${methodName} should have a body`);
+    let braceDepth = 0;
+    for (let index = bodyStart; index < source.length; index += 1) {
+        const char = source[index];
+        if (char === '{') {
+            braceDepth += 1;
+        } else if (char === '}') {
+            braceDepth -= 1;
+            if (braceDepth === 0) {
+                return source.slice(start, index + 1);
+            }
+        }
+    }
+    assert.fail(`${methodName} body should close`);
+}
+
+function extractFunction(source, functionName) {
+    const start = source.indexOf(`function ${functionName}(`);
+    assert.notEqual(start, -1, `${functionName} should exist`);
+    const bodyStart = source.indexOf('{', start);
+    assert.notEqual(bodyStart, -1, `${functionName} should have a body`);
+    let braceDepth = 0;
+    for (let index = bodyStart; index < source.length; index += 1) {
+        const char = source[index];
+        if (char === '{') {
+            braceDepth += 1;
+        } else if (char === '}') {
+            braceDepth -= 1;
+            if (braceDepth === 0) {
+                return source.slice(start, index + 1);
+            }
+        }
+    }
+    assert.fail(`${functionName} body should close`);
+}
+
+function loadChatHistoryHarness() {
+    const methodSources = [
+        extractClassMethod(chatSource, 'getAttachmentTypes'),
+        extractClassMethod(chatSource, 'getTurnDiffEntryTypes'),
+        extractClassMethod(chatSource, 'getClientMessageHistoryConfig'),
+        extractClassMethod(chatSource, 'getServerHistoryTurnAnchorIndexes'),
+        extractClassMethod(chatSource, 'pruneServerHistoryIfNeeded'),
+        extractClassMethod(chatSource, 'renderChatHistory')
+    ];
+    const document = createFakeDocument();
+    const context = {
+        document,
+        window: {
+            AIRPG_CONFIG: {
+                clientMessageHistory: {
+                    maxMessages: 1,
+                    pruneTo: 1
+                }
+            }
+        }
+    };
+    vm.createContext(context);
+    vm.runInContext(`
+class Harness {
+    constructor() {
+        this.serverHistory = [];
+        this.chatLog = document.createElement('div');
+        this.systemMessage = { role: 'system', content: 'System.' };
+        this.messageRegistry = new Map();
+        this.chatBubbleTypes = new Map();
+        this.renderedEntries = [];
+    }
+${methodSources.join('\n')}
+    getLatestPlayerActionEntry() {
+        return null;
+    }
+    getEntryKey() {
+        return null;
+    }
+    isLegacyDirectTravelSummaryEntry() {
+        return false;
+    }
+    findLegacyDirectTravelDrawerParentId() {
+        return null;
+    }
+    createChatMessageElement(entry, attachments = [], turnDiffEntries = []) {
+        this.renderedEntries.push({ entry, attachments, turnDiffEntries });
+        const element = document.createElement('div');
+        element.textContent = entry.id || entry.type || entry.role || '';
+        return element;
+    }
+    decorateChatBubbleElement() {}
+    syncChatBubbleTypesFromDom() {}
+    renderChatBubbleFilterOptions() {}
+    applyChatBubbleFilters() {}
+    scrollToBottom() {}
+}
+this.Harness = Harness;
+`, context);
+    return new context.Harness();
+}
+
+function loadServerOrphanFilterHarness() {
+    const context = {
+        HIDDEN_CHAT_ENTRY_TYPES: new Set([
+            'supplemental-story-info',
+            'offscreen-npc-activity-daily',
+            'offscreen-npc-activity-weekly',
+            'scheduled-event',
+            'while-you-were-away',
+            'plot-summary',
+            'plot-expander'
+        ])
+    };
+    vm.createContext(context);
+    vm.runInContext(`
+${extractFunction(serverSource, 'isHiddenChatEntry')}
+${extractFunction(serverSource, 'filterOrphanedChatEntries')}
+this.filterOrphanedChatEntries = filterOrphanedChatEntries;
+`, context);
+    return context.filterOrphanedChatEntries;
+}
+
 test('turn state diff drawer script is loaded before chat controller', () => {
     assert.ok(fs.existsSync(drawerPath), 'turn-state-diff-drawer.js should exist');
     const drawerScriptIndex = viewSource.indexOf('<script src="/js/turn-state-diff-drawer.js"></script>');
@@ -178,6 +326,92 @@ test('chat history rendering tracks parent-linked turn diff entries separately f
     assert.ok(attachmentTypesMatch, 'getAttachmentTypes should return an explicit Set');
     assert.doesNotMatch(attachmentTypesMatch[1], /event-summary/);
     assert.doesNotMatch(attachmentTypesMatch[1], /status-summary/);
+});
+
+test('client pruning drops parent-linked turn diff entries when their parent aged out', () => {
+    const harness = loadChatHistoryHarness();
+    harness.serverHistory = [
+        { id: 'old-user', role: 'user', content: 'Old action.' },
+        { id: 'old-parent', role: 'assistant', type: 'player-action', content: 'Old result.' },
+        { id: 'new-user', role: 'user', content: 'New action.' },
+        {
+            id: 'old-event-summary',
+            role: 'assistant',
+            type: 'event-summary',
+            parentId: 'old-parent',
+            summaryItems: [{ text: 'Old item changed.' }]
+        },
+        {
+            id: 'old-status-summary',
+            role: 'assistant',
+            type: 'status-summary',
+            parentId: 'old-parent',
+            summaryItems: [{ text: 'Old status changed.' }]
+        }
+    ];
+
+    assert.equal(harness.pruneServerHistoryIfNeeded(), true);
+    assert.deepEqual(harness.serverHistory.map(entry => entry.id), ['new-user']);
+});
+
+test('chat history rendering does not render unresolved parent-linked turn diff entries as standalone rows', () => {
+    const harness = loadChatHistoryHarness();
+    harness.serverHistory = [
+        { id: 'visible-user', role: 'user', content: 'Visible action.' },
+        {
+            id: 'orphan-event-summary',
+            role: 'assistant',
+            type: 'event-summary',
+            parentId: 'missing-parent',
+            summaryItems: [{ text: 'Old item changed.' }]
+        }
+    ];
+
+    harness.renderChatHistory();
+
+    assert.deepEqual(
+        Array.from(harness.renderedEntries, record => record.entry.id),
+        ['visible-user']
+    );
+});
+
+test('server orphan filtering drops parent-linked turn diff entries with missing parents but keeps standalone summaries', () => {
+    const filterOrphanedChatEntries = loadServerOrphanFilterHarness();
+    const filtered = filterOrphanedChatEntries([
+        { id: 'visible-user', role: 'user', content: 'Visible action.' },
+        {
+            id: 'attached-event-summary',
+            role: 'assistant',
+            type: 'event-summary',
+            parentId: 'visible-user',
+            summaryItems: [{ text: 'Attached event.' }]
+        },
+        {
+            id: 'orphan-event-summary',
+            role: 'assistant',
+            type: 'event-summary',
+            parentId: 'missing-parent',
+            summaryItems: [{ text: 'Orphan event.' }]
+        },
+        {
+            id: 'standalone-event-summary',
+            role: 'assistant',
+            type: 'event-summary',
+            summaryItems: [{ text: 'Standalone event.' }]
+        },
+        {
+            id: 'orphan-status-summary',
+            role: 'assistant',
+            type: 'status-summary',
+            parentId: 'missing-parent',
+            summaryItems: [{ text: 'Orphan status.' }]
+        }
+    ]);
+
+    assert.deepEqual(
+        filtered.map(entry => entry.id),
+        ['visible-user', 'attached-event-summary', 'standalone-event-summary']
+    );
 });
 
 test('live chat rendering keeps a parent element for turn diff drawer updates', () => {

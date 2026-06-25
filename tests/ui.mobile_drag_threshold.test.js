@@ -24,6 +24,16 @@ test('thing touch dragging starts when movement crosses the slop distance', () =
     assertIncludes(viewSource, 'beginModalInventoryTouchDrag(state);');
 });
 
+test('container and crafting modals complete item touch drops on their own targets', () => {
+    assertIncludes(viewSource, "element?.closest?.('#containerPlayerInventoryPanel, #containerContentsPanel')");
+    assertIncludes(viewSource, 'function resolveCraftingTouchDropSlot(state)');
+    assertIncludes(viewSource, 'function updateCraftingTouchDropHighlight(state)');
+    assertIncludes(viewSource, 'async function handleCraftingInventoryTouchDrop(state)');
+    assertIncludes(viewSource, 'onTouchDragMove: updateCraftingTouchDropHighlight');
+    assertIncludes(viewSource, 'onTouchDrop: handleCraftingInventoryTouchDrop');
+    assertIncludes(viewSource, 'await assignDraggedItemToCraftingSlot(slotIndex, state.thing.id);');
+});
+
 test('NPC party touch dragging uses the same movement threshold gesture', () => {
     assertIncludes(viewSource, 'let partyNpcTouchDragState = null;');
     assertIncludes(viewSource, 'function wireNpcPartyTouchDrag(card, npc, source) {');
@@ -34,7 +44,9 @@ test('NPC party touch dragging uses the same movement threshold gesture', () => 
 
 test('mobile drag docs describe threshold movement instead of long press', () => {
     assertIncludes(chatDocs, 'movement-threshold touch dragging');
+    assertIncludes(chatDocs, 'Crafting and container modal touch drags resolve drops against their modal-specific panels or slots');
     assertIncludes(modalDocs, 'movement-threshold touch dragging');
+    assertIncludes(modalDocs, 'touch release over a crafting slot assigns the dragged input through the same validation path as desktop drag/drop');
     assertNotIncludes(chatDocs, 'long-press touch-dragging');
     assertNotIncludes(modalDocs, 'touch long-press drag');
 });

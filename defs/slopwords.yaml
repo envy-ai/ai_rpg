@@ -13,6 +13,7 @@ forbidden_tropes:
   - characters obsessively logging things
   - \"I reported this to my company seventeen times and was ignored every time!\"
   - \"She didn't say anything. She didn't have to."\ - Adds nothing. Always omit.
+  - \"Not $thing. $other_thing.\"
 
 # A list of slop words (ngrams are listed below as well) and their allowable parts per million before being flagged as repetitive
 regexes:

@@ -59,7 +59,7 @@
 - Single-color SVG icon assets use `#ffffff` for their explicit fill/stroke color. Multicolor emoji/logo SVGs keep their original palette and gradient definitions.
 - `assets/material-icons/app-nav-icons/` stores mask-friendly app-header icons for New Game, System, Tools, Save, Load, Debug, and Player Stats. App-header masks also reuse existing game-tab icons for Play, Worlds, and Lorebooks, and `assets/material-icons/misc/puzzle.svg` for Mods.
 - `assets/material-icons/game-tab-icons/relationship.svg` is the Relationships tab icon. It follows the same single-color white SVG convention as the other Play tab icons.
-- `assets/material-icons/misc/compress.svg` and `assets/material-icons/misc/expand.svg` are used by the docked prompt-progress tracker mode buttons and rendered as white right-aligned controls in the one-line state. `assets/material-icons/misc/view_prompt.svg`, `restart.svg`, and `cancel.svg` are used by the prompt row action buttons, rendered as white icons on transparent borderless buttons. `star.svg` and `star_solid.svg` provide matching outlined/solid star variants, including the borderless transparent current-location favorite toggle inset `4px` from the image corner.
+- `assets/material-icons/misc/compress.svg` and `assets/material-icons/misc/expand.svg` are used by the docked prompt-progress tracker mode buttons and rendered as white right-aligned controls in the one-line state. `assets/material-icons/misc/view_prompt.svg`, `restart.svg`, and `cancel.svg` are used by the prompt row action buttons, rendered as white icons on transparent borderless buttons. `visibility.svg` is the white eye icon for the chat bubble type filter. `merge.svg` is the white item-stack combiner control used in real item-list headers. `star.svg` and `star_solid.svg` provide matching outlined/solid star variants, including the borderless transparent current-location favorite toggle inset `4px` from the image corner.
 - `public/js/image-manager.js` coordinates image job requests and updates.
 - `public/js/lightbox.js` provides the full-screen lightbox viewer.
 
@@ -184,6 +184,9 @@ Loaded on the chat page:
   row and cell borders are styled as collapsed `2px` lines with zero spacing. The shared list container also gets semantic mode classes
   for downstream styling hooks: `.view-classic-mode`, `.view-table-mode`,
   `.view-grid-mode`, `.view-grid-mode-large`, and `.view-grid-mode-small`.
+  Real item-holder panels additionally use `.thing-list-combine-toggle` for the AI-backed stack combiner, and the modal uses
+  `.thing-stack-combiner-modal__*` plus `.thing-stack-combiner-card*` for the selectable keeper-card grid. Its footer stays on the shared
+  `.modal__actions` and `.button` / `.button-primary` / `.button-secondary` modal button pattern.
   Crafting cards also add a red equipped-state outline via `.crafting-inventory-card.is-equipped`
   so equipped items are visually blocked from slot assignment until unequipped.
   `.crafting-inventory-card.is-non-empty-container` greys out non-empty containers that must be emptied

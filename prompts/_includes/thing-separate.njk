@@ -25,6 +25,8 @@ Guidelines:
 - If it's a stack of items with a count of one and a number specified in the description (e.g., "A bundle of 5 arrows"), separate it into a stack of identical items with the appropriate count (e.g., 5 arrows with count 5). Keep all stats except description, name, and short description the same.
 - If it's just one thing that can't be separated as above, return an empty items list.
 
+First, think out loud for 1-3 sentences about whether the thing can be separated, and if so, how. Then return the separated thing(s) in the one of the specified formats below. If it cannot be separated, return an empty items list.
+
 Respond in the following format if it's separated into multiple things:
 <items>
 {% include "_includes/item.njk" %}

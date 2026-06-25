@@ -62,6 +62,8 @@ Prompt-writing, prompt retries, prompt batching, entity/job deduplication, realt
 
 `queuePrompt()` submits only the ComfyUI API prompt graph plus `client_id` and `prompt_id`. It does not send ComfyUI UI workflow metadata under `extra_data.extra_pnginfo.workflow`.
 
+Non-edit workflow templates commonly consume `image.prompt`, `image.width`, `image.height`, and `image.seed` from the server-rendered image job context. For example, `imagegen/test_krea_2_simplified.json.njk` renders those values into its positive prompt, latent dimensions, and sampler seed.
+
 The bundled Qwen workflows use `SaveImageWithMetaData` with plain output formats such as `png`. `*_with_json` output formats from that extension require workflow metadata that this client does not send.
 
 ## Error Behavior

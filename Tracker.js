@@ -394,6 +394,8 @@ class Tracker {
       type: this.type,
       value: this.displayValue({ formatCountdownValue }),
       rawValue: this.value,
+      description: this.description,
+      note: this.note,
       hiddenFromPlayer: this.hiddenFromPlayer,
       lastUpdated: typeof formatLastUpdated === 'function'
         ? normalizeText(formatLastUpdated(this.lastUpdatedWorldMinute)) || 'unknown'

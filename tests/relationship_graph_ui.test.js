@@ -3,6 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
+const { DOMParser } = require('@xmldom/xmldom');
 
 const rootDir = path.join(__dirname, '..');
 
@@ -31,6 +32,40 @@ function extractSelectorBlock(source, selector) {
   assert.notEqual(start, -1, `${selector} style should exist`);
   const nextSelector = source.indexOf('selector:', start + marker.length);
   return nextSelector === -1 ? source.slice(start) : source.slice(start, nextSelector);
+}
+
+function collectSvgAttributes(svgSource, attributeNames) {
+  const doc = new DOMParser({
+    onError(level, message) {
+      if (level !== 'warning') {
+        throw new Error(message);
+      }
+    }
+  }).parseFromString(svgSource, 'image/svg+xml');
+  const values = [];
+
+  function visit(node) {
+    if (node.nodeType !== 1) {
+      return;
+    }
+
+    for (const attributeName of attributeNames) {
+      if (node.hasAttribute(attributeName)) {
+        values.push({
+          nodeName: node.nodeName,
+          attributeName,
+          value: node.getAttribute(attributeName)
+        });
+      }
+    }
+
+    for (let child = node.firstChild; child; child = child.nextSibling) {
+      visit(child);
+    }
+  }
+
+  visit(doc.documentElement);
+  return values;
 }
 
 test('play interface declares a relationships tab wired to the Cytoscape graph module', () => {
@@ -129,8 +164,18 @@ test('relationship graph styles live in SCSS and icon asset exists', () => {
   const scssSource = read('public/css/main.scss');
   const graphSource = read('public/js/relationship-graph.js');
   const labelStyle = extractSelectorBlock(graphSource, 'node.relationship-label');
+  const relationshipIconPath = path.join(rootDir, 'assets/material-icons/game-tab-icons/relationship.svg');
+  const relationshipIconSource = read('assets/material-icons/game-tab-icons/relationship.svg');
+  const paintAttributes = collectSvgAttributes(relationshipIconSource, ['fill', 'stroke']);
+  const opacityAttributes = collectSvgAttributes(relationshipIconSource, ['opacity', 'fill-opacity', 'stroke-opacity']);
 
-  assert.ok(fs.existsSync(path.join(rootDir, 'assets/material-icons/game-tab-icons/relationship.svg')));
+  assert.ok(fs.existsSync(relationshipIconPath));
+  assert.ok(paintAttributes.length > 0, 'relationship icon should declare an explicit fill or stroke color');
+  assert.deepEqual(
+    [...new Set(paintAttributes.filter(({ value }) => value !== 'none').map(({ value }) => value.toLowerCase()))],
+    ['#ffffff']
+  );
+  assert.deepEqual(opacityAttributes, []);
   assert.match(scssSource, /#tab-relationships/);
   assert.match(scssSource, /#relationshipGraphContainer/);
   assert.match(scssSource, /\.relationship-graph-panel/);

@@ -383,6 +383,9 @@ class AIRPGChat {
         this.prefixHelpLink = document.getElementById('prefixHelpLink');
         this.prefixHelpModal = document.getElementById('prefixHelpModal');
         this.prefixHelpCloseButton = document.getElementById('prefixHelpCloseBtn');
+        this.chatBubbleFilterToggle = document.getElementById('chatBubbleFilterToggle');
+        this.chatBubbleFilterPopover = document.getElementById('chatBubbleFilterPopover');
+        this.chatBubbleFilterOptions = document.getElementById('chatBubbleFilterOptions');
         this.emptyActionConfirmModal = document.getElementById('emptyActionConfirmModal');
         this.emptyActionConfirmCloseButton = document.getElementById('emptyActionConfirmCloseBtn');
         this.emptyActionConfirmCancelButton = document.getElementById('emptyActionConfirmCancelBtn');
@@ -427,6 +430,10 @@ class AIRPGChat {
         this.inputHistory = [];
         this.inputHistoryIndex = null;
         this.inputHistoryDraft = '';
+        this.chatBubbleFilterCookieName = 'airpg_chat_bubble_hidden_types';
+        this.chatBubbleHiddenTypes = this.loadChatBubbleHiddenTypes();
+        this.chatBubbleTypes = new Map();
+        this.chatBubbleFilterBound = false;
 
         this.clientId = this.loadClientId();
         this.pendingRequests = new Map();
@@ -2060,6 +2067,348 @@ class AIRPGChat {
         return normalized;
     }
 
+    readClientCookie(name) {
+        if (!name) {
+            throw new Error('Cookie name is required.');
+        }
+        const cookieName = encodeURIComponent(name);
+        const cookieString = typeof document.cookie === 'string' ? document.cookie : '';
+        if (!cookieString) {
+            return '';
+        }
+        const cookies = cookieString.split(';');
+        for (const cookie of cookies) {
+            const trimmed = cookie.trim();
+            const separatorIndex = trimmed.indexOf('=');
+            const rawName = separatorIndex >= 0 ? trimmed.slice(0, separatorIndex) : trimmed;
+            if (rawName !== cookieName) {
+                continue;
+            }
+            const rawValue = separatorIndex >= 0 ? trimmed.slice(separatorIndex + 1) : '';
+            return decodeURIComponent(rawValue);
+        }
+        return '';
+    }
+
+    writeClientCookie(name, value) {
+        if (!name) {
+            throw new Error('Cookie name is required.');
+        }
+        const maxAgeSeconds = 60 * 60 * 24 * 365;
+        document.cookie = [
+            `${encodeURIComponent(name)}=${encodeURIComponent(String(value ?? ''))}`,
+            `Max-Age=${maxAgeSeconds}`,
+            'Path=/',
+            'SameSite=Lax'
+        ].join('; ');
+    }
+
+    loadChatBubbleHiddenTypes() {
+        try {
+            const raw = this.readClientCookie(this.chatBubbleFilterCookieName);
+            if (!raw) {
+                return new Set();
+            }
+            const parsed = JSON.parse(raw);
+            if (!Array.isArray(parsed)) {
+                return new Set();
+            }
+            return new Set(
+                parsed
+                    .map(value => this.normalizeChatBubbleType(value))
+                    .filter(Boolean)
+            );
+        } catch (error) {
+            console.warn('Failed to load chat bubble filter state:', error);
+            return new Set();
+        }
+    }
+
+    persistChatBubbleHiddenTypes() {
+        try {
+            const values = Array.from(this.chatBubbleHiddenTypes || []);
+            this.writeClientCookie(
+                this.chatBubbleFilterCookieName,
+                JSON.stringify(values)
+            );
+        } catch (error) {
+            console.warn('Failed to persist chat bubble filter state:', error);
+        }
+    }
+
+    normalizeChatBubbleType(value) {
+        if (value === null || value === undefined) {
+            return '';
+        }
+        return String(value)
+            .trim()
+            .toLowerCase()
+            .replace(/[^a-z0-9_-]+/g, '-')
+            .replace(/^-+|-+$/g, '');
+    }
+
+    formatChatBubbleTypeLabel(type) {
+        const normalized = this.normalizeChatBubbleType(type);
+        const labels = {
+            assistant: 'AI Game Master',
+            user: 'Player Messages',
+            system: 'System Messages',
+            error: 'Errors',
+            'player-action': 'Player Action Results',
+            'player-action-open-container': 'Container Opening Results',
+            'user-question': 'Player Questions',
+            'storyteller-answer': 'Storyteller Answers',
+            'user-generic-prompt': 'Generic Prompt Requests',
+            'generic-prompt-response': 'Generic Prompt Responses',
+            'npc-action': 'NPC Actions',
+            'npc-message': 'NPC Messages',
+            'while-you-were-away-player': 'While You Were Away',
+            'event-summary': 'Event Summaries',
+            'status-summary': 'Status Summaries',
+            'check-results': 'Check Results',
+            'tool-call-debug': 'Tool Call Debug',
+            plausibility: 'Plausibility Checks',
+            'slop-remover': 'Slop Remover',
+            'skill-check': 'Skill Checks',
+            'attack-check': 'Attack Checks',
+            'tracker-updates': 'Tracker Updates',
+            'relationship-updates': 'Relationship Updates',
+            'container-transfer': 'Container Transfers'
+        };
+        if (labels[normalized]) {
+            return labels[normalized];
+        }
+        if (!normalized) {
+            return 'Other Messages';
+        }
+        return normalized
+            .split('-')
+            .filter(Boolean)
+            .map(part => part.charAt(0).toUpperCase() + part.slice(1))
+            .join(' ');
+    }
+
+    resolveChatBubbleDescriptor(entryOrType, labelOverride = '') {
+        let rawType = '';
+        let role = '';
+        let isNpcTurn = false;
+
+        if (entryOrType && typeof entryOrType === 'object') {
+            rawType = typeof entryOrType.type === 'string' ? entryOrType.type : '';
+            role = typeof entryOrType.role === 'string' ? entryOrType.role.trim().toLowerCase() : '';
+            isNpcTurn = entryOrType.isNpcTurn === true;
+        } else {
+            rawType = entryOrType;
+        }
+
+        let type = this.normalizeChatBubbleType(rawType);
+        if (!type) {
+            if (role === 'user') {
+                type = 'user';
+            } else if (role === 'system') {
+                type = 'system';
+            } else if (isNpcTurn) {
+                type = 'npc-message';
+            } else if (role === 'assistant') {
+                type = 'assistant';
+            } else {
+                type = 'system';
+            }
+        }
+
+        const override = typeof labelOverride === 'string' ? labelOverride.trim() : '';
+        return {
+            type,
+            label: override || this.formatChatBubbleTypeLabel(type)
+        };
+    }
+
+    registerChatBubbleType(type, label) {
+        const normalized = this.normalizeChatBubbleType(type);
+        if (!normalized) {
+            return false;
+        }
+        const resolvedLabel = typeof label === 'string' && label.trim()
+            ? label.trim()
+            : this.formatChatBubbleTypeLabel(normalized);
+        const existing = this.chatBubbleTypes.get(normalized);
+        if (existing === resolvedLabel) {
+            return false;
+        }
+        this.chatBubbleTypes.set(normalized, resolvedLabel);
+        return true;
+    }
+
+    decorateChatBubbleElement(element, entryOrType, labelOverride = '') {
+        if (!element) {
+            return element;
+        }
+        const descriptor = this.resolveChatBubbleDescriptor(entryOrType, labelOverride);
+        element.dataset.chatBubbleType = descriptor.type;
+        element.dataset.chatBubbleLabel = descriptor.label;
+        const added = this.registerChatBubbleType(descriptor.type, descriptor.label);
+        this.applyChatBubbleTypeVisibility(element);
+        if (added) {
+            this.renderChatBubbleFilterOptions();
+        }
+        return element;
+    }
+
+    syncChatBubbleTypesFromDom() {
+        if (!this.chatLog) {
+            return;
+        }
+        this.chatLog.querySelectorAll('.message[data-chat-bubble-type]').forEach(element => {
+            this.registerChatBubbleType(element.dataset.chatBubbleType, element.dataset.chatBubbleLabel);
+        });
+    }
+
+    applyChatBubbleTypeVisibility(element) {
+        if (!element) {
+            return false;
+        }
+        const type = this.normalizeChatBubbleType(element.dataset?.chatBubbleType || '');
+        const hidden = Boolean(type && this.chatBubbleHiddenTypes?.has(type));
+        element.classList.toggle('chat-bubble-hidden-by-filter', hidden);
+        if (hidden) {
+            element.setAttribute('aria-hidden', 'true');
+        } else {
+            element.removeAttribute('aria-hidden');
+        }
+        return hidden;
+    }
+
+    applyChatBubbleFilters() {
+        if (!this.chatLog) {
+            return;
+        }
+        this.chatLog.querySelectorAll('.message[data-chat-bubble-type]').forEach(element => {
+            this.applyChatBubbleTypeVisibility(element);
+        });
+        this.updateChatBubbleFilterToggleState();
+    }
+
+    getSortedChatBubbleTypes() {
+        this.syncChatBubbleTypesFromDom();
+        return Array.from(this.chatBubbleTypes.entries())
+            .map(([type, label]) => ({ type, label }))
+            .sort((left, right) => left.label.localeCompare(right.label));
+    }
+
+    renderChatBubbleFilterOptions() {
+        if (!this.chatBubbleFilterOptions) {
+            return;
+        }
+
+        const types = this.getSortedChatBubbleTypes();
+        this.chatBubbleFilterOptions.innerHTML = '';
+        if (!types.length) {
+            const empty = document.createElement('div');
+            empty.className = 'chat-bubble-filter-empty';
+            empty.textContent = 'No chat bubbles yet.';
+            this.chatBubbleFilterOptions.appendChild(empty);
+            this.updateChatBubbleFilterToggleState();
+            return;
+        }
+
+        types.forEach(({ type, label }) => {
+            const row = document.createElement('label');
+            row.className = 'chat-bubble-filter-option';
+
+            const checkbox = document.createElement('input');
+            checkbox.type = 'checkbox';
+            checkbox.className = 'chat-bubble-filter-option__input';
+            checkbox.checked = !this.chatBubbleHiddenTypes.has(type);
+            checkbox.dataset.chatBubbleType = type;
+            checkbox.addEventListener('change', () => {
+                if (checkbox.checked) {
+                    this.chatBubbleHiddenTypes.delete(type);
+                } else {
+                    this.chatBubbleHiddenTypes.add(type);
+                }
+                this.persistChatBubbleHiddenTypes();
+                this.applyChatBubbleFilters();
+            });
+
+            const text = document.createElement('span');
+            text.className = 'chat-bubble-filter-option__label';
+            text.textContent = label;
+
+            row.appendChild(checkbox);
+            row.appendChild(text);
+            this.chatBubbleFilterOptions.appendChild(row);
+        });
+
+        this.updateChatBubbleFilterToggleState();
+    }
+
+    updateChatBubbleFilterToggleState() {
+        if (!this.chatBubbleFilterToggle) {
+            return;
+        }
+        const hasHidden = Boolean(this.chatBubbleHiddenTypes && this.chatBubbleHiddenTypes.size > 0);
+        this.chatBubbleFilterToggle.classList.toggle('is-filtering', hasHidden);
+    }
+
+    setChatBubbleFilterPopoverOpen(open) {
+        if (!this.chatBubbleFilterPopover || !this.chatBubbleFilterToggle) {
+            return;
+        }
+        const shouldOpen = Boolean(open);
+        this.chatBubbleFilterPopover.hidden = !shouldOpen;
+        this.chatBubbleFilterToggle.setAttribute('aria-expanded', shouldOpen ? 'true' : 'false');
+        this.chatBubbleFilterToggle.classList.toggle('is-open', shouldOpen);
+        if (shouldOpen) {
+            this.renderChatBubbleFilterOptions();
+        }
+    }
+
+    toggleChatBubbleFilterPopover(forceOpen = null) {
+        const shouldOpen = forceOpen === null
+            ? Boolean(this.chatBubbleFilterPopover?.hidden)
+            : Boolean(forceOpen);
+        this.setChatBubbleFilterPopoverOpen(shouldOpen);
+    }
+
+    setupChatBubbleFilter() {
+        if (!this.chatBubbleFilterToggle || !this.chatBubbleFilterPopover || this.chatBubbleFilterBound) {
+            return;
+        }
+        this.chatBubbleFilterBound = true;
+        this.syncChatBubbleTypesFromDom();
+        this.renderChatBubbleFilterOptions();
+        this.applyChatBubbleFilters();
+
+        this.chatBubbleFilterToggle.addEventListener('click', (event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            this.toggleChatBubbleFilterPopover();
+        });
+
+        this.chatBubbleFilterPopover.addEventListener('click', (event) => {
+            event.stopPropagation();
+        });
+
+        document.addEventListener('click', (event) => {
+            if (this.chatBubbleFilterPopover.hidden) {
+                return;
+            }
+            const target = event.target;
+            if (this.chatBubbleFilterPopover.contains(target) || this.chatBubbleFilterToggle.contains(target)) {
+                return;
+            }
+            this.setChatBubbleFilterPopoverOpen(false);
+        });
+
+        document.addEventListener('keydown', (event) => {
+            if (event.key === 'Escape' && !this.chatBubbleFilterPopover.hidden) {
+                event.preventDefault();
+                this.setChatBubbleFilterPopoverOpen(false);
+                this.chatBubbleFilterToggle.focus();
+            }
+        });
+    }
+
     isModelBoundChatRequestMessage(entry) {
         if (!entry || typeof entry !== 'object') {
             return false;
@@ -2272,6 +2621,7 @@ class AIRPGChat {
         }
 
         const attachmentTypes = this.getAttachmentTypes();
+        const turnDiffEntryTypes = this.getTurnDiffEntryTypes();
         const resolvedParentById = new Map();
         let lastNonAttachmentId = null;
 
@@ -2302,10 +2652,14 @@ class AIRPGChat {
                 return false;
             }
             const entryType = entry.type || null;
-            if (!attachmentTypes.has(entryType)) {
+            const isAttachment = attachmentTypes.has(entryType);
+            const isParentLinkedTurnDiff = turnDiffEntryTypes.has(entryType) && Boolean(entry.parentId);
+            if (!isAttachment && !isParentLinkedTurnDiff) {
                 return true;
             }
-            const parentId = entry.parentId || (entry.id ? resolvedParentById.get(entry.id) : null);
+            const parentId = isAttachment
+                ? entry.parentId || (entry.id ? resolvedParentById.get(entry.id) : null)
+                : entry.parentId;
             if (!parentId) {
                 return false;
             }
@@ -2333,6 +2687,7 @@ class AIRPGChat {
         this.latestPlayerActionEntryKey = this.getEntryKey(latestPlayerAction);
 
         this.messageRegistry.clear();
+        this.chatBubbleTypes.clear();
         const fragment = document.createDocumentFragment();
 
         const aggregatedEntries = [];
@@ -2443,14 +2798,6 @@ class AIRPGChat {
             }
         }
 
-        if (pendingTurnDiffEntries.size) {
-            for (const pendingList of pendingTurnDiffEntries.values()) {
-                pendingList.forEach(entry => {
-                    aggregatedEntries.push({ entry, attachments: [], turnDiffEntries: [] });
-                });
-            }
-        }
-
         aggregatedEntries.forEach(({ entry, attachments, turnDiffEntries }) => {
             const element = this.createChatMessageElement(entry, attachments, turnDiffEntries);
             if (element) {
@@ -2470,11 +2817,15 @@ class AIRPGChat {
                 <div class="message-actions" hidden></div>
                 <div>Welcome to the AI RPG! I\'m your Game Master. Use System for operational configuration, Worlds for world profiles, then New Game to begin.</div>
             `;
+            this.decorateChatBubbleElement(placeholder, 'assistant');
             this.chatLog.appendChild(placeholder);
         } else {
             this.chatLog.appendChild(fragment);
         }
 
+        this.syncChatBubbleTypesFromDom();
+        this.renderChatBubbleFilterOptions();
+        this.applyChatBubbleFilters();
         this.scrollToBottom();
     }
 
@@ -2583,6 +2934,7 @@ class AIRPGChat {
             messageDiv.appendChild(insightsOnly);
         }
 
+        this.decorateChatBubbleElement(messageDiv, entry);
         return messageDiv;
     }
 
@@ -2592,6 +2944,7 @@ class AIRPGChat {
         messageDiv.dataset.type = 'tool-call-debug';
         messageDiv.dataset.timestamp = entry.timestamp || '';
         messageDiv.dataset.entryId = entry.id || '';
+        this.decorateChatBubbleElement(messageDiv, 'tool-call-debug');
 
         const senderDiv = document.createElement('div');
         senderDiv.className = 'message-sender';
@@ -2775,6 +3128,7 @@ class AIRPGChat {
         messageDiv.dataset.type = 'check-results';
         messageDiv.dataset.timestamp = entry.timestamp || '';
         messageDiv.dataset.entryId = entry.id || '';
+        this.decorateChatBubbleElement(messageDiv, 'check-results');
 
         const senderDiv = document.createElement('div');
         senderDiv.className = 'message-sender';
@@ -3456,6 +3810,7 @@ class AIRPGChat {
         const container = document.createElement('div');
         container.className = 'message event-summary-batch';
         container.dataset.timestamp = entry.timestamp || '';
+        this.decorateChatBubbleElement(container, 'event-summary');
 
         const senderDiv = document.createElement('div');
         senderDiv.className = 'message-sender';
@@ -3507,6 +3862,7 @@ class AIRPGChat {
         const container = document.createElement('div');
         container.className = 'message status-summary-batch';
         container.dataset.timestamp = entry.timestamp || '';
+        this.decorateChatBubbleElement(container, 'status-summary');
 
         const senderDiv = document.createElement('div');
         senderDiv.className = 'message-sender';
@@ -4552,21 +4908,6 @@ class AIRPGChat {
         });
 
         overlay.dataset.dragBound = 'true';
-    }
-
-    closeLoadGameModalIfOpen() {
-        const loadGameModal = document.getElementById('loadGameModal');
-        if (!loadGameModal || loadGameModal.hasAttribute('hidden')) {
-            return;
-        }
-
-        if (typeof window.closeLoadGameModal === 'function') {
-            window.closeLoadGameModal({ focusTrigger: false });
-            return;
-        }
-
-        loadGameModal.setAttribute('aria-hidden', 'true');
-        loadGameModal.setAttribute('hidden', '');
     }
 
     getPromptProgressSafeTopOffsetPx() {
@@ -5618,9 +5959,6 @@ class AIRPGChat {
 
         dock.hidden = false;
         this.updatePromptProgressDockStateClasses();
-        if (this.promptProgressEntries.length) {
-            this.closeLoadGameModalIfOpen();
-        }
 
         if (this.promptProgressDockState === 'collapsed') {
             this.renderPromptProgressCollapsed(dock, this.promptProgressEntries);
@@ -5884,6 +6222,7 @@ class AIRPGChat {
 
     init() {
         this.bindEvents();
+        this.setupChatBubbleFilter();
         this.messageInput.focus();
     }
 
@@ -6113,6 +6452,8 @@ class AIRPGChat {
 
         // Add debug information if available (for AI responses)
         messageDiv.appendChild(timestampDiv);
+        const bubbleType = options.bubbleType || (isError ? 'error' : (sender === 'user' ? 'user' : sender || 'assistant'));
+        this.decorateChatBubbleElement(messageDiv, options.bubbleType || bubbleType);
         this.chatLog.appendChild(messageDiv);
 
         this.scrollToBottom();
@@ -6144,6 +6485,7 @@ class AIRPGChat {
         messageDiv.appendChild(contentDiv);
         messageDiv.appendChild(timestampDiv);
 
+        this.decorateChatBubbleElement(messageDiv, 'npc-message');
         this.chatLog.appendChild(messageDiv);
         this.scrollToBottom();
     }
@@ -6450,6 +6792,7 @@ class AIRPGChat {
         messageDiv.appendChild(contentDiv);
         messageDiv.appendChild(timestampDiv);
 
+        this.decorateChatBubbleElement(messageDiv, 'event-summary');
         this.chatLog.appendChild(messageDiv);
         this.scrollToBottom();
     }
@@ -6517,6 +6860,7 @@ class AIRPGChat {
         messageDiv.appendChild(contentDiv);
         messageDiv.appendChild(timestampDiv);
 
+        this.decorateChatBubbleElement(messageDiv, 'event-summary');
         this.chatLog.appendChild(messageDiv);
         this.scrollToBottom();
     }
@@ -6743,6 +7087,7 @@ class AIRPGChat {
             messageDiv.appendChild(contentDiv);
             messageDiv.appendChild(timestampDiv);
 
+            this.decorateChatBubbleElement(messageDiv, 'event-summary');
             this.chatLog.appendChild(messageDiv);
             appendedCount += 1;
         });
@@ -6799,6 +7144,7 @@ class AIRPGChat {
         messageDiv.appendChild(contentDiv);
         messageDiv.appendChild(timestampDiv);
 
+        this.decorateChatBubbleElement(messageDiv, 'event-summary');
         this.chatLog.appendChild(messageDiv);
         this.scrollToBottom();
     }
@@ -7378,6 +7724,7 @@ class AIRPGChat {
         messageDiv.appendChild(contentDiv);
         messageDiv.appendChild(timestampDiv);
 
+        this.decorateChatBubbleElement(messageDiv, 'event-summary');
         this.chatLog.appendChild(messageDiv);
         this.scrollToBottom();
     }
@@ -7411,6 +7758,7 @@ class AIRPGChat {
         messageDiv.appendChild(contentDiv);
         messageDiv.appendChild(timestampDiv);
 
+        this.decorateChatBubbleElement(messageDiv, 'event-summary');
         this.chatLog.appendChild(messageDiv);
         this.scrollToBottom();
     }
@@ -7435,6 +7783,7 @@ class AIRPGChat {
         messageDiv.appendChild(contentDiv);
         messageDiv.appendChild(timestampDiv);
 
+        this.decorateChatBubbleElement(messageDiv, 'status-summary');
         this.chatLog.appendChild(messageDiv);
         this.scrollToBottom();
     }
@@ -7596,6 +7945,7 @@ class AIRPGChat {
         messageDiv.appendChild(contentDiv);
         messageDiv.appendChild(timestampDiv);
 
+        this.decorateChatBubbleElement(messageDiv, 'event-summary');
         this.chatLog.appendChild(messageDiv);
         this.scrollToBottom();
 
@@ -7672,6 +8022,7 @@ class AIRPGChat {
         messageDiv.appendChild(contentDiv);
         messageDiv.appendChild(timestampDiv);
 
+        this.decorateChatBubbleElement(messageDiv, 'status-summary');
         this.chatLog.appendChild(messageDiv);
         this.scrollToBottom();
     }
@@ -7823,6 +8174,7 @@ class AIRPGChat {
         messageDiv.appendChild(contentDiv);
         messageDiv.appendChild(timestampDiv);
 
+        this.decorateChatBubbleElement(messageDiv, 'plausibility');
         return messageDiv;
     }
 
@@ -7861,6 +8213,7 @@ class AIRPGChat {
         messageDiv.appendChild(contentDiv);
         messageDiv.appendChild(timestampDiv);
 
+        this.decorateChatBubbleElement(messageDiv, 'slop-remover');
         return messageDiv;
     }
 
@@ -8127,6 +8480,7 @@ class AIRPGChat {
         messageDiv.appendChild(contentDiv);
         messageDiv.appendChild(timestampDiv);
 
+        this.decorateChatBubbleElement(messageDiv, 'skill-check');
         return messageDiv;
     }
 
@@ -8697,6 +9051,7 @@ class AIRPGChat {
         messageDiv.appendChild(contentDiv);
         messageDiv.appendChild(timestampDiv);
 
+        this.decorateChatBubbleElement(messageDiv, 'attack-check');
         return messageDiv;
     }
 
@@ -8870,7 +9225,9 @@ class AIRPGChat {
 
         if (payload.response && (!context || !context.playerActionRendered)) {
             this.hideLoading(requestId);
-            const playerActionElement = this.addMessage('ai', payload.response, false, payload.debug);
+            const playerActionElement = this.addMessage('ai', payload.response, false, payload.debug, {
+                bubbleType: payload.proseType || 'player-action'
+            });
             shouldRefreshLocation = true;
             if (context) {
                 context.playerActionElement = playerActionElement;
@@ -9629,11 +9986,13 @@ class AIRPGChat {
             : (isGenericPromptEntry
                 ? trimmedVisibleContent.slice(genericMarkerLength).replace(/^\s+/, '')
                 : content);
+        const requestId = this.generateRequestId();
 
         if (isNoLogGenericPromptEntry) {
             this.addMessage('user', normalizedUserContent, false);
         } else {
             const userEntry = this.normalizeLocalEntry({
+                id: requestId,
                 role: 'user',
                 type: isQuestionEntry
                     ? 'user-question'
@@ -9670,7 +10029,6 @@ class AIRPGChat {
             return [...history, rawUserMessage];
         })();
 
-        const requestId = this.generateRequestId();
         const context = this.ensureRequestContext(requestId);
         if (context) {
             context.isTravelRequest = Boolean(travel);

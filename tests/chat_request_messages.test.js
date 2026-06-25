@@ -130,6 +130,30 @@ test('submitChatMessage builds request payload from model-bound history only', (
     );
 });
 
+test('optimistic user entry id matches the server-persisted user entry id', () => {
+    const submitSource = extractClassMethod(chatSource, 'submitChatMessage');
+    const requestIdIndex = submitSource.indexOf('const requestId = this.generateRequestId();');
+    const optimisticEntryIndex = submitSource.indexOf('const userEntry = this.normalizeLocalEntry({');
+
+    assert.notEqual(requestIdIndex, -1, 'submitChatMessage should generate a request id');
+    assert.notEqual(optimisticEntryIndex, -1, 'submitChatMessage should create an optimistic user entry');
+    assert.ok(
+        requestIdIndex < optimisticEntryIndex,
+        'submitChatMessage should generate the request id before creating the optimistic user entry'
+    );
+    assert.match(
+        submitSource,
+        /const userEntry = this\.normalizeLocalEntry\(\{\s*id:\s*requestId,/,
+        'the optimistic user entry should use the request id as its chat entry id'
+    );
+
+    assert.match(
+        apiSource,
+        /const entryPayload = \{\s*id:\s*stream\.requestId\s*\|\|\s*undefined,\s*role:\s*'user',/,
+        'the server-persisted user entry should use the same request id when available'
+    );
+});
+
 test('player prompt template errors abort instead of falling back to raw client messages', () => {
     assert.doesNotMatch(
         apiSource,

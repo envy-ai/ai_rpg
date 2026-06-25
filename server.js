@@ -543,6 +543,7 @@ function filterOrphanedChatEntries(entries) {
     }
 
     const attachmentTypes = new Set(['skill-check', 'attack-check', 'plausibility', 'slop-remover']);
+    const turnDiffEntryTypes = new Set(['event-summary', 'status-summary']);
     const implicitParentById = new Map();
     const entryById = new Map();
     let lastNonAttachmentId = null;
@@ -580,10 +581,19 @@ function filterOrphanedChatEntries(entries) {
             return false;
         }
         const entryType = entry.type || null;
-        if (!attachmentTypes.has(entryType)) {
+        const isAttachment = attachmentTypes.has(entryType);
+        const isTurnDiff = turnDiffEntryTypes.has(entryType);
+        if (!isAttachment && !isTurnDiff) {
             return true;
         }
-        const parentId = entry.parentId || (entry.id ? implicitParentById.get(entry.id) : null);
+
+        if (isTurnDiff && !entry.parentId) {
+            return true;
+        }
+
+        const parentId = isAttachment
+            ? entry.parentId || (entry.id ? implicitParentById.get(entry.id) : null)
+            : entry.parentId;
         if (!parentId) {
             return false;
         }
@@ -593,6 +603,9 @@ function filterOrphanedChatEntries(entries) {
         }
         const parentType = parentEntry.type || null;
         if (attachmentTypes.has(parentType)) {
+            return false;
+        }
+        if (turnDiffEntryTypes.has(parentType)) {
             return false;
         }
         return true;

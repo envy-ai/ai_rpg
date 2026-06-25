@@ -11,7 +11,7 @@ Request:
 - Body:
   - `messages` (required): array of chat messages; at minimum the last entry should be `{ role, content }`.
   - `clientId` (optional string): enables realtime streaming events.
-  - `requestId` (optional string): echoed back in `streamMeta` and chat metadata.
+  - `requestId` (optional string): echoed back in `streamMeta` and chat metadata. For logged user actions, the browser also uses this value as the optimistic user `ChatEntry.id`, and the server preserves it as the stored user-entry id so message edits can resolve before the full turn finishes.
   - `travel` (optional boolean): marks the user message as a travel action.
   - `travelMetadata` (optional object): required for event-driven travel and used by direct unexplored-exit prose prompts; normalized to:
     - `mode` (string | null; `fast-travel` validates origin/destination without requiring one adjacent exit)
@@ -31,7 +31,7 @@ Request:
 
 `travelMetadata.mode: "fast-travel"` must be direct (`eventDriven: false`). Region Map, World Map, and Favorites use this mode for non-adjacent prompt-backed fast travel after route preview and confirmation only when the player enters nonblank modal action text; blank map/Favorites confirmations skip the player-action prompt, log a comment-style travel entry, and then use the teleport flow. Character-menu story-tool teleports do not call `/api/chat`.
 
-Split `<moveTurnResult>` responses can include `<playerDestination><travelTime>...</travelTime></playerDestination>`. The duration is parsed with the shared duration parser and stored on a created origin exit for the player destination; if the relevant exit already exists, the prompt-provided value is ignored.
+Split `<moveTurnResult>` responses can include `<playerDestination><travelTime>...</travelTime></playerDestination>`. The duration is parsed with the shared duration parser and stored on a created origin exit for the player destination; if the relevant exit already exists, the prompt-provided value is ignored. When a split movement turn runs separate origin and destination event checks, those sub-checks suppress automatic housekeeping; `/api/chat` then runs one housekeeping prompt with the combined movement prose, original player action when available, merged event result, and final destination location.
 
 Response (200):
 
@@ -252,6 +252,7 @@ Notes:
 
 - Uses `client_message_history.max_messages` as a turn-based visibility cap for client history.
 - This is independent from `recent_history_turns`, which only affects base-context prompt construction.
+- Parent-linked `event-summary` and `status-summary` entries are omitted from normal Adventure history responses when their parent entry is not present after pruning. Unparented summaries remain visible as standalone summary cards.
 - Query options:
   - `includeAllEntries=true|false` (default `false`): when `true`, returns stored `chatHistory` entries in oldest-first order with no pruning and no hidden/orphan entry filtering. Intended for Story Tools/admin-style views. Player-action `<hidden>` note blocks are preserved in this full-history response only when `show_hidden_notes: true`; otherwise the configured hidden-note stripping applies.
   - Accepted boolean values: `true`, `false`, `1`, `0`, `yes`, `no`, `on`, `off`.
