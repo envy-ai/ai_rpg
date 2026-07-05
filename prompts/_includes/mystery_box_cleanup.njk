@@ -1,0 +1,56 @@
+Mystery box tracking is great, but unless it's managed carefully, it can quickly get out of hand. Go through each active mystery thread and each unresolved mystery box contained in it, and determine whether each mystery box has been fully revealed to the player (as well as whether each mystery thread is resolved).
+
+Only use mystery thread IDs and mystery box IDs listed below. If a mystery box is not listed, do not mention it in the output. If no listed threads or boxes are resolved/revealed, output each listed thread with <resolved>false</resolved> and each listed box with <revealed>false</revealed>.
+
+{% set cleanupThreads = mysteryCleanupThreads | default([], true) %}
+<mysteryCleanupCandidates>
+{% for thread in cleanupThreads %}
+  <mysteryThread id="{{ thread.id }}">
+    <name>{{ thread.name }}</name>
+    <status>{{ thread.status }}</status>
+    {% if thread.keys and thread.keys.length %}
+    <keys>{% for key in thread.keys %}<key>{{ key }}</key>{% endfor %}</keys>
+    {% endif %}
+    {% if thread.summary %}
+    <summary>{{ thread.summary }}</summary>
+    {% endif %}
+    {% if thread.constraints and thread.constraints.length %}
+    <constraints>{% for constraint in thread.constraints %}<constraint>{{ constraint }}</constraint>{% endfor %}</constraints>
+    {% endif %}
+    <mysteryBoxes>
+    {% for box in thread.mysteryBoxes | default([], true) %}
+      <mysteryBox id="{{ box.id }}">
+        <name>{{ box.name }}</name>
+        {% if box.keys and box.keys.length %}
+        <keys>{% for key in box.keys %}<key>{{ key }}</key>{% endfor %}</keys>
+        {% endif %}
+        <text>{{ box.text }}</text>
+      </mysteryBox>
+    {% else %}
+      <none />
+    {% endfor %}
+    </mysteryBoxes>
+  </mysteryThread>
+{% else %}
+  <none />
+{% endfor %}
+</mysteryCleanupCandidates>
+
+Output the following XML:
+
+<mysteryThreads>
+  <mysteryThread>
+    <id><!-- mystery thread ID --></id>
+    <thoughts><!-- free text thoughts about the mystery thread, 2 paragraphs or so --></thoughts>
+    <resolved><!-- true if the mystery thread is resolved, false otherwise --></resolved>
+    <mysteryBoxes>
+      <mysteryBox>
+        <id><!-- mystery box ID --></id>
+        <thoughts><!-- 1-2 sentences about the status of this mystery box --></thoughts>
+        <revealed><!-- true if the mystery box has been fully revealed to the player, false otherwise --></revealed>
+      </mysteryBox>
+      ... additional mystery boxes from this thread here ...
+    </mysteryBoxes>
+  </mysteryThread>
+  ... additional mystery threads here ...
+</mysteryThreads>

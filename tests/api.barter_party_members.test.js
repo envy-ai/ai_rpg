@@ -201,7 +201,7 @@ test('barter generated stock uses batched inventory generator prompts', () => {
         'function restoreCharacterHealthToMaximum'
     );
 
-    assert.match(configSource, /max_items_per_prompt:\s*15/);
+    assert.match(configSource, /max_items_per_prompt:\s*8/);
     assert.match(applyBlock, /generatedStockMaxItemsPerPrompt/);
     assert.match(applyBlock, /generateInventoryForCharacter\(/);
     assert.match(applyBlock, /attachToInventory: false/);
@@ -210,5 +210,5 @@ test('barter generated stock uses batched inventory generator prompts', () => {
     assert.match(inventoryBlock, /Inventory generator returned \$\{items\.length\} barter stock item/);
     assert.match(promptSource, /inventoryMode == "barterStock"/);
     assert.match(promptSource, /requestedBarterStock/);
-    assert.match(promptSource, /Generate exactly \{\{ requestedItems \| length \}\}/);
+    assert.match(promptSource, /Generate an <items> block containing exactly \{\{ requestedItems \| length \}\}/);
 });

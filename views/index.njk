@@ -13170,6 +13170,7 @@
             }
             moduleWorkbenchSlots.innerHTML = '';
             const entries = getModuleWorkbenchSlotEntries();
+            moduleWorkbenchSlots.classList.toggle('crafting-modal__slots--multiple', entries.length > 1);
             entries.forEach(entry => {
                 const slot = document.createElement('div');
                 slot.className = 'module-workbench__slot';
@@ -21850,6 +21851,17 @@
             });
         }
 
+        function refreshThingListFilterPopoverForPanel(panel) {
+            if (!panel) {
+                return;
+            }
+            thingListFilterPopoverStates.forEach(state => {
+                if (state?.panel === panel) {
+                    updateThingListFilterPopoverLayout(state);
+                }
+            });
+        }
+
         function closeThingListSortPopoverForPanel(panel) {
             if (!panel) {
                 return;
@@ -21883,14 +21895,9 @@
             state.panel.classList.toggle('thing-list-panel--filters-open', shouldCompact && state.isOpen);
             state.toggleButton.hidden = !shouldCompact;
             if (shouldCompact) {
-                const toggleTop = Number(state.toggleButton.offsetTop) || 0;
-                const toggleHeight = Number(state.toggleButton.offsetHeight) || 0;
-                const toggleLeft = Number(state.toggleButton.offsetLeft) || 0;
-                const toggleWidth = Number(state.toggleButton.offsetWidth) || 0;
-                const panelWidth = Number(state.panel.clientWidth) || 0;
-                const computedRight = Math.max(0, panelWidth - (toggleLeft + toggleWidth));
-                state.filtersShell.style.top = `${toggleTop + toggleHeight + 8}px`;
-                state.filtersShell.style.right = `${computedRight}px`;
+                state.filtersShell.style.top = '0px';
+                state.filtersShell.style.left = '0px';
+                state.filtersShell.style.right = '0px';
                 if (state.isOpen) {
                     state.filtersShell.hidden = false;
                     state.filtersShell.classList.add('is-open');
@@ -21905,6 +21912,7 @@
             } else {
                 state.isOpen = false;
                 state.filtersShell.style.top = '';
+                state.filtersShell.style.left = '';
                 state.filtersShell.style.right = '';
                 state.filtersShell.hidden = false;
                 state.filtersShell.classList.remove('is-open');
@@ -24221,6 +24229,7 @@
                 })
             });
 
+            refreshThingListFilterPopoverForPanel(npcInventoryPanel);
             try {
                 document.dispatchEvent(new Event('inventory:updated'));
             } catch (_) {}
@@ -27295,6 +27304,7 @@
                 return;
             }
             craftingSlotsContainer.innerHTML = '';
+            craftingSlotsContainer.classList.toggle('crafting-modal__slots--multiple', slotCount > 1);
             for (let index = 0; index < slotCount; index += 1) {
                 const slot = document.createElement('div');
                 slot.className = 'crafting-slot';

@@ -16,6 +16,13 @@
   <role>{{ alteredCharacter.role }}</role>
   <class>{{ alteredCharacter.class }}</class>
   <race>{{ alteredCharacter.race }}</race>
+  {% for field in playerGeneratorPromptFields | default([], true) %}
+  {% set fieldValue = alteredCharacter[field.fieldName] | default('', true) %}
+  {% if fieldValue != '' and fieldValue != none %}
+  {% set tagName = field.xmlPrompt.tagName | default(field.fieldName, true) %}
+  <{{ tagName }}>{{ fieldValue }}</{{ tagName }}>
+  {% endif %}
+  {% endfor %}
   <relativeLevel>{{ alteredCharacter.relativeLevel | default('unknown') }}</relativeLevel>
   <currency>{{ alteredCharacter.currency | default('unknown') }}</currency>
   <attributes>
@@ -45,6 +52,8 @@
       {%- endif -%}
     </goals>
   </personality>
+  {% set playerFieldSeed = characterSeed %}
+  {% include "_includes/player-generator-fields.njk" %}
   <statusEffects>
     {% if alteredCharacter.statusEffects %}
       {% for effect in alteredCharacter.statusEffects %}

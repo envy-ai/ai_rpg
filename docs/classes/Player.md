@@ -14,14 +14,14 @@ Represents a player or NPC with attributes, skills, inventory, gear, status effe
 - Social: `#dispositions`, `#relationships` (`target character id -> label of at most six words`), `#personalityType`, `#personalityTraits`, `#personalityNotes`, `#aiNotes`, `#resistances`, `#vulnerabilities`, NPC-only `#hiddenFromPlayer`.
 - Factions: `#factionId`, `#factionStandings` (map of `factionId -> number`).
 - UI state: `#thingListViewPreferences` (per-panel shared thing-list view modes for location/inventory/crafting/barter panels).
-- Mod state: `#modState` (namespaced JSON object persisted for hook-based mods).
+- Mod state: `#modState` (namespaced JSON object persisted for hook-based mods) and `#extensionFields` (top-level first-class Player fields registered by enabled mods).
 - Party/quests: `#partyMembers`, `#quests`, `#goals`, `#characterArc`.
 - Movement/turns: `#currentLocation`, `#previousLocationId`, `#lastSeenTime` (`last_seen_time` absolute world minutes), `#lastSeenLocation` (`last_seen_location` id), `#wasInPlayerLocationPreviousRound`, `#elapsedTime` (minutes), `#lastVisitedTime` (minutes), `#inCombat`, `#lastActionWasTravel`, `#consecutiveTravelActions`.
 - Lifecycle: `#isDead`, `#persistWhenDead`, `#corpseCountdown`.
 - Static indexes: `#indexById`, `#indexByName`.
 
 ## Construction
-- `new Player(options)` loads definitions, validates input, initializes attributes, inventory, gear, skills, dispositions, need bars, per-actor need-bar applicability, assigns a compact `char_n` id when missing, and registers in indexes.
+- `new Player(options)` loads definitions, validates input, initializes attributes, inventory, gear, skills, dispositions, need bars, per-actor need-bar applicability, installs accessors for currently registered Player extension fields, assigns a compact `char_n` id when missing, and registers in indexes.
 
 ## Static API
 - Lookup and registry:
@@ -83,6 +83,7 @@ Represents a player or NPC with attributes, skills, inventory, gear, status effe
 - Mod state:
   - `modState` returns a cloned full namespaced state object.
   - `getModState(namespace)`, `setModState(namespace, value)`, and `updateModState(namespace, updater)` are for mod-owned actor state. Missing old-save state reads as `{}`.
+  - `getExtensionField(fieldName)`, `setExtensionField(fieldName, value)`, and `getExtensionFields({ includeDefaults })` are for registered first-class Player fields. Registered fields also install direct accessors such as `player.sexualTraits`.
   - `withHealthRatioPreserved(mutator)` lets attachment-style mods update actor state while preserving the current-health ratio if contributed max-health modifiers change.
 - Attributes/skills/abilities:
   - `getAttributeNames()`, `getAttributeDefinition(name)`, `getAttributeModifier(name)`, `getAttributeModifiers()`.
@@ -135,7 +136,7 @@ Represents a player or NPC with attributes, skills, inventory, gear, status effe
   - `updatePreviousLocation()`.
   - `recordLastSeenByPlayer({ time, locationId, wasInPlayerLocationPreviousRound })`.
 - Serialization:
-  - `getStatus()`, `toJSON()`, `static fromJSON(data)`.
+  - `getStatus()`, `toJSON()`, `static fromJSON(data)`. `toJSON()` writes registered Player extension fields at top level, and `fromJSON()` restores only fields registered in `Globals.modExtensionRegistry` at hydration time.
 - Misc:
   - `generateAttributes(method, diceModule)`, `getGenerationMethods()`.
   - `finalizeTurn()`.

@@ -7,7 +7,7 @@
 Mod directories live under `mods/`. A valid mod directory contains `mod.js`, `defs/`, or both:
 
 - `mod.js` exports `register(scope)` for runtime hooks and optional `meta` / `configSchema` metadata.
-- `defs/` contains YAML overlays consumed by `DefinitionLoader`.
+- `defs/` contains YAML definitions consumed by `DefinitionLoader`. Files may overlay matching root `defs/*.yaml` files or introduce mod-owned definitions without requiring root placeholders.
 - `prompts/` contains mod-owned Nunjucks templates rendered through `scope.renderModPrompt(...)`.
 - `public/` contains browser-facing files served under `/mods/<mod>/...`.
 - `assets/` contains mod-owned image/icon files served under `/mods/<mod>/assets/...`.

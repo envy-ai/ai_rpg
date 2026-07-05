@@ -76,6 +76,8 @@ Respond in the below format, making sure that <npcInfo> is the root tag and encl
                 </goals>
                 <notes><!-- up to 2 paragraphs of additional information that's unique to the character. If the character has any secrets (known to the character themselves or not), put them here. --></notes>
             </personality>
+            {% set playerFieldSeed = npc %}
+            {% include "_includes/player-generator-fields.njk" %}
             <healthAttribute><!-- Name of the attribute (from the list) that determines health gained at level up. Usually something related to toughness or stamina, but may differ for particularly strange npcs or creatures --></healthAttribute>
             <aiNotes>{% if npc.aiNotes %}{{ npc.aiNotes }}{% else %}<!-- One or two brief sentences about things that might trigger the character to take action, like "Bob will attempt to heal if anyone is injured or bleeding, prioritizing allies over himself. He will attempt to flee if his health drops below 30%." -->{% endif %}</aiNotes>
         </npc>

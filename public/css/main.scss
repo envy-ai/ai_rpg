@@ -2659,10 +2659,10 @@ p:not(:last-child) {
 
   .thing-list-filters-shell {
     position: absolute;
-    top: calc(100% - 2px);
+    top: 0;
+    left: 0;
     right: 0;
-    width: min(360px, calc(100vw - 48px));
-    max-width: calc(100vw - 48px);
+    width: auto;
     padding: 14px;
     border-radius: 14px;
     border: 1px solid rgba(148, 163, 184, 0.3);
@@ -10604,6 +10604,19 @@ body.modal-open {
   gap: 18px;
 }
 
+@media (max-width: 768px) {
+  .crafting-modal__slots--multiple {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+  }
+
+  .crafting-modal__slots--multiple > .crafting-slot,
+  .crafting-modal__slots--multiple > .module-workbench__slot {
+    min-width: 0;
+    min-height: 0;
+  }
+}
+
 .crafting-modal__notes {
   width: 100%;
 }
@@ -11220,7 +11233,12 @@ body.modal-open {
   display: flex;
   flex-direction: column;
   gap: 16px;
+  position: relative;
   padding-bottom: 8px;
+}
+
+.npc-inventory-panel.thing-list-panel--compact {
+  position: static;
 }
 
 .npc-inventory-header {

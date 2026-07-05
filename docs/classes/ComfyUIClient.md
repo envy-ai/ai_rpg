@@ -62,7 +62,11 @@ Prompt-writing, prompt retries, prompt batching, entity/job deduplication, realt
 
 `queuePrompt()` submits only the ComfyUI API prompt graph plus `client_id` and `prompt_id`. It does not send ComfyUI UI workflow metadata under `extra_data.extra_pnginfo.workflow`.
 
-Non-edit workflow templates commonly consume `image.prompt`, `image.width`, `image.height`, and `image.seed` from the server-rendered image job context. For example, `imagegen/test_krea_2_simplified.json.njk` renders those values into its positive prompt, latent dimensions, and sampler seed.
+Non-edit workflow templates commonly consume `image.prompt`, `image.width`, `image.height`, and `image.seed` from the server-rendered image job context. They also receive the full runtime `config` object, so workflows can read values such as `config.imagegen.lora` directly. For example, `imagegen/test_krea_2_simplified.json.njk` renders image values into its positive prompt, latent dimensions, and sampler seed.
+
+The bundled Krea 2 templates use VAE Utils nodes for VAE loading and tiled decoding: `VAEUtils_CustomVAELoader` and `VAEUtils_VAEDecodeTiled`. They load `Wan2.1_VAE_upscale2x_imageonly_real_v1.safetensors`, so the ComfyUI environment needs both the VAE Utils custom nodes and that VAE file available. Those templates also pass the decoded image through `ImageScaleBy` with `upscale_method: "area"` and `scale_by: 0.5` before saving, which halves the final decoded image dimensions. Their rendered prompt is stored in a `Text Multiline` node, consumed by the CLIP encoder, and printed through a `Text to Console` node labeled `Final Prompt`; `easy showAnything` forces that console-output branch to execute.
+
+`imagegen/test_krea_2_any_lora.json.njk` loads its first Krea 2 LoRA from `config.imagegen.lora`, then chains an additional model-only LoRA loader for `krea2/realism_engine_krea2_v2.safetensors` before passing the model into the sampler. Those LoRA files must exist in ComfyUI's LoRA search path when run.
 
 The bundled Qwen workflows use `SaveImageWithMetaData` with plain output formats such as `png`. `*_with_json` output formats from that extension require workflow metadata that this client does not send.
 
@@ -76,7 +80,7 @@ The bundled Qwen workflows use `SaveImageWithMetaData` with plain output formats
 
 ## Related Coverage
 
-- `tests/imagegen_workflow_templates.test.js` checks the Flux location-edit workflow prompt wiring.
+- `tests/imagegen_workflow_templates.test.js` checks the Flux location-edit workflow prompt wiring, Krea 2 VAE Utils node wiring, imagegen access to the full `config` object, and the Krea 2 any-LoRA chained model path.
 - `tests/server.location_weather_variant_helpers.test.js` covers variant keys, prompts, source validation, size warnings, and attachment rules.
 - `tests/location.image_variants.test.js` covers location variant persistence and cache behavior.
 - `tests/server.image_prompt_preamble.test.js` covers ComfyUI prompt-prefix behavior and base-context preamble exclusion.

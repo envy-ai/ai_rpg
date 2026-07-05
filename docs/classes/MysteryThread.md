@@ -48,7 +48,8 @@ The class stores containment as ids only and does not enforce global uniqueness 
 - A `mysteryBoxMention` event runs `mystery-thread-check` before `mystery-box-update` when active threads exist. The check can inactivate matching active threads and mark matching boxes resolved.
 - Resolved thread names are matched by id, key, or active name/key search. Unknown returned thread or box names are warned and ignored.
 - `mystery-box-update` can create, update, or skip one `MysteryBox`, then applies the returned thread data through `MysteryThread`. Creating or activating an active thread is rejected when the active count is at `mystery_threads.max_active`.
-- Both mystery prompts are logged through `LLMClient.logPrompt()`.
+- The periodic `mystery_box_cleanup` prompt and `/resolve_mystery_threads` command review active threads by exact id. Returned threads with `<resolved>true</resolved>` are set to `inactive`, not `concluded`, matching the existing reactive mystery-thread check convention.
+- Mystery prompts are logged through `LLMClient.logPrompt()`, including `mystery_thread_check`, `mystery_box_update`, and `mystery_box_cleanup`.
 
 ## API And Story Tools
 - `GET /api/mystery-threads`: returns sorted lightweight summaries, optional phrase filtering, and `maxActive`.

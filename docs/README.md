@@ -8,7 +8,7 @@ Current map of Markdown documentation under `docs/`. This README and the generat
 | ------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------ |
 | [developer_overview.md](developer_overview.md)         | Session warm-up: project shape, core runtime flow, and first files to inspect.                               |
 | [API_README.md](API_README.md)                         | High-level Express route index with pointers into `docs/api/`.                                               |
-| [server_llm_notes.md](server_llm_notes.md)             | Detailed server, base-context prompt helpers, LLM, chat tools, event, travel, save/load, and generation flow notes including generation-only random integer tool access. |
+| [server_llm_notes.md](server_llm_notes.md)             | Detailed server, base-context prompt helpers including compact `quantity N` item labels, LLM, chat tools, event, travel, save/load, and generation flow notes including generation-only random integer tool access. |
 | [config.md](config.md)                                 | Runtime/gameplay configuration, overrides, model settings, assistant prefill, system-prompt append text, tracker limits, retry waits, global prompt concurrency, staggered prompt timing, prompt behavior, and mod enablement. |
 | [slash_commands.md](slash_commands.md)                 | Slash command lifecycle, interaction helpers, reply actions, and implementation conventions.                 |
 | [slop_and_repetition.md](slop_and_repetition.md)       | Slop-word, ngram, regex, forbidden-trope, turnResult parsing, and repetition-removal systems.                |
@@ -25,7 +25,7 @@ Current map of Markdown documentation under `docs/`. This README and the generat
 | ---------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | [ui/README.md](ui/README.md)                   | UI documentation scope and entry-point map.                                                                                                                                                 |
 | [ui/pages.md](ui/pages.md)                     | Server-rendered pages, templates, injected data, app header, settings/config pages, and route notes.                                                                                        |
-| [ui/chat_interface.md](ui/chat_interface.md)   | Main Play interface behavior, tabs, panels, chat flow/error alerts, model-bound chat request filtering, chat-log action controls including in-flight input edit ids, cookie-persisted chat bubble type filtering, and parent-linked turn-diff pruning, inventory lists including AI-backed item search and mechanics-aware stack combining, tracker sidebar cards/progress fills/hover details/top-layer overlay controls, Story Tools, entity image upload/regenerate prompt editing, concurrent distinct dragged-item operations, mobile touch-drag operations, and client data flow. |
+| [ui/chat_interface.md](ui/chat_interface.md)   | Main Play interface behavior, tabs, panels, chat flow/error alerts, model-bound chat request filtering, chat-log action controls including in-flight input edit ids, cookie-persisted chat bubble type filtering, and parent-linked turn-diff pruning, inventory lists including AI-backed item search, mobile-safe shared item filters with inventory-modal refresh behavior, mobile two-column modal slot grids, and mechanics-aware stack combining, tracker sidebar cards/progress fills/hover details/top-layer overlay controls, Story Tools, entity image upload/regenerate prompt editing, concurrent distinct dragged-item operations, mobile touch-drag operations, and client data flow. |
 | [ui/modals_overlays.md](ui/modals_overlays.md) | Chat-page modal, overlay, tooltip, prompt tracker without load/save modal dismissal, entity image upload/prompt editing textarea styling, level-up ability draft, item stack combiner, container, crafting touch-drag, barter, blank stub descriptions, location-region fixer, and map confirmation behavior.                                      |
 | [ui/maps.md](ui/maps.md)                       | Region/world map rendering, map actions, fast-travel confirmation timing including blank-prompt direct travel, context menus including image prompt editing, stubs, and vehicle map state.                                 |
 | [ui/relationships.md](ui/relationships.md)     | Play Relationships tab rendering, Cytoscape relationship graph data flow, curve-side endpoint offsets, hidden-character filtering, and missing-id placeholders.                             |
@@ -37,6 +37,7 @@ Current map of Markdown documentation under `docs/`. This README and the generat
 | ---------------------------------------------- | ------------------------------------------------------------------------------------------- |
 | [mods/modules.md](mods/modules.md)             | Bundled item-module mod: fields, UI, generation guidance, mechanics, tools, and XML events. |
 | [mods/need-bar-lust.md](mods/need-bar-lust.md) | Bundled lust need-bar hybrid mod and its prompt-step guidance.                              |
+| [mods/nsfw-boost.md](mods/nsfw-boost.md)       | Bundled NSFW prompt boost mod: sexual trait defs, Player field, prompts, and tools.         |
 
 ## API Reference
 
@@ -56,7 +57,7 @@ Current map of Markdown documentation under `docs/`. This README and the generat
 | [api/misc.md](api/misc.md)                       | Feature flags, health/config tests, prompt cancel/retry controls, and slash-command routes.                                                                           |
 | [api/mystery-boxes.md](api/mystery-boxes.md)     | Story Tools MysteryBox list/get/update routes and persistence.                                                                                                        |
 | [api/mystery-threads.md](api/mystery-threads.md) | Story Tools MysteryThread routes, box assignment, active-cap validation, and persistence.                                                                             |
-| [api/npcs.md](api/npcs.md)                       | NPC CRUD, aliases, state edits, equipment, teleport, party cleanup, and barter sessions.                                                                              |
+| [api/npcs.md](api/npcs.md)                       | NPC CRUD, aliases, state edits, equipment, teleport, party cleanup, and barter sessions including generated-stock validation.                                                                              |
 | [api/players.md](api/players.md)                 | Player/party endpoints, direct moves, cross-region exit travel-time backfill, ability selection with declined-option persistence, stats, inventory serialization, and view preferences.                 |
 | [api/quests.md](api/quests.md)                   | Quest edits, confirmations, rewards, reputation, and NPC disposition rewards.                                                                                         |
 | [api/regions.md](api/regions.md)                 | Region CRUD, generation, vehicle info, weather definitions, and weather state.                                                                                        |
@@ -72,7 +73,7 @@ Current map of Markdown documentation under `docs/`. This README and the generat
 | [classes/ActorAttachmentSystem.md](classes/ActorAttachmentSystem.md)       | Helper for inventory-backed actor attachments such as implants.                                                                                          |
 | [classes/base_context_relationships.md](classes/base_context_relationships.md) | Prompt-facing character relationship summaries for base-context character records.                                                                        |
 | [classes/CodexBridgeClient.md](classes/CodexBridgeClient.md)               | Codex CLI bridge backend, prompt wrapping, streaming, structured output, and usage reporting.                                                            |
-| [classes/ComfyUIClient.md](classes/ComfyUIClient.md)                       | ComfyUI image-generation queueing, upload, polling, result download client, and workflow-template payload notes.                                         |
+| [classes/ComfyUIClient.md](classes/ComfyUIClient.md)                       | ComfyUI image-generation queueing, upload, polling, result download client, workflow-template payload notes including config access, and bundled workflow node dependencies including Krea 2 LoRA chaining.      |
 | [classes/Events.md](classes/Events.md)                                     | Event-check, staggered background-check, and concurrent-launch housekeeping XML parsing/application for world mutations, travel, time, quests, needs, trackers, relationships, and summaries. |
 | [classes/EventsEventTypes.md](classes/EventsEventTypes.md)                 | Event type table with payload shapes and application behavior.                                                                                           |
 | [classes/EventsXmlEventSchema.md](classes/EventsXmlEventSchema.md)         | XML event-check schema and LLM-facing event tag guidance.                                                                                                |
@@ -156,6 +157,8 @@ Current map of Markdown documentation under `docs/`. This README and the generat
 | [superpowers/plans/2026-06-15-needs-modal-simplification.md](superpowers/plans/2026-06-15-needs-modal-simplification.md)     | Compact needs edit modal implementation tasks, focused UI test, SCSS compilation, and docs updates.                    |
 | [superpowers/plans/2026-06-16-player-relationships.md](superpowers/plans/2026-06-16-player-relationships.md)                 | Player/NPC sparse relationship labels, persistence, chat-tool mutation, and docs updates.                              |
 | [superpowers/plans/2026-06-16-trackers.md](superpowers/plans/2026-06-16-trackers.md)                                         | First-class plot tracker implementation: model, save/load, prompt context, mutator tools, sidebar UI, tests, and docs. |
+| [superpowers/plans/2026-07-01-mystery-box-cleanup.md](superpowers/plans/2026-07-01-mystery-box-cleanup.md)                   | Periodic and manual mystery-box cleanup prompt, parser, slash command, tests, and docs.                               |
+| [superpowers/plans/2026-07-02-mod-only-defs-overlays.md](superpowers/plans/2026-07-02-mod-only-defs-overlays.md)             | Mod-owned defs files without root placeholder requirements.                                                           |
 
 ## Design Specs
 
@@ -167,6 +170,8 @@ Current map of Markdown documentation under `docs/`. This README and the generat
 | [superpowers/specs/2026-06-15-needs-modal-simplification-design.md](superpowers/specs/2026-06-15-needs-modal-simplification-design.md) | Compact needs edit modal with one icon/name, colored slider, and numeric input row per active need.        |
 | [superpowers/specs/2026-06-16-player-relationships-design.md](superpowers/specs/2026-06-16-player-relationships-design.md)             | Sparse semantic character relationship labels persisted on `Player` for a future relationship graph.       |
 | [superpowers/specs/2026-06-16-trackers-design.md](superpowers/specs/2026-06-16-trackers-design.md)                                     | First-class plot trackers: persistence, prompt context, sidebar display, hidden toggle, and mutator tools. |
+| [superpowers/specs/2026-07-01-mystery-box-cleanup-design.md](superpowers/specs/2026-07-01-mystery-box-cleanup-design.md)               | Mystery cleanup design for periodic checks and `/resolve_mystery_threads`.                                |
+| [superpowers/specs/2026-07-02-mod-only-defs-overlays-design.md](superpowers/specs/2026-07-02-mod-only-defs-overlays-design.md)         | Design for mod-owned defs files without root placeholder files.                                            |
 
 ## Slash Command Reference
 
@@ -191,6 +196,7 @@ Current map of Markdown documentation under `docs/`. This README and the generat
 | [slashcommands/ImportItemCommand.md](slashcommands/ImportItemCommand.md)                       | `/import_item` imports XML item/scenery entries.                                 |
 | [slashcommands/IncapacitateCommand.md](slashcommands/IncapacitateCommand.md)                   | `/incapacitate` applies the Incapacitated status without lowering health.        |
 | [slashcommands/KillCommand.md](slashcommands/KillCommand.md)                                   | `/kill` immediately kills a named NPC.                                           |
+| [slashcommands/ListNpcsCommand.md](slashcommands/ListNpcsCommand.md)                           | `/list_npcs` lists NPC locations and short descriptions.                         |
 | [slashcommands/LocateCommand.md](slashcommands/LocateCommand.md)                               | `/locate` finds NPCs by exact name or alias.                                     |
 | [slashcommands/NeedBarsCommand.md](slashcommands/NeedBarsCommand.md)                           | `/needbars` lists or directly edits need bars.                                   |
 | [slashcommands/OrphanedLocationsCommand.md](slashcommands/OrphanedLocationsCommand.md)         | `/orphaned_locations` lists locations with missing region links or usable exits. |
@@ -202,6 +208,7 @@ Current map of Markdown documentation under `docs/`. This README and the generat
 | [slashcommands/RegexReplaceCommand.md](slashcommands/RegexReplaceCommand.md)                   | `/regex_replace` runs regex replacement across chat history.                     |
 | [slashcommands/ReloadConfigCommand.md](slashcommands/ReloadConfigCommand.md)                   | `/reload_config` reloads config files and definition caches.                     |
 | [slashcommands/ReloadLorebooksCommand.md](slashcommands/ReloadLorebooksCommand.md)             | `/reload_lorebooks` reloads lorebooks from disk.                                 |
+| [slashcommands/ResolveMysteryThreadsCommand.md](slashcommands/ResolveMysteryThreadsCommand.md) | `/resolve_mystery_threads` runs mystery cleanup and reports resolved/revealed candidate decisions. |
 | [slashcommands/RespecAbilitiesCommand.md](slashcommands/RespecAbilitiesCommand.md)             | `/respec_abilities` rebuilds ability selections across a level range.            |
 | [slashcommands/RespecSkillsCommand.md](slashcommands/RespecSkillsCommand.md)                   | `/respec_skills` rebuilds NPC skill allocation for current level.                |
 | [slashcommands/RpCommand.md](slashcommands/RpCommand.md)                                       | `/rp` toggles roleplay mode and related checks, including plot analysis.         |

@@ -2040,15 +2040,23 @@ const buildRegisteredThingFieldDescriptionContext = ({ getActiveSettingSnapshot 
         : (global.currentSetting || null)
 });
 
-const getRegisteredThingFields = (modExtensionRegistry, filter = {}, options = {}) => {
+const getRegisteredEntityFields = (modExtensionRegistry, entityType, filter = {}, options = {}) => {
     if (!modExtensionRegistry || typeof modExtensionRegistry.getEntityFields !== 'function') {
         return [];
     }
-    return modExtensionRegistry.getEntityFields('thing', {
+    return modExtensionRegistry.getEntityFields(entityType, {
         ...filter,
         descriptionContext: buildRegisteredThingFieldDescriptionContext(options)
     });
 };
+
+const getRegisteredThingFields = (modExtensionRegistry, filter = {}, options = {}) => (
+    getRegisteredEntityFields(modExtensionRegistry, 'thing', filter, options)
+);
+
+const getRegisteredPlayerFields = (modExtensionRegistry, filter = {}, options = {}) => (
+    getRegisteredEntityFields(modExtensionRegistry, 'player', filter, options)
+);
 
 const applyRegisteredThingFieldsToToolDefinition = (toolDefinition, {
     modExtensionRegistry = null,
@@ -2071,6 +2079,35 @@ const applyRegisteredThingFieldsToToolDefinition = (toolDefinition, {
         return toolDefinition;
     }
 
+    if (functionName === 'createNpc') {
+        const createFields = getRegisteredPlayerFields(
+            modExtensionRegistry,
+            { exposeToCreateTool: true },
+            { getActiveSettingSnapshot }
+        );
+        if (!createFields.length) {
+            return toolDefinition;
+        }
+        const properties = toolDefinition.function.parameters.properties;
+        for (const field of createFields) {
+            properties[field.fieldName] = entityFieldSchema(field);
+        }
+        return toolDefinition;
+    }
+
+    if (functionName === 'updateCharacterFields') {
+        const updateFields = getRegisteredPlayerFields(
+            modExtensionRegistry,
+            { exposeToUpdateTool: true },
+            { getActiveSettingSnapshot }
+        );
+        if (updateFields.length) {
+            const fieldNames = updateFields.map(field => field.fieldName).join(', ');
+            toolDefinition.function.description = `${toolDefinition.function.description} Registered Player fields may also be updated when exposed by enabled mods: ${fieldNames}.`;
+        }
+        return toolDefinition;
+    }
+
     if (functionName === 'updateObjectFields') {
         const updateFields = getRegisteredThingFields(
             modExtensionRegistry,
@@ -2080,6 +2117,15 @@ const applyRegisteredThingFieldsToToolDefinition = (toolDefinition, {
         if (updateFields.length) {
             const fieldNames = updateFields.map(field => field.fieldName).join(', ');
             toolDefinition.function.description = `${toolDefinition.function.description} Registered Thing fields may also be updated when exposed by enabled mods: ${fieldNames}.`;
+        }
+        const playerUpdateFields = getRegisteredPlayerFields(
+            modExtensionRegistry,
+            { exposeToUpdateTool: true },
+            { getActiveSettingSnapshot }
+        );
+        if (playerUpdateFields.length) {
+            const fieldNames = playerUpdateFields.map(field => field.fieldName).join(', ');
+            toolDefinition.function.description = `${toolDefinition.function.description} Registered Player fields may also be updated for character objects when exposed by enabled mods: ${fieldNames}.`;
         }
         return toolDefinition;
     }
@@ -5383,7 +5429,8 @@ const createChatToolRuntime = ({
         isHostile = null,
         hiddenFromPlayer = null,
         aiNotes = null,
-        notes = null
+        notes = null,
+        ...registeredPlayerFieldInputs
     } = {}) => {
         const functionName = 'createNpc';
         if (typeof generateNpcFromEvent !== 'function') {
@@ -5447,6 +5494,26 @@ const createChatToolRuntime = ({
         if (raceValue) seed.race = raceValue;
         const aiNotesValue = normalizeOptionalString(aiNotes);
         if (aiNotesValue) seed.aiNotes = aiNotesValue;
+
+        const registeredCreateFields = getRegisteredEntityFieldsForRuntime('player', { exposeToCreateTool: true });
+        const registeredCreateFieldMap = new Map(registeredCreateFields.map(field => [field.fieldName, field]));
+        const unknownPlayerFieldNames = Object.keys(registeredPlayerFieldInputs || {})
+            .filter(fieldName => !registeredCreateFieldMap.has(fieldName));
+        if (unknownPlayerFieldNames.length) {
+            throw new ToolVisibleError(
+                `createNpc cannot use unsupported field "${unknownPlayerFieldNames[0]}".`,
+                { code: 'unsupported_field', details: { fieldName: unknownPlayerFieldNames[0] } }
+            );
+        }
+        for (const field of registeredCreateFields) {
+            if (!Object.prototype.hasOwnProperty.call(registeredPlayerFieldInputs, field.fieldName)) {
+                continue;
+            }
+            const value = normalizeRegisteredEntityFieldValue(registeredPlayerFieldInputs[field.fieldName], field, { functionName });
+            if (value !== null) {
+                seed[field.fieldName] = value;
+            }
+        }
 
         const levelInteger = normalizeOptionalInteger(level, { functionName, fieldName: 'level' });
         const relativeLevelInteger = normalizeOptionalInteger(relativeLevel, { functionName, fieldName: 'relativeLevel' });
@@ -5719,10 +5786,17 @@ const createChatToolRuntime = ({
             );
         }
 
+        const registeredPlayerUpdateFields = getRegisteredEntityFieldsForRuntime('player', { exposeToUpdateTool: true });
+        const registeredPlayerUpdateFieldMap = new Map(registeredPlayerUpdateFields.map(field => [field.fieldName, field]));
+        const allowedFields = [
+            ...UPDATE_CHARACTER_FIELD_NAMES,
+            ...registeredPlayerUpdateFields.map(field => field.fieldName)
+        ];
+        const allowedFieldSet = new Set(allowedFields);
         for (const [fieldName] of fieldEntries) {
-            if (!UPDATE_CHARACTER_FIELD_SET.has(fieldName)) {
+            if (!allowedFieldSet.has(fieldName)) {
                 throw new ToolVisibleError(
-                    `${functionName} cannot update field "${fieldName}". Allowed fields: ${UPDATE_CHARACTER_FIELD_NAMES.join(', ')}.`,
+                    `${functionName} cannot update field "${fieldName}". Allowed fields: ${allowedFields.join(', ')}.`,
                     {
                         code: 'unsupported_field',
                         details: { fieldName }
@@ -5737,6 +5811,20 @@ const createChatToolRuntime = ({
         };
 
         for (const [fieldName, rawValue] of fieldEntries) {
+            const registeredField = registeredPlayerUpdateFieldMap.get(fieldName) || null;
+            if (registeredField) {
+                const value = normalizeRegisteredEntityFieldValue(rawValue, registeredField, { functionName });
+                addOperation(fieldName, () => {
+                    if (targetNpc && typeof targetNpc.setExtensionField === 'function') {
+                        targetNpc.setExtensionField(fieldName, value);
+                    } else if (targetNpc && typeof targetNpc === 'object') {
+                        targetNpc[fieldName] = value;
+                    } else {
+                        throw new Error(`Target does not support registered field "${fieldName}".`);
+                    }
+                });
+                continue;
+            }
             switch (fieldName) {
                 case 'name': {
                     const value = normalizeCharacterFieldString(rawValue, {

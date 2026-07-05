@@ -814,6 +814,53 @@ test('server and live bundles preserve explicit summary item categories', () => 
     assert.match(chatSource, /category:\s*this\.normalizeTurnDiffCategory\(item\.category\)/);
 });
 
+test('crafting endpoint emits craft and harvest result rows as inventory changes', () => {
+    assert.match(
+        apiSource,
+        /description:\s*`\$\{actorName\} harvested \$\{recoveredNames\.join\(', '\)\} from \$\{harvestSourceName\}\.`,\s*category:\s*'inventory'/
+    );
+    assert.match(
+        apiSource,
+        /description:\s*`\$\{actorName\} attempted to harvest \$\{harvestSourceName\} but obtained nothing usable\.`,\s*category:\s*'inventory'/
+    );
+    assert.match(
+        apiSource,
+        /description:\s*`\$\{actorName\} salvaged \$\{recoveredNames\.join\(', '\)\} from \$\{salvageSourceName\}\.`,\s*category:\s*'inventory'/
+    );
+    assert.match(
+        apiSource,
+        /description:\s*`\$\{actorName\} attempted to salvage from \$\{salvageSourceName\} but recovered nothing usable\.`,\s*category:\s*'inventory'/
+    );
+    assert.match(
+        apiSource,
+        /description:\s*`\$\{actorName\} processed \$\{craftedNames\.join\(', '\)\} using \$\{processSourceLabel\}\.`,\s*category:\s*'inventory'/
+    );
+    assert.match(
+        apiSource,
+        /description:\s*`\$\{actorName\} attempted to process using \$\{processSourceLabel\} but produced nothing usable\.`,\s*category:\s*'inventory'/
+    );
+    assert.match(
+        apiSource,
+        /description:\s*`\$\{actorName\} crafted \$\{craftedNames\.join\(', '\)\} using \$\{craftUsingLabel\}\.`,\s*category:\s*'inventory'/
+    );
+    assert.match(
+        apiSource,
+        /description:\s*`\$\{actorName\} attempted to craft using \$\{craftUsingLabel\} but produced nothing usable\.`,\s*category:\s*'inventory'/
+    );
+    assert.match(
+        apiSource,
+        /description:\s*`Consumed \$\{name\}\.`,\s*category:\s*'inventory'/
+    );
+    assert.match(
+        apiSource,
+        /description:\s*'Through exceptional care, the ingredients were preserved\.',\s*category:\s*'inventory'/
+    );
+    assert.match(
+        apiSource,
+        /description:\s*`\$\{ability\.name\}: \$\{ability\.effect\}`,\s*category:\s*'inventory'/
+    );
+});
+
 test('phase 2 summary metadata is preserved for server and live drawer rows', () => {
     assert.match(apiSource, /function normalizeSummarySeverity\(value,\s*fallback = 'normal'\)/);
     assert.match(apiSource, /function normalizeSummarySourceType\(value\)/);

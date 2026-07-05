@@ -170,6 +170,17 @@ improvement_prompt:
 
 `interval` defaults to `10` and must be an integer greater than or equal to `1` when provided. The cadence counts eligible player-action submissions (normal/creative actions; excludes question, generic, forced-event, and comment-only flows) and runs on every Nth eligible turn. The prompt runs through the shared base-context wrapper with all ordinary `@@`-eligible history available, logs through `LLMClient.logPrompt()` as `improvement_prompt`, and appends a visible `game-improvement-suggestions` chat entry headed `Game improvement suggestions`. That entry is excluded from base-context history, including all-entry generic prompt modes.
 
+## Mystery Box Cleanup
+
+`mystery_box_cleanup.interval` controls how often eligible player-action turns schedule the non-blocking mystery cleanup prompt.
+
+```yaml
+mystery_box_cleanup:
+  interval: 10
+```
+
+`interval` defaults to `10` and must be an integer greater than or equal to `1` when provided. The cadence counts the same eligible player-action submissions as the improvement prompt. The prompt runs through the shared base-context wrapper with `promptType: "mystery_box_cleanup"`, reviews active mystery threads and unresolved contained boxes by exact id, logs through `LLMClient.logPrompt()` as `mystery_box_cleanup`, marks resolved threads inactive, marks revealed boxes resolved, and persists mystery state when a current save directory is attached. The same cleanup runner is available manually through `/resolve_mystery_threads`.
+
 ## Event Checks
 
 `event_checks.enabled` controls whether narrative event processing runs at all. When it is `false`, prose does not mutate world state through event checks and quest completion checks are skipped.
@@ -750,6 +761,8 @@ healthRegenPercentPerMinute: 0.01736111111
 `imagegen.prompt_generation_attempts` controls how many times the server asks the LLM to write the final image prompt before giving up. If prompt generation keeps failing or returns leaked prompt/context XML instead of a final image prompt, the image request is skipped with `reason: "image-prompt-failed"` and no image-rendering job is queued.
 
 `imagegen.prompt_batching` controls batching for the same LLM prompt-writing step. It does not batch the final image-rendering jobs.
+
+ComfyUI workflow templates under `imagegen/` receive the full merged runtime config as `config`, in addition to the image job values under `image`. For example, a workflow can reference `{{ config.imagegen.lora }}` to select a configured LoRA filename.
 
 ```yaml
 imagegen:

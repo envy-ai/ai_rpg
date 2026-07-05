@@ -1127,6 +1127,97 @@ function getWorldOutline() {
         regions: []
     };
 
+    const toTrimmedString = (value) => (typeof value === 'string' ? value.trim() : '');
+    const normalizeId = (value) => {
+        if (typeof value === 'string') {
+            return value.trim();
+        }
+        if (value && typeof value === 'object') {
+            return toTrimmedString(value.id);
+        }
+        return '';
+    };
+    const getActorLocationId = (actor) => {
+        if (!actor || typeof actor !== 'object') {
+            return '';
+        }
+        const currentLocation = normalizeId(actor.currentLocation);
+        if (currentLocation) {
+            return currentLocation;
+        }
+        const locationId = normalizeId(actor.locationId);
+        if (locationId) {
+            return locationId;
+        }
+        return normalizeId(actor.location);
+    };
+    const getActorName = (actor) => {
+        if (!actor || typeof actor !== 'object') {
+            return '';
+        }
+        return toTrimmedString(actor.name) || toTrimmedString(actor.id);
+    };
+    const getPartyMemberIds = () => {
+        if (!currentPlayer || typeof currentPlayer.getPartyMembers !== 'function') {
+            return new Set();
+        }
+        const members = currentPlayer.getPartyMembers();
+        if (!Array.isArray(members)) {
+            return new Set();
+        }
+        return new Set(members.map(member => normalizeId(member)).filter(Boolean));
+    };
+    const currentPlayerId = normalizeId(currentPlayer);
+    const currentPlayerLocationId = getActorLocationId(currentPlayer);
+    const partyMemberIds = getPartyMemberIds();
+    const characterNamesByLocation = new Map();
+    const addCharacterToLocation = (actor, forcedLocationId = '') => {
+        const name = getActorName(actor);
+        if (!name) {
+            return;
+        }
+        const actorId = normalizeId(actor);
+        const locationId = forcedLocationId
+            || (actorId && partyMemberIds.has(actorId) && currentPlayerLocationId ? currentPlayerLocationId : '')
+            || (actorId && currentPlayerId && actorId === currentPlayerId && currentPlayerLocationId ? currentPlayerLocationId : '')
+            || getActorLocationId(actor);
+        if (!locationId) {
+            return;
+        }
+        if (!characterNamesByLocation.has(locationId)) {
+            characterNamesByLocation.set(locationId, new Set());
+        }
+        characterNamesByLocation.get(locationId).add(name);
+    };
+
+    if (typeof players !== 'undefined' && players instanceof Map) {
+        for (const actor of players.values()) {
+            addCharacterToLocation(actor);
+        }
+    }
+    if (currentPlayer) {
+        addCharacterToLocation(currentPlayer, currentPlayerLocationId);
+    }
+
+    const getCharacterListForLocation = (locationObj, locationName) => {
+        const keys = [
+            normalizeId(locationObj),
+            toTrimmedString(locationName)
+        ].filter(Boolean);
+        const names = new Set();
+        for (const key of keys) {
+            const locationNames = characterNamesByLocation.get(key);
+            if (!locationNames) {
+                continue;
+            }
+            for (const name of locationNames) {
+                names.add(name);
+            }
+        }
+        return Array.from(names)
+            .sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
+    };
+
     // Iterate all regions
     let regionMap = Region.getIndexByName();
     // Get name of each region
@@ -1171,9 +1262,11 @@ function getWorldOutline() {
                     }
                 }
             }
-            const locationLabel = locationShort
+            const locationLabelBase = locationShort
                 ? `${locationName} - ${locationShort}`
                 : locationName;
+            const locationCharacters = getCharacterListForLocation(locationObj, locationName);
+            const locationLabel = `${locationLabelBase}; Characters: ${locationCharacters.length ? locationCharacters.join(', ') : 'none'}`;
             regionEntry.locations.push({
                 name: locationName,
                 shortDescription: locationShort,
@@ -2081,6 +2174,7 @@ async function processImageGeneration(job) {
     const effectiveNegativePrompt = (typeof negative_prompt === 'string' && negative_prompt.trim()) || fallbackNegativePrompt || 'blurry, low quality, distorted';
     const effectiveMegapixels = resolveMegapixels(megapixels);
     const templateVars = {
+        config: config,
         image: {
             prompt: prompt.trim(),
             width: width || config.imagegen.default_settings.image.width || 1024,
@@ -2575,6 +2669,21 @@ async function validateConfiguration() {
                 if (!Number.isInteger(interval) || interval < 1) {
                     validationErrors.push('improvement_prompt.interval must be an integer greater than or equal to 1 when provided');
                 }
+            }
+        }
+    }
+    if (config.mystery_box_cleanup !== undefined) {
+        const mysteryBoxCleanupConfig = config.mystery_box_cleanup;
+        if (!mysteryBoxCleanupConfig || typeof mysteryBoxCleanupConfig !== 'object' || Array.isArray(mysteryBoxCleanupConfig)) {
+            validationErrors.push('mystery_box_cleanup must be an object when provided');
+        } else if (
+            mysteryBoxCleanupConfig.interval !== undefined
+            && mysteryBoxCleanupConfig.interval !== null
+            && mysteryBoxCleanupConfig.interval !== ''
+        ) {
+            const interval = Number(mysteryBoxCleanupConfig.interval);
+            if (!Number.isInteger(interval) || interval < 1) {
+                validationErrors.push('mystery_box_cleanup.interval must be an integer greater than or equal to 1 when provided');
             }
         }
     }
@@ -3245,6 +3354,27 @@ function buildActiveMysteryThreadsForPrompt(sourceConfig = config) {
     }
 
     return MysteryThread.getActive({ max: maxActive }).map(thread => ({
+        id: thread.id,
+        name: thread.name,
+        status: thread.status,
+        keys: [...thread.keys],
+        summary: thread.summary,
+        constraints: [...thread.constraints],
+        mysteryBoxes: thread.boxIds
+            .map(boxId => MysteryBox.getById(boxId))
+            .filter(Boolean)
+            .filter(box => !box.resolved)
+            .map(box => ({
+                id: box.id,
+                name: box.name,
+                keys: [...box.keys],
+                text: box.text
+            }))
+    }));
+}
+
+function buildMysteryCleanupThreadsForPrompt() {
+    return MysteryThread.getActive({ max: Number.MAX_SAFE_INTEGER }).map(thread => ({
         id: thread.id,
         name: thread.name,
         status: thread.status,
@@ -5860,6 +5990,73 @@ function buildBasePromptContext({
     </worldOutline> */
 
     let worldOutline = getWorldOutline();
+    const normalizeCharacterPromptText = (value) => {
+        if (value === null || value === undefined) {
+            return '';
+        }
+        return String(value).replace(/\s+/g, ' ').trim();
+    };
+    const firstSentenceForPrompt = (value) => {
+        const text = normalizeCharacterPromptText(value);
+        if (!text) {
+            return '';
+        }
+        const match = text.match(/^.*?[.!?](?:\s|$)/);
+        return (match ? match[0] : text).trim();
+    };
+    const getCharacterPromptName = (actor, status = null) => {
+        const statusName = normalizeCharacterPromptText(status?.name);
+        if (statusName) {
+            return statusName;
+        }
+        const actorName = normalizeCharacterPromptText(actor?.name);
+        if (actorName) {
+            return actorName;
+        }
+        return normalizeCharacterPromptText(actor?.id);
+    };
+    const buildAllNpcPromptEntry = (actor) => {
+        if (!actor || typeof actor !== 'object') {
+            return null;
+        }
+        const status = typeof actor.getStatus === 'function' ? actor.getStatus() : null;
+        const name = getCharacterPromptName(actor, status);
+        if (!name) {
+            return null;
+        }
+        const description = firstSentenceForPrompt(
+            status?.shortDescription
+            || actor.shortDescription
+            || status?.description
+            || actor.description
+            || ''
+        );
+        return {
+            name,
+            description
+        };
+    };
+    const allNpcEntriesByKey = new Map();
+    const addCharacterToAllNpcs = (actor) => {
+        const entry = buildAllNpcPromptEntry(actor);
+        if (!entry) {
+            return;
+        }
+        const rawId = normalizeCharacterPromptText(actor?.id);
+        const key = rawId ? `id:${rawId}` : `name:${entry.name.toLowerCase()}`;
+        if (!allNpcEntriesByKey.has(key)) {
+            allNpcEntriesByKey.set(key, entry);
+        }
+    };
+
+    if (players instanceof Map) {
+        for (const actor of players.values()) {
+            addCharacterToAllNpcs(actor);
+        }
+    }
+    addCharacterToAllNpcs(currentPlayer);
+    const allNpcs = Array.from(allNpcEntriesByKey.values())
+        .sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }));
 
     if (regionStatus && Array.isArray(regionStatus.locationIds)) {
         for (const locId of regionStatus.locationIds) {
@@ -6319,6 +6516,32 @@ function buildBasePromptContext({
         playersById: players,
         listedCharacterIds: listedRelationshipCharacterIds
     });
+    const playerEntityPromptFields = getRegisteredPlayerEntityFields();
+    const collectPlayerExtensionFieldsForPrompt = (actor, status = {}) => {
+        const values = {};
+        for (const field of playerEntityPromptFields) {
+            if (!field || typeof field.fieldName !== 'string') {
+                continue;
+            }
+            let value;
+            if (status && Object.prototype.hasOwnProperty.call(status, field.fieldName)) {
+                value = status[field.fieldName];
+            } else if (actor && typeof actor.getExtensionField === 'function') {
+                try {
+                    value = actor.getExtensionField(field.fieldName);
+                } catch (_) {
+                    value = undefined;
+                }
+            } else if (actor && Object.prototype.hasOwnProperty.call(actor, field.fieldName)) {
+                value = actor[field.fieldName];
+            }
+            if (value === undefined || value === null || (typeof value === 'string' && !value.trim())) {
+                continue;
+            }
+            values[field.fieldName] = value;
+        }
+        return values;
+    };
 
     const gearSnapshot = playerStatus?.gear && typeof playerStatus.gear === 'object'
         ? Object.entries(playerStatus.gear).map(([slotName, slotData]) => ({
@@ -6350,6 +6573,7 @@ function buildBasePromptContext({
         needs: currentPlayerNeeds,
         modStatusSections: collectActorModStatusSections(currentPlayer),
         currentQuests: currentPlayer.currentQuests,
+        ...collectPlayerExtensionFieldsForPrompt(currentPlayer, playerStatus),
         ...relationshipPromptContextFor(currentPlayer)
     };
 
@@ -6447,6 +6671,7 @@ function buildBasePromptContext({
                 last_seen_time: npc.last_seen_time,
                 last_seen_location: npc.last_seen_location,
                 was_in_player_location_previous_round: Boolean(npc.was_in_player_location_previous_round),
+                ...collectPlayerExtensionFieldsForPrompt(npc, npcStatus),
                 ...relationshipPromptContextFor(npc)
             });
         }
@@ -6500,6 +6725,7 @@ function buildBasePromptContext({
                 modStatusSections: collectActorModStatusSections(member),
                 importantMemories,
                 selectedImportantMemories: [],
+                ...collectPlayerExtensionFieldsForPrompt(member, memberStatus),
                 ...relationshipPromptContextFor(member)
             });
         }
@@ -7353,6 +7579,7 @@ function buildBasePromptContext({
         plotAnalysis: typeof Globals.getPlotAnalysis === 'function' ? Globals.getPlotAnalysis() : null,
         mysteryThreadMaxActive: resolveMysteryThreadMaxActive(config),
         activeMysteryThreads: buildActiveMysteryThreadsForPrompt(config),
+        mysteryCleanupThreads: buildMysteryCleanupThreadsForPrompt(),
         trackers: buildTrackersForPrompt(),
         currentRegion: currentRegionContext,
         currentLocation: currentLocationContext,
@@ -7363,6 +7590,7 @@ function buildBasePromptContext({
         saveFileSaveVersion: Number(Globals?.saveFileSaveVersion) || 0,
         omitInventoryItems: shouldOmitInventoryItems,
         omitAbilities: shouldOmitAbilities,
+        allNpcs,
         npcs,
         party,
         partyMemberIds: partyMemberIds.slice(),
@@ -7381,6 +7609,8 @@ function buildBasePromptContext({
         experiencePointValues,
         generatedThingRarity,
         thingGeneratorPromptFields: getThingGeneratorPromptFields(),
+        playerGeneratorPromptFields: getPlayerGeneratorPromptFields(),
+        playerEntityPromptFields,
         thingSeed: {},
         npcRepresentation: buildNpcRepresentationSummaryForPrompt(),
         calendarSeasons,
@@ -15774,6 +16004,22 @@ function normalizeNpcPromptSeed(seed = {}) {
     if (typeof rawAiNotes === 'string') {
         normalized.aiNotes = rawAiNotes;
     }
+    for (const field of getRegisteredPlayerEntityFields({ exposeToCreateTool: true })) {
+        if (!field || typeof field.fieldName !== 'string') {
+            continue;
+        }
+        if (!Object.prototype.hasOwnProperty.call(seed, field.fieldName)) {
+            continue;
+        }
+        const value = normalizeRegisteredPlayerFieldValue(
+            seed[field.fieldName],
+            field,
+            'NPC seed Player field'
+        );
+        if (value !== undefined) {
+            normalized[field.fieldName] = value;
+        }
+    }
     if (Object.prototype.hasOwnProperty.call(seed, 'startingHealthPercentage')
         || Object.prototype.hasOwnProperty.call(seed, 'satartingHealthPercentage')) {
         const rawStartingHealth = Object.prototype.hasOwnProperty.call(seed, 'startingHealthPercentage')
@@ -16242,6 +16488,11 @@ async function generateNpcFromEvent({
         }
 
         const npc = new Player({
+            ...getPlayerExtensionFieldInputsFromSource(
+                npcData,
+                getRegisteredPlayerEntityFields(),
+                `NPC "${npcData?.name || trimmedName || 'Unnamed NPC'}" Player field`
+            ),
             name: npcData?.name || trimmedName,
             description: npcData?.description || `${trimmedName} is drawn into the story.`,
             shortDescription: npcData?.shortDescription || '',
@@ -16406,6 +16657,11 @@ async function generateNpcFromEvent({
 
         try {
             const fallbackNpc = new Player({
+                ...getPlayerExtensionFieldInputsFromSource(
+                    seedSource,
+                    getRegisteredPlayerEntityFields(),
+                    `Fallback NPC "${name || 'Unnamed NPC'}" Player field`
+                ),
                 name,
                 description: `${name} arrives on the scene.`,
                 level: 1,
@@ -17681,7 +17937,13 @@ function parseLocationNpcs(xmlContent) {
             }
 
             if (name) {
+                const playerExtensionFields = getPlayerExtensionFieldInputsFromXmlNode(
+                    node,
+                    getPlayerXmlParserFields(),
+                    `Location NPC "${name}" Player field`
+                );
                 result.npcs.push({
+                    ...playerExtensionFields,
                     name,
                     description,
                     shortDescription,
@@ -17863,7 +18125,13 @@ function parseRegionNpcs(xmlContent) {
                 }
             }
 
+            const playerExtensionFields = getPlayerExtensionFieldInputsFromXmlNode(
+                node,
+                getPlayerXmlParserFields(),
+                `Region NPC "${name}" Player field`
+            );
             result.npcs.push({
+                ...playerExtensionFields,
                 name,
                 description,
                 shortDescription,
@@ -18328,6 +18596,27 @@ function buildNpcGenerationSeedXml(npc, { location = null } = {}) {
     const aiNotes = typeof npc?.aiNotes === 'string'
         ? npc.aiNotes.trim()
         : (typeof npc?.personality?.aiNotes === 'string' ? npc.personality.aiNotes.trim() : '');
+    const playerExtensionLines = getPlayerGeneratorPromptFields()
+        .map(field => {
+            const tagName = field?.xmlPrompt?.tagName || field?.fieldName;
+            if (!tagName) {
+                return '';
+            }
+            let rawValue;
+            if (typeof npc.getExtensionField === 'function') {
+                rawValue = npc.getExtensionField(field.fieldName);
+            } else {
+                rawValue = npc[field.fieldName];
+            }
+            if (rawValue === undefined || rawValue === null || (typeof rawValue === 'string' && !rawValue.trim())) {
+                return '';
+            }
+            const value = (field.type === 'array' || field.type === 'object')
+                ? JSON.stringify(rawValue)
+                : String(rawValue);
+            return `      <${tagName}>${escapeXmlText(value)}</${tagName}>`;
+        })
+        .filter(Boolean);
     const lines = [
         '<response>',
         '  <npcs>',
@@ -18359,6 +18648,9 @@ function buildNpcGenerationSeedXml(npc, { location = null } = {}) {
     }
     lines.push('        </goals>');
     lines.push('      </personality>');
+    if (playerExtensionLines.length) {
+        lines.push(...playerExtensionLines);
+    }
     lines.push(`      <aiNotes>${escapeXmlText(aiNotes)}</aiNotes>`);
     lines.push('    </npc>');
     lines.push('  </npcs>');
@@ -20685,6 +20977,30 @@ function getThingGeneratorPromptFields() {
     return getRegisteredThingEntityFields({ exposeToGeneratorPrompt: true });
 }
 
+function getRegisteredPlayerEntityFields(filter = {}) {
+    const registry = Globals.modExtensionRegistry || modExtensionRegistry || null;
+    if (!registry || typeof registry.getEntityFields !== 'function') {
+        return [];
+    }
+    const setting = typeof getActiveSettingSnapshot === 'function'
+        ? getActiveSettingSnapshot()
+        : null;
+    return registry.getEntityFields('player', {
+        ...filter,
+        descriptionContext: { setting }
+    });
+}
+
+function getPlayerGeneratorPromptFields() {
+    return getRegisteredPlayerEntityFields({ exposeToGeneratorPrompt: true })
+        .filter(field => field && field.xmlPrompt && typeof field.xmlPrompt.tagName === 'string');
+}
+
+function getPlayerXmlParserFields() {
+    return getRegisteredPlayerEntityFields({ exposeToXmlParser: true })
+        .filter(field => field && field.xmlPrompt && typeof field.xmlPrompt.tagName === 'string');
+}
+
 function getModGenerationPromptInstructions(generationType, context = {}) {
     const registry = Globals.modExtensionRegistry || modExtensionRegistry || null;
     if (!registry || typeof registry.collectGenerationPromptInstructions !== 'function') {
@@ -20790,6 +21106,60 @@ function getThingExtensionFieldInputsFromSource(source = {}, fields = getThingXm
             continue;
         }
         const value = normalizeRegisteredThingFieldValue(
+            source[field.fieldName],
+            field,
+            sourceLabel
+        );
+        if (value !== undefined) {
+            inputs[field.fieldName] = value;
+        }
+    }
+    return inputs;
+}
+
+function normalizeRegisteredPlayerFieldValue(value, field, sourceLabel = 'registered Player field') {
+    return normalizeRegisteredThingFieldValue(value, field, sourceLabel);
+}
+
+function getPlayerExtensionFieldInputsFromXmlNode(node, fields = getPlayerXmlParserFields(), sourceLabel = 'registered Player field') {
+    if (!node) {
+        return {};
+    }
+    const inputs = {};
+    for (const field of fields) {
+        const tagName = field?.xmlPrompt?.tagName || field?.fieldName;
+        if (!field || typeof field.fieldName !== 'string' || typeof tagName !== 'string') {
+            continue;
+        }
+        const valueNode = node.getElementsByTagName(tagName)[0] || null;
+        if (!valueNode || typeof valueNode.textContent !== 'string') {
+            continue;
+        }
+        const value = normalizeRegisteredPlayerFieldValue(
+            valueNode.textContent,
+            field,
+            sourceLabel
+        );
+        if (value !== undefined) {
+            inputs[field.fieldName] = value;
+        }
+    }
+    return inputs;
+}
+
+function getPlayerExtensionFieldInputsFromSource(source = {}, fields = getRegisteredPlayerEntityFields(), sourceLabel = 'registered Player field') {
+    if (!source || typeof source !== 'object') {
+        return {};
+    }
+    const inputs = {};
+    for (const field of fields) {
+        if (!field || typeof field.fieldName !== 'string') {
+            continue;
+        }
+        if (!Object.prototype.hasOwnProperty.call(source, field.fieldName)) {
+            continue;
+        }
+        const value = normalizeRegisteredPlayerFieldValue(
             source[field.fieldName],
             field,
             sourceLabel
@@ -24890,6 +25260,11 @@ async function generateLocationNPCs({ location, systemPrompt, generationPrompt, 
             }
 
             const npc = new Player({
+                ...getPlayerExtensionFieldInputsFromSource(
+                    npcData,
+                    getRegisteredPlayerEntityFields(),
+                    `Location NPC "${npcData?.name || 'Unnamed NPC'}" Player field`
+                ),
                 name: npcData.name || 'Unnamed NPC',
                 description: npcData.description || '',
                 shortDescription: npcData.shortDescription || '',
@@ -25357,6 +25732,11 @@ async function generateRegionNPCs({ region, systemPrompt, generationPrompt, aiRe
             const targetLocation = resolveRegionNpcTargetLocation(npcData);
 
             const npc = new Player({
+                ...getPlayerExtensionFieldInputsFromSource(
+                    npcData,
+                    getRegisteredPlayerEntityFields(),
+                    `Region NPC "${npcData?.name || 'Unnamed NPC'}" Player field`
+                ),
                 name: npcData.name || 'Unnamed NPC',
                 description: npcData.description || '',
                 shortDescription: npcData.shortDescription || '',

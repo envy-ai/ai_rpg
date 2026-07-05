@@ -7,7 +7,8 @@ const {
     buildBarterItemReferenceIndex,
     resolveBarterOfferItemReference,
     buildBarterCurrencySettlement,
-    sanitizeBarterPricingXmlForParsing
+    sanitizeBarterPricingXmlForParsing,
+    parseGeneratedBarterStockCount
 } = require('../api.js');
 
 function resolve(items, reference) {
@@ -159,4 +160,27 @@ test('barter pricing XML sanitizer removes Unicode replacement characters before
     );
     assert.equal(warnings.length, 1);
     assert.match(warnings[0], /Unicode replacement character/);
+});
+
+test('barter generated stock count parser allows zero so pricing can skip that seed', () => {
+    assert.equal(parseGeneratedBarterStockCount('', 'new stock Blank count'), 1);
+    assert.equal(parseGeneratedBarterStockCount('0', 'new stock Empty Crate count'), 0);
+    assert.equal(parseGeneratedBarterStockCount('3', 'new stock Torch count'), 3);
+    assert.throws(
+        () => parseGeneratedBarterStockCount('-1', 'new stock Bad count'),
+        /must be a non-negative integer/
+    );
+});
+
+test('barter pricing parser skips zero-count generated stock before inventory generation', () => {
+    const rootDir = path.join(__dirname, '..');
+    const apiSource = fs.readFileSync(path.join(rootDir, 'api.js'), 'utf8');
+    const parseBlock = apiSource.slice(
+        apiSource.indexOf('const newStock = [];'),
+        apiSource.indexOf('return {', apiSource.indexOf('const newStock = [];'))
+    );
+
+    assert.match(parseBlock, /parseGeneratedBarterStockCount/);
+    assert.match(parseBlock, /if \(count === 0\) \{\s*continue;\s*\}/);
+    assert.doesNotMatch(parseBlock, /parseBarterPositiveInteger\(directChildText\(itemNode, 'count'\)/);
 });

@@ -13,28 +13,54 @@ forbidden_tropes:
   - characters obsessively logging things
   - \"I reported this to my company seventeen times and was ignored every time!\"
   - \"She didn't say anything. She didn't have to."\ - Adds nothing. Always omit.
-  - \"Not $thing. $other_thing.\"
+  - '"The [noun] of someone who [clause]" - examples: "the way someone inspects a wrench before buying it", "the flat patience of someone tallying up a long column and not liking the total"'
+  - '"Didn''t [verb]. [Action]." / "She didn''t [X]. She [Y]."'
+  - '"Not a [X]. A [Y]." / "Not [X] — [Y]."'
 
 # A list of slop words (ngrams are listed below as well) and their allowable parts per million before being flagged as repetitive
 regexes:
   - pattern: "/gossip/i"
     name: "gossip/gossiping/etc"
     ppm: default
-  - pattern: "/(logging|logbook|document|data point|record|journal|ledger)/i"
+  - pattern: "/(logging|logbook|document|data point|record|journal|ledger|notebook)/i"
     name: "Stop having characters log and document everything. It's an overused trope. Omit."
     ppm: 0
   - pattern: '/[Aa] beat\./'
-    name: "Avoid repetitive use of 'a beat' in prose, because if you use it in prose, every character must immediately shit themselves in horrifying, graphic detail. Best just to change/remove it, because no one wants that."
+    name: "Ban use of 'a beat' in prose."
     ppm: 0
   - pattern: "/made a (sound|noise)/"
     name: made a noise/sound
     ppm: 1
   - pattern: "/jaw (worked|set)/"
-    name: jaw worked/set
+    name: '"jaw worked/set" - Pick something other than people expressing themselves with their jaw'
     ppm: 0
   - pattern: "/nothing like/"
-    name: nothing like
+    name: "was nothing like [x]"
     ppm: 300
+  - pattern: "/(ozone|iron|copper)/"
+    name: "Taste/smell of ozone/iron/copper. Disregard if not referring to a taste or smell. Otherwise, change or Omit."
+    ppm: 0
+  - pattern: "/\\.\\s+[A-Z][a-z]+\\./"
+    name: "Single word sentences. Rework the single word sentence and probably the previous sentence to avoid this."
+    ppm: 0
+  - pattern: "/ed once/"
+    name: '"[verb]ed once". Overused construction. Reword.'
+    ppm: 0
+  - pattern: "/without looking/"
+    name: '"Without looking [up / at / around / away]" - Overused.'
+    ppm: 300
+  - pattern: "/something that wasn't/"
+    name: '"something that wasn''t [x]"'
+    ppm: 1
+  - pattern: "/like someone/"
+    name: '"...like someone [does something]" - Overused construction.'
+    ppm: 1
+  - pattern: "/already [A-Za-z]+ing/"
+    name: '"...already [verb]ing" - This creates a sense of momentum but also makes every character seem perpetually impatient and renders the word "already" nearly meaningless.'
+    ppm: 300
+  - pattern: "/you can't just say/i"
+    name: '"You can''t just say [x]!" - This dialogue is overused. Replace it with something else.'
+    ppm: 1
 slopwords:
   # Custom ones first:
   singing: default

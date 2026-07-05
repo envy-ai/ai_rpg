@@ -55,16 +55,20 @@ Registry-backed hooks are process-local. The enabled mod set is fixed at startup
 - `scope.registerStartupValidator(fn)` runs after mods and merged definitions load. Validator failures are wrapped with the mod name and stop startup.
 
 ## Entity Fields
-- `scope.registerEntityField(...)` declares first-class mod-owned fields on core entities. Runtime integration currently supports `entityType: "thing"`.
+- `scope.registerEntityField(...)` declares first-class mod-owned fields on core entities. Runtime integration currently supports `entityType: "thing"` and `entityType: "player"`.
 - Supported field types are `string`, `number`, `integer`, `boolean`, `array`, and `object`.
 - Registered Thing fields persist as top-level `Thing` JSON, are available through `thing.getExtensionField(fieldName)` / `thing.setExtensionField(fieldName, value)`, and are installed as direct instance accessors when possible.
+- Registered Player fields persist as top-level `Player` JSON, are available through `player.getExtensionField(fieldName)` / `player.setExtensionField(fieldName, value)`, and are installed as direct instance accessors when possible.
 - `Thing.fromJSON(...)` restores only fields registered in `Globals.modExtensionRegistry` at hydration time. Mods that own Thing fields must register them before save hydration.
-- Entity field names cannot collide with built-in `Thing` fields or runtime properties, and must be JavaScript-style property names.
-- `exposeToCreateTool` adds the field to the live `createThing` schema and forwards the value into the generator seed. After generation, the runtime writes the value back onto the created Thing so it persists even if the generator omits it.
+- `Player.fromJSON(...)` restores only fields registered in `Globals.modExtensionRegistry` at hydration time. Mods that own Player fields must register them before save hydration.
+- Entity field names cannot collide with built-in fields for their entity type or runtime properties, and must be JavaScript-style property names.
+- For Thing fields, `exposeToCreateTool` adds the field to the live `createThing` schema and forwards the value into the generator seed. After generation, the runtime writes the value back onto the created Thing so it persists even if the generator omits it.
 - `exposeToUpdateTool` lets generic prompts patch the field through `updateObjectFields({ objectType: "thing", fields: { ... } })`.
-- `toolSchema` supplies the JSON schema used for that field in `createThing`. Use it for structured array/object fields that need item shapes, required keys, or `additionalProperties: false`; the registered description or `descriptionProvider` still supplies active prompt text.
+- For Player fields, `exposeToCreateTool` adds the field to the live `createNpc` schema and forwards it into NPC generation. `exposeToUpdateTool` lets generic prompts patch the field through `updateCharacterFields(...)` or `updateObjectFields({ objectType: "character", fields: { ... } })`.
+- `toolSchema` supplies the JSON schema used for that field in `createThing` or `createNpc`. Use it for structured array/object fields that need item shapes, required keys, or `additionalProperties: false`; the registered description or `descriptionProvider` still supplies active prompt text.
 - `exposeToGeneratorPrompt` adds the field to the shared generated item XML scaffold, including craft, process, salvage, harvest, inventory, location-thing, container-content, and generic item generation prompts that include `_includes/item.njk`. It requires `xmlPrompt.placeholder`; `xmlPrompt.tagName` defaults to the field name.
 - `exposeToXmlParser` reads that XML tag from generated item/scenery output and maps it back onto the registered Thing field. Parser-only fields can omit the placeholder and still use the default tag name.
+- For Player fields, `exposeToGeneratorPrompt` adds the field to NPC generation and character-alter XML scaffolds. `exposeToXmlParser` reads the tag back from generated NPC XML and character-alter XML.
 - `exposeToEditModal` adds the field to the shared item/scenery edit modal. Use `edit: { label, placeholder, description, inputType, order }` to control the form field. Supported edit input types are `text`, `textarea`, `number`, and `checkbox`.
 - Dynamic `descriptionProvider` and `xmlPromptPlaceholderProvider` callbacks are evaluated when field snapshots are requested. Non-string provider return values throw; `null` and `undefined` keep the registered fallback text.
 - `clearThingSlotWhenPresent: true` clears the built-in `Thing.slot` equipment field when the registered field has a meaningful value in create, update, API payload, and generation paths. Attachment-style mods use this so special item systems do not expose normal gear equip controls.

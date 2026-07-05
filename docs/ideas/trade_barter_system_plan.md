@@ -125,7 +125,7 @@ Omitted existing items are unavailable for that session. Existing item reference
 
 NPC barter stock is persistent, but part of it can refresh when opening trade after at least one in-world day has elapsed. The implementation removes a configured fraction of current barter stock, deletes those generated `Thing` records, stamps `barterStockUpdatedAt`, and lets the pricing prompt request replacement stock.
 
-Generated stock is not created directly by the pricing prompt. The pricing prompt returns item seeds, and the server instantiates them through the shared `inventory-generator` flow in `barterStock` mode. Batches are capped by `barter.generated_stock.max_items_per_prompt`.
+Generated stock is not created directly by the pricing prompt. The pricing prompt returns item seeds, and the server instantiates them through the shared `inventory-generator` flow in `barterStock` mode. Seeds with count `0` are ignored before inventory generation; negative or non-integer counts still fail validation. Batches are capped by `barter.generated_stock.max_items_per_prompt`.
 
 Player-sold items currently move into the NPC's barter inventory, which makes resale and later refresh behavior straightforward.
 

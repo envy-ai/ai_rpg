@@ -40,7 +40,7 @@ The below context is an account of the current game state, including the setting
   {% set useShortDescriptions = saveFileVersion >= 1 %}
   {% macro containerContentsSummary(contents) -%}
 {%- for contained in contents -%}
-{{ contained.name }}{% if contained.count and contained.count > 1 %} x{{ contained.count }}{% endif %}{% if contained.isContainer %} ({% if contained.containerContents and contained.containerContents.length %}contains {{ containerContentsSummary(contained.containerContents) }}{% else %}empty{% endif %}){% endif %}{% if not loop.last %}, {% endif %}
+{{ contained.name }}: quantity {{ contained.count | default(1) }}{% if contained.isContainer %} ({% if contained.containerContents and contained.containerContents.length %}contains {{ containerContentsSummary(contained.containerContents) }}{% else %}empty{% endif %}){% endif %}{% if not loop.last %}, {% endif %}
 {%- endfor -%}
   {%- endmacro %}
   {% macro itemValueSummary(item) -%}
@@ -50,6 +50,7 @@ The below context is an account of the current game state, including the setting
 {%- if not pluralCurrency -%}{%- set pluralCurrency = singularCurrency ~ 's' -%}{%- endif -%}
 ({{ amount }} {% if amount == 1 %}{{ singularCurrency }}{% else %}{{ pluralCurrency }}{% endif %})
   {%- endmacro %}
+  {% macro itemQuantityField(item) -%}quantity {{ item.count | default(1) }}; {% endmacro %}
   {% macro renderContainerContentsXml(contents) -%}
         <containerContents>
           {% for contained in contents %}
@@ -80,6 +81,14 @@ The below context is an account of the current game state, including the setting
 {% endfor %}    </reciprocalRelationships>
   {%- endif %}
   {%- endmacro %}
+  {% macro renderPlayerEntityFields(character) -%}
+  {%- for field in playerEntityPromptFields | default([], true) -%}
+  {%- set fieldValue = character[field.fieldName] | default('', true) -%}
+  {%- if fieldValue != '' and fieldValue != none %}
+        <{{ field.fieldName }}>{{ fieldValue }}</{{ field.fieldName }}>
+  {%- endif -%}
+  {%- endfor -%}
+  {%- endmacro %}
   <setting>
     <name>{{ setting.name }}</name>
     <description>{{ setting.description }}</description>
@@ -108,12 +117,20 @@ The below context is an account of the current game state, including the setting
 {{ setting.skills | join("\n") }}
 </skills>
   </setting>
+  {% for contribution in modContext | default([], true) %}
+  {{ contribution }}
+  {% endfor %}
   <itemRarityLevels>{% for rarity in rarityDefinitions %}
     {{ rarity.label }}: {{ rarity.description }}
 {% endfor %}  </itemRarityLevels>
   {% if gameHistory and gameHistory | trim and not effectiveOmitGameHistory %}
   <olderStoryHistory>{{ gameHistory }}</olderStoryHistory>
   {% endif %}
+  <allNpcs>
+This is a list of all characters in the story and a short description of each.
+
+{% for character in (allNpcs | default([], true) | sort(false, false, 'name')) %}- {{ character.name }}: {{ character.description }}
+{% endfor %}  </allNpcs>
   <worldOutline>
     {% for region in worldOutline.regions %}
     <region name="{{ region.name | escape }}">
@@ -189,7 +206,7 @@ The below context is an account of the current game state, including the setting
     </exits>
     <items>{% if useShortDescriptions -%}
 {%- for item in currentLocation.items -%}
-{{ item.name }}{% if item.count and item.count > 1 %} x{{ item.count }}{% endif %}: {{ item.rarity | default('common', true) }} level {{ item.level | default(1, true) }} {{ itemValueSummary(item) }} - {{ item.shortDescription | default(item.description, true) }}{% if item.equippedSlot %} (Equipped to {{ item.equippedSlot }}){% endif %}{% if item.isContainer %} (Container{% if item.containerContents and item.containerContents.length %}: contains {{ containerContentsSummary(item.containerContents) }}{% else %}: empty{% endif %}){% endif %}{% if not loop.last %}{{ "\n" }}{% endif %}
+{{ item.name }}: {{ itemQuantityField(item) }}{{ item.rarity | default('common', true) }} level {{ item.level | default(1, true) }} {{ itemValueSummary(item) }} - {{ item.shortDescription | default(item.description, true) }}{% if item.equippedSlot %} (Equipped to {{ item.equippedSlot }}){% endif %}{% if item.isContainer %} (Container{% if item.containerContents and item.containerContents.length %}: contains {{ containerContentsSummary(item.containerContents) }}{% else %}: empty{% endif %}){% endif %}{% if not loop.last %}{{ "\n" }}{% endif %}
 {%- endfor -%}
 {%- else %}
       {% for item in currentLocation.items %}
@@ -241,6 +258,7 @@ The below context is an account of the current game state, including the setting
           <notes>{{ npc.personality.notes | default('', true) }}</notes>
           <aiNotes>{{ npc.aiNotes | default(npc.personality.aiNotes, true) | default('', true) }}</aiNotes>
         </personality>
+        {{ renderPlayerEntityFields(npc) }}
 {#        <health>{{ npc.health | default('unknown') }}</health>
         <maxHealth>{{ npc.maxHealth | default('unknown') }}</maxHealth> #}
         <dispositionsTowardsPlayer>
@@ -262,7 +280,7 @@ The below context is an account of the current game state, including the setting
 {%- for item in npc.inventory -%}
 {%- set installedModuleBaseId = item.moduleInstalledOnItemId | default('', true) | lower -%}
 {%- if installedModuleBaseId in ['', 'n/a', 'none', 'null'] -%}
-{{ item.name }}{% if item.count and item.count > 1 %} x{{ item.count }}{% endif %}: {{ item.rarity | default('common', true) }} level {{ item.level | default(1, true) }} {{ itemValueSummary(item) }} - {{ item.shortDescription | default(item.description, true) }}{% if item.equippedSlot %} (Equipped to {{ item.equippedSlot }}){% endif %}{% if item.isContainer %} (Container{% if item.containerContents and item.containerContents.length %}: contains {{ containerContentsSummary(item.containerContents) }}{% else %}: empty{% endif %}){% endif %}{% if not loop.last %}{{ "\n" }}{% endif %}
+{{ item.name }}: {{ itemQuantityField(item) }}{{ item.rarity | default('common', true) }} level {{ item.level | default(1, true) }} {{ itemValueSummary(item) }} - {{ item.shortDescription | default(item.description, true) }}{% if item.equippedSlot %} (Equipped to {{ item.equippedSlot }}){% endif %}{% if item.isContainer %} (Container{% if item.containerContents and item.containerContents.length %}: contains {{ containerContentsSummary(item.containerContents) }}{% else %}: empty{% endif %}){% endif %}{% if not loop.last %}{{ "\n" }}{% endif %}
 {%- endif -%}
 {%- endfor -%}
 {%- else %}
@@ -333,7 +351,7 @@ The below context is an account of the current game state, including the setting
     </npcs>
     <itemsInScene>{% if useShortDescriptions -%}
 {%- for item in itemsInScene %}{% if not item.isScenery -%}
-{{ item.name }}: {{ item.rarity | default('common', true) }} level {{ item.level | default(1, true) }} {{ itemValueSummary(item) }} - {{ item.shortDescription | default(item.description, true) }}{% if item.equippedSlot %} (Equipped to {{ item.equippedSlot }}){% endif %}{% if not loop.last %}{{ "\n" }}{% endif %}
+{{ item.name }}: {{ itemQuantityField(item) }}{{ item.rarity | default('common', true) }} level {{ item.level | default(1, true) }} {{ itemValueSummary(item) }} - {{ item.shortDescription | default(item.description, true) }}{% if item.equippedSlot %} (Equipped to {{ item.equippedSlot }}){% endif %}{% if not loop.last %}{{ "\n" }}{% endif %}
 {%- endif %}{%- endfor -%}
 {%- else %}
       {% for item in itemsInScene %}{% if not item.isScenery %}
@@ -363,7 +381,7 @@ The below context is an account of the current game state, including the setting
     {% endif %}</itemsInScene>
     <sceneryList>{% if useShortDescriptions -%}
 {%- for item in itemsInScene %}{% if item.isScenery -%}
-{{ item.name }}{% if item.count and item.count > 1 %} x{{ item.count }}{% endif %}: {{ item.rarity | default('common', true) }} level {{ item.level | default(1, true) }} {{ itemValueSummary(item) }} - {{ item.shortDescription | default(item.description, true) }}{% if item.equippedSlot %} (Equipped to {{ item.equippedSlot }}){% endif %}{% if item.isContainer %} (Container{% if item.containerContents and item.containerContents.length %}: contains {{ containerContentsSummary(item.containerContents) }}{% else %}: empty{% endif %}){% endif %}{% if not loop.last %}{{ "\n" }}{% endif %}
+{{ item.name }}: {{ itemQuantityField(item) }}{{ item.rarity | default('common', true) }} level {{ item.level | default(1, true) }} {{ itemValueSummary(item) }} - {{ item.shortDescription | default(item.description, true) }}{% if item.equippedSlot %} (Equipped to {{ item.equippedSlot }}){% endif %}{% if item.isContainer %} (Container{% if item.containerContents and item.containerContents.length %}: contains {{ containerContentsSummary(item.containerContents) }}{% else %}: empty{% endif %}){% endif %}{% if not loop.last %}{{ "\n" }}{% endif %}
 {%- endif %}{%- endfor -%}
 {%- else %}
       {% for item in itemsInScene %}{% if item.isScenery %}
@@ -400,6 +418,7 @@ The below context is an account of the current game state, including the setting
     <maxHealth>{{ currentPlayer.maxHealth }}</maxHealth>#}
     <class>{{ currentPlayer.class }}</class>
     <race>{{ currentPlayer.race }}</race>
+    {{ renderPlayerEntityFields(currentPlayer) }}
     <currency>{{ currentPlayer.currency | default(0) }}</currency>
     <statusEffects>
       {% for effect in currentPlayer.statusEffects %}
@@ -434,7 +453,7 @@ The below context is an account of the current game state, including the setting
 {%- for item in currentPlayer.inventory -%}
 {%- set installedModuleBaseId = item.moduleInstalledOnItemId | default('', true) | lower -%}
 {%- if installedModuleBaseId in ['', 'n/a', 'none', 'null'] -%}
-{{ item.name }}: {{ item.rarity | default('common', true) }} level {{ item.level | default(1, true) }} {{ itemValueSummary(item) }} - {{ item.shortDescription | default(item.description, true) }}{% if item.equippedSlot %} (Equipped to {{ item.equippedSlot }}){% endif %}{% if not loop.last %}{{ "\n" }}{% endif %}
+{{ item.name }}: {{ itemQuantityField(item) }}{{ item.rarity | default('common', true) }} level {{ item.level | default(1, true) }} {{ itemValueSummary(item) }} - {{ item.shortDescription | default(item.description, true) }}{% if item.equippedSlot %} (Equipped to {{ item.equippedSlot }}){% endif %}{% if not loop.last %}{{ "\n" }}{% endif %}
 {%- endif -%}
 {%- endfor -%}
 {%- else %}
@@ -523,6 +542,7 @@ The below context is an account of the current game state, including the setting
         <notes>{{ member.personality.notes | default('', true) }}</notes>
         <aiNotes>{{ member.aiNotes | default(member.personality.aiNotes, true) | default('', true) }}</aiNotes>
       </personality>
+      {{ renderPlayerEntityFields(member) }}
 {#      <health>{{ member.health | default('unknown') }}</health>
       <maxHealth>{{ member.maxHealth | default('unknown') }}</maxHealth> #}
       <dispositionsTowardsPlayer>
@@ -544,7 +564,7 @@ The below context is an account of the current game state, including the setting
 {%- for item in member.inventory -%}
 {%- set installedModuleBaseId = item.moduleInstalledOnItemId | default('', true) | lower -%}
 {%- if installedModuleBaseId in ['', 'n/a', 'none', 'null'] -%}
-{{ item.name }}: {{ item.rarity | default('common', true) }} level {{ item.level | default(1, true) }} {{ itemValueSummary(item) }} - {{ item.shortDescription | default(item.description, true) }}{% if item.equippedSlot %} (Equipped to {{ item.equippedSlot }}){% endif %}{% if not loop.last %}{{ "\n" }}{% endif %}
+{{ item.name }}: {{ itemQuantityField(item) }}{{ item.rarity | default('common', true) }} level {{ item.level | default(1, true) }} {{ itemValueSummary(item) }} - {{ item.shortDescription | default(item.description, true) }}{% if item.equippedSlot %} (Equipped to {{ item.equippedSlot }}){% endif %}{% if not loop.last %}{{ "\n" }}{% endif %}
 {%- endif -%}
 {%- endfor -%}
 {%- else %}

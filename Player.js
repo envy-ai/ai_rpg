@@ -106,6 +106,7 @@ class Player {
     #relationships = new Map();
     #thingListViewPreferences = {};
     #modState = {};
+    #extensionFields = {};
 
     static #indexById = new Map();
     static #indexByName = new SanitizedStringMap();
@@ -212,6 +213,97 @@ class Player {
             }
         }
         return normalized;
+    }
+
+    static #getRegisteredExtensionFields() {
+        const registry = Globals.modExtensionRegistry;
+        if (!registry || typeof registry.getEntityFields !== 'function') {
+            return [];
+        }
+        return registry.getEntityFields('player');
+    }
+
+    static #getRegisteredExtensionField(fieldName) {
+        const normalized = typeof fieldName === 'string' ? fieldName.trim() : '';
+        if (!normalized) {
+            return null;
+        }
+        const registry = Globals.modExtensionRegistry;
+        if (!registry || typeof registry.getEntityField !== 'function') {
+            return null;
+        }
+        return registry.getEntityField('player', normalized);
+    }
+
+    static #cloneExtensionFieldValue(value) {
+        if (value === undefined) {
+            return undefined;
+        }
+        if (value === null || typeof value !== 'object') {
+            return value;
+        }
+        return JSON.parse(JSON.stringify(value));
+    }
+
+    static #normalizeExtensionFieldValue(field, value) {
+        if (value === undefined || value === null) {
+            return value;
+        }
+        switch (field.type) {
+            case 'string':
+                return String(value).trim();
+            case 'number': {
+                const numeric = Number(value);
+                if (!Number.isFinite(numeric)) {
+                    throw new Error(`Player extension field "${field.fieldName}" must be a finite number.`);
+                }
+                return numeric;
+            }
+            case 'integer': {
+                const numeric = Number(value);
+                if (!Number.isFinite(numeric) || !Number.isInteger(numeric)) {
+                    throw new Error(`Player extension field "${field.fieldName}" must be an integer.`);
+                }
+                return numeric;
+            }
+            case 'boolean':
+                if (typeof value !== 'boolean') {
+                    throw new Error(`Player extension field "${field.fieldName}" must be a boolean.`);
+                }
+                return value;
+            case 'array':
+                if (!Array.isArray(value)) {
+                    throw new Error(`Player extension field "${field.fieldName}" must be an array.`);
+                }
+                return Player.#cloneExtensionFieldValue(value);
+            case 'object':
+                if (!value || typeof value !== 'object' || Array.isArray(value)) {
+                    throw new Error(`Player extension field "${field.fieldName}" must be an object.`);
+                }
+                return Player.#cloneExtensionFieldValue(value);
+            default:
+                throw new Error(`Player extension field "${field.fieldName}" has unsupported type "${field.type}".`);
+        }
+    }
+
+    static #shouldStoreExtensionFieldValue(value) {
+        if (value === undefined || value === null) {
+            return false;
+        }
+        return !(typeof value === 'string' && value.length === 0);
+    }
+
+    static #extractExtensionFieldInputs(data) {
+        const inputs = {};
+        if (!data || typeof data !== 'object') {
+            return inputs;
+        }
+        for (const field of Player.#getRegisteredExtensionFields()) {
+            if (Object.prototype.hasOwnProperty.call(data, field.fieldName)) {
+                inputs[field.fieldName] = data[field.fieldName];
+            }
+        }
+        return inputs;
     }
 
     static #rebuildIndexes() {
@@ -2279,6 +2371,8 @@ class Player {
         this.#initializeNeedBars(options.needBars, this.#needBarApplicability);
         this.#thingListViewPreferences = Player.#normalizeThingListViewPreferences(options.thingListViewPreferences);
         this.#modState = Player.#normalizeModState(options.modState);
+        this.#installExtensionFieldAccessors();
+        this.#applyExtensionFieldInputs(Player.#extractExtensionFieldInputs(options));
         this.#syncModStateWithInventory({ action: 'initialize' });
 
         // Creation timestamp
@@ -4007,6 +4101,74 @@ class Player {
         const result = updater(current);
         const nextState = result === undefined ? current : result;
         return this.setModState(namespace, nextState, options);
+    }
+
+    getExtensionField(fieldName) {
+        const field = Player.#getRegisteredExtensionField(fieldName);
+        if (!field) {
+            throw new Error(`Player extension field "${fieldName}" is not registered.`);
+        }
+        if (Object.prototype.hasOwnProperty.call(this.#extensionFields, field.fieldName)) {
+            return Player.#cloneExtensionFieldValue(this.#extensionFields[field.fieldName]);
+        }
+        return Player.#cloneExtensionFieldValue(field.defaultValue);
+    }
+
+    setExtensionField(fieldName, value) {
+        const field = Player.#getRegisteredExtensionField(fieldName);
+        if (!field) {
+            throw new Error(`Player extension field "${fieldName}" is not registered.`);
+        }
+        this.#setExtensionFieldValue(field, value, { updateTimestamp: true });
+    }
+
+    getExtensionFields({ includeDefaults = false } = {}) {
+        const output = {};
+        for (const field of Player.#getRegisteredExtensionFields()) {
+            if (Object.prototype.hasOwnProperty.call(this.#extensionFields, field.fieldName)) {
+                output[field.fieldName] = Player.#cloneExtensionFieldValue(this.#extensionFields[field.fieldName]);
+            } else if (includeDefaults && field.defaultValue !== undefined) {
+                output[field.fieldName] = Player.#cloneExtensionFieldValue(field.defaultValue);
+            }
+        }
+        return output;
+    }
+
+    #installExtensionFieldAccessors() {
+        for (const field of Player.#getRegisteredExtensionFields()) {
+            if (field.fieldName in this) {
+                throw new Error(`Player extension field "${field.fieldName}" conflicts with an existing Player property.`);
+            }
+            Object.defineProperty(this, field.fieldName, {
+                configurable: true,
+                enumerable: false,
+                get: () => this.getExtensionField(field.fieldName),
+                set: value => this.setExtensionField(field.fieldName, value)
+            });
+        }
+    }
+
+    #setExtensionFieldValue(field, value, { updateTimestamp = false } = {}) {
+        const normalized = Player.#normalizeExtensionFieldValue(field, value);
+        if (Player.#shouldStoreExtensionFieldValue(normalized)) {
+            this.#extensionFields[field.fieldName] = normalized;
+        } else {
+            delete this.#extensionFields[field.fieldName];
+        }
+        if (updateTimestamp) {
+            this.#lastUpdated = new Date().toISOString();
+        }
+    }
+
+    #applyExtensionFieldInputs(inputs = {}) {
+        if (!inputs || typeof inputs !== 'object') {
+            return;
+        }
+        for (const field of Player.#getRegisteredExtensionFields()) {
+            if (Object.prototype.hasOwnProperty.call(inputs, field.fieldName)) {
+                this.#setExtensionFieldValue(field, inputs[field.fieldName], { updateTimestamp: false });
+            }
+        }
     }
 
     withHealthRatioPreserved(mutator, { suppressTimestamp = false } = {}) {
@@ -6440,6 +6602,7 @@ class Player {
      */
     toJSON() {
         return {
+            ...this.getExtensionFields(),
             id: this.#id,
             name: this.#name,
             description: this.#description,
@@ -6538,6 +6701,7 @@ class Player {
             isNPC: data.isNPC
         });
         const player = new Player({
+            ...Player.#extractExtensionFieldInputs(data),
             name: data.name,
             level: data.level,
             health: data.health,

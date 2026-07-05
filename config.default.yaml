@@ -44,6 +44,10 @@ improvement_prompt:
   enabled: false
   interval: 10
 
+mystery_box_cleanup:
+  # Number of eligible player-action turns between automatic mystery cleanup checks.
+  interval: 10
+
 # OpenAI-compatible API configuration
 ai:
   # Text generation backend:
@@ -216,6 +220,7 @@ prompt_progress:
     levelup_abilities: 5000
     list_*: 5000
     more_info_*: 5000
+    mystery_box_cleanup: 5000
     mystery_box_update: 5000
     mystery_thread_check: 5000
     need_bar_event_checks: 5000

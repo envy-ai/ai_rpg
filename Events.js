@@ -8597,6 +8597,234 @@ class Events {
         return { threads, boxes };
     }
 
+    static _parseMysteryCleanupBoolean(value, label) {
+        const normalized = normalizeString(value).toLowerCase();
+        if (normalized === "true") {
+            return true;
+        }
+        if (normalized === "false") {
+            return false;
+        }
+        throw new Error(`${label} must be true or false.`);
+    }
+
+    static _parseMysteryBoxCleanupResponse(responseText) {
+        const xml = Utils.extractFinalXmlRootBlock(responseText || "", "mysteryThreads");
+        if (!xml) {
+            throw new Error("Mystery box cleanup response missing <mysteryThreads> root.");
+        }
+
+        let doc;
+        try {
+            doc = Utils.parseXmlDocumentStrict(xml, "text/xml");
+        } catch (error) {
+            throw new Error(`Failed to parse mystery box cleanup XML: ${error.message}`);
+        }
+
+        const root = doc?.documentElement;
+        if (!root || root.tagName !== "mysteryThreads") {
+            throw new Error("Mystery box cleanup response did not parse into <mysteryThreads>.");
+        }
+
+        const threads = this._getXmlElementChildren(root)
+            .filter((child) => child.tagName === "mysteryThread")
+            .map((threadNode) => {
+                const id = normalizeString(this._getXmlDirectChildText(threadNode, "id"));
+                if (!id) {
+                    console.warn("Mystery box cleanup returned a mysteryThread entry without an id; ignoring it.");
+                    return null;
+                }
+                const boxesNode = this._getXmlElementChildren(threadNode)
+                    .find((child) => child.tagName === "mysteryBoxes");
+                const boxes = boxesNode
+                    ? this._getXmlElementChildren(boxesNode)
+                        .filter((child) => child.tagName === "mysteryBox")
+                        .map((boxNode) => {
+                            const boxId = normalizeString(this._getXmlDirectChildText(boxNode, "id"));
+                            if (!boxId) {
+                                console.warn(`Mystery box cleanup returned a mysteryBox entry without an id for thread "${id}"; ignoring it.`);
+                                return null;
+                            }
+                            return {
+                                id: boxId,
+                                thoughts: normalizeString(this._getXmlDirectChildText(boxNode, "thoughts")),
+                                revealed: this._parseMysteryCleanupBoolean(
+                                    this._getXmlDirectChildText(boxNode, "revealed"),
+                                    `Mystery box cleanup revealed value for "${boxId}"`
+                                ),
+                            };
+                        })
+                        .filter(Boolean)
+                    : [];
+
+                return {
+                    id,
+                    thoughts: normalizeString(this._getXmlDirectChildText(threadNode, "thoughts")),
+                    resolved: this._parseMysteryCleanupBoolean(
+                        this._getXmlDirectChildText(threadNode, "resolved"),
+                        `Mystery box cleanup resolved value for "${id}"`
+                    ),
+                    boxes,
+                };
+            })
+            .filter(Boolean);
+
+        return { threads };
+    }
+
+    static _summarizeMysteryBoxCleanupDecisions(cleanupResult = {}, cleanupThreads = []) {
+        if (!cleanupResult || typeof cleanupResult !== "object" || Array.isArray(cleanupResult)) {
+            throw new Error("Cannot summarize empty mystery box cleanup result.");
+        }
+        if (!Array.isArray(cleanupThreads)) {
+            throw new Error("Mystery cleanup candidate threads must be an array.");
+        }
+
+        const threadCandidatesById = new Map();
+        const boxCandidatesById = new Map();
+        for (const threadCandidate of cleanupThreads) {
+            const threadId = normalizeString(threadCandidate?.id);
+            if (!threadId) {
+                continue;
+            }
+            const threadName = normalizeString(threadCandidate?.name);
+            threadCandidatesById.set(threadId, {
+                id: threadId,
+                name: threadName,
+            });
+
+            const boxCandidates = Array.isArray(threadCandidate?.mysteryBoxes)
+                ? threadCandidate.mysteryBoxes
+                : [];
+            for (const boxCandidate of boxCandidates) {
+                const boxId = normalizeString(boxCandidate?.id);
+                if (!boxId) {
+                    continue;
+                }
+                boxCandidatesById.set(boxId, {
+                    id: boxId,
+                    name: normalizeString(boxCandidate?.name),
+                    threadId,
+                    threadName,
+                });
+            }
+        }
+
+        const resolvedThreads = [];
+        const resolvedBoxes = [];
+        const seenThreadIds = new Set();
+        const seenBoxIds = new Set();
+        const threadEntries = Array.isArray(cleanupResult.threads) ? cleanupResult.threads : [];
+
+        for (const threadEntry of threadEntries) {
+            const threadId = normalizeString(threadEntry?.id);
+            if (threadEntry?.resolved === true) {
+                const threadCandidate = threadCandidatesById.get(threadId);
+                if (!threadCandidate) {
+                    console.warn(`Mystery box cleanup returned resolved thread "${threadId}", but it was not listed as a cleanup candidate; continuing.`);
+                } else if (!seenThreadIds.has(threadCandidate.id)) {
+                    seenThreadIds.add(threadCandidate.id);
+                    resolvedThreads.push({
+                        id: threadCandidate.id,
+                        name: threadCandidate.name,
+                        thoughts: normalizeString(threadEntry?.thoughts),
+                    });
+                }
+            }
+
+            const boxEntries = Array.isArray(threadEntry?.boxes) ? threadEntry.boxes : [];
+            for (const boxEntry of boxEntries) {
+                if (boxEntry?.revealed !== true) {
+                    continue;
+                }
+                const boxId = normalizeString(boxEntry?.id);
+                const boxCandidate = boxCandidatesById.get(boxId);
+                if (!boxCandidate) {
+                    console.warn(`Mystery box cleanup returned revealed box "${boxId}", but it was not listed as a cleanup candidate; continuing.`);
+                    continue;
+                }
+                if (seenBoxIds.has(boxCandidate.id)) {
+                    continue;
+                }
+                seenBoxIds.add(boxCandidate.id);
+                resolvedBoxes.push({
+                    id: boxCandidate.id,
+                    name: boxCandidate.name,
+                    thoughts: normalizeString(boxEntry?.thoughts),
+                    threadId: boxCandidate.threadId,
+                    threadName: boxCandidate.threadName,
+                });
+            }
+        }
+
+        return { resolvedThreads, resolvedBoxes };
+    }
+
+    static _applyMysteryBoxCleanupResult(cleanupResult = {}) {
+        if (!cleanupResult || typeof cleanupResult !== "object" || Array.isArray(cleanupResult)) {
+            throw new Error("Cannot apply empty mystery box cleanup result.");
+        }
+        const resolvedThreads = [];
+        const resolvedBoxes = [];
+        const seenThreadIds = new Set();
+        const seenBoxIds = new Set();
+        const threadEntries = Array.isArray(cleanupResult.threads) ? cleanupResult.threads : [];
+
+        for (const threadEntry of threadEntries) {
+            const threadId = normalizeString(threadEntry?.id);
+            const thread = threadId ? MysteryThread.getById(threadId) : null;
+            if (threadEntry?.resolved === true) {
+                if (!threadId) {
+                    console.warn("Mystery box cleanup returned a resolved thread without an id; ignoring it.");
+                } else if (!thread) {
+                    console.warn(`Mystery box cleanup returned resolved thread "${threadId}", but it does not match any mystery thread; continuing.`);
+                } else if (thread.status !== "active") {
+                    console.warn(`Mystery box cleanup returned resolved thread "${thread.name}", but it is not active; continuing.`);
+                } else if (!seenThreadIds.has(thread.id)) {
+                    thread.applyUpdate({ status: "inactive" });
+                    seenThreadIds.add(thread.id);
+                    resolvedThreads.push({
+                        id: thread.id,
+                        name: thread.name,
+                        thoughts: normalizeString(threadEntry?.thoughts),
+                    });
+                }
+            }
+
+            const boxEntries = Array.isArray(threadEntry?.boxes) ? threadEntry.boxes : [];
+            for (const boxEntry of boxEntries) {
+                if (boxEntry?.revealed !== true) {
+                    continue;
+                }
+                const boxId = normalizeString(boxEntry?.id);
+                if (!boxId) {
+                    console.warn("Mystery box cleanup returned a revealed box without an id; ignoring it.");
+                    continue;
+                }
+                if (seenBoxIds.has(boxId)) {
+                    continue;
+                }
+                const box = MysteryBox.getById(boxId);
+                if (!box) {
+                    console.warn(`Mystery box cleanup returned revealed box "${boxId}", but it does not match any mystery box; continuing.`);
+                    continue;
+                }
+                const containingThread = MysteryThread.getContainingBox(box.id) || thread || null;
+                box.markResolved();
+                seenBoxIds.add(box.id);
+                resolvedBoxes.push({
+                    id: box.id,
+                    name: box.name,
+                    thoughts: normalizeString(boxEntry?.thoughts),
+                    threadId: containingThread?.id || null,
+                    threadName: containingThread?.name || null,
+                });
+            }
+        }
+
+        return { resolvedThreads, resolvedBoxes };
+    }
+
     static _markResolvedMysteryThreadsInactive(resolvedThreads = []) {
         if (!Array.isArray(resolvedThreads) || !resolvedThreads.length) {
             return [];
@@ -13480,6 +13708,135 @@ class Events {
         };
     }
 
+    static _getRegisteredPlayerEntityFields(filter = {}) {
+        const registry = Globals.modExtensionRegistry || this._deps?.modExtensionRegistry || null;
+        if (!registry || typeof registry.getEntityFields !== "function") {
+            return [];
+        }
+        return registry.getEntityFields("player", filter);
+    }
+
+    static _normalizeRegisteredPlayerFieldValue(value, field, sourceLabel = "registered Player field") {
+        if (value === undefined || value === null) {
+            return undefined;
+        }
+        if (typeof value === "string") {
+            const trimmed = value.trim();
+            if (!trimmed || trimmed.toLowerCase() === "n/a") {
+                return undefined;
+            }
+            value = trimmed;
+        }
+
+        switch (field.type) {
+            case "string":
+                return String(value).trim();
+            case "number": {
+                const numeric = Number(value);
+                if (!Number.isFinite(numeric)) {
+                    throw new Error(`${sourceLabel} "${field.fieldName}" must be a finite number.`);
+                }
+                return numeric;
+            }
+            case "integer": {
+                const numeric = Number(value);
+                if (!Number.isInteger(numeric)) {
+                    throw new Error(`${sourceLabel} "${field.fieldName}" must be an integer.`);
+                }
+                return numeric;
+            }
+            case "boolean": {
+                if (typeof value === "boolean") {
+                    return value;
+                }
+                if (typeof value === "number") {
+                    if (value === 1) return true;
+                    if (value === 0) return false;
+                }
+                if (typeof value === "string") {
+                    const normalized = value.trim().toLowerCase();
+                    if (["true", "1", "yes", "y", "on"].includes(normalized)) return true;
+                    if (["false", "0", "no", "n", "off"].includes(normalized)) return false;
+                }
+                throw new Error(`${sourceLabel} "${field.fieldName}" must be true or false.`);
+            }
+            case "array": {
+                const parsed = Array.isArray(value)
+                    ? value
+                    : (typeof value === "string" ? JSON.parse(value) : value);
+                if (!Array.isArray(parsed)) {
+                    throw new Error(`${sourceLabel} "${field.fieldName}" must be a JSON array.`);
+                }
+                return parsed;
+            }
+            case "object": {
+                const parsed = value && typeof value === "object" && !Array.isArray(value)
+                    ? value
+                    : (typeof value === "string" ? JSON.parse(value) : value);
+                if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+                    throw new Error(`${sourceLabel} "${field.fieldName}" must be a JSON object.`);
+                }
+                return parsed;
+            }
+            default:
+                throw new Error(`Unsupported registered Player field type "${field.type}" for "${field.fieldName}".`);
+        }
+    }
+
+    static _collectPlayerExtensionFieldsForPrompt(actor, status = {}, fields = null) {
+        const playerFields = Array.isArray(fields)
+            ? fields
+            : this._getRegisteredPlayerEntityFields();
+        const values = {};
+        for (const field of playerFields) {
+            if (!field || typeof field.fieldName !== "string") {
+                continue;
+            }
+            let value;
+            if (status && Object.prototype.hasOwnProperty.call(status, field.fieldName)) {
+                value = status[field.fieldName];
+            } else if (actor && typeof actor.getExtensionField === "function") {
+                value = actor.getExtensionField(field.fieldName);
+            } else if (actor && Object.prototype.hasOwnProperty.call(actor, field.fieldName)) {
+                value = actor[field.fieldName];
+            }
+            if (value === undefined || value === null || (typeof value === "string" && !value.trim())) {
+                continue;
+            }
+            values[field.fieldName] = value;
+        }
+        return values;
+    }
+
+    static _getPlayerExtensionFieldInputsFromXmlNode(node, fields = null, sourceLabel = "registered Player field") {
+        if (!node) {
+            return {};
+        }
+        const parserFields = Array.isArray(fields)
+            ? fields
+            : this._getRegisteredPlayerEntityFields({ exposeToXmlParser: true });
+        const inputs = {};
+        for (const field of parserFields) {
+            const tagName = field?.xmlPrompt?.tagName || field?.fieldName;
+            if (!field || typeof field.fieldName !== "string" || typeof tagName !== "string") {
+                continue;
+            }
+            const valueNode = node.getElementsByTagName(tagName)[0] || null;
+            if (!valueNode || typeof valueNode.textContent !== "string") {
+                continue;
+            }
+            const value = this._normalizeRegisteredPlayerFieldValue(
+                valueNode.textContent,
+                field,
+                sourceLabel,
+            );
+            if (value !== undefined) {
+                inputs[field.fieldName] = value;
+            }
+        }
+        return inputs;
+    }
+
     static async _handleAlterNpcEvents(entries, context = {}) {
         const {
             findActorByName,
@@ -13584,6 +13941,14 @@ class Events {
                     : typeof npc.toJSON === "function"
                         ? npc.toJSON()
                         : {};
+            const registeredPlayerEntityFields = this._getRegisteredPlayerEntityFields();
+            const registeredPlayerPromptFields = this._getRegisteredPlayerEntityFields({ exposeToGeneratorPrompt: true })
+                .filter(field => field && field.xmlPrompt && typeof field.xmlPrompt.tagName === "string");
+            const playerExtensionFields = this._collectPlayerExtensionFieldsForPrompt(
+                npc,
+                npcStatus,
+                registeredPlayerEntityFields,
+            );
 
             const attributeSnapshot = {};
             const attributeDefinitions = npc.attributeDefinitions || {};
@@ -13623,6 +13988,7 @@ class Events {
                 role: npcStatus?.role || npcStatus?.class || "",
                 class: npcStatus?.class || npc.class,
                 race: npcStatus?.race || npc.race,
+                ...playerExtensionFields,
                 relativeLevel: npcStatus?.relativeLevel ?? null,
                 currency:
                     typeof npc.getCurrency === "function"
@@ -13648,6 +14014,7 @@ class Events {
                 role: alteredCharacter.role,
                 class: npc.class,
                 race: npc.race,
+                ...playerExtensionFields,
                 relativeLevel: alteredCharacter.relativeLevel,
                 currency: alteredCharacter.currency,
                 personality: {
@@ -13667,6 +14034,9 @@ class Events {
                 changeDescription,
                 alteredCharacter,
                 characterSeed,
+                playerGeneratorPromptFields: registeredPlayerPromptFields.length
+                    ? registeredPlayerPromptFields
+                    : baseContext.playerGeneratorPromptFields,
             };
 
             let promptData;
@@ -13879,6 +14249,24 @@ class Events {
         }
         if (typeof parsedCharacter.aiNotes === "string") {
             npc.aiNotes = parsedCharacter.aiNotes.trim();
+        }
+
+        const registeredPlayerParserFields = this._getRegisteredPlayerEntityFields({ exposeToXmlParser: true });
+        for (const field of registeredPlayerParserFields) {
+            if (!field || typeof field.fieldName !== "string") {
+                continue;
+            }
+            if (!Object.prototype.hasOwnProperty.call(parsedCharacter, field.fieldName)) {
+                continue;
+            }
+            if (typeof npc.setExtensionField !== "function") {
+                throw new Error(`NPC "${npc.name}" cannot update registered Player field "${field.fieldName}".`);
+            }
+            npc.setExtensionField(field.fieldName, parsedCharacter[field.fieldName]);
+            if (!Array.isArray(summary.updatedPlayerFields)) {
+                summary.updatedPlayerFields = [];
+            }
+            summary.updatedPlayerFields.push(field.fieldName);
         }
 
         if (Number.isFinite(parsedCharacter.currency)) {
@@ -15062,6 +15450,11 @@ class Events {
             }
 
             return {
+                ...this._getPlayerExtensionFieldInputsFromXmlNode(
+                    npcNode,
+                    this._getRegisteredPlayerEntityFields({ exposeToXmlParser: true }),
+                    "altered character Player field",
+                ),
                 name: getText("name") || null,
                 description: getText("description") || "",
                 shortDescription: getText("shortDescription") || "",

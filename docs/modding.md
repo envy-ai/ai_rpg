@@ -45,7 +45,7 @@ Game saves persist the startup-frozen active mod list in `metadata.enabledMods`.
 
 ## Defs Overlays
 
-Mods can provide overlays whose filenames match root `defs/*.yaml` files exactly. `DefinitionLoader.validateDefinitionOverlays(...)` rejects unknown filenames, invalid YAML, and structurally incompatible merges.
+Mods can provide `defs/*.yaml` files that overlay matching root files or introduce mod-owned definition files. A mod-only filename is treated as if an empty root `defs/<filename>` existed; no placeholder file is created in the root `defs/` directory. `DefinitionLoader.validateDefinitionOverlays(...)` rejects invalid YAML and structurally incompatible merges.
 
 Merge behavior is deterministic:
 
@@ -103,6 +103,7 @@ See [`modding_hooks.md`](modding_hooks.md) and [`classes/ModExtensionRegistry.md
 - Setting tabs and fields render in World Profiles; fields without a tab stay in the Prompt Guidance Mod Settings block.
 - Non-persisted select fields with `action: "applyPreset"` can copy confirmed option values into editable mod setting fields without saving the selector itself.
 - First-class `thing` fields persist at top level on `Thing` JSON, install direct accessors when possible, and can expose themselves to `createThing`, `updateObjectFields`, generated item XML, XML parsing, and the item edit modal.
+- First-class `player` fields persist at top level on `Player` JSON, install direct accessors when possible, and can expose themselves to `createNpc`, `updateCharacterFields`, `updateObjectFields` for `character`, generated NPC XML, and character-alter XML parsing.
 - Structured `thing` fields can provide a custom `createThing` `toolSchema`.
 - `clearThingSlotWhenPresent` clears normal `Thing.slot` when a registered special-system field has a meaningful value.
 - Thing image badges render mod-owned SVG or raster assets on item/scenery cards, with optional world-profile overrides for asset path and label.
@@ -117,6 +118,7 @@ Current bundled mods under `mods/`:
 - `mods/modules`: runtime mod for item-to-item module slots on equippable gear. It registers `moduleSlots`, `moduleType`, `installedModuleIds`, and `moduleInstalledOnItemId`; exposes structured `createThing` schema for module slots; registers install/remove chat tools, XML events, item context actions, top-left module badges, inventory-sync/status/attribute/target-effect contributors, item-generation balance guidance, and a `Modules` World Profiles tab. Presets include Module, Crystal, Mod, and Materia terminology.
 - `mods/spells`: runtime mod for actor-owned spells that spend the `mana` need bar. It registers `generateSpell` / `castSpell`, `<spellLearned>` / `<spellCast>`, a startup validator requiring a `mana` need bar, actor status/base-context contributors, a spell generator prompt, and a `Spells` World Profiles tab with per-world cost settings.
 - `mods/need-bar-lust`: hybrid mod that contributes the `sex` / `Sexual Satisfaction` need bar, slopword/regex entries, and stage-1 player-action prompt guidance for lust-driven NPC initiative.
+- `mods/nsfw-boost`: runtime/defs mod that registers the first-class `Player.sexualTraits` field, contributes a `<sexualTraits>` reference list from its mod-owned `defs/sexual_traits.yaml`, exposes the field to NPC generation and alteration XML, and adds player-action prompt guidance for sexually proactive NPC behavior.
 - `mods/need-bar-social`: defs-only mod that contributes the `social` need bar for players and party NPCs.
 - `mods/need-bar-sanity`: defs-only mod that contributes the `sanity` need bar for players and party NPCs.
 - `mods/need-bar-hydration`: defs-only mod that contributes the `hydration` need bar for players and party NPCs.

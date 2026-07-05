@@ -86,6 +86,7 @@ Response:
 - `noProse` skips the player-action prose prompt, crafting result event-summary entries, consumed-item status-effect application, and additional-effect event checks. Quest checks still run using the deterministic action summary line.
 - Craft/process/salvage/harvest success-degree outcomes are recorded as visible prompt-excluded `check-results` chat entries using the same collapsed and expanded rendering as skill checks. This entry is synthesized from the action's ActionResolution, so it is recorded for `noProse` requests as well.
 - Prose-mode result summaries include source context: harvest/salvage lines use `from <source>`, and craft/process lines use `using <inputs>`.
+- Prose-mode craft/process/salvage/harvest item-result summary rows are categorized as `inventory` for the `What changed` drawer.
 - Prose-mode result summaries include the elapsed-time row based on the applied `timeTakenMinutes`.
 - Additional `<other>` effects from the selected result can generate a separate visible player-action entry and run ordinary event checks in prose mode.
 - Quest checks run after the crafting mutation path. Quest reward/objective summaries are recorded when applicable.

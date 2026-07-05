@@ -174,9 +174,7 @@ function validateDefinitionOverlays({ baseDir } = {}) {
       if (!entry.isFile() || !entry.name.endsWith('.yaml')) {
         continue;
       }
-      if (!knownDefinitionFiles.has(entry.name)) {
-        throw new Error(`Mod "${modName}" defines unknown defs overlay "${entry.name}".`);
-      }
+      knownDefinitionFiles.add(entry.name);
       validatedFiles.add(entry.name);
     }
   }

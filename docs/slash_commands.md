@@ -62,6 +62,7 @@ This guide covers the runtime slash-command path: registration, request parsing,
 - `interaction.runPlotSummaryPrompt({ parentEntryId?, locationId? })`: runs the plot-summary prompt for a resolved location.
 - `interaction.runPlotExpanderPrompt({ parentEntryId?, locationId?, specificPlot? })`: runs the plot-expander prompt for a resolved location.
 - `interaction.runHousekeepingPrompt({ instructions? })`: runs the parser-based housekeeping prompt with optional manual `housekeepingInstructions`. The helper requires an active `clientId` so realtime status, quest confirmation, and tool-call debug updates can target the invoking browser tab.
+- `interaction.runMysteryBoxCleanupPrompt()`: runs the mystery cleanup prompt immediately, applies resolved/revealed results, persists mystery state when possible, and returns both newly applied records and prompt-candidate decision summaries with model thoughts.
 - `interaction.generateSkillsByNames(options)`: shared skill metadata generation helper.
 - `interaction.generatePlayerImage(player, { force?, clientId? })`: shared player/NPC portrait generation helper.
 - `interaction.getActiveSettingSnapshot()`: returns the active setting snapshot.
@@ -129,6 +130,7 @@ Helpers that can be unavailable are exposed as `null`. Commands should check req
 | `/import_item` | - | Opens XML upload and imports parsed item/scenery entries into the current location. |
 | `/incapacitate` | - | Applies incapacitation to an NPC without killing them. |
 | `/kill` | - | Kills a named NPC. |
+| `/list_npcs` | - | Lists NPC locations and short descriptions. |
 | `/locate` | - | Finds NPCs by exact name or alias. |
 | `/needbars` | - | Lists or edits character need bars. |
 | `/orphaned_locations` | - | Lists locations missing valid region links or usable exits. |
@@ -140,6 +142,7 @@ Helpers that can be unavailable are exposed as `null`. Commands should check req
 | `/regex_replace` | - | Runs regex replacement across story history. |
 | `/reload_config` | `/reloadconfig`, `/rcfg` | Reloads config files and definition caches. |
 | `/reload_lorebooks` | `/reloadlorebooks`, `/rlb` | Reloads lorebooks from disk. |
+| `/resolve_mystery_threads` | - | Runs mystery cleanup and lists resolved threads and boxes with thoughts. |
 | `/respec_abilities` | - | Rebuilds a character's ability selections across a level range. |
 | `/respec_skills` | - | Rebuilds an NPC's skill allocation for their current level. |
 | `/rp` | - | Toggles roleplay mode and related automated checks, including plot analysis. |

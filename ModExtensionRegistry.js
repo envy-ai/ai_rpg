@@ -85,6 +85,67 @@ class ModExtensionRegistry {
         'properties'
     ]);
 
+    static #playerReservedFieldNames = new Set([
+        'id',
+        'name',
+        'aliases',
+        'description',
+        'shortDescription',
+        'imageId',
+        'class',
+        'race',
+        'gender',
+        'isNPC',
+        'attributes',
+        'level',
+        'experience',
+        'health',
+        'maxHealth',
+        'healthAttribute',
+        'inventory',
+        'barterInventory',
+        'willingToTrade',
+        'tradeRefusalExpiresAt',
+        'barterStockUpdatedAt',
+        'barterProfile',
+        'skills',
+        'abilities',
+        'declinedAbilities',
+        'statusEffects',
+        'needBars',
+        'needBarApplicability',
+        'dispositions',
+        'relationships',
+        'personality',
+        'personalityType',
+        'personalityTraits',
+        'personalityNotes',
+        'aiNotes',
+        'resistances',
+        'vulnerabilities',
+        'hiddenFromPlayer',
+        'isHiddenFromPlayer',
+        'factionId',
+        'factionStandings',
+        'thingListViewPreferences',
+        'modState',
+        'partyMembers',
+        'goals',
+        'characterArc',
+        'currentQuests',
+        'completedQuests',
+        'importantMemories',
+        'currentLocation',
+        'location',
+        'previousLocationId',
+        'last_seen_time',
+        'last_seen_location',
+        'was_in_player_location_previous_round',
+        'isDead',
+        'persistWhenDead',
+        'corpseCountdown'
+    ]);
+
     constructor({ reservedChatToolNames = [] } = {}) {
         if (Array.isArray(reservedChatToolNames)) {
             this.#reservedChatToolNames = new Set(
@@ -1107,6 +1168,9 @@ class ModExtensionRegistry {
         const normalizedFieldName = ModExtensionRegistry.#normalizeFieldName(fieldName, 'entity field fieldName');
         if (normalizedEntityType === 'thing' && ModExtensionRegistry.#thingReservedFieldNames.has(normalizedFieldName)) {
             throw new Error(`Entity field "thing.${normalizedFieldName}" conflicts with a built-in Thing field.`);
+        }
+        if (normalizedEntityType === 'player' && ModExtensionRegistry.#playerReservedFieldNames.has(normalizedFieldName)) {
+            throw new Error(`Entity field "player.${normalizedFieldName}" conflicts with a built-in Player field.`);
         }
 
         if (!this.#entityFieldsByType.has(normalizedEntityType)) {

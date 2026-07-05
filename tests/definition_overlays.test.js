@@ -78,17 +78,63 @@ outer:
     }
 });
 
-test('validateDefinitionOverlays rejects unknown defs overlay filenames', () => {
+test('validateDefinitionOverlays rejects incompatible mod-only definition merges', () => {
     const rootDir = makeTempGameDir();
 
     try {
-        writeFile(rootDir, 'defs/known.yaml', 'value: 1\n');
-        writeFile(rootDir, 'mods/bad/defs/unknown.yaml', 'value: 2\n');
+        writeFile(rootDir, 'mods/alpha/defs/custom.yaml', `
+value:
+  nested: true
+`);
+        writeFile(rootDir, 'mods/bravo/defs/custom.yaml', `
+value:
+  - bad
+`);
 
         assert.throws(
             () => validateDefinitionOverlays({ baseDir: rootDir }),
-            /unknown defs overlay "unknown\.yaml"/
+            /mods\/bravo\/defs\/custom\.yaml\.value must remain an object/
         );
+    } finally {
+        clearFrozenEnabledModManifests(rootDir);
+        fs.rmSync(rootDir, { recursive: true, force: true });
+    }
+});
+
+test('definition overlays allow mod-only definition files without root placeholders', () => {
+    const rootDir = makeTempGameDir();
+
+    try {
+        writeFile(rootDir, 'mods/mod_only/defs/sexual_traits.yaml', `
+sexual_traits_and_preferences:
+  style:
+    - trait: Romantic
+      description: Wants emotional intimacy.
+`);
+
+        const validation = validateDefinitionOverlays({ baseDir: rootDir });
+        assert.deepEqual(validation.knownDefinitionFiles, ['sexual_traits.yaml']);
+        assert.deepEqual(validation.validatedFiles, ['sexual_traits.yaml']);
+
+        const { value, sources } = loadMergedDefinitionFile({
+            baseDir: rootDir,
+            filename: 'sexual_traits.yaml'
+        });
+
+        assert.deepEqual(JSON.parse(JSON.stringify(value)), {
+            sexual_traits_and_preferences: {
+                style: [
+                    {
+                        trait: 'Romantic',
+                        description: 'Wants emotional intimacy.'
+                    }
+                ]
+            }
+        });
+        assert.deepEqual(sources.map(source => source.label), [
+            'mods/mod_only/defs/sexual_traits.yaml'
+        ]);
+        assert.equal(fs.existsSync(path.join(rootDir, 'defs', 'sexual_traits.yaml')), false);
     } finally {
         clearFrozenEnabledModManifests(rootDir);
         fs.rmSync(rootDir, { recursive: true, force: true });

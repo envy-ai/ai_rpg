@@ -2,7 +2,7 @@
 
 Common payloads: see `docs/api/common.md` for shared job and entity shapes.
 
-Image generation is controlled by `config.imagegen`. The configured engine is one of `comfyui`, `nanogpt`, or `openai`. ComfyUI jobs render workflow templates from `imagegen/`; NanoGPT and OpenAI jobs call their HTTP image APIs and save the returned base64 image locally. Saved image files live in `public/generated-images/`, and generated image metadata is stored in the `generatedImages` map that is serialized with game state.
+Image generation is controlled by `config.imagegen`. The configured engine is one of `comfyui`, `nanogpt`, or `openai`. ComfyUI jobs render workflow templates from `imagegen/`; those templates receive both `image` job values and the full runtime `config` object. NanoGPT and OpenAI jobs call their HTTP image APIs and save the returned base64 image locally. Saved image files live in `public/generated-images/`, and generated image metadata is stored in the `generatedImages` map that is serialized with game state.
 
 Image jobs use the statuses `queued`, `processing`, `completed`, `failed`, and `timeout`. `imagegen.maxConcurrentJobs` controls concurrent processing. When a request includes `clientId`, the server subscribes that client to `image_job_update` realtime events for the queued or joined job.
 

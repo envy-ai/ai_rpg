@@ -1,0 +1,5 @@
+{% set playerFieldSeed = playerFieldSeed | default({}, true) -%}
+{% if playerGeneratorPromptFields %}{% for field in playerGeneratorPromptFields %}
+{% set tagName = field.xmlPrompt.tagName | default(field.fieldName, true) -%}
+<{{ tagName }}>{% if playerFieldSeed[field.fieldName] is defined and playerFieldSeed[field.fieldName] != null and playerFieldSeed[field.fieldName] != '' %}{% if field.type == 'array' or field.type == 'object' %}{{ playerFieldSeed[field.fieldName] | dump }}{% else %}{{ playerFieldSeed[field.fieldName] }}{% endif %}{% else %}<!--{{ field.xmlPrompt.placeholder }}-->{% endif %}</{{ tagName }}>
+{% endfor %}{% endif %}

@@ -20,7 +20,7 @@ Each save directory can contain:
 | File | Contents |
 | --- | --- |
 | `gameWorld.json` | Object with `locations`, `locationExits`, and `regions` maps. Locations serialize through `Location.toJSON()` / `getDetails()`, exits through `LocationExit.toJSON()`, and regions through `Region.toJSON()`. |
-| `allPlayers.json` | Map of player/NPC ids to `Player.toJSON()` records. Inventories, barter inventories, party members, and quests are stored by id/reference fields inside each actor record. |
+| `allPlayers.json` | Map of player/NPC ids to `Player.toJSON()` records. Inventories, barter inventories, party members, quests, and registered Player extension fields are stored inside each actor record. |
 | `things.json` | Map of item/scenery ids to `Thing.toJSON()` records. Container contents, pending container seed entries, stack count, harvest state, flags, status effects, metadata, and registered Thing extension fields are persisted here. |
 | `factions.json` | Map of faction ids to `Faction.toJSON()` records. |
 | `skills.json` | Array of `Skill.toJSON()` records. |
@@ -80,7 +80,7 @@ Hydration resets the generator, seeds counters from `metadata.idCounters`, and r
 
 The save format stores canonical server records, not necessarily the expanded client API payloads.
 
-- `Player.toJSON()` stores actor identity, descriptors, aliases, health, attributes, skills, abilities, declined abilities, inventory ids, barter inventory ids, gear, quests, dispositions, faction state, need bars, need-bar applicability, per-minute need/health timestamps, party state, travel memory, hidden/death flags, UI view preferences, and mod state.
+- `Player.toJSON()` stores actor identity, descriptors, aliases, health, attributes, skills, abilities, declined abilities, inventory ids, barter inventory ids, gear, quests, dispositions, faction state, need bars, need-bar applicability, per-minute need/health timestamps, party state, travel memory, hidden/death flags, UI view preferences, mod state, and registered Player extension fields at top level.
 - `Thing.toJSON()` stores item/scenery identity, type, count, image, rarity/level fields, slot/attribute bonuses, target/equipper cause effects, container state, harvest state, boolean flags, metadata, status effects, and registered extension fields at top level.
 - `Location.toJSON()` stores location details including exits, region id, controlling faction id, image variants, visit/favorite state, stubs, generation hints, NPC ids, thing ids, random events, status effects, and vehicle info.
 - `Region.toJSON()` stores region details including blueprints, location ids, entrance, parent, controlling faction, vehicle info, weather/weather state, status effects, random events, concepts, secrets, and average level.
@@ -89,7 +89,7 @@ The save format stores canonical server records, not necessarily the expanded cl
 - `VehicleInfo.toJSON()` stores terrain types, icon, current/pending destinations, fixed-route destination ids or pending-region tokens, ETA, departure time, and vehicle exit id.
 - `Quest`, `Faction`, `Skill`, `SettingInfo`, `MysteryBox`, `MysteryThread`, and `ScheduledEvent` persist through their own JSON helpers.
 
-Registered Thing extension fields must be registered before load for `Thing.fromJSON()` to restore them. Enabled-mod compatibility is checked before hydration when `metadata.enabledMods` is present; callers may pass `modMismatchChoice: 'keep-current'` to `/api/load` to bypass the mismatch response and hydrate under the running server's active mods.
+Registered Thing and Player extension fields must be registered before load for `Thing.fromJSON()` / `Player.fromJSON()` to restore them. Enabled-mod compatibility is checked before hydration when `metadata.enabledMods` is present; callers may pass `modMismatchChoice: 'keep-current'` to `/api/load` to bypass the mismatch response and hydrate under the running server's active mods.
 
 ## Hydration Flow
 

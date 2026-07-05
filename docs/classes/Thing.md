@@ -70,7 +70,7 @@ The container inventory API generates pending contents through the `thing-genera
 `delete()` rejects non-empty containers so contents are not orphaned. The event-system `consume_item` full-destruction path resolves the destroyed container's holder or location, moves instantiated contents there, clears the container inventory, then deletes the container.
 
 ## Prompts, APIs, And Events
-Generated item descriptions remain descriptive prose. Mechanical details such as type, slot, rarity, value, weight, properties, attribute bonuses, target/equipper cause effects, flags, and mod fields are stored structurally and rendered by client tooltips/details.
+Generated item descriptions remain descriptive prose. Mechanical details such as type, slot, rarity, value, weight, properties, attribute bonuses, target/equipper cause effects, flags, and mod fields are stored structurally and rendered by client tooltips/details. Base-context compact item, scenery, and inventory rows always render stack counts as a separate `quantity N;` field after the item name, keeping the quantity out of the canonical item name and short description.
 
 The shared item XML prompt includes count, item/scenery kind, type, slot, rarity, value, weight, relative level, boolean flags, container data, attribute bonuses, target/equipper cause effects, properties, short description, and registered Thing fields exposed to generator prompts. The XML parser returns the same fields for natural location generation, inventory generation, container-content generation, crafting/process/salvage/harvest output, item alteration, and thing separation.
 

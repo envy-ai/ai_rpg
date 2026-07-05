@@ -624,6 +624,20 @@ function sanitizeBarterPricingXmlForParsing(value, { warn = console.warn } = {})
     return text.replace(/\uFFFD/g, '');
 }
 
+function parseGeneratedBarterStockCount(value, fieldName = 'generated barter stock count') {
+    const normalized = value === null || value === undefined || value === ''
+        ? '1'
+        : String(value).trim();
+    if (!/^-?\d+$/.test(normalized)) {
+        throw new Error(`${fieldName} must be an integer.`);
+    }
+    const numeric = Number(normalized);
+    if (!Number.isInteger(numeric) || numeric < 0) {
+        throw new Error(`${fieldName} must be a non-negative integer.`);
+    }
+    return numeric;
+}
+
 function isMeaningfulInstalledModuleReference(value) {
     if (typeof value !== 'string') {
         return false;
@@ -2900,6 +2914,7 @@ module.exports = function registerApiRoutes(scope) {
         let plotExpanderInProgress = false;
         let plotExpanderTurnCounter = 0;
         let improvementPromptTurnCounter = 0;
+        let mysteryBoxCleanupTurnCounter = 0;
         let plotAnalysisPromptSequence = 0;
         let plotAnalysisPromptToken = randomUUID();
         let offscreenNpcActivityInProgress = false;
@@ -3228,9 +3243,16 @@ module.exports = function registerApiRoutes(scope) {
                 if (!name) {
                     throw new Error('Generated barter stock item is missing <name>.');
                 }
+                const count = parseGeneratedBarterStockCount(
+                    directChildText(itemNode, 'count'),
+                    `new stock ${name} count`
+                );
+                if (count === 0) {
+                    continue;
+                }
                 newStock.push({
                     name,
-                    count: parseBarterPositiveInteger(directChildText(itemNode, 'count') || '1', `new stock ${name} count`),
+                    count,
                     value: parseBarterNonNegativeInteger(directChildText(itemNode, 'value') || '0', `new stock ${name} value`),
                     price: parseBarterNonNegativeInteger(directChildText(itemNode, 'price') || '0', `new stock ${name} price`),
                     description: directChildText(itemNode, 'description'),
@@ -6040,6 +6062,24 @@ module.exports = function registerApiRoutes(scope) {
             return improvementPromptTurnCounter % interval === 0;
         }
 
+        function resolveMysteryBoxCleanupInterval() {
+            const rawInterval = config?.mystery_box_cleanup?.interval;
+            if (rawInterval === undefined || rawInterval === null || rawInterval === '') {
+                return 10;
+            }
+            const interval = Number(rawInterval);
+            if (!Number.isInteger(interval) || interval < 1) {
+                throw new Error('mystery_box_cleanup.interval must be an integer greater than or equal to 1 when provided.');
+            }
+            return interval;
+        }
+
+        function shouldRunMysteryBoxCleanupThisTurn() {
+            const interval = resolveMysteryBoxCleanupInterval();
+            mysteryBoxCleanupTurnCounter += 1;
+            return mysteryBoxCleanupTurnCounter % interval === 0;
+        }
+
         function resetPlotAnalysisPromptRuntime() {
             plotAnalysisPromptSequence = 0;
             plotAnalysisPromptToken = randomUUID();
@@ -8679,6 +8719,138 @@ module.exports = function registerApiRoutes(scope) {
                 locationId,
                 clientId,
                 sourceRequestId
+            });
+            return true;
+        }
+
+        function mergeMysteryCleanupSummaries(...lists) {
+            const merged = [];
+            const seen = new Set();
+            for (const list of lists) {
+                if (!Array.isArray(list)) {
+                    continue;
+                }
+                for (const item of list) {
+                    if (!item || typeof item !== 'object') {
+                        continue;
+                    }
+                    const id = typeof item.id === 'string' && item.id.trim()
+                        ? item.id.trim()
+                        : '';
+                    const name = typeof item.name === 'string' && item.name.trim()
+                        ? item.name.trim()
+                        : '';
+                    const key = id || name.toLowerCase();
+                    if (!key || seen.has(key)) {
+                        continue;
+                    }
+                    seen.add(key);
+                    merged.push(item);
+                }
+            }
+            return merged;
+        }
+
+        async function runMysteryBoxCleanupPrompt({
+            locationOverride = null,
+            sourceRequestId = null,
+            runInBackground = false
+        } = {}) {
+            const baseContext = await prepareBasePromptContext({
+                locationOverride,
+                includeAllHistoryEntryTypes: false
+            });
+            const cleanupThreads = Array.isArray(baseContext?.mysteryCleanupThreads)
+                ? baseContext.mysteryCleanupThreads
+                : [];
+            if (!cleanupThreads.length) {
+                return {
+                    response: '',
+                    parsed: { threads: [] },
+                    resolvedThreads: [],
+                    resolvedBoxes: [],
+                    persisted: false
+                };
+            }
+            if (!config?.ai) {
+                throw new Error('AI configuration missing; unable to run mystery box cleanup prompt.');
+            }
+
+            const renderedTemplate = promptEnv.render('base-context.xml.njk', {
+                ...baseContext,
+                promptType: 'mystery_box_cleanup'
+            });
+            const parsedTemplate = parseXMLTemplate(renderedTemplate);
+            if (!parsedTemplate?.systemPrompt || !parsedTemplate?.generationPrompt) {
+                throw new Error('Mystery box cleanup prompt template is missing prompts.');
+            }
+
+            const requestOptions = {
+                messages: [
+                    { role: 'system', content: parsedTemplate.systemPrompt },
+                    { role: 'user', content: parsedTemplate.generationPrompt }
+                ],
+                metadataLabel: 'mystery_box_cleanup',
+                metadata: {
+                    sourceRequestId: sourceRequestId || null
+                },
+                validateXML: false,
+                requiredRegex: /<mysteryThreads[\s>]/
+            };
+            if (runInBackground) {
+                requestOptions.runInBackground = true;
+            }
+            if (typeof parsedTemplate.temperature === 'number') {
+                requestOptions.temperature = parsedTemplate.temperature;
+            }
+
+            const rawResponse = await LLMClient.chatCompletion(requestOptions);
+            LLMClient.logPrompt({
+                prefix: 'mystery_box_cleanup',
+                metadataLabel: 'mystery_box_cleanup',
+                systemPrompt: parsedTemplate.systemPrompt || '',
+                generationPrompt: parsedTemplate.generationPrompt || '',
+                response: rawResponse || '',
+                model: requestOptions.model,
+                endpoint: requestOptions.endpoint
+            });
+
+            const parsed = Events._parseMysteryBoxCleanupResponse(rawResponse || '');
+            const decisionSummaries = Events._summarizeMysteryBoxCleanupDecisions(parsed, cleanupThreads);
+            const applied = Events._applyMysteryBoxCleanupResult(parsed);
+            const hasChanges = applied.resolvedThreads.length > 0 || applied.resolvedBoxes.length > 0;
+            const persisted = hasChanges ? persistMysteryBoxesToCurrentSave() : false;
+            const resolvedThreads = mergeMysteryCleanupSummaries(
+                applied.resolvedThreads,
+                decisionSummaries.resolvedThreads
+            );
+            const resolvedBoxes = mergeMysteryCleanupSummaries(
+                applied.resolvedBoxes,
+                decisionSummaries.resolvedBoxes
+            );
+            return {
+                response: rawResponse || '',
+                parsed,
+                appliedResolvedThreads: applied.resolvedThreads,
+                appliedResolvedBoxes: applied.resolvedBoxes,
+                decisionResolvedThreads: decisionSummaries.resolvedThreads,
+                decisionResolvedBoxes: decisionSummaries.resolvedBoxes,
+                resolvedThreads,
+                resolvedBoxes,
+                persisted
+            };
+        }
+
+        function scheduleMysteryBoxCleanupPrompt({
+            locationOverride = null,
+            sourceRequestId = null
+        } = {}) {
+            void runMysteryBoxCleanupPrompt({
+                locationOverride,
+                sourceRequestId,
+                runInBackground: true
+            }).catch(error => {
+                console.warn('Failed to run mystery box cleanup prompt:', error?.message || error);
             });
             return true;
         }
@@ -23444,6 +23616,15 @@ module.exports = function registerApiRoutes(scope) {
                 )
                     ? shouldRunImprovementPromptThisTurn()
                     : false;
+                const shouldRunMysteryBoxCleanupForThisTurn = (
+                    userMessage
+                    && userMessage.role === 'user'
+                    && !isCommentOnlyAction
+                    && !isForcedEventAction
+                    && !isPromptOnlyAction
+                )
+                    ? shouldRunMysteryBoxCleanupThisTurn()
+                    : false;
 
                 // Add the location with the id of currentPlayer.curentLocation to the player context if available
                 if (currentPlayer && currentPlayer.currentLocation) {
@@ -23685,6 +23866,16 @@ module.exports = function registerApiRoutes(scope) {
                             });
                         } catch (improvementPromptScheduleError) {
                             console.warn('Failed to schedule improvement prompt:', improvementPromptScheduleError.message);
+                        }
+                    }
+                    if (shouldRunMysteryBoxCleanupForThisTurn) {
+                        try {
+                            scheduleMysteryBoxCleanupPrompt({
+                                locationOverride: location,
+                                sourceRequestId: stream.requestId || null
+                            });
+                        } catch (mysteryCleanupScheduleError) {
+                            console.warn('Failed to schedule mystery box cleanup prompt:', mysteryCleanupScheduleError.message);
                         }
                     }
 
@@ -25833,6 +26024,17 @@ module.exports = function registerApiRoutes(scope) {
                         console.warn('Failed to schedule offscreen NPC activity prompt:', offscreenScheduleError.message);
                     }
 
+                    if (shouldRunMysteryBoxCleanupForThisTurn) {
+                        try {
+                            scheduleMysteryBoxCleanupPrompt({
+                                locationOverride: location,
+                                sourceRequestId: stream.requestId || null
+                            });
+                        } catch (mysteryCleanupScheduleError) {
+                            console.warn('Failed to schedule mystery box cleanup prompt:', mysteryCleanupScheduleError.message);
+                        }
+                    }
+
                     void summarizePendingEntriesIfThresholdReached().catch((summaryBatchError) => {
                         console.warn('Failed to summarize pending chat entries:', summaryBatchError.message);
                     });
@@ -26320,6 +26522,7 @@ module.exports = function registerApiRoutes(scope) {
             fs.writeFileSync(path.join(saveDir, 'metadata.json'), JSON.stringify(metadata, null, 2));
             return true;
         };
+        Globals.persistMysteryBoxesToCurrentSave = persistMysteryBoxesToCurrentSave;
 
         const getMysteryThreadMaxActiveForApi = () => {
             const configured = Number(config?.mystery_threads?.max_active);
@@ -38443,48 +38646,56 @@ module.exports = function registerApiRoutes(scope) {
                         if (recoveredNames.length) {
                             eventItems.push({
                                 icon: '🌾',
-                                description: `${actorName} harvested ${recoveredNames.join(', ')} from ${harvestSourceName}.`
+                                description: `${actorName} harvested ${recoveredNames.join(', ')} from ${harvestSourceName}.`,
+                                category: 'inventory'
                             });
                         } else {
                             eventItems.push({
                                 icon: '🌾',
-                                description: `${actorName} attempted to harvest ${harvestSourceName} but obtained nothing usable.`
+                                description: `${actorName} attempted to harvest ${harvestSourceName} but obtained nothing usable.`,
+                                category: 'inventory'
                             });
                         }
                     } else if (isSalvageAction) {
                         if (recoveredNames.length) {
                             eventItems.push({
                                 icon: '♻️',
-                                description: `${actorName} salvaged ${recoveredNames.join(', ')} from ${salvageSourceName}.`
+                                description: `${actorName} salvaged ${recoveredNames.join(', ')} from ${salvageSourceName}.`,
+                                category: 'inventory'
                             });
                         } else {
                             eventItems.push({
                                 icon: '♻️',
-                                description: `${actorName} attempted to salvage from ${salvageSourceName} but recovered nothing usable.`
+                                description: `${actorName} attempted to salvage from ${salvageSourceName} but recovered nothing usable.`,
+                                category: 'inventory'
                             });
                         }
                     } else if (craftingMode === 'process') {
                         if (craftedThingInstances.length) {
                             eventItems.push({
                                 icon: '🛠️',
-                                description: `${actorName} processed ${craftedNames.join(', ')} using ${processSourceLabel}.`
+                                description: `${actorName} processed ${craftedNames.join(', ')} using ${processSourceLabel}.`,
+                                category: 'inventory'
                             });
                         } else {
                             eventItems.push({
                                 icon: '🛠️',
-                                description: `${actorName} attempted to process using ${processSourceLabel} but produced nothing usable.`
+                                description: `${actorName} attempted to process using ${processSourceLabel} but produced nothing usable.`,
+                                category: 'inventory'
                             });
                         }
                     } else {
                         if (craftedThingInstances.length) {
                             eventItems.push({
                                 icon: '🛠️',
-                                description: `${actorName} crafted ${craftedNames.join(', ')} using ${craftUsingLabel}.`
+                                description: `${actorName} crafted ${craftedNames.join(', ')} using ${craftUsingLabel}.`,
+                                category: 'inventory'
                             });
                         } else {
                             eventItems.push({
                                 icon: '🛠️',
-                                description: `${actorName} attempted to craft using ${craftUsingLabel} but produced nothing usable.`
+                                description: `${actorName} attempted to craft using ${craftUsingLabel} but produced nothing usable.`,
+                                category: 'inventory'
                             });
                         }
                     }
@@ -38495,7 +38706,8 @@ module.exports = function registerApiRoutes(scope) {
                         consumedSummaryNames.forEach(name => {
                             eventItems.push({
                                 icon: '♻️',
-                                description: `Consumed ${name}.`
+                                description: `Consumed ${name}.`,
+                                category: 'inventory'
                             });
                         });
 
@@ -38534,7 +38746,8 @@ module.exports = function registerApiRoutes(scope) {
                     if (expectedConsumption && consumedSummaryNames.length === 0 && actionOutcome.success) {
                         eventItems.push({
                             icon: '✨',
-                            description: 'Through exceptional care, the ingredients were preserved.'
+                            description: 'Through exceptional care, the ingredients were preserved.',
+                            category: 'inventory'
                         });
                     }
 
@@ -38544,7 +38757,8 @@ module.exports = function registerApiRoutes(scope) {
                             .forEach(ability => {
                                 eventItems.push({
                                     icon: '✨',
-                                    description: `${ability.name}: ${ability.effect}`
+                                    description: `${ability.name}: ${ability.effect}`,
+                                    category: 'inventory'
                                 });
                             });
                     }
@@ -45120,6 +45334,7 @@ module.exports = function registerApiRoutes(scope) {
                 plotExpanderInProgress = false;
                 plotExpanderTurnCounter = 0;
                 improvementPromptTurnCounter = 0;
+                mysteryBoxCleanupTurnCounter = 0;
                 resetPlotAnalysisPromptRuntime();
                 Globals.setPlotAnalysis(null);
                 resetOffscreenNpcActivityState();
@@ -45943,6 +46158,9 @@ module.exports = function registerApiRoutes(scope) {
             metadata.improvementPromptTurnCounter = Number.isInteger(improvementPromptTurnCounter) && improvementPromptTurnCounter >= 0
                 ? improvementPromptTurnCounter
                 : 0;
+            metadata.mysteryBoxCleanupTurnCounter = Number.isInteger(mysteryBoxCleanupTurnCounter) && mysteryBoxCleanupTurnCounter >= 0
+                ? mysteryBoxCleanupTurnCounter
+                : 0;
             metadata.offscreenNpcActivityState = normalizeOffscreenNpcActivityState(offscreenNpcActivityState);
             const currentLocationId = currentPlayer.currentLocation || null;
             const currentLocation = currentLocationId
@@ -46265,6 +46483,14 @@ module.exports = function registerApiRoutes(scope) {
                     improvementPromptTurnCounter = parsedImprovementPromptCounter;
                 } else {
                     improvementPromptTurnCounter = 0;
+                }
+            }
+            {
+                const parsedMysteryBoxCleanupCounter = Number(metadata.mysteryBoxCleanupTurnCounter);
+                if (Number.isInteger(parsedMysteryBoxCleanupCounter) && parsedMysteryBoxCleanupCounter >= 0) {
+                    mysteryBoxCleanupTurnCounter = parsedMysteryBoxCleanupCounter;
+                } else {
+                    mysteryBoxCleanupTurnCounter = 0;
                 }
             }
             resetPlotAnalysisPromptRuntime();
@@ -48173,6 +48399,11 @@ module.exports = function registerApiRoutes(scope) {
                         housekeepingInstructions: instructions
                     });
                 },
+                runMysteryBoxCleanupPrompt: async () => runMysteryBoxCleanupPrompt({
+                    locationOverride: currentPlayer?.currentLocation
+                        ? (Location.get(currentPlayer.currentLocation) || null)
+                        : null
+                }),
                 generateSkillsByNames: typeof generateSkillsByNames === 'function'
                     ? generateSkillsByNames
                     : null,
@@ -49421,6 +49652,7 @@ module.exports.buildBarterItemReferenceIndex = buildBarterItemReferenceIndex;
 module.exports.resolveBarterOfferItemReference = resolveBarterOfferItemReference;
 module.exports.buildBarterCurrencySettlement = buildBarterCurrencySettlement;
 module.exports.sanitizeBarterPricingXmlForParsing = sanitizeBarterPricingXmlForParsing;
+module.exports.parseGeneratedBarterStockCount = parseGeneratedBarterStockCount;
 module.exports.clearNewGameRuntimeRegistries = clearNewGameRuntimeRegistries;
 module.exports.shouldIncludePlayerActionForEventChecks = shouldIncludePlayerActionForEventChecks;
 module.exports.extractRegisteredThingBlueprintFields = extractRegisteredThingBlueprintFields;

@@ -131,6 +131,9 @@ function loadBuildBasePromptContext(registry) {
         getGearSlotNames: () => ['head', 'body'],
         getGearSlotTypes: () => ['head', 'body'],
         getThingGeneratorPromptFields: () => registry.getEntityFields('thing', { exposeToGeneratorPrompt: true }),
+        getRegisteredPlayerEntityFields: (filter = {}) => registry.getEntityFields('player', filter),
+        getPlayerGeneratorPromptFields: () => registry.getEntityFields('player', { exposeToGeneratorPrompt: true })
+            .filter(field => field && field.xmlPrompt && typeof field.xmlPrompt.tagName === 'string'),
         getWorldOutline: () => ({ regions: [] }),
         modExtensionRegistry: registry,
         normalizeLocationWeatherExposure: () => 'no',

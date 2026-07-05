@@ -74,6 +74,7 @@ function buildRenderContext() {
             ],
             npcs: []
         },
+        itemsInScene: [],
         currentPlayer: {
             name: 'Tester',
             description: 'A player.',
@@ -142,6 +143,154 @@ test('base-context compact inventory item lines include value before description
         rendered,
         /Brass Compass: Common level 1 \(3 gold\) - Points toward the nearest open road\./
     );
+});
+
+test('base-context compact item lines render stack counts as a separate quantity field', () => {
+    const promptEnv = createPromptEnv();
+    const context = buildRenderContext();
+    context.currentLocation.items[0].count = 2;
+    context.currentLocation.items.push({
+        name: 'Key Satchel',
+        rarity: 'Common',
+        level: 1,
+        value: 8,
+        count: 2,
+        shortDescription: 'A small bag of keys.',
+        description: 'A small bag of keys.',
+        isContainer: true,
+        containerContents: [
+            {
+                name: 'Silver Key',
+                count: 2,
+                shortDescription: 'A bright key.',
+                description: 'A bright key.'
+            }
+        ],
+        statusEffects: []
+    });
+    context.currentPlayer.inventory[0].count = 3;
+    context.currentPlayer.inventory.push({
+        name: 'Single Torch',
+        rarity: 'Common',
+        level: 1,
+        value: 1,
+        count: 1,
+        shortDescription: 'A resin torch ready to light.',
+        description: 'A resin torch ready to light.',
+        statusEffects: []
+    });
+    context.npcs = [{
+        id: 'npc_quartermaster',
+        name: 'Quartermaster',
+        description: 'A careful supply keeper.',
+        class: 'Merchant',
+        race: 'Human',
+        personality: { type: 'Practical', traits: [], goals: [], notes: '' },
+        dispositionsTowardsPlayer: [],
+        relationships: [],
+        reciprocalRelationships: [],
+        selectedImportantMemories: [],
+        inventory: [{
+            name: 'Field Ration',
+            rarity: 'Common',
+            level: 1,
+            value: 2,
+            count: 4,
+            shortDescription: 'A wrapped meal that keeps well.',
+            description: 'A wrapped meal that keeps well.',
+            statusEffects: []
+        }],
+        skills: [],
+        abilities: [],
+        statusEffects: [],
+        needs: [],
+        modStatusSections: []
+    }];
+    context.party = [{
+        id: 'npc_scout',
+        name: 'Scout',
+        description: 'A quick-eyed pathfinder.',
+        class: 'Ranger',
+        race: 'Elf',
+        personality: { type: 'Alert', traits: [], goals: [], notes: '' },
+        dispositionsTowardsPlayer: [],
+        relationships: [],
+        reciprocalRelationships: [],
+        selectedImportantMemories: [],
+        inventory: [{
+            name: 'Signal Flare',
+            rarity: 'Common',
+            level: 1,
+            value: 5,
+            count: 5,
+            shortDescription: 'A waxed flare for emergencies.',
+            description: 'A waxed flare for emergencies.',
+            statusEffects: []
+        }],
+        skills: [],
+        abilities: [],
+        statusEffects: [],
+        needs: [],
+        modStatusSections: []
+    }];
+    context.itemsInScene = [
+        {
+            name: 'Iron Spike',
+            rarity: 'Common',
+            level: 1,
+            value: 1,
+            count: 6,
+            shortDescription: 'A blackened climbing spike.',
+            description: 'A blackened climbing spike.',
+            statusEffects: [],
+            isScenery: false
+        },
+        {
+            name: 'Training Dummy',
+            rarity: 'Common',
+            level: 1,
+            value: 0,
+            count: 7,
+            shortDescription: 'A battered straw target.',
+            description: 'A battered straw target.',
+            statusEffects: [],
+            isScenery: true
+        }
+    ];
+
+    const rendered = promptEnv.render('base-context.xml.njk', context);
+
+    assert.match(
+        rendered,
+        /Fractured Sorcerous Orb: quantity 2; Uncommon level 2 \(24 gold\) - Fractured obsidian orb pulsing with unstable violet magical energy\./
+    );
+    assert.match(
+        rendered,
+        /Key Satchel: quantity 2; Common level 1 \(8 gold\) - A small bag of keys\. \(Container: contains Silver Key: quantity 2\)/
+    );
+    assert.match(
+        rendered,
+        /Brass Compass: quantity 3; Common level 1 \(3 gold\) - Points toward the nearest open road\./
+    );
+    assert.match(
+        rendered,
+        /Field Ration: quantity 4; Common level 1 \(2 gold\) - A wrapped meal that keeps well\./
+    );
+    assert.match(
+        rendered,
+        /Signal Flare: quantity 5; Common level 1 \(5 gold\) - A waxed flare for emergencies\./
+    );
+    assert.match(
+        rendered,
+        /Iron Spike: quantity 6; Common level 1 \(1 gold\) - A blackened climbing spike\./
+    );
+    assert.match(
+        rendered,
+        /Training Dummy: quantity 7; Common level 1 \(0 gold\) - A battered straw target\./
+    );
+    assert.doesNotMatch(rendered, /Single Torch: quantity 1;/);
+    assert.doesNotMatch(rendered, /Fractured Sorcerous Orb \(x2\):/);
+    assert.doesNotMatch(rendered, /Silver Key \(x2\)/);
 });
 
 test('base-context status effect XML includes effect names', () => {
