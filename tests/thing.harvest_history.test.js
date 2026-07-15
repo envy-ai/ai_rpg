@@ -64,7 +64,7 @@ test('Thing harvest history persists through toJSON/fromJSON and defaults missin
     assert.equal(legacyRestored.getLastHarvestedAgoText({ currentTotalMinutes: 500 }), null);
 });
 
-test('Thing harvest history persists through save-file write/load', () => {
+test('Thing harvest history persists through save-file write/load', async () => {
     const saveDir = makeTempSaveDir();
 
     try {
@@ -77,7 +77,7 @@ test('Thing harvest history persists through save-file write/load', () => {
 
         node.recordSuccessfulHarvest(['Silverleaf', 'Moon Dew'], { harvestedAtMinutes: 2468 });
 
-        Utils.writeSerializedGameState(saveDir, {
+        await Utils.writeSerializedGameState(saveDir, {
             gameWorld: {},
             chatHistory: [],
             generatedImages: {},

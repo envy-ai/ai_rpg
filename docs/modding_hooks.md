@@ -30,8 +30,8 @@ Registry-backed hooks are process-local. The enabled mod set is fixed at startup
 ## Prompt Context and Prompt Instructions
 - `scope.registerBaseContextContributor(fn)` contributes arbitrary mod context. The server collects contributor results under `modContext` while building base prompt context.
 - `scope.registerPlayerActionPromptStep({ id, step, text, order? })` appends an instruction to `prompts/_includes/player-action.njk`.
-- Player-action `step` accepts only `1` or `3`. Step `1` entries render after built-in `1f`; step `3` entries render after built-in `3j` in the GLM editing/pruning sequence.
-- The `id` is scoped to the registering mod; duplicate ids for the same mod throw. The server assigns labels automatically per stage: step `1` starts at `1g`, and step `3` starts at `3k`.
+- Player-action `step` accepts only `1` or `3`. Step `1` entries render after built-in `1f`; step `3` entries render after built-in `3k` in the GLM editing/pruning sequence.
+- The `id` is scoped to the registering mod; duplicate ids for the same mod throw. The server assigns labels automatically per stage: step `1` starts at `1g`, and step `3` starts at `3l`.
 - `order` is optional. When omitted, registration order is used; when provided, it controls sorting before automatic numbering.
 - `scope.registerGenerationPromptInstruction({ id, generationType, generationTypes, text, textProvider, order? })` contributes instructional text to item, location, and/or region generation prompts.
 - `generationType` accepts `item`, `location`, or `region`; `generationTypes` accepts a list. Item instructions render in single-item, container-content, inventory, and location item/scenery generation prompts. Location and region instructions render in their respective generator prompts.
@@ -51,6 +51,7 @@ Registry-backed hooks are process-local. The enabled mod set is fixed at startup
 - `scope.registerAttributeModifierContributor(fn)` contributes numeric attribute modifiers used by `Player.getModifiedAttribute(...)`.
 - `scope.registerStatusEffectContributor(fn)` contributes continuous actor status effects used by `Player.getStatusEffects()`.
 - `scope.registerThingTargetStatusEffectContributor(fn)` contributes additional target status effects for an actor/item pair during attack handling. The modules mod uses this for installed module target effects.
+- `scope.registerThingPromptContributor(fn)` contributes mod-owned XML embedded inside a Thing's full base-context representation. `fn(thing, context)` receives the resolved Thing and a context (`{ things, Thing, resolveThing }`) and returns an XML string (or `null`/empty to contribute nothing); returning a non-string fails loud. `mapItemContext()` in `prepareBasePromptContext()` collects the fragments (via `ModExtensionRegistry.collectThingPromptContributions`) and exposes them as `item.modPromptXml`, which the full `<item>` blocks in `prompts/base-context.xml.njk` render. The modules mod uses this to list the modules installed in each item whenever that item is output in full. Because module items are resolved by id through `resolveThing`, this works for items in any inventory or location (no actor required).
 - `scope.registerInventorySyncContributor(fn)` lets mods clean actor mod state after inventory replacement or removal. `Player` invokes these contributors through the registry inventory-sync path.
 - `scope.registerStartupValidator(fn)` runs after mods and merged definitions load. Validator failures are wrapped with the mod name and stop startup.
 

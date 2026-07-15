@@ -20,6 +20,7 @@ Guidelines:
 - Use need bar changes to reflect ongoing effects of the status effect. For example, a "Poisoned" effect might decrease Health over time, while a "Blessed" effect might slowly restore Mana.
 - Need bar deltas are *in addition to* any natural regeneration or depletion that occurs. For example, if Health normally regenerates at +1 per turn, and a status effect has a -2 delta to Health, the net effect is -1 Health per turn. Hence, negatives are *always* bad, and positives are *always* good.
 - For instantaneous status effects (duration of 1), remember that they only happen once, so consider increasing the magnitude of any need bar changes significantly.
+- A negative delta to health should *only* be applied in the case of statuses that are potentially life-threatening, or very short (5 minutes maximum). A three-hour nosebleed is annoying, but not life-threatening; therefore, the duration should be shortened to 5 minutes, or the health delta set to zero.
 
 Respond in the following format:
 

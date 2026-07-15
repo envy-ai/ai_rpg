@@ -22,14 +22,16 @@ test('builds a system-prompt tonal scale block from setting selections', () => {
       idealism: { level: 4, comment: 'Villains can be dangerous without making hope pointless.' },
       grit: { level: 2 },
       seriousness: { level: 3 },
-      focus: { level: 2 }
+      focus: { level: 2 },
+      dialogue_uniqueness: { level: 4 }
     }
   });
 
   assert.match(prompt, /## Unified Tonal Scale/);
-  assert.match(prompt, /### THIS STORY: I4-G2-S3-F2/);
+  assert.match(prompt, /### THIS STORY: I4-G2-S3-F2-U4/);
   assert.match(prompt, /Villains can be dangerous without making hope pointless\./);
   assert.match(prompt, /\| \*\*Idealism\*\* \| 4 \(Hopeful\) \|/);
+  assert.match(prompt, /\| \*\*Dialogue Uniqueness\*\* \| 4 \(Distinctive\) \|/);
 });
 
 test('normalizes and validates setting tonal scale selections', () => {
@@ -78,11 +80,12 @@ test('builds prompt rows for half-step tonal selections', () => {
       idealism: { level: 3.5, comment: 'Hope wins often, but not cheaply.' },
       grit: { level: 2 },
       seriousness: { level: 3 },
-      focus: { level: 2 }
+      focus: { level: 2 },
+      dialogue_uniqueness: { level: 3 }
     }
   });
 
-  assert.match(prompt, /### THIS STORY: I3\.5-G2-S3-F2/);
+  assert.match(prompt, /### THIS STORY: I3\.5-G2-S3-F2-U3/);
   assert.match(prompt, /\| \*\*Idealism\*\* \| 3\.5 \(Hopeful\/Mixed\) \|/);
   assert.match(prompt, /Between Mixed and Hopeful:/);
   assert.match(prompt, /Hope wins often, but not cheaply\./);

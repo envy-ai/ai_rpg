@@ -518,6 +518,13 @@ class AIRPGChat {
             cancel: '/assets/material-icons/misc/cancel.svg',
             restart: '/assets/material-icons/misc/restart.svg'
         };
+        this.promptProgressFaviconOriginalHref = '';
+        this.promptProgressFaviconOriginalSource = '';
+        this.promptProgressFaviconOriginalType = '';
+        this.promptProgressFaviconBaseImage = null;
+        this.promptProgressFaviconBaseImagePromise = null;
+        this.promptProgressFaviconUpdateToken = 0;
+        this.promptProgressFaviconFillColor = '#0f3d7a';
         this.promptProgressDockState = this.loadPromptProgressDockState();
         this.promptProgressDockBound = false;
         this.promptProgressMessage = this.promptProgressDock;
@@ -553,7 +560,9 @@ class AIRPGChat {
         this.worldTimeIndicatorLightLevel = document.getElementById('worldTimeIndicatorLightLevel');
         this.worldTimeIndicatorWeather = document.getElementById('worldTimeIndicatorWeather');
         this.lastWorldTimeIndicatorState = null;
+        this.modalPromptProgressObserver = null;
         this.renderPromptProgress([]);
+        this.setupModalPromptProgressObserver();
     }
 
     setupQuestConfirmationModal() {
@@ -1509,9 +1518,11 @@ class AIRPGChat {
                             if (!type || !Number.isFinite(intensity) || !Number.isInteger(intensity) || intensity === 0) {
                                 return null;
                             }
+                            const delta = Number(disposition.delta);
                             return {
                                 type,
                                 intensity,
+                                delta: Number.isFinite(delta) ? delta : null,
                                 reason: safeText(disposition.reason) || null
                             };
                         })
@@ -1724,7 +1735,13 @@ class AIRPGChat {
                         if (!Number.isFinite(intensity) || !Number.isInteger(intensity) || intensity === 0) {
                             return;
                         }
-                        const signed = intensity > 0 ? `+${intensity}` : `${intensity}`;
+                        // Prefer the server-resolved delta (intensity scaled by the
+                        // typical step) so the accept dialog matches the quest list and
+                        // the change actually applied on completion; fall back to the
+                        // raw intensity only if no delta was provided.
+                        const deltaRaw = Number(disposition?.delta);
+                        const amount = Number.isFinite(deltaRaw) && deltaRaw !== 0 ? deltaRaw : intensity;
+                        const signed = amount > 0 ? `+${amount}` : `${amount}`;
                         const reason = disposition.reason ? ` - ${disposition.reason}` : '';
                         rewardLines.push(`${npcName}: ${disposition.type} ${signed}${reason}`);
                     });
@@ -2869,6 +2886,10 @@ class AIRPGChat {
             return this.createToolCallDebugEntryElement(entry);
         }
 
+        if (!renderEditedPlainText && entry.type === 'save-notice') {
+            return this.createSaveNoticeElement(entry);
+        }
+
         const messageDiv = document.createElement('div');
         const role = entry.type === 'user-question'
             ? 'user-question-message'
@@ -3909,6 +3930,28 @@ class AIRPGChat {
         return container;
     }
 
+    createSaveNoticeElement(entry) {
+        const container = document.createElement('div');
+        container.className = 'message save-notice';
+        container.dataset.timestamp = entry.timestamp || '';
+        container.dataset.entryId = entry.id || '';
+
+        const text = document.createElement('span');
+        text.className = 'save-notice__text';
+        const content = typeof entry.content === 'string' && entry.content.trim()
+            ? entry.content.trim()
+            : '💾 Game saved.';
+        text.textContent = content;
+        container.appendChild(text);
+
+        const timestampDiv = document.createElement('span');
+        timestampDiv.className = 'save-notice__timestamp';
+        timestampDiv.textContent = this.formatTimestamp(entry.timestamp);
+        container.appendChild(timestampDiv);
+
+        return container;
+    }
+
     createMessageActions(entry, { allowSystem = false, allowEdit = true, persistent = false } = {}) {
         if (!entry || (entry.role === 'system' && !allowSystem)) {
             return null;
@@ -4320,6 +4363,7 @@ class AIRPGChat {
     setupEditModal() {
         this.editModal = document.createElement('div');
         this.editModal.className = 'chat-edit-modal';
+        this.editModal.setAttribute('data-ctrl-enter-submit', '.chat-edit-modal__save');
         this.editModal.setAttribute('hidden', '');
 
         this.editModal.innerHTML = `
@@ -5050,6 +5094,164 @@ class AIRPGChat {
             return null;
         }
         return Math.max(...fractions);
+    }
+
+    // Mirror the chat prompt-progress aggregate as a thin bar pinned to the
+    // bottom of any open modal, so a modal that is waiting on the LLM shows the
+    // same progress signal as the chat screen. Bars are injected/removed on the
+    // fly and require no per-modal markup.
+    updateModalPromptProgressBars() {
+        if (typeof document === 'undefined' || !document.body) {
+            return;
+        }
+
+        const entries = Array.isArray(this.promptProgressEntries) ? this.promptProgressEntries : [];
+        const aggregate = this.getPromptProgressAggregateFraction(entries);
+        const isActive = entries.length > 0 && aggregate !== null;
+
+        if (!isActive) {
+            document.querySelectorAll('.modal__prompt-progress').forEach(bar => bar.remove());
+            return;
+        }
+
+        const fraction = Math.max(0, Math.min(1, aggregate));
+        const openDialogs = new Set(document.querySelectorAll('.modal[aria-hidden="false"] .modal__dialog'));
+
+        // Drop bars that belong to modals which are no longer open.
+        document.querySelectorAll('.modal__prompt-progress').forEach(bar => {
+            if (!openDialogs.has(bar.parentElement)) {
+                bar.remove();
+            }
+        });
+
+        openDialogs.forEach(dialog => {
+            let bar = dialog.querySelector(':scope > .modal__prompt-progress');
+            if (!bar) {
+                bar = document.createElement('div');
+                bar.className = 'modal__prompt-progress';
+                bar.setAttribute('aria-hidden', 'true');
+                const fill = document.createElement('div');
+                fill.className = 'modal__prompt-progress-fill';
+                bar.appendChild(fill);
+                dialog.appendChild(bar);
+            }
+            const fill = bar.firstElementChild;
+            if (fill) {
+                fill.style.width = `${fraction * 100}%`;
+            }
+        });
+    }
+
+    // Refresh modal progress bars when a modal opens/closes mid-prompt so a
+    // freshly-opened modal picks up an in-flight prompt without waiting for the
+    // next progress tick.
+    setupModalPromptProgressObserver() {
+        if (this.modalPromptProgressObserver || typeof MutationObserver === 'undefined' || !document.body) {
+            return;
+        }
+        this.modalPromptProgressObserver = new MutationObserver(mutations => {
+            const touchedModal = mutations.some(mutation => {
+                const target = mutation.target;
+                return target
+                    && target.nodeType === 1
+                    && typeof target.matches === 'function'
+                    && target.matches('.modal');
+            });
+            if (touchedModal) {
+                this.updateModalPromptProgressBars();
+            }
+        });
+        this.modalPromptProgressObserver.observe(document.body, {
+            attributes: true,
+            attributeFilter: ['aria-hidden', 'hidden'],
+            subtree: true
+        });
+    }
+
+    ensurePromptProgressFavicon() {
+        const favicon = document.querySelector('link[rel~="icon"]');
+        if (!favicon) {
+            throw new Error('Prompt progress favicon link is missing.');
+        }
+        if (!this.promptProgressFaviconOriginalHref) {
+            this.promptProgressFaviconOriginalHref = favicon.getAttribute('href') || favicon.href || '';
+            this.promptProgressFaviconOriginalSource = favicon.href || this.promptProgressFaviconOriginalHref;
+            this.promptProgressFaviconOriginalType = favicon.getAttribute('type') || '';
+        }
+        return favicon;
+    }
+
+    loadPromptProgressFaviconBaseImage() {
+        if (this.promptProgressFaviconBaseImage) {
+            return Promise.resolve(this.promptProgressFaviconBaseImage);
+        }
+        if (this.promptProgressFaviconBaseImagePromise) {
+            return this.promptProgressFaviconBaseImagePromise;
+        }
+
+        const imageSource = this.promptProgressFaviconOriginalSource || this.promptProgressFaviconOriginalHref;
+        if (!imageSource) {
+            throw new Error('Prompt progress favicon source is missing.');
+        }
+
+        this.promptProgressFaviconBaseImagePromise = new Promise((resolve, reject) => {
+            const image = new Image();
+            image.onload = () => {
+                this.promptProgressFaviconBaseImage = image;
+                resolve(image);
+            };
+            image.onerror = () => {
+                reject(new Error(`Failed to load prompt progress favicon image: ${imageSource}`));
+            };
+            image.src = imageSource;
+        });
+
+        return this.promptProgressFaviconBaseImagePromise;
+    }
+
+    restorePromptProgressFavicon() {
+        this.promptProgressFaviconUpdateToken += 1;
+        const favicon = this.ensurePromptProgressFavicon();
+        if (this.promptProgressFaviconOriginalHref) {
+            favicon.href = this.promptProgressFaviconOriginalHref;
+        }
+        favicon.type = this.promptProgressFaviconOriginalType || 'image/svg+xml';
+    }
+
+    async updatePromptProgressFavicon(entries = this.promptProgressEntries) {
+        const favicon = this.ensurePromptProgressFavicon();
+        const activeEntry = this.getLongestRunningPromptProgressEntry(entries);
+        if (!activeEntry) {
+            this.restorePromptProgressFavicon();
+            return;
+        }
+
+        const updateToken = this.promptProgressFaviconUpdateToken + 1;
+        this.promptProgressFaviconUpdateToken = updateToken;
+        const iconSize = 64;
+        const canvas = document.createElement('canvas');
+        canvas.width = iconSize;
+        canvas.height = iconSize;
+        const context = canvas.getContext('2d');
+        if (!context) {
+            throw new Error('Prompt progress favicon canvas context is unavailable.');
+        }
+
+        const progressFraction = Number(activeEntry.progressFraction);
+        const safeProgressFraction = Number.isFinite(progressFraction) ? progressFraction : 0;
+        const fillHeight = iconSize * safeProgressFraction;
+        context.clearRect(0, 0, iconSize, iconSize);
+        context.fillStyle = this.promptProgressFaviconFillColor;
+        context.fillRect(0, iconSize - fillHeight, iconSize, fillHeight);
+
+        const baseImage = await this.loadPromptProgressFaviconBaseImage();
+        if (updateToken !== this.promptProgressFaviconUpdateToken) {
+            return;
+        }
+
+        context.drawImage(baseImage, 0, 0, iconSize, iconSize);
+        favicon.type = 'image/png';
+        favicon.href = canvas.toDataURL('image/png');
     }
 
     getPromptProgressEntry(promptId) {
@@ -5957,8 +6159,12 @@ class AIRPGChat {
             this.promptProgressHideTimer = null;
         }
 
+        this.updatePromptProgressFavicon(this.promptProgressEntries).catch(error => {
+            console.warn('Failed to update prompt progress favicon:', error);
+        });
         dock.hidden = false;
         this.updatePromptProgressDockStateClasses();
+        this.updateModalPromptProgressBars();
 
         if (this.promptProgressDockState === 'collapsed') {
             this.renderPromptProgressCollapsed(dock, this.promptProgressEntries);
@@ -6036,6 +6242,7 @@ class AIRPGChat {
     async handlePromptProgressCleared(payload) {
         // Remove any existing prompt progress UI and refresh adventure tab sections without a full reload.
         this.schedulePromptProgressRender([], { force: true });
+        this.restorePromptProgressFavicon();
 
         const refreshTasks = [];
 

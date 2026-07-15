@@ -37,6 +37,9 @@ regexes:
   - pattern: "/nothing like/"
     name: "was nothing like [x]"
     ppm: 300
+  - pattern: "/nothing to do with/"
+    name: "nothing to do with [x]"
+    ppm: 300
   - pattern: "/(ozone|iron|copper)/"
     name: "Taste/smell of ozone/iron/copper. Disregard if not referring to a taste or smell. Otherwise, change or Omit."
     ppm: 0

@@ -102,7 +102,7 @@ test('MysteryThread manual edit replaces editable fields and box assignment', ()
     assert.equal(MysteryThread.getByKey('new key'), thread);
 });
 
-test('serialized game state writes and loads mystery threads', () => {
+test('serialized game state writes and loads mystery threads', async () => {
     IdGenerator.reset();
     MysteryBox.clear();
     MysteryThread.clear();
@@ -126,7 +126,7 @@ test('serialized game state writes and loads mystery threads', () => {
             boxIds: [box.id]
         });
 
-        Utils.writeSerializedGameState(saveDir, Utils.serializeGameState(emptySerializedContext()));
+        await Utils.writeSerializedGameState(saveDir, Utils.serializeGameState(emptySerializedContext()));
 
         MysteryBox.clear();
         MysteryThread.clear();
@@ -147,7 +147,7 @@ test('serialized game state writes and loads mystery threads', () => {
     }
 });
 
-test('legacy saves with boxes and no threads hydrate into one inactive legacy thread', () => {
+test('legacy saves with boxes and no threads hydrate into one inactive legacy thread', async () => {
     IdGenerator.reset();
     MysteryBox.clear();
     MysteryThread.clear();
@@ -166,7 +166,7 @@ test('legacy saves with boxes and no threads hydrate into one inactive legacy th
 
         const serialized = Utils.serializeGameState(emptySerializedContext());
         delete serialized.mysteryThreads;
-        Utils.writeSerializedGameState(saveDir, serialized);
+        await Utils.writeSerializedGameState(saveDir, serialized);
         fs.rmSync(path.join(saveDir, 'mysteryThreads.json'), { force: true });
 
         MysteryBox.clear();

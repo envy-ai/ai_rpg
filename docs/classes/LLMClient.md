@@ -8,8 +8,9 @@ Callers use it from gameplay routes, world-generation helpers, event checks, sta
 ## Backends
 - `openai_compatible`: sends HTTP requests with `axios` to a normalized `/chat/completions` endpoint using `ai.endpoint`, `ai.apiKey` or OAuth refresh-token auth, and `ai.model`.
 - `codex_cli_bridge`: delegates transport to `CodexBridgeClient.chatCompletion(...)`. `LLMClient` keeps ownership of retry handling, validation, progress tracking, prompt stats, cancellation, and Codex usage/quota reporting around the bridge response.
+- `cline_cli_bridge`: delegates transport to `ClineBridgeClient.chatCompletion(...)`. It uses the authenticated local Cline CLI, keeps retry/validation/progress/cancellation behavior in `LLMClient`, and does not use endpoint/API-key config.
 
-Backend aliases and backend-specific configuration validation are centralized through `CodexBridgeClient.normalizeBackend(...)` and `CodexBridgeClient.getConfigurationErrors(...)`. See [CodexBridgeClient.md](CodexBridgeClient.md) for bridge session modes, structured-output conversion, and app-server transport details.
+Backend aliases are normalized through `CodexBridgeClient.normalizeBackend(...)`; backend-specific validation routes to the selected adapter. See [CodexBridgeClient.md](CodexBridgeClient.md) for Codex app-server transport and [ClineBridgeClient.md](ClineBridgeClient.md) for Cline one-shot CLI transport.
 
 ## Configuration Inputs
 - `Globals.config.ai` is cloned for each request attempt. Matching `ai_model_overrides` profiles are applied by normalized `metadataLabel` before that attempt is dispatched.
@@ -17,7 +18,7 @@ Backend aliases and backend-specific configuration validation are centralized th
 - `ai.custom_args` injects provider-specific top-level payload fields. Reserved core payload keys are rejected in configured custom args.
 - `ai.headers`, override-profile headers, and per-call `headers` are merged for HTTP requests. OAuth-backed requests always set `Authorization` from the refreshed access token.
 - `ai.cachebuster: true` prepends `[cachebuster:<uuid>]` to the final user message in the outbound payload copy. Caller-provided message objects are not mutated.
-- `ai.prefill` adds a final assistant message for OpenAI-compatible requests so providers that support assistant prefill can continue from that text. Matching `ai_model_overrides` profiles can replace it or set it to `null`; per-call `prefill`/`assistantResponseSeed` takes precedence. Prefill is rejected for Codex bridge and tool-call requests.
+- `ai.prefill` adds a final assistant message for OpenAI-compatible requests so providers that support assistant prefill can continue from that text. Matching `ai_model_overrides` profiles can replace it or set it to `null`; per-call `prefill`/`assistantResponseSeed` takes precedence. Prefill is rejected for CLI bridges and tool-call requests.
 - `ai.sysprompt_append` adds an additional model-specific system-instruction message to the outbound payload copy. Matching `ai_model_overrides` profiles replace it or set it to `null`; the caller-provided `messages` array is not mutated.
 - `ai.reasoning_effort`, override-profile `reasoning_effort`, payload `reasoning_effort`, or per-call `reasoningEffort` opt into OpenAI-compatible reasoning by sending `reasoning: true` and `reasoning_effort`.
 - `ai.force_outputs_file` or `LLM_FORCE_OUTPUTS_FILE` supplies deterministic fixture output buckets for tests and scripted runs.
@@ -49,7 +50,7 @@ Important options:
 - `model`, `apiKey`, `endpoint`, `temperature`, `maxTokens`, `topP`, `frequencyPenalty`, `presencePenalty`, `seed`: per-call request overrides.
 - `prefill` or `assistantResponseSeed`: optional OpenAI-compatible assistant response prefill. `null` suppresses configured `ai.prefill` for that call.
 - `timeoutMs`, `timeoutScale`, `retryAttempts`, `waitAfterError`, `waitAfterRateLimitError`, `waitAfterNetworkError`: timeout and retry controls.
-- `stream`: OpenAI-compatible streaming control. Codex bridge requests are sent through the bridge with `stream: false` while bridge events feed prompt progress.
+- `stream`: OpenAI-compatible streaming control. CLI bridge requests are sent through the bridge with `stream: false` while bridge events feed prompt progress.
 - `runInBackground`: marks the request as background for progress display and lower semaphore priority.
 - `multimodal`: merges `Globals.config.ai_multimodal` into the effective AI config.
 - `validateXML`, `validateXMLStrict`, `requiredTags`, `requiredRegex`: response validation controls.
@@ -66,12 +67,12 @@ Request flow:
 4. For each attempt, clone AI config, apply `ai_model_overrides`, merge custom args/headers, resolve backend, append configured system-prompt text, apply cachebuster, append OpenAI-compatible assistant prefill when configured, resolve model/temperature/token/top-p/reasoning settings, and choose a semaphore key.
 5. Acquire the per-key semaphore, then the optional all-model semaphore from root `max_concurrent_requests_all_models`. Background requests share the same semaphores but foreground requests are dispatched first; with a limit above one, background work leaves one slot available for foreground prompts.
 6. Start prompt-progress tracking when the request is trackable and output is not `silent`.
-7. Dispatch through `axios.post(...)` or `CodexBridgeClient.chatCompletion(...)`.
+7. Dispatch through `axios.post(...)`, `CodexBridgeClient.chatCompletion(...)`, or `ClineBridgeClient.chatCompletion(...)`.
 8. Normalize the response into an OpenAI-style `chat.completion` payload, merge assistant prefill into returned text exactly once, call capture/on-response hooks, strip `<think>...</think>` blocks from returned text, validate output, update prompt stats, and return assistant text.
 
 ## Response Normalization And Validation
 - Streaming OpenAI-compatible responses are assembled from SSE `data:` chunks. Text deltas are concatenated and `delta.tool_calls` chunks are assembled into complete function calls.
-- Non-stream responses and Codex bridge responses use the same normalized shape for `choices[0].message.content` and `choices[0].message.tool_calls`.
+- Non-stream responses and CLI bridge responses use the same normalized shape for `choices[0].message.content` and `choices[0].message.tool_calls`.
 - Tool-call arguments must be parseable JSON strings. Malformed tool-call payloads throw before callers receive them.
 - Empty assistant text is accepted only when one or more valid tool calls are present. Tool-call-only completions return `''` while `onResponse` carries the normalized tool calls.
 - `requiredRegex`, XML validation, and required-tag checks are skipped for tool-call turns.
@@ -84,8 +85,8 @@ Prompt progress is active when output is not `silent` and either an interactive 
 Progress entries include:
 - `id`, `label`, `model`, elapsed seconds, timeout seconds, retry count, and background flag.
 - `promptText` from `formatMessagesForErrorLog(...)`.
-- `previewText` from streamed assistant text or Codex bridge assistant-content events.
-- `receivedCount` and `receivedUnit`; both OpenAI-compatible and Codex bridge progress count decoded JavaScript characters.
+- `previewText` from streamed assistant text or CLI bridge assistant-content events.
+- `receivedCount` and `receivedUnit`; OpenAI-compatible streaming and CLI bridge progress count decoded JavaScript characters.
 - `targetCharacters`, `progressFraction`, `runCount`, and `averageOutputCharacters`.
 
 Cold-start targets come from `config.prompt_progress.character_targets`. Label matching normalizes metadata labels; exact entries win over `*` prefix entries. Missing coverage throws. When a positive stored average exists for a prompt label, that average is used as the target for the next run. Progress advances linearly to 75% at the target and approaches 100% asymptotically after that.
@@ -96,7 +97,7 @@ High-frequency progress broadcasts are coalesced to at most one active update ev
 `LLMClient` keeps a semaphore per backend/model/auth/session key, plus an optional process-wide semaphore when root `max_concurrent_requests_all_models` is set.
 
 - OpenAI-compatible keys use the resolved API credential or OAuth cache key plus model.
-- Codex fresh-mode keys use backend plus model and honor `ai.max_concurrent_requests`.
+- Codex fresh-mode and Cline bridge keys use backend plus model and honor `ai.max_concurrent_requests`.
 - Codex resumed-session keys serialize by Codex home and, for `resume_id`, session id.
 - The all-model semaphore caps real outbound text-generation attempts across every key. It is acquired only after the per-key permit so a request waiting on a busy model does not occupy an all-model slot.
 - `runInBackground: true` lowers queue priority and limits concurrent background occupancy so foreground gameplay prompts can start ahead of queued background prompts.
@@ -124,6 +125,8 @@ Forced-output fixtures are loaded from `LLM_FORCE_OUTPUTS_FILE` or `ai.force_out
 
 ## Codex Usage And Quota Reporting
 When the Codex bridge response includes normalized `usage`, `LLMClient` writes a server-console usage line for that prompt with input, cached-input, output, and total token counts.
+
+Cline bridge responses do not currently report quota usage because Cline's documented NDJSON stream does not guarantee token usage metadata.
 
 Quota snapshots are based on unique gameplay-turn metadata rather than raw prompt count. A prompt counts only when `metadata.__codexQuotaCountAsTurn === true` and `metadata.__codexQuotaTurnKey` is a non-empty stable string. Duplicate keys are ignored; a missing key with counting enabled throws. Every fifth counted turn calls `CodexBridgeClient.readRateLimits(...)`.
 

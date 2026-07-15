@@ -6,6 +6,7 @@ const Globals = require('./Globals.js');
 
 const BACKEND_OPENAI = 'openai_compatible';
 const BACKEND_CODEX = 'codex_cli_bridge';
+const BACKEND_CLINE = 'cline_cli_bridge';
 const CODEX_REASONING_EFFORTS = Object.freeze(['none', 'minimal', 'low', 'medium', 'high', 'xhigh']);
 const CODEX_APP_SERVER_TIMEOUT_MS = 15000;
 const CODEX_APP_SERVER_THREAD_SOURCE_KINDS = Object.freeze([
@@ -876,6 +877,9 @@ class CodexBridgeClient {
         }
         if (normalized === 'codex' || normalized === 'codex-bridge' || normalized === 'codex_cli' || normalized === BACKEND_CODEX) {
             return BACKEND_CODEX;
+        }
+        if (normalized === 'cline' || normalized === 'cline-bridge' || normalized === 'cline_cli' || normalized === BACKEND_CLINE) {
+            return BACKEND_CLINE;
         }
         throw new Error(`Unsupported AI backend "${rawValue}".`);
     }

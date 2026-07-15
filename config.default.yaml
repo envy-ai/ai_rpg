@@ -44,6 +44,11 @@ improvement_prompt:
   enabled: false
   interval: 10
 
+tonal_scale_evaluation:
+  # Schedules the tonal-scale evaluation prompt after completed player-action turns.
+  enabled: true
+  interval: 5
+
 mystery_box_cleanup:
   # Number of eligible player-action turns between automatic mystery cleanup checks.
   interval: 10
@@ -53,6 +58,7 @@ ai:
   # Text generation backend:
   # - openai_compatible: send requests to an OpenAI-style /chat/completions endpoint
   # - codex_cli_bridge: run requests through the local Codex CLI bridge
+  # - cline_cli_bridge: run requests through the local Cline CLI bridge
   backend: openai_compatible
 
   # API endpoint URL (examples):
@@ -96,6 +102,26 @@ ai:
     prompt_preamble: ""
     # Abort Codex turns after this many milliseconds without streamed stdout data.
     idle_timeout_ms: 30000
+
+  # Cline bridge settings. These are used only when ai.backend is cline_cli_bridge.
+  cline_bridge:
+    command: cline
+    # Optional Cline provider override. Blank uses Cline's saved default provider.
+    provider: ""
+    # Working directory for Cline. The default isolated tmp directory avoids repo AGENTS.md/rules being applied to provider prompts.
+    cwd: ./tmp/cline-bridge-cwd
+    # Optional Cline thinking level: none, low, medium, high, xhigh
+    thinking: ""
+    # Cline context compaction mode: agentic, basic, or off
+    compaction: basic
+    # Optional Cline total timeout in seconds. 0 leaves Cline without a total timeout.
+    timeout_seconds: 0
+    # Optional Cline config directory.
+    config: ""
+    # Optional Cline data directory.
+    data_dir: ""
+    # Optional instructions prepended ahead of the generated bridge wrapper prompt.
+    prompt_preamble: ""
 
   # Optional: Additional parameters
   maxTokens: 10000
@@ -249,6 +275,7 @@ prompt_progress:
     status_effect_generate: 5000
     summarize_batch: 5000
     supplemental_story_info: 5000
+    tonal_scale_evaluation: 5000
     test_*: 5000
     thing_*: 5000
     tool_*: 5000
@@ -492,6 +519,7 @@ prose_length: 2-3 paragraphs
 # Number of events to check concurrently when processing text. Omit to do them all.
 # A lower number makes it easier for the AI but is slower and will use more tokens/requests.
 # You can omit this for sophisticated models that can handle more complex prompts.
+# Ignored in XML event mode
 events_to_check_concurrently: 10
 
 # This can be: never, unexplored_regions, unexplored_locations, or always

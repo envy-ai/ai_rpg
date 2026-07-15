@@ -442,3 +442,49 @@ test('module action can remove the only installed module from a loose location b
     assert.equal(result.actor, actor);
     assert.equal(result.location, location);
 });
+
+test('modules mod contributes installed-module XML for full base-context item output', () => {
+    const registry = new ModExtensionRegistry();
+    const modulesMod = require('../mods/modules/mod.js');
+    modulesMod.register(createModulesScope(registry));
+
+    const moduleItem = item({
+        id: 'mod_core_1',
+        name: 'Overclock Chip',
+        moduleType: 'core',
+        shortDescription: 'Boosts processing speed.'
+    });
+    const baseItem = item({ id: 'base_1', name: 'Cyberdeck', installedModuleIds: ['mod_core_1'] });
+    const resolveThing = (id) => (id === 'mod_core_1' ? moduleItem : null);
+
+    const fragments = registry.collectThingPromptContributions(baseItem, { resolveThing });
+    assert.equal(fragments.length, 1, 'a base item with an installed module should contribute one fragment');
+    const xml = fragments[0];
+    assert.match(xml, /<installedModules>/);
+    assert.match(xml, /<name>Overclock Chip<\/name>/);
+    assert.match(xml, /<slot>core<\/slot>/);
+    assert.match(xml, /<description>Boosts processing speed\.<\/description>/);
+
+    // Items without installed modules contribute nothing.
+    assert.deepEqual(
+        registry.collectThingPromptContributions(item({ id: 'plain_1', name: 'Rock' }), { resolveThing }),
+        []
+    );
+
+    // Installed ids that cannot be resolved are skipped, not crashed on.
+    assert.deepEqual(
+        registry.collectThingPromptContributions(
+            item({ id: 'base_2', name: 'Cyberdeck 2', installedModuleIds: ['missing'] }),
+            { resolveThing }
+        ),
+        []
+    );
+
+    // Dynamic module text is XML-escaped.
+    const spicyModule = item({ id: 'mod_x', name: 'A & B <chip>', moduleType: 'edge', shortDescription: '' });
+    const spicyBase = item({ id: 'base_3', name: 'Deck 3', installedModuleIds: ['mod_x'] });
+    const spicyXml = registry.collectThingPromptContributions(spicyBase, {
+        resolveThing: (id) => (id === 'mod_x' ? spicyModule : null)
+    })[0];
+    assert.match(spicyXml, /<name>A &amp; B &lt;chip&gt;<\/name>/);
+});

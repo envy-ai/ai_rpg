@@ -5,31 +5,23 @@ const path = require('path');
 
 const rootDir = path.join(__dirname, '..');
 const viewSource = fs.readFileSync(path.join(rootDir, 'views', 'index.njk'), 'utf8');
+const headSource = fs.readFileSync(path.join(rootDir, 'views', '_includes', 'head-common.njk'), 'utf8');
 
 test('crafting modal notes submit primary actions with ctrl-enter', () => {
     assert.match(
-        viewSource,
-        /function isCtrlEnterSubmitShortcut\(event\)/,
-        'shared Ctrl/Cmd+Enter submit shortcut predicate should exist'
+        headSource,
+        /\/js\/modal-submit-shortcuts\.js/,
+        'the shared modal Ctrl/Cmd+Enter helper should be loaded'
     );
     assert.match(
         viewSource,
-        /craftingNotesInput\.addEventListener\('keydown', handleCraftingNotesCtrlEnter\)/,
-        'main crafting notes field should have an explicit Ctrl/Cmd+Enter submit handler'
+        /id="craftingNotesInput"[^>]*data-ctrl-enter-submit="#craftingActionButton"/,
+        'main crafting notes should map to the primary crafting action'
     );
     assert.match(
         viewSource,
-        /salvageIntentInput\.addEventListener\('keydown', handleSalvageIntentCtrlEnter\)/,
-        'salvage and harvest intent field should have an explicit Ctrl/Cmd+Enter submit handler'
+        /id="salvageIntentInput"[^>]*data-ctrl-enter-submit="#salvageIntentSubmitBtn"/,
+        'salvage and harvest intent should map to the primary intent action'
     );
-    assert.match(
-        viewSource,
-        /clickPrimaryButtonForShortcut\(event, craftingActionButton\)/,
-        'main crafting shortcut should trigger the primary crafting action'
-    );
-    assert.match(
-        viewSource,
-        /clickPrimaryButtonForShortcut\(event, salvageIntentSubmitBtn\)/,
-        'salvage and harvest shortcut should trigger the primary intent action'
-    );
+    assert.doesNotMatch(viewSource, /handleCraftingNotesCtrlEnter|handleSalvageIntentCtrlEnter/);
 });

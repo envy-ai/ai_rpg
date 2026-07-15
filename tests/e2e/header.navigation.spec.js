@@ -1,11 +1,12 @@
 const { test, expect } = require('@playwright/test');
 
-const primaryNavLabels = ['Play', 'New Game', 'Worlds', 'Lorebooks', 'System', 'Tools'];
+const primaryNavLabels = ['Play', 'New Game', 'Worlds', 'Mods', 'Lorebooks', 'System', 'Tools'];
 
 const topLevelRoutes = [
     { url: '/', currentPage: 'chat', title: 'Play' },
     { url: '/new-game', currentPage: 'new-game', title: 'New Game' },
     { url: '/settings', currentPage: 'settings', title: 'World Profiles' },
+    { url: '/mods', currentPage: 'mods', title: 'Mods' },
     { url: '/config', currentPage: 'config', title: 'System Configuration' },
     { url: '/lorebooks', currentPage: 'lorebooks', title: 'Lorebooks' },
     { url: '/debug', currentPage: 'debug', title: 'Debug' },
@@ -13,6 +14,18 @@ const topLevelRoutes = [
 ];
 
 async function expectHeaderBasics(page, route) {
+    if (route.url === '/settings') {
+        await page.route((url) => new URL(url).pathname === '/api/settings/load', async (requestRoute) => {
+            await requestRoute.fulfill({
+                status: 200,
+                contentType: 'application/json',
+                body: JSON.stringify({
+                    success: true,
+                    result: { count: 0, settings: [], files: [] }
+                })
+            });
+        });
+    }
     const response = await page.goto(route.url, { waitUntil: 'domcontentloaded' });
     expect(response && response.ok()).toBeTruthy();
 
@@ -133,6 +146,6 @@ test.describe('shared app header navigation', () => {
         expect(result.toolsPanelLeft).toBeGreaterThanOrEqual(0);
         expect(result.toolsPanelRight).toBeLessThanOrEqual(390);
         expect(result.toolsPanelWidth).toBeLessThanOrEqual(390);
-        expect(result.navLabels).toEqual(['Play', 'New Game', 'Worlds', 'Lorebooks', 'System', 'Tools', 'Debug', 'Player Stats']);
+        expect(result.navLabels).toEqual(['Play', 'New Game', 'Worlds', 'Mods', 'Lorebooks', 'System', 'Tools', 'Debug', 'Player Stats']);
     });
 });

@@ -3,6 +3,7 @@ const path = require('path');
 const { test, expect } = require('@playwright/test');
 
 const SHOULD_RUN = process.env.PLAYWRIGHT_NEW_GAME_VEHICLE_REGRESSION === '1';
+const REGRESSION_TIMEOUT_MS = 5 * 60 * 1000;
 const ROOT_DIR = path.resolve(__dirname, '..', '..');
 const FIXTURE_FORCED_OUTPUTS_PATH = path.join(
     ROOT_DIR,
@@ -245,6 +246,8 @@ async function createAndApplyDeterministicSetting(request) {
 }
 
 test.describe('new game vehicle region regression', () => {
+    test.describe.configure({ timeout: REGRESSION_TIMEOUT_MS });
+
     test.skip(
         !SHOULD_RUN,
         'Set PLAYWRIGHT_NEW_GAME_VEHICLE_REGRESSION=1 to run the deterministic vehicle region regression.'

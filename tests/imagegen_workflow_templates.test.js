@@ -40,27 +40,52 @@ function findWorkflowNode(workflow, predicate) {
         .find(({ node }) => predicate(node)) || null;
 }
 
+function listImagegenWorkflowFiles() {
+    const imagegenDir = path.join(__dirname, '..', 'imagegen');
+    return fs.readdirSync(imagegenDir)
+        .filter(name => name.endsWith('.json') || name.endsWith('.json.njk'))
+        .map(name => ({
+            name,
+            source: fs.readFileSync(path.join(imagegenDir, name), 'utf8')
+        }));
+}
+
+test('imagegen workflows use vanilla primitive text input nodes instead of custom Text Multiline', () => {
+    const offenders = listImagegenWorkflowFiles()
+        .filter(({ source }) => {
+            return source.includes('"class_type": "Text Multiline"');
+        })
+        .map(({ name }) => name);
+
+    assert.deepEqual(offenders, []);
+});
+
+test('imagegen workflows use Crystools display nodes instead of custom Text to Console', () => {
+    const offenders = listImagegenWorkflowFiles()
+        .filter(({ source }) => source.includes('"class_type": "Text to Console"'))
+        .map(({ name }) => name);
+
+    assert.deepEqual(offenders, []);
+});
+
 test('flux2 edit workflow prints the rendered image prompt to the ComfyUI console', () => {
     const workflow = renderImagegenWorkflow('flux2_klein_edit.json.njk');
 
     const promptTextNode = findWorkflowNode(workflow, node =>
-        node.class_type === 'Text Multiline'
-        && node.inputs?.text === 'Shift the scene to a rainy midnight atmosphere.'
+        node.class_type === 'PrimitiveStringMultiline'
+        && node.inputs?.value === 'Shift the scene to a rainy midnight atmosphere.'
     );
-    assert.ok(promptTextNode, 'expected a Text Multiline node containing the rendered prompt');
+    assert.ok(promptTextNode, 'expected a vanilla Input Text node containing the rendered prompt');
 
     const consoleNode = findWorkflowNode(workflow, node =>
-        node.class_type === 'Text to Console'
-        && node.inputs?.label === 'Final Prompt'
+        node.class_type === 'Show any [Crystools]'
+        && node._meta?.title === '🪛 Show any value to console/display'
     );
-    assert.ok(consoleNode, 'expected a Text to Console node labeled Final Prompt');
-    assert.deepEqual(consoleNode.node.inputs.text, [promptTextNode.id, 0]);
-
-    const showNode = findWorkflowNode(workflow, node =>
-        node.class_type === 'easy showAnything'
-    );
-    assert.ok(showNode, 'expected an easy showAnything node to force console output execution');
-    assert.deepEqual(showNode.node.inputs.anything, [consoleNode.id, 0]);
+    assert.ok(consoleNode, 'expected a Crystools Show any output node');
+    assert.deepEqual(consoleNode.node.inputs.any_value, [promptTextNode.id, 0]);
+    assert.equal(consoleNode.node.inputs.console, true);
+    assert.equal(consoleNode.node.inputs.display, true);
+    assert.equal(consoleNode.node.inputs.prefix, 'Final Prompt');
 
     const positivePromptNode = findWorkflowNode(workflow, node =>
         node.class_type === 'CLIPTextEncode'
@@ -78,23 +103,20 @@ test('krea2 workflows use VAE Utils decoder with the Wan x2 VAE and print the pr
         const workflow = renderImagegenWorkflow(templateName);
 
         const promptTextNode = findWorkflowNode(workflow, node =>
-            node.class_type === 'Text Multiline'
-            && node.inputs?.text === 'Shift the scene to a rainy midnight atmosphere.'
+            node.class_type === 'PrimitiveStringMultiline'
+            && node.inputs?.value === 'Shift the scene to a rainy midnight atmosphere.'
         );
-        assert.ok(promptTextNode, `${templateName} should store the rendered prompt in a text node`);
+        assert.ok(promptTextNode, `${templateName} should store the rendered prompt in a vanilla Input Text node`);
 
         const consoleNode = findWorkflowNode(workflow, node =>
-            node.class_type === 'Text to Console'
-            && node.inputs?.label === 'Final Prompt'
+            node.class_type === 'Show any [Crystools]'
+            && node._meta?.title === '🪛 Show any value to console/display'
         );
-        assert.ok(consoleNode, `${templateName} should print the rendered prompt to the ComfyUI console`);
-        assert.deepEqual(consoleNode.node.inputs.text, [promptTextNode.id, 0]);
-
-        const showNode = findWorkflowNode(workflow, node =>
-            node.class_type === 'easy showAnything'
-        );
-        assert.ok(showNode, `${templateName} should force console output execution`);
-        assert.deepEqual(showNode.node.inputs.anything, [consoleNode.id, 0]);
+        assert.ok(consoleNode, `${templateName} should print/display the rendered prompt through Crystools`);
+        assert.deepEqual(consoleNode.node.inputs.any_value, [promptTextNode.id, 0]);
+        assert.equal(consoleNode.node.inputs.console, true);
+        assert.equal(consoleNode.node.inputs.display, true);
+        assert.equal(consoleNode.node.inputs.prefix, 'Final Prompt');
 
         const positivePromptNode = findWorkflowNode(workflow, node =>
             node.class_type === 'CLIPTextEncode'

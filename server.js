@@ -1675,7 +1675,7 @@ function parseImageDataUrl(dataUrl) {
     return { mimeType, buffer };
 }
 
-function saveUploadedPortraitImage(dataUrl) {
+async function saveUploadedPortraitImage(dataUrl) {
     const { mimeType, buffer } = parseImageDataUrl(dataUrl);
     if (mimeType !== 'image/png') {
         throw new Error('NPC portrait image must be a PNG data URL.');
@@ -1683,13 +1683,11 @@ function saveUploadedPortraitImage(dataUrl) {
 
     const imageId = generateImageId();
     const saveDirectory = path.join(__dirname, 'public', 'generated-images');
-    if (!fs.existsSync(saveDirectory)) {
-        fs.mkdirSync(saveDirectory, { recursive: true });
-    }
+    await fs.promises.mkdir(saveDirectory, { recursive: true });
 
     const filename = `${imageId}.png`;
     const filepath = path.join(saveDirectory, filename);
-    fs.writeFileSync(filepath, buffer);
+    await fs.promises.writeFile(filepath, buffer);
 
     const imageEntry = {
         imageId,
@@ -1716,7 +1714,7 @@ function saveUploadedPortraitImage(dataUrl) {
     };
 }
 
-function saveUploadedLocationImage(dataUrl) {
+async function saveUploadedLocationImage(dataUrl) {
     const { mimeType, buffer } = parseImageDataUrl(dataUrl);
     if (mimeType !== 'image/png') {
         throw new Error('Location image must be a PNG data URL.');
@@ -1724,13 +1722,11 @@ function saveUploadedLocationImage(dataUrl) {
 
     const imageId = generateImageId();
     const saveDirectory = path.join(__dirname, 'public', 'generated-images');
-    if (!fs.existsSync(saveDirectory)) {
-        fs.mkdirSync(saveDirectory, { recursive: true });
-    }
+    await fs.promises.mkdir(saveDirectory, { recursive: true });
 
     const filename = `${imageId}.png`;
     const filepath = path.join(saveDirectory, filename);
-    fs.writeFileSync(filepath, buffer);
+    await fs.promises.writeFile(filepath, buffer);
 
     const imageEntry = {
         imageId,
@@ -2668,6 +2664,29 @@ async function validateConfiguration() {
                 const interval = Number(improvementPromptConfig.interval);
                 if (!Number.isInteger(interval) || interval < 1) {
                     validationErrors.push('improvement_prompt.interval must be an integer greater than or equal to 1 when provided');
+                }
+            }
+        }
+    }
+    if (config.tonal_scale_evaluation !== undefined) {
+        const tonalScaleEvaluationConfig = config.tonal_scale_evaluation;
+        if (!tonalScaleEvaluationConfig || typeof tonalScaleEvaluationConfig !== 'object' || Array.isArray(tonalScaleEvaluationConfig)) {
+            validationErrors.push('tonal_scale_evaluation must be an object when provided');
+        } else {
+            if (
+                tonalScaleEvaluationConfig.enabled !== undefined
+                && typeof tonalScaleEvaluationConfig.enabled !== 'boolean'
+            ) {
+                validationErrors.push('tonal_scale_evaluation.enabled must be a boolean when provided');
+            }
+            if (
+                tonalScaleEvaluationConfig.interval !== undefined
+                && tonalScaleEvaluationConfig.interval !== null
+                && tonalScaleEvaluationConfig.interval !== ''
+            ) {
+                const interval = Number(tonalScaleEvaluationConfig.interval);
+                if (!Number.isInteger(interval) || interval < 1) {
+                    validationErrors.push('tonal_scale_evaluation.interval must be an integer greater than or equal to 1 when provided');
                 }
             }
         }
@@ -6310,6 +6329,28 @@ function buildBasePromptContext({
             }
         }
 
+        // Let mods contribute extra XML detail rendered inside this item's full
+        // prompt representation (e.g. the modules mod listing installed modules).
+        let modPromptXml = '';
+        if (modExtensionRegistry && typeof modExtensionRegistry.collectThingPromptContributions === 'function') {
+            const promptThing = actualThing || item;
+            const fragments = modExtensionRegistry.collectThingPromptContributions(promptThing, {
+                things,
+                Thing,
+                resolveThing: (id) => {
+                    const normalizedId = typeof id === 'string' ? id.trim() : '';
+                    if (!normalizedId) {
+                        return null;
+                    }
+                    return things.get(normalizedId)
+                        || (typeof Thing.getById === 'function' ? Thing.getById(normalizedId) : null);
+                }
+            });
+            if (fragments.length) {
+                modPromptXml = fragments.join('\n');
+            }
+        }
+
         return {
             name,
             description,
@@ -6333,7 +6374,8 @@ function buildBasePromptContext({
             causeStatusEffectOnEquipper: item.causeStatusEffectOnEquipper || null,
             value: metadata.value,
             weight: metadata.weight,
-            properties: metadata.properties
+            properties: metadata.properties,
+            modPromptXml
         };
     }
 
@@ -7568,6 +7610,22 @@ function buildBasePromptContext({
         }
     }
 
+    const runtimeMetadata = (typeof Globals.getSaveMetadata === 'function'
+        ? Globals.getSaveMetadata()
+        : Globals.saveMetadata) || {};
+    const tonalScaleEvaluation = typeof runtimeMetadata.tonalScaleEvaluationResult === 'string'
+        ? runtimeMetadata.tonalScaleEvaluationResult.trim()
+        : '';
+    const tonalScaleEvaluationTurnCounter = Number(runtimeMetadata.tonalScaleEvaluationTurnCounter);
+    const tonalScaleEvaluationResultTurnCounter = Number(runtimeMetadata.tonalScaleEvaluationResultTurnCounter);
+    const tonalScaleEvaluationTurnsAgo = Number.isInteger(tonalScaleEvaluationTurnCounter)
+        && tonalScaleEvaluationTurnCounter >= 0
+        && Number.isInteger(tonalScaleEvaluationResultTurnCounter)
+        && tonalScaleEvaluationResultTurnCounter >= 0
+        && tonalScaleEvaluationTurnCounter >= tonalScaleEvaluationResultTurnCounter
+        ? tonalScaleEvaluationTurnCounter - tonalScaleEvaluationResultTurnCounter
+        : 0;
+
     const context = {
         setting: settingContext,
         config: config,
@@ -7577,6 +7635,8 @@ function buildBasePromptContext({
         plotSummary: latestPlotSummary,
         plotExpander: latestPlotExpander,
         plotAnalysis: typeof Globals.getPlotAnalysis === 'function' ? Globals.getPlotAnalysis() : null,
+        tonalScaleEvaluation,
+        tonalScaleEvaluationTurnsAgo,
         mysteryThreadMaxActive: resolveMysteryThreadMaxActive(config),
         activeMysteryThreads: buildActiveMysteryThreadsForPrompt(config),
         mysteryCleanupThreads: buildMysteryCleanupThreadsForPrompt(),
@@ -10894,7 +10954,7 @@ async function createLocationFromEvent({ name, originLocation = null, descriptio
 
     let locationImageId = null;
     if (normalizedImageDataUrlOriginal) {
-        const imageSave = saveUploadedLocationImage(normalizedImageDataUrlOriginal);
+        const imageSave = await saveUploadedLocationImage(normalizedImageDataUrlOriginal);
         locationImageId = imageSave.imageId;
     }
 
@@ -11044,17 +11104,23 @@ async function createRegionStubFromEvent({ name, originLocation = null, descript
 
     const existingRegion = findRegionByNameLoose(trimmedName);
     if (existingRegion) {
-        const entranceLocationId = existingRegion.entranceLocationId
-            || (existingRegion.locationIds || []).find(id => gameLocations.get(id));
-        const entranceLocation = entranceLocationId ? gameLocations.get(entranceLocationId) : null;
+        // The target region is already fully generated. Rather than always
+        // routing this new exit to the canonical entrance, pick the border
+        // location that best fits where the traveler is approaching from.
+        const originRegionForArrival = findRegionByLocationId(originLocation.id) || null;
+        const arrivalLocation = await chooseArrivalLocationForEntryStub({
+            region: existingRegion,
+            originContext: {
+                originLocationName: originLocation.name || null,
+                originRegionName: originRegionForArrival?.name || null,
+                originDirection: null,
+                description,
+                regionName: existingRegion.name || trimmedName
+            }
+        });
 
-        if (!entranceLocation) {
-            console.warn(`Region "${trimmedName}" exists but no entrance location was found.`);
-            return null;
-        }
-
-        ensureExistingConnection(entranceLocation, existingRegion.id);
-        return entranceLocation;
+        ensureExistingConnection(arrivalLocation, existingRegion.id);
+        return arrivalLocation;
     }
 
     if (typeof Location.findByName === 'function') {
@@ -11069,6 +11135,12 @@ async function createRegionStubFromEvent({ name, originLocation = null, descript
         }
     }
 
+    // If a pending region with this name already exists, associate this origin's
+    // doorway with the SAME target region id (so it still generates once) rather
+    // than funneling this origin into the shared entrance doorway. The per-origin
+    // hasExistingMatchingExit guard below still prevents duplicate doorways from
+    // the same origin.
+    let reuseRegionId = null;
     for (const pending of pendingRegionStubs.values()) {
         const pendingNameSource = pending ? (pending.originalName || pending.name) : null;
         if (!pendingNameSource) {
@@ -11078,11 +11150,8 @@ async function createRegionStubFromEvent({ name, originLocation = null, descript
             continue;
         }
 
-        const existingStub = pending.entranceStubId ? gameLocations.get(pending.entranceStubId) : null;
-        if (existingStub) {
-            ensureExistingConnection(existingStub, pending.id || null);
-            return existingStub;
-        }
+        reuseRegionId = pending.id || null;
+        break;
     }
 
     const normalizeName = (value) => (typeof value === 'string' ? value.trim().toLowerCase() : null);
@@ -11142,11 +11211,12 @@ async function createRegionStubFromEvent({ name, originLocation = null, descript
     };
 
     const existingEntryStub = findExistingEntryStub();
-    if (existingEntryStub) {
-        const metadata = existingEntryStub.stubMetadata || {};
-        const destinationRegionId = metadata.targetRegionId || metadata.regionId || null;
-        ensureExistingConnection(existingEntryStub, destinationRegionId);
-        return existingEntryStub;
+    if (existingEntryStub && !reuseRegionId) {
+        // Another origin already opened a doorway to this (still pending) region.
+        // Reuse its target region id so this origin's new doorway resolves into
+        // the same region, but give this origin its own doorway.
+        const existingStubMetadata = existingEntryStub.stubMetadata || {};
+        reuseRegionId = existingStubMetadata.targetRegionId || existingStubMetadata.regionId || null;
     }
 
     const exits = typeof originLocation.getAvailableDirections === 'function'
@@ -11182,11 +11252,11 @@ async function createRegionStubFromEvent({ name, originLocation = null, descript
 
     let entryImageId = null;
     if (normalizedImageDataUrlOriginal) {
-        const imageSave = saveUploadedLocationImage(normalizedImageDataUrlOriginal);
+        const imageSave = await saveUploadedLocationImage(normalizedImageDataUrlOriginal);
         entryImageId = imageSave.imageId;
     }
 
-    const newRegionId = generateRegionStubId();
+    const newRegionId = reuseRegionId || generateRegionStubId();
     const descriptionText = description || `An unexplored region known as ${trimmedName}.`;
     const currentRegion = findRegionByLocationId(originLocation.id) || null;
     const levelData = resolveEventRegionStubLevelData({
@@ -11299,26 +11369,33 @@ async function createRegionStubFromEvent({ name, originLocation = null, descript
         }
     }
 
-    pendingRegionStubs.set(newRegionId, {
-        id: newRegionId,
-        name: regionEntryStub.name || trimmedName,
-        originalName: trimmedName,
-        description: regionEntryStub.stubMetadata?.targetRegionDescription || descriptionText,
-        relationship: 'Adjacent',
-        relativeLevel: normalizedRelativeLevel,
-        parentRegionId: parentRegionId || null,
-        sourceRegionId: currentRegion?.id || null,
-        exitLocationId: originLocation.id,
-        entranceStubId: regionEntryStub.id,
-        locationIds: [],
-        createOriginExit: createOriginExit !== false,
-        originDirection: stubMetadata.originDirection,
-        travelTimeMinutes: Number.isInteger(travelTimeMinutes) && travelTimeMinutes >= 0 ? travelTimeMinutes : null,
-        createdAt: new Date().toISOString(),
-        imageDataUrl: normalizedImageDataUrl || null
-    });
+    // When reusing an existing pending region (a sibling doorway from another
+    // origin), keep the existing pending record — its canonical entranceStubId
+    // and region metadata already drive generation. Only create a record when
+    // this is the first doorway to the region.
+    if (!pendingRegionStubs.has(newRegionId)) {
+        pendingRegionStubs.set(newRegionId, {
+            id: newRegionId,
+            name: regionEntryStub.name || trimmedName,
+            originalName: trimmedName,
+            description: regionEntryStub.stubMetadata?.targetRegionDescription || descriptionText,
+            relationship: 'Adjacent',
+            relativeLevel: normalizedRelativeLevel,
+            parentRegionId: parentRegionId || null,
+            sourceRegionId: currentRegion?.id || null,
+            exitLocationId: originLocation.id,
+            entranceStubId: regionEntryStub.id,
+            locationIds: [],
+            createOriginExit: createOriginExit !== false,
+            originDirection: stubMetadata.originDirection,
+            travelTimeMinutes: Number.isInteger(travelTimeMinutes) && travelTimeMinutes >= 0 ? travelTimeMinutes : null,
+            createdAt: new Date().toISOString(),
+            imageDataUrl: normalizedImageDataUrl || null
+        });
+    }
 
-    console.log(`🌐 Created region stub "${regionEntryStub.name}" (${newRegionId}) from event at ${originLocation.name || originLocation.id}.`);
+    const reusedExisting = Boolean(reuseRegionId && pendingRegionStubs.get(newRegionId)?.entranceStubId !== regionEntryStub.id);
+    console.log(`🌐 Created region ${reusedExisting ? 'sibling ' : ''}stub "${regionEntryStub.name}" (${newRegionId}) from event at ${originLocation.name || originLocation.id}.`);
 
     return regionEntryStub;
 }
@@ -11633,6 +11710,30 @@ async function expandRegionEntryStub(stubLocation) {
             return entranceLocation || null;
         };
 
+        // Resolve where THIS doorway lands in an already-generated region.
+        // The region's canonical entrance is established as a side effect (front
+        // door for name-based travel and other consumers), but the actual arrival
+        // is chosen from the doorway's approach context so sibling doorways don't
+        // all dump the player at the same front door. Throws if no arrival can be
+        // determined rather than silently funneling to the entrance.
+        const resolveArrivalLocation = async (targetRegion) => {
+            resolveEntranceLocation(targetRegion);
+            const originLoc = metadata.originLocationId ? gameLocations.get(metadata.originLocationId) : null;
+            const originRegion = metadata.originRegionId
+                ? (regions.get(metadata.originRegionId) || null)
+                : (originLoc ? findRegionByLocationId(originLoc.id) : null);
+            return chooseArrivalLocationForEntryStub({
+                region: targetRegion,
+                originContext: {
+                    originLocationName: originLoc?.name || null,
+                    originRegionName: originRegion?.name || null,
+                    originDirection: metadata.originDirection || null,
+                    description: metadata.shortDescription || stubLocation.description || null,
+                    regionName: targetRegion.name || metadata.targetRegionName || null
+                }
+            });
+        };
+
         const targetRegionName = (pendingInfo?.name || metadata.targetRegionName || '').trim();
         let originLocation = metadata.originLocationId ? gameLocations.get(metadata.originLocationId) : null;
         if (targetRegionName) {
@@ -11663,7 +11764,7 @@ async function expandRegionEntryStub(stubLocation) {
 
                 stubLocation.stubMetadata = metadata;
 
-                const entranceLocation = resolveEntranceLocation(existingRegionByName);
+                const entranceLocation = await resolveArrivalLocation(existingRegionByName);
                 if (entranceLocation) {
                     applyStubControllingFaction(existingRegionByName);
                     let originExitTravelTimeMinutes = Number.isInteger(metadata.travelTimeMinutes) && metadata.travelTimeMinutes >= 0
@@ -12007,7 +12108,7 @@ async function expandRegionEntryStub(stubLocation) {
         }
 
         // Region already exists
-        const entranceLocation = resolveEntranceLocation(region);
+        const entranceLocation = await resolveArrivalLocation(region);
 
         if (!entranceLocation) {
             return null;
@@ -16475,7 +16576,7 @@ async function generateNpcFromEvent({
 
         let portraitImageId = null;
         if (normalizedPortraitImageDataUrl) {
-            const portraitSave = saveUploadedPortraitImage(normalizedPortraitImageDataUrl);
+            const portraitSave = await saveUploadedPortraitImage(normalizedPortraitImageDataUrl);
             portraitImageId = portraitSave.imageId;
         }
 
@@ -30914,6 +31015,123 @@ async function chooseRegionEntrance({
     };
 }
 
+// Collect the non-stub member locations of a region as arrival candidates.
+function collectRegionArrivalCandidates(region) {
+    if (!region || !Array.isArray(region.locationIds)) {
+        return [];
+    }
+    const seen = new Set();
+    const candidates = [];
+    for (const locationId of region.locationIds) {
+        const normalizedId = typeof locationId === 'string' ? locationId.trim() : '';
+        if (!normalizedId || seen.has(normalizedId)) {
+            continue;
+        }
+        const location = gameLocations.get(normalizedId);
+        if (!location || location.stubMetadata?.isRegionEntryStub) {
+            continue;
+        }
+        seen.add(normalizedId);
+        candidates.push(location);
+    }
+    return candidates;
+}
+
+// Choose which existing location inside an already-generated region a traveler
+// arrives at when approaching from a specific origin, so that new exits into a
+// region land at a context-appropriate border location instead of always the
+// canonical entrance. Returns the chosen Location, or throws if a valid arrival
+// cannot be determined — callers surface the error rather than silently landing
+// the traveler somewhere arbitrary. `originContext` carries { originLocationName,
+// originRegionName, originDirection, description, regionName }.
+async function chooseArrivalLocationForEntryStub({ region, originContext = {} } = {}) {
+    const regionLabel = region?.name || region?.id || 'unknown region';
+    const candidates = collectRegionArrivalCandidates(region);
+    if (candidates.length === 0) {
+        throw new Error(`Cannot choose an arrival location for region "${regionLabel}": the region has no non-stub member locations.`);
+    }
+    if (candidates.length === 1) {
+        return candidates[0];
+    }
+
+    const regionName = originContext.regionName || region?.name || 'the region';
+    const approachParts = [];
+    if (originContext.originLocationName) {
+        approachParts.push(`from ${originContext.originLocationName}`);
+    }
+    if (originContext.originRegionName) {
+        approachParts.push(`in ${originContext.originRegionName}`);
+    }
+    const directionWord = normalizeDirection(originContext.originDirection);
+    if (directionWord) {
+        approachParts.push(`heading ${directionWord}`);
+    }
+    const approachSummary = approachParts.length ? approachParts.join(', ') : 'from an adjacent area';
+    const routeDescription = typeof originContext.description === 'string' && originContext.description.trim()
+        ? originContext.description.trim()
+        : null;
+
+    const candidateLines = candidates.map((candidate) => {
+        const summary = candidate.shortDescription
+            || candidate.stubMetadata?.shortDescription
+            || (typeof candidate.description === 'string' ? candidate.description.slice(0, 160) : '')
+            || '';
+        return summary ? `- ${candidate.name}: ${summary}` : `- ${candidate.name}`;
+    }).join('\n');
+
+    const systemPrompt = 'You place travelers at the geographically sensible arrival point when they enter a region by a specific route. Respond only with the requested XML.';
+    const userPrompt = [
+        `A traveler is entering the region "${regionName}" ${approachSummary}.`,
+        routeDescription ? `The route is described as: ${routeDescription}` : null,
+        '',
+        'These are the existing locations within the region:',
+        candidateLines,
+        '',
+        'Which single location would this traveler most plausibly arrive at first, given where they are coming from? Choose the location whose position or character best fits that approach.',
+        'Output only the exact name of the location in this format:',
+        '',
+        '<arrival>',
+        '<name>…</name>',
+        '</arrival>'
+    ].filter((line) => line !== null).join('\n');
+
+    const arrivalResponse = await LLMClient.chatCompletion({
+        messages: [
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: userPrompt }
+        ],
+        metadataLabel: 'region_arrival_selection'
+    });
+
+    LLMClient.logPrompt({
+        prefix: 'region_arrival_selection',
+        metadataLabel: 'region_arrival_selection',
+        systemPrompt,
+        generationPrompt: userPrompt,
+        response: arrivalResponse || ''
+    });
+
+    const arrivalMessage = typeof arrivalResponse === 'string' ? arrivalResponse.trim() : '';
+    if (!arrivalMessage) {
+        throw new Error(`Region arrival selection for "${regionLabel}" returned an empty response.`);
+    }
+
+    const match = arrivalMessage.match(/<arrival>[\s\S]*?<\/arrival>/i);
+    const arrivalXml = match ? match[0].replace(/^<arrival>/i, '<entrance>').replace(/<\/arrival>$/i, '</entrance>') : arrivalMessage;
+    const arrivalName = parseRegionEntranceResponse(arrivalXml);
+    if (!arrivalName) {
+        throw new Error(`Region arrival selection for "${regionLabel}" did not include a parseable <name>.`);
+    }
+
+    const normalizedArrival = normalizeRegionLocationName(arrivalName);
+    const matched = candidates.find((candidate) => normalizeRegionLocationName(candidate.name) === normalizedArrival);
+    if (!matched) {
+        throw new Error(`Region arrival selection "${arrivalName}" was not found among the locations of region "${regionLabel}".`);
+    }
+
+    return matched;
+}
+
 async function generateRegionFromPrompt(options = {}) {
     try {
         const { report: progressReporter, imageDataUrl: imageDataUrlRaw, ...rawOptions } = options || {};
@@ -31186,7 +31404,7 @@ app.get('/mods', (req, res) => {
     }
 });
 
-app.post('/config', (req, res) => {
+app.post('/config', async (req, res) => {
     try {
         const TYPE_HINT_SEPARATOR = '::';
 
@@ -31438,7 +31656,7 @@ app.post('/config', (req, res) => {
             forceQuotes: false
         });
 
-        fs.writeFileSync(path.join(__dirname, 'config.yaml'), yamlString, 'utf8');
+        await fs.promises.writeFile(path.join(__dirname, 'config.yaml'), yamlString, 'utf8');
 
         // Update in-memory config
         config = updatedConfig;
@@ -31680,6 +31898,7 @@ const apiScope = {
     backfillRegionExitTravelTimes,
     createLocationFromEvent,
     createRegionStubFromEvent,
+    chooseArrivalLocationForEntryStub,
     generateSkillsList,
     generateSkillsByNames,
     generateFactionsList,
@@ -31905,14 +32124,24 @@ async function startServer() {
             console.log(`🚀 Server is running on http://${HOST}:${PORT}`);
             console.log(`📡 API endpoint available at http://${HOST}:${PORT}/api/hello`);
             console.log(`🎮 Using AI model: ${config.ai.model}`);
-            console.log(`🤖 AI backend: ${LLMClient.resolveBackend(config.ai)}`);
-            if (LLMClient.resolveBackend(config.ai) === 'openai_compatible') {
+            const resolvedAiBackend = LLMClient.resolveBackend(config.ai);
+            console.log(`🤖 AI backend: ${resolvedAiBackend}`);
+            if (resolvedAiBackend === 'openai_compatible') {
                 console.log(`🌐 AI endpoint: ${config.ai.endpoint}`);
-            } else {
+            } else if (resolvedAiBackend === 'codex_cli_bridge') {
                 const codexHome = typeof config?.ai?.codex_bridge?.home === 'string' && config.ai.codex_bridge.home.trim()
                     ? config.ai.codex_bridge.home.trim()
                     : '(default)';
                 console.log(`🧰 Codex bridge home: ${codexHome}`);
+            } else if (resolvedAiBackend === 'cline_cli_bridge') {
+                const clineCommand = typeof config?.ai?.cline_bridge?.command === 'string' && config.ai.cline_bridge.command.trim()
+                    ? config.ai.cline_bridge.command.trim()
+                    : 'cline';
+                const clineCwd = typeof config?.ai?.cline_bridge?.cwd === 'string' && config.ai.cline_bridge.cwd.trim()
+                    ? config.ai.cline_bridge.cwd.trim()
+                    : '(repo root)';
+                console.log(`🧰 Cline bridge command: ${clineCommand}`);
+                console.log(`🧰 Cline bridge cwd: ${clineCwd}`);
             }
 
             if (config.imagegen && config.imagegen.enabled) {
@@ -31934,11 +32163,17 @@ async function startServer() {
     });
 }
 
-// Start the server
-startServer().catch(error => {
-    console.error('❌ Failed to start server:', error.message);
-    process.exit(1);
-});
+// Start the HTTP server only when this file is run directly (`node server.js`).
+// Other modules (e.g. LocationExit.js) require('./server') solely for shared
+// runtime state such as `gameLocations`/`pendingRegionStubs`; importing it must
+// not bind a port or leave a listening handle open (which otherwise hangs test
+// processes and causes EADDRINUSE when a dev server is already running).
+if (require.main === module) {
+    startServer().catch(error => {
+        console.error('❌ Failed to start server:', error.message);
+        process.exit(1);
+    });
+}
 function getExperiencePointValues() {
     if (cachedExperiencePointValues) {
         return cachedExperiencePointValues;

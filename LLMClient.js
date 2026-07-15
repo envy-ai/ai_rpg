@@ -9,6 +9,7 @@ const Utils = require('./Utils.js');
 const { dump } = require('js-yaml');
 const readline = require('readline');
 const CodexBridgeClient = require('./CodexBridgeClient.js');
+const ClineBridgeClient = require('./ClineBridgeClient.js');
 let sharpModule = null;
 
 const PROMPT_PROGRESS_BROADCAST_INTERVAL_MS = 500;
@@ -532,6 +533,29 @@ class LLMClient {
             default:
                 return `Codex event: ${type}`;
         }
+    }
+
+    static #isCodexBridgeBackend(backend) {
+        return backend === CodexBridgeClient.backendName;
+    }
+
+    static #isClineBridgeBackend(backend) {
+        return backend === ClineBridgeClient.backendName;
+    }
+
+    static #isCliBridgeBackend(backend) {
+        return LLMClient.#isCodexBridgeBackend(backend)
+            || LLMClient.#isClineBridgeBackend(backend);
+    }
+
+    static #resolveCliBridgeClient(backend) {
+        if (LLMClient.#isCodexBridgeBackend(backend)) {
+            return CodexBridgeClient;
+        }
+        if (LLMClient.#isClineBridgeBackend(backend)) {
+            return ClineBridgeClient;
+        }
+        return null;
     }
 
     static #formatTokenCount(value) {
@@ -1226,6 +1250,15 @@ class LLMClient {
         const config = aiConfigOverride === null
             ? Globals?.config?.ai
             : aiConfigOverride;
+        let backend = null;
+        try {
+            backend = LLMClient.resolveBackend(config);
+        } catch (error) {
+            return [error.message];
+        }
+        if (LLMClient.#isClineBridgeBackend(backend)) {
+            return ClineBridgeClient.getConfigurationErrors(config);
+        }
         return CodexBridgeClient.getConfigurationErrors(config);
     }
 
@@ -1240,8 +1273,11 @@ class LLMClient {
     static getMaxConcurrent(aiConfigOverride = null) {
         const config = aiConfigOverride || LLMClient.ensureAiConfig();
         const backend = LLMClient.resolveBackend(config);
-        if (backend === CodexBridgeClient.backendName) {
+        if (LLMClient.#isCodexBridgeBackend(backend)) {
             return CodexBridgeClient.getMaxConcurrent(config);
+        }
+        if (LLMClient.#isClineBridgeBackend(backend)) {
+            return ClineBridgeClient.getMaxConcurrent(config);
         }
         const raw = Number(config?.max_concurrent_requests);
         if (Number.isInteger(raw) && raw > 0) {
@@ -3855,6 +3891,8 @@ class LLMClient {
                 }
 
                 const resolvedBackend = LLMClient.resolveBackend(aiConfig);
+                const bridgeClient = LLMClient.#resolveCliBridgeClient(resolvedBackend);
+                const isCliBridgeBackend = Boolean(bridgeClient);
                 const effectiveCustomArgs = LLMClient.#buildEffectiveCustomArgs({
                     baseCustomArgs: aiConfig.custom_args,
                     overrideCustomArgs
@@ -3872,7 +3910,7 @@ class LLMClient {
                     assistantResponseSeed,
                     configured: aiConfig.prefill
                 });
-                if (resolvedPrefill && resolvedBackend === CodexBridgeClient.backendName) {
+                if (resolvedPrefill && isCliBridgeBackend) {
                     throw LLMClient.#assistantPrefillError(
                         'Assistant response prefill is only supported by the openai_compatible backend.'
                     );
@@ -3937,7 +3975,7 @@ class LLMClient {
                     stream,
                     payload.stream !== undefined ? payload.stream : aiConfig.stream
                 );
-                payload.stream = resolvedBackend === CodexBridgeClient.backendName
+                payload.stream = isCliBridgeBackend
                     ? false
                     : resolvedStream !== false;
 
@@ -3966,8 +4004,8 @@ class LLMClient {
                     payload.reasoning_effort = resolvedReasoningEffort;
                 }
 
-                const configuredMaxConcurrent = resolvedBackend === CodexBridgeClient.backendName
-                    ? CodexBridgeClient.getMaxConcurrent(aiConfig)
+                const configuredMaxConcurrent = isCliBridgeBackend
+                    ? bridgeClient.getMaxConcurrent(aiConfig)
                     : LLMClient.getMaxConcurrent(aiConfig);
                 const effectiveMaxConcurrent = Number.isInteger(maxConcurrent) && maxConcurrent > 0
                     ? maxConcurrent
@@ -4014,10 +4052,10 @@ class LLMClient {
                     }
                     resolvedWaitAfterNetworkError = configuredNetworkWait;
                 }
-                const resolvedEndpoint = resolvedBackend === CodexBridgeClient.backendName
+                const resolvedEndpoint = isCliBridgeBackend
                     ? null
                     : LLMClient.resolveChatEndpoint(endpoint || aiConfig.endpoint);
-                const oauthKey = resolvedBackend === CodexBridgeClient.backendName
+                const oauthKey = isCliBridgeBackend
                     ? null
                     : LLMClient.#normalizeOAuthKey(aiConfig);
                 const oauthUrl = oauthKey ? LLMClient.#normalizeOAuthUrl(aiConfig) : null;
@@ -4032,17 +4070,17 @@ class LLMClient {
                     ...effectiveHeaders,
                     ...headers
                 };
-                const resolvedApiKey = resolvedBackend === CodexBridgeClient.backendName
+                const resolvedApiKey = isCliBridgeBackend
                     ? null
                     : (apiKey || (oauthConfig
                         ? await LLMClient.#resolveOAuthAccessToken(oauthConfig, configuredRequestHeaders)
                         : aiConfig.apiKey));
-                if (resolvedBackend !== CodexBridgeClient.backendName && !resolvedApiKey) {
+                if (!isCliBridgeBackend && !resolvedApiKey) {
                     throw new Error('AI API key is not configured.');
                 }
 
-                const semaphoreKey = resolvedBackend === CodexBridgeClient.backendName
-                    ? CodexBridgeClient.getSemaphoreKey(aiConfig, resolvedModel)
+                const semaphoreKey = isCliBridgeBackend
+                    ? bridgeClient.getSemaphoreKey(aiConfig, resolvedModel)
                     : `${oauthConfig ? `oauth:${LLMClient.#getOAuthCacheKey(oauthConfig)}` : (resolvedApiKey || 'no-key')}::${resolvedModel || 'no-model'}`;
                 let resolvedTimeout = LLMClient.resolveTimeout(timeoutMs, timeoutScale);
                 let baseStartTimeoutMs = Number.isFinite(aiConfig.stream_start_timeout)
@@ -4057,25 +4095,25 @@ class LLMClient {
                 const incrementContinueTimeoutMs = Number.isFinite(aiConfig.increment_continue_timeout)
                     ? aiConfig.increment_continue_timeout * 1000
                     : 0;
-                if (resolvedBackend === CodexBridgeClient.backendName) {
-                    resolvedTimeout = CodexBridgeClient.resolveBridgeIdleTimeoutMs(aiConfig);
+                if (isCliBridgeBackend) {
+                    resolvedTimeout = bridgeClient.resolveBridgeIdleTimeoutMs(aiConfig);
                     baseStartTimeoutMs = resolvedTimeout;
                     baseContinueTimeoutMs = resolvedTimeout;
                 }
-                const effectiveIncrementStartTimeoutMs = resolvedBackend === CodexBridgeClient.backendName
+                const effectiveIncrementStartTimeoutMs = isCliBridgeBackend
                     ? 0
                     : incrementStartTimeoutMs;
-                const effectiveIncrementContinueTimeoutMs = resolvedBackend === CodexBridgeClient.backendName
+                const effectiveIncrementContinueTimeoutMs = isCliBridgeBackend
                     ? 0
                     : incrementContinueTimeoutMs;
                 const streamStartTimeoutMs = baseStartTimeoutMs + (effectiveIncrementStartTimeoutMs * attemptNumber);
                 const streamContinueTimeoutMs = baseContinueTimeoutMs + (effectiveIncrementContinueTimeoutMs * attemptNumber);
 
-                if (resolvedBackend === CodexBridgeClient.backendName) {
+                if (isCliBridgeBackend) {
                     return {
                         backend: resolvedBackend,
                         aiConfig,
-                        bridgeConfig: CodexBridgeClient.resolveBridgeConfig(aiConfig),
+                        bridgeConfig: bridgeClient.resolveBridgeConfig(aiConfig),
                         payload,
                         requestMessages,
                         resolvedPrefill,
@@ -4301,7 +4339,7 @@ class LLMClient {
                         }
 
                         const shouldTrackPromptProgress = !isSilent
-                            && (payload.stream || resolvedBackend === CodexBridgeClient.backendName);
+                            && (payload.stream || LLMClient.#isCliBridgeBackend(resolvedBackend));
                         streamTrackerId = shouldTrackPromptProgress
                             ? LLMClient.#trackStreamStart(metadataLabel, {
                                 startTimeoutMs: streamStartTimeoutMs,
@@ -4316,8 +4354,40 @@ class LLMClient {
                             LLMClient.#abortControllers.set(streamTrackerId, controller);
                         }
 
-                        if (resolvedBackend === CodexBridgeClient.backendName) {
+                        if (LLMClient.#isCodexBridgeBackend(resolvedBackend)) {
                             response = await CodexBridgeClient.chatCompletion({
+                                messages: requestMessages,
+                                model: resolvedModel,
+                                timeoutMs: resolvedTimeout,
+                                metadataLabel,
+                                additionalPayload: payload,
+                                aiConfig: attemptRuntime.aiConfig,
+                                signal: controller.signal,
+                                onStdoutEvent: (event) => {
+                                    if (!streamTrackerId) {
+                                        return;
+                                    }
+                                    const previewUpdate = LLMClient.#extractCodexPreviewUpdate(event);
+                                    if (previewUpdate) {
+                                        LLMClient.#applyCodexPreviewUpdate(
+                                            streamTrackerId,
+                                            previewUpdate,
+                                            streamContinueTimeoutMs
+                                        );
+                                        return;
+                                    }
+                                    const statusLine = LLMClient.#formatCodexProgressEvent(event);
+                                    if (statusLine) {
+                                        LLMClient.#trackStreamStatus(
+                                            streamTrackerId,
+                                            statusLine,
+                                            streamContinueTimeoutMs
+                                        );
+                                    }
+                                }
+                            });
+                        } else if (LLMClient.#isClineBridgeBackend(resolvedBackend)) {
+                            response = await ClineBridgeClient.chatCompletion({
                                 messages: requestMessages,
                                 model: resolvedModel,
                                 timeoutMs: resolvedTimeout,
@@ -4366,7 +4436,7 @@ class LLMClient {
                         }
 
                         // On any 5xx response, wait waitAfterError seconds and then retry
-                        if (resolvedBackend !== CodexBridgeClient.backendName
+                        if (!LLMClient.#isCliBridgeBackend(resolvedBackend)
                             && (response.status == 429 || (response.status >= 500 && response.status < 600))) {
                             errorLog(`Server error from LLM (status ${response.status}) on attempt ${attempt + 1}.`);
                             const retryWaitSeconds = response.status == 429
@@ -4526,7 +4596,7 @@ class LLMClient {
                         responseContent
                     );
 
-                    if (resolvedBackend === CodexBridgeClient.backendName && responseUsage) {
+                    if (LLMClient.#isCodexBridgeBackend(resolvedBackend) && responseUsage) {
                         await LLMClient.#reportCodexUsage({
                             metadataLabel,
                             model: resolvedModel,
@@ -4705,7 +4775,7 @@ class LLMClient {
                             }
                         }
                     }
-                    if (resolvedBackend === CodexBridgeClient.backendName && streamTrackerId) {
+                    if (LLMClient.#isCliBridgeBackend(resolvedBackend) && streamTrackerId) {
                         LLMClient.#trackStreamEnd(streamTrackerId);
                         streamTrackerId = null;
                     }
@@ -4829,7 +4899,7 @@ class LLMClient {
 
                 errorLog(`Retrying chat completion (attempt ${attempt + 2} of ${retryAttempts + 1})...`);
                 attempt++;
-                if ((attemptRuntime?.payload?.stream || attemptRuntime?.backend === CodexBridgeClient.backendName) && streamTrackerId) {
+                if ((attemptRuntime?.payload?.stream || LLMClient.#isCliBridgeBackend(attemptRuntime?.backend)) && streamTrackerId) {
                     // bump retry count on all active streams
                     const entry = LLMClient.#streamProgress.active.get(streamTrackerId);
                     if (entry) {

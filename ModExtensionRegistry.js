@@ -8,6 +8,7 @@ class ModExtensionRegistry {
     #attributeModifierContributors = [];
     #statusEffectContributors = [];
     #thingTargetStatusEffectContributors = [];
+    #thingPromptContributors = [];
     #inventorySyncContributors = [];
     #settingFields = new Map();
     #settingTabs = new Map();
@@ -596,7 +597,7 @@ class ModExtensionRegistry {
             case 1:
                 return { prefix: '1', startSuffix: 'g' };
             case 3:
-                return { prefix: '3', startSuffix: 'k' };
+                return { prefix: '3', startSuffix: 'l' };
             default:
                 throw new Error('Player-action prompt step must be either 1 or 3.');
         }
@@ -625,6 +626,7 @@ class ModExtensionRegistry {
         this.#attributeModifierContributors = [];
         this.#statusEffectContributors = [];
         this.#thingTargetStatusEffectContributors = [];
+        this.#thingPromptContributors = [];
         this.#inventorySyncContributors = [];
         this.#settingFields.clear();
         this.#settingTabs.clear();
@@ -784,6 +786,10 @@ class ModExtensionRegistry {
         this.#registerContributor(this.#thingTargetStatusEffectContributors, 'Thing target status effect', { modName, contributor });
     }
 
+    registerThingPromptContributor({ modName, contributor } = {}) {
+        this.#registerContributor(this.#thingPromptContributors, 'Thing prompt', { modName, contributor });
+    }
+
     registerInventorySyncContributor({ modName, contributor } = {}) {
         this.#registerContributor(this.#inventorySyncContributors, 'inventory sync', { modName, contributor });
     }
@@ -806,6 +812,10 @@ class ModExtensionRegistry {
 
     getThingTargetStatusEffectContributors() {
         return [...this.#thingTargetStatusEffectContributors];
+    }
+
+    getThingPromptContributors() {
+        return [...this.#thingPromptContributors];
     }
 
     getInventorySyncContributors() {
@@ -1025,6 +1035,29 @@ class ModExtensionRegistry {
         for (const record of this.#inventorySyncContributors) {
             record.contributor(actor, event);
         }
+    }
+
+    // Collect per-Thing prompt fragments contributed by mods. Each contributor
+    // receives the resolved Thing and a context and returns an XML string to embed
+    // inside that Thing's full prompt representation (or null/empty to contribute
+    // nothing). Used to append mod-owned detail (e.g. installed modules) to items
+    // rendered in full in base context.
+    collectThingPromptContributions(thing, context = {}) {
+        const fragments = [];
+        for (const record of this.#thingPromptContributors) {
+            const value = record.contributor(thing, context);
+            if (value === null || value === undefined) {
+                continue;
+            }
+            if (typeof value !== 'string') {
+                throw new Error(`Thing prompt contributor from mod "${record.modName}" must return a string or null.`);
+            }
+            const trimmed = value.trim();
+            if (trimmed) {
+                fragments.push(trimmed);
+            }
+        }
+        return fragments;
     }
 
     registerSettingTab({

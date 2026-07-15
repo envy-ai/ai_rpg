@@ -261,7 +261,7 @@ class ConfigManager {
         if (this.addModelInput) {
             this.addModelInput.addEventListener('input', () => this.clearAddModelError());
             this.addModelInput.addEventListener('keydown', (event) => {
-                if (event.key === 'Enter') {
+                if (event.key === 'Enter' && !event.ctrlKey && !event.metaKey && !event.altKey && !event.shiftKey) {
                     event.preventDefault();
                     this.handleAddModelSubmit();
                 }
@@ -511,6 +511,7 @@ async function testConnection() {
     const model = document.getElementById('ai-model').value;
     const codexSessionMode = document.getElementById('ai-codex-sessionMode')?.value || 'fresh';
     const codexSessionId = document.getElementById('ai-codex-sessionId')?.value || '';
+    const clineCommand = document.getElementById('ai-cline-command')?.value || '';
 
     if (!model) {
         showTestResult('Please fill in the model before testing.', 'error');
@@ -522,6 +523,10 @@ async function testConnection() {
     }
     if (backend === 'codex_cli_bridge' && codexSessionMode === 'resume_id' && !codexSessionId.trim()) {
         showTestResult('Please provide a Codex session ID when using resume_id mode.', 'error');
+        return;
+    }
+    if (backend === 'cline_cli_bridge' && !clineCommand.trim()) {
+        showTestResult('Please provide a Cline command before testing.', 'error');
         return;
     }
     
@@ -552,6 +557,17 @@ async function testConnection() {
                     reasoning_effort: document.getElementById('ai-codex-reasoningEffort')?.value || '',
                     profile: document.getElementById('ai-codex-profile')?.value || '',
                     prompt_preamble: document.getElementById('ai-codex-promptPreamble')?.value || ''
+                },
+                clineBridge: {
+                    command: clineCommand,
+                    provider: document.getElementById('ai-cline-provider')?.value || '',
+                    cwd: document.getElementById('ai-cline-cwd')?.value || '',
+                    thinking: document.getElementById('ai-cline-thinking')?.value || '',
+                    compaction: document.getElementById('ai-cline-compaction')?.value || 'basic',
+                    timeout_seconds: Number(document.getElementById('ai-cline-timeoutSeconds')?.value || 0),
+                    config: document.getElementById('ai-cline-config')?.value || '',
+                    data_dir: document.getElementById('ai-cline-dataDir')?.value || '',
+                    prompt_preamble: document.getElementById('ai-cline-promptPreamble')?.value || ''
                 }
             })
         });

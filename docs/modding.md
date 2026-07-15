@@ -98,7 +98,7 @@ See [`modding_hooks.md`](modding_hooks.md) and [`classes/ModExtensionRegistry.md
 - XML event tags are looked up case-insensitively while parsing event-check responses, then routed to mod parsers and handlers.
 - XML event prompt schemas render through `prompts/_includes/events-xml.njk`.
 - Base-context contributors populate `modContext`; actor status contributors populate prompt/client `modStatusSections`.
-- Player-action prompt steps support stages `1` and `3` and receive automatic numbering such as `1g` and `3k`.
+- Player-action prompt steps support stages `1` and `3` and receive automatic numbering such as `1g` and `3l`.
 - Generation prompt instructions are collected dynamically for item, location, and region generators.
 - Setting tabs and fields render in World Profiles; fields without a tab stay in the Prompt Guidance Mod Settings block.
 - Non-persisted select fields with `action: "applyPreset"` can copy confirmed option values into editable mod setting fields without saving the selector itself.

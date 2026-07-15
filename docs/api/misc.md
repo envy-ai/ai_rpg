@@ -22,8 +22,10 @@ Test an AI backend configuration without saving it.
 Request:
 - Body for OpenAI-compatible backends: `{ backend?: string, endpoint: string, apiKey: string, model: string }`
 - Body for Codex bridge: `{ backend: 'codex_cli_bridge', model?: string, codexBridge?: object }`
+- Body for Cline bridge: `{ backend: 'cline_cli_bridge', model?: string, clineBridge?: object }`
 - The OpenAI-compatible test calls `<endpoint>/chat/completions` using the supplied API key and model.
 - The Codex bridge test validates the provided bridge settings before sending a short bridge test prompt.
+- The Cline bridge test validates the provided bridge settings before sending a short Cline bridge test prompt.
 
 Response:
 - 200: `{ success: true, message: 'Configuration test successful' }`

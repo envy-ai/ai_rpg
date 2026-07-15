@@ -9,22 +9,24 @@
 - Canonical command: `regex_replace`.
 - Aliases: none.
 - Help description: `Replace strings throughout the story log using regular expressions.`
-- Usage from declared args: `/regex_replace <pattern> <replacement> [flags]`.
+- Usage from declared args: `/regex_replace <pattern> <replacement> [flags] [scope]`.
 
 ## Args
 - `pattern` (string, required): Trimmed before execution. A missing, null, or all-whitespace pattern returns an ephemeral `Pattern is required.` reply.
 - `replacement` (string or null, required): String values are trimmed before execution. `null`, an empty string, or an all-whitespace string replaces matches with empty text. The argument must be present; omitted or `undefined` values fail validation.
 - `flags` (string, optional, default `g`): Trimmed before execution. Only `g`, `i`, `m`, `s`, `u`, and `y` characters pass the command's flag-character check. Duplicate or otherwise invalid flag combinations fail when the command constructs `new RegExp(pattern, flags)`.
+- `scope` (string, optional): Trimmed before execution. When omitted or blank, all chat history entries remain eligible. When provided, only entries whose `type` exactly matches the scope value are eligible, for example `player-action`. Because `flags` comes before `scope`, slash text with a scope must include the flags argument, such as `/regex_replace old new g player-action`.
 
 ## Validation
 - `validateArgs(...)` requires `pattern` to be a string and `replacement` to be present as either a string or `null`.
 - `flags` may be omitted, `null`, or a string. Other flag value types fail validation.
+- `scope` may be omitted, `null`, or a string. Other scope value types fail validation.
 - Execution rejects invalid flag characters before constructing the `RegExp`.
 - Execution catches `RegExp` construction errors and replies with `Invalid regex pattern: ...`.
 
 ## Execution
 - Reads `interaction.chatHistory` directly and requires it to be a non-empty array.
-- Processes only entries whose `content` is a string.
+- Processes only entries whose `content` is a string and, when `scope` is present, whose `type` exactly equals that scope.
 - Replaces entry content with `originalContent.replace(regex, replacement)`.
 - Sets `entry.lastEditedAt` to the current ISO timestamp for each edited entry.
 - Tracks each truthy edited `entry.id` in `modifiedEntryIds`.
@@ -55,4 +57,4 @@
 - Edits applied: visible `Replaced N occurrence(s) in M message(s). Changes have been saved.`
 
 ## Tests
-- `tests/regex_replace_command.test.js` covers empty-string deletion, `null` replacement deletion, save invocation, realtime emission, `lastEditedAt` stamping, modified id payloads, and validation that accepts `null` replacement while rejecting an omitted replacement.
+- `tests/regex_replace_command.test.js` covers empty-string deletion, `null` replacement deletion, scoped entry-type replacement, omitted-scope all-entry behavior, save invocation, realtime emission, `lastEditedAt` stamping, modified id payloads, and validation that accepts `null` replacement while rejecting an omitted replacement.

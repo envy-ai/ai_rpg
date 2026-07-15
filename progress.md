@@ -415,3 +415,68 @@ Original prompt: In mobile mode, rather than columns, the player inventory shoul
   - `npm run scss:build:main` ✅
   - rendered `views/index.njk` inline script `node --check` ✅
   - `npm run test:e2e:headless` ✅ (3 passed, 3 skipped)
+
+Original prompt: Check every modal input box and make sure ctrl-enter submits on all of them. Maybe unify that piece of code.
+
+- Audited modal documentation, modal markup across the shared pages, and existing keyboard handlers.
+- Found a partially unified Ctrl/Cmd+Enter handler in `views/index.njk`, plus separate crafting and salvage handlers and page-specific modal implementations.
+- Identified a behavior boundary requiring confirmation before implementation: inventory/search filters have no submit action, and the barter modal contains filters, a Haggle action, and a separate Commit Trade action.
+- Proposed direction: a shared delegated modal-shortcut helper loaded by `_includes/head-common.njk`, native form submission where available, and explicit control-to-action mappings for non-form/multi-action modals.
+- Added shared `public/js/modal-submit-shortcuts.js`, loaded through `_includes/head-common.njk` on every application page.
+- Modal inputs inside forms now submit through native `requestSubmit()`; non-form data-entry modals use explicit `data-ctrl-enter-submit` mappings.
+- Added mappings for Play-page travel, location-region repair, slash upload, barter haggle, crafting/salvage, NPC memories/goals, load game, and dynamic chat edit workflows, plus Config Add Model, Settings Auto-Fill Guidance, and Lorebooks Upload.
+- Removed the duplicated general/crafting/salvage Play-page Ctrl/Cmd+Enter handlers; preserved unmodified Enter behavior for Add Model, Load Game, barter haggle, and skill addition.
+- Added behavioral and markup regression coverage in `tests/modal_submit_shortcuts.test.js` and updated `tests/crafting_ctrl_enter_ui.test.js`.
+- Added `tests/e2e/modal-submit-shortcuts.spec.js` for real-browser form submission, explicit action activation, filter non-submission, and shared Play-page helper loading.
+- Updated docs: `docs/ui/modals_overlays.md` and `docs/README.md`.
+- Validation:
+  - `node --check` passed for all altered JavaScript and test files.
+  - `node --test tests/modal_submit_shortcuts.test.js tests/crafting_ctrl_enter_ui.test.js` ✅ (7 passed).
+  - Targeted Playwright modal shortcut spec ✅ (2 passed).
+  - Develop-web-game browser client completed with no captured console/page errors; inspected `tmp/modal-ctrl-enter-webgame/shot-0.png`.
+  - Full `npm run test:e2e:headless`: 18 passed, 3 skipped, 11 failed. Eight header failures expect the existing navigation without its Mods entry; two settings persistence tests time out creating profiles. The empty-action confirmation test failed only in the parallel run and passed when rerun alone.
+  - Settings persistence failures reproduce with one worker and are unrelated to keyboard events (the new helper only handles Ctrl/Cmd+Enter keydown).
+- TODO: no remaining work for modal Ctrl/Cmd+Enter submission. Existing header/settings E2E failures remain outside this task.
+
+Original prompt: Update the tests to match the current intended functionalty of the game.
+
+- Compared the failing E2E assertions with current UI/API documentation and implementation.
+- Header expectations are stale: `Mods` is now a primary navigation item and `/mods` is a documented top-level page.
+- Settings persistence tests submit before the asynchronous Worlds-page initialization attaches handlers and omit the now-required hiding/perception attributes.
+- Settings tests also need isolation: `/settings` performs `POST /api/settings/load`, which clears/reloads the singleton in-memory profile registry and can race with persistence tests running in parallel.
+- The parallel-only empty-action failure is a readiness race; the test clicks Send before `window.AIRPG_CHAT` is guaranteed to exist.
+- Proposed test-only changes: update header labels/routes, stub profile reload in the header-only Worlds check, serialize settings persistence tests, populate required mechanic attributes, and wait for client initialization in the empty-action test.
+- Updated `header.navigation.spec.js` to include the primary Mods label, exercise `/mods`, and include Mods in mobile navigation expectations.
+- The header-only `/settings` case now stubs `POST /api/settings/load` so a read-only chrome assertion cannot clear/reload the shared profile registry during persistence tests.
+- Updated `settings.persistence.spec.js` to run serially, wait for Worlds-page network initialization, force a create-mode current-profile response, choose required hiding/perception attributes through Character Options, and apply the enabled Modules default preset before saving.
+- Updated `empty-action-confirm.spec.js` to wait for `window.AIRPG_CHAT` and an enabled Send button before exercising the confirmation flow.
+- Updated docs: `docs/playwright.md` and `docs/README.md`.
+- Validation:
+  - Altered E2E spec syntax checks passed.
+  - The 15 formerly failing header/settings/empty-action tests passed together with three workers.
+  - Full `npm run test:e2e:headless` ✅: 30 passed, 3 intentionally skipped.
+  - Develop-web-game browser client completed without captured console/page errors; inspected `tmp/current-functionality-tests-webgame/shot-0.png` and confirmed the Mods page/header renders correctly.
+- TODO: none for this test-alignment task.
+
+Original prompt: I've saved my current game on the running server. Go ahead and run those tests, checking if they work as designed. If they fail, let me know and we'll determine if the problem is the code or the test.
+
+- Ran all three intentionally skipped Playwright regressions against the existing server at `http://127.0.0.1:7777` after confirming the user's manual save exists.
+- Attack replay: failed at the 30-second timeout waiting for `POST /api/chat`; the attack check and `resolveAttack` completed, but live (non-fixture) player-action and follow-up prompts ran. The resulting narration did not match the deterministic fixture assertion.
+- Cross-region round trip: failed at the 30-second timeout on its first `POST /api/player/move`; the server did complete the move from The Sinking Stairs to Warning Post, but the test never reached the round-trip exit assertions because live image/while-away work ran after load.
+- Vehicle new game: failed at the 30-second timeout on `POST /api/new-game`; it created Vehicle Regression Hero but was still generating a live calendar/region and had no current location when the test ended, so none of the vehicle assertions ran.
+- Root-cause evidence points to test setup: both `/api/load` and `/api/new-game` call `Globals.reloadConfigAndDefs()`, while the tests apply `ai.force_outputs_file` and other deterministic runtime settings *before* those calls. The reload removes the test overrides, causing live prompts and making the 30-second timeout unsuitable. No application or test code was changed during this diagnostic run.
+- Verified the runtime config values returned to the pre-test baseline after the runs. The live in-memory game remains test-mutated; the user's pre-test manual save is retained for restoration.
+- Develop-web-game smoke review captured `tmp/web-game-test-review/shot-0.png`; it shows the partially initialized Vehicle Regression Hero at Unknown Location with a live `region_generation` prompt. The client captured one generic 404 console resource error.
+
+Follow-up: Change the timeout to 5m and re-run the tests.
+
+- Scoped a five-minute timeout to the opt-in playthrough regression describe block and the opt-in vehicle regression describe block; the global Playwright timeout remains 30 seconds.
+- Updated `docs/playwright.md` and its `docs/README.md` catalog description to document the regression-specific timeout.
+- Known rerun caveat: `/api/load` and `/api/new-game` still reload configuration after the tests set deterministic runtime overrides, so the five-minute runs may use live prompts.
+- Validation:
+  - Altered spec syntax checks passed.
+  - Attack replay ran for about 5.1 minutes, received a successful live `/api/chat` response just before timeout, then failed because the live narration did not contain the deterministic fixture text. Serial mode did not run the region scenario in that command.
+  - Region shortcut ran for about 5.1 minutes. It completed moves to Warning Post and Memorial Walk, then hit the 300,000 ms timeout during the move to Last Chance Market; cross-region assertions were not reached.
+  - Vehicle regression ran for about 5.1 minutes and hit the 300,000 ms timeout inside `/api/new-game` while live Starfall Station NPC/ability generation was still running; vehicle assertions were not reached.
+  - Develop-web-game browser review captured `tmp/five-minute-regression-review/shot-0.png`, showing Vehicle Regression Hero at Unknown Location with live NPC ability generation still active. One generic 404 resource console error was captured.
+- Conclusion: the five-minute timeout override is active, but it does not make the regressions deterministic or sufficient while config reloads discard their forced-output settings.

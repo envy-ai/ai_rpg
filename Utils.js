@@ -1316,7 +1316,26 @@ class Utils {
     return serialized;
   }
 
-  static writeSerializedGameState(saveDir, serialized) {
+  static async writeFileAtomic(filePath, contents) {
+    if (!filePath || typeof filePath !== 'string') {
+      throw new Error('writeFileAtomic requires a target file path');
+    }
+    const directory = path.dirname(filePath);
+    const tempPath = path.join(directory, `.${path.basename(filePath)}.${process.pid}.${Date.now()}.tmp`);
+    try {
+      await fs.promises.writeFile(tempPath, contents);
+      await fs.promises.rename(tempPath, filePath);
+    } catch (error) {
+      try {
+        await fs.promises.rm(tempPath, { force: true });
+      } catch (cleanupError) {
+        console.warn('Failed to remove temporary file after atomic write failure:', tempPath, cleanupError?.message || cleanupError);
+      }
+      throw error;
+    }
+  }
+
+  static async writeSerializedGameState(saveDir, serialized) {
     if (!saveDir || typeof saveDir !== 'string') {
       throw new Error('writeSerializedGameState requires a target directory');
     }
@@ -1324,38 +1343,39 @@ class Utils {
       throw new Error('writeSerializedGameState requires serialized data');
     }
 
-    if (!fs.existsSync(saveDir)) {
-      fs.mkdirSync(saveDir, { recursive: true });
-    }
+    await fs.promises.mkdir(saveDir, { recursive: true });
 
     const ensureFile = (filename, data) => {
       const filePath = path.join(saveDir, filename);
-      fs.writeFileSync(filePath, JSON.stringify(data, null, 2));
+      return fs.promises.writeFile(filePath, JSON.stringify(data, null, 2));
     };
 
-    ensureFile('gameWorld.json', serialized.gameWorld || {});
-    ensureFile('chatHistory.json', serialized.chatHistory || []);
-    ensureFile('images.json', serialized.generatedImages || {});
-    ensureFile('things.json', serialized.things || {});
-    ensureFile('allPlayers.json', serialized.players || {});
-    ensureFile('factions.json', serialized.factions || {});
-    ensureFile('mysteryBoxes.json', serialized.mysteryBoxes || {});
-    ensureFile('mysteryThreads.json', serialized.mysteryThreads || {});
-    ensureFile('scheduledEvents.json', serialized.scheduledEvents || {});
-    ensureFile('trackers.json', serialized.trackers || {});
-    ensureFile('skills.json', serialized.skills || []);
-    ensureFile('metadata.json', serialized.metadata || {});
-    ensureFile('pendingRegionStubs.json', serialized.pendingRegionStubs || {});
-    ensureFile('worldTime.json', serialized.worldTime || {});
-    ensureFile('calendarDefinition.json', serialized.calendarDefinition || {});
-    fs.writeFileSync(path.join(saveDir, 'gameConfigOverride.yaml'), serialized.gameConfigOverrideYaml || '', 'utf8');
+    const writes = [
+      ensureFile('gameWorld.json', serialized.gameWorld || {}),
+      ensureFile('chatHistory.json', serialized.chatHistory || []),
+      ensureFile('images.json', serialized.generatedImages || {}),
+      ensureFile('things.json', serialized.things || {}),
+      ensureFile('allPlayers.json', serialized.players || {}),
+      ensureFile('factions.json', serialized.factions || {}),
+      ensureFile('mysteryBoxes.json', serialized.mysteryBoxes || {}),
+      ensureFile('mysteryThreads.json', serialized.mysteryThreads || {}),
+      ensureFile('scheduledEvents.json', serialized.scheduledEvents || {}),
+      ensureFile('trackers.json', serialized.trackers || {}),
+      ensureFile('skills.json', serialized.skills || []),
+      ensureFile('metadata.json', serialized.metadata || {}),
+      ensureFile('pendingRegionStubs.json', serialized.pendingRegionStubs || {}),
+      ensureFile('worldTime.json', serialized.worldTime || {}),
+      ensureFile('calendarDefinition.json', serialized.calendarDefinition || {}),
+      fs.promises.writeFile(path.join(saveDir, 'gameConfigOverride.yaml'), serialized.gameConfigOverrideYaml || '', 'utf8'),
+      ensureFile('chatSummaries.json', serialized.chatSummaries || {}),
+      ensureFile('sceneSummaries.json', serialized.sceneSummaries || {})
+    ];
 
     if (serialized.setting) {
-      ensureFile('setting.json', serialized.setting);
+      writes.push(ensureFile('setting.json', serialized.setting));
     }
 
-    ensureFile('chatSummaries.json', serialized.chatSummaries || {});
-    ensureFile('sceneSummaries.json', serialized.sceneSummaries || {});
+    await Promise.all(writes);
   }
 
   static loadSerializedGameState(saveDir) {

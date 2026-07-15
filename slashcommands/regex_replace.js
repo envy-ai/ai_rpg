@@ -14,7 +14,8 @@ class RegexReplaceCommand extends SlashCommandBase {
     return [
       { name: 'pattern', type: 'string', required: true },
       { name: 'replacement', type: 'string', required: true },
-      { name: 'flags', type: 'string', required: false, default: 'g' }
+      { name: 'flags', type: 'string', required: false, default: 'g' },
+      { name: 'scope', type: 'string', required: false }
     ];
   }
 
@@ -41,6 +42,11 @@ class RegexReplaceCommand extends SlashCommandBase {
       errors.push('Argument "flags" must be a string.');
     }
 
+    const scope = providedArgs.scope;
+    if (scope !== undefined && scope !== null && typeof scope !== 'string') {
+      errors.push('Argument "scope" must be a string.');
+    }
+
     return errors;
   }
 
@@ -48,6 +54,7 @@ class RegexReplaceCommand extends SlashCommandBase {
     const pattern = args.pattern?.trim();
     const replacement = args.replacement === null ? '' : args.replacement?.trim();
     const flags = args.flags?.trim() || 'g';
+    const scope = args.scope?.trim() || '';
 
     if (!pattern) {
       await interaction.reply({
@@ -104,6 +111,9 @@ class RegexReplaceCommand extends SlashCommandBase {
 
     // Apply regex replacement to each chat entry
     for (const entry of chatHistory) {
+      if (scope && entry?.type !== scope) {
+        continue;
+      }
       if (entry && typeof entry.content === 'string') {
         const originalContent = entry.content;
         const newContent = originalContent.replace(regex, replacement);

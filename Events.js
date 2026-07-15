@@ -12,6 +12,7 @@ const MysteryBox = require("./MysteryBox.js");
 const MysteryThread = require("./MysteryThread.js");
 const Tracker = require("./Tracker.js");
 const { CHAT_TOOL_DEFINITIONS, createChatToolRuntime } = require("./chat_tool_calls.js");
+const { resolveQuestDispositionRewardDelta } = require("./quest_disposition_reward_delta.js");
 
 const BASE_TIMEOUT_MS = 120000;
 const DEFAULT_STATUS_DURATION = 3;
@@ -14793,40 +14794,9 @@ class Events {
     }
 
     static _resolveQuestDispositionDelta(intensityValue, definitions) {
-        const range = definitions?.range || {};
-        const typicalStep = Number.isFinite(Number(range.typicalStep))
-            ? Number(range.typicalStep)
-            : null;
-        const typicalBigStep = Number.isFinite(Number(range.typicalBigStep))
-            ? Number(range.typicalBigStep)
-            : null;
-
-        if (intensityValue === -10) {
-            if (!Number.isFinite(typicalBigStep)) {
-                return null;
-            }
-            return -typicalBigStep;
-        }
-
-        if (intensityValue >= -3 && intensityValue <= 3) {
-            if (!Number.isFinite(typicalStep)) {
-                return null;
-            }
-            const scaled = intensityValue * typicalStep;
-            const rounded = Math.round(scaled);
-            return rounded !== 0
-                ? rounded
-                : Math.sign(intensityValue) * Math.max(1, Math.round(Math.abs(scaled)) || 1);
-        }
-
-        if (!Number.isFinite(typicalStep)) {
-            return null;
-        }
-        const scaled = (intensityValue / 2) * typicalStep;
-        const rounded = Math.round(scaled);
-        return rounded !== 0
-            ? rounded
-            : Math.sign(intensityValue) * Math.max(1, Math.round(Math.abs(scaled)) || 1);
+        // Shared with the quest confirmation preview so the accepted-quest display
+        // and the on-completion award can never diverge.
+        return resolveQuestDispositionRewardDelta(intensityValue, definitions);
     }
 
     static _applyQuestNpcDispositionRewards(quest, context = {}) {

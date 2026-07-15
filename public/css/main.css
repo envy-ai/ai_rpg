@@ -9184,6 +9184,22 @@ body.modal-open {
   overflow: hidden;
 }
 
+.modal__prompt-progress {
+  flex: 0 0 auto;
+  width: 100%;
+  height: 4px;
+  background: rgba(113, 63, 18, 0.54);
+  overflow: hidden;
+}
+
+.modal__prompt-progress-fill {
+  height: 100%;
+  width: 0;
+  background: linear-gradient(90deg, #fde047, #facc15 48%, #f97316);
+  box-shadow: 0 0 10px rgba(250, 204, 21, 0.9);
+  transition: width 0.3s ease;
+}
+
 .modal__header,
 .quest-confirmation__header,
 .chat-edit-modal__header,
@@ -13401,6 +13417,29 @@ body.modal-open {
 .message.status-summary {
   background: rgba(0, 0, 0, 0.6);
   border-left: 4px solid #a855f7;
+}
+
+.message.save-notice {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  align-self: center;
+  max-width: 100%;
+  margin: 0.35rem auto;
+  padding: 0.3rem 0.85rem;
+  background: rgba(15, 23, 42, 0.45);
+  border: 1px dashed rgba(148, 163, 184, 0.35);
+  border-radius: 999px;
+  color: rgba(203, 213, 225, 0.85);
+  font-size: 0.82rem;
+  font-style: italic;
+}
+
+.message.save-notice .save-notice__timestamp {
+  color: rgba(148, 163, 184, 0.65);
+  font-size: 0.72rem;
+  font-style: normal;
 }
 
 .turn-diff-drawer {

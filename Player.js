@@ -5425,19 +5425,23 @@ class Player {
         const equippedEffects = [];
         for (const item of equippedItems) {
             if (!item) continue;
-            const equipEffect = item.causeStatusEffectOnEquipper
-                || (item.causeStatusEffect?.applyToEquipper ? item.causeStatusEffect : null)
-                || null;
-            if (equipEffect && (equipEffect.description || equipEffect.name)) {
-                const effectPayload = {
-                    name: equipEffect.name || null,
-                    description: equipEffect.description || equipEffect.text || equipEffect.name || '',
-                    duration: equipEffect.duration ?? null,
-                    attributes: Array.isArray(equipEffect.attributes) ? equipEffect.attributes : [],
-                    skills: Array.isArray(equipEffect.skills) ? equipEffect.skills : [],
-                    needBars: Array.isArray(equipEffect.needBars) ? equipEffect.needBars : []
-                };
-                equippedEffects.push(effectPayload);
+            // Apply every equip status effect the item carries, not just the first.
+            const equipperEffects = Array.isArray(item.causeStatusEffectsOnEquipper) && item.causeStatusEffectsOnEquipper.length
+                ? item.causeStatusEffectsOnEquipper
+                : (item.causeStatusEffectOnEquipper
+                    ? [item.causeStatusEffectOnEquipper]
+                    : (item.causeStatusEffect?.applyToEquipper ? [item.causeStatusEffect] : []));
+            for (const equipEffect of equipperEffects) {
+                if (equipEffect && (equipEffect.description || equipEffect.name)) {
+                    equippedEffects.push({
+                        name: equipEffect.name || null,
+                        description: equipEffect.description || equipEffect.text || equipEffect.name || '',
+                        duration: equipEffect.duration ?? null,
+                        attributes: Array.isArray(equipEffect.attributes) ? equipEffect.attributes : [],
+                        skills: Array.isArray(equipEffect.skills) ? equipEffect.skills : [],
+                        needBars: Array.isArray(equipEffect.needBars) ? equipEffect.needBars : []
+                    });
+                }
             }
         }
 

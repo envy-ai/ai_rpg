@@ -94,7 +94,7 @@ test('MysteryBox manual edit replaces editable keys and text', () => {
     assert.equal(MysteryBox.getByKey('Omega-7 Captain'), null);
 });
 
-test('serialized game state writes and loads mystery boxes', () => {
+test('serialized game state writes and loads mystery boxes', async () => {
     IdGenerator.reset();
     MysteryBox.clear();
     const saveDir = makeTempSaveDir();
@@ -112,7 +112,7 @@ test('serialized game state writes and loads mystery boxes', () => {
         });
         box.markResolved();
 
-        Utils.writeSerializedGameState(saveDir, Utils.serializeGameState({
+        await Utils.writeSerializedGameState(saveDir, Utils.serializeGameState({
             gameLocations: new Map(),
             gameLocationExits: new Map(),
             regions: new Map(),

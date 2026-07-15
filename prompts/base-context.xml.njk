@@ -230,7 +230,8 @@ This is a list of all characters in the story and a short description of each.
           {% endfor %}
         </statusEffects>
         <weight>{{ item.weight | default(0) }}</weight>
-        <properties>{{ item.properties | default('', true) }}</properties>
+        <properties>{{ item.properties | default('', true) }}</properties>{% if item.modPromptXml %}
+{{ item.modPromptXml | safe }}{% endif %}
       </item>
       {% endfor %}
     {% endif %}</items>
@@ -289,7 +290,8 @@ This is a list of all characters in the story and a short description of each.
             {% if installedModuleBaseId in ['', 'n/a', 'none', 'null'] %}
           <item>
             <name>{{ item.name }}</name>
-            <equippedSlot>{{ item.equippedSlot | default('none') }}</equippedSlot>
+            <equippedSlot>{{ item.equippedSlot | default('none') }}</equippedSlot>{% if item.modPromptXml %}
+{{ item.modPromptXml | safe }}{% endif %}
           </item>
             {% endif %}
         {% endfor %}{% endif %}</inventory>
@@ -375,7 +377,8 @@ This is a list of all characters in the story and a short description of each.
           {% endfor %}
         </statusEffects>
         <weight>{{ item.weight | default(0) }}</weight>
-        <properties>{{ item.properties | default('', true) }}</properties>
+        <properties>{{ item.properties | default('', true) }}</properties>{% if item.modPromptXml %}
+{{ item.modPromptXml | safe }}{% endif %}
       </item>
       {% endif %}{% endfor %}
     {% endif %}</itemsInScene>
@@ -475,7 +478,8 @@ This is a list of all characters in the story and a short description of each.
         </statusEffects>
         <value>{{ item.value | default(0) }}</value>
         <weight>{{ item.weight | default(0) }}</weight>
-        <properties>{{ item.properties | default('', true) }}</properties>
+        <properties>{{ item.properties | default('', true) }}</properties>{% if item.modPromptXml %}
+{{ item.modPromptXml | safe }}{% endif %}
       </item>
       {% endif %}
       {% endfor %}
@@ -695,6 +699,13 @@ This is a list of all characters in the story and a short description of each.
 <plotAnalysis>
   {% include "_includes/plot-analysis-blurb.njk" %}
 </plotAnalysis>
+{% endif %}
+{% if promptType != 'tonal-scale-evaluation' and tonalScaleEvaluation and tonalScaleEvaluation | trim %}
+<tonalScaleEvaluation>
+This evaluation is current as of {{ tonalScaleEvaluationTurnsAgo | default(0, true) }} turns ago, and the state of the story may have changed since then. Use your judgement.
+
+{{ tonalScaleEvaluation }}
+</tonalScaleEvaluation>
 {% endif %}
 <currentConditions>
   <worldTime>

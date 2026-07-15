@@ -71,7 +71,7 @@ npm run test:e2e:headless -- tests/e2e/settings.persistence.spec.js
 - Default base URL: `http://127.0.0.1:4173`
 - Web server command: `npm run start -- --port <port>`
 - Web server reuse: enabled when a compatible server is already listening.
-- Test timeout: 30 seconds.
+- Test timeout: 30 seconds by default; the opt-in playthrough and vehicle regressions use 5 minutes because they can exercise multi-stage generation and save/load processing.
 - Expect timeout: 5 seconds.
 - Reporter: list output plus HTML report with `open: never`.
 - Failure artifacts: traces and videos are retained on failure; screenshots are captured only on failure.
@@ -89,11 +89,19 @@ Environment variables:
 - `new-game.smoke.spec.js`: new-game form rendering and immediate redirect to the Adventure tab after submit.
 - `empty-action-confirm.spec.js`: empty chat sends require confirmation before `/api/chat` receives an empty user action.
 - `crafting.empty-submit.spec.js`: crafting and location-modification modals submit intentional empty material selections, including the Ctrl+Enter prose shortcut.
-- `header.navigation.spec.js`: shared header rendering, nav labels, save/load actions, tools menu layering, and mobile non-overlap checks.
-- `settings.persistence.spec.js`: world profile create/rename/delete persistence and Calendar tab serialization.
+- `header.navigation.spec.js`: shared header rendering including the primary Mods route, nav labels, save/load actions, tools menu layering, and mobile non-overlap checks.
+- `modal-submit-shortcuts.spec.js`: shared modal form submission, explicit non-form actions, filter non-submission, and common-page helper loading.
+- `settings.persistence.spec.js`: world profile create/rename/delete persistence and Calendar tab serialization using required Character Options mechanic attributes and enabled-mod preset configuration.
 - `story-tools-search.spec.js`: Story Tools search modes, type filters, case sensitivity, delayed filtering, and Mystery Box load/save behavior.
 - `playthrough.regression.spec.js`: deterministic playthrough replay and cross-region round-trip checks, gated by environment variables.
 - `new-game.vehicles.spec.js`: deterministic vehicle-region generation and vehicle exit UI checks, gated by environment variables.
+
+## Stateful Test Isolation
+
+- The Express game server owns singleton in-memory world/profile state, so specs that mutate it must clean up and avoid destructive startup requests from unrelated read-only tests.
+- `settings.persistence.spec.js` runs its two profile-mutating tests serially. Its setup waits for Worlds-page network initialization, starts from an explicitly empty current-profile response, fills required hiding/perception attributes through the Character Options tab, and applies the default Modules preset when that enabled mod is present.
+- The `/settings` case in `header.navigation.spec.js` stubs `POST /api/settings/load` because header rendering does not need to clear and reload the shared profile registry.
+- Chat interaction specs wait for `window.AIRPG_CHAT` before clicking controls whose listeners are installed by the client constructor.
 
 ## Gated Regression Specs
 
@@ -118,6 +126,7 @@ npm run test:e2e:playthrough-region-roundtrip
 ```
 
 The playthrough regression copies `tests/e2e/fixtures/playthrough_save_start` into `autosaves/`, copies forced outputs into `tmp/`, configures deterministic runtime values through `/api/slash-command`, and removes its runtime autosave and forced-output file during teardown.
+Both playthrough modes have a five-minute test timeout.
 
 Vehicle-region regression:
 
@@ -126,6 +135,7 @@ PLAYWRIGHT_NEW_GAME_VEHICLE_REGRESSION=1 npm run test:e2e:headless -- tests/e2e/
 ```
 
 The vehicle regression copies `tests/e2e/fixtures/new_game_vehicle_region_forced_outputs.json` into `tmp/`, appends deterministic forced outputs for region-stub and location generation, creates a temporary world profile, and removes those temporary runtime files and settings during teardown. It performs a final `/api/save` and leaves that save available under `saves/` for manual inspection.
+The vehicle regression has a five-minute test timeout.
 
 ## Standalone Browser Scripts
 

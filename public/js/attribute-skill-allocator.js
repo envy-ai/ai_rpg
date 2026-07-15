@@ -1028,7 +1028,7 @@
       addSkillInputs.forEach(input => {
         input.addEventListener('input', () => syncAddSkillInputs(input));
         input.addEventListener('keydown', (event) => {
-          if (event.key === 'Enter') {
+          if (event.key === 'Enter' && !event.ctrlKey && !event.metaKey && !event.altKey && !event.shiftKey) {
             event.preventDefault();
             handleAddSkillInput(input);
           }

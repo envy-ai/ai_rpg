@@ -53,7 +53,7 @@ Each save directory can contain:
 - `enabledMods`: sorted unique startup-active mod directory names. `/api/load` compares this list with the running server's startup-frozen active mod list before hydration.
 - `idCounters`: `IdGenerator.snapshotCounters()` output so compact ids are not reused after deleted records disappear from the live world.
 - `saveFileSaveVersion`: numeric save-format version recorded in memory as `Globals.saveFileSaveVersion`.
-- Prompt/runtime fields: `summaryStyle`, `npcAliasesGenerated`, `plotSummaryTurnCounter`, `plotExpanderTurnCounter`, `improvementPromptTurnCounter`, `offscreenNpcActivityState`, and `plotAnalysis`.
+- Prompt/runtime fields: `summaryStyle`, `npcAliasesGenerated`, `plotSummaryTurnCounter`, `plotExpanderTurnCounter`, `improvementPromptTurnCounter`, `tonalScaleEvaluationTurnCounter`, `tonalScaleEvaluationResult`, `tonalScaleEvaluationResultTurnCounter`, `tonalScaleEvaluationUpdatedAt`, optional tonal evaluation source/location fields, `offscreenNpcActivityState`, and `plotAnalysis`.
 
 ## ID Allocation
 

@@ -5,6 +5,7 @@ const path = require('path');
 
 const rootDir = path.join(__dirname, '..');
 const viewSource = fs.readFileSync(path.join(rootDir, 'views', 'index.njk'), 'utf8');
+const headCommonSource = fs.readFileSync(path.join(rootDir, 'views', '_includes', 'head-common.njk'), 'utf8');
 const chatSource = fs.readFileSync(path.join(rootDir, 'public', 'js', 'chat.js'), 'utf8');
 const scssSource = fs.readFileSync(path.join(rootDir, 'public', 'css', 'main.scss'), 'utf8');
 const globalsSource = fs.readFileSync(path.join(rootDir, 'public', 'css', '_globals.scss'), 'utf8');
@@ -41,6 +42,18 @@ test('prompt progress dock supports persisted collapsed, one-line, and table sta
     assert.match(chatSource, /prompt-progress-dock--table/);
     assert.match(chatSource, /getLongestRunningPromptProgressEntry/);
     assert.match(chatSource, /progressFraction/);
+});
+
+test('prompt progress updates the favicon with a dark blue bottom-to-top active prompt fill', () => {
+    assert.match(headCommonSource, /<link rel="icon" href="\/assets\/fluentui-emoji\/crossed_swords_color_classic\.svg" type="image\/svg\+xml">/);
+    assert.match(chatSource, /this\.promptProgressFaviconOriginalHref/);
+    assert.match(chatSource, /this\.promptProgressFaviconFillColor = '#0f3d7a'/);
+    assert.match(chatSource, /updatePromptProgressFavicon\(this\.promptProgressEntries\)/);
+    assert.match(chatSource, /restorePromptProgressFavicon\(\)/);
+    assert.match(chatSource, /getLongestRunningPromptProgressEntry\(entries\)/);
+    assert.match(chatSource, /const fillHeight = iconSize \* safeProgressFraction/);
+    assert.match(chatSource, /context\.fillRect\(0, iconSize - fillHeight, iconSize, fillHeight\)/);
+    assert.match(chatSource, /favicon\.href = canvas\.toDataURL\('image\/png'\)/);
 });
 
 test('prompt progress dock mode controls use compress and expand icons without abort reload', () => {
@@ -87,7 +100,7 @@ test('one-line prompt tracker right-aligns white mode icons and softens idle sta
     assert.match(scssSource, /\.prompt-progress-dock__one-line-content > \.prompt-progress-dock__mode-controls/);
     assert.match(scssSource, /margin-left:\s*auto/);
     assert.match(scssSource, /filter:\s*brightness\(0\) invert\(1\)/);
-    assert.match(scssSource, /\.prompt-progress-dock__one-line-row--idle \.prompt-progress-dock__one-line-label/);
+    assert.match(scssSource, /\.prompt-progress-dock__one-line-row--idle\s+\.prompt-progress-dock__one-line-label/);
     assert.match(scssSource, /font-style:\s*italic/);
 });
 
@@ -116,7 +129,7 @@ test('one-line prompt label uses a fixed 60 percent desktop width with medium-bo
 });
 
 test('main styles import Roboto and use it as the default font at normal width and weight', () => {
-    assert.match(scssSource, /@import url\('https:\/\/fonts\.googleapis\.com\/css2\?family=Roboto:ital,wdth,wght@0,75\.\.100,100\.\.900;1,75\.\.100,100\.\.900&display=swap'\);/);
+    assert.match(scssSource, /@import url\(["']https:\/\/fonts\.googleapis\.com\/css2\?family=Roboto:ital,wdth,wght@0,75\.\.100,100\.\.900;1,75\.\.100,100\.\.900&display=swap["']\);/);
     assert.match(globalsSource, /\$font-family:\s*"Roboto",/);
     assert.match(scssSource, /body\s*\{[\s\S]*font-family:\s*\$font-family/);
     assert.match(scssSource, /body\s*\{[\s\S]*font-weight:\s*400/);
@@ -187,4 +200,33 @@ test('prompt view action spawns persistent modeless prompt viewers', () => {
     assert.match(syncViewerWindowBlock, /viewerState\.lastEntry/);
     assert.doesNotMatch(syncViewerWindowBlock, /closePromptProgressViewer/);
     assert.match(scssSource, /\.prompt-progress-viewer\s*\{[\s\S]*pointer-events:\s*auto/);
+});
+
+test('open modals mirror the prompt-progress aggregate as a thin bottom bar', () => {
+    const updateBlock = extractBlock(
+        chatSource,
+        'updateModalPromptProgressBars() {',
+        'setupModalPromptProgressObserver() {'
+    );
+    const observerBlock = extractBlock(
+        chatSource,
+        'setupModalPromptProgressObserver() {',
+        'ensurePromptProgressFavicon() {'
+    );
+
+    // Bar reflects the same aggregate fraction used by the chat dock and only
+    // shows while a prompt is active.
+    assert.match(updateBlock, /getPromptProgressAggregateFraction\(entries\)/);
+    assert.match(updateBlock, /\.modal\[aria-hidden="false"\] \.modal__dialog/);
+    assert.match(updateBlock, /modal__prompt-progress-fill/);
+    assert.match(updateBlock, /bar\.remove\(\)/);
+
+    // Rendering the dock also refreshes modal bars, and modal open/close is observed.
+    assert.match(chatSource, /this\.updateModalPromptProgressBars\(\);/);
+    assert.match(chatSource, /this\.setupModalPromptProgressObserver\(\);/);
+    assert.match(observerBlock, /attributeFilter:\s*\['aria-hidden', 'hidden'\]/);
+
+    // Styling exists for the injected bar.
+    assert.match(scssSource, /\.modal__prompt-progress\s*\{[\s\S]*height:\s*4px/);
+    assert.match(scssSource, /\.modal__prompt-progress-fill\s*\{/);
 });

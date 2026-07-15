@@ -116,6 +116,7 @@ Response:
 - 400/503 with `{ success: false, error }`
 
 Validation and persistence:
+- `filename` is rejected when it is empty or contains `/`, `\`, or `..`, so uploads never escape the lorebook directory.
 - `.json` is appended to `filename` when it is missing.
 - `content` must parse as JSON.
 - Parsed content must contain an object-valued `entries` property.

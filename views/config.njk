@@ -83,6 +83,7 @@
                     <h2>🤖 AI Configuration</h2>
                     {% set aiBackend = config.ai.backend or 'openai_compatible' %}
                     {% set codexBridgeConfig = config.ai.codex_bridge or {} %}
+                    {% set clineBridgeConfig = config.ai.cline_bridge or {} %}
                     {% set codexCommandValue = codexBridgeConfig.command or 'codex' %}
                     {% set codexHomeValue = codexBridgeConfig.home or './tmp/codex-bridge-home' %}
                     {% set codexSessionModeValue = codexBridgeConfig.session_mode or 'fresh' %}
@@ -90,6 +91,15 @@
                     {% set codexReasoningEffortValue = codexBridgeConfig.reasoning_effort or '' %}
                     {% set codexProfileValue = codexBridgeConfig.profile or '' %}
                     {% set codexPromptPreambleValue = codexBridgeConfig.prompt_preamble or '' %}
+                    {% set clineCommandValue = clineBridgeConfig.command or 'cline' %}
+                    {% set clineProviderValue = clineBridgeConfig.provider or '' %}
+                    {% set clineCwdValue = clineBridgeConfig.cwd or '' %}
+                    {% set clineThinkingValue = clineBridgeConfig.thinking or '' %}
+                    {% set clineCompactionValue = clineBridgeConfig.compaction or 'basic' %}
+                    {% set clineTimeoutSecondsValue = clineBridgeConfig.timeout_seconds if clineBridgeConfig.timeout_seconds is defined else 0 %}
+                    {% set clineConfigValue = clineBridgeConfig.config or '' %}
+                    {% set clineDataDirValue = clineBridgeConfig.data_dir or '' %}
+                    {% set clinePromptPreambleValue = clineBridgeConfig.prompt_preamble or '' %}
                     {% set aiSyspromptAppendValue = config.ai.sysprompt_append or '' %}
                     <div class="form-grid">
                         <div class="form-group full-width">
@@ -97,8 +107,9 @@
                             <select id="ai-backend" name="ai.backend::string" required>
                                 <option value="openai_compatible" {% if aiBackend == 'openai_compatible' %}selected{% endif %}>openai_compatible</option>
                                 <option value="codex_cli_bridge" {% if aiBackend == 'codex_cli_bridge' %}selected{% endif %}>codex_cli_bridge</option>
+                                <option value="cline_cli_bridge" {% if aiBackend == 'cline_cli_bridge' %}selected{% endif %}>cline_cli_bridge</option>
                             </select>
-                            <span class="help-text">Choose the text-generation backend. The OpenAI-compatible path remains available, and Codex can be enabled as a separate bridge-backed option.</span>
+                            <span class="help-text">Choose the text-generation backend. The OpenAI-compatible path remains available, and Codex or Cline can be enabled as separate bridge-backed options.</span>
                         </div>
 
                         <div class="form-group full-width"
@@ -147,6 +158,40 @@
                                    name="ai.codex_bridge.home::string"
                                    value="{{ codexHomeValue }}">
                             <span class="help-text">State directory used by the bridge. Relative paths are resolved from the repo root. Resume modes only see sessions recorded under this same Codex home.</span>
+                        </div>
+
+                        <div class="form-group full-width"
+                             data-ai-backend-section="cline_cli_bridge"
+                             {% if aiBackend != 'cline_cli_bridge' %}hidden{% endif %}>
+                            <label for="ai-cline-command">Cline Command:</label>
+                            <input type="text"
+                                   id="ai-cline-command"
+                                   name="ai.cline_bridge.command::string"
+                                   value="{{ clineCommandValue }}"
+                                   data-required-backend="cline_cli_bridge">
+                            <span class="help-text">Command or absolute path used to launch Cline.</span>
+                        </div>
+
+                        <div class="form-group"
+                             data-ai-backend-section="cline_cli_bridge"
+                             {% if aiBackend != 'cline_cli_bridge' %}hidden{% endif %}>
+                            <label for="ai-cline-provider">Cline Provider:</label>
+                            <input type="text"
+                                   id="ai-cline-provider"
+                                   name="ai.cline_bridge.provider::string"
+                                   value="{{ clineProviderValue }}">
+                            <span class="help-text">Optional provider id passed to Cline. Blank uses Cline's saved default provider.</span>
+                        </div>
+
+                        <div class="form-group"
+                             data-ai-backend-section="cline_cli_bridge"
+                             {% if aiBackend != 'cline_cli_bridge' %}hidden{% endif %}>
+                            <label for="ai-cline-cwd">Cline CWD:</label>
+                            <input type="text"
+                                   id="ai-cline-cwd"
+                                   name="ai.cline_bridge.cwd::string"
+                                   value="{{ clineCwdValue }}">
+                            <span class="help-text">Optional working directory. Relative paths are resolved from the repo root.</span>
                         </div>
                         
                         <div class="form-group full-width">
@@ -248,6 +293,78 @@
                                       name="ai.codex_bridge.prompt_preamble::string"
                                       rows="4">{{ codexPromptPreambleValue }}</textarea>
                             <span class="help-text">Optional instructions prepended ahead of the bridge wrapper prompt.</span>
+                        </div>
+
+                        <div class="form-group"
+                             data-ai-backend-section="cline_cli_bridge"
+                             {% if aiBackend != 'cline_cli_bridge' %}hidden{% endif %}>
+                            <label for="ai-cline-thinking">Cline Thinking:</label>
+                            <select id="ai-cline-thinking" name="ai.cline_bridge.thinking::string">
+                                <option value="" {% if clineThinkingValue == '' %}selected{% endif %}>default</option>
+                                <option value="none" {% if clineThinkingValue == 'none' %}selected{% endif %}>none</option>
+                                <option value="low" {% if clineThinkingValue == 'low' %}selected{% endif %}>low</option>
+                                <option value="medium" {% if clineThinkingValue == 'medium' %}selected{% endif %}>medium</option>
+                                <option value="high" {% if clineThinkingValue == 'high' %}selected{% endif %}>high</option>
+                                <option value="xhigh" {% if clineThinkingValue == 'xhigh' %}selected{% endif %}>xhigh</option>
+                            </select>
+                            <span class="help-text">Optional Cline thinking level.</span>
+                        </div>
+
+                        <div class="form-group"
+                             data-ai-backend-section="cline_cli_bridge"
+                             {% if aiBackend != 'cline_cli_bridge' %}hidden{% endif %}>
+                            <label for="ai-cline-compaction">Cline Compaction:</label>
+                            <select id="ai-cline-compaction" name="ai.cline_bridge.compaction::string">
+                                <option value="basic" {% if clineCompactionValue == 'basic' %}selected{% endif %}>basic</option>
+                                <option value="agentic" {% if clineCompactionValue == 'agentic' %}selected{% endif %}>agentic</option>
+                                <option value="off" {% if clineCompactionValue == 'off' %}selected{% endif %}>off</option>
+                            </select>
+                            <span class="help-text">Cline context compaction mode.</span>
+                        </div>
+
+                        <div class="form-group"
+                             data-ai-backend-section="cline_cli_bridge"
+                             {% if aiBackend != 'cline_cli_bridge' %}hidden{% endif %}>
+                            <label for="ai-cline-timeoutSeconds">Cline Timeout (seconds):</label>
+                            <input type="number"
+                                   id="ai-cline-timeoutSeconds"
+                                   name="ai.cline_bridge.timeout_seconds::number"
+                                   value="{{ clineTimeoutSecondsValue }}"
+                                   min="0"
+                                   step="1">
+                            <span class="help-text">Optional total Cline timeout. 0 leaves Cline without a total timeout.</span>
+                        </div>
+
+                        <div class="form-group"
+                             data-ai-backend-section="cline_cli_bridge"
+                             {% if aiBackend != 'cline_cli_bridge' %}hidden{% endif %}>
+                            <label for="ai-cline-config">Cline Config Directory:</label>
+                            <input type="text"
+                                   id="ai-cline-config"
+                                   name="ai.cline_bridge.config::string"
+                                   value="{{ clineConfigValue }}">
+                            <span class="help-text">Optional Cline configuration directory.</span>
+                        </div>
+
+                        <div class="form-group"
+                             data-ai-backend-section="cline_cli_bridge"
+                             {% if aiBackend != 'cline_cli_bridge' %}hidden{% endif %}>
+                            <label for="ai-cline-dataDir">Cline Data Directory:</label>
+                            <input type="text"
+                                   id="ai-cline-dataDir"
+                                   name="ai.cline_bridge.data_dir::string"
+                                   value="{{ clineDataDirValue }}">
+                            <span class="help-text">Optional isolated Cline data directory.</span>
+                        </div>
+
+                        <div class="form-group full-width"
+                             data-ai-backend-section="cline_cli_bridge"
+                             {% if aiBackend != 'cline_cli_bridge' %}hidden{% endif %}>
+                            <label for="ai-cline-promptPreamble">Cline Prompt Preamble:</label>
+                            <textarea id="ai-cline-promptPreamble"
+                                      name="ai.cline_bridge.prompt_preamble::string"
+                                      rows="4">{{ clinePromptPreambleValue }}</textarea>
+                            <span class="help-text">Optional instructions prepended ahead of the Cline bridge wrapper prompt.</span>
                         </div>
 
                         <div class="form-group full-width">
@@ -1064,7 +1181,7 @@
         </div>
     </div>
 
-    <div id="addModelModal" class="modal config-add-model-modal" role="dialog" aria-modal="true" aria-hidden="true" hidden>
+    <div id="addModelModal" class="modal config-add-model-modal" role="dialog" aria-modal="true" aria-hidden="true" data-ctrl-enter-submit="#addModelConfirm" hidden>
         <div class="modal__dialog">
             <header class="modal__header">
                 <h2>Add AI Model</h2>

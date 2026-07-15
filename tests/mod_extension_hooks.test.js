@@ -169,7 +169,7 @@ test('ModExtensionRegistry registers and numbers player-action prompt steps for 
             id: 'implant-consistency',
             fullId: 'implants:implant-consistency',
             step: 3,
-            number: '3k',
+            number: '3l',
             text: 'Check whether implant behavior stayed consistent with installed hardware.',
             order: 1
         },
@@ -178,7 +178,7 @@ test('ModExtensionRegistry registers and numbers player-action prompt steps for 
             id: 'spell-costs',
             fullId: 'spells:spell-costs',
             step: 3,
-            number: '3l',
+            number: '3m',
             text: 'Check whether any spellcasting respected configured costs.',
             order: 3
         }
@@ -189,7 +189,7 @@ test('ModExtensionRegistry registers and numbers player-action prompt steps for 
     );
     assert.deepEqual(
         registry.getPlayerActionPromptSteps({ step: 3 }).map(step => step.number),
-        ['3k', '3l']
+        ['3l', '3m']
     );
     assert.throws(
         () => registry.registerPlayerActionPromptStep({
@@ -310,12 +310,12 @@ test('player-action prompt renders mod-registered steps at stages 1 and 3', () =
             },
             {
                 step: 3,
-                number: '3k',
+                number: '3l',
                 text: 'Check whether implant behavior stayed consistent with installed hardware.'
             },
             {
                 step: 3,
-                number: '3l',
+                number: '3m',
                 text: 'Check whether spellcasting respected configured costs.'
             }
         ]
@@ -323,15 +323,15 @@ test('player-action prompt renders mod-registered steps at stages 1 and 3', () =
 
     assert.match(rendered, /3j\. Did you create any "mystery boxes"\?/);
     assert.match(rendered, /1g\. Check whether urgent lust needs should affect selected NPC initiative\./);
-    assert.match(rendered, /3k\. Check whether implant behavior stayed consistent with installed hardware\./);
-    assert.match(rendered, /3l\. Check whether spellcasting respected configured costs\./);
+    assert.match(rendered, /3l\. Check whether implant behavior stayed consistent with installed hardware\./);
+    assert.match(rendered, /3m\. Check whether spellcasting respected configured costs\./);
     assert.ok(
         rendered.indexOf('1f. Is the player currently under the effects') < rendered.indexOf('1g. Check whether urgent lust needs'),
         'stage 1 mod prompt steps should render after the built-in 1f step'
     );
     assert.ok(
-        rendered.indexOf('3j. Did you create any "mystery boxes"?') < rendered.indexOf('3k. Check whether implant behavior'),
-        'mod prompt steps should render immediately after the built-in 3j step'
+        rendered.indexOf('3k. Remember the rule, "Show, don\'t tell."') < rendered.indexOf('3l. Check whether implant behavior'),
+        'stage 3 mod prompt steps should render immediately after the built-in 3k step'
     );
 });
 
@@ -1017,7 +1017,7 @@ test('ModLoader mod scope exposes mod asset URLs and prompt-step registration', 
             [{
                 fullId: 'implants:implant-consistency',
                 step: 3,
-                number: '3k',
+                number: '3l',
                 text: 'Check whether implant behavior stayed consistent with installed hardware.'
             }]
         );
@@ -1209,4 +1209,31 @@ test('ActorActivatableSystem learns spells and spends mana from a formula withou
         () => system.activate({ actor, name: 'Missing Spell' }),
         /unknown spell/i
     );
+});
+
+test('registerThingPromptContributor collects per-Thing prompt fragments and enforces string output', () => {
+    const registry = new ModExtensionRegistry();
+    registry.registerThingPromptContributor({
+        modName: 'test',
+        contributor: (thing) => (thing?.flagged ? '<extra>hi</extra>' : null)
+    });
+
+    // Contributors that return null/empty contribute nothing.
+    assert.deepEqual(registry.collectThingPromptContributions({ id: 'a' }), []);
+    assert.deepEqual(registry.collectThingPromptContributions({ id: 'b', flagged: true }), ['<extra>hi</extra>']);
+
+    // Non-string return values fail loud.
+    registry.registerThingPromptContributor({
+        modName: 'bad',
+        contributor: () => ({ not: 'a string' })
+    });
+    assert.throws(
+        () => registry.collectThingPromptContributions({ id: 'c', flagged: true }),
+        /must return a string or null/
+    );
+
+    // Clearing removes registered contributors.
+    registry.clear();
+    assert.deepEqual(registry.getThingPromptContributors(), []);
+    assert.deepEqual(registry.collectThingPromptContributions({ id: 'd', flagged: true }), []);
 });

@@ -281,7 +281,7 @@ test('base prompt context exposes registered player-action prompt steps', () => 
         id: 'implant-consistency',
         fullId: 'implants:implant-consistency',
         step: 3,
-        number: '3k',
+        number: '3l',
         text: 'Check whether implant behavior stayed consistent with installed hardware.',
         order: 1
     }]);

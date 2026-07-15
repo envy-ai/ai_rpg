@@ -1,5 +1,51 @@
 const { test, expect } = require('@playwright/test');
 
+test.describe.configure({ mode: 'serial' });
+
+async function openNewWorldProfileEditor(page) {
+    await page.route((url) => new URL(url).pathname === '/api/settings/current', async (route) => {
+        await route.fulfill({
+            status: 200,
+            contentType: 'application/json',
+            body: JSON.stringify({ success: true, setting: null })
+        });
+    });
+    const response = await page.goto('/settings', { waitUntil: 'networkidle' });
+    expect(response && response.ok()).toBeTruthy();
+
+    await expect(page.locator('#formTitle')).toContainText('Create New Setting');
+
+    await page.click('[data-editor-tab="characters"]');
+    await expect(page.locator('[data-editor-panel="characters"]')).toHaveClass(/is-active/);
+
+    const hidingAttributeOption = page.locator('#hidingAttribute option:not([value=""])').first();
+    const perceptionAttributeOption = page.locator('#perceptionAttribute option:not([value=""])').first();
+    await expect(hidingAttributeOption).toHaveCount(1);
+    await expect(perceptionAttributeOption).toHaveCount(1);
+
+    const hidingAttribute = await hidingAttributeOption.getAttribute('value');
+    const perceptionAttribute = await perceptionAttributeOption.getAttribute('value');
+    expect(hidingAttribute).toBeTruthy();
+    expect(perceptionAttribute).toBeTruthy();
+    await page.selectOption('#hidingAttribute', hidingAttribute);
+    await page.selectOption('#perceptionAttribute', perceptionAttribute);
+
+    const modulesPreset = page.locator('#modSetting_modules_applyPreset');
+    if (await modulesPreset.count()) {
+        await page.click('[data-editor-tab="mod-modules"]');
+        await expect(page.locator('[data-editor-panel="mod-modules"]')).toHaveClass(/is-active/);
+        page.once('dialog', async (dialog) => {
+            await dialog.accept();
+        });
+        await modulesPreset.selectOption('modules');
+        await expect(page.locator('.modules-slot-types-editor__row')).toHaveCount(1);
+        await expect(page.locator('[data-module-slot-type-id]')).toHaveValue('module');
+    }
+
+    await page.click('[data-editor-tab="basics"]');
+    await expect(page.locator('[data-editor-panel="basics"]')).toHaveClass(/is-active/);
+}
+
 async function fetchSettings(page) {
     return page.evaluate(async () => {
         const response = await fetch('/api/settings');
@@ -37,8 +83,7 @@ test('renaming creates new id and delete persists across refresh', async ({ page
 
     const cleanupIds = [];
     try {
-        const response = await page.goto('/settings');
-        expect(response && response.ok()).toBeTruthy();
+        await openNewWorldProfileEditor(page);
 
         await page.fill('#name', originalName);
         await page.fill('#theme', 'Fantasy');
@@ -93,8 +138,7 @@ test('calendar tab saves a generated calendar with the world profile', async ({ 
     const cleanupIds = [];
 
     try {
-        const response = await page.goto('/settings');
-        expect(response && response.ok()).toBeTruthy();
+        await openNewWorldProfileEditor(page);
 
         await page.fill('#name', settingName);
         await page.fill('#theme', 'Fantasy');

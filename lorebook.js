@@ -370,6 +370,11 @@ class LorebookManager {
    * Save an uploaded lorebook file
    */
   async saveLorebook(filename, content) {
+    if (typeof filename !== 'string' || !filename.trim()
+      || filename.includes('/') || filename.includes('\\') || filename.includes('..')) {
+      throw new Error(`Invalid lorebook filename: ${filename}`);
+    }
+
     // Ensure .json extension
     if (!filename.endsWith('.json')) {
       filename = filename + '.json';

@@ -69,6 +69,49 @@ test('regex_replace treats a null replacement as empty text', async () => {
     assert.equal(result.replies[0].content, 'Replaced 2 occurrence(s) in 1 message(s). Changes have been saved.');
 });
 
+test('regex_replace scope limits replacements to one chat entry type', async () => {
+    const chatHistory = [
+        { id: 'entry-1', type: 'player-action', content: 'red fish, red fish' },
+        { id: 'entry-2', type: 'assistant', content: 'red fish' },
+        { id: 'entry-3', type: 'player-action', content: 'blue fish' }
+    ];
+
+    const result = await runRegexReplace({
+        pattern: 'red',
+        replacement: 'gold',
+        flags: 'g',
+        scope: 'player-action'
+    }, chatHistory);
+
+    assert.equal(chatHistory[0].content, 'gold fish, gold fish');
+    assert.equal(chatHistory[1].content, 'red fish');
+    assert.equal(chatHistory[2].content, 'blue fish');
+    assert.match(chatHistory[0].lastEditedAt, /^\d{4}-\d{2}-\d{2}T/);
+    assert.equal(chatHistory[1].lastEditedAt, undefined);
+    assert.equal(result.saves.length, 1);
+    assert.equal(result.replies[0].content, 'Replaced 2 occurrence(s) in 1 message(s). Changes have been saved.');
+    assert.deepEqual(result.emits[0][2].modifiedEntryIds, ['entry-1']);
+});
+
+test('regex_replace omitted scope preserves all-entry behavior', async () => {
+    const chatHistory = [
+        { id: 'entry-1', type: 'player-action', content: 'red fish' },
+        { id: 'entry-2', type: 'assistant', content: 'red fish' }
+    ];
+
+    const result = await runRegexReplace({
+        pattern: 'red',
+        replacement: 'gold',
+        flags: 'g'
+    }, chatHistory);
+
+    assert.equal(chatHistory[0].content, 'gold fish');
+    assert.equal(chatHistory[1].content, 'gold fish');
+    assert.equal(result.saves.length, 1);
+    assert.equal(result.replies[0].content, 'Replaced 2 occurrence(s) in 2 message(s). Changes have been saved.');
+    assert.deepEqual(result.emits[0][2].modifiedEntryIds, ['entry-1', 'entry-2']);
+});
+
 test('regex_replace validation accepts null replacement but still requires the argument', () => {
     assert.deepEqual(RegexReplaceCommand.validateArgs({
         pattern: 'x',

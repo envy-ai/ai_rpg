@@ -468,9 +468,9 @@ class Location {
 
         // Convert numeric fields to numbers
         if (child.tagName === 'relativeLevel') {
-          locationData[child.tagName] = parseInt(value, 0);
+          locationData[child.tagName] = parseInt(value, 10);
         } else if (child.tagName === 'numItems' || child.tagName === 'numScenery' || child.tagName === 'numNpcs' || child.tagName === 'numHostiles') {
-          locationData[child.tagName] = parseInt(value, 0);
+          locationData[child.tagName] = parseInt(value, 10);
         } else if (child.tagName === 'hasWeather') {
           locationData[child.tagName] = Location.#normalizeWeatherExposure(value, 'location.hasWeather');
         } else {

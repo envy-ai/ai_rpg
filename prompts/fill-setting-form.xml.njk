@@ -10,7 +10,11 @@ Here is the XML structure representing the game setting:
 
 <setting>
   <name>{{ setting.name }}</name>
-  <description>{{ setting.description | default("<-- use several paragraphs to provide a rich and immersive overview of the setting -->", true) }}</description>
+  {% if setting.description %}
+  <description>{{ setting.description }}</description>
+  {% else %}
+  <description><!-- use several paragraphs to provide a rich and immersive overview of the setting --></description>
+  {% endif %}
   <theme>{{ setting.theme }}</theme>
   <genre>{{ setting.genre }}</genre>
   <startingLocationType>{{ setting.startingLocationType }}</startingLocationType>
@@ -23,7 +27,11 @@ Here is the XML structure representing the game setting:
   <currencyValueNotes>{{ setting.currencyValueNotes }}</currencyValueNotes>
   <writingStyleNotes>{{ setting.writingStyleNotes }}</writingStyleNotes>
   <baseContextPreamble>{{ setting.baseContextPreamble }}</baseContextPreamble>
+  {% if setting.characterGenInstructions %}
   <characterGenInstructions>{{ setting.characterGenInstructions }}</characterGenInstructions>
+  {% else %}
+  <characterGenInstructions><!-- Provide instructions to the LLM for generating NPCs in this setting --></characterGenInstructions>
+  {% endif %}
   <playerStartingLevel>{{ setting.playerStartingLevel }}</playerStartingLevel>
   <defaultPlayerName>{{ setting.defaultPlayerName }}</defaultPlayerName>
   <defaultPlayerDescription>{{ setting.defaultPlayerDescription }}</defaultPlayerDescription>
@@ -51,12 +59,6 @@ Here is the XML structure representing the game setting:
     <race>{{ race }}</race>
 {% endfor %}
   </availableRaces>
-  <customSlopWords>
-    <!-- Optional list of extra slop terms to avoid in prose. Use <word></word> for each entry. Single words are checked as slop words; multi-word phrases are checked as ngrams. -->
-{% for word in setting.customSlopWords %}
-    <word>{{ word }}</word>
-{% endfor %}
-  </customSlopWords>
 </setting>
 {% if attributeOptions and attributeOptions.length %}
 

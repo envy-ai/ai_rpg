@@ -1129,7 +1129,7 @@
                     </div>
                 </dl>
                 <label class="map-fast-travel-action-label" for="mapFastTravelActionText">Action</label>
-                <textarea id="mapFastTravelActionText" class="map-fast-travel-action-text" rows="5"></textarea>
+                <textarea id="mapFastTravelActionText" class="map-fast-travel-action-text" rows="5" data-ctrl-enter-submit="#mapFastTravelConfirmBtn"></textarea>
             </div>
             <footer class="modal__footer">
                 <div class="button-group">
@@ -1140,7 +1140,7 @@
         </div>
     </div>
 
-    <div id="locationRegionFixerModal" class="modal location-region-fixer-modal" role="dialog" aria-modal="true" aria-labelledby="locationRegionFixerTitle" aria-describedby="locationRegionFixerDescription" aria-hidden="true" hidden>
+    <div id="locationRegionFixerModal" class="modal location-region-fixer-modal" role="dialog" aria-modal="true" aria-labelledby="locationRegionFixerTitle" aria-describedby="locationRegionFixerDescription" aria-hidden="true" data-ctrl-enter-submit="#locationRegionFixerConfirmBtn" hidden>
         <div class="modal__dialog">
             <header class="modal__header">
                 <h2 id="locationRegionFixerTitle">Fix Location Region</h2>
@@ -1171,7 +1171,7 @@
         </div>
     </div>
 
-    <div id="slashUploadModal" class="modal" role="dialog" aria-modal="true" aria-labelledby="slashUploadTitle" aria-hidden="true" hidden>
+    <div id="slashUploadModal" class="modal" role="dialog" aria-modal="true" aria-labelledby="slashUploadTitle" aria-hidden="true" data-ctrl-enter-submit="#slashUploadSubmitBtn" hidden>
         <div class="modal__dialog">
             <header class="modal__header">
                 <h2 id="slashUploadTitle">Upload File</h2>
@@ -1803,7 +1803,7 @@
                     <div id="barterHaggleHistory" class="barter-modal__haggle-history"></div>
                     <div class="barter-modal__haggle-row">
                         <label class="sr-only" for="barterHaggleInput">Haggle offer</label>
-                        <input type="text" id="barterHaggleInput" class="npc-selection-filter-input barter-modal__haggle-input" placeholder="Make an offer or argument">
+                        <input type="text" id="barterHaggleInput" class="npc-selection-filter-input barter-modal__haggle-input" placeholder="Make an offer or argument" data-ctrl-enter-submit="#barterHaggleBtn">
                         <button type="button" class="npc-edit-add-btn" id="barterHaggleBtn">Haggle</button>
                     </div>
                 </div>
@@ -2126,7 +2126,7 @@
                 </div>
                 <div class="crafting-modal__notes">
                     <label for="craftingNotesInput" class="sr-only">Crafting notes</label>
-                    <textarea id="craftingNotesInput" class="crafting-modal__notes-input" rows="2" placeholder="Optionally, describe what you are trying to craft. Include &lt;N&gt; to force your roll."></textarea>
+                    <textarea id="craftingNotesInput" class="crafting-modal__notes-input" rows="2" placeholder="Optionally, describe what you are trying to craft. Include &lt;N&gt; to force your roll." data-ctrl-enter-submit="#craftingActionButton"></textarea>
                 </div>
             </div>
             <footer class="modal__footer crafting-modal__footer">
@@ -2204,7 +2204,7 @@
             <div class="modal__body">
                 <p id="salvageIntentMessage" class="modal__instruction">Optionally describe what you hope to recover. Leave blank to continue.</p>
                 <label for="salvageIntentInput" class="sr-only">Desired outcome</label>
-                <textarea id="salvageIntentInput" class="crafting-modal__notes-input" rows="2" placeholder="Optionally describe what you hope to recover. Include &lt;N&gt; to force your roll."></textarea>
+                <textarea id="salvageIntentInput" class="crafting-modal__notes-input" rows="2" placeholder="Optionally describe what you hope to recover. Include &lt;N&gt; to force your roll." data-ctrl-enter-submit="#salvageIntentSubmitBtn"></textarea>
             </div>
             <footer class="modal__footer">
                 <button type="button" class="button button-secondary" id="salvageIntentCancelBtn">Cancel</button>
@@ -2213,7 +2213,7 @@
             </footer>
         </div>
     </div>
-    <div id="npcMemoriesModal" class="modal npc-list-editor-modal npc-list-editor-modal--memories npc-memories-modal" role="dialog" aria-modal="true" aria-hidden="true" hidden>
+    <div id="npcMemoriesModal" class="modal npc-list-editor-modal npc-list-editor-modal--memories npc-memories-modal" role="dialog" aria-modal="true" aria-hidden="true" data-ctrl-enter-submit="#npcMemoriesSaveBtn" hidden>
         <div class="modal__dialog">
             <header class="modal__header">
                 <h2 id="npcMemoriesModalTitle">Edit Memories</h2>
@@ -2235,7 +2235,7 @@
             </footer>
         </div>
     </div>
-    <div id="npcGoalsModal" class="modal npc-list-editor-modal npc-list-editor-modal--goals npc-goals-modal" role="dialog" aria-modal="true" aria-hidden="true" hidden>
+    <div id="npcGoalsModal" class="modal npc-list-editor-modal npc-list-editor-modal--goals npc-goals-modal" role="dialog" aria-modal="true" aria-hidden="true" data-ctrl-enter-submit="#npcGoalsSaveBtn" hidden>
         <div class="modal__dialog">
             <header class="modal__header">
                 <h2 id="npcGoalsModalTitle">Edit Goals</h2>
@@ -2331,7 +2331,7 @@
         </div>
     </div>
 
-    <div id="loadGameModal" class="modal load-game-modal" role="dialog" aria-modal="true" aria-hidden="true" hidden>
+    <div id="loadGameModal" class="modal load-game-modal" role="dialog" aria-modal="true" aria-hidden="true" data-ctrl-enter-submit="#loadGameConfirmBtn" hidden>
         <div class="modal__dialog">
             <header class="modal__header">
                 <h2 id="loadGameModalTitle">Load Game</h2>
@@ -13430,6 +13430,15 @@
                 } else {
                     window.currentPlayerData = cloneActorRecord(actor) || { ...actor };
                     updateChatPlayerPanel?.(actor);
+                    // The player's inventory modal reuses the NPC inventory modal, so
+                    // re-render it here (mirroring the NPC branch above) when it is open
+                    // for the player. window.refreshInventory() only refreshes the chat
+                    // player panel, not the open inventory grid, so without this the
+                    // installed/removed module would not appear until a manual refresh.
+                    if (currentNpcInventoryNpcId === actor.id && Array.isArray(actor.inventory)) {
+                        currentNpcInventory = actor.inventory;
+                        renderNpcInventory(actor.inventory);
+                    }
                     if (options.context === 'player-inventory' || options.context === 'container-player-inventory') {
                         await window.refreshInventory?.();
                     }
@@ -19819,7 +19828,7 @@
                 }
             });
             loadGameSelect.addEventListener('keydown', (event) => {
-                if (event.key === 'Enter') {
+                if (event.key === 'Enter' && !event.ctrlKey && !event.metaKey && !event.altKey && !event.shiftKey) {
                     event.preventDefault();
                     if (!loadGameConfirmBtn.disabled) {
                         loadGameConfirmBtn.click();
@@ -19965,20 +19974,6 @@
             });
         }
 
-        function isCtrlEnterSubmitShortcut(event) {
-            return Boolean(event && !event.isComposing && event.key === 'Enter' && (event.ctrlKey || event.metaKey));
-        }
-
-        function clickPrimaryButtonForShortcut(event, button) {
-            if (!isCtrlEnterSubmitShortcut(event) || !button || button.disabled) {
-                return false;
-            }
-            event.preventDefault();
-            event.stopPropagation();
-            button.click();
-            return true;
-        }
-
         if (craftingCancelButton) {
             craftingCancelButton.addEventListener('click', () => {
                 closeCraftingModal();
@@ -20006,15 +20001,6 @@
             searchInput: craftingInventoryFilterInput,
             rerender: () => renderCraftingInventory()
         });
-        const handleCraftingNotesCtrlEnter = (event) => {
-            if (!craftingIsOpen) {
-                return;
-            }
-            clickPrimaryButtonForShortcut(event, craftingActionButton);
-        };
-        if (craftingNotesInput) {
-            craftingNotesInput.addEventListener('keydown', handleCraftingNotesCtrlEnter);
-        }
         if (craftingInventorySlotFilter) {
             craftingInventorySlotFilter.addEventListener('change', () => renderCraftingInventory());
         }
@@ -20077,17 +20063,6 @@
             salvageIntentBackdrop.addEventListener('click', () => closeSalvageIntentModal());
         }
 
-        const handleSalvageIntentCtrlEnter = (event) => {
-            const salvageModalOpen = salvageIntentModal && salvageIntentModal.getAttribute('aria-hidden') === 'false';
-            if (!salvageModalOpen) {
-                return;
-            }
-            clickPrimaryButtonForShortcut(event, salvageIntentSubmitBtn);
-        };
-        if (salvageIntentInput) {
-            salvageIntentInput.addEventListener('keydown', handleSalvageIntentCtrlEnter);
-        }
-
         document.addEventListener('keydown', (event) => {
             if (event.key !== 'Escape') {
                 return;
@@ -20103,48 +20078,6 @@
                 closeCraftingModal();
             }
         });
-
-        function setupCtrlEnterSubmission() {
-            const handleCtrlEnter = (event) => {
-                if (!isCtrlEnterSubmitShortcut(event)) {
-                    return;
-                }
-
-                const active = document.activeElement;
-
-                const triggerSubmitForScope = (root) => {
-                    if (!root) return false;
-                    const submitBtn = root.querySelector('button[type="submit"]:not([disabled])')
-                        || root.querySelector('.button-primary:not([disabled])');
-                    if (submitBtn) {
-                        return clickPrimaryButtonForShortcut(event, submitBtn);
-                    }
-                    return false;
-                };
-
-                // Prefer the nearest form to the focused element
-                const form = active?.closest?.('form');
-                if (form && triggerSubmitForScope(form)) {
-                    return;
-                }
-
-                // If a modal is open, try its primary action
-                const openModal = document.querySelector('.modal[aria-hidden="false"]');
-                if (openModal && triggerSubmitForScope(openModal)) {
-                    return;
-                }
-
-                // Fallback: chat send button when focus is in the message input
-                if (messageInput && (active === messageInput || messageInput.contains(active)) && sendButton && !sendButton.disabled) {
-                    event.preventDefault();
-                    sendButton.click();
-                }
-            };
-
-            document.addEventListener('keydown', handleCtrlEnter);
-        }
-
-        setupCtrlEnterSubmission();
 
         if (npcDispositionCancelBtn) {
             npcDispositionCancelBtn.addEventListener('click', () => {
@@ -20972,7 +20905,7 @@
 
         if (barterHaggleInput) {
             barterHaggleInput.addEventListener('keydown', (event) => {
-                if (event.key === 'Enter') {
+                if (event.key === 'Enter' && !event.ctrlKey && !event.metaKey && !event.altKey && !event.shiftKey) {
                     event.preventDefault();
                     submitBarterHaggle();
                 }

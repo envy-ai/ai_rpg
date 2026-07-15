@@ -35,11 +35,11 @@
   },
   "227": {
     "inputs": {
-      "text": "{{ image.prompt | json }}"
+      "value": "{{ image.prompt | json }}"
     },
-    "class_type": "Text Multiline",
+    "class_type": "PrimitiveStringMultiline",
     "_meta": {
-      "title": "Text Multiline"
+      "title": "Input Text"
     }
   },
   "230": {
@@ -199,19 +199,6 @@
       "title": "concat"
     }
   },
-  "260": {
-    "inputs": {
-      "text": "",
-      "anything": [
-        "266",
-        0
-      ]
-    },
-    "class_type": "easy showAnything",
-    "_meta": {
-      "title": "Show Any"
-    }
-  },
   "265": {
     "inputs": {
       "lora_name": "qwen/qwen_image_nova.safetensors",
@@ -242,15 +229,17 @@
   },
   "266": {
     "inputs": {
-      "label": "Final Prompt",
-      "text": [
+      "any_value": [
         "256",
         0
-      ]
+      ],
+      "console": true,
+      "display": true,
+      "prefix": "Final Prompt"
     },
-    "class_type": "Text to Console",
+    "class_type": "Show any [Crystools]",
     "_meta": {
-      "title": "Text to Console"
+      "title": "🪛 Show any value to console/display"
     }
   },
   "267": {

@@ -42,7 +42,11 @@ Static utility helpers used across the server for set math, title casing, durati
   - Serializes locations, location exits, regions, things, players, factions, skills, chat history, generated images, pending region stubs, setting data, world time, calendar definition, per-game config override YAML, chat summaries, scene summaries, mystery boxes, mystery threads, and scheduled events.
   - Writes metadata counts, current player identity, `IdGenerator` counters, active plot analysis from `Globals.getPlotAnalysis()`, and `enabledMods` normalized as a sorted unique array for load-time mod manifest comparison.
   - Requires the mystery box/thread, scheduled event, and scene summary serializers to be available; missing serializers throw explicit errors.
-- `writeSerializedGameState(saveDir, serialized)`.
+- `writeFileAtomic(filePath, contents)` (async).
+  - Writes `contents` to a temporary file in the target directory and renames it over `filePath`, so readers never observe a partially written file. Used by the runtime save-metadata, scene-summary, and mystery box/thread persistence paths in `api.js` that overwrite files inside an existing save directory.
+  - Removes the temporary file and rethrows on failure.
+- `writeSerializedGameState(saveDir, serialized)` (async).
+  - Uses `fs.promises` and writes the per-file payloads concurrently so large saves do not block the event loop. Callers must await it; `performGameSave` and the load-time setting backfill in `api.js` do.
   - Writes the save directory files used by `loadSerializedGameState`, including `gameWorld.json`, `chatHistory.json`, `images.json`, `things.json`, `allPlayers.json`, `factions.json`, `mysteryBoxes.json`, `mysteryThreads.json`, `scheduledEvents.json`, `skills.json`, `metadata.json`, `pendingRegionStubs.json`, `worldTime.json`, `calendarDefinition.json`, `gameConfigOverride.yaml`, `chatSummaries.json`, `sceneSummaries.json`, and `setting.json` when a setting is present.
 - `loadSerializedGameState(saveDir)`.
   - Reads the same file set and returns defaults for missing files. JSON/text read failures are warned and return the file's default shape.

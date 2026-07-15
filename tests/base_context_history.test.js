@@ -135,6 +135,28 @@ test('game improvement suggestions are excluded even in all-entry mode', () => {
     );
 });
 
+test('tonal scale evaluation entries are excluded even in all-entry mode', () => {
+    const entry = {
+        type: 'tonal-scale-evaluation',
+        role: 'assistant',
+        content: 'Tonal scale evaluation\n\nIdealism:\n  Current State: Hope is fragile.'
+    };
+
+    assert.equal(
+        shouldIncludeEntryInBaseContextHistory(entry, {
+            hasRenderableContent: true
+        }),
+        false
+    );
+    assert.equal(
+        shouldIncludeEntryInBaseContextHistory(entry, {
+            includeAllEntryTypes: true,
+            hasRenderableContent: true
+        }),
+        false
+    );
+});
+
 test('housekeeping tracker and relationship update entries are excluded even in all-entry mode', () => {
     const entries = [
         {

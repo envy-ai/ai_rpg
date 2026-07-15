@@ -123,6 +123,7 @@ Response:
 - 400/404/500 with `{ success: false, error }`
 
 Behavior:
+- `saveName` is rejected with `400` (`INVALID_SAVE_NAME`) when it contains `/`, `\`, or `..`; save names never escape the save root directory.
 - Saves with `metadata.enabledMods` are compared against the startup-frozen active enabled mod list before hydration. Saves without that metadata skip the mismatch check.
 - `missingFromActive` lists saved mods that are not active in the running server. `extraActive` lists running active mods not recorded in the save.
 - The save's `gameConfigOverride.yaml` is applied through the same merged-config reload path used by `/reload_config` before hydration. Need-bar prompt-sentence validation runs in strict mode for load.
@@ -179,6 +180,7 @@ Response:
 - 400/404/422 with `{ success: false, error }`
 
 Behavior:
+- `saveName` is rejected with `400` (`INVALID_SAVE_NAME`) when it contains `/`, `\`, or `..`; save names never escape the save root directory.
 - The save must contain `metadata.enabledMods`; saves without it cannot be applied automatically.
 - The route writes `tmp/pending-load.json` before restart handling. The pending-load client script consumes that intent on startup and posts `/api/load`.
 - `server.allowSelfRestart: true` allows the route to spawn a replacement server process. Otherwise the response sets `manualRestartRequired: true`.
@@ -272,10 +274,11 @@ Delete a manual save from `saves/`.
 
 Response:
 - 200: `{ success: true, saveName, message }`
-- 404/500 with `{ success: false, error }`
+- 400/404/500 with `{ success: false, error }`
 
 Behavior:
 - This route targets only the `saves/` root, not `autosaves/`.
+- `saveName` is rejected with `400` (`INVALID_SAVE_NAME`) when it contains `/`, `\`, or `..`; deletion never escapes the `saves/` directory.
 
 ## POST /api/summaries/style
 

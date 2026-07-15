@@ -346,7 +346,7 @@ test('Tracker replaces editable fields and derives countdown targets', () => {
   }
 });
 
-test('serialized game state writes, loads, and hydrates trackers', () => {
+test('serialized game state writes, loads, and hydrates trackers', async () => {
   IdGenerator.reset();
   Tracker.clear();
   const saveDir = makeTempSaveDir();
@@ -366,7 +366,7 @@ test('serialized game state writes, loads, and hydrates trackers', () => {
       description: 'Update when signal conditions change.'
     });
 
-    Utils.writeSerializedGameState(saveDir, Utils.serializeGameState(emptySerializedContext()));
+    await Utils.writeSerializedGameState(saveDir, Utils.serializeGameState(emptySerializedContext()));
     const raw = JSON.parse(fs.readFileSync(path.join(saveDir, 'trackers.json'), 'utf8'));
     assert.equal(raw[tracker.id].name, 'Signal Strength');
 

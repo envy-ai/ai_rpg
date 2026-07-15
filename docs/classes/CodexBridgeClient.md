@@ -3,7 +3,7 @@
 ## Purpose
 `CodexBridgeClient.js` is the text-generation backend adapter used when `config.ai.backend` resolves to `codex_cli_bridge`. It turns OpenAI-style chat messages into Codex app-server `developerInstructions` plus a text conversation payload, starts or resumes a Codex thread over stdio, constrains the assistant reply with a structured-output schema, and returns an OpenAI-style chat-completion response for `LLMClient`.
 
-The class also owns backend-name normalization, AI config validation for both supported text backends, Codex bridge concurrency keys, bridge idle-timeout resolution, Codex rate-limit reads, app-server JSON-RPC transport, command-mode helper methods, usage extraction, prompt logging, and normalized progress events.
+The class also owns shared backend-name normalization, AI config validation for OpenAI-compatible and Codex backends, Codex bridge concurrency keys, bridge idle-timeout resolution, Codex rate-limit reads, app-server JSON-RPC transport, command-mode helper methods, usage extraction, prompt logging, and normalized progress events.
 
 ## Configuration
 The Codex bridge requires `ai.model` and accepts `ai.codex_bridge` settings. Defaults are merged by `resolveBridgeConfig(...)`:
@@ -19,7 +19,7 @@ The Codex bridge requires `ai.model` and accepts `ai.codex_bridge` settings. Def
 - `prompt_preamble`: optional text prepended to the generated bridge wrapper instructions.
 - `idle_timeout_ms`: positive no-stdout idle timeout for app-server requests; default `30000`.
 
-`normalizeBackend(...)` accepts `openai`, `openai-compatible`, and `openai_compatible` for the OpenAI-compatible backend, plus `codex`, `codex-bridge`, `codex_cli`, and `codex_cli_bridge` for the bridge. Unknown backend values throw.
+`normalizeBackend(...)` accepts `openai`, `openai-compatible`, and `openai_compatible` for the OpenAI-compatible backend, `codex`, `codex-bridge`, `codex_cli`, and `codex_cli_bridge` for Codex, plus `cline`, `cline-bridge`, `cline_cli`, and `cline_cli_bridge` for Cline. Cline-specific validation and transport live in [ClineBridgeClient.md](ClineBridgeClient.md). Unknown backend values throw.
 
 ## Session Modes
 - `fresh`: sends `thread/start` with `ephemeral: true` for each request.

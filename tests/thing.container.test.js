@@ -145,7 +145,7 @@ test('adding a matching loose item stack to a location merges into the existing 
   }
 });
 
-test('container flag and inventory ids persist through JSON and saves', () => {
+test('container flag and inventory ids persist through JSON and saves', async () => {
   const chest = new Thing({
     id: 'thing-chest',
     name: 'Travel Chest',
@@ -168,7 +168,7 @@ test('container flag and inventory ids persist through JSON and saves', () => {
 
   const saveDir = makeTempSaveDir();
   try {
-    Utils.writeSerializedGameState(saveDir, {
+    await Utils.writeSerializedGameState(saveDir, {
       gameWorld: {},
       chatHistory: [],
       generatedImages: {},
@@ -197,7 +197,7 @@ test('container flag and inventory ids persist through JSON and saves', () => {
   }
 });
 
-test('pending container contents normalize and persist through JSON and saves', () => {
+test('pending container contents normalize and persist through JSON and saves', async () => {
   const warnings = [];
   const originalWarn = console.warn;
   console.warn = (...args) => warnings.push(args.join(' '));
@@ -245,7 +245,7 @@ test('pending container contents normalize and persist through JSON and saves', 
 
   const saveDir = makeTempSaveDir();
   try {
-    Utils.writeSerializedGameState(saveDir, {
+    await Utils.writeSerializedGameState(saveDir, {
       gameWorld: {},
       chatHistory: [],
       generatedImages: {},

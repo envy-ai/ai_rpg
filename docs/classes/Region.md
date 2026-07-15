@@ -93,6 +93,15 @@ Missing region or location short descriptions log warnings but do not abort pars
 
 `server.js` performs additional parsing around the same generated XML for region exits and vehicles. `<regionExits><stubRegion>` entries require `<travelTime>`; parsed minutes are applied to created cross-region exits and are not stored on pending-region stub records. Large generated vehicles become location stubs; huge generated vehicles become pending region-entry stubs with vehicle metadata.
 
+## Region-Entry Doorways And Arrival Selection
+
+Exits into a region no longer all funnel to a single entrance:
+
+- **Distinct doorways per origin.** `createRegionStubFromEvent()` in `server.js` gives each distinct origin location its own region-entry stub ("doorway") rather than reusing a shared entrance stub. When a pending region with the same name already exists, the new doorway reuses that pending region's id (so the region still generates once) but keeps its own approach context. The existing per-origin guard still prevents duplicate doorways from the same origin, and the pending record is created only for the first doorway.
+- **First traversal defines the entrance.** Whichever doorway is entered first triggers region generation and lands the traveler at the LLM-chosen canonical entrance (`chooseRegionEntrance()`), which sets `entranceLocationId`. Sibling doorways remain region-entry stubs pointing at the now-generated region and resolve independently when later traversed.
+- **Contextual arrival for generated regions.** `chooseArrivalLocationForEntryStub({ region, originContext })` picks which existing member location a traveler arrives at based on approach context (origin location/region, direction, route description) via the `region_arrival_selection` prompt. It returns the chosen `Location` or **throws** — it does not silently fall back to the entrance. Regions with a single member location return that location without a prompt; a region with no non-stub members, an empty/unparseable response, or a name that matches no member all raise clear errors. `entranceLocationId` remains the canonical default only for name-based travel and other consumers (while-you-were-away, travel prose, vehicle arrival).
+- **Call sites.** The contextual pick is used by `createRegionStubFromEvent()` (new exit to an already-generated region), `expandRegionEntryStub()`'s already-generated branches (sibling doorway traversal), and the `POST /api/locations/:id/exits` existing-region branch (manual exit creation).
+
 ## Weather
 Region weather definitions normalize to:
 

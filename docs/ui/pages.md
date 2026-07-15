@@ -7,7 +7,7 @@ This page maps server-rendered routes to templates, shared page chrome, injected
 - Shared head tags live in `views/_includes/head-common.njk`: `charset`, viewport, `title`, favicon, `/css/main.css`, and the deferred `/js/pending-load.js` script.
 - Top-level page templates (`index`, `new-game`, `config`, `settings`, `mods`, `lorebooks`, `debug`, `player-stats`) include `views/_includes/head-common.njk`.
 - Top-level pages include `views/_includes/app-header.njk` for the shared app header. `views/_navigation.njk` is a compatibility shim that includes the same header partial.
-- The shared favicon target is `/assets/fluentui-emoji/crossed_swords_color_classic.svg`.
+- The shared favicon target is `/assets/fluentui-emoji/crossed_swords_color_classic.svg`; on the Play page, active prompt progress temporarily replaces it with a canvas-rendered progress favicon and restores the static SVG when prompts clear.
 - `public/js/pending-load.js` checks `GET /api/pending-load` on `DOMContentLoaded`. A pending load intent redirects non-play pages to `/?pendingLoad=1#tab-adventure`, posts `/api/load` with `fromPendingLoad: true`, clears the intent with `DELETE /api/pending-load` after a successful load, and reloads the play page at `/#tab-adventure`.
 
 ## Main Chat Interface
@@ -65,7 +65,7 @@ This page maps server-rendered routes to templates, shared page chrome, injected
 - Data injected by `server.js`: `config`, `modConfigs`, `modelOptions`, `savedMessage`, `errorMessage`, `gameConfigOverrideYaml`, `gameLoaded`.
 - The app header nav label is `System`; the page title is `System Configuration`.
 - The page has `Server Configuration` and `Game Configuration` tabs.
-- The AI section has a backend selector. `openai_compatible` displays endpoint/API-key inputs. `codex_cli_bridge` displays command, home, model/session settings, sandbox, reasoning effort, profile, skip-git-check, prompt preamble, and session-id validation for `resume_id`. Shared AI controls include model swap options and the global `ai.sysprompt_append` textarea for model-specific system instructions.
+- The AI section has a backend selector. `openai_compatible` displays endpoint/API-key inputs. `codex_cli_bridge` displays command, home, model/session settings, sandbox, reasoning effort, profile, skip-git-check, prompt preamble, and session-id validation for `resume_id`. `cline_cli_bridge` displays command, provider, cwd, thinking, compaction, timeout, config/data directories, and prompt preamble. Shared AI controls include model swap options and the global `ai.sysprompt_append` textarea for model-specific system instructions.
 - Image Generation includes prompt batching controls for enablement, delay, and maximum compatible prompts per batch.
 - Gameplay Tuning includes Debug Tool Calls, Show Hidden Notes in Story Tools, and the compatibility prompt-check toggle for attack/skill checks.
 - The `Game Configuration` tab exposes a fixed-width YAML textarea for the loaded game's runtime config override. It saves through `PUT /api/game-config-override`, reloads merged config on change, persists to the save as `gameConfigOverride.yaml`, and is disabled until a game is loaded.

@@ -6,6 +6,7 @@ const SHOULD_RUN = process.env.PLAYWRIGHT_PLAYTHROUGH_REGRESSION === '1';
 const PLAYTHROUGH_MODE = (process.env.PLAYWRIGHT_PLAYTHROUGH_MODE || 'attack').trim().toLowerCase();
 const RUN_ATTACK_MODE = PLAYTHROUGH_MODE === 'attack' || PLAYTHROUGH_MODE === 'all';
 const RUN_REGION_MODE = PLAYTHROUGH_MODE === 'region' || PLAYTHROUGH_MODE === 'all';
+const REGRESSION_TIMEOUT_MS = 5 * 60 * 1000;
 const ROOT_DIR = path.resolve(__dirname, '..', '..');
 const FIXTURE_SAVE_DIR = path.join(ROOT_DIR, 'tests', 'e2e', 'fixtures', 'playthrough_save_start');
 const FIXTURE_FORCED_OUTPUTS_PATH = path.join(
@@ -120,7 +121,7 @@ function findLocationByName(locations, targetName) {
 }
 
 test.describe('playthrough regression', () => {
-    test.describe.configure({ mode: 'serial' });
+    test.describe.configure({ mode: 'serial', timeout: REGRESSION_TIMEOUT_MS });
 
     test.skip(
         !SHOULD_RUN,

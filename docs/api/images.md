@@ -73,7 +73,7 @@ Notes:
 - `force: true` removes the cached variant for the current conditions, queues a replacement, and leaves the base `location.imageId` unchanged.
 - Variant images are display-only. They are stored on the location's image variant map and do not replace the base location image.
 - The deterministic edit prompt is rendered locally from `templates/location-weather-variant-image-prompt.njk`; no LLM prompt-writing call is made for this endpoint.
-- When a variant job runs, the server logs the final rendered image-edit prompt before rendering/submitting the ComfyUI workflow. The default `flux2_klein_edit.json.njk` workflow also sends the prompt through a `Text to Console` node labeled `Final Prompt`.
+- When a variant job runs, the server logs the final rendered image-edit prompt before rendering/submitting the ComfyUI workflow. The default `flux2_klein_edit.json.njk` workflow also sends the prompt through a Crystools `Show any [Crystools]` node with the `Final Prompt` prefix.
 - After saving an edited variant image, the server compares source and edited image dimensions and logs a warning when they differ.
 
 ## POST /api/images/upload

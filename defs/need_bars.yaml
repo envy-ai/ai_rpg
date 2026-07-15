@@ -23,6 +23,15 @@ need_bars:
     min: 0
     max: 1000
     initial: 1000
+    need_values:
+      increase:
+        small: 100
+        medium: 250
+        large: 700
+      decrease:
+        small: 10
+        medium: 20
+        large: 50
     change_per_minute: -0.7
     relative_to_level: false
     small_increase:
@@ -37,9 +46,8 @@ need_bars:
       - eating a rare or better food item of any size
       - eating until fully satisfied
     small_decrease:
-      - light activity
-    large_decrease:
       - strenuous activity
+    large_decrease:
       - vomiting
     while_you_were_away_prompt_notes: If food is available, this need bar should be at least 50%. If it's just after a meal time, it should be close to 100%.
     effect_thresholds:
@@ -148,6 +156,15 @@ need_bars:
     min: 0
     max: 1000
     initial: 1000
+    need_values:
+      increase:
+        small: 100
+        medium: 250
+        large: 700
+      decrease:
+        small: 10
+        medium: 100
+        large: 500
     change_per_minute: -0.6
     relative_to_level: false
     small_increase:

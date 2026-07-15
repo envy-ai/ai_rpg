@@ -1,5 +1,7 @@
 const { randomUUID } = require('crypto');
 const Globals = require('./Globals.js');
+const Player = require('./Player.js');
+const { resolveQuestDispositionRewardDelta } = require('./quest_disposition_reward_delta.js');
 
 class QuestConfirmationManager {
     constructor({ timeoutMs = null } = {}) {
@@ -189,6 +191,9 @@ class QuestConfirmationManager {
             if (!npcName) {
                 return null;
             }
+            const dispositionDefinitions = typeof Player.getDispositionDefinitions === 'function'
+                ? Player.getDispositionDefinitions()
+                : null;
             const dispositions = mapArray(entry.dispositions, disposition => {
                 if (!disposition || typeof disposition !== 'object') {
                     return null;
@@ -199,9 +204,14 @@ class QuestConfirmationManager {
                     return null;
                 }
                 const reason = safeString(disposition.reason);
+                // Preview the actual disposition change (intensity scaled by the
+                // configured typical step), matching what completion will apply and
+                // what the quest list already shows, so the accept dialog is not raw.
+                const resolvedDelta = resolveQuestDispositionRewardDelta(intensity, dispositionDefinitions);
                 return {
                     type,
                     intensity,
+                    delta: Number.isFinite(resolvedDelta) ? resolvedDelta : null,
                     reason: reason || null
                 };
             });

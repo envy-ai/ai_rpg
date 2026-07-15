@@ -66,7 +66,7 @@ max_concurrent_requests_all_models: null
 stagger_concurrent_prompts: 4
 ```
 
-- `max_concurrent_requests_all_models` is optional. When set to a positive integer, `LLMClient` enforces that cap across all real text-generation requests regardless of backend, model, API key, OAuth identity, or Codex bridge session key. Each request still also honors the existing per-model/API-key semaphore from `ai.max_concurrent_requests`.
+- `max_concurrent_requests_all_models` is optional. When set to a positive integer, `LLMClient` enforces that cap across all real text-generation requests regardless of backend, model, API key, OAuth identity, or CLI bridge session key. Each request still also honors the existing per-model/API-key semaphore from `ai.max_concurrent_requests`.
 - `stagger_concurrent_prompts` is the number of seconds between staggered prompt launches. It defaults to `4` when omitted or blank. Event checks launch immediately, need-bar event checks launch after one interval, and quest checks launch after two intervals. Values must be non-negative finite numbers.
 
 ## Mod enablement
@@ -170,6 +170,20 @@ improvement_prompt:
 
 `interval` defaults to `10` and must be an integer greater than or equal to `1` when provided. The cadence counts eligible player-action submissions (normal/creative actions; excludes question, generic, forced-event, and comment-only flows) and runs on every Nth eligible turn. The prompt runs through the shared base-context wrapper with all ordinary `@@`-eligible history available, logs through `LLMClient.logPrompt()` as `improvement_prompt`, and appends a visible `game-improvement-suggestions` chat entry headed `Game improvement suggestions`. That entry is excluded from base-context history, including all-entry generic prompt modes.
 
+## Tonal Scale Evaluation
+
+`tonal_scale_evaluation.enabled` controls whether completed player-action turns periodically schedule the tonal-scale evaluation prompt after turn finalization.
+
+```yaml
+tonal_scale_evaluation:
+  enabled: true
+  interval: 5
+```
+
+`enabled` defaults to `true` in `config.default.yaml` and must be a boolean when provided.
+
+`interval` defaults to `5` and must be an integer greater than or equal to `1` when provided. The cadence counts completed player-action turns after `Player.finalizeTurn()` runs. The prompt renders `prompts/_includes/tonal-scale-evaluation.njk` through the shared base-context wrapper with `promptType: "tonal-scale-evaluation"`, logs through `LLMClient.logPrompt()` as `tonal_scale_evaluation`, extracts only the text inside `<tonalScaleEvaluation>`, and stores it in save metadata. Normal base-context prompts inject the latest stored result before `<currentConditions>` inside a `<tonalScaleEvaluation>` block with a turns-ago staleness warning; the block is omitted when rendering the tonal evaluation prompt itself. `/tonal_scale_evaluation` runs the same prompt immediately and stores a visible `tonal-scale-evaluation` chat entry that is excluded from every LLM-facing prompt-history path.
+
 ## Mystery Box Cleanup
 
 `mystery_box_cleanup.interval` controls how often eligible player-action turns schedule the non-blocking mystery cleanup prompt.
@@ -269,6 +283,7 @@ ai:
 Supported values:
 - `openai_compatible`: the `/chat/completions` HTTP path using `ai.endpoint`, `ai.apiKey` or OAuth refresh-token auth, and `ai.model`.
 - `codex_cli_bridge`: runs text requests through the local Codex CLI bridge; this backend uses `ai.model` plus `ai.codex_bridge.*` and does not require `ai.endpoint` or `ai.apiKey`.
+- `cline_cli_bridge`: runs text requests through the local Cline CLI bridge; this backend uses `ai.model` plus `ai.cline_bridge.*` and does not require `ai.endpoint` or `ai.apiKey`.
 
 Validation rules:
 - `backend` defaults to `openai_compatible` when omitted.
@@ -299,15 +314,15 @@ model_swap_options:
   - "zai-org/glm-4.7"
 ```
 
-- `model` is the default model for OpenAI-compatible requests and the Codex bridge model override.
+- `model` is the default model for OpenAI-compatible requests and the CLI bridge model override.
 - `maxTokens` becomes `max_tokens` when a prompt call does not provide a positive `maxTokens`; server helpers may also use it as a minimum when resolving prompt-specific token caps.
-- `temperature`, `top_p`, and `stream` map to chat-completion payload fields. The Codex bridge forces `stream: false` at the normalized `LLMClient` payload layer because Codex streaming is handled by the bridge client.
+- `temperature`, `top_p`, and `stream` map to chat-completion payload fields. CLI bridges force `stream: false` at the normalized `LLMClient` payload layer because streaming is handled by the bridge client.
 - `lowTemperature` and `highTemperature` are available to caller code that chooses bounded temperature variants.
-- `prefill` can be `null` or a string. When set for `openai_compatible`, `LLMClient` appends the string as a final assistant message and returns `prefill + generated continuation`, avoiding duplicate text when the provider echoes the prefill. This is rejected for tool-call requests and for `codex_cli_bridge`.
+- `prefill` can be `null` or a string. When set for `openai_compatible`, `LLMClient` appends the string as a final assistant message and returns `prefill + generated continuation`, avoiding duplicate text when the provider echoes the prefill. This is rejected for tool-call requests and for CLI bridges.
 - `sysprompt_append` can be `null`, blank, or a string. A non-empty string is inserted into the outbound request as an additional `system` message after existing system messages, or before the first user message when the prompt did not already include a system message. This applies to both text backends and does not mutate caller-provided message objects.
 - `stream_start_timeout` and `stream_continue_timeout` are seconds. Retry attempts add `increment_start_timeout` and `increment_continue_timeout`, also in seconds.
 - `supress_seed: true` omits the `seed` payload field. The key name is spelled `supress_seed` in the config file and code.
-- `max_concurrent_requests` controls the per-model/API-key semaphore for OpenAI-compatible requests and the fresh-session concurrency limit for the Codex bridge. The root `max_concurrent_requests_all_models` setting can add a process-wide cap across those per-key semaphores.
+- `max_concurrent_requests` controls the per-model/API-key semaphore for OpenAI-compatible requests and the one-shot/fresh-session concurrency limit for CLI bridges. The root `max_concurrent_requests_all_models` setting can add a process-wide cap across those per-key semaphores.
 - `model_swap_options` drives the `/config` page model selector and is saved as a JSON string-array field by that page.
 
 ## OAuth Refresh-Token Auth
@@ -330,7 +345,7 @@ These fields also work in `ai_model_overrides` profiles, so only selected prompt
 
 ## AI request timeout
 
-`ai.baseTimeoutSeconds` is the shared base request timeout for non-Codex text-generation calls. `LLMClient` converts this value to milliseconds before dispatching a request.
+`ai.baseTimeoutSeconds` is the shared base request timeout for non-Codex text-generation calls. `LLMClient` converts this value to milliseconds before dispatching a request. The Cline bridge uses it as the no-stdout idle timeout unless a per-call timeout overrides it.
 
 For `codex_cli_bridge`, `ai.codex_bridge.idle_timeout_ms` is used instead. This is an idle timeout, not a fixed total deadline: the bridge starts the timer when the Codex app-server process starts, resets it whenever stdout data streams in from Codex, and terminates the request if no streamed data arrives before the timer expires. The default is `30000`, giving Codex prompts a 30-second no-data timeout that is not multiplied by prompt `timeoutScale`.
 
@@ -380,6 +395,49 @@ Behavior notes:
 - The bridge uses the shared `ai.model` field as the Codex thread/turn model override.
 - The bridge forwards its wrapper instructions and all incoming chat `system` messages through Codex `developer_instructions`; only non-system messages are flattened into the user-message conversation transcript.
 - Prompt-progress live preview streams assistant `content` text from Codex app-server message deltas.
+
+## Cline CLI bridge
+
+When `config.ai.backend` is `cline_cli_bridge`, the game runs text completions through the local Cline CLI and translates the final bridge JSON or plain assistant text back into the normalized response shape `LLMClient` expects.
+
+```yaml
+ai:
+  backend: cline_cli_bridge
+  model: openai/gpt-5.3-codex
+  cline_bridge:
+    command: cline
+    provider: ""
+    cwd: ./tmp/cline-bridge-cwd
+    thinking: ""
+    compaction: basic
+    timeout_seconds: 0
+    config: ""
+    data_dir: ""
+    prompt_preamble: ""
+```
+
+Fields:
+- `command`: command or absolute path used to launch Cline.
+- `provider`: optional Cline provider id. Blank uses Cline's saved default provider.
+- `cwd`: working directory for Cline. The default `./tmp/cline-bridge-cwd` is intentionally isolated so repo `AGENTS.md` or Cline rules do not turn provider prompts into coding-agent sessions.
+- `thinking`: optional Cline thinking level: `none`, `low`, `medium`, `high`, or `xhigh`.
+- `compaction`: Cline compaction mode: `agentic`, `basic`, or `off`.
+- `timeout_seconds`: optional Cline total timeout. `0` leaves Cline without a total timeout; the bridge idle timeout still applies through `LLMClient`.
+- `config`: optional Cline configuration directory.
+- `data_dir`: optional isolated Cline data directory.
+- `prompt_preamble`: optional text prepended ahead of the generated bridge wrapper prompt.
+
+Behavior notes:
+- Cline must already be installed and authenticated.
+- Each prompt launches one non-interactive `cline --json --auto-approve false` subprocess.
+- The bridge pipes the full bridge prompt through Cline stdin so large game prompts do not hit OS command-line argument limits.
+- The command still includes a tiny bootstrap prompt argument because this Cline build only consumes piped stdin when a prompt argument is present.
+- Incoming chat `system` messages, tool definitions, and the structured response contract are embedded in the stdin prompt as `Bridge Instructions`.
+- `--system` is still set, but only to a short transport instruction telling Cline to read stdin and return the requested JSON.
+- Non-system messages are flattened into a `Conversation:` transcript inside the stdin prompt.
+- Prompt-progress live preview streams assistant `content` text parsed from Cline NDJSON `agent_event.event.text` records; if Cline ignores the wrapper and streams plain non-JSON text, that text is previewed directly.
+- Final valid bridge JSON is parsed for `content` or `tool_calls`, including when Cline prepends prose before the JSON object. Final non-JSON assistant text is accepted as normal content, while malformed JSON-looking output still fails loudly.
+- The bridge does not configure API keys, resume Cline sessions, or report Cline quota usage.
 
 ## Prompt Progress Targets
 
@@ -824,7 +882,7 @@ imagegen:
 ```
 
 - `api_template` is required when the ComfyUI engine is active. The default img2img template is `flux2_klein_edit.json.njk`. The template must exist under `imagegen/`; missing templates fail configuration validation and location-variant requests return an explicit skipped reason.
-- The default `flux2_klein_edit.json.njk` workflow detects width and height from the source image and does not use configured dimensions, so edited variants should return at the original resolution. It also routes the rendered edit prompt through a `Text to Console` node labeled `Final Prompt`, matching the current non-edit Qwen workflows' ComfyUI-console prompt visibility.
+- The default `flux2_klein_edit.json.njk` workflow detects width and height from the source image and does not use configured dimensions, so edited variants should return at the original resolution. It also routes the rendered edit prompt through a Crystools `Show any [Crystools]` node with the `Final Prompt` prefix, matching the current non-edit Qwen workflows' ComfyUI-console prompt visibility.
 - `image.width` / `height` are optional for custom variant workflows that reference `{{ image.width }}` or `{{ image.height }}`. `null` or omission falls back to the source image metadata, then `location_settings.image`, then `default_settings.image`.
 - `sampling.steps` falls back to `location_settings.sampling.steps`, then `default_settings.sampling.steps`.
 - `denoise`, `cfg`, `sampler`, and `scheduler` are passed to the variant workflow template.

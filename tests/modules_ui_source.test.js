@@ -180,3 +180,42 @@ test('module card drop target helper is shared before inventory renderers use it
     assert.ok(helperIndex < containerIndex, 'container inventory renderers must not reference a later location-scoped module drop helper');
     assert.ok(helperIndex < locationDragIndex, 'module card drop helper must live in shared item-card code, not the location drag/drop section');
 });
+
+test('module context action refresh re-renders the open inventory modal for the player, not only NPCs', () => {
+    const source = read('views/index.njk');
+    const start = source.indexOf('async function refreshAfterModThingContextAction(result, options = {}, thing = {}) {');
+    const end = source.indexOf('async function executeModThingContextAction(action, thing, options = {}) {', start);
+    assert.notEqual(start, -1, 'expected refreshAfterModThingContextAction');
+    assert.notEqual(end, -1, 'expected executeModThingContextAction boundary');
+    const block = source.slice(start, end);
+
+    // The player's inventory modal reuses the NPC inventory modal, so BOTH the NPC
+    // branch and the player (else) branch must re-render it from the fresh actor
+    // inventory when it is open for that actor. Otherwise an installed/removed
+    // module does not appear until a manual inventory refresh.
+    const renderCalls = block.match(/renderNpcInventory\(actor\.inventory\)/g) || [];
+    assert.ok(renderCalls.length >= 2, 'both NPC and player branches should re-render the open inventory modal');
+    const guards = block.match(/currentNpcInventoryNpcId === actor\.id/g) || [];
+    assert.ok(guards.length >= 2, 'both branches should guard the modal re-render on the open actor');
+    assert.match(block, /window\.currentPlayerData = cloneActorRecord\(actor\)/);
+});
+
+test('items output in full in base context embed mod-contributed detail, and modules mod supplies installed modules', () => {
+    const baseContext = read('prompts/base-context.xml.njk');
+    const serverSource = read('server.js');
+    const modSource = read('mods/modules/mod.js');
+    const systemSource = read('mods/modules/ItemModuleSystem.js');
+
+    // Full <item> blocks render the mod-contributed XML fragment.
+    const embeds = baseContext.match(/\{% if item\.modPromptXml %\}\n\{\{ item\.modPromptXml \| safe \}\}\{% endif %\}/g) || [];
+    assert.ok(embeds.length >= 3, 'full item blocks should embed item.modPromptXml');
+
+    // mapItemContext collects per-thing contributions and exposes them as modPromptXml.
+    assert.match(serverSource, /collectThingPromptContributions\(/);
+    assert.match(serverSource, /modPromptXml/);
+
+    // The modules mod registers the contributor and builds installed-module XML.
+    assert.match(modSource, /registerThingPromptContributor\(/);
+    assert.match(systemSource, /getInstalledModulesPromptXml\(/);
+    assert.match(systemSource, /<installedModules>/);
+});

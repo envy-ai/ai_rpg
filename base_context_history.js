@@ -10,6 +10,7 @@ const PROMPT_DIAGNOSTIC_ENTRY_TYPES = new Set([
     'check-results',
     'game-improvement-suggestions',
     'relationship-updates',
+    'tonal-scale-evaluation',
     'tracker-updates',
     'tool-call-debug'
 ]);

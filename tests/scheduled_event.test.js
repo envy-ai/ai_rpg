@@ -166,7 +166,7 @@ test('ScheduledEvent returns pending events inside an exclusive-start inclusive-
     }
 });
 
-test('serialized game state writes, loads, and hydrates scheduled events', () => {
+test('serialized game state writes, loads, and hydrates scheduled events', async () => {
     IdGenerator.reset();
     ScheduledEvent.clear();
     const saveDir = makeTempSaveDir();
@@ -183,7 +183,7 @@ test('serialized game state writes, loads, and hydrates scheduled events', () =>
             targetWorldTime: { dayIndex: 0, timeMinutes: 180 }
         });
 
-        Utils.writeSerializedGameState(saveDir, Utils.serializeGameState(emptySerializedContext()));
+        await Utils.writeSerializedGameState(saveDir, Utils.serializeGameState(emptySerializedContext()));
 
         ScheduledEvent.clear();
         const reloaded = Utils.loadSerializedGameState(saveDir);

@@ -2,6 +2,14 @@
 
 Most modals live in `views/index.njk` and are wired up by the inline script or `public/js/chat.js`.
 
+## Keyboard submission
+
+- `public/js/modal-submit-shortcuts.js`, loaded by the shared head include on every application page, provides one delegated modal submission shortcut.
+- Pressing Ctrl+Enter or Cmd+Enter in an editable modal control submits its nearest form through `requestSubmit()`, preserving native validation and the form's submit handler.
+- Non-form data-entry modals declare their intended action with `data-ctrl-enter-submit`; this covers workflows such as fast travel, region repair, file uploads, crafting/salvage intent, NPC memories/goals, load game, world-profile auto-fill guidance, model addition, and chat-message editing.
+- Search and inventory-filter controls without a form or explicit action remain non-submitting. In the barter modal, only the haggle field maps the shortcut to `Haggle`; filter fields never trigger `Commit Trade`.
+- A disabled submit/action button leaves the shortcut inactive.
+
 ## Global overlays and status
 
 - `#chatSpinnerStatusBar`: non-modal inline status strip rendered in the chat column between `#promptProgressDock` and `.input-area`. It is hidden when idle, displays status text with a small spinner to the left of italicized text, and is controlled by `window.showLocationOverlay(message)` / `window.hideLocationOverlay()`. Normal interface interaction stays available while it is visible. Request-scoped `chat_status` progress text uses this strip; prompt-excluded result/debug entries such as `check-results`, `tool-call-debug`, and pending `npc-action` render as chat entries.
@@ -19,6 +27,7 @@ Most modals live in `views/index.njk` and are wired up by the inline script or `
   - Prompt viewers use `role="dialog"` with `aria-modal="false"`, have no backdrop, and do not add `body.modal-open`, so the rest of the interface stays interactive. Multiple viewers can be open at once; each keeps its last prompt/response snapshot after the prompt leaves the live tracker and stays open until its own close button is clicked.
   - Each viewer supports header dragging, native resize, and an internal vertical scrollbar when the combined text pane overflows. When `Follow` is checked, that viewer's combined prompt/response pane stays scrolled to the bottom as throttled stream updates render.
   - Received-count cells are character based and displayed without a unit label.
+- Modal prompt-progress bar (`.modal__prompt-progress`, injected by `public/js/chat.js`): while any prompt is running, a thin (4px) glowing aggregate progress bar is pinned across the bottom of every open `.modal[aria-hidden="false"] .modal__dialog`, mirroring the dock's `collapsed` aggregate fraction so a modal waiting on the LLM shows the same progress signal as the chat screen. The bar is injected as the last flex child of the dialog (no per-modal markup) by `updateModalPromptProgressBars()`, refreshed on every progress render tick, and removed when no prompt is active. A `MutationObserver` on `aria-hidden`/`hidden` toggles adds the bar to a modal that opens mid-prompt. The fill reuses `getPromptProgressAggregateFraction()`.
 - `#npcModalBackdrop`, `#questEditBackdrop`, `#craftingModalBackdrop`, `#salvageIntentBackdrop`:
   shared backdrops used to dim the page for certain modals.
 

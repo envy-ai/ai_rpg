@@ -88,7 +88,7 @@
   },
   "126": {
     "inputs": {
-      "unet_name": "flux-2-klein-9b-kv-fp8.safetensors",
+      "unet_name": "flux-2-klein-9b-kv-int8_convrot.safetensors",
       "weight_dtype": "default"
     },
     "class_type": "UNETLoader",
@@ -124,7 +124,7 @@
   },
   "133": {
     "inputs": {
-      "clip_name": "qwen_3_8b_fp8mixed.safetensors",
+      "clip_name": "qwen_3_8b_int8_convrot.safetensors",
       "type": "flux2",
       "device": "default"
     },
@@ -320,37 +320,26 @@
   },
   "727": {
     "inputs": {
-      "text": "{{ image.prompt | json }}"
+      "value": "{{ image.prompt | json }}"
     },
-    "class_type": "Text Multiline",
+    "class_type": "PrimitiveStringMultiline",
     "_meta": {
-      "title": "Text Multiline"
+      "title": "Input Text"
     }
   },
   "728": {
     "inputs": {
-      "label": "Final Prompt",
-      "text": [
+      "any_value": [
         "727",
         0
-      ]
+      ],
+      "console": true,
+      "display": true,
+      "prefix": "Final Prompt"
     },
-    "class_type": "Text to Console",
+    "class_type": "Show any [Crystools]",
     "_meta": {
-      "title": "Text to Console"
-    }
-  },
-  "729": {
-    "inputs": {
-      "text": "",
-      "anything": [
-        "728",
-        0
-      ]
-    },
-    "class_type": "easy showAnything",
-    "_meta": {
-      "title": "Show Any"
+      "title": "🪛 Show any value to console/display"
     }
   }
 }

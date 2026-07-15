@@ -13,6 +13,7 @@ const Globals = require('./Globals.js');
 const LLMClient = require('./LLMClient.js');
 const IdGenerator = require('./IdGenerator.js');
 const CodexBridgeClient = require('./CodexBridgeClient.js');
+const ClineBridgeClient = require('./ClineBridgeClient.js');
 const SlashCommandRegistry = require('./SlashCommandRegistry.js');
 const SanitizedStringSet = require('./SanitizedStringSet.js');
 const Events = require('./Events.js');
@@ -531,6 +532,10 @@ function isPlotAnalysisPromptEnabled() {
 
 function isImprovementPromptEnabled() {
     return Globals.config?.improvement_prompt?.enabled === true;
+}
+
+function isTonalScaleEvaluationEnabled() {
+    return Globals.config?.tonal_scale_evaluation?.enabled !== false;
 }
 
 function filterEnabledChatTools({ allowWorldMutationTools = false, modExtensionRegistry = null } = {}) {
@@ -1545,6 +1550,21 @@ function maybeInstallAiDebugInterceptor(axiosInstance) {
     } catch (error) {
         console.warn('Failed to install AI debug interceptor:', error?.message || error);
     }
+}
+
+function assertSafeSaveDirectoryName(rawName) {
+    const normalized = typeof rawName === 'string' ? rawName.trim() : '';
+    if (!normalized) {
+        const error = new Error('Save name is required');
+        error.code = 'SAVE_NAME_REQUIRED';
+        throw error;
+    }
+    if (normalized.includes('/') || normalized.includes('\\') || normalized.includes('..')) {
+        const error = new Error('Save name contains invalid path characters.');
+        error.code = 'INVALID_SAVE_NAME';
+        throw error;
+    }
+    return normalized;
 }
 
 module.exports = function registerApiRoutes(scope) {
@@ -2914,6 +2934,7 @@ module.exports = function registerApiRoutes(scope) {
         let plotExpanderInProgress = false;
         let plotExpanderTurnCounter = 0;
         let improvementPromptTurnCounter = 0;
+        let tonalScaleEvaluationTurnCounter = 0;
         let mysteryBoxCleanupTurnCounter = 0;
         let plotAnalysisPromptSequence = 0;
         let plotAnalysisPromptToken = randomUUID();
@@ -4763,7 +4784,7 @@ module.exports = function registerApiRoutes(scope) {
             }
 
             try {
-                const autosaveResult = performGameSave({ saveRoot: 'autosaves' });
+                const autosaveResult = await performGameSave({ saveRoot: 'autosaves' });
                 const autosaveRoot = path.dirname(autosaveResult.saveDir);
 
                 if (!fs.existsSync(autosaveRoot)) {
@@ -6062,6 +6083,46 @@ module.exports = function registerApiRoutes(scope) {
             return improvementPromptTurnCounter % interval === 0;
         }
 
+        function resolveTonalScaleEvaluationInterval() {
+            const rawInterval = config?.tonal_scale_evaluation?.interval;
+            if (rawInterval === undefined || rawInterval === null || rawInterval === '') {
+                return 5;
+            }
+            const interval = Number(rawInterval);
+            if (!Number.isInteger(interval) || interval < 1) {
+                throw new Error('tonal_scale_evaluation.interval must be an integer greater than or equal to 1 when provided.');
+            }
+            return interval;
+        }
+
+        function syncTonalScaleEvaluationTurnCounterMetadata() {
+            const currentMetadata = (typeof Globals.getSaveMetadata === 'function'
+                ? Globals.getSaveMetadata()
+                : Globals.saveMetadata) || null;
+            if (!currentMetadata || typeof currentMetadata !== 'object' || Array.isArray(currentMetadata)) {
+                return null;
+            }
+            const nextMetadata = {
+                ...currentMetadata,
+                tonalScaleEvaluationTurnCounter: Number.isInteger(tonalScaleEvaluationTurnCounter)
+                    && tonalScaleEvaluationTurnCounter >= 0
+                    ? tonalScaleEvaluationTurnCounter
+                    : 0
+            };
+            Globals.setSaveMetadata(nextMetadata);
+            return nextMetadata;
+        }
+
+        function shouldRunTonalScaleEvaluationThisTurn() {
+            tonalScaleEvaluationTurnCounter += 1;
+            syncTonalScaleEvaluationTurnCounterMetadata();
+            if (!isTonalScaleEvaluationEnabled()) {
+                return false;
+            }
+            const interval = resolveTonalScaleEvaluationInterval();
+            return tonalScaleEvaluationTurnCounter % interval === 0;
+        }
+
         function resolveMysteryBoxCleanupInterval() {
             const rawInterval = config?.mystery_box_cleanup?.interval;
             if (rawInterval === undefined || rawInterval === null || rawInterval === '') {
@@ -6197,7 +6258,7 @@ module.exports = function registerApiRoutes(scope) {
             return state;
         }
 
-        function persistPlotAnalysisToCurrentSave(plotAnalysis) {
+        async function persistPlotAnalysisToCurrentSave(plotAnalysis) {
             const currentMetadata = (typeof Globals.getSaveMetadata === 'function'
                 ? Globals.getSaveMetadata()
                 : Globals.saveMetadata) || {};
@@ -6228,7 +6289,7 @@ module.exports = function registerApiRoutes(scope) {
             }
 
             const metadataPath = path.join(saveDir, 'metadata.json');
-            fs.writeFileSync(metadataPath, JSON.stringify(metadata, null, 2));
+            await Utils.writeFileAtomic(metadataPath, JSON.stringify(metadata, null, 2));
             return true;
         }
 
@@ -8723,6 +8784,212 @@ module.exports = function registerApiRoutes(scope) {
             return true;
         }
 
+        function extractTonalScaleEvaluationResponse(rawResponse) {
+            if (typeof rawResponse !== 'string') {
+                throw new TypeError('Tonal scale evaluation response must be a string.');
+            }
+            const xmlPayload = Utils.extractFinalXmlRootBlock(rawResponse, 'tonalScaleEvaluation');
+            if (!xmlPayload) {
+                throw new Error('Tonal scale evaluation response missing <tonalScaleEvaluation> XML.');
+            }
+
+            const doc = Utils.parseXmlDocumentStrict(sanitizeForXml(xmlPayload), 'text/xml');
+            const evaluationNode = doc.getElementsByTagName('tonalScaleEvaluation')[0] || null;
+            const evaluation = typeof evaluationNode?.textContent === 'string'
+                ? evaluationNode.textContent.trim()
+                : '';
+            if (!evaluation) {
+                throw new Error('Tonal scale evaluation response contained an empty <tonalScaleEvaluation> block.');
+            }
+            return evaluation;
+        }
+
+        function formatTonalScaleEvaluationChatContent(evaluation) {
+            const text = typeof evaluation === 'string' ? evaluation.trim() : '';
+            if (!text) {
+                return '';
+            }
+            return `Tonal scale evaluation\n\n${text}`;
+        }
+
+        async function persistTonalScaleEvaluationMetadata(metadata) {
+            if (!metadata || typeof metadata !== 'object' || Array.isArray(metadata)) {
+                throw new Error('persistTonalScaleEvaluationMetadata requires a metadata object.');
+            }
+            if (typeof persistCurrentSaveMetadata !== 'function') {
+                throw new Error('persistCurrentSaveMetadata is unavailable for tonal scale evaluation.');
+            }
+            return persistCurrentSaveMetadata(metadata);
+        }
+
+        function updateTonalScaleEvaluationResultMetadata({
+            evaluation,
+            completedAt = null,
+            locationId = null,
+            sourceRequestId = null
+        } = {}) {
+            const normalizedEvaluation = typeof evaluation === 'string' ? evaluation.trim() : '';
+            if (!normalizedEvaluation) {
+                throw new Error('Tonal scale evaluation result cannot be empty.');
+            }
+            const currentMetadata = (typeof Globals.getSaveMetadata === 'function'
+                ? Globals.getSaveMetadata()
+                : Globals.saveMetadata) || null;
+            if (!currentMetadata || typeof currentMetadata !== 'object' || Array.isArray(currentMetadata)) {
+                throw new Error('Current save metadata must be an object before storing tonal scale evaluation.');
+            }
+            const resultTurnCounter = Number.isInteger(tonalScaleEvaluationTurnCounter)
+                && tonalScaleEvaluationTurnCounter >= 0
+                ? tonalScaleEvaluationTurnCounter
+                : 0;
+            const nextMetadata = {
+                ...currentMetadata,
+                tonalScaleEvaluationResult: normalizedEvaluation,
+                tonalScaleEvaluationUpdatedAt: completedAt || new Date().toISOString(),
+                tonalScaleEvaluationTurnCounter: resultTurnCounter,
+                tonalScaleEvaluationResultTurnCounter: resultTurnCounter
+            };
+            if (locationId) {
+                nextMetadata.tonalScaleEvaluationLocationId = locationId;
+            } else {
+                delete nextMetadata.tonalScaleEvaluationLocationId;
+            }
+            if (sourceRequestId) {
+                nextMetadata.tonalScaleEvaluationSourceRequestId = sourceRequestId;
+            } else {
+                delete nextMetadata.tonalScaleEvaluationSourceRequestId;
+            }
+            Globals.setSaveMetadata(nextMetadata);
+            return nextMetadata;
+        }
+
+        async function runTonalScaleEvaluationPrompt({
+            locationOverride = null,
+            sourceRequestId = null,
+            runInBackground = false,
+            storeChatEntry = false,
+            clientId = null
+        } = {}) {
+            if (!config?.ai) {
+                throw new Error('AI configuration missing; unable to run tonal scale evaluation prompt.');
+            }
+
+            const resolvedLocationId = requireLocationId(
+                locationOverride?.id || currentPlayer?.currentLocation,
+                'tonal scale evaluation prompt'
+            );
+            const baseContext = await prepareBasePromptContext({
+                locationOverride,
+                includeAllHistoryEntryTypes: false
+            });
+            const renderedTemplate = promptEnv.render('base-context.xml.njk', {
+                ...baseContext,
+                promptType: 'tonal-scale-evaluation'
+            });
+            const parsedTemplate = parseXMLTemplate(renderedTemplate);
+            if (!parsedTemplate?.systemPrompt || !parsedTemplate?.generationPrompt) {
+                throw new Error('Tonal scale evaluation prompt template is missing prompts.');
+            }
+
+            const requestOptions = {
+                messages: [
+                    { role: 'system', content: parsedTemplate.systemPrompt },
+                    { role: 'user', content: parsedTemplate.generationPrompt }
+                ],
+                metadataLabel: 'tonal_scale_evaluation',
+                metadata: {
+                    sourceRequestId: sourceRequestId || null
+                },
+                validateXML: false,
+                requiredRegex: /<tonalScaleEvaluation[\s>]/
+            };
+            if (runInBackground) {
+                requestOptions.runInBackground = true;
+            }
+            if (typeof parsedTemplate.temperature === 'number') {
+                requestOptions.temperature = parsedTemplate.temperature;
+            }
+
+            const rawResponse = await LLMClient.chatCompletion(requestOptions);
+            LLMClient.logPrompt({
+                prefix: 'tonal_scale_evaluation',
+                metadataLabel: 'tonal_scale_evaluation',
+                systemPrompt: parsedTemplate.systemPrompt || '',
+                generationPrompt: parsedTemplate.generationPrompt || '',
+                response: rawResponse || '',
+                model: requestOptions.model,
+                endpoint: requestOptions.endpoint
+            });
+
+            const evaluation = extractTonalScaleEvaluationResponse(rawResponse || '');
+            const completedAt = new Date().toISOString();
+            const metadata = updateTonalScaleEvaluationResultMetadata({
+                evaluation,
+                completedAt,
+                locationId: resolvedLocationId,
+                sourceRequestId
+            });
+            const persisted = await persistTonalScaleEvaluationMetadata(metadata);
+            let storedEntry = null;
+            if (storeChatEntry) {
+                const content = formatTonalScaleEvaluationChatContent(evaluation);
+                if (!content) {
+                    throw new Error('Tonal scale evaluation chat content cannot be empty.');
+                }
+                const entryMetadata = {
+                    excludeFromBaseContextHistory: true
+                };
+                if (sourceRequestId) {
+                    entryMetadata.sourceRequestId = sourceRequestId;
+                }
+                storedEntry = pushChatEntry({
+                    role: 'assistant',
+                    content,
+                    summary: content,
+                    type: 'tonal-scale-evaluation',
+                    locationId: resolvedLocationId,
+                    metadata: entryMetadata
+                }, null, resolvedLocationId);
+                if (!storedEntry?.id) {
+                    throw new Error('Failed to store tonal scale evaluation chat entry.');
+                }
+                if (clientId) {
+                    try {
+                        Globals.emitToClient(clientId, 'chat_history_updated', {
+                            reason: 'tonal_scale_evaluation',
+                            entryId: storedEntry.id,
+                            entryType: storedEntry.type,
+                            locationId: resolvedLocationId
+                        });
+                    } catch (notifyError) {
+                        console.warn('Failed to notify client about tonal scale evaluation:', notifyError.message || notifyError);
+                    }
+                }
+            }
+
+            return {
+                response: rawResponse || '',
+                evaluation,
+                metadata,
+                persisted,
+                storedEntry
+            };
+        }
+
+        function scheduleTonalScaleEvaluationPrompt({
+            locationOverride = null,
+            sourceRequestId = null
+        } = {}) {
+            void runTonalScaleEvaluationPrompt({
+                locationOverride,
+                sourceRequestId,
+                runInBackground: true
+            }).catch(error => {
+                console.warn('Failed to run tonal scale evaluation prompt:', error?.message || error);
+            });
+            return true;
+        }
+
         function mergeMysteryCleanupSummaries(...lists) {
             const merged = [];
             const seen = new Set();
@@ -8819,7 +9086,7 @@ module.exports = function registerApiRoutes(scope) {
             const decisionSummaries = Events._summarizeMysteryBoxCleanupDecisions(parsed, cleanupThreads);
             const applied = Events._applyMysteryBoxCleanupResult(parsed);
             const hasChanges = applied.resolvedThreads.length > 0 || applied.resolvedBoxes.length > 0;
-            const persisted = hasChanges ? persistMysteryBoxesToCurrentSave() : false;
+            const persisted = hasChanges ? await persistMysteryBoxesToCurrentSave() : false;
             const resolvedThreads = mergeMysteryCleanupSummaries(
                 applied.resolvedThreads,
                 decisionSummaries.resolvedThreads
@@ -8973,7 +9240,7 @@ module.exports = function registerApiRoutes(scope) {
                 Globals.setPlotAnalysis(plotAnalysis);
 
                 try {
-                    persistPlotAnalysisToCurrentSave(Globals.getPlotAnalysis());
+                    await persistPlotAnalysisToCurrentSave(Globals.getPlotAnalysis());
                 } catch (persistError) {
                     console.warn('Failed to persist plot analysis metadata:', persistError.message);
                 }
@@ -19576,9 +19843,11 @@ module.exports = function registerApiRoutes(scope) {
                 }
 
                 const effects = [];
-                if (weaponThing.causeStatusEffectOnTarget) {
-                    effects.push(weaponThing.causeStatusEffectOnTarget);
-                }
+                // Apply every inflict status effect the weapon carries, not just the first.
+                const weaponTargetEffects = Array.isArray(weaponThing.causeStatusEffectsOnTarget) && weaponThing.causeStatusEffectsOnTarget.length
+                    ? weaponThing.causeStatusEffectsOnTarget
+                    : (weaponThing.causeStatusEffectOnTarget ? [weaponThing.causeStatusEffectOnTarget] : []);
+                effects.push(...weaponTargetEffects);
                 const registry = Globals.modExtensionRegistry || modExtensionRegistry || null;
                 if (registry && typeof registry.collectThingTargetStatusEffectContributions === 'function') {
                     effects.push(...registry.collectThingTargetStatusEffectContributions(attacker, weaponThing, {
@@ -26061,6 +26330,17 @@ module.exports = function registerApiRoutes(scope) {
                         player.finalizeTurn();
                     }
 
+                    if (shouldRunTonalScaleEvaluationThisTurn()) {
+                        try {
+                            scheduleTonalScaleEvaluationPrompt({
+                                locationOverride: location,
+                                sourceRequestId: stream.requestId || null
+                            });
+                        } catch (tonalScaleScheduleError) {
+                            console.warn('Failed to schedule tonal scale evaluation prompt:', tonalScaleScheduleError.message);
+                        }
+                    }
+
                     const worldTimeTransitions = Array.isArray(eventResult?.timeProgress?.transitions)
                         ? eventResult.timeProgress.transitions
                         : [];
@@ -26457,7 +26737,7 @@ module.exports = function registerApiRoutes(scope) {
             });
         };
 
-        const persistSceneSummariesToCurrentSave = () => {
+        const persistSceneSummariesToCurrentSave = async () => {
             const saveInfo = typeof Globals.getCurrentSaveInfo === 'function'
                 ? Globals.getCurrentSaveInfo()
                 : Globals.currentSaveInfo;
@@ -26473,7 +26753,7 @@ module.exports = function registerApiRoutes(scope) {
             }
 
             const sceneSummaries = getSceneSummariesForApi();
-            fs.writeFileSync(
+            await Utils.writeFileAtomic(
                 path.join(saveDir, 'sceneSummaries.json'),
                 JSON.stringify(sceneSummaries.serialize(), null, 2)
             );
@@ -26483,12 +26763,12 @@ module.exports = function registerApiRoutes(scope) {
             };
             metadata.totalSceneSummaries = sceneSummaries.getScenesInOrder().length;
             Globals.setSaveMetadata(metadata);
-            fs.writeFileSync(path.join(saveDir, 'metadata.json'), JSON.stringify(metadata, null, 2));
+            await Utils.writeFileAtomic(path.join(saveDir, 'metadata.json'), JSON.stringify(metadata, null, 2));
             return true;
         };
         Globals.persistSceneSummariesToCurrentSave = persistSceneSummariesToCurrentSave;
 
-        const persistMysteryBoxesToCurrentSave = () => {
+        const persistMysteryBoxesToCurrentSave = async () => {
             const saveInfo = typeof Globals.getCurrentSaveInfo === 'function'
                 ? Globals.getCurrentSaveInfo()
                 : Globals.currentSaveInfo;
@@ -26503,11 +26783,11 @@ module.exports = function registerApiRoutes(scope) {
                 throw new Error(`Save directory does not exist: ${saveDir}`);
             }
 
-            fs.writeFileSync(
+            await Utils.writeFileAtomic(
                 path.join(saveDir, 'mysteryBoxes.json'),
                 JSON.stringify(MysteryBox.serializeAll(), null, 2)
             );
-            fs.writeFileSync(
+            await Utils.writeFileAtomic(
                 path.join(saveDir, 'mysteryThreads.json'),
                 JSON.stringify(MysteryThread.serializeAll(), null, 2)
             );
@@ -26519,7 +26799,7 @@ module.exports = function registerApiRoutes(scope) {
             metadata.totalMysteryThreads = MysteryThread.getAll().length;
             metadata.totalTrackers = Tracker.getAll().length;
             Globals.setSaveMetadata(metadata);
-            fs.writeFileSync(path.join(saveDir, 'metadata.json'), JSON.stringify(metadata, null, 2));
+            await Utils.writeFileAtomic(path.join(saveDir, 'metadata.json'), JSON.stringify(metadata, null, 2));
             return true;
         };
         Globals.persistMysteryBoxesToCurrentSave = persistMysteryBoxesToCurrentSave;
@@ -26563,7 +26843,7 @@ module.exports = function registerApiRoutes(scope) {
             }
         });
 
-        app.put('/api/scene-summaries/:index', (req, res) => {
+        app.put('/api/scene-summaries/:index', async (req, res) => {
             try {
                 const rawIndex = typeof req.params.index === 'string' ? req.params.index.trim() : '';
                 const sceneNumber = Number(rawIndex);
@@ -26593,7 +26873,7 @@ module.exports = function registerApiRoutes(scope) {
                     details: normalizeMysteryTextListForApi(body.details, 'Scene summary detail'),
                     quotes: normalizeSceneSummaryQuotesForApi(body.quotes)
                 });
-                const persisted = persistSceneSummariesToCurrentSave();
+                const persisted = await persistSceneSummariesToCurrentSave();
 
                 return res.json({
                     success: true,
@@ -26665,7 +26945,7 @@ module.exports = function registerApiRoutes(scope) {
             }
         });
 
-        app.put('/api/mystery-threads/:id', (req, res) => {
+        app.put('/api/mystery-threads/:id', async (req, res) => {
             try {
                 const mysteryThreadId = typeof req.params.id === 'string' ? req.params.id.trim() : '';
                 if (!mysteryThreadId) {
@@ -26704,7 +26984,7 @@ module.exports = function registerApiRoutes(scope) {
                     boxIds: thread.boxIds
                 });
 
-                const persisted = persistMysteryBoxesToCurrentSave();
+                const persisted = await persistMysteryBoxesToCurrentSave();
                 return res.json({
                     success: true,
                     mysteryThread: serializeMysteryThreadForClient(thread),
@@ -26720,7 +27000,7 @@ module.exports = function registerApiRoutes(scope) {
             }
         });
 
-        app.put('/api/mystery-threads/:id/boxes', (req, res) => {
+        app.put('/api/mystery-threads/:id/boxes', async (req, res) => {
             try {
                 const mysteryThreadId = typeof req.params.id === 'string' ? req.params.id.trim() : '';
                 if (!mysteryThreadId) {
@@ -26760,7 +27040,7 @@ module.exports = function registerApiRoutes(scope) {
                 }
                 thread.replaceBoxIds(boxIds);
 
-                const persisted = persistMysteryBoxesToCurrentSave();
+                const persisted = await persistMysteryBoxesToCurrentSave();
                 return res.json({
                     success: true,
                     mysteryThread: serializeMysteryThreadForClient(thread),
@@ -26828,7 +27108,7 @@ module.exports = function registerApiRoutes(scope) {
             }
         });
 
-        app.put('/api/mystery-boxes/:id', (req, res) => {
+        app.put('/api/mystery-boxes/:id', async (req, res) => {
             try {
                 const mysteryBoxId = typeof req.params.id === 'string' ? req.params.id.trim() : '';
                 if (!mysteryBoxId) {
@@ -26868,7 +27148,7 @@ module.exports = function registerApiRoutes(scope) {
                     text
                 });
 
-                const persisted = persistMysteryBoxesToCurrentSave();
+                const persisted = await persistMysteryBoxesToCurrentSave();
                 const mysteryBox = serializeMysteryBoxForClient(box);
                 return res.json({
                     success: true,
@@ -29429,7 +29709,7 @@ module.exports = function registerApiRoutes(scope) {
                     }
                 }
 
-                const { metadata, persisted } = markNpcAliasesGenerated({ persist: true });
+                const { metadata, persisted } = await markNpcAliasesGenerated({ persist: true });
                 return res.json({
                     success: true,
                     message: `Generated aliases for ${updatedNpcs} NPCs in ${promptsRun} prompt batch(es).`,
@@ -35408,12 +35688,40 @@ module.exports = function registerApiRoutes(scope) {
                         return null;
                     };
 
-                    const destinationLocation = findRegionEntranceLocation();
+                    let destinationLocation = findRegionEntranceLocation();
                     if (!destinationLocation) {
                         const targetRegionName = pendingDestinationRegion?.name || destinationRegion?.name || targetRegionId;
                         return res.status(404).json({
                             success: false,
                             error: `No entrance location was found for region '${targetRegionName}'.`
+                        });
+                    }
+
+                    // For an already-generated region, land at a context-appropriate
+                    // border location rather than always the canonical entrance, so
+                    // manually-added exits don't all funnel to the same front door.
+                    // A failure to choose surfaces to the caller instead of silently
+                    // falling back to the entrance.
+                    if (
+                        destinationRegion
+                        && Array.isArray(destinationRegion.locationIds)
+                        && destinationRegion.locationIds.length > 1
+                    ) {
+                        if (typeof chooseArrivalLocationForEntryStub !== 'function') {
+                            throw new Error('Region arrival selection is unavailable.');
+                        }
+                        const originRegionForArrival = originLocation
+                            ? (typeof findRegionByLocationId === 'function' ? findRegionByLocationId(originLocation.id) : null)
+                            : null;
+                        destinationLocation = await chooseArrivalLocationForEntryStub({
+                            region: destinationRegion,
+                            originContext: {
+                                originLocationName: originLocation?.name || null,
+                                originRegionName: originRegionForArrival?.name || null,
+                                originDirection: null,
+                                description: resolvedDescription || null,
+                                regionName: destinationRegion.name || null
+                            }
                         });
                     }
 
@@ -38714,8 +39022,17 @@ module.exports = function registerApiRoutes(scope) {
                         const appliedConsumeEffects = [];
                         if (actionOutcome.success && Array.isArray(consumedThings)) {
                             for (const thing of consumedThings) {
-                                const targetEffect = thing?.causeStatusEffectOnTarget || thing?.metadata?.causeStatusEffectOnTarget || null;
-                                if (targetEffect && typeof currentPlayer?.addStatusEffect === 'function') {
+                                // Apply every inflict effect the consumed item carries, not just the first.
+                                const targetEffects = Array.isArray(thing?.causeStatusEffectsOnTarget) && thing.causeStatusEffectsOnTarget.length
+                                    ? thing.causeStatusEffectsOnTarget
+                                    : (() => {
+                                        const single = thing?.causeStatusEffectOnTarget || thing?.metadata?.causeStatusEffectOnTarget || null;
+                                        return single ? [single] : [];
+                                    })();
+                                for (const targetEffect of targetEffects) {
+                                    if (!targetEffect || typeof currentPlayer?.addStatusEffect !== 'function') {
+                                        continue;
+                                    }
                                     try {
                                         const applied = currentPlayer.addStatusEffect(targetEffect, targetEffect.duration ?? 1);
                                         if (applied) {
@@ -45334,6 +45651,7 @@ module.exports = function registerApiRoutes(scope) {
                 plotExpanderInProgress = false;
                 plotExpanderTurnCounter = 0;
                 improvementPromptTurnCounter = 0;
+                tonalScaleEvaluationTurnCounter = 0;
                 mysteryBoxCleanupTurnCounter = 0;
                 resetPlotAnalysisPromptRuntime();
                 Globals.setPlotAnalysis(null);
@@ -45888,12 +46206,7 @@ module.exports = function registerApiRoutes(scope) {
         };
 
         const resolveSaveDirForRequest = (requestedSaveName, saveRoot) => {
-            const normalizedName = typeof requestedSaveName === 'string' ? requestedSaveName.trim() : '';
-            if (!normalizedName) {
-                const error = new Error('Save name is required');
-                error.code = 'SAVE_NAME_REQUIRED';
-                throw error;
-            }
+            const normalizedName = assertSafeSaveDirectoryName(requestedSaveName);
             const baseDir = resolveBaseDirectory();
             const saveRootPath = resolveSaveRootPath(saveRoot, baseDir);
             const saveDir = path.join(saveRootPath, normalizedName);
@@ -45983,7 +46296,7 @@ module.exports = function registerApiRoutes(scope) {
             return nextMetadata;
         };
 
-        const persistCurrentSaveMetadata = (metadata) => {
+        const persistCurrentSaveMetadata = async (metadata) => {
             if (!metadata || typeof metadata !== 'object' || Array.isArray(metadata)) {
                 throw new Error('persistCurrentSaveMetadata requires a metadata object.');
             }
@@ -46001,15 +46314,15 @@ module.exports = function registerApiRoutes(scope) {
                 throw new Error(`Save directory does not exist: ${saveDir}`);
             }
             const metadataPath = path.join(saveDir, 'metadata.json');
-            fs.writeFileSync(metadataPath, JSON.stringify(metadata, null, 2));
+            await Utils.writeFileAtomic(metadataPath, JSON.stringify(metadata, null, 2));
             return true;
         };
 
-        const markNpcAliasesGenerated = ({ persist = false } = {}) => {
+        const markNpcAliasesGenerated = async ({ persist = false } = {}) => {
             const metadata = updateRuntimeSaveMetadata((nextMetadata) => {
                 nextMetadata.npcAliasesGenerated = true;
             });
-            const persisted = persist ? persistCurrentSaveMetadata(metadata) : false;
+            const persisted = persist ? await persistCurrentSaveMetadata(metadata) : false;
             return { metadata, persisted };
         };
 
@@ -46057,7 +46370,7 @@ module.exports = function registerApiRoutes(scope) {
             return normalized;
         };
 
-        function performGameSave({ requestedSaveName = null, saveRoot = null } = {}) {
+        async function performGameSave({ requestedSaveName = null, saveRoot = null } = {}) {
             if (!currentPlayer) {
                 const error = new Error('No current player to save');
                 error.code = 'NO_PLAYER';
@@ -46080,6 +46393,37 @@ module.exports = function registerApiRoutes(scope) {
             const saveName = `${timestampPrefix}_${baseSaveName}`;
 
             const saveDir = path.join(saveRootPath, saveName);
+
+            // Record a permanent, player-visible but non-LLM-visible marker in the
+            // chat log for manual saves, so the timeline shows where the game was
+            // saved. It is added before serialization so it lives inside this save.
+            // Autosaves are frequent and intentionally skip the marker.
+            const isAutosaveTarget = path.basename(saveRootPath) === 'autosaves';
+            if (!isAutosaveTarget && currentPlayer && typeof Globals.appendChatEntry === 'function') {
+                try {
+                    // role 'system' is unconditionally excluded from LLM prompt
+                    // history (even under includeAllHistoryEntryTypes); the
+                    // excludeFromBaseContextHistory metadata is belt-and-suspenders.
+                    // The client dispatches rendering on the 'save-notice' type, so
+                    // the entry still displays despite the system role.
+                    Globals.appendChatEntry({
+                        role: 'system',
+                        type: 'save-notice',
+                        content: `💾 Game saved as "${baseSaveName}".`,
+                        metadata: {
+                            excludeFromBaseContextHistory: true,
+                            saveName
+                        }
+                    }, {
+                        locationId: currentPlayer.currentLocation || null,
+                        emitClientRefresh: true,
+                        refreshPayload: { reason: 'game-saved' }
+                    });
+                } catch (error) {
+                    console.warn('Failed to append save marker chat entry:', error.message);
+                }
+            }
+
             const serialized = Utils.serializeGameState({
                 currentPlayer,
                 gameLocations,
@@ -46158,6 +46502,18 @@ module.exports = function registerApiRoutes(scope) {
             metadata.improvementPromptTurnCounter = Number.isInteger(improvementPromptTurnCounter) && improvementPromptTurnCounter >= 0
                 ? improvementPromptTurnCounter
                 : 0;
+            metadata.tonalScaleEvaluationTurnCounter = Number.isInteger(tonalScaleEvaluationTurnCounter) && tonalScaleEvaluationTurnCounter >= 0
+                ? tonalScaleEvaluationTurnCounter
+                : 0;
+            if (
+                typeof metadata.tonalScaleEvaluationResult === 'string'
+                && metadata.tonalScaleEvaluationResult.trim()
+            ) {
+                const resultCounter = Number(metadata.tonalScaleEvaluationResultTurnCounter);
+                metadata.tonalScaleEvaluationResultTurnCounter = Number.isInteger(resultCounter) && resultCounter >= 0
+                    ? resultCounter
+                    : metadata.tonalScaleEvaluationTurnCounter;
+            }
             metadata.mysteryBoxCleanupTurnCounter = Number.isInteger(mysteryBoxCleanupTurnCounter) && mysteryBoxCleanupTurnCounter >= 0
                 ? mysteryBoxCleanupTurnCounter
                 : 0;
@@ -46170,7 +46526,7 @@ module.exports = function registerApiRoutes(scope) {
             metadata.currentLocationName = currentLocation?.name || metadata.currentLocationName || null;
             metadata.source = path.basename(saveRootPath) === 'autosaves' ? 'autosaves' : 'saves';
 
-            Utils.writeSerializedGameState(saveDir, serialized);
+            await Utils.writeSerializedGameState(saveDir, serialized);
             console.log(`[save] Saved game '${saveName}' (${metadata.source}) at ${saveDir}`);
 
             return { saveName, saveDir, metadata };
@@ -46364,7 +46720,7 @@ module.exports = function registerApiRoutes(scope) {
             return stats;
         }
 
-        function persistLoadedGameStateAfterSettingBackfill(saveDir, metadata = {}) {
+        async function persistLoadedGameStateAfterSettingBackfill(saveDir, metadata = {}) {
             if (!currentPlayer) {
                 throw new Error('Cannot persist loaded setting backfill before current player is resolved.');
             }
@@ -46392,7 +46748,7 @@ module.exports = function registerApiRoutes(scope) {
                 currentSettingId: currentSetting?.id || metadata?.currentSettingId || null,
                 currentSettingName: currentSetting?.name || metadata?.currentSettingName || null
             };
-            Utils.writeSerializedGameState(saveDir, serializedBackfill);
+            await Utils.writeSerializedGameState(saveDir, serializedBackfill);
         }
 
         async function performGameLoad(requestedSaveName, { skipSummary = false, saveRoot = null, clientId = null, modMismatchChoice = null } = {}) {
@@ -46483,6 +46839,14 @@ module.exports = function registerApiRoutes(scope) {
                     improvementPromptTurnCounter = parsedImprovementPromptCounter;
                 } else {
                     improvementPromptTurnCounter = 0;
+                }
+            }
+            {
+                const parsedTonalScaleEvaluationCounter = Number(metadata.tonalScaleEvaluationTurnCounter);
+                if (Number.isInteger(parsedTonalScaleEvaluationCounter) && parsedTonalScaleEvaluationCounter >= 0) {
+                    tonalScaleEvaluationTurnCounter = parsedTonalScaleEvaluationCounter;
+                } else {
+                    tonalScaleEvaluationTurnCounter = 0;
                 }
             }
             {
@@ -46704,7 +47068,7 @@ module.exports = function registerApiRoutes(scope) {
             metadata.totalSkills = skills.size;
 
             if (hidePerceptionBackfillResult.updated) {
-                persistLoadedGameStateAfterSettingBackfill(saveDir, metadata);
+                await persistLoadedGameStateAfterSettingBackfill(saveDir, metadata);
             }
 
             if (!skipSummary) {
@@ -47074,7 +47438,7 @@ module.exports = function registerApiRoutes(scope) {
             return `${settingSegment}-${playerSegment}-${levelSegment}`;
         };
 
-        const performNewGameSettingsSave = ({ requestedSaveName = null, settings } = {}) => {
+        const performNewGameSettingsSave = async ({ requestedSaveName = null, settings } = {}) => {
             const normalizedSettings = normalizeNewGameSettingsPayload(settings);
             const baseDir = resolveBaseDirectory();
             const saveRootPath = resolveNewGameSettingsRootPath(baseDir);
@@ -47116,9 +47480,9 @@ module.exports = function registerApiRoutes(scope) {
                 totalSkills: Object.keys(normalizedSettings.skills || {}).length
             };
 
-            fs.mkdirSync(saveDir, { recursive: false });
-            fs.writeFileSync(settingsPath, JSON.stringify(normalizedSettings, null, 2));
-            fs.writeFileSync(metadataPath, JSON.stringify(metadata, null, 2));
+            await fs.promises.mkdir(saveDir, { recursive: false });
+            await Utils.writeFileAtomic(settingsPath, JSON.stringify(normalizedSettings, null, 2));
+            await Utils.writeFileAtomic(metadataPath, JSON.stringify(metadata, null, 2));
 
             return {
                 saveName,
@@ -47325,11 +47689,11 @@ module.exports = function registerApiRoutes(scope) {
             }
         }
 
-        app.post('/api/new-game/settings/save', (req, res) => {
+        app.post('/api/new-game/settings/save', async (req, res) => {
             try {
                 const body = req.body && typeof req.body === 'object' ? req.body : {};
                 const { saveName = null, settings = null } = body;
-                const result = performNewGameSettingsSave({
+                const result = await performNewGameSettingsSave({
                     requestedSaveName: saveName,
                     settings
                 });
@@ -47551,9 +47915,9 @@ module.exports = function registerApiRoutes(scope) {
         });
 
         // Save current game state
-        app.post('/api/save', (req, res) => {
+        app.post('/api/save', async (req, res) => {
             try {
-                const result = performGameSave();
+                const result = await performGameSave();
                 res.json({
                     success: true,
                     saveName: result.saveName,
@@ -47594,7 +47958,7 @@ module.exports = function registerApiRoutes(scope) {
             } catch (error) {
                 console.error('Error loading game:', error);
                 let statusCode = 500;
-                if (error.code === 'SAVE_NAME_REQUIRED') {
+                if (error.code === 'SAVE_NAME_REQUIRED' || error.code === 'INVALID_SAVE_NAME') {
                     statusCode = 400;
                 } else if (error.code === 'SAVE_NOT_FOUND') {
                     statusCode = 404;
@@ -47615,7 +47979,7 @@ module.exports = function registerApiRoutes(scope) {
             }
         });
 
-        app.post('/api/summaries/style', (req, res) => {
+        app.post('/api/summaries/style', async (req, res) => {
             try {
                 const { style } = req.body || {};
                 const normalized = normalizeSummaryStyle(style);
@@ -47648,7 +48012,7 @@ module.exports = function registerApiRoutes(scope) {
                         throw new Error('Save directory does not exist for metadata update.');
                     }
                     const metadataPath = path.join(saveInfo.saveDir, 'metadata.json');
-                    fs.writeFileSync(metadataPath, JSON.stringify(metadata, null, 2));
+                    await Utils.writeFileAtomic(metadataPath, JSON.stringify(metadata, null, 2));
                     persisted = true;
                 }
 
@@ -48404,6 +48768,13 @@ module.exports = function registerApiRoutes(scope) {
                         ? (Location.get(currentPlayer.currentLocation) || null)
                         : null
                 }),
+                runTonalScaleEvaluationPrompt: async ({ storeChatEntry = false } = {}) => runTonalScaleEvaluationPrompt({
+                    locationOverride: currentPlayer?.currentLocation
+                        ? (Location.get(currentPlayer.currentLocation) || null)
+                        : null,
+                    storeChatEntry,
+                    clientId: normalizedClientId
+                }),
                 generateSkillsByNames: typeof generateSkillsByNames === 'function'
                     ? generateSkillsByNames
                     : null,
@@ -48533,7 +48904,7 @@ module.exports = function registerApiRoutes(scope) {
         // Delete a save
         app.delete('/api/save/:saveName', (req, res) => {
             try {
-                const { saveName } = req.params;
+                const saveName = assertSafeSaveDirectoryName(req.params.saveName);
                 const saveDir = path.join(__dirname, 'saves', saveName);
 
                 if (!fs.existsSync(saveDir)) {
@@ -48554,7 +48925,8 @@ module.exports = function registerApiRoutes(scope) {
 
             } catch (error) {
                 console.error('Error deleting save:', error);
-                res.status(500).json({
+                const statusCode = (error.code === 'SAVE_NAME_REQUIRED' || error.code === 'INVALID_SAVE_NAME') ? 400 : 500;
+                res.status(statusCode).json({
                     success: false,
                     error: error.message
                 });
@@ -48578,7 +48950,8 @@ module.exports = function registerApiRoutes(scope) {
                     endpoint,
                     apiKey,
                     model,
-                    codexBridge
+                    codexBridge,
+                    clineBridge
                 } = req.body || {};
                 const backend = CodexBridgeClient.normalizeBackend(rawBackend);
 
@@ -48608,6 +48981,34 @@ module.exports = function registerApiRoutes(scope) {
                         return res.json({ success: true, message: 'Configuration test successful' });
                     }
                     return res.status(500).json({ error: 'Invalid response from Codex bridge' });
+                }
+
+                if (backend === ClineBridgeClient.backendName) {
+                    const aiConfig = {
+                        backend,
+                        model,
+                        cline_bridge: clineBridge
+                    };
+                    const configurationErrors = ClineBridgeClient.getConfigurationErrors(aiConfig);
+                    if (configurationErrors.length) {
+                        return res.status(400).json({ error: configurationErrors.join('. ') });
+                    }
+
+                    const response = await ClineBridgeClient.chatCompletion({
+                        messages: [
+                            { role: 'system', content: 'You are validating a Cline bridge configuration.' },
+                            { role: 'user', content: 'Return a short confirmation that the bridge is working.' }
+                        ],
+                        model,
+                        timeoutMs: baseTimeoutMilliseconds,
+                        metadataLabel: 'config_test',
+                        aiConfig
+                    });
+
+                    if (response?.data?.choices?.length > 0) {
+                        return res.json({ success: true, message: 'Configuration test successful' });
+                    }
+                    return res.status(500).json({ error: 'Invalid response from Cline bridge' });
                 }
 
                 if (!endpoint || !apiKey || !model) {
@@ -49360,17 +49761,15 @@ module.exports = function registerApiRoutes(scope) {
             });
         });
 
-        function saveUploadedEntityImage({ imageDataUrl, entityType, entityId }) {
+        async function saveUploadedEntityImage({ imageDataUrl, entityType, entityId }) {
             const parsedImage = parseUploadedEntityImageDataUrl(imageDataUrl);
             const imageId = generateImageId();
             const imagesDir = path.join(resolveBaseDirectory(), 'public', 'generated-images');
-            if (!fs.existsSync(imagesDir)) {
-                fs.mkdirSync(imagesDir, { recursive: true });
-            }
+            await fs.promises.mkdir(imagesDir, { recursive: true });
 
             const filename = `${imageId}.${parsedImage.extension}`;
             const filepath = path.join(imagesDir, filename);
-            fs.writeFileSync(filepath, parsedImage.buffer);
+            await fs.promises.writeFile(filepath, parsedImage.buffer);
 
             const imageEntry = {
                 imageId,
@@ -49446,11 +49845,11 @@ module.exports = function registerApiRoutes(scope) {
             }
         }
 
-        app.post('/api/images/upload', (req, res) => {
+        app.post('/api/images/upload', async (req, res) => {
             try {
                 const { entityType: rawEntityType, entityId: rawEntityId, imageDataUrl } = req.body || {};
                 const { entityType, entity, responseKey } = resolveEntityImageUploadTarget(rawEntityType, rawEntityId);
-                const savedImage = saveUploadedEntityImage({
+                const savedImage = await saveUploadedEntityImage({
                     imageDataUrl,
                     entityType,
                     entityId: entity.id
@@ -49662,3 +50061,4 @@ module.exports.resetNewGameRuntimeState = resetNewGameRuntimeState;
 module.exports.resolvePendingRegionEntryStubForTravelDestination = resolvePendingRegionEntryStubForTravelDestination;
 module.exports.resolveTravelTimeBackfillRegionIdentity = resolveTravelTimeBackfillRegionIdentity;
 module.exports.maybeBackfillRegionExitTravelTimesForArrival = maybeBackfillRegionExitTravelTimesForArrival;
+module.exports.assertSafeSaveDirectoryName = assertSafeSaveDirectoryName;

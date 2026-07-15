@@ -1093,6 +1093,17 @@ class Thing {
     return entry ? entry.effect.toJSON() : null;
   }
 
+  // All status effects this item inflicts on a target (e.g. attack victims).
+  // An item may carry several, from its own definition and/or added mechanisms.
+  get causeStatusEffectsOnTarget() {
+    return this.#getCauseStatusEffectEntries('target').map(entry => entry.effect.toJSON());
+  }
+
+  // All status effects this item applies to its equipper while equipped.
+  get causeStatusEffectsOnEquipper() {
+    return this.#getCauseStatusEffectEntries('equipper').map(entry => entry.effect.toJSON());
+  }
+
   get previouslyHarvestedItems() {
     return Array.isArray(this.#previouslyHarvestedItems) ? [...this.#previouslyHarvestedItems] : [];
   }
@@ -1143,17 +1154,24 @@ class Thing {
     return Utils.formatAbsoluteWorldMinutesAgo(this.#lastHarvested, { currentTotalMinutes });
   }
 
+  // `target` and `equipper` may each be a single effect or an array of effects;
+  // all provided effects are retained (deduplicated by name/description), so an
+  // item can inflict and/or apply multiple distinct status effects.
   setCauseStatusEffects({ target = null, equipper = null, legacy = null } = {}) {
     this.#causeStatusEffect = [];
-    const targetEntry = this.#normalizeCauseStatusEffectEntry(target, { applyToTarget: true });
-    const equipperEntry = this.#normalizeCauseStatusEffectEntry(equipper, { applyToEquipper: true });
-    const legacyEntry = this.#normalizeCauseStatusEffectEntry(legacy, {
-      applyToTarget: Boolean(legacy?.applyToTarget),
-      applyToEquipper: Boolean(legacy?.applyToEquipper)
-    });
-    this.#upsertCauseStatusEffectEntry(targetEntry);
-    this.#upsertCauseStatusEffectEntry(equipperEntry);
-    this.#upsertCauseStatusEffectEntry(legacyEntry);
+    const asArray = (value) => (Array.isArray(value) ? value : (value ? [value] : []));
+    for (const entry of asArray(target)) {
+      this.#upsertCauseStatusEffectEntry(this.#normalizeCauseStatusEffectEntry(entry, { applyToTarget: true }));
+    }
+    for (const entry of asArray(equipper)) {
+      this.#upsertCauseStatusEffectEntry(this.#normalizeCauseStatusEffectEntry(entry, { applyToEquipper: true }));
+    }
+    for (const entry of asArray(legacy)) {
+      this.#upsertCauseStatusEffectEntry(this.#normalizeCauseStatusEffectEntry(entry, {
+        applyToTarget: Boolean(entry?.applyToTarget),
+        applyToEquipper: Boolean(entry?.applyToEquipper)
+      }));
+    }
     this.#syncFieldsToMetadata();
     this.#lastUpdated = new Date().toISOString();
   }
@@ -1916,6 +1934,7 @@ class Thing {
         return entry ? entry.effect.toJSON() : undefined;
       })(),
       causeStatusEffect: this.causeStatusEffect,
+      causeStatusEffects: this.#causeStatusEffect.length ? this.#serializeCauseStatusEffectEntries() : undefined,
       count: this.#count,
       level: this.#level || undefined,
       relativeLevel: this.#relativeLevel || undefined,
@@ -1967,6 +1986,10 @@ class Thing {
       slot: data.slot ?? (data.metadata?.slot ?? null),
       attributeBonuses: data.attributeBonuses ?? data.metadata?.attributeBonuses ?? null,
       causeStatusEffect: (function resolveCauseStatusEffect() {
+        const plural = data.causeStatusEffects ?? data.metadata?.causeStatusEffects;
+        if (Array.isArray(plural) && plural.length) {
+          return plural;
+        }
         const target = data.causeStatusEffectOnTarget ?? data.metadata?.causeStatusEffectOnTarget;
         const equipper = data.causeStatusEffectOnEquipper ?? data.metadata?.causeStatusEffectOnEquipper;
         const legacy = data.causeStatusEffect ?? data.metadata?.causeStatusEffect ?? null;
@@ -2225,6 +2248,35 @@ class Thing {
     return null;
   }
 
+  #getCauseStatusEffectEntries(targetType = null) {
+    if (!Array.isArray(this.#causeStatusEffect) || !this.#causeStatusEffect.length) {
+      return [];
+    }
+    if (!targetType) {
+      return [...this.#causeStatusEffect];
+    }
+    if (targetType === 'target') {
+      return this.#causeStatusEffect.filter(entry => entry.applyToTarget);
+    }
+    if (targetType === 'equipper') {
+      return this.#causeStatusEffect.filter(entry => entry.applyToEquipper);
+    }
+    return [];
+  }
+
+  // Serialize every cause-status-effect entry (with its role flags) so multiple
+  // target/equipper effects survive save/load, not just the first of each role.
+  #serializeCauseStatusEffectEntries() {
+    if (!Array.isArray(this.#causeStatusEffect) || !this.#causeStatusEffect.length) {
+      return [];
+    }
+    return this.#causeStatusEffect.map(entry => ({
+      ...entry.effect.toJSON(),
+      applyToTarget: Boolean(entry.applyToTarget),
+      applyToEquipper: Boolean(entry.applyToEquipper)
+    }));
+  }
+
   #ingestCauseStatusEffects(effects) {
     if (!effects) {
       return;
@@ -2258,15 +2310,20 @@ class Thing {
     this.#unscaledAttributeBonuses = unscaledBonuses;
 
     this.#causeStatusEffect = [];
-    const effectTarget = this.#normalizeCauseStatusEffectEntry(meta.causeStatusEffectOnTarget, { applyToTarget: true });
-    const effectEquipper = this.#normalizeCauseStatusEffectEntry(meta.causeStatusEffectOnEquipper, { applyToEquipper: true });
-    const legacyEffect = this.#normalizeCauseStatusEffectEntry(meta.causeStatusEffect, {
-      applyToTarget: Boolean(meta?.causeStatusEffect?.applyToTarget),
-      applyToEquipper: Boolean(meta?.causeStatusEffect?.applyToEquipper)
-    });
-    this.#upsertCauseStatusEffectEntry(effectTarget);
-    this.#upsertCauseStatusEffectEntry(effectEquipper);
-    this.#upsertCauseStatusEffectEntry(legacyEffect);
+    if (Array.isArray(meta.causeStatusEffects) && meta.causeStatusEffects.length) {
+      // Preferred multi-effect form: every entry carries its own role flags.
+      this.#ingestCauseStatusEffects(meta.causeStatusEffects);
+    } else {
+      const effectTarget = this.#normalizeCauseStatusEffectEntry(meta.causeStatusEffectOnTarget, { applyToTarget: true });
+      const effectEquipper = this.#normalizeCauseStatusEffectEntry(meta.causeStatusEffectOnEquipper, { applyToEquipper: true });
+      const legacyEffect = this.#normalizeCauseStatusEffectEntry(meta.causeStatusEffect, {
+        applyToTarget: Boolean(meta?.causeStatusEffect?.applyToTarget),
+        applyToEquipper: Boolean(meta?.causeStatusEffect?.applyToEquipper)
+      });
+      this.#upsertCauseStatusEffectEntry(effectTarget);
+      this.#upsertCauseStatusEffectEntry(effectEquipper);
+      this.#upsertCauseStatusEffectEntry(legacyEffect);
+    }
 
     const metadataFlags = Array.isArray(meta.flags) ? meta.flags : [];
     if (metadataFlags.length) {
@@ -2368,6 +2425,15 @@ class Thing {
       this.#metadata.causeStatusEffectOnEquipper = equipperEntry.effect.toJSON();
     } else {
       delete this.#metadata.causeStatusEffectOnEquipper;
+    }
+    // Persist the full set (with per-entry role flags) so items with multiple
+    // target and/or equipper effects round-trip; the singular fields above remain
+    // for backward compatibility with readers that expect one effect per role.
+    const allEntries = this.#serializeCauseStatusEffectEntries();
+    if (allEntries.length) {
+      this.#metadata.causeStatusEffects = allEntries;
+    } else {
+      delete this.#metadata.causeStatusEffects;
     }
     delete this.#metadata.causeStatusEffect;
 

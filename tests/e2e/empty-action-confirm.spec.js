@@ -34,6 +34,8 @@ test('empty chat send asks for confirmation before posting empty action', async 
     });
 
     await page.goto('/', { waitUntil: 'domcontentloaded' });
+    await expect.poll(() => page.evaluate(() => Boolean(window.AIRPG_CHAT))).toBe(true);
+    await expect(page.locator('#sendButton')).toBeEnabled();
 
     await expect(page.locator('#emptyActionConfirmModal')).toBeHidden();
     await page.locator('#sendButton').click();

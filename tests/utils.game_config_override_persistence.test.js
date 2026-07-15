@@ -10,11 +10,11 @@ function makeTempSaveDir() {
     return fs.mkdtempSync(path.join(os.tmpdir(), 'ai-rpg-save-'));
 }
 
-test('writeSerializedGameState persists per-game config override YAML alongside save data', () => {
+test('writeSerializedGameState persists per-game config override YAML alongside save data', async () => {
     const saveDir = makeTempSaveDir();
 
     try {
-        Utils.writeSerializedGameState(saveDir, {
+        await Utils.writeSerializedGameState(saveDir, {
             gameWorld: {},
             chatHistory: [],
             generatedImages: {},

@@ -55,7 +55,7 @@
 - `mods/modules/assets/module.svg` is the bundled installable-module badge icon and tooltip fallback thumbnail.
 - `mods/modules/assets/modular.svg` is the bundled modular-item badge icon for items with module slots.
 - `public/icons/` stores static UI icon assets (for example, `sword-shield.svg`).
-- `assets/fluentui-emoji/crossed_swords_color_classic.svg` is the favicon and app-header brand mark.
+- `assets/fluentui-emoji/crossed_swords_color_classic.svg` is the favicon and app-header brand mark. During active prompt progress, `public/js/chat.js` temporarily draws that mark into a canvas favicon over a dark blue bottom-to-top progress fill, then restores the static SVG when no prompts are running.
 - Single-color SVG icon assets use `#ffffff` for their explicit fill/stroke color. Multicolor emoji/logo SVGs keep their original palette and gradient definitions.
 - `assets/material-icons/app-nav-icons/` stores mask-friendly app-header icons for New Game, System, Tools, Save, Load, Debug, and Player Stats. App-header masks also reuse existing game-tab icons for Play, Worlds, and Lorebooks, and `assets/material-icons/misc/puzzle.svg` for Mods.
 - `assets/material-icons/game-tab-icons/relationship.svg` is the Relationships tab icon. It follows the same single-color white SVG convention as the other Play tab icons.

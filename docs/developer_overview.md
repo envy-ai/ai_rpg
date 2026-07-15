@@ -6,7 +6,7 @@ This is a session warm-up map for the project shape, runtime flow, and first fil
 
 - Server-driven, setting-agnostic, LLM-assisted RPG with persistent world state. The LLM helps create settings, regions, locations, NPCs, items/scenery, factions, quests, and turn narration.
 - Core entities include players/NPCs, locations/regions/exits, things, quests, factions, skills, status effects, scheduled events, mystery boxes/threads, scene summaries, and world-profile settings.
-- Optional image generation runs through ComfyUI, NanoGPT, or OpenAI clients. Text generation runs through `LLMClient` using either an OpenAI-compatible backend or the Codex bridge.
+- Optional image generation runs through ComfyUI, NanoGPT, or OpenAI clients. Text generation runs through `LLMClient` using an OpenAI-compatible backend, the Codex bridge, or the Cline bridge.
 
 ## Runtime architecture (high level)
 
@@ -47,7 +47,7 @@ This is a session warm-up map for the project shape, runtime flow, and first fil
 - `AGENTS.md` for repo-specific constraints and coding rules.
 - `docs/README.md` for the full documentation map.
 - `docs/server_llm_notes.md` for the end-to-end server + LLM flow.
-- `docs/classes/LLMClient.md`, `docs/classes/CodexBridgeClient.md`, and `docs/classes/Events.md` for generation, tool loops, prompt validation, and event checks.
+- `docs/classes/LLMClient.md`, `docs/classes/CodexBridgeClient.md`, `docs/classes/ClineBridgeClient.md`, and `docs/classes/Events.md` for generation, tool loops, prompt validation, bridge transports, and event checks.
 - `docs/classes/Player.md`, `docs/classes/Location.md`, `docs/classes/Region.md`, `docs/classes/Thing.md`, `docs/classes/Globals.md`, and `docs/classes/ScheduledEvent.md` for world state.
 - `docs/modding.md`, `docs/modding_hooks.md`, `docs/classes/ModLoader.md`, and `docs/classes/ModExtensionRegistry.md` for the mod system.
 

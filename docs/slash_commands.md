@@ -63,6 +63,7 @@ This guide covers the runtime slash-command path: registration, request parsing,
 - `interaction.runPlotExpanderPrompt({ parentEntryId?, locationId?, specificPlot? })`: runs the plot-expander prompt for a resolved location.
 - `interaction.runHousekeepingPrompt({ instructions? })`: runs the parser-based housekeeping prompt with optional manual `housekeepingInstructions`. The helper requires an active `clientId` so realtime status, quest confirmation, and tool-call debug updates can target the invoking browser tab.
 - `interaction.runMysteryBoxCleanupPrompt()`: runs the mystery cleanup prompt immediately, applies resolved/revealed results, persists mystery state when possible, and returns both newly applied records and prompt-candidate decision summaries with model thoughts.
+- `interaction.runTonalScaleEvaluationPrompt({ storeChatEntry? })`: runs the tonal-scale evaluation prompt immediately, extracts the `<tonalScaleEvaluation>` body, stores it as the latest save-metadata evaluation, and returns the extracted text. When `storeChatEntry: true`, it also stores a visible prompt-excluded `tonal-scale-evaluation` assistant chat entry and emits a chat-history refresh for the invoking client.
 - `interaction.generateSkillsByNames(options)`: shared skill metadata generation helper.
 - `interaction.generatePlayerImage(player, { force?, clientId? })`: shared player/NPC portrait generation helper.
 - `interaction.getActiveSettingSnapshot()`: returns the active setting snapshot.
@@ -139,7 +140,7 @@ Helpers that can be unavailable are exposed as `null`. Commands should check req
 | `/random` | - | Triggers a configured random event type. |
 | `/refill_needs` | - | Refills stored need bars for one NPC or every NPC. |
 | `/regen_party_images` | - | Queues forced portrait regeneration for current party NPCs. |
-| `/regex_replace` | - | Runs regex replacement across story history. |
+| `/regex_replace` | - | Runs regex replacement across story history, optionally limited to one chat entry type. |
 | `/reload_config` | `/reloadconfig`, `/rcfg` | Reloads config files and definition caches. |
 | `/reload_lorebooks` | `/reloadlorebooks`, `/rlb` | Reloads lorebooks from disk. |
 | `/resolve_mystery_threads` | - | Runs mystery cleanup and lists resolved threads and boxes with thoughts. |
@@ -159,6 +160,7 @@ Helpers that can be unavailable are exposed as `null`. Commands should check req
 | `/summarize` | `/scene_summary` | Exports or rebuilds scene summaries for a selected history range. |
 | `/teleport` | - | Moves the player to a location by id or quoted name. |
 | `/time` | - | Advances or rewinds world time by a signed duration. |
+| `/tonal_scale_evaluation` | - | Runs the tonal-scale evaluation prompt and displays the extracted result. |
 | `/vehicle_status` | - | Displays current vehicle route/trip status. |
 | `/weather` | - | Displays current-region seasonal weather details. |
 | `/world_outline` | - | Lists regions, locations, and pending stubs. |
