@@ -1,21 +1,25 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('fs');
-const path = require('path');
 const vm = require('vm');
-const nunjucks = require('nunjucks');
 
 const Globals = require('../Globals.js');
 const ModExtensionRegistry = require('../ModExtensionRegistry.js');
 const Utils = require('../Utils.js');
 const {
-    buildActorRelationshipPromptContext
-} = require('../base_context_relationships.js');
+    createPromptEnv: createBasePromptEnv,
+    loadBuildBasePromptContext: loadBuildBasePromptContextBase
+} = require('./helpers/baseContextFixtures.js');
 
 function createPromptEnv() {
-    return nunjucks.configure(path.join(process.cwd(), 'prompts'), {
-        autoescape: false,
-        throwOnUndefined: true
+    return createBasePromptEnv({ randomWord: false });
+}
+
+function loadBuildBasePromptContext(registry) {
+    return loadBuildBasePromptContextBase({
+        registry,
+        includeMysteryCleanup: true,
+        playerAvailableSkills: new Map([['Cybernetics', {}]])
     });
 }
 
@@ -48,108 +52,6 @@ this.parseThingsXml = parseThingsXml;`,
     return context.parseThingsXml;
 }
 
-function loadBuildBasePromptContext(registry) {
-    const source = fs.readFileSync(require.resolve('../server.js'), 'utf8');
-    const start = source.indexOf('function buildBasePromptContext');
-    const end = source.indexOf('\nfunction getBaseContextTurnKey', start);
-    assert.notEqual(start, -1, 'Could not locate buildBasePromptContext');
-    assert.notEqual(end, -1, 'Could not locate getBaseContextTurnKey');
-
-    const context = {
-        Boolean,
-        Error,
-        Map,
-        Number,
-        Object,
-        Set,
-        String,
-        console,
-        config: {},
-        currentPlayer: {
-            id: 'player_1',
-            name: 'Tester',
-            currentQuests: [],
-            getAbilities: () => [],
-            getPartyMembers: () => [],
-            getStatus: () => ({
-                name: 'Tester',
-                description: '',
-                inventory: [],
-                gear: {},
-                skills: []
-            })
-        },
-        currentTurnToken: null,
-        chatHistory: [],
-        factions: new Map(),
-        gameLocations: new Map(),
-        pendingRegionStubs: new Map(),
-        players: new Map(),
-        regions: new Map(),
-        skills: new Map(),
-        things: new Map(),
-        attributeDefinitionsForPrompt: {
-            intelligence: {},
-            strength: {}
-        },
-        Globals: {
-            ensureWorldTimeInitialized: () => ({}),
-            getPlotAnalysis: () => null,
-            getSerializedCalendarDefinition: () => ({}),
-            saveFileSaveVersion: 1
-        },
-        Player: {
-            getAvailableSkills: () => new Map([['Cybernetics', {}]]),
-            getDispositionDefinitions: () => ({ types: {}, range: {} }),
-            getNeedBarDefinitionsForContext: () => []
-        },
-        StatusEffect: {
-            normalizeDuration: value => value
-        },
-        Thing: {
-            generateRandomRarityDefinition: () => ({ label: 'Common' }),
-            getAllRarityDefinitions: () => [{ label: 'Common', description: 'Common item.' }]
-        },
-        buildActiveMysteryThreadsForPrompt: () => [],
-        buildMysteryCleanupThreadsForPrompt: () => [],
-        buildNpcRepresentationSummaryForPrompt: () => '',
-        buildActorRelationshipPromptContext,
-        buildTrackersForPrompt: () => [],
-        buildSettingPromptContext: () => ({
-            name: 'Test Setting',
-            description: 'A test setting.',
-            genre: 'science fantasy',
-            tone: 'neutral',
-            skills: ['Cybernetics'],
-            attributes: ['intelligence', 'strength']
-        }),
-        collectNpcNamesForContext: () => [],
-        describeSettingForPrompt: () => 'A test setting.',
-        extractPersonality: () => ({}),
-        findRegionByLocationId: () => null,
-        getActiveSettingSnapshot: () => ({ name: 'Test Setting' }),
-        getExperiencePointValues: () => ({}),
-        getGearSlotNames: () => ['head', 'body'],
-        getGearSlotTypes: () => ['head', 'body'],
-        getThingGeneratorPromptFields: () => registry.getEntityFields('thing', { exposeToGeneratorPrompt: true }),
-        getRegisteredPlayerEntityFields: (filter = {}) => registry.getEntityFields('player', filter),
-        getPlayerGeneratorPromptFields: () => registry.getEntityFields('player', { exposeToGeneratorPrompt: true })
-            .filter(field => field && field.xmlPrompt && typeof field.xmlPrompt.tagName === 'string'),
-        getWorldOutline: () => ({ regions: [] }),
-        modExtensionRegistry: registry,
-        normalizeLocationWeatherExposure: () => 'no',
-        resolveLocationHasWeather: () => null,
-        resolveMysteryThreadMaxActive: () => 0,
-        resolveRegionWeatherForPrompt: () => null
-    };
-    vm.createContext(context);
-    vm.runInContext(
-        `${source.slice(start, end)}
-this.buildBasePromptContext = buildBasePromptContext;`,
-        context
-    );
-    return context.buildBasePromptContext;
-}
 
 function registerImplantField(registry) {
     registry.registerEntityField({

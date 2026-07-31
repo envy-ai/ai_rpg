@@ -1,13 +1,11 @@
+const sanitizeString = require('./sanitizeString.js');
+
 class SanitizedStringMap extends Map {
   static #sanitizeKey(key) {
     if (typeof key !== 'string') {
       throw new TypeError('SanitizedStringMap only accepts string keys.');
     }
-    return key
-      .replace(/[^\w\s]|_/g, ' ')
-      .replace(/\s+/g, ' ')
-      .trim()
-      .toLowerCase();
+    return sanitizeString(key);
   }
 
   set(key, value) {

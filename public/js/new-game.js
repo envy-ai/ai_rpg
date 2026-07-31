@@ -63,7 +63,7 @@ document.addEventListener('DOMContentLoaded', () => {
   };
 
   const realtimeState = {
-    clientId: loadClientId(),
+    clientId: window.DomUtils.loadClientId(),
     ws: null,
     reconnectTimer: null,
     reconnectDelay: 1000,
@@ -152,27 +152,6 @@ document.addEventListener('DOMContentLoaded', () => {
       startBtn.disabled = true;
     }
   };
-
-  function loadClientId() {
-    const storageKey = 'airpg:clientId';
-    try {
-      const existing = window.localStorage.getItem(storageKey);
-      if (existing && existing.length > 0) {
-        return existing;
-      }
-    } catch (_) {
-      // Ignore storage read errors
-    }
-    const generated = (window.crypto && typeof window.crypto.randomUUID === 'function')
-      ? window.crypto.randomUUID()
-      : `client-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
-    try {
-      window.localStorage.setItem('airpg:clientId', generated);
-    } catch (_) {
-      // Ignore storage write errors
-    }
-    return generated;
-  }
 
   function generateRequestId() {
     if (window.crypto && typeof window.crypto.randomUUID === 'function') {

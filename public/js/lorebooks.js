@@ -317,12 +317,7 @@
     }
 
     // Utility functions
-    function escapeHtml(str) {
-        if (!str) return '';
-        const div = document.createElement('div');
-        div.textContent = str;
-        return div.innerHTML;
-    }
+    const escapeHtml = window.DomUtils.escapeHtml;
 
     function formatKeys(keys) {
         if (Array.isArray(keys)) {

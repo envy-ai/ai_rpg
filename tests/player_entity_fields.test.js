@@ -1,10 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('fs');
-const os = require('os');
-const path = require('path');
 const vm = require('vm');
-const nunjucks = require('nunjucks');
 
 const Globals = require('../Globals.js');
 const ModExtensionRegistry = require('../ModExtensionRegistry.js');
@@ -15,63 +12,19 @@ const {
     createChatToolRuntime,
     getChatToolDefinitions
 } = require('../chat_tool_calls.js');
-
-function createTempPlayerDefs() {
-    const tempBaseDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ai-rpg-player-fields-'));
-
-    const writeFile = (relativePath, content) => {
-        const targetPath = path.join(tempBaseDir, relativePath);
-        fs.mkdirSync(path.dirname(targetPath), { recursive: true });
-        fs.writeFileSync(targetPath, content, 'utf8');
-    };
-
-    writeFile('defs/attributes.yaml', `
-attributes:
-  strength:
-    label: Strength
-    default: 5
-`);
-    writeFile('defs/gear_slots.yaml', 'gear_slots: {}\n');
-    writeFile('defs/dispositions.yaml', 'dispositions: {}\nrange: {}\n');
-    writeFile('defs/need_bars.yaml', 'need_bars: {}\n');
-
-    return tempBaseDir;
-}
+const {
+    withTempPlayerEnvironment: withTempPlayerEnvironmentBase
+} = require('./helpers/needBarFixtures.js');
+const {
+    createPromptEnv,
+    buildBaseRenderContext
+} = require('./helpers/baseContextFixtures.js');
 
 function withTempPlayerEnvironment(run) {
-    const tempBaseDir = createTempPlayerDefs();
-    const previousBaseDir = Globals.baseDir;
-    const previousConfig = Globals.config;
-    const previousRegistry = Globals.modExtensionRegistry;
-
-    Player.clearRuntimeRegistries();
-    Globals.baseDir = tempBaseDir;
-    Globals.config = {
-        ...(previousConfig && typeof previousConfig === 'object' ? previousConfig : {}),
-        baseHealthPerLevel: Number.isFinite(previousConfig?.baseHealthPerLevel)
-            ? previousConfig.baseHealthPerLevel
-            : 10,
-        formulas: {
-            character_creation: {
-                attribute_pool_formula: '0',
-                skill_pool_formula: '0',
-                max_attribute: '18',
-                max_skill: '10'
-            }
-        }
-    };
-    Player.reloadDefinitionCaches({ refreshInstances: false });
-
-    try {
-        return run();
-    } finally {
-        Player.clearRuntimeRegistries();
-        Globals.baseDir = previousBaseDir;
-        Globals.config = previousConfig;
-        Globals.modExtensionRegistry = previousRegistry;
-        Player.reloadDefinitionCaches({ refreshInstances: false });
-        fs.rmSync(tempBaseDir, { recursive: true, force: true });
-    }
+    return withTempPlayerEnvironmentBase({
+        prefix: 'ai-rpg-player-fields-',
+        manageModRegistry: true
+    }, run);
 }
 
 function registerPlayerSexualTraitsField(registry) {
@@ -324,53 +277,10 @@ test('updateCharacterFields accepts registered Player fields', async () => {
     assert.equal(npc.sexualTraits, 'dominant, teasing - Mira likes to control the tempo.');
 });
 
-function createPromptEnv() {
-    const env = nunjucks.configure(path.join(process.cwd(), 'prompts'), {
-        autoescape: false,
-        throwOnUndefined: true
-    });
-    env.addGlobal('randomword', () => 'test');
-    return env;
-}
-
 function buildBaseContextForRender(overrides = {}) {
-    return {
+    return buildBaseRenderContext({
         config: {},
-        promptType: 'question',
-        question: 'What is here?',
-        setting: {
-            baseContextPreamble: '',
-            name: 'Test Setting',
-            description: 'A test setting.',
-            theme: 'Test',
-            genre: 'Fantasy',
-            startingLocationType: 'Town',
-            magicLevel: 'Low',
-            techLevel: 'Low',
-            tone: 'Neutral',
-            difficulty: 'Normal',
-            currencyName: 'gold',
-            currencyNamePlural: 'gold',
-            currencyValueNotes: '',
-            writingStyleNotes: '',
-            races: [],
-            attributes: [],
-            skills: []
-        },
-        rarityDefinitions: [],
-        gameHistory: '',
-        recentGameHistory: '',
-        omitGameHistory: false,
-        worldOutline: { regions: [] },
-        factions: [],
-        trackers: [],
-        currentRegion: {
-            name: 'Test Region',
-            description: '',
-            secrets: [],
-            locations: [],
-            connectedRegions: []
-        },
+        trackers: true,
         currentLocation: {
             name: 'Test Location',
             description: '',
@@ -380,51 +290,8 @@ function buildBaseContextForRender(overrides = {}) {
             items: [],
             npcs: []
         },
-        currentPlayer: {
-            name: 'Tester',
-            description: 'A player.',
-            class: 'Adventurer',
-            race: 'Human',
-            currency: 0,
-            statusEffects: [],
-            skills: [],
-            abilities: [],
-            inventory: [],
-            needs: [],
-            currentQuests: []
-        },
-        party: [],
-        npcs: [],
-        additionalLore: '',
-        itemContext: '',
-        abilityContext: '',
-        plotSummary: '',
-        plotExpander: '',
-        worldTime: {
-            dayIndex: 0,
-            timeMinutes: 720,
-            dateLabel: 'Day 1',
-            timeLabel: '12:00 PM',
-            segment: 'Noon',
-            season: 'Spring',
-            seasonDescription: '',
-            holiday: null,
-            lighting: 'Daylight',
-            hasLocalWeather: false,
-            weatherName: '',
-            weatherDescription: '',
-            lightLevelDescription: 'Bright'
-        },
-        currentVehicle: null,
-        omitInventoryItems: false,
-        omitAbilities: false,
-        suppressQuestList: false,
-        saveFileSaveVersion: 1,
-        Globals: {
-            saveFileSaveVersion: 1
-        },
-        ...overrides
-    };
+        overrides
+    });
 }
 
 test('base context renders registered Player field values when registered', () => {

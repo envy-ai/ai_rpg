@@ -1,57 +1,24 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const fs = require('fs');
-const os = require('os');
-const path = require('path');
 
-const Globals = require('../Globals.js');
 const Player = require('../Player.js');
+const {
+    createTempDefsDir,
+    withTempPlayerEnvironment: withTempPlayerEnvironmentBase
+} = require('./helpers/needBarFixtures.js');
 
 function writeTempNeedBarDefs({ needBarsYaml }) {
-    const tempBaseDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ai-rpg-need-sentences-'));
-
-    const writeFile = (relativePath, content) => {
-        const targetPath = path.join(tempBaseDir, relativePath);
-        fs.mkdirSync(path.dirname(targetPath), { recursive: true });
-        fs.writeFileSync(targetPath, content, 'utf8');
-    };
-
-    writeFile('defs/attributes.yaml', `
-attributes:
-  strength:
-    label: Strength
-    default: 5
-`);
-    writeFile('defs/gear_slots.yaml', 'gear_slots: {}\n');
-    writeFile('defs/dispositions.yaml', 'dispositions: {}\nrange: {}\n');
-    writeFile('defs/need_bars.yaml', needBarsYaml);
-
-    return tempBaseDir;
+    return createTempDefsDir({
+        prefix: 'ai-rpg-need-sentences-',
+        needBarsYaml
+    });
 }
 
 function withTempNeedBarEnvironment(tempBaseDir, run) {
-    const previousBaseDir = Globals.baseDir;
-    const previousConfig = Globals.config;
-
-    Player.clearRuntimeRegistries();
-    Globals.baseDir = tempBaseDir;
-    Globals.config = {
-        ...(previousConfig && typeof previousConfig === 'object' ? previousConfig : {}),
-        baseHealthPerLevel: Number.isFinite(previousConfig?.baseHealthPerLevel)
-            ? previousConfig.baseHealthPerLevel
-            : 10
-    };
-    Player.reloadDefinitionCaches({ refreshInstances: false });
-
-    try {
-        run();
-    } finally {
-        Player.clearRuntimeRegistries();
-        Globals.baseDir = previousBaseDir;
-        Globals.config = previousConfig;
-        Player.reloadDefinitionCaches({ refreshInstances: false });
-        fs.rmSync(tempBaseDir, { recursive: true, force: true });
-    }
+    return withTempPlayerEnvironmentBase({
+        tempBaseDir,
+        configStyle: 'health-only'
+    }, run);
 }
 
 test('Player.validateNeedBarPromptSentences throws on strict validation but only warns in warn mode', () => {

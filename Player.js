@@ -1,6 +1,7 @@
 const Thing = require('./Thing.js');
 const Skill = require('./Skill.js');
 const StatusEffect = require('./StatusEffect.js');
+const StatusEffectList = require('./status_effect_list.js');
 const SanitizedStringMap = require('./SanitizedStringMap.js');
 const { findPackageJSON } = require('module');
 const Globals = require('./Globals.js');
@@ -11,6 +12,9 @@ const FormulaEvaluator = require('./public/js/formula-evaluator.js');
 const { resolvePointPoolFormulas } = require('./utils/point-pool-formulas.js');
 const { loadMergedDefinitionFile } = require('./DefinitionLoader.js');
 const IdGenerator = require('./IdGenerator.js');
+const { createExtensionFieldAccess } = require('./extension_field_access.js');
+
+const playerExtensionFields = createExtensionFieldAccess({ entityType: 'player', label: 'Player' });
 
 const ATTRIBUTE_POOL_BASELINE_VALUE = 10;
 const SKILL_POOL_BASELINE_VALUE = 1;
@@ -214,97 +218,6 @@ class Player {
             }
         }
         return normalized;
-    }
-
-    static #getRegisteredExtensionFields() {
-        const registry = Globals.modExtensionRegistry;
-        if (!registry || typeof registry.getEntityFields !== 'function') {
-            return [];
-        }
-        return registry.getEntityFields('player');
-    }
-
-    static #getRegisteredExtensionField(fieldName) {
-        const normalized = typeof fieldName === 'string' ? fieldName.trim() : '';
-        if (!normalized) {
-            return null;
-        }
-        const registry = Globals.modExtensionRegistry;
-        if (!registry || typeof registry.getEntityField !== 'function') {
-            return null;
-        }
-        return registry.getEntityField('player', normalized);
-    }
-
-    static #cloneExtensionFieldValue(value) {
-        if (value === undefined) {
-            return undefined;
-        }
-        if (value === null || typeof value !== 'object') {
-            return value;
-        }
-        return JSON.parse(JSON.stringify(value));
-    }
-
-    static #normalizeExtensionFieldValue(field, value) {
-        if (value === undefined || value === null) {
-            return value;
-        }
-        switch (field.type) {
-            case 'string':
-                return String(value).trim();
-            case 'number': {
-                const numeric = Number(value);
-                if (!Number.isFinite(numeric)) {
-                    throw new Error(`Player extension field "${field.fieldName}" must be a finite number.`);
-                }
-                return numeric;
-            }
-            case 'integer': {
-                const numeric = Number(value);
-                if (!Number.isFinite(numeric) || !Number.isInteger(numeric)) {
-                    throw new Error(`Player extension field "${field.fieldName}" must be an integer.`);
-                }
-                return numeric;
-            }
-            case 'boolean':
-                if (typeof value !== 'boolean') {
-                    throw new Error(`Player extension field "${field.fieldName}" must be a boolean.`);
-                }
-                return value;
-            case 'array':
-                if (!Array.isArray(value)) {
-                    throw new Error(`Player extension field "${field.fieldName}" must be an array.`);
-                }
-                return Player.#cloneExtensionFieldValue(value);
-            case 'object':
-                if (!value || typeof value !== 'object' || Array.isArray(value)) {
-                    throw new Error(`Player extension field "${field.fieldName}" must be an object.`);
-                }
-                return Player.#cloneExtensionFieldValue(value);
-            default:
-                throw new Error(`Player extension field "${field.fieldName}" has unsupported type "${field.type}".`);
-        }
-    }
-
-    static #shouldStoreExtensionFieldValue(value) {
-        if (value === undefined || value === null) {
-            return false;
-        }
-        return !(typeof value === 'string' && value.length === 0);
-    }
-
-    static #extractExtensionFieldInputs(data) {
-        const inputs = {};
-        if (!data || typeof data !== 'object') {
-            return inputs;
-        }
-        for (const field of Player.#getRegisteredExtensionFields()) {
-            if (Object.prototype.hasOwnProperty.call(data, field.fieldName)) {
-                inputs[field.fieldName] = data[field.fieldName];
-            }
-        }
-        return inputs;
     }
 
     static #rebuildIndexes() {
@@ -2377,7 +2290,7 @@ class Player {
         this.#thingListViewPreferences = Player.#normalizeThingListViewPreferences(options.thingListViewPreferences);
         this.#modState = Player.#normalizeModState(options.modState);
         this.#installExtensionFieldAccessors();
-        this.#applyExtensionFieldInputs(Player.#extractExtensionFieldInputs(options));
+        this.#applyExtensionFieldInputs(playerExtensionFields.extractInputs(options));
         this.#syncModStateWithInventory({ action: 'initialize' });
 
         // Creation timestamp
@@ -4109,78 +4022,31 @@ class Player {
     }
 
     getExtensionField(fieldName) {
-        const field = Player.#getRegisteredExtensionField(fieldName);
-        if (!field) {
-            throw new Error(`Player extension field "${fieldName}" is not registered.`);
-        }
-        if (Object.prototype.hasOwnProperty.call(this.#extensionFields, field.fieldName)) {
-            return Player.#cloneExtensionFieldValue(this.#extensionFields[field.fieldName]);
-        }
-        return Player.#cloneExtensionFieldValue(field.defaultValue);
+        return playerExtensionFields.getField(this.#extensionFields, fieldName);
     }
 
     setExtensionField(fieldName, value) {
-        const field = Player.#getRegisteredExtensionField(fieldName);
-        if (!field) {
-            throw new Error(`Player extension field "${fieldName}" is not registered.`);
-        }
+        const field = playerExtensionFields.getRequiredField(fieldName);
         this.#setExtensionFieldValue(field, value, { updateTimestamp: true });
     }
 
     getExtensionFields({ includeDefaults = false } = {}) {
-        const output = {};
-        for (const field of Player.#getRegisteredExtensionFields()) {
-            if (Object.prototype.hasOwnProperty.call(this.#extensionFields, field.fieldName)) {
-                output[field.fieldName] = Player.#cloneExtensionFieldValue(this.#extensionFields[field.fieldName]);
-            } else if (includeDefaults && field.defaultValue !== undefined) {
-                output[field.fieldName] = Player.#cloneExtensionFieldValue(field.defaultValue);
-            }
-        }
-        return output;
+        return playerExtensionFields.getFields(this.#extensionFields, { includeDefaults });
     }
 
     #installExtensionFieldAccessors() {
-        for (const field of Player.#getRegisteredExtensionFields()) {
-            if (field.fieldName in this) {
-                throw new Error(`Player extension field "${field.fieldName}" conflicts with an existing Player property.`);
-            }
-            Object.defineProperty(this, field.fieldName, {
-                configurable: true,
-                enumerable: false,
-                get: () => this.getExtensionField(field.fieldName),
-                set: value => this.setExtensionField(field.fieldName, value)
-            });
-        }
+        playerExtensionFields.installAccessors(this);
     }
 
     #setExtensionFieldValue(field, value, { updateTimestamp = false } = {}) {
-        const normalized = Player.#normalizeExtensionFieldValue(field, value);
-        if (typeof field.validateValue === 'function') {
-            field.validateValue(Player.#cloneExtensionFieldValue(normalized), {
-                entity: this,
-                entityType: 'player',
-                fieldName: field.fieldName
-            });
-        }
-        if (Player.#shouldStoreExtensionFieldValue(normalized)) {
-            this.#extensionFields[field.fieldName] = normalized;
-        } else {
-            delete this.#extensionFields[field.fieldName];
-        }
+        playerExtensionFields.setFieldValue(this, this.#extensionFields, field, value);
         if (updateTimestamp) {
             this.#lastUpdated = new Date().toISOString();
         }
     }
 
     #applyExtensionFieldInputs(inputs = {}) {
-        if (!inputs || typeof inputs !== 'object') {
-            return;
-        }
-        for (const field of Player.#getRegisteredExtensionFields()) {
-            if (Object.prototype.hasOwnProperty.call(inputs, field.fieldName)) {
-                this.#setExtensionFieldValue(field, inputs[field.fieldName], { updateTimestamp: false });
-            }
-        }
+        playerExtensionFields.applyInputs(this, this.#extensionFields, inputs);
     }
 
     withHealthRatioPreserved(mutator, { suppressTimestamp = false } = {}) {
@@ -5254,99 +5120,37 @@ class Player {
         };
     }
 
+    #statusEffectDefaultAppliedAt() {
+        try {
+            if (!this.#isNPC) {
+                return this.elapsedTime;
+            }
+        } catch (_) {
+            // fall through
+        }
+
+        try {
+            if (typeof Globals?.getTotalWorldMinutes === 'function') {
+                const worldMinutes = Number(Globals.getTotalWorldMinutes());
+                if (Number.isFinite(worldMinutes) && worldMinutes >= 0) {
+                    return worldMinutes;
+                }
+            }
+        } catch (_) {
+            // fall through
+        }
+
+        return 0;
+    }
+
     #normalizeStatusEffects(effects = []) {
-        // if (!this.isNPC) {
-        //     console.log('Normalizing status effects:', effects);
-        //     console.trace();
-        // }
-        if (!Array.isArray(effects)) {
-            return [];
-        }
-
-        const normalized = [];
-        const defaultAppliedAt = (() => {
-            try {
-                if (!this.#isNPC) {
-                    return this.elapsedTime;
-                }
-            } catch (_) {
-                // fall through
-            }
-
-            try {
-                if (typeof Globals?.getTotalWorldMinutes === 'function') {
-                    const worldMinutes = Number(Globals.getTotalWorldMinutes());
-                    if (Number.isFinite(worldMinutes) && worldMinutes >= 0) {
-                        return worldMinutes;
-                    }
-                }
-            } catch (_) {
-                // fall through
-            }
-
-            return 0;
-        })();
-
-        for (const entry of effects) {
-            if (entry instanceof StatusEffect) {
-                if (!Number.isFinite(entry.appliedAt) || entry.appliedAt < 0) {
-                    entry.appliedAt = defaultAppliedAt;
-                }
-                normalized.push(entry);
-                continue;
-            }
-
-            if (typeof entry === 'string') {
-                const description = entry.trim();
-                if (!description) {
-                    throw new Error('Status effect description must not be empty');
-                }
-                normalized.push(new StatusEffect({
-                    description,
-                    duration: 1,
-                    appliedAt: defaultAppliedAt
-                }));
-                continue;
-            }
-
-            if (entry && typeof entry === 'object') {
-                const descriptionValue = typeof entry.description === 'string'
-                    ? entry.description.trim()
-                    : (typeof entry.text === 'string' ? entry.text.trim() : (typeof entry.name === 'string' ? entry.name.trim() : ''));
-
-                if (!descriptionValue) {
-                    throw new Error('Status effect entry is missing a description');
-                }
-
-                const attributes = Array.isArray(entry.attributes) ? entry.attributes : undefined;
-                const skills = Array.isArray(entry.skills) ? entry.skills : undefined;
-                const needBars = Array.isArray(entry.needBars) ? entry.needBars : undefined;
-                const duration = entry.duration === undefined ? null : entry.duration;
-                const appliedAt = entry.appliedAt !== undefined ? entry.appliedAt : defaultAppliedAt;
-
-                normalized.push(new StatusEffect({
-                    id: entry.id,
-                    name: entry.name,
-                    description: descriptionValue,
-                    attributes,
-                    skills,
-                    needBars,
-                    duration,
-                    appliedAt
-                }));
-                continue;
-            }
-
-            throw new Error('Invalid status effect entry');
-        }
-
-        normalized.sort((a, b) => {
-            const nameA = (a.name || a.description || '').toLowerCase();
-            const nameB = (b.name || b.description || '').toLowerCase();
-            return nameA.localeCompare(nameB);
+        return StatusEffectList.normalizeStatusEffectInstances(effects, {
+            throwOnInvalid: true,
+            skipFalsy: false,
+            includeNeedBars: true,
+            defaultAppliedAt: this.#statusEffectDefaultAppliedAt(),
+            fixInstanceAppliedAt: true
         });
-
-        return normalized.slice(0, 60);
     }
 
     #normalizeAbilities(abilitiesInput = []) {
@@ -5517,34 +5321,16 @@ class Player {
     }
 
     addStatusEffect(effectInput, defaultDuration = 1) {
-        const effects = Array.isArray(effectInput) ? effectInput : [effectInput];
-        const normalized = this.#normalizeStatusEffects(effects.map(entry => {
-            if (typeof entry === 'string') {
-                return { description: entry, duration: defaultDuration };
-            }
-            if (entry && typeof entry === 'object' && entry.description && entry.duration === undefined) {
-                return { ...entry, duration: defaultDuration };
-            }
-            return entry;
-        }));
+        const normalized = this.#normalizeStatusEffects(
+            StatusEffectList.prepareStatusEffectInputs(effectInput, defaultDuration)
+        );
 
         if (!normalized.length) {
             return null;
         }
 
         const previousMaxHealth = this.maxHealth;
-        let updated = false;
-        for (const effect of normalized) {
-            const existingIndex = this.#statusEffects.findIndex(existing =>
-                existing.description.toLowerCase() === effect.description.toLowerCase()
-            );
-            if (existingIndex >= 0) {
-                this.#statusEffects[existingIndex] = effect;
-            } else {
-                this.#statusEffects.push(effect);
-            }
-            updated = true;
-        }
+        const updated = StatusEffectList.upsertStatusEffects(this.#statusEffects, normalized);
 
         if (updated) {
             this.#reconcileHealthAfterStatusEffectChange({
@@ -5563,15 +5349,10 @@ class Player {
         }
 
         const previousMaxHealth = this.maxHealth;
-        const before = this.#statusEffects.length;
-        const target = description.trim().toLowerCase();
-        this.#statusEffects = this.#statusEffects.filter(effect => {
-            const effectName = typeof effect?.name === 'string' ? effect.name.trim().toLowerCase() : '';
-            const effectDescription = typeof effect?.description === 'string' ? effect.description.trim().toLowerCase() : '';
-            return effectName !== target && effectDescription !== target;
-        });
+        const { removed, effects } = StatusEffectList.removeStatusEffectFromList(this.#statusEffects, description, { matchName: true });
 
-        if (this.#statusEffects.length !== before) {
+        if (removed) {
+            this.#statusEffects = effects;
             this.#reconcileHealthAfterStatusEffectChange({
                 previousMaxHealth,
                 suppressTimestamp: true
@@ -5583,53 +5364,11 @@ class Player {
     }
 
     tickStatusEffects(elapsedMinutes = 1) {
-        if (!Array.isArray(this.#statusEffects) || this.#statusEffects.length === 0) {
-            return;
-        }
-
-        const normalizedMinutes = Number(elapsedMinutes);
-        if (!Number.isFinite(normalizedMinutes) || normalizedMinutes <= 0) {
-            return;
-        }
-        const roundedMinutes = Math.max(1, Math.round(normalizedMinutes));
-
-        const retained = [];
-        let changed = false;
-
-        for (const effect of this.#statusEffects) {
-            if (!effect) {
-                changed = true;
-                continue;
-            }
-
-            if (!Number.isFinite(effect.duration)) {
-                retained.push(effect);
-                continue;
-            }
-
-            if (effect.duration < 0) {
-                retained.push(effect);
-                continue;
-            }
-
-            if (effect.duration === 0) {
-                retained.push(effect);
-                continue;
-            }
-
-            const remainingMinutes = Math.max(0, Math.round(effect.duration));
-            const nextRemainingMinutes = Math.max(0, remainingMinutes - roundedMinutes);
-            const nextDuration = nextRemainingMinutes;
-
-            retained.push(new StatusEffect({
-                ...effect.toJSON(),
-                duration: nextDuration,
-                appliedAt: Number.isFinite(effect.appliedAt) ? effect.appliedAt : null
-            }));
-            changed = true;
-        }
-
-        if (changed) {
+        const retained = StatusEffectList.tickStatusEffectList(this.#statusEffects, elapsedMinutes, {
+            copyRetained: effect => effect,
+            tickEffect: StatusEffectList.tickStatusEffectInstance
+        });
+        if (retained) {
             this.#statusEffects = retained;
             this.#lastUpdated = new Date().toISOString();
         }
@@ -5637,9 +5376,9 @@ class Player {
 
     clearExpiredStatusEffects() {
         const previousMaxHealth = this.maxHealth;
-        const before = this.#statusEffects.length;
-        this.#statusEffects = this.#statusEffects.filter(effect => !Number.isFinite(effect.duration) || effect.duration !== 0);
-        if (this.#statusEffects.length !== before) {
+        const filtered = StatusEffectList.clearExpiredStatusEffects(this.#statusEffects);
+        if (filtered) {
+            this.#statusEffects = filtered;
             this.#reconcileHealthAfterStatusEffectChange({
                 previousMaxHealth,
                 suppressTimestamp: true
@@ -6731,7 +6470,7 @@ class Player {
             isNPC: data.isNPC
         });
         const player = new Player({
-            ...Player.#extractExtensionFieldInputs(data),
+            ...playerExtensionFields.extractInputs(data),
             name: data.name,
             level: data.level,
             health: data.health,

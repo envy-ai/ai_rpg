@@ -1,54 +1,22 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('fs');
-const os = require('os');
-const path = require('path');
 
 const Globals = require('../Globals.js');
 const Player = require('../Player.js');
-
-function withBaseHealthAndFormulas(previousConfig = {}) {
-    return {
-        ...(previousConfig && typeof previousConfig === 'object' ? previousConfig : {}),
-        baseHealthPerLevel: Number.isFinite(previousConfig?.baseHealthPerLevel)
-            ? previousConfig.baseHealthPerLevel
-            : 10,
-        formulas: {
-            ...(previousConfig?.formulas && typeof previousConfig.formulas === 'object' ? previousConfig.formulas : {}),
-            character_creation: {
-                ...(previousConfig?.formulas?.character_creation && typeof previousConfig.formulas.character_creation === 'object'
-                    ? previousConfig.formulas.character_creation
-                    : {}),
-                attribute_pool_formula: previousConfig?.formulas?.character_creation?.attribute_pool_formula ?? '0',
-                skill_pool_formula: previousConfig?.formulas?.character_creation?.skill_pool_formula ?? '0',
-                max_attribute: previousConfig?.formulas?.character_creation?.max_attribute ?? '999',
-                max_skill: previousConfig?.formulas?.character_creation?.max_skill ?? '999'
-            }
-        }
-    };
-}
+const {
+    createTempDefsDir,
+    withMergedTestConfig: withBaseHealthAndFormulas
+} = require('./helpers/needBarFixtures.js');
 
 function createTempNeedBarDefs() {
-    const tempBaseDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ai-rpg-need-audience-'));
-
-    const writeFile = (relativePath, content) => {
-        const targetPath = path.join(tempBaseDir, relativePath);
-        fs.mkdirSync(path.dirname(targetPath), { recursive: true });
-        fs.writeFileSync(targetPath, content, 'utf8');
-    };
-
-    writeFile('defs/attributes.yaml', `
-attributes:
-  strength:
-    label: Strength
-    default: 5
-  constitution:
-    label: Constitution
-    default: 5
-`);
-    writeFile('defs/gear_slots.yaml', 'gear_slots: {}\n');
-    writeFile('defs/dispositions.yaml', 'dispositions: {}\nrange: {}\n');
-    writeFile('defs/need_bars.yaml', `
+    return createTempDefsDir({
+        prefix: 'ai-rpg-need-audience-',
+        attributes: [
+            { id: 'strength', label: 'Strength', default: 5 },
+            { id: 'constitution', label: 'Constitution', default: 5 }
+        ],
+        needBarsYaml: `
 need_values:
   increase:
     small: 10
@@ -91,9 +59,8 @@ need_bars:
     max: 100
     initial: 100
     change_per_minute: -1
-`);
-
-    return tempBaseDir;
+`
+    });
 }
 
 function applyNeedBarsAtMinute(minute) {
@@ -216,23 +183,12 @@ test('player actors only store and expose player-audience plus shared need bars'
 test('per-need need_values override global magnitudes and fall back for missing entries', () => {
     const previousBaseDir = Globals.baseDir;
     const previousConfig = Globals.config;
-    const tempBaseDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ai-rpg-need-values-'));
-
-    const writeFile = (relativePath, content) => {
-        const targetPath = path.join(tempBaseDir, relativePath);
-        fs.mkdirSync(path.dirname(targetPath), { recursive: true });
-        fs.writeFileSync(targetPath, content, 'utf8');
-    };
-
-    writeFile('defs/attributes.yaml', `
-attributes:
-  wisdom:
-    label: Wisdom
-    default: 5
-`);
-    writeFile('defs/gear_slots.yaml', 'gear_slots: {}\n');
-    writeFile('defs/dispositions.yaml', 'dispositions: {}\nrange: {}\n');
-    writeFile('defs/need_bars.yaml', `
+    const tempBaseDir = createTempDefsDir({
+        prefix: 'ai-rpg-need-values-',
+        attributes: [
+            { id: 'wisdom', label: 'Wisdom', default: 5 }
+        ],
+        needBarsYaml: `
 need_values:
   increase:
     small: 10
@@ -270,7 +226,8 @@ need_bars:
     need_values:
       decrease:
         small: 0.5
-`);
+`
+    });
 
     Player.clearRuntimeRegistries();
     Globals.baseDir = tempBaseDir;

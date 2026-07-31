@@ -1,25 +1,26 @@
 const axios = require('axios');
 const fs = require('fs');
-const path = require('path');
 const crypto = require('crypto');
+const {
+  resolveImageFilePath,
+  initImageEngineConfig,
+  validateImageSaveInputs,
+  extractB64ImageData,
+  imageRequestError
+} = require('./image_client_utils.js');
 
 class NanoGPTImageClient {
   constructor(config) {
-    const engineConfig = config?.imagegen ?? {};
+    const { apiKey, baseURL, model, timeout } = initImageEngineConfig(config, {
+      label: 'NanoGPT',
+      envVar: 'NANOGPT_API_KEY',
+      defaultEndpoint: 'https://nano-gpt.com/'
+    });
 
-    this.apiKey = engineConfig.apiKey || process.env.NANOGPT_API_KEY;
-    this.baseURL = engineConfig.endpoint || 'https://nano-gpt.com/';
-    this.model = engineConfig.model || null;
-
-    if (!this.apiKey) {
-      throw new Error('NanoGPT image generation requires imagegen.apiKey or NANOGPT_API_KEY.');
-    }
-
-    if (!this.model) {
-      throw new Error('NanoGPT image generation requires imagegen.model.');
-    }
-
-    this.timeout = 60000;
+    this.apiKey = apiKey;
+    this.baseURL = baseURL;
+    this.model = model;
+    this.timeout = timeout;
   }
 
   generatePromptId() {
@@ -54,30 +55,17 @@ class NanoGPTImageClient {
       );
 
       const data = response.data;
-      if (!data || !Array.isArray(data.data) || !data.data.length || !data.data[0]?.b64_json) {
-        throw new Error('NanoGPT image response missing image data.');
-      }
-
-      const imageBuffer = Buffer.from(data.data[0].b64_json, 'base64');
-      return { requestId, imageBuffer, mimeType: data.data[0]?.mime_type || 'image/png' };
+      const { imageBuffer, mimeType } = extractB64ImageData(data, 'NanoGPT');
+      return { requestId, imageBuffer, mimeType };
     } catch (error) {
-      const message = error?.response?.data?.error?.message || error.message || String(error);
-      throw new Error(`NanoGPT image request failed: ${message}`);
+      throw imageRequestError(error, 'NanoGPT');
     }
   }
 
   async saveImage(imageBuffer, imageId, originalFilename, saveDirectory) {
-    if (!imageBuffer || !Buffer.isBuffer(imageBuffer)) {
-      throw new Error('NanoGPT image buffer missing.');
-    }
+    validateImageSaveInputs(imageBuffer, imageId, 'NanoGPT');
 
-    if (!imageId) {
-      throw new Error('NanoGPT image save requires an imageId.');
-    }
-
-    const ext = path.extname(originalFilename || '') || '.png';
-    const filename = `${imageId}${ext}`;
-    const filepath = path.join(saveDirectory, filename);
+    const { filename, filepath } = resolveImageFilePath(imageId, originalFilename, saveDirectory);
 
     fs.writeFileSync(filepath, imageBuffer);
 

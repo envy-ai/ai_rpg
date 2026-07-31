@@ -1,67 +1,22 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const fs = require('fs');
-const os = require('os');
-const path = require('path');
 
 const Globals = require('../Globals.js');
 const Player = require('../Player.js');
-
-function createTempPlayerDefs() {
-    const tempBaseDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ai-rpg-float-health-'));
-
-    const writeFile = (relativePath, content) => {
-        const targetPath = path.join(tempBaseDir, relativePath);
-        fs.mkdirSync(path.dirname(targetPath), { recursive: true });
-        fs.writeFileSync(targetPath, content, 'utf8');
-    };
-
-    writeFile('defs/attributes.yaml', `
-attributes:
-  constitution:
-    label: Constitution
-    default: 10
-`);
-    writeFile('defs/gear_slots.yaml', 'gear_slots: {}\n');
-    writeFile('defs/dispositions.yaml', 'dispositions: {}\nrange: {}\n');
-    writeFile('defs/need_bars.yaml', 'need_bars: {}\n');
-
-    return tempBaseDir;
-}
+const {
+    withTempPlayerEnvironment: withTempPlayerEnvironmentBase
+} = require('./helpers/needBarFixtures.js');
 
 function withTempPlayerEnvironment(run, configOverrides = {}) {
-    const tempBaseDir = createTempPlayerDefs();
-    const previousBaseDir = Globals.baseDir;
-    const previousConfig = Globals.config;
-    const previousWorldTime = Globals.worldTime;
-
-    Player.clearRuntimeRegistries();
-    Globals.baseDir = tempBaseDir;
-    Globals.config = {
-        ...(previousConfig && typeof previousConfig === 'object' ? previousConfig : {}),
-        baseHealthPerLevel: 10,
-        formulas: {
-            character_creation: {
-                attribute_pool_formula: '0',
-                skill_pool_formula: '0',
-                max_attribute: '18',
-                max_skill: '10'
-            }
-        },
-        ...configOverrides
-    };
-    Player.reloadDefinitionCaches({ refreshInstances: false });
-
-    try {
-        run();
-    } finally {
-        Player.clearRuntimeRegistries();
-        Globals.baseDir = previousBaseDir;
-        Globals.config = previousConfig;
-        Globals.worldTime = previousWorldTime;
-        Player.reloadDefinitionCaches({ refreshInstances: false });
-        fs.rmSync(tempBaseDir, { recursive: true, force: true });
-    }
+    return withTempPlayerEnvironmentBase({
+        prefix: 'ai-rpg-float-health-',
+        attributes: [
+            { id: 'constitution', label: 'Constitution', default: 10 }
+        ],
+        configStyle: 'standard-force-health',
+        configOverrides,
+        manageWorldTime: true
+    }, run);
 }
 
 test('current health can be a persisted finite float', () => {

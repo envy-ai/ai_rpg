@@ -1,25 +1,27 @@
 const axios = require('axios');
 const fs = require('fs');
-const path = require('path');
 const crypto = require('crypto');
+const {
+  ensureDirectory,
+  resolveImageFilePath,
+  initImageEngineConfig,
+  validateImageSaveInputs,
+  extractB64ImageData,
+  imageRequestError
+} = require('./image_client_utils.js');
 
 class OpenAIImageClient {
   constructor(config) {
-    const engineConfig = config?.imagegen ?? {};
+    const { apiKey, baseURL, model, timeout } = initImageEngineConfig(config, {
+      label: 'OpenAI',
+      envVar: 'OPENAI_API_KEY',
+      defaultEndpoint: 'https://api.openai.com/v1/images/generations'
+    });
 
-    this.apiKey = engineConfig.apiKey || process.env.OPENAI_API_KEY;
-    this.baseURL = engineConfig.endpoint || 'https://api.openai.com/v1/images/generations';
-    this.model = engineConfig.model || null;
-
-    if (!this.apiKey) {
-      throw new Error('OpenAI image generation requires imagegen.apiKey or OPENAI_API_KEY.');
-    }
-
-    if (!this.model) {
-      throw new Error('OpenAI image generation requires imagegen.model.');
-    }
-
-    this.timeout = 60000;
+    this.apiKey = apiKey;
+    this.baseURL = baseURL;
+    this.model = model;
+    this.timeout = timeout;
   }
 
   generateRequestId() {
@@ -53,38 +55,23 @@ class OpenAIImageClient {
       );
 
       const data = response.data;
-      if (!data || !Array.isArray(data.data) || !data.data.length || !data.data[0]?.b64_json) {
-        throw new Error('OpenAI image response missing image data.');
-      }
-
-      const imageBuffer = Buffer.from(data.data[0].b64_json, 'base64');
+      const { imageBuffer, mimeType } = extractB64ImageData(data, 'OpenAI');
       return {
         requestId,
         imageBuffer,
-        mimeType: data.data[0]?.mime_type || 'image/png'
+        mimeType
       };
     } catch (error) {
-      const message = error?.response?.data?.error?.message || error.message || String(error);
-      throw new Error(`OpenAI image request failed: ${message}`);
+      throw imageRequestError(error, 'OpenAI');
     }
   }
 
   async saveImage(imageBuffer, imageId, originalFilename, saveDirectory) {
-    if (!imageBuffer || !Buffer.isBuffer(imageBuffer)) {
-      throw new Error('OpenAI image buffer missing.');
-    }
+    validateImageSaveInputs(imageBuffer, imageId, 'OpenAI');
 
-    if (!imageId) {
-      throw new Error('OpenAI image save requires an imageId.');
-    }
+    const { filename, filepath } = resolveImageFilePath(imageId, originalFilename, saveDirectory);
 
-    const ext = path.extname(originalFilename || '') || '.png';
-    const filename = `${imageId}${ext}`;
-    const filepath = path.join(saveDirectory, filename);
-
-    if (!fs.existsSync(saveDirectory)) {
-      fs.mkdirSync(saveDirectory, { recursive: true });
-    }
+    ensureDirectory(saveDirectory);
 
     fs.writeFileSync(filepath, imageBuffer);
 

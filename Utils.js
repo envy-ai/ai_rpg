@@ -7,18 +7,16 @@ const IdGenerator = require('./IdGenerator.js');
 
 let sharedDomParser = null;
 
-let cachedLocationModule = null;
-let cachedLocationExitModule = null;
-let cachedRegionModule = null;
-let cachedThingModule = null;
-let cachedPlayerModule = null;
-let cachedSkillModule = null;
-let cachedFactionModule = null;
-let cachedQuestModule = null;
-let cachedMysteryBoxModule = null;
-let cachedMysteryThreadModule = null;
-let cachedScheduledEventModule = null;
-let cachedTrackerModule = null;
+const makeLazyModuleGetter = (modulePath) => {
+  let cachedModule = null;
+  return () => {
+    if (!cachedModule) {
+      cachedModule = require(modulePath);
+    }
+    return cachedModule;
+  };
+};
+
 const chatSummaryStore = new Map();
 const chatSummaryQueue = [];
 const COMMON_WORDS = new Set([
@@ -317,12 +315,7 @@ class Utils {
     return numeric === 0 ? 1 : numeric;
   }
 
-  static formatMinutesAsDuration(value, { includeAgo = false } = {}) {
-    const numeric = Number(value);
-    if (!Number.isFinite(numeric) || !Number.isInteger(numeric)) {
-      return null;
-    }
-
+  static #decomposeMinutesIntoParts(numeric) {
     const isPast = numeric < 0;
     let remaining = Math.abs(numeric);
     const days = Math.floor(remaining / 1440);
@@ -330,6 +323,16 @@ class Utils {
     const hours = Math.floor(remaining / 60);
     remaining -= hours * 60;
     const minutes = remaining;
+    return { isPast, days, hours, minutes };
+  }
+
+  static formatMinutesAsDuration(value, { includeAgo = false } = {}) {
+    const numeric = Number(value);
+    if (!Number.isFinite(numeric) || !Number.isInteger(numeric)) {
+      return null;
+    }
+
+    const { isPast, days, hours, minutes } = Utils.#decomposeMinutesIntoParts(numeric);
 
     const parts = [];
     if (days > 0) {
@@ -355,13 +358,7 @@ class Utils {
       return null;
     }
 
-    const isPast = numeric < 0;
-    let remaining = Math.abs(numeric);
-    const days = Math.floor(remaining / 1440);
-    remaining -= days * 1440;
-    const hours = Math.floor(remaining / 60);
-    remaining -= hours * 60;
-    const minutes = remaining;
+    const { isPast, days, hours, minutes } = Utils.#decomposeMinutesIntoParts(numeric);
 
     const parts = [];
     if (days > 0) {
@@ -415,13 +412,7 @@ class Utils {
       return null;
     }
 
-    const isPast = numeric < 0;
-    let remaining = Math.abs(numeric);
-    const days = Math.floor(remaining / 1440);
-    remaining -= days * 1440;
-    const hours = Math.floor(remaining / 60);
-    remaining -= hours * 60;
-    const minutes = remaining;
+    const { isPast, days, hours, minutes } = Utils.#decomposeMinutesIntoParts(numeric);
 
     const parts = [];
     if (days > 0) {
@@ -1048,89 +1039,29 @@ class Utils {
       .join(" ");
   }
 
-  static #getLocationModule() {
-    if (!cachedLocationModule) {
-      cachedLocationModule = require('./Location.js');
-    }
-    return cachedLocationModule;
-  }
+  static #getLocationModule = makeLazyModuleGetter('./Location.js');
 
-  static #getLocationExitModule() {
-    if (!cachedLocationExitModule) {
-      cachedLocationExitModule = require('./LocationExit.js');
-    }
-    return cachedLocationExitModule;
-  }
+  static #getLocationExitModule = makeLazyModuleGetter('./LocationExit.js');
 
-  static #getRegionModule() {
-    if (!cachedRegionModule) {
-      cachedRegionModule = require('./Region.js');
-    }
-    return cachedRegionModule;
-  }
+  static #getRegionModule = makeLazyModuleGetter('./Region.js');
 
-  static #getThingModule() {
-    if (!cachedThingModule) {
-      cachedThingModule = require('./Thing.js');
-    }
-    return cachedThingModule;
-  }
+  static #getThingModule = makeLazyModuleGetter('./Thing.js');
 
-  static #getPlayerModule() {
-    if (!cachedPlayerModule) {
-      cachedPlayerModule = require('./Player.js');
-    }
-    return cachedPlayerModule;
-  }
+  static #getPlayerModule = makeLazyModuleGetter('./Player.js');
 
-  static #getSkillModule() {
-    if (!cachedSkillModule) {
-      cachedSkillModule = require('./Skill.js');
-    }
-    return cachedSkillModule;
-  }
+  static #getSkillModule = makeLazyModuleGetter('./Skill.js');
 
-  static #getFactionModule() {
-    if (!cachedFactionModule) {
-      cachedFactionModule = require('./Faction.js');
-    }
-    return cachedFactionModule;
-  }
+  static #getFactionModule = makeLazyModuleGetter('./Faction.js');
 
-  static #getQuestModule() {
-    if (!cachedQuestModule) {
-      cachedQuestModule = require('./Quest.js');
-    }
-    return cachedQuestModule;
-  }
+  static #getQuestModule = makeLazyModuleGetter('./Quest.js');
 
-  static #getMysteryBoxModule() {
-    if (!cachedMysteryBoxModule) {
-      cachedMysteryBoxModule = require('./MysteryBox.js');
-    }
-    return cachedMysteryBoxModule;
-  }
+  static #getMysteryBoxModule = makeLazyModuleGetter('./MysteryBox.js');
 
-  static #getMysteryThreadModule() {
-    if (!cachedMysteryThreadModule) {
-      cachedMysteryThreadModule = require('./MysteryThread.js');
-    }
-    return cachedMysteryThreadModule;
-  }
+  static #getMysteryThreadModule = makeLazyModuleGetter('./MysteryThread.js');
 
-  static #getScheduledEventModule() {
-    if (!cachedScheduledEventModule) {
-      cachedScheduledEventModule = require('./ScheduledEvent.js');
-    }
-    return cachedScheduledEventModule;
-  }
+  static #getScheduledEventModule = makeLazyModuleGetter('./ScheduledEvent.js');
 
-  static #getTrackerModule() {
-    if (!cachedTrackerModule) {
-      cachedTrackerModule = require('./Tracker.js');
-    }
-    return cachedTrackerModule;
-  }
+  static #getTrackerModule = makeLazyModuleGetter('./Tracker.js');
 
   static serializeGameState(context = {}) {
     const {

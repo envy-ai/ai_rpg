@@ -3,7 +3,9 @@ const path = require('path');
 const SlashCommandBase = require('../SlashCommandBase.js');
 const Globals = require('../Globals.js');
 const {
-    countSceneSummaryIndexEntries
+    countSceneSummaryIndexEntries,
+    normalizeSceneSummaryIntervals,
+    walkSceneSummaryIntervals
 } = require('../scene_summary_index.js');
 
 function parseIndexRange(rawRange) {
@@ -82,35 +84,8 @@ function countUnsummarizedEntries(chatHistory) {
         return { total: totalEntries, summarized: 0, unsummarized: totalEntries };
     }
 
-    const intervals = scenes
-        .map(scene => ({
-            start: Number(scene?.startIndex),
-            end: Number(scene?.endIndex)
-        }))
-        .filter(interval => Number.isInteger(interval.start) && Number.isInteger(interval.end))
-        .map(interval => ({
-            start: Math.max(1, interval.start),
-            end: Math.min(totalEntries, interval.end)
-        }))
-        .filter(interval => interval.end >= interval.start)
-        .sort((a, b) => a.start - b.start);
-
-    let summarized = 0;
-    let cursor = 1;
-    for (const interval of intervals) {
-        if (interval.end < cursor) {
-            continue;
-        }
-        const start = Math.max(cursor, interval.start);
-        const end = Math.min(interval.end, totalEntries);
-        if (end >= start) {
-            summarized += end - start + 1;
-            cursor = end + 1;
-        }
-        if (cursor > totalEntries) {
-            break;
-        }
-    }
+    const intervals = normalizeSceneSummaryIntervals(scenes, totalEntries);
+    const { summarized } = walkSceneSummaryIntervals(intervals, totalEntries);
 
     const unsummarized = Math.max(0, totalEntries - summarized);
     return { total: totalEntries, summarized, unsummarized };

@@ -1,13 +1,16 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('fs');
-const os = require('os');
 const path = require('path');
 const nunjucks = require('nunjucks');
 
 const Globals = require('../Globals.js');
 const Player = require('../Player.js');
 const { addEvalFilter } = require('../nunjucks_filters.js');
+const {
+    createTempDefsDir,
+    withMergedTestConfig
+} = require('./helpers/needBarFixtures.js');
 
 function createPromptEnv() {
     const env = nunjucks.configure(path.join(process.cwd(), 'prompts'), {
@@ -19,23 +22,12 @@ function createPromptEnv() {
 }
 
 function createTempNeedBarDefs() {
-    const tempBaseDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ai-rpg-while-away-needs-'));
-
-    const writeFile = (relativePath, content) => {
-        const targetPath = path.join(tempBaseDir, relativePath);
-        fs.mkdirSync(path.dirname(targetPath), { recursive: true });
-        fs.writeFileSync(targetPath, content, 'utf8');
-    };
-
-    writeFile('defs/attributes.yaml', `
-attributes:
-  constitution:
-    label: Constitution
-    default: 5
-`);
-    writeFile('defs/gear_slots.yaml', 'gear_slots: {}\n');
-    writeFile('defs/dispositions.yaml', 'dispositions: {}\nrange: {}\n');
-    writeFile('defs/need_bars.yaml', `
+    return createTempDefsDir({
+        prefix: 'ai-rpg-while-away-needs-',
+        attributes: [
+            { id: 'constitution', label: 'Constitution', default: 5 }
+        ],
+        needBarsYaml: `
 need_bars:
   social:
     name: Social
@@ -47,9 +39,8 @@ need_bars:
     max: 100
     initial: 50
     while_you_were_away_prompt_notes: Characters with friendly company nearby should usually recover this need.
-`);
-
-    return tempBaseDir;
+`
+    });
 }
 
 test('while-you-were-away include renders current-location reunion candidates', () => {
@@ -79,24 +70,7 @@ test('while-you-were-away include renders need bar prompt notes from definitions
 
     Player.clearRuntimeRegistries();
     Globals.baseDir = tempBaseDir;
-    Globals.config = {
-        ...(previousConfig && typeof previousConfig === 'object' ? previousConfig : {}),
-        baseHealthPerLevel: Number.isFinite(previousConfig?.baseHealthPerLevel)
-            ? previousConfig.baseHealthPerLevel
-            : 10,
-        formulas: {
-            ...(previousConfig?.formulas && typeof previousConfig.formulas === 'object' ? previousConfig.formulas : {}),
-            character_creation: {
-                ...(previousConfig?.formulas?.character_creation && typeof previousConfig.formulas.character_creation === 'object'
-                    ? previousConfig.formulas.character_creation
-                    : {}),
-                attribute_pool_formula: previousConfig?.formulas?.character_creation?.attribute_pool_formula ?? '0',
-                skill_pool_formula: previousConfig?.formulas?.character_creation?.skill_pool_formula ?? '0',
-                max_attribute: previousConfig?.formulas?.character_creation?.max_attribute ?? '999',
-                max_skill: previousConfig?.formulas?.character_creation?.max_skill ?? '999'
-            }
-        }
-    };
+    Globals.config = withMergedTestConfig(previousConfig);
     Player.reloadDefinitionCaches({ refreshInstances: false });
 
     try {

@@ -1,8 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('fs');
-const os = require('os');
-const path = require('path');
 
 const Globals = require('../Globals.js');
 const Player = require('../Player.js');
@@ -15,6 +13,14 @@ const Quest = require('../Quest.js');
 const StatusEffect = require('../StatusEffect.js');
 const Utils = require('../Utils.js');
 const IdGenerator = require('../IdGenerator.js');
+const {
+  createTempDefsDir,
+  withStandardTestConfig
+} = require('./helpers/needBarFixtures.js');
+const {
+  createHydrationContext,
+  createSceneSummariesStub
+} = require('./helpers/locationFixtures.js');
 
 function clearLocationRegistry() {
   for (const location of Location.getAll()) {
@@ -23,24 +29,12 @@ function clearLocationRegistry() {
 }
 
 function createTempDefs() {
-  const tempBaseDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ai-rpg-counter-ids-'));
-  const writeFile = (relativePath, content) => {
-    const targetPath = path.join(tempBaseDir, relativePath);
-    fs.mkdirSync(path.dirname(targetPath), { recursive: true });
-    fs.writeFileSync(targetPath, content, 'utf8');
-  };
-
-  writeFile('defs/attributes.yaml', `
-attributes:
-  constitution:
-    label: Constitution
-    default: 10
-`);
-  writeFile('defs/gear_slots.yaml', 'gear_slots: {}\n');
-  writeFile('defs/dispositions.yaml', 'dispositions: {}\nrange: {}\n');
-  writeFile('defs/need_bars.yaml', 'need_bars: {}\n');
-
-  return tempBaseDir;
+  return createTempDefsDir({
+    prefix: 'ai-rpg-counter-ids-',
+    attributes: [
+      { id: 'constitution', label: 'Constitution', default: 10 }
+    ]
+  });
 }
 
 function withTempEnvironment(run) {
@@ -57,24 +51,8 @@ function withTempEnvironment(run) {
   IdGenerator.reset();
 
   Globals.baseDir = tempBaseDir;
-  Globals.config = {
-    ...(previousConfig && typeof previousConfig === 'object' ? previousConfig : {}),
-    baseHealthPerLevel: 10,
-    formulas: {
-      character_creation: {
-        attribute_pool_formula: '0',
-        skill_pool_formula: '0',
-        max_attribute: '18',
-        max_skill: '10'
-      }
-    }
-  };
-  Globals.sceneSummaries = {
-    serialize() {
-      return {};
-    },
-    load() {}
-  };
+  Globals.config = withStandardTestConfig(previousConfig, { preserveBaseHealth: false });
+  Globals.sceneSummaries = createSceneSummariesStub();
   Player.reloadDefinitionCaches({ refreshInstances: false });
 
   try {
@@ -92,25 +70,6 @@ function withTempEnvironment(run) {
     Player.reloadDefinitionCaches({ refreshInstances: false });
     fs.rmSync(tempBaseDir, { recursive: true, force: true });
   }
-}
-
-function createHydrationContext() {
-  return {
-    gameLocations: new Map(),
-    gameLocationExits: new Map(),
-    regions: new Map(),
-    chatHistoryRef: [],
-    generatedImages: new Map(),
-    things: new Map(),
-    players: new Map(),
-    skills: new Map(),
-    factions: new Map(),
-    jobQueue: [],
-    imageJobs: new Map(),
-    pendingLocationImages: new Map(),
-    npcGenerationPromises: new Map(),
-    pendingRegionStubs: new Map()
-  };
 }
 
 test('new domain objects receive compact counter ids per object type', () => {

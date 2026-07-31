@@ -1,3 +1,5 @@
+const { normalizeFormula, evaluateFormulasAtLevelOne } = require('./formula-utils.js');
+
 const OUTCOME_MARGIN_FORMULA_KEYS = Object.freeze([
   'critical_success',
   'major_success',
@@ -17,20 +19,6 @@ const DEFAULT_OUTCOME_MARGIN_FORMULAS = Object.freeze({
   major_failure: '-6',
   failure: '-3'
 });
-
-const normalizeFormula = (value, label) => {
-  if (value === undefined || value === null) {
-    throw new Error(`Config ${label} is required.`);
-  }
-  if (typeof value !== 'string') {
-    throw new Error(`Config ${label} must be a string.`);
-  }
-  const trimmed = value.trim();
-  if (!trimmed) {
-    throw new Error(`Config ${label} must be a non-empty string.`);
-  }
-  return trimmed;
-};
 
 const resolveOutcomeMarginFormulas = (config = {}) => {
   const section = config.formulas?.outcome_margins;
@@ -80,11 +68,7 @@ const validateOutcomeMarginFormulas = (config = {}, { formulaEvaluator = null } 
   }
 
   const formulas = resolveOutcomeMarginFormulas(config);
-  const values = {};
-  for (const [key, formula] of Object.entries(formulas)) {
-    const evaluator = formulaEvaluator.compile(formula);
-    values[key] = evaluator({ level: 1 });
-  }
+  const values = evaluateFormulasAtLevelOne(formulas, formulaEvaluator);
   validateOutcomeMarginValues(values);
   return formulas;
 };

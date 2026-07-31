@@ -7,18 +7,19 @@ const LocationExit = require('../LocationExit.js');
 const Player = require('../Player.js');
 const Region = require('../Region.js');
 const Utils = require('../Utils.js');
+const {
+    withBaseHealthOnly
+} = require('./helpers/needBarFixtures.js');
+const {
+    resetWorldState: resetWorldStateBase,
+    removeLocationsFromIndex,
+    createSceneSummariesStub,
+    createSerializationContext,
+    createHydrationContext
+} = require('./helpers/locationFixtures.js');
 
 function resetWorldState() {
-    Player.clearRuntimeRegistries();
-    Region.clear();
-}
-
-function removeLocationsFromIndex(locations) {
-    for (const location of locations) {
-        if (location) {
-            Location.removeFromIndex(location);
-        }
-    }
+    resetWorldStateBase({ clearPlayers: true });
 }
 
 test('Player.setLocation marks player destinations visited and records lastVisitedTime, but NPC moves do not', () => {
@@ -27,12 +28,7 @@ test('Player.setLocation marks player destinations visited and records lastVisit
     const createdLocations = [];
 
     resetWorldState();
-    Globals.config = {
-        ...(previousConfig && typeof previousConfig === 'object' ? previousConfig : {}),
-        baseHealthPerLevel: Number.isFinite(previousConfig?.baseHealthPerLevel)
-            ? previousConfig.baseHealthPerLevel
-            : 10
-    };
+    Globals.config = withBaseHealthOnly(previousConfig);
 
     try {
         const region = new Region({
@@ -96,18 +92,8 @@ test('Utils.hydrateGameState infers visited state for legacy saves without a vis
     const hydratedLocations = [];
 
     resetWorldState();
-    Globals.config = {
-        ...(previousConfig && typeof previousConfig === 'object' ? previousConfig : {}),
-        baseHealthPerLevel: Number.isFinite(previousConfig?.baseHealthPerLevel)
-            ? previousConfig.baseHealthPerLevel
-            : 10
-    };
-    Globals.sceneSummaries = {
-        serialize() {
-            return {};
-        },
-        load() {}
-    };
+    Globals.config = withBaseHealthOnly(previousConfig);
+    Globals.sceneSummaries = createSceneSummariesStub();
 
     try {
         const region = new Region({
@@ -143,18 +129,10 @@ test('Utils.hydrateGameState infers visited state for legacy saves without a vis
         });
         sourceLocations.push(legacyStub);
 
-        const serialized = Utils.serializeGameState({
+        const serialized = Utils.serializeGameState(createSerializationContext({
             gameLocations: new Map(sourceLocations.map(location => [location.id, location])),
-            gameLocationExits: new Map(),
-            regions: new Map([[region.id, region]]),
-            chatHistory: [],
-            generatedImages: new Map(),
-            things: new Map(),
-            players: new Map(),
-            skills: new Map(),
-            factions: new Map(),
-            pendingRegionStubs: new Map()
-        });
+            regions: new Map([[region.id, region]])
+        }));
 
         delete serialized.gameWorld.locations[legacyExpanded.id].visited;
         delete serialized.gameWorld.locations[legacyStub.id].visited;
@@ -167,22 +145,11 @@ test('Utils.hydrateGameState infers visited state for legacy saves without a vis
         const gameLocationExits = new Map();
         const regions = new Map();
 
-        Utils.hydrateGameState(serialized, {
+        Utils.hydrateGameState(serialized, createHydrationContext({
             gameLocations,
             gameLocationExits,
-            regions,
-            chatHistoryRef: [],
-            generatedImages: new Map(),
-            things: new Map(),
-            players: new Map(),
-            skills: new Map(),
-            factions: new Map(),
-            jobQueue: [],
-            imageJobs: new Map(),
-            pendingLocationImages: new Map(),
-            npcGenerationPromises: new Map(),
-            pendingRegionStubs: new Map()
-        });
+            regions
+        }));
 
         hydratedLocations.push(...gameLocations.values());
 
@@ -212,18 +179,8 @@ test('Utils.hydrateGameState defaults missing saved exit travel times to 0 minut
     const hydratedLocations = [];
 
     resetWorldState();
-    Globals.config = {
-        ...(previousConfig && typeof previousConfig === 'object' ? previousConfig : {}),
-        baseHealthPerLevel: Number.isFinite(previousConfig?.baseHealthPerLevel)
-            ? previousConfig.baseHealthPerLevel
-            : 10
-    };
-    Globals.sceneSummaries = {
-        serialize() {
-            return {};
-        },
-        load() {}
-    };
+    Globals.config = withBaseHealthOnly(previousConfig);
+    Globals.sceneSummaries = createSceneSummariesStub();
 
     try {
         const region = new Region({
@@ -257,18 +214,11 @@ test('Utils.hydrateGameState defaults missing saved exit travel times to 0 minut
         });
         origin.addExit('south', exit);
 
-        const serialized = Utils.serializeGameState({
+        const serialized = Utils.serializeGameState(createSerializationContext({
             gameLocations: new Map(sourceLocations.map(location => [location.id, location])),
             gameLocationExits: new Map([[exit.id, exit]]),
-            regions: new Map([[region.id, region]]),
-            chatHistory: [],
-            generatedImages: new Map(),
-            things: new Map(),
-            players: new Map(),
-            skills: new Map(),
-            factions: new Map(),
-            pendingRegionStubs: new Map()
-        });
+            regions: new Map([[region.id, region]])
+        }));
 
         delete serialized.gameWorld.locations[origin.id].exits.south.travelTimeMinutes;
         delete serialized.gameWorld.locationExits[exit.id].travelTimeMinutes;
@@ -280,22 +230,11 @@ test('Utils.hydrateGameState defaults missing saved exit travel times to 0 minut
         const gameLocationExits = new Map();
         const regions = new Map();
 
-        Utils.hydrateGameState(serialized, {
+        Utils.hydrateGameState(serialized, createHydrationContext({
             gameLocations,
             gameLocationExits,
-            regions,
-            chatHistoryRef: [],
-            generatedImages: new Map(),
-            things: new Map(),
-            players: new Map(),
-            skills: new Map(),
-            factions: new Map(),
-            jobQueue: [],
-            imageJobs: new Map(),
-            pendingLocationImages: new Map(),
-            npcGenerationPromises: new Map(),
-            pendingRegionStubs: new Map()
-        });
+            regions
+        }));
 
         hydratedLocations.push(...gameLocations.values());
 

@@ -3,7 +3,11 @@ const assert = require('node:assert/strict');
 const fs = require('fs');
 const path = require('path');
 const yaml = require('js-yaml');
-const nunjucks = require('nunjucks');
+
+const {
+    createPromptEnv,
+    buildBaseRenderContext
+} = require('./helpers/baseContextFixtures.js');
 
 const rootDir = path.join(__dirname, '..');
 const defaultConfigSource = fs.readFileSync(path.join(rootDir, 'config.default.yaml'), 'utf8');
@@ -12,103 +16,17 @@ const serverSource = fs.readFileSync(path.join(rootDir, 'server.js'), 'utf8');
 const apiSource = fs.readFileSync(path.join(rootDir, 'api.js'), 'utf8');
 const baseContextSource = fs.readFileSync(path.join(rootDir, 'prompts', 'base-context.xml.njk'), 'utf8');
 
-function createPromptEnv() {
-    const env = nunjucks.configure(path.join(rootDir, 'prompts'), {
-        autoescape: false,
-        throwOnUndefined: true
-    });
-    env.addGlobal('randomword', () => 'test');
-    return env;
-}
-
 function buildRenderContext(overrides = {}) {
-    return {
-        config: {
-            extra_system_instructions: '',
-            prompt_uses_caching: false
-        },
-        promptType: 'question',
+    return buildBaseRenderContext({
         question: 'What is happening?',
-        setting: {
-            baseContextPreamble: '',
-            name: 'Test Setting',
-            description: 'A test setting.',
-            theme: 'Test',
-            genre: 'Fantasy',
-            startingLocationType: 'Town',
-            magicLevel: 'Low',
-            techLevel: 'Low',
-            tone: 'Neutral',
-            difficulty: 'Normal',
-            currencyName: 'Gold',
-            currencyNamePlural: 'Gold',
-            currencyValueNotes: '',
-            writingStyleNotes: '',
-            races: [],
-            attributes: [],
-            skills: []
-        },
-        rarityDefinitions: [],
-        gameHistory: '',
-        recentGameHistory: '',
-        omitGameHistory: false,
-        worldOutline: { regions: [] },
-        factions: [],
-        currentRegion: {
-            name: '',
-            description: '',
-            secrets: [],
-            locations: [],
-            connectedRegions: []
-        },
-        currentLocation: null,
-        currentPlayer: {
-            name: 'Tester',
-            description: 'A player.',
-            class: 'Adventurer',
-            race: 'Human',
-            currency: 0,
-            statusEffects: [],
-            skills: [],
-            abilities: [],
-            inventory: [],
-            needs: [],
-            currentQuests: []
-        },
-        party: [],
-        npcs: [],
-        additionalLore: '',
-        itemContext: '',
-        abilityContext: '',
-        plotSummary: '',
-        plotExpander: '',
-        plotAnalysisHasContent: false,
-        tonalScaleEvaluation: '',
-        worldTime: {
-            dayIndex: 0,
-            timeMinutes: 720,
-            dateLabel: 'Day 1',
-            timeLabel: '12:00 PM',
-            segment: 'Noon',
-            season: 'Spring',
-            seasonDescription: '',
-            holiday: null,
-            lighting: 'Daylight',
-            hasLocalWeather: false,
-            weatherName: '',
-            weatherDescription: '',
-            lightLevelDescription: 'Bright'
-        },
-        currentVehicle: null,
-        omitInventoryItems: false,
-        omitAbilities: false,
-        suppressQuestList: false,
-        saveFileSaveVersion: 1,
-        Globals: {
-            saveFileSaveVersion: 1
-        },
-        ...overrides
-    };
+        currencyName: 'Gold',
+        regionName: '',
+        overrides: {
+            plotAnalysisHasContent: false,
+            tonalScaleEvaluation: '',
+            ...overrides
+        }
+    });
 }
 
 test('default config enables tonal scale evaluation every five turns and server validates it', () => {

@@ -3,8 +3,12 @@ const Globals = require('./Globals.js');
 const SanitizedStringMap = require('./SanitizedStringMap.js');
 const SanitizedStringSet = require('./SanitizedStringSet.js');
 const StatusEffect = require('./StatusEffect.js');
+const StatusEffectList = require('./status_effect_list.js');
+const { createExtensionFieldAccess } = require('./extension_field_access.js');
 const { loadMergedDefinitionFile } = require('./DefinitionLoader.js');
 const IdGenerator = require('./IdGenerator.js');
+
+const thingExtensionFields = createExtensionFieldAccess({ entityType: 'thing', label: 'Thing' });
 
 /**
  * Thing class for AI RPG
@@ -930,37 +934,16 @@ class Thing {
   }
 
   getExtensionField(fieldName) {
-    const field = Thing.#getRegisteredExtensionField(fieldName);
-    if (!field) {
-      throw new Error(`Thing extension field "${fieldName}" is not registered.`);
-    }
-    if (Object.prototype.hasOwnProperty.call(this.#extensionFields, field.fieldName)) {
-      return Thing.#cloneExtensionFieldValue(this.#extensionFields[field.fieldName]);
-    }
-    if (field.defaultValue !== undefined) {
-      return Thing.#cloneExtensionFieldValue(field.defaultValue);
-    }
-    return undefined;
+    return thingExtensionFields.getField(this.#extensionFields, fieldName);
   }
 
   setExtensionField(fieldName, value) {
-    const field = Thing.#getRegisteredExtensionField(fieldName);
-    if (!field) {
-      throw new Error(`Thing extension field "${fieldName}" is not registered.`);
-    }
+    const field = thingExtensionFields.getRequiredField(fieldName);
     this.#setExtensionFieldValue(field, value, { updateTimestamp: true });
   }
 
   getExtensionFields({ includeDefaults = false } = {}) {
-    const output = {};
-    for (const field of Thing.#getRegisteredExtensionFields()) {
-      if (Object.prototype.hasOwnProperty.call(this.#extensionFields, field.fieldName)) {
-        output[field.fieldName] = Thing.#cloneExtensionFieldValue(this.#extensionFields[field.fieldName]);
-      } else if (includeDefaults && field.defaultValue !== undefined) {
-        output[field.fieldName] = Thing.#cloneExtensionFieldValue(field.defaultValue);
-      }
-    }
-    return output;
+    return thingExtensionFields.getFields(this.#extensionFields, { includeDefaults });
   }
 
   get attributeBonuses() {
@@ -1791,139 +1774,19 @@ class Thing {
     return normalized;
   }
 
-  static #getRegisteredExtensionFields() {
-    const registry = Globals.modExtensionRegistry;
-    if (!registry || typeof registry.getEntityFields !== 'function') {
-      return [];
-    }
-    return registry.getEntityFields('thing');
-  }
-
-  static #getRegisteredExtensionField(fieldName) {
-    const normalized = typeof fieldName === 'string' ? fieldName.trim() : '';
-    if (!normalized) {
-      return null;
-    }
-    const registry = Globals.modExtensionRegistry;
-    if (!registry || typeof registry.getEntityField !== 'function') {
-      return null;
-    }
-    return registry.getEntityField('thing', normalized);
-  }
-
-  static #cloneExtensionFieldValue(value) {
-    if (value === undefined) {
-      return undefined;
-    }
-    if (value === null || typeof value !== 'object') {
-      return value;
-    }
-    return JSON.parse(JSON.stringify(value));
-  }
-
-  static #normalizeExtensionFieldValue(field, value) {
-    if (value === undefined || value === null) {
-      return value;
-    }
-    switch (field.type) {
-      case 'string':
-        return String(value).trim();
-      case 'number': {
-        const numeric = Number(value);
-        if (!Number.isFinite(numeric)) {
-          throw new Error(`Thing extension field "${field.fieldName}" must be a finite number.`);
-        }
-        return numeric;
-      }
-      case 'integer': {
-        const numeric = Number(value);
-        if (!Number.isFinite(numeric) || !Number.isInteger(numeric)) {
-          throw new Error(`Thing extension field "${field.fieldName}" must be an integer.`);
-        }
-        return numeric;
-      }
-      case 'boolean':
-        if (typeof value !== 'boolean') {
-          throw new Error(`Thing extension field "${field.fieldName}" must be a boolean.`);
-        }
-        return value;
-      case 'array':
-        if (!Array.isArray(value)) {
-          throw new Error(`Thing extension field "${field.fieldName}" must be an array.`);
-        }
-        return Thing.#cloneExtensionFieldValue(value);
-      case 'object':
-        if (!value || typeof value !== 'object' || Array.isArray(value)) {
-          throw new Error(`Thing extension field "${field.fieldName}" must be an object.`);
-        }
-        return Thing.#cloneExtensionFieldValue(value);
-      default:
-        throw new Error(`Thing extension field "${field.fieldName}" has unsupported type "${field.type}".`);
-    }
-  }
-
-  static #shouldStoreExtensionFieldValue(value) {
-    if (value === undefined || value === null) {
-      return false;
-    }
-    return !(typeof value === 'string' && value.length === 0);
-  }
-
-  static #extractExtensionFieldInputs(data) {
-    const inputs = {};
-    if (!data || typeof data !== 'object') {
-      return inputs;
-    }
-    for (const field of Thing.#getRegisteredExtensionFields()) {
-      if (Object.prototype.hasOwnProperty.call(data, field.fieldName)) {
-        inputs[field.fieldName] = data[field.fieldName];
-      }
-    }
-    return inputs;
-  }
-
   #installExtensionFieldAccessors() {
-    for (const field of Thing.#getRegisteredExtensionFields()) {
-      if (field.fieldName in this) {
-        throw new Error(`Thing extension field "${field.fieldName}" conflicts with an existing Thing property.`);
-      }
-      Object.defineProperty(this, field.fieldName, {
-        configurable: true,
-        enumerable: false,
-        get: () => this.getExtensionField(field.fieldName),
-        set: value => this.setExtensionField(field.fieldName, value)
-      });
-    }
+    thingExtensionFields.installAccessors(this);
   }
 
   #setExtensionFieldValue(field, value, { updateTimestamp = false } = {}) {
-    const normalized = Thing.#normalizeExtensionFieldValue(field, value);
-    if (typeof field.validateValue === 'function') {
-      field.validateValue(Thing.#cloneExtensionFieldValue(normalized), {
-        entity: this,
-        entityType: 'thing',
-        fieldName: field.fieldName
-      });
-    }
-    if (Thing.#shouldStoreExtensionFieldValue(normalized)) {
-      this.#extensionFields[field.fieldName] = normalized;
-    } else {
-      delete this.#extensionFields[field.fieldName];
-    }
+    thingExtensionFields.setFieldValue(this, this.#extensionFields, field, value);
     if (updateTimestamp) {
       this.#lastUpdated = new Date().toISOString();
     }
   }
 
   #applyExtensionFieldInputs(inputs = {}) {
-    if (!inputs || typeof inputs !== 'object') {
-      return;
-    }
-    for (const field of Thing.#getRegisteredExtensionFields()) {
-      if (Object.prototype.hasOwnProperty.call(inputs, field.fieldName)) {
-        this.#setExtensionFieldValue(field, inputs[field.fieldName], { updateTimestamp: false });
-      }
-    }
+    thingExtensionFields.applyInputs(this, this.#extensionFields, inputs);
   }
 
   // Instance methods
@@ -1999,7 +1862,7 @@ class Thing {
         booleanFlagOptions[key] = data.metadata[key];
       }
     }
-    const extensionFieldOptions = Thing.#extractExtensionFieldInputs(data);
+    const extensionFieldOptions = thingExtensionFields.extractInputs(data);
 
     const thing = new Thing({
       id: data.id,
@@ -2510,65 +2373,7 @@ class Thing {
   }
 
   #normalizeStatusEffects(effects = []) {
-    if (!Array.isArray(effects)) {
-      return [];
-    }
-
-    const normalized = [];
-    for (const entry of effects) {
-      if (!entry) continue;
-
-      if (entry instanceof StatusEffect) {
-        normalized.push(entry);
-        continue;
-      }
-
-      if (typeof entry === 'string') {
-        const description = entry.trim();
-        if (!description) {
-          throw new Error('Status effect description must not be empty');
-        }
-        normalized.push(new StatusEffect({ description, duration: 1 }));
-        continue;
-      }
-
-      if (typeof entry === 'object') {
-        const descriptionValue = typeof entry.description === 'string'
-          ? entry.description.trim()
-          : (typeof entry.text === 'string' ? entry.text.trim() : (typeof entry.name === 'string' ? entry.name.trim() : ''));
-        if (!descriptionValue) {
-          throw new Error('Status effect entry is missing a description');
-        }
-        const attributes = Array.isArray(entry.attributes) ? entry.attributes : undefined;
-        const skills = Array.isArray(entry.skills) ? entry.skills : undefined;
-        const duration = entry.duration === undefined ? null : entry.duration;
-        const name = typeof entry.name === 'string' ? entry.name : undefined;
-        const appliedAt = Object.prototype.hasOwnProperty.call(entry, 'appliedAt')
-          ? entry.appliedAt
-          : undefined;
-
-        normalized.push(new StatusEffect({
-          id: entry.id,
-          name,
-          description: descriptionValue,
-          attributes,
-          skills,
-          duration,
-          appliedAt
-        }));
-        continue;
-      }
-
-      throw new Error('Invalid status effect entry');
-    }
-
-    normalized.sort((a, b) => {
-      const nameA = (a.name || a.description || '').toLowerCase();
-      const nameB = (b.name || b.description || '').toLowerCase();
-      return nameA.localeCompare(nameB);
-    });
-
-    return normalized.slice(0, 60);
+    return StatusEffectList.normalizeStatusEffectInstances(effects, { throwOnInvalid: true });
   }
 
   whoseInventory() {
@@ -2791,31 +2596,15 @@ class Thing {
   }
 
   addStatusEffect(effectInput, defaultDuration = 1) {
-    const effects = Array.isArray(effectInput) ? effectInput : [effectInput];
-    const normalized = this.#normalizeStatusEffects(effects.map(entry => {
-      if (typeof entry === 'string') {
-        return { description: entry, duration: defaultDuration };
-      }
-      if (entry && typeof entry === 'object' && entry.description && entry.duration === undefined) {
-        return { ...entry, duration: defaultDuration };
-      }
-      return entry;
-    }));
+    const normalized = this.#normalizeStatusEffects(
+      StatusEffectList.prepareStatusEffectInputs(effectInput, defaultDuration)
+    );
 
     if (!normalized.length) {
       return null;
     }
 
-    let updated = false;
-    for (const effect of normalized) {
-      const existingIndex = this.#statusEffects.findIndex(existing => existing.description.toLowerCase() === effect.description.toLowerCase());
-      if (existingIndex >= 0) {
-        this.#statusEffects[existingIndex] = effect;
-      } else {
-        this.#statusEffects.push(effect);
-      }
-      updated = true;
-    }
+    const updated = StatusEffectList.upsertStatusEffects(this.#statusEffects, normalized);
 
     if (updated) {
       this.#lastUpdated = new Date().toISOString();
@@ -2826,13 +2615,9 @@ class Thing {
   }
 
   removeStatusEffect(description) {
-    if (!description || typeof description !== 'string') {
-      return false;
-    }
-    const before = this.#statusEffects.length;
-    const target = description.trim().toLowerCase();
-    this.#statusEffects = this.#statusEffects.filter(effect => effect.description.toLowerCase() !== target);
-    if (this.#statusEffects.length !== before) {
+    const { removed, effects } = StatusEffectList.removeStatusEffectFromList(this.#statusEffects, description);
+    if (removed) {
+      this.#statusEffects = effects;
       this.#lastUpdated = new Date().toISOString();
       return true;
     }
@@ -2840,52 +2625,20 @@ class Thing {
   }
 
   tickStatusEffects(elapsedMinutes = 1) {
-    if (!this.#statusEffects.length) {
-      return;
-    }
-    const normalizedMinutes = Number(elapsedMinutes);
-    if (!Number.isFinite(normalizedMinutes) || normalizedMinutes <= 0) {
-      return;
-    }
-    const roundedMinutes = Math.max(1, Math.round(normalizedMinutes));
-    const retained = [];
-    let changed = false;
-    for (const effect of this.#statusEffects) {
-      if (!effect) {
-        changed = true;
-        continue;
-      }
-      if (!Number.isFinite(effect.duration)) {
-        retained.push(effect);
-        continue;
-      }
-      if (effect.duration < 0) {
-        retained.push(effect);
-        continue;
-      }
-      if (effect.duration === 0) {
-        retained.push(effect);
-        continue;
-      }
-      const remainingMinutes = Math.max(0, Math.round(effect.duration));
-      const nextRemainingMinutes = Math.max(0, remainingMinutes - roundedMinutes);
-      retained.push(new StatusEffect({
-        ...effect.toJSON(),
-        duration: nextRemainingMinutes,
-        appliedAt: Number.isFinite(effect.appliedAt) ? effect.appliedAt : null
-      }));
-      changed = true;
-    }
-    if (changed) {
+    const retained = StatusEffectList.tickStatusEffectList(this.#statusEffects, elapsedMinutes, {
+      copyRetained: effect => effect,
+      tickEffect: StatusEffectList.tickStatusEffectInstance
+    });
+    if (retained) {
       this.#statusEffects = retained;
       this.#lastUpdated = new Date().toISOString();
     }
   }
 
   clearExpiredStatusEffects() {
-    const before = this.#statusEffects.length;
-    this.#statusEffects = this.#statusEffects.filter(effect => !Number.isFinite(effect.duration) || effect.duration !== 0);
-    if (this.#statusEffects.length !== before) {
+    const filtered = StatusEffectList.clearExpiredStatusEffects(this.#statusEffects);
+    if (filtered) {
+      this.#statusEffects = filtered;
       this.#lastUpdated = new Date().toISOString();
     }
   }

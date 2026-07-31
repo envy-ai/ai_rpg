@@ -1,34 +1,23 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('fs');
-const os = require('os');
-const path = require('path');
 
 const Events = require('../Events.js');
 const Globals = require('../Globals.js');
 const Player = require('../Player.js');
+const {
+    createTempDefsDir,
+    withMergedTestConfig
+} = require('./helpers/needBarFixtures.js');
 
 function createTempNeedBarEnvironment() {
-    const tempBaseDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ai-rpg-event-need-ticks-'));
-
-    const writeFile = (relativePath, content) => {
-        const targetPath = path.join(tempBaseDir, relativePath);
-        fs.mkdirSync(path.dirname(targetPath), { recursive: true });
-        fs.writeFileSync(targetPath, content, 'utf8');
-    };
-
-    writeFile('defs/attributes.yaml', `
-attributes:
-  strength:
-    label: Strength
-    default: 5
-  constitution:
-    label: Constitution
-    default: 5
-`);
-    writeFile('defs/gear_slots.yaml', 'gear_slots: {}\n');
-    writeFile('defs/dispositions.yaml', 'dispositions: {}\nrange: {}\n');
-    writeFile('defs/need_bars.yaml', `
+    return createTempDefsDir({
+        prefix: 'ai-rpg-event-need-ticks-',
+        attributes: [
+            { id: 'strength', label: 'Strength', default: 5 },
+            { id: 'constitution', label: 'Constitution', default: 5 }
+        ],
+        needBarsYaml: `
 need_values:
   increase:
     small: 10
@@ -44,33 +33,17 @@ need_bars:
     max: 100
     initial: 100
     change_per_minute: -1
-`);
-
-    return tempBaseDir;
+`
+    });
 }
 
 function baseTestConfig(previousConfig = {}) {
     return {
-        ...(previousConfig && typeof previousConfig === 'object' ? previousConfig : {}),
+        ...withMergedTestConfig(previousConfig),
         ai: {},
         event_checks: { enabled: true, use_xml: false },
         quests: { enabled: false },
-        omit_npc_generation: true,
-        baseHealthPerLevel: Number.isFinite(previousConfig?.baseHealthPerLevel)
-            ? previousConfig.baseHealthPerLevel
-            : 10,
-        formulas: {
-            ...(previousConfig?.formulas && typeof previousConfig.formulas === 'object' ? previousConfig.formulas : {}),
-            character_creation: {
-                ...(previousConfig?.formulas?.character_creation && typeof previousConfig.formulas.character_creation === 'object'
-                    ? previousConfig.formulas.character_creation
-                    : {}),
-                attribute_pool_formula: previousConfig?.formulas?.character_creation?.attribute_pool_formula ?? '0',
-                skill_pool_formula: previousConfig?.formulas?.character_creation?.skill_pool_formula ?? '0',
-                max_attribute: previousConfig?.formulas?.character_creation?.max_attribute ?? '999',
-                max_skill: previousConfig?.formulas?.character_creation?.max_skill ?? '999'
-            }
-        }
+        omit_npc_generation: true
     };
 }
 

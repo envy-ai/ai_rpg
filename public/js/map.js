@@ -39,6 +39,11 @@ let edgeContextMenu = null;
 const LINK_GHOST_NODE_ID = '__link-ghost__';
 const LINK_GHOST_EDGE_ID = '__link-ghost-edge__';
 const VEHICLE_OVERLAY_NODE_PREFIX = '__vehicle-overlay__';
+const {
+  getVehicleOverlayNodeId,
+  syncVehicleOverlayPositions,
+  attachVehicleOverlayPositionFollower
+} = window.VehicleOverlay.createHelpers(VEHICLE_OVERLAY_NODE_PREFIX);
 
 function isVehicleDebugEnabledOnClient() {
   return Boolean(window?.AIRPG_CONFIG?.debugVehicles);
@@ -67,10 +72,6 @@ function focusAdventureTabForMapTravel() {
   }
 }
 
-function getVehicleOverlayNodeId(targetNodeId) {
-  return `${VEHICLE_OVERLAY_NODE_PREFIX}${targetNodeId}`;
-}
-
 function buildVehicleOverlayNode(targetNodeId, icon = '🚗') {
   return {
     data: {
@@ -82,25 +83,6 @@ function buildVehicleOverlayNode(targetNodeId, icon = '🚗') {
     grabbable: false,
     selectable: false
   };
-}
-
-function syncVehicleOverlayPositions(cy) {
-  if (!cy) {
-    return;
-  }
-  cy.nodes('.vehicle-overlay').forEach(overlayNode => {
-    const targetId = overlayNode.data('targetId');
-    if (!targetId) {
-      return;
-    }
-    const targetNode = cy.getElementById(targetId);
-    if (!targetNode || targetNode.empty()) {
-      return;
-    }
-    overlayNode.unlock();
-    overlayNode.position(targetNode.position());
-    overlayNode.lock();
-  });
 }
 
 function normalizeMapFocusOptions(options = {}) {
@@ -608,19 +590,7 @@ function renderMap(region, options = {}) {
   cy.nodes('.vehicle-overlay').lock();
   syncVehicleOverlayPositions(cy);
 
-  cy.on('position', 'node', event => {
-    const node = event.target;
-    if (!node || node.hasClass('vehicle-overlay')) {
-      return;
-    }
-    const overlayNode = cy.getElementById(getVehicleOverlayNodeId(node.id()));
-    if (!overlayNode || overlayNode.empty()) {
-      return;
-    }
-    overlayNode.unlock();
-    overlayNode.position(node.position());
-    overlayNode.lock();
-  });
+  attachVehicleOverlayPositionFollower(cy, { ignoreOverlayClass: true });
 
   cy.nodes().removeClass('current');
   if (region.currentLocationId) {
@@ -1279,8 +1249,7 @@ function renderMap(region, options = {}) {
     runLayout();
   };
 
-  const openEdgeContextMenu = (edge, anchorPoint) => {
-    closeEdgeMenu();
+  const createContextMenuContainer = (anchorPoint, minWidth) => {
     const menu = document.createElement('div');
     menu.className = 'map-edge-menu';
     menu.style.position = 'fixed';
@@ -1293,35 +1262,30 @@ function renderMap(region, options = {}) {
     menu.style.boxShadow = '0 10px 30px rgba(0,0,0,0.35)';
     menu.style.padding = '6px';
     menu.style.zIndex = '2100';
-    menu.style.minWidth = '160px';
+    menu.style.minWidth = minWidth;
+    return menu;
+  };
 
-    const deleteBtn = document.createElement('button');
-    deleteBtn.type = 'button';
-    deleteBtn.textContent = 'Delete exit';
-    deleteBtn.style.width = '100%';
-    deleteBtn.style.padding = '8px 10px';
-    deleteBtn.style.border = 'none';
-    deleteBtn.style.background = 'transparent';
-    deleteBtn.style.color = '#f87171';
-    deleteBtn.style.textAlign = 'left';
-    deleteBtn.style.cursor = 'pointer';
-    deleteBtn.addEventListener('mouseover', () => {
-      deleteBtn.style.background = 'rgba(248,113,113,0.08)';
+  const createContextMenuButton = ({ color, hoverBackground }) => {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.style.width = '100%';
+    button.style.padding = '8px 10px';
+    button.style.border = 'none';
+    button.style.background = 'transparent';
+    button.style.color = color;
+    button.style.textAlign = 'left';
+    button.style.cursor = 'pointer';
+    button.addEventListener('mouseover', () => {
+      button.style.background = hoverBackground;
     });
-    deleteBtn.addEventListener('mouseout', () => {
-      deleteBtn.style.background = 'transparent';
+    button.addEventListener('mouseout', () => {
+      button.style.background = 'transparent';
     });
-    deleteBtn.addEventListener('click', async () => {
-      try {
-        await deleteEdgeAndExit(edge);
-      } catch (error) {
-        window.alert(error?.message || 'Failed to delete exit');
-      } finally {
-        closeEdgeMenu();
-      }
-    });
+    return button;
+  };
 
-    menu.appendChild(deleteBtn);
+  const showContextMenu = (menu) => {
     document.body.appendChild(menu);
     edgeContextMenu = menu;
 
@@ -1337,44 +1301,44 @@ function renderMap(region, options = {}) {
     document.addEventListener('contextmenu', onOutside);
   };
 
+  const openEdgeContextMenu = (edge, anchorPoint) => {
+    closeEdgeMenu();
+    const menu = createContextMenuContainer(anchorPoint, '160px');
+
+    const deleteBtn = createContextMenuButton({
+      color: '#f87171',
+      hoverBackground: 'rgba(248,113,113,0.08)'
+    });
+    deleteBtn.textContent = 'Delete exit';
+    deleteBtn.addEventListener('click', async () => {
+      try {
+        await deleteEdgeAndExit(edge);
+      } catch (error) {
+        window.alert(error?.message || 'Failed to delete exit');
+      } finally {
+        closeEdgeMenu();
+      }
+    });
+
+    menu.appendChild(deleteBtn);
+    showContextMenu(menu);
+  };
+
   const openStubContextMenu = (node, anchorPoint) => {
     closeEdgeMenu();
     const stubId = node?.data ? (node.data('stubId') || node.id()) : (node?.id?.() || null);
     if (!stubId) {
       return;
     }
-    const menu = document.createElement('div');
-    menu.className = 'map-edge-menu';
-    menu.style.position = 'fixed';
-    menu.style.left = `${anchorPoint.x}px`;
-    menu.style.top = `${anchorPoint.y}px`;
-    menu.style.background = '#0f172a';
-    menu.style.color = '#e2e8f0';
-    menu.style.border = '1px solid rgba(255,255,255,0.15)';
-    menu.style.borderRadius = '10px';
-    menu.style.boxShadow = '0 10px 30px rgba(0,0,0,0.35)';
-    menu.style.padding = '6px';
-    menu.style.zIndex = '2100';
-    menu.style.minWidth = '180px';
+    const menu = createContextMenuContainer(anchorPoint, '180px');
 
     const isRegionStub = Boolean(node?.hasClass?.('region-exit') || node?.data?.('regionName') || node?.data?.('targetRegionId'));
 
-    const unstubBtn = document.createElement('button');
-    unstubBtn.type = 'button';
+    const unstubBtn = createContextMenuButton({
+      color: '#a7f3d0',
+      hoverBackground: 'rgba(16,185,129,0.12)'
+    });
     unstubBtn.textContent = isRegionStub ? 'Unstub region' : 'Unstub location';
-    unstubBtn.style.width = '100%';
-    unstubBtn.style.padding = '8px 10px';
-    unstubBtn.style.border = 'none';
-    unstubBtn.style.background = 'transparent';
-    unstubBtn.style.color = '#a7f3d0';
-    unstubBtn.style.textAlign = 'left';
-    unstubBtn.style.cursor = 'pointer';
-    unstubBtn.addEventListener('mouseover', () => {
-      unstubBtn.style.background = 'rgba(16,185,129,0.12)';
-    });
-    unstubBtn.addEventListener('mouseout', () => {
-      unstubBtn.style.background = 'transparent';
-    });
     unstubBtn.addEventListener('click', async () => {
       try {
         const confirmed = window.confirm(`Unstub this ${isRegionStub ? 'region' : 'location'} now?`);
@@ -1391,22 +1355,11 @@ function renderMap(region, options = {}) {
       }
     });
 
-    const editBtn = document.createElement('button');
-    editBtn.type = 'button';
+    const editBtn = createContextMenuButton({
+      color: '#e2e8f0',
+      hoverBackground: 'rgba(148,163,184,0.15)'
+    });
     editBtn.textContent = 'Edit stub';
-    editBtn.style.width = '100%';
-    editBtn.style.padding = '8px 10px';
-    editBtn.style.border = 'none';
-    editBtn.style.background = 'transparent';
-    editBtn.style.color = '#e2e8f0';
-    editBtn.style.textAlign = 'left';
-    editBtn.style.cursor = 'pointer';
-    editBtn.addEventListener('mouseover', () => {
-      editBtn.style.background = 'rgba(148,163,184,0.15)';
-    });
-    editBtn.addEventListener('mouseout', () => {
-      editBtn.style.background = 'transparent';
-    });
     editBtn.addEventListener('click', async () => {
       try {
         if (typeof window.openStubEditModal !== 'function') {
@@ -1420,22 +1373,11 @@ function renderMap(region, options = {}) {
       }
     });
 
-    const deleteBtn = document.createElement('button');
-    deleteBtn.type = 'button';
+    const deleteBtn = createContextMenuButton({
+      color: '#f87171',
+      hoverBackground: 'rgba(248,113,113,0.08)'
+    });
     deleteBtn.textContent = 'Delete stub';
-    deleteBtn.style.width = '100%';
-    deleteBtn.style.padding = '8px 10px';
-    deleteBtn.style.border = 'none';
-    deleteBtn.style.background = 'transparent';
-    deleteBtn.style.color = '#f87171';
-    deleteBtn.style.textAlign = 'left';
-    deleteBtn.style.cursor = 'pointer';
-    deleteBtn.addEventListener('mouseover', () => {
-      deleteBtn.style.background = 'rgba(248,113,113,0.08)';
-    });
-    deleteBtn.addEventListener('mouseout', () => {
-      deleteBtn.style.background = 'transparent';
-    });
     deleteBtn.addEventListener('click', async () => {
       try {
         const info = await fetchStubInfo(stubId);
@@ -1471,19 +1413,7 @@ function renderMap(region, options = {}) {
     menu.appendChild(unstubBtn);
     menu.appendChild(editBtn);
     menu.appendChild(deleteBtn);
-    document.body.appendChild(menu);
-    edgeContextMenu = menu;
-
-    const onOutside = (evt) => {
-      if (!edgeContextMenu) return;
-      if (!edgeContextMenu.contains(evt.target)) {
-        closeEdgeMenu();
-        document.removeEventListener('mousedown', onOutside);
-        document.removeEventListener('contextmenu', onOutside);
-      }
-    };
-    document.addEventListener('mousedown', onOutside);
-    document.addEventListener('contextmenu', onOutside);
+    showContextMenu(menu);
   };
 
   cy.on('cxttap', 'edge', event => {

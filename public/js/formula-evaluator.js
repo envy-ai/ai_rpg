@@ -253,7 +253,7 @@
     }
   };
 
-  const compile = (expression, customFunctions = {}) => {
+  const parseFormulaExpression = (expression) => {
     if (typeof expression !== 'string') {
       throw new Error('Expression must be a string.');
     }
@@ -267,6 +267,11 @@
     if (tail.type !== 'eof') {
       throw new Error(`Unexpected token '${tail.value}' after expression.`);
     }
+    return ast;
+  };
+
+  const compile = (expression, customFunctions = {}) => {
+    const ast = parseFormulaExpression(expression);
     const functions = { ...DEFAULT_FUNCTIONS, ...customFunctions };
     return (variables = {}) => {
       const result = evaluateNode(ast, variables, functions);
@@ -278,19 +283,7 @@
   };
 
   const collectVariables = (expression) => {
-    if (typeof expression !== 'string') {
-      throw new Error('Expression must be a string.');
-    }
-    const trimmed = expression.trim();
-    if (!trimmed) {
-      throw new Error('Expression cannot be empty.');
-    }
-    const tokens = new Tokenizer(trimmed);
-    const ast = parseExpression(tokens);
-    const tail = tokens.next();
-    if (tail.type !== 'eof') {
-      throw new Error(`Unexpected token '${tail.value}' after expression.`);
-    }
+    const ast = parseFormulaExpression(expression);
 
     const variables = new Set();
     const walk = (node) => {

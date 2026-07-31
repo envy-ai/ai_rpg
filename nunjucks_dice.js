@@ -1,8 +1,5 @@
-const nunjucks = require('nunjucks');
 // Optional: deterministic RNG (npm i seedrandom)
 // const seedrandom = require('seedrandom');
-
-nunjucks.configure({ autoescape: true });
 
 // Simple RNG wrapper; swap Math.random with seedrandom(seed) if needed.
 function makeRng(seed) {
@@ -140,27 +137,6 @@ function rollDice(notation, opts = {}) {
     sides: cfg.sides,
     detail,
   };
-}
-
-// Example usages:
-const examples = [
-  '3d6',
-  '3d6+2',
-  '4d6kh3',
-  '4d6dl1',
-  'd6!',
-  'd6r1',
-  'd10r>8',
-  'd6r<3!',
-  'd20adv',
-  'd20dis',
-];
-
-if (require.main === module) {
-  // Only run examples if this file is run directly
-  for (const ex of examples) {
-    console.log(nunjucks.renderString('{{ ex|roll_detail("demo-seed") }}', { ex }));
-  }
 }
 
 // Export functions for use by other modules

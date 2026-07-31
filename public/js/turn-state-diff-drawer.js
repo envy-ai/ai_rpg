@@ -557,17 +557,17 @@
         return rowRank < currentRank ? rowSeverity : currentSeverity;
     }
 
-    function groupDispositionRows(rows) {
+    function groupChangeRows(rows, normalizeChange, { getKey, getName }) {
         const groups = new Map();
         (Array.isArray(rows) ? rows : []).forEach(row => {
-            const change = normalizeDispositionChange(row);
+            const change = normalizeChange(row);
             if (!change) {
                 return;
             }
-            const key = change.npcId || change.npcName.toLowerCase();
+            const key = getKey(change);
             if (!groups.has(key)) {
                 groups.set(key, {
-                    npcName: change.npcName,
+                    name: getName(change),
                     changes: [],
                     severity: row.severity || 'normal'
                 });
@@ -579,60 +579,54 @@
         return Array.from(groups.values()).filter(group => group.changes.length);
     }
 
-    function createDispositionRows(rows, options) {
-        const groups = groupDispositionRows(rows);
+    function createGroupedChangeRows(groups, options, config) {
         if (!groups.length) {
             return null;
         }
 
         const list = document.createElement('div');
-        list.className = 'turn-diff-drawer__disposition-list';
+        list.className = config.listClass;
 
         groups.forEach(group => {
             const details = document.createElement('details');
-            details.className = `turn-diff-drawer__disposition-row turn-diff-drawer__row--${group.severity}`;
-            details.dataset.category = 'disposition';
+            details.className = `${config.rowClass} turn-diff-drawer__row--${group.severity}`;
+            details.dataset.category = config.category;
             details.dataset.severity = group.severity;
 
             const summary = document.createElement('summary');
-            summary.className = 'turn-diff-drawer__disposition-summary';
+            summary.className = config.summaryClass;
 
             const name = document.createElement('strong');
-            name.className = 'turn-diff-drawer__disposition-name';
-            name.textContent = group.npcName;
+            name.className = config.nameClass;
+            name.textContent = group.name;
             summary.appendChild(name);
             summary.appendChild(document.createTextNode(': '));
 
             const pills = document.createElement('span');
-            pills.className = 'turn-diff-drawer__disposition-pills';
+            pills.className = config.pillsClass;
             group.changes.forEach(change => {
-                if (!Number.isFinite(change.delta) || change.delta === 0) {
+                const pill = config.createPill(change);
+                if (!pill) {
                     return;
                 }
-                const pill = document.createElement('span');
-                pill.className = 'turn-diff-drawer__disposition-pill';
-                pill.title = change.typeLabel;
-                pill.setAttribute('aria-label', `${change.typeLabel} ${change.delta > 0 ? 'increased' : 'decreased'} by ${Math.abs(Math.round(change.delta))}`);
-                const sign = change.delta > 0 ? '+' : '';
-                pill.textContent = `${change.icon}${sign}${Math.round(change.delta)}`;
                 pills.appendChild(pill);
             });
             summary.appendChild(pills);
             details.appendChild(summary);
 
             const body = document.createElement('div');
-            body.className = 'turn-diff-drawer__disposition-details';
+            body.className = config.detailsClass;
             const detailList = document.createElement('ul');
-            detailList.className = 'turn-diff-drawer__disposition-detail-list';
+            detailList.className = config.detailListClass;
 
             group.changes.forEach(change => {
                 const detailItem = document.createElement('li');
-                detailItem.className = 'turn-diff-drawer__disposition-detail';
+                detailItem.className = config.detailClass;
 
                 const icon = document.createElement('span');
                 icon.className = 'turn-diff-drawer__icon';
                 icon.setAttribute('aria-hidden', 'true');
-                icon.textContent = change.icon || '💞';
+                icon.textContent = change.icon || config.defaultIcon;
                 detailItem.appendChild(icon);
 
                 const main = document.createElement('span');
@@ -658,6 +652,40 @@
         });
 
         return list;
+    }
+
+    function groupDispositionRows(rows) {
+        return groupChangeRows(rows, normalizeDispositionChange, {
+            getKey: change => change.npcId || change.npcName.toLowerCase(),
+            getName: change => change.npcName
+        });
+    }
+
+    function createDispositionRows(rows, options) {
+        return createGroupedChangeRows(groupDispositionRows(rows), options, {
+            listClass: 'turn-diff-drawer__disposition-list',
+            rowClass: 'turn-diff-drawer__disposition-row',
+            summaryClass: 'turn-diff-drawer__disposition-summary',
+            nameClass: 'turn-diff-drawer__disposition-name',
+            pillsClass: 'turn-diff-drawer__disposition-pills',
+            detailsClass: 'turn-diff-drawer__disposition-details',
+            detailListClass: 'turn-diff-drawer__disposition-detail-list',
+            detailClass: 'turn-diff-drawer__disposition-detail',
+            category: 'disposition',
+            defaultIcon: '💞',
+            createPill(change) {
+                if (!Number.isFinite(change.delta) || change.delta === 0) {
+                    return null;
+                }
+                const pill = document.createElement('span');
+                pill.className = 'turn-diff-drawer__disposition-pill';
+                pill.title = change.typeLabel;
+                pill.setAttribute('aria-label', `${change.typeLabel} ${change.delta > 0 ? 'increased' : 'decreased'} by ${Math.abs(Math.round(change.delta))}`);
+                const sign = change.delta > 0 ? '+' : '';
+                pill.textContent = `${change.icon}${sign}${Math.round(change.delta)}`;
+                return pill;
+            }
+        });
     }
 
     function normalizeNeedBarChange(row) {
@@ -701,54 +729,25 @@
     }
 
     function groupNeedRows(rows) {
-        const groups = new Map();
-        (Array.isArray(rows) ? rows : []).forEach(row => {
-            const change = normalizeNeedBarChange(row);
-            if (!change) {
-                return;
-            }
-            const key = change.actorId || change.actorName.toLowerCase();
-            if (!groups.has(key)) {
-                groups.set(key, {
-                    actorName: change.actorName,
-                    changes: [],
-                    severity: row.severity || 'normal'
-                });
-            }
-            const group = groups.get(key);
-            group.changes.push(change);
-            group.severity = compareDispositionSeverity(group.severity, row.severity || 'normal');
+        return groupChangeRows(rows, normalizeNeedBarChange, {
+            getKey: change => change.actorId || change.actorName.toLowerCase(),
+            getName: change => change.actorName
         });
-        return Array.from(groups.values()).filter(group => group.changes.length);
     }
 
     function createNeedRows(rows, options) {
-        const groups = groupNeedRows(rows);
-        if (!groups.length) {
-            return null;
-        }
-
-        const list = document.createElement('div');
-        list.className = 'turn-diff-drawer__need-list';
-
-        groups.forEach(group => {
-            const details = document.createElement('details');
-            details.className = `turn-diff-drawer__need-row turn-diff-drawer__row--${group.severity}`;
-            details.dataset.category = 'needs';
-            details.dataset.severity = group.severity;
-
-            const summary = document.createElement('summary');
-            summary.className = 'turn-diff-drawer__need-summary';
-
-            const name = document.createElement('strong');
-            name.className = 'turn-diff-drawer__need-name';
-            name.textContent = group.actorName;
-            summary.appendChild(name);
-            summary.appendChild(document.createTextNode(': '));
-
-            const pills = document.createElement('span');
-            pills.className = 'turn-diff-drawer__need-pills';
-            group.changes.forEach(change => {
+        return createGroupedChangeRows(groupNeedRows(rows), options, {
+            listClass: 'turn-diff-drawer__need-list',
+            rowClass: 'turn-diff-drawer__need-row',
+            summaryClass: 'turn-diff-drawer__need-summary',
+            nameClass: 'turn-diff-drawer__need-name',
+            pillsClass: 'turn-diff-drawer__need-pills',
+            detailsClass: 'turn-diff-drawer__need-details',
+            detailListClass: 'turn-diff-drawer__need-detail-list',
+            detailClass: 'turn-diff-drawer__need-detail',
+            category: 'needs',
+            defaultIcon: '🧪',
+            createPill(change) {
                 const pill = document.createElement('span');
                 pill.className = 'turn-diff-drawer__need-pill';
                 pill.title = change.needBarName;
@@ -756,49 +755,9 @@
                     ? `${change.needBarName} changed by ${change.deltaText}`
                     : `${change.needBarName} changed`);
                 pill.textContent = `${change.icon}${change.deltaText || ''}`;
-                pills.appendChild(pill);
-            });
-            summary.appendChild(pills);
-            details.appendChild(summary);
-
-            const body = document.createElement('div');
-            body.className = 'turn-diff-drawer__need-details';
-            const detailList = document.createElement('ul');
-            detailList.className = 'turn-diff-drawer__need-detail-list';
-
-            group.changes.forEach(change => {
-                const detailItem = document.createElement('li');
-                detailItem.className = 'turn-diff-drawer__need-detail';
-
-                const icon = document.createElement('span');
-                icon.className = 'turn-diff-drawer__icon';
-                icon.setAttribute('aria-hidden', 'true');
-                icon.textContent = change.icon || '🧪';
-                detailItem.appendChild(icon);
-
-                const main = document.createElement('span');
-                main.className = 'turn-diff-drawer__row-main';
-
-                const text = document.createElement('span');
-                text.className = 'turn-diff-drawer__text';
-                appendText(text, change.row.text, options);
-                main.appendChild(text);
-
-                const entityList = createEntityList(change.row);
-                if (entityList) {
-                    main.appendChild(entityList);
-                }
-
-                detailItem.appendChild(main);
-                detailList.appendChild(detailItem);
-            });
-
-            body.appendChild(detailList);
-            details.appendChild(body);
-            list.appendChild(details);
+                return pill;
+            }
         });
-
-        return list;
     }
 
     function createDrawer(entries, options = {}) {

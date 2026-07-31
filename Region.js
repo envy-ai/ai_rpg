@@ -1,7 +1,8 @@
 const Utils = require('./Utils.js');
 const StatusEffect = require('./StatusEffect.js');
-const VehicleInfo = require('./VehicleInfo.js');
 const IdGenerator = require('./IdGenerator.js');
+const StatusEffectList = require('./status_effect_list.js');
+const LocationRegionUtils = require('./location_region_utils.js');
 
 let CachedLocationModule = null;
 function getLocationModule() {
@@ -124,28 +125,7 @@ class Region {
   }
 
   static #normalizeWeatherExposure(value, fieldName) {
-    if (value === null || value === undefined || value === '') {
-      return null;
-    }
-    if (typeof value === 'boolean') {
-      return value ? 'yes' : 'no';
-    }
-    if (typeof value === 'string') {
-      const lowered = value.trim().toLowerCase();
-      if (!lowered) {
-        return null;
-      }
-      if (['true', '1', 'yes'].includes(lowered)) {
-        return 'yes';
-      }
-      if (['false', '0', 'no'].includes(lowered)) {
-        return 'no';
-      }
-      if (lowered === 'outside') {
-        return 'outside';
-      }
-    }
-    throw new Error(`${fieldName} must be "yes", "no", "outside", true, false, or null.`);
+    return LocationRegionUtils.normalizeWeatherExposure(value, fieldName);
   }
 
   static #normalizeDurationRange(range, fieldName) {
@@ -329,16 +309,7 @@ class Region {
   }
 
   static #normalizeVehicleInfo(vehicleInfo = null) {
-    if (vehicleInfo === null || vehicleInfo === undefined) {
-      return null;
-    }
-    if (vehicleInfo instanceof VehicleInfo) {
-      return VehicleInfo.fromJSON(vehicleInfo.toJSON());
-    }
-    if (typeof vehicleInfo !== 'object' || Array.isArray(vehicleInfo)) {
-      throw new Error('Region vehicleInfo must be an object, VehicleInfo instance, or null');
-    }
-    return VehicleInfo.fromJSON(vehicleInfo);
+    return LocationRegionUtils.normalizeVehicleInfo(vehicleInfo, 'Region');
   }
 
   static #normalizeBlueprint(blueprint = {}) {
@@ -974,41 +945,16 @@ class Region {
   }
 
   addRandomEvent(event) {
-    if (typeof event !== 'string') {
-      return;
+    if (LocationRegionUtils.pushRandomEvent(this.#randomEvents, event)) {
+      this.#lastUpdated = new Date().toISOString();
     }
-    const trimmed = event.trim();
-    if (!trimmed) {
-      return;
-    }
-    this.#randomEvents.push(trimmed);
-    this.#lastUpdated = new Date().toISOString();
   }
 
   removeRandomEvent(event) {
-    if (!event) {
-      return false;
-    }
-
-    let removed = false;
-    if (typeof event === 'number' && Number.isInteger(event)) {
-      if (event >= 0 && event < this.#randomEvents.length) {
-        this.#randomEvents.splice(event, 1);
-        removed = true;
-      }
-    } else if (typeof event === 'string') {
-      const trimmed = event.trim();
-      const index = this.#randomEvents.findIndex(entry => entry === trimmed);
-      if (index !== -1) {
-        this.#randomEvents.splice(index, 1);
-        removed = true;
-      }
-    }
-
+    const removed = LocationRegionUtils.removeRandomEvent(this.#randomEvents, event);
     if (removed) {
       this.#lastUpdated = new Date().toISOString();
     }
-
     return removed;
   }
 
@@ -1139,7 +1085,7 @@ class Region {
   }
 
   get characterConcepts() {
-    return [...this.#characterConcepts];
+    return LocationRegionUtils.copyConceptList(this.#characterConcepts);
   }
 
   get secrets() {
@@ -1152,16 +1098,16 @@ class Region {
   }
 
   set characterConcepts(concepts) {
-    this.#characterConcepts = Array.isArray(concepts) ? [...concepts] : [];
+    this.#characterConcepts = LocationRegionUtils.normalizeConceptList(concepts);
     this.#lastUpdated = new Date().toISOString();
   }
 
   get enemyConcepts() {
-    return [...this.#enemyConcepts];
+    return LocationRegionUtils.copyConceptList(this.#enemyConcepts);
   }
 
   set enemyConcepts(concepts) {
-    this.#enemyConcepts = Array.isArray(concepts) ? [...concepts] : [];
+    this.#enemyConcepts = LocationRegionUtils.normalizeConceptList(concepts);
     this.#lastUpdated = new Date().toISOString();
   }
 
@@ -1171,11 +1117,7 @@ class Region {
       this.#lastUpdated = new Date().toISOString();
       return;
     }
-    const num = Number(value);
-    if (!Number.isFinite(num) || num < 0) {
-      throw new Error('Region lastVisitedTime must be a non-negative number or null');
-    }
-    this.#lastVisitedTime = num;
+    this.#lastVisitedTime = LocationRegionUtils.coerceLastVisitedTime(value, 'Region');
     this.#lastUpdated = new Date().toISOString();
   }
 
@@ -1184,17 +1126,7 @@ class Region {
   }
 
   minutesSinceLastVisit(currentTime = null) {
-    const lastVisited = this.#lastVisitedTime;
-    if (lastVisited === null) {
-      return null;
-    }
-    const referenceTime = currentTime === null || currentTime === undefined
-      ? Globals.elapsedTime
-      : Number(currentTime);
-    if (!Number.isFinite(referenceTime)) {
-      throw new Error('Region minutesSinceLastVisit reference time must be a finite number');
-    }
-    return referenceTime - lastVisited;
+    return LocationRegionUtils.minutesSinceLastVisit(this.#lastVisitedTime, currentTime, 'Region');
   }
 
   set relativeLevel(level) {
@@ -1526,31 +1458,15 @@ class Region {
   }
 
   addStatusEffect(effectInput, defaultDuration = 1) {
-    const effects = Array.isArray(effectInput) ? effectInput : [effectInput];
-    const normalized = this.#normalizeStatusEffects(effects.map(entry => {
-      if (typeof entry === 'string') {
-        return { description: entry, duration: defaultDuration };
-      }
-      if (entry && typeof entry === 'object' && entry.description && entry.duration === undefined) {
-        return { ...entry, duration: defaultDuration };
-      }
-      return entry;
-    }));
+    const normalized = this.#normalizeStatusEffects(
+      StatusEffectList.prepareStatusEffectInputs(effectInput, defaultDuration)
+    );
 
     if (!normalized.length) {
       return null;
     }
 
-    let updated = false;
-    for (const effect of normalized) {
-      const existingIndex = this.#statusEffects.findIndex(existing => existing.description.toLowerCase() === effect.description.toLowerCase());
-      if (existingIndex >= 0) {
-        this.#statusEffects[existingIndex] = effect;
-      } else {
-        this.#statusEffects.push(effect);
-      }
-      updated = true;
-    }
+    const updated = StatusEffectList.upsertStatusEffects(this.#statusEffects, normalized);
 
     if (updated) {
       this.#lastUpdated = new Date().toISOString();
@@ -1560,13 +1476,9 @@ class Region {
   }
 
   removeStatusEffect(description) {
-    if (!description || typeof description !== 'string') {
-      return false;
-    }
-    const before = this.#statusEffects.length;
-    const target = description.trim().toLowerCase();
-    this.#statusEffects = this.#statusEffects.filter(effect => effect.description.toLowerCase() !== target);
-    if (this.#statusEffects.length !== before) {
+    const { removed, effects } = StatusEffectList.removeStatusEffectFromList(this.#statusEffects, description);
+    if (removed) {
+      this.#statusEffects = effects;
       this.#lastUpdated = new Date().toISOString();
       return true;
     }
@@ -1574,48 +1486,20 @@ class Region {
   }
 
   tickStatusEffects(elapsedMinutes = 1) {
-    if (!this.#statusEffects.length) {
-      return;
-    }
-    const normalizedMinutes = Number(elapsedMinutes);
-    if (!Number.isFinite(normalizedMinutes) || normalizedMinutes <= 0) {
-      return;
-    }
-    const roundedMinutes = Math.max(1, Math.round(normalizedMinutes));
-    const retained = [];
-    let changed = false;
-    for (const effect of this.#statusEffects) {
-      if (!effect) {
-        changed = true;
-        continue;
-      }
-      if (!Number.isFinite(effect.duration)) {
-        retained.push({ ...effect });
-        continue;
-      }
-      if (effect.duration < 0) {
-        retained.push({ ...effect });
-        continue;
-      }
-      if (effect.duration === 0) {
-        retained.push({ ...effect });
-        continue;
-      }
-      const remainingMinutes = Math.max(0, Math.round(effect.duration));
-      const nextRemainingMinutes = Math.max(0, remainingMinutes - roundedMinutes);
-      retained.push({ ...effect, duration: nextRemainingMinutes });
-      changed = true;
-    }
-    if (changed) {
+    const retained = StatusEffectList.tickStatusEffectList(this.#statusEffects, elapsedMinutes, {
+      copyRetained: effect => ({ ...effect }),
+      tickEffect: (effect, nextRemainingMinutes) => ({ ...effect, duration: nextRemainingMinutes })
+    });
+    if (retained) {
       this.#statusEffects = retained;
       this.#lastUpdated = new Date().toISOString();
     }
   }
 
   clearExpiredStatusEffects() {
-    const before = this.#statusEffects.length;
-    this.#statusEffects = this.#statusEffects.filter(effect => !Number.isFinite(effect.duration) || effect.duration !== 0);
-    if (this.#statusEffects.length !== before) {
+    const filtered = StatusEffectList.clearExpiredStatusEffects(this.#statusEffects);
+    if (filtered) {
+      this.#statusEffects = filtered;
       this.#lastUpdated = new Date().toISOString();
     }
   }

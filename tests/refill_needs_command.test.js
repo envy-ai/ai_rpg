@@ -1,8 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('fs');
-const os = require('os');
-const path = require('path');
 
 const Globals = require('../Globals.js');
 const Player = require('../Player.js');
@@ -10,28 +8,19 @@ const {
   initializeSlashCommands,
   getSlashCommandModule
 } = require('../SlashCommandRegistry.js');
+const {
+  createTempDefsDir,
+  withStandardTestConfig
+} = require('./helpers/needBarFixtures.js');
 
 function writeTempDefs() {
-  const tempBaseDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ai-rpg-refill-needs-'));
-
-  const writeFile = (relativePath, content) => {
-    const targetPath = path.join(tempBaseDir, relativePath);
-    fs.mkdirSync(path.dirname(targetPath), { recursive: true });
-    fs.writeFileSync(targetPath, content, 'utf8');
-  };
-
-  writeFile('defs/attributes.yaml', `
-attributes:
-  strength:
-    label: Strength
-    default: 5
-  constitution:
-    label: Constitution
-    default: 5
-`);
-  writeFile('defs/gear_slots.yaml', 'gear_slots: {}\n');
-  writeFile('defs/dispositions.yaml', 'dispositions: {}\nrange: {}\n');
-  writeFile('defs/need_bars.yaml', `
+  return createTempDefsDir({
+    prefix: 'ai-rpg-refill-needs-',
+    attributes: [
+      { id: 'strength', label: 'Strength', default: 5 },
+      { id: 'constitution', label: 'Constitution', default: 5 }
+    ],
+    needBarsYaml: `
 need_bars:
   morale:
     name: Morale
@@ -57,9 +46,8 @@ need_bars:
     min: 0
     max: 50
     initial: 5
-`);
-
-  return tempBaseDir;
+`
+  });
 }
 
 async function withRefillNeedsState(callback) {
@@ -73,20 +61,7 @@ async function withRefillNeedsState(callback) {
   Globals.baseDir = tempBaseDir;
   Globals.currentPlayer = null;
   Globals.gameLoaded = true;
-  Globals.config = {
-    ...(previousConfig && typeof previousConfig === 'object' ? previousConfig : {}),
-    baseHealthPerLevel: Number.isFinite(previousConfig?.baseHealthPerLevel)
-      ? previousConfig.baseHealthPerLevel
-      : 10,
-    formulas: {
-      character_creation: {
-        attribute_pool_formula: '0',
-        skill_pool_formula: '0',
-        max_attribute: '18',
-        max_skill: '10'
-      }
-    }
-  };
+  Globals.config = withStandardTestConfig(previousConfig);
   Player.reloadDefinitionCaches({ refreshInstances: false });
 
   try {

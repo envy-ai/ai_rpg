@@ -4,7 +4,28 @@
 **Scope:** All first-party JavaScript in the repository (~147k lines across 472 files), excluding `node_modules/`, `public/vendor/`, saves/logs/exports, and this audit's scratch dir (`tmp/audit/`).
 **Method:** automated copy-paste detection (jscpd, min 10 lines / 60 tokens), a require/import-graph reachability scan, and manual verification of every finding by reading the code. Existing documentation was not consulted.
 
-## Executive summary
+## Resolution status (2026-07-31, same day)
+
+The findings below were acted on. Results:
+
+- **jscpd re-scan after remediation: 352 clones / 5,811 duplicated lines (4.01%)**, down from 485 clones / 9,178 lines (6.23%) — and this scan does not include the `.njk` template inline scripts, where ~1,200 more duplicated lines were removed.
+- **Full test suite: 1,440 pass / 24 fail — byte-identical to the pre-refactor baseline** (the 24 failures pre-date this work; see `tmp/audit/baseline_failures.txt`).
+- Net diff: 66 tracked files, +1,708 / −7,126 lines, plus 11 new shared modules (`bridge_client_utils.js`, `status_effect_list.js`, `extension_field_access.js`, `location_region_utils.js`, `image_client_utils.js`, `sanitizeString.js`, `utils/formula-utils.js`, `public/js/dom-utils.js`, `public/js/faction-editor.js`, `public/js/vehicle-overlay.js`, `tests/helpers/`).
+
+What was done, per section:
+
+1. **Bridge clients** — shared helper layer extracted to `bridge_client_utils.js` (label-parameterized); dispatch triplication in `LLMClient.js` and `api.js` collapsed to registry lookups; `LLMClient.#formatMessageContent` folded in. Kept per-backend: `parseBridgeMessage` contract forks, `buildDeveloperInstructions`, all transport layers. (−1,819/+152 lines.)
+2. **Entity classes** — status-effect suite extracted to `status_effect_list.js` (all 4 classes; Region keeps its own plain-object `#normalizeStatusEffects` but shares add/remove/tick/clear via hook factories); extension-field machinery extracted to `extension_field_access.js`; Location↔Region misc to `location_region_utils.js`. Static-registry boilerplate deliberately **not** unified (indexing semantics genuinely differ per class). (−930/+137.)
+3. **Frontend** — `chat.js`: `appendChatBubble`/`appendMessageSections`/`currentChatTimestampString`, one parameterized drag binder, shared circumstance/collapsible-details builders, `formatSignedNumber` hoisted (−270 lines). Templates: faction editor extracted to `public/js/faction-editor.js` (shared by `index.njk` and `settings.njk`), touch-drag pair unified into `wireTouchDragGestureCard`, sort popovers and portrait-card builders unified (−978/+284 across views). New `public/js/dom-utils.js` (`escapeHtml`, `formatHealthDisplayValue`, `loadClientId`) and `public/js/vehicle-overlay.js` (shared by `map.js`/`world-map.js`); `turn-state-diff-drawer.js`, `map.js` menus, `image-manager.js`, `formula-evaluator.js` deduped.
+4. **Utilities** — `utils/formula-utils.js` (shared `normalizeFormula` + validate loops), `Utils.js` lazy-getter factory + shared duration decomposition, `Globals.js` getter factory, `sanitizeString.js` shared by the three sanitizer sites, scene-summary interval walk moved into `scene_summary_index.js`.
+5. **Dead code** — `NameCache.js` deleted; `nunjucks_dice.js` demo block and its unused `nunjucks` require removed. The unreferenced config variants were **left in place** (user data, not code).
+6. **Tests** — `tests/helpers/` created (`needBarFixtures.js`, `baseContextFixtures.js`, `locationFixtures.js`); 26 test files converted, +346/−1,867 lines. Remaining: the large *intra-file* clones in `tests/chat_tool_calls.test.js` (~1,300 dup lines) and `tests/events.xml_event_parser.test.js` (~1,050) were not refactored (fixture builders local to those files; a future pass can extract per-file factories).
+
+Deliberately preserved divergences (do not "re-dedupe" these): Region's plain-object status effects; per-backend `parseBridgeMessage` contracts; `chat.js` `getCurrencyLabel` inline fallback (lacks the `-es` rule by design); `quest_disposition_reward_delta.js`'s local `roundAwayFromZero`; `scene_summary` vs `scene_summaries` handling of `startIndex <= 0` (parameterized via `requirePositiveStart`).
+
+---
+
+## Original findings
 
 - jscpd found **502 clone instances covering ~9,900 lines (~6.2% of the codebase)**. Roughly **65% of that is test↔test duplication** (shared fixture/setup blocks); ~3,500 clone-lines involve production source.
 - The single largest production offender is the **bridge-client trio** (`ClineBridgeClient.js`, `CodexBridgeClient.js`, `KimiBridgeClient.js`): ~550–620 lines of identical helper code copied into each file, plus triplicated dispatch code in `LLMClient.js` and `api.js`. **~1,250–1,350 lines eliminable.**

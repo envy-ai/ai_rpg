@@ -150,12 +150,7 @@
 
       if (baseResult.imageId && !baseResult.jobId) {
         // We have an immediate image reference; prefer metadata lookup to get canonical URL
-        const metadata = await this._fetchImageMetadata(baseResult.imageId).catch(() => null);
-        if (metadata?.metadata?.images?.[0]?.url) {
-          baseResult.imageUrl = metadata.metadata.images[0].url;
-        }
-        this._dispatch('image:updated', baseResult);
-        return baseResult;
+        return this._resolveImmediateImageResult(baseResult);
       }
 
       if (baseResult.jobId) {
@@ -172,6 +167,15 @@
         });
       }
 
+      return baseResult;
+    }
+
+    async _resolveImmediateImageResult(baseResult) {
+      const metadata = await this._fetchImageMetadata(baseResult.imageId).catch(() => null);
+      if (metadata?.metadata?.images?.[0]?.url) {
+        baseResult.imageUrl = metadata.metadata.images[0].url;
+      }
+      this._dispatch('image:updated', baseResult);
       return baseResult;
     }
 
@@ -221,12 +225,7 @@
       };
 
       if (baseResult.imageId && !baseResult.jobId) {
-        const metadata = await this._fetchImageMetadata(baseResult.imageId).catch(() => null);
-        if (metadata?.metadata?.images?.[0]?.url) {
-          baseResult.imageUrl = metadata.metadata.images[0].url;
-        }
-        this._dispatch('image:updated', baseResult);
-        return baseResult;
+        return this._resolveImmediateImageResult(baseResult);
       }
 
       if (baseResult.jobId) {

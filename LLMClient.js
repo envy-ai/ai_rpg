@@ -11,7 +11,14 @@ const readline = require('readline');
 const CodexBridgeClient = require('./CodexBridgeClient.js');
 const ClineBridgeClient = require('./ClineBridgeClient.js');
 const KimiBridgeClient = require('./KimiBridgeClient.js');
+const { formatMessageContent: formatBridgeMessageContent } = require('./bridge_client_utils.js');
 let sharpModule = null;
+
+const ERROR_LOG_IMAGE_CONTENT_FORMAT_OPTIONS = Object.freeze({
+    trimPartType: false,
+    dataUrlImagePlaceholder: '[image_url: data url omitted]',
+    missingImageUrlPlaceholder: '[image_url]'
+});
 
 const PROMPT_PROGRESS_BROADCAST_INTERVAL_MS = 500;
 const PROMPT_PROGRESS_COMPLETION_HOLD_MS = 250;
@@ -1325,13 +1332,8 @@ class LLMClient {
         } catch (error) {
             return [error.message];
         }
-        if (LLMClient.#isClineBridgeBackend(backend)) {
-            return ClineBridgeClient.getConfigurationErrors(config);
-        }
-        if (LLMClient.#isKimiBridgeBackend(backend)) {
-            return KimiBridgeClient.getConfigurationErrors(config);
-        }
-        return CodexBridgeClient.getConfigurationErrors(config);
+        const bridgeClient = LLMClient.#resolveCliBridgeClient(backend);
+        return (bridgeClient || CodexBridgeClient).getConfigurationErrors(config);
     }
 
     static isConfigured(aiConfigOverride = null) {
@@ -1345,14 +1347,9 @@ class LLMClient {
     static getMaxConcurrent(aiConfigOverride = null) {
         const config = aiConfigOverride || LLMClient.ensureAiConfig();
         const backend = LLMClient.resolveBackend(config);
-        if (LLMClient.#isCodexBridgeBackend(backend)) {
-            return CodexBridgeClient.getMaxConcurrent(config);
-        }
-        if (LLMClient.#isClineBridgeBackend(backend)) {
-            return ClineBridgeClient.getMaxConcurrent(config);
-        }
-        if (LLMClient.#isKimiBridgeBackend(backend)) {
-            return KimiBridgeClient.getMaxConcurrent(config);
+        const bridgeClient = LLMClient.#resolveCliBridgeClient(backend);
+        if (bridgeClient) {
+            return bridgeClient.getMaxConcurrent(config);
         }
         const raw = Number(config?.max_concurrent_requests);
         if (Number.isInteger(raw) && raw > 0) {
@@ -1976,65 +1973,7 @@ class LLMClient {
     }
 
     static #formatMessageContent(content) {
-        if (content === null || content === undefined) {
-            return '';
-        }
-        if (typeof content === 'string') {
-            return content;
-        }
-        if (Array.isArray(content)) {
-            const parts = [];
-            content.forEach(part => {
-                if (part === null || part === undefined) {
-                    return;
-                }
-                if (typeof part === 'string') {
-                    if (part.trim()) {
-                        parts.push(part);
-                    }
-                    return;
-                }
-                if (typeof part === 'object') {
-                    const type = part.type || '';
-                    if (type === 'text' && typeof part.text === 'string') {
-                        if (part.text.trim()) {
-                            parts.push(part.text);
-                        }
-                        return;
-                    }
-                    if (type === 'image_url') {
-                        const url = part.image_url?.url || '';
-                        if (url) {
-                            if (url.startsWith('data:')) {
-                                parts.push('[image_url: data url omitted]');
-                            } else {
-                                parts.push(`[image_url: ${url}]`);
-                            }
-                        } else {
-                            parts.push('[image_url]');
-                        }
-                        return;
-                    }
-                    if (typeof part.text === 'string' && part.text.trim()) {
-                        parts.push(part.text);
-                        return;
-                    }
-                }
-                const fallback = String(part);
-                if (fallback && fallback !== '[object Object]') {
-                    parts.push(fallback);
-                }
-            });
-            return parts.join('\n').trim();
-        }
-        if (typeof content === 'object') {
-            if (typeof content.text === 'string') {
-                return content.text;
-            }
-            const fallback = JSON.stringify(content, null, 2);
-            return typeof fallback === 'string' ? fallback : String(content);
-        }
-        return String(content);
+        return formatBridgeMessageContent(content, ERROR_LOG_IMAGE_CONTENT_FORMAT_OPTIONS);
     }
 
     static formatMessagesForErrorLog(messages = []) {
@@ -4617,72 +4556,9 @@ class LLMClient {
                             LLMClient.#abortControllers.set(streamTrackerId, controller);
                         }
 
-                        if (LLMClient.#isCodexBridgeBackend(resolvedBackend)) {
-                            response = await CodexBridgeClient.chatCompletion({
-                                messages: requestMessages,
-                                model: resolvedModel,
-                                timeoutMs: resolvedTimeout,
-                                metadataLabel,
-                                additionalPayload: payload,
-                                aiConfig: attemptRuntime.aiConfig,
-                                signal: controller.signal,
-                                onStdoutEvent: (event) => {
-                                    if (!streamTrackerId) {
-                                        return;
-                                    }
-                                    const previewUpdate = LLMClient.#extractCodexPreviewUpdate(event);
-                                    if (previewUpdate) {
-                                        LLMClient.#applyCodexPreviewUpdate(
-                                            streamTrackerId,
-                                            previewUpdate,
-                                            streamContinueTimeoutMs
-                                        );
-                                        return;
-                                    }
-                                    const statusLine = LLMClient.#formatCodexProgressEvent(event);
-                                    if (statusLine) {
-                                        LLMClient.#trackStreamStatus(
-                                            streamTrackerId,
-                                            statusLine,
-                                            streamContinueTimeoutMs
-                                        );
-                                    }
-                                }
-                            });
-                        } else if (LLMClient.#isClineBridgeBackend(resolvedBackend)) {
-                            response = await ClineBridgeClient.chatCompletion({
-                                messages: requestMessages,
-                                model: resolvedModel,
-                                timeoutMs: resolvedTimeout,
-                                metadataLabel,
-                                additionalPayload: payload,
-                                aiConfig: attemptRuntime.aiConfig,
-                                signal: controller.signal,
-                                onStdoutEvent: (event) => {
-                                    if (!streamTrackerId) {
-                                        return;
-                                    }
-                                    const previewUpdate = LLMClient.#extractCodexPreviewUpdate(event);
-                                    if (previewUpdate) {
-                                        LLMClient.#applyCodexPreviewUpdate(
-                                            streamTrackerId,
-                                            previewUpdate,
-                                            streamContinueTimeoutMs
-                                        );
-                                        return;
-                                    }
-                                    const statusLine = LLMClient.#formatCodexProgressEvent(event);
-                                    if (statusLine) {
-                                        LLMClient.#trackStreamStatus(
-                                            streamTrackerId,
-                                            statusLine,
-                                            streamContinueTimeoutMs
-                                        );
-                                    }
-                                }
-                            });
-                        } else if (LLMClient.#isKimiBridgeBackend(resolvedBackend)) {
-                            response = await KimiBridgeClient.chatCompletion({
+                        const cliBridgeClient = LLMClient.#resolveCliBridgeClient(resolvedBackend);
+                        if (cliBridgeClient) {
+                            response = await cliBridgeClient.chatCompletion({
                                 messages: requestMessages,
                                 model: resolvedModel,
                                 timeoutMs: resolvedTimeout,

@@ -1,71 +1,26 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const fs = require('fs');
-const os = require('os');
-const path = require('path');
 
 const Player = require('../Player.js');
 const Thing = require('../Thing.js');
 const Globals = require('../Globals.js');
+const {
+    withTempPlayerEnvironment: withTempPlayerEnvironmentBase
+} = require('./helpers/needBarFixtures.js');
 
-function createTempPlayerDefs() {
-    const tempBaseDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ai-rpg-barter-state-'));
-    const writeFile = (relativePath, content) => {
-        const targetPath = path.join(tempBaseDir, relativePath);
-        fs.mkdirSync(path.dirname(targetPath), { recursive: true });
-        fs.writeFileSync(targetPath, content, 'utf8');
-    };
-
-    writeFile('defs/attributes.yaml', `
-attributes:
-  strength:
-    label: Strength
-    default: 10
-`);
-    writeFile('defs/gear_slots.yaml', 'gear_slots: {}\n');
-    writeFile('defs/dispositions.yaml', 'dispositions: {}\nrange: {}\n');
-    writeFile('defs/need_bars.yaml', 'need_bars: {}\n');
-
-    return tempBaseDir;
+function withTempPlayerEnvironment(run) {
+    return withTempPlayerEnvironmentBase({
+        prefix: 'ai-rpg-barter-state-',
+        attributes: [
+            { id: 'strength', label: 'Strength', default: 10 }
+        ],
+        clearThings: true
+    }, run);
 }
 
 function resetRuntimeState() {
     Player.clearRuntimeRegistries();
     Thing.clear();
-}
-
-function withTempPlayerEnvironment(run) {
-    const tempBaseDir = createTempPlayerDefs();
-    const previousBaseDir = Globals.baseDir;
-    const previousConfig = Globals.config;
-
-    resetRuntimeState();
-    Globals.baseDir = tempBaseDir;
-    Globals.config = {
-        ...(previousConfig && typeof previousConfig === 'object' ? previousConfig : {}),
-        baseHealthPerLevel: Number.isFinite(previousConfig?.baseHealthPerLevel)
-            ? previousConfig.baseHealthPerLevel
-            : 10,
-        formulas: {
-            character_creation: {
-                attribute_pool_formula: '0',
-                skill_pool_formula: '0',
-                max_attribute: '18',
-                max_skill: '10'
-            }
-        }
-    };
-    Player.reloadDefinitionCaches({ refreshInstances: false });
-
-    try {
-        run();
-    } finally {
-        resetRuntimeState();
-        Globals.baseDir = previousBaseDir;
-        Globals.config = previousConfig;
-        Player.reloadDefinitionCaches({ refreshInstances: false });
-        fs.rmSync(tempBaseDir, { recursive: true, force: true });
-    }
 }
 
 test('NPC barter inventory persists separately from normal inventory', () => {

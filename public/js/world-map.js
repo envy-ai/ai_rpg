@@ -6,10 +6,11 @@
   let convexHullPadding = 100;
   let convexHullCornerRadius = 100;
   const VEHICLE_OVERLAY_NODE_PREFIX = 'vehicle-overlay::';
-
-  function getVehicleOverlayNodeId(targetNodeId) {
-    return `${VEHICLE_OVERLAY_NODE_PREFIX}${targetNodeId}`;
-  }
+  const {
+    getVehicleOverlayNodeId,
+    syncVehicleOverlayPositions,
+    attachVehicleOverlayPositionFollower
+  } = window.VehicleOverlay.createHelpers(VEHICLE_OVERLAY_NODE_PREFIX, { respectTargetVisibility: true });
 
   function destroyWorldCyInstance() {
     if (hullOverlayInstance) {
@@ -576,30 +577,6 @@
     return overlays;
   }
 
-  function syncVehicleOverlayPositions(cy) {
-    if (!cy) {
-      return;
-    }
-    cy.nodes('.vehicle-overlay').forEach(overlayNode => {
-      const targetId = overlayNode.data('targetId');
-      if (!targetId) {
-        return;
-      }
-      const targetNode = cy.getElementById(targetId);
-      if (!targetNode || targetNode.empty()) {
-        return;
-      }
-      const targetHidden = targetNode.style('display') === 'none';
-      overlayNode.style('display', targetHidden ? 'none' : 'element');
-      if (targetHidden) {
-        return;
-      }
-      overlayNode.unlock();
-      overlayNode.position(targetNode.position());
-      overlayNode.lock();
-    });
-  }
-
   function positionRegionLabels(cy, regions = []) {
     if (!cy) return;
     const locationNodes = cy.nodes('.location-node');
@@ -809,19 +786,7 @@
     cy.nodes('.vehicle-overlay').lock();
     syncVehicleOverlayPositions(cy);
 
-    cy.on('position', 'node.location-node, node.region-label', event => {
-      const node = event.target;
-      if (!node) {
-        return;
-      }
-      const overlayNode = cy.getElementById(getVehicleOverlayNodeId(node.id()));
-      if (!overlayNode || overlayNode.empty()) {
-        return;
-      }
-      overlayNode.unlock();
-      overlayNode.position(node.position());
-      overlayNode.lock();
-    });
+    attachVehicleOverlayPositionFollower(cy, { selector: 'node.location-node, node.region-label' });
 
     cy.nodes('node.location-node').forEach(node => {
       node.toggleClass('visited', Boolean(node.data('visited')));

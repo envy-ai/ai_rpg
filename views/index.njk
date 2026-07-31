@@ -3091,7 +3091,9 @@
     <script src="/js/cytoscape-convex-hull.js"></script>
     <script src="/js/lightbox.js"></script>
     <script src="/js/image-manager.js"></script>
+    <script src="/js/dom-utils.js"></script>
     <script src="/js/currency-utils.js"></script>
+    <script src="/js/faction-editor.js"></script>
     <script src="/js/formula-evaluator.js"></script>
     <script src="/js/attribute-skill-allocator.js"></script>
     <script src="/vendor/nunjucks.js"></script>
@@ -3099,6 +3101,7 @@
     <script src="/vendor/json-viewer.js"></script>
     <script src="/js/turn-state-diff-drawer.js"></script>
     <script src="/js/chat.js"></script>
+    <script defer src="/js/vehicle-overlay.js"></script>
     <script defer src="/js/map.js"></script>
     <script defer src="/js/world-map.js"></script>
     <script defer src="/js/relationship-graph.js"></script>
@@ -3244,17 +3247,7 @@
             }
         }
 
-        const escapeHtml = (value) => {
-            if (value === null || value === undefined) {
-                return '';
-            }
-            return String(value)
-                .replace(/&/g, '&amp;')
-                .replace(/</g, '&lt;')
-                .replace(/>/g, '&gt;')
-                .replace(/"/g, '&quot;')
-                .replace(/'/g, '&#39;');
-        };
+        const escapeHtml = window.DomUtils.escapeHtml;
 
         const LONG_NAME_CHARACTER_LIMIT = 40;
         const LONG_NAME_WORD_CHARACTER_LIMIT = 12;
@@ -4412,6 +4405,63 @@
             return stack;
         }
 
+        function buildEntityPortraitContent(entity, { altText = 'NPC portrait' } = {}) {
+            const portrait = document.createElement('div');
+            portrait.className = 'entity-icon location-entity-icon';
+            const portraitImage = document.createElement('div');
+            portraitImage.className = 'entity-image location-entity-image';
+            portrait.appendChild(portraitImage);
+
+            const levelBadge = createCharacterLevelBadge();
+            const levelStack = ensureCharacterLevelStack(portrait);
+            if (levelStack) {
+                levelStack.appendChild(levelBadge);
+            } else {
+                portrait.appendChild(levelBadge);
+            }
+
+            const { bar: npcHealthBar, fill: npcHealthFill } = createHealthBar('npc-health-bar');
+            npcHealthFill.classList.add('npc-health-bar-fill');
+            portrait.appendChild(npcHealthBar);
+
+            const npcNeedBars = document.createElement('div');
+            npcNeedBars.className = 'npc-need-bars need-bars';
+            portrait.appendChild(npcNeedBars);
+
+            renderEntityImage({
+                element: portraitImage,
+                entityType: entity.isNPC ? 'npc' : 'player',
+                entityId: entity.id || null,
+                imageId: entity.imageId || null,
+                altText: entity.name || altText,
+                placeholderIcon: '🎭',
+                placeholderClass: 'entity-icon-placeholder location-entity-placeholder'
+            });
+
+            if (npcHealthBar) {
+                if (entity?.name) {
+                    npcHealthBar.setAttribute('aria-label', `${entity.name} health`);
+                } else {
+                    npcHealthBar.removeAttribute('aria-label');
+                }
+            }
+
+            updateCharacterLevelBadge(levelBadge, entity?.level);
+            updateHealthBar(npcHealthBar, npcHealthFill, entity?.health, entity?.maxHealth);
+
+            renderNeedBars(
+                npcNeedBars,
+                Array.isArray(entity?.needBars) ? entity.needBars : [],
+                {
+                    includePlayerOnly: false,
+                    variant: 'npc',
+                    compact: true
+                }
+            );
+
+            return { portrait, portraitImage, levelBadge, npcHealthBar, npcHealthFill, npcNeedBars };
+        }
+
         function updateCharacterLevelBadge(badge, levelValue) {
             if (!(badge instanceof HTMLElement)) {
                 return;
@@ -4969,8 +5019,7 @@
 
         function resolveCurrencyLabel({ capitalize = false } = {}) {
             const setting = window.currentSetting || {};
-            const raw = typeof setting.currencyNamePlural === 'string' ? setting.currencyNamePlural.trim() : '';
-            const label = raw || 'coins';
+            const label = window.CurrencyUtils.getCurrencyLabel(2, { plural: setting.currencyNamePlural });
             if (!capitalize) {
                 return label;
             }
@@ -6820,58 +6869,7 @@
                     card.dataset.npcId = member.id;
                 }
 
-                const portrait = document.createElement('div');
-                portrait.className = 'entity-icon location-entity-icon';
-                const portraitImage = document.createElement('div');
-                portraitImage.className = 'entity-image location-entity-image';
-                portrait.appendChild(portraitImage);
-
-                const levelBadge = createCharacterLevelBadge();
-                const levelStack = ensureCharacterLevelStack(portrait);
-                if (levelStack) {
-                    levelStack.appendChild(levelBadge);
-                } else {
-                    portrait.appendChild(levelBadge);
-                }
-
-                const { bar: npcHealthBar, fill: npcHealthFill } = createHealthBar('npc-health-bar');
-                npcHealthFill.classList.add('npc-health-bar-fill');
-                portrait.appendChild(npcHealthBar);
-
-                const npcNeedBars = document.createElement('div');
-                npcNeedBars.className = 'npc-need-bars need-bars';
-                portrait.appendChild(npcNeedBars);
-
-                renderEntityImage({
-                    element: portraitImage,
-                    entityType: member.isNPC ? 'npc' : 'player',
-                    entityId: member.id || null,
-                    imageId: member.imageId || null,
-                    altText: member.name || 'Party member portrait',
-                    placeholderIcon: '🎭',
-                    placeholderClass: 'entity-icon-placeholder location-entity-placeholder'
-                });
-
-                if (npcHealthBar) {
-                    if (member?.name) {
-                        npcHealthBar.setAttribute('aria-label', `${member.name} health`);
-                    } else {
-                        npcHealthBar.removeAttribute('aria-label');
-                    }
-                }
-
-                updateCharacterLevelBadge(levelBadge, member?.level);
-                updateHealthBar(npcHealthBar, npcHealthFill, member?.health, member?.maxHealth);
-
-                renderNeedBars(
-                    npcNeedBars,
-                    Array.isArray(member?.needBars) ? member.needBars : [],
-                    {
-                        includePlayerOnly: false,
-                        variant: 'npc',
-                        compact: true
-                    }
-                );
+                const { portrait } = buildEntityPortraitContent(member, { altText: 'Party member portrait' });
 
                 applyNpcDeathStyling(card, portrait, member);
                 if (typeof registerNpcTradeButton === 'function') {
@@ -13921,33 +13919,34 @@
         }
 
         function populateThingCauseStatusEffect(effectOnTarget = null, effectOnEquipper = null) {
-            if (thingCauseEffectNameInput) {
-                thingCauseEffectNameInput.value = effectOnTarget?.name || '';
-            }
-            if (thingCauseEffectDescriptionInput) {
-                thingCauseEffectDescriptionInput.value = effectOnTarget?.description || effectOnTarget?.text || '';
-            }
-            if (thingCauseEffectDurationInput) {
-                if (effectOnTarget && effectOnTarget.duration !== undefined && effectOnTarget.duration !== null) {
-                    thingCauseEffectDurationInput.value = String(effectOnTarget.duration);
-                } else {
-                    thingCauseEffectDurationInput.value = '';
+            const fillStatusEffectFields = (effect, nameInput, descriptionInput, durationInput) => {
+                if (nameInput) {
+                    nameInput.value = effect?.name || '';
                 }
-            }
+                if (descriptionInput) {
+                    descriptionInput.value = effect?.description || effect?.text || '';
+                }
+                if (durationInput) {
+                    if (effect && effect.duration !== undefined && effect.duration !== null) {
+                        durationInput.value = String(effect.duration);
+                    } else {
+                        durationInput.value = '';
+                    }
+                }
+            };
 
-            if (thingCauseEffectEquipperNameInput) {
-                thingCauseEffectEquipperNameInput.value = effectOnEquipper?.name || '';
-            }
-            if (thingCauseEffectEquipperDescriptionInput) {
-                thingCauseEffectEquipperDescriptionInput.value = effectOnEquipper?.description || effectOnEquipper?.text || '';
-            }
-            if (thingCauseEffectEquipperDurationInput) {
-                if (effectOnEquipper && effectOnEquipper.duration !== undefined && effectOnEquipper.duration !== null) {
-                    thingCauseEffectEquipperDurationInput.value = String(effectOnEquipper.duration);
-                } else {
-                    thingCauseEffectEquipperDurationInput.value = '';
-                }
-            }
+            fillStatusEffectFields(
+                effectOnTarget,
+                thingCauseEffectNameInput,
+                thingCauseEffectDescriptionInput,
+                thingCauseEffectDurationInput
+            );
+            fillStatusEffectFields(
+                effectOnEquipper,
+                thingCauseEffectEquipperNameInput,
+                thingCauseEffectEquipperDescriptionInput,
+                thingCauseEffectEquipperDurationInput
+            );
 
             if (thingCauseEffectTargetModifiers) {
                 thingModifierTemplates.renderList(thingCauseEffectTargetModifiers, [
@@ -14614,19 +14613,22 @@
             }
         }
 
-        function wireModalInventoryTouchDrag(card, {
-            thing = null,
-            modal = null,
-            context = '',
-            npcId = null,
-            onTouchDragStart = null,
-            onTouchDragMove = null,
-            onTouchDrop = null
-        } = {}) {
-            if (!(card instanceof HTMLElement) || !thing?.id || !(modal instanceof HTMLElement) || card.dataset.modalTouchDragWired === 'true') {
+        function wireTouchDragGestureCard(card, {
+            wiredDatasetKey,
+            isEligible,
+            getState,
+            setState,
+            isOtherDragActive = () => false,
+            buildStateFields,
+            beginDrag,
+            onDragMove,
+            cancelDrag,
+            finishDrop
+        }) {
+            if (!(card instanceof HTMLElement) || !isEligible() || card.dataset[wiredDatasetKey] === 'true') {
                 return;
             }
-            card.dataset.modalTouchDragWired = 'true';
+            card.dataset[wiredDatasetKey] = 'true';
 
             const createTouchDragState = ({
                 inputType,
@@ -14636,12 +14638,8 @@
                 startY,
                 pointerCaptureElement = null
             }) => {
-                modalInventoryTouchDragState = {
-                    card,
-                    thing,
-                    modal,
-                    context,
-                    npcId,
+                setState({
+                    ...buildStateFields(),
                     inputType,
                     identifier,
                     pointerId,
@@ -14651,11 +14649,8 @@
                     currentX: startX,
                     currentY: startY,
                     dragStarted: false,
-                    ghost: null,
-                    onTouchDragStart,
-                    onTouchDragMove,
-                    onTouchDrop
-                };
+                    ghost: null
+                });
             };
 
             const startPointerTouchDrag = (event) => {
@@ -14663,7 +14658,8 @@
                     || !isTouchLikePointerEvent(event)
                     || event.isPrimary === false
                     || event.button !== 0
-                    || modalInventoryTouchDragState) {
+                    || getState()
+                    || isOtherDragActive()) {
                     return;
                 }
                 if (isTouchDragInteractiveTarget(event.target)) {
@@ -14686,7 +14682,7 @@
             };
 
             const updatePointerTouchDrag = (event) => {
-                const state = modalInventoryTouchDragState;
+                const state = getState();
                 if (!state || state.card !== card || state.inputType !== 'pointer' || state.pointerId !== event.pointerId) {
                     return;
                 }
@@ -14695,7 +14691,7 @@
                 state.currentX = event.clientX;
                 state.currentY = event.clientY;
                 if (!state.dragStarted && getTouchDragDistance(dx, dy) > touchDragSlopDistance) {
-                    beginModalInventoryTouchDrag(state);
+                    beginDrag(state);
                 }
                 if (!state.dragStarted) {
                     return;
@@ -14703,13 +14699,11 @@
 
                 event.preventDefault();
                 positionModalInventoryTouchDragGhost(state);
-                if (typeof state.onTouchDragMove === 'function') {
-                    state.onTouchDragMove(state);
-                }
+                onDragMove(state);
             };
 
             const finishPointerTouchDrag = (event) => {
-                const state = modalInventoryTouchDragState;
+                const state = getState();
                 if (!state || state.card !== card || state.inputType !== 'pointer' || state.pointerId !== event.pointerId) {
                     return;
                 }
@@ -14717,24 +14711,21 @@
                 state.currentY = event.clientY;
 
                 if (!state.dragStarted) {
-                    cancelModalInventoryTouchDrag();
+                    cancelDrag();
                     return;
                 }
 
                 event.preventDefault();
                 event.stopPropagation();
                 const dropState = { ...state };
-                cancelModalInventoryTouchDrag({ suppressClick: true });
-                finishModalInventoryTouchDrag(dropState).catch(error => {
-                    console.warn('Failed to complete pointer touch drag:', error);
-                    alert(`Failed to move item: ${error?.message || error}`);
-                });
+                cancelDrag({ suppressClick: true });
+                finishDrop(dropState, 'pointer');
             };
 
             const cancelPointerTouchDrag = (event) => {
-                const state = modalInventoryTouchDragState;
+                const state = getState();
                 if (state?.card === card && state.inputType === 'pointer' && state.pointerId === event.pointerId) {
-                    cancelModalInventoryTouchDrag({ suppressClick: state.dragStarted });
+                    cancelDrag({ suppressClick: state.dragStarted });
                 }
             };
 
@@ -14745,7 +14736,7 @@
             card.addEventListener('lostpointercapture', cancelPointerTouchDrag);
 
             card.addEventListener('touchstart', (event) => {
-                if (!isTouchOrCoarsePointerContext() || event.touches.length !== 1 || modalInventoryTouchDragState) {
+                if (!isTouchOrCoarsePointerContext() || event.touches.length !== 1 || getState() || isOtherDragActive()) {
                     return;
                 }
                 if (isTouchDragInteractiveTarget(event.target)) {
@@ -14761,7 +14752,7 @@
             }, { passive: true });
 
             card.addEventListener('touchmove', (event) => {
-                const state = modalInventoryTouchDragState;
+                const state = getState();
                 if (!state || state.card !== card || state.inputType !== 'touch') {
                     return;
                 }
@@ -14775,7 +14766,7 @@
                 state.currentX = touch.clientX;
                 state.currentY = touch.clientY;
                 if (!state.dragStarted && getTouchDragDistance(dx, dy) > touchDragSlopDistance) {
-                    beginModalInventoryTouchDrag(state);
+                    beginDrag(state);
                 }
                 if (!state.dragStarted) {
                     return;
@@ -14783,13 +14774,11 @@
 
                 event.preventDefault();
                 positionModalInventoryTouchDragGhost(state);
-                if (typeof state.onTouchDragMove === 'function') {
-                    state.onTouchDragMove(state);
-                }
+                onDragMove(state);
             }, { passive: false });
 
             card.addEventListener('touchend', (event) => {
-                const state = modalInventoryTouchDragState;
+                const state = getState();
                 if (!state || state.card !== card || state.inputType !== 'touch') {
                     return;
                 }
@@ -14800,24 +14789,21 @@
                 }
 
                 if (!state.dragStarted) {
-                    cancelModalInventoryTouchDrag();
+                    cancelDrag();
                     return;
                 }
 
                 event.preventDefault();
                 event.stopPropagation();
                 const dropState = { ...state };
-                cancelModalInventoryTouchDrag({ suppressClick: true });
-                finishModalInventoryTouchDrag(dropState).catch(error => {
-                    console.warn('Failed to complete touch drag:', error);
-                    alert(`Failed to move item: ${error?.message || error}`);
-                });
+                cancelDrag({ suppressClick: true });
+                finishDrop(dropState, 'touch');
             }, { passive: false });
 
             card.addEventListener('touchcancel', () => {
-                const state = modalInventoryTouchDragState;
+                const state = getState();
                 if (state?.card === card && state.inputType === 'touch') {
-                    cancelModalInventoryTouchDrag({ suppressClick: state.dragStarted });
+                    cancelDrag({ suppressClick: state.dragStarted });
                 }
             }, { passive: true });
 
@@ -14828,6 +14814,46 @@
                     event.stopImmediatePropagation();
                 }
             }, true);
+        }
+
+        function wireModalInventoryTouchDrag(card, {
+            thing = null,
+            modal = null,
+            context = '',
+            npcId = null,
+            onTouchDragStart = null,
+            onTouchDragMove = null,
+            onTouchDrop = null
+        } = {}) {
+            wireTouchDragGestureCard(card, {
+                wiredDatasetKey: 'modalTouchDragWired',
+                isEligible: () => Boolean(thing?.id) && modal instanceof HTMLElement,
+                getState: () => modalInventoryTouchDragState,
+                setState: (nextState) => { modalInventoryTouchDragState = nextState; },
+                buildStateFields: () => ({
+                    card,
+                    thing,
+                    modal,
+                    context,
+                    npcId,
+                    onTouchDragStart,
+                    onTouchDragMove,
+                    onTouchDrop
+                }),
+                beginDrag: (state) => { beginModalInventoryTouchDrag(state); },
+                onDragMove: (state) => {
+                    if (typeof state.onTouchDragMove === 'function') {
+                        state.onTouchDragMove(state);
+                    }
+                },
+                cancelDrag: cancelModalInventoryTouchDrag,
+                finishDrop: (dropState, inputType) => {
+                    finishModalInventoryTouchDrag(dropState).catch(error => {
+                        console.warn(inputType === 'pointer' ? 'Failed to complete pointer touch drag:' : 'Failed to complete touch drag:', error);
+                        alert(`Failed to move item: ${error?.message || error}`);
+                    });
+                }
+            });
         }
 
         function beginModalInventoryDrag(event, {
@@ -17096,206 +17122,29 @@
         }
 
         function wireNpcPartyTouchDrag(card, npc, source) {
-            if (!(card instanceof HTMLElement) || !npc?.id || card.dataset.partyTouchDragAttached === 'true') {
-                return;
-            }
-            card.dataset.partyTouchDragAttached = 'true';
-
-            const npcId = String(npc.id);
-            const createTouchDragState = ({
-                inputType,
-                identifier = null,
-                pointerId = null,
-                startX,
-                startY,
-                pointerCaptureElement = null
-            }) => {
-                partyNpcTouchDragState = {
+            wireTouchDragGestureCard(card, {
+                wiredDatasetKey: 'partyTouchDragAttached',
+                isEligible: () => Boolean(npc?.id),
+                getState: () => partyNpcTouchDragState,
+                setState: (nextState) => { partyNpcTouchDragState = nextState; },
+                isOtherDragActive: () => Boolean(modalInventoryTouchDragState),
+                buildStateFields: () => ({
                     card,
                     npc,
-                    npcId,
+                    npcId: String(npc.id),
                     source: source || 'party',
-                    inputType,
-                    identifier,
-                    pointerId,
-                    pointerCaptureElement,
-                    startX,
-                    startY,
-                    currentX: startX,
-                    currentY: startY,
-                    dragStarted: false,
-                    draggedNpc: null,
-                    ghost: null
-                };
-            };
-
-            const startPointerTouchDrag = (event) => {
-                if (!isTouchOrCoarsePointerContext()
-                    || !isTouchLikePointerEvent(event)
-                    || event.isPrimary === false
-                    || event.button !== 0
-                    || partyNpcTouchDragState
-                    || modalInventoryTouchDragState) {
-                    return;
+                    draggedNpc: null
+                }),
+                beginDrag: (state) => { beginNpcPartyTouchDrag(state); },
+                onDragMove: updateNpcPartyTouchDropHighlight,
+                cancelDrag: cancelNpcPartyTouchDrag,
+                finishDrop: (dropState) => {
+                    finishNpcPartyTouchDrag(dropState).catch(error => {
+                        console.warn('Failed to complete NPC touch drag:', error);
+                        alert(`Failed to update party membership: ${error?.message || error}`);
+                    });
                 }
-                if (isTouchDragInteractiveTarget(event.target)) {
-                    return;
-                }
-                if (typeof card.setPointerCapture === 'function') {
-                    try {
-                        card.setPointerCapture(event.pointerId);
-                    } catch (_) {
-                        // Pointer capture can fail on detached nodes; movement still works through bubbling when possible.
-                    }
-                }
-                createTouchDragState({
-                    inputType: 'pointer',
-                    pointerId: event.pointerId,
-                    pointerCaptureElement: card,
-                    startX: event.clientX,
-                    startY: event.clientY
-                });
-            };
-
-            const updatePointerTouchDrag = (event) => {
-                const state = partyNpcTouchDragState;
-                if (!state || state.card !== card || state.inputType !== 'pointer' || state.pointerId !== event.pointerId) {
-                    return;
-                }
-                const dx = event.clientX - state.startX;
-                const dy = event.clientY - state.startY;
-                state.currentX = event.clientX;
-                state.currentY = event.clientY;
-                if (!state.dragStarted && getTouchDragDistance(dx, dy) > touchDragSlopDistance) {
-                    beginNpcPartyTouchDrag(state);
-                }
-                if (!state.dragStarted) {
-                    return;
-                }
-
-                event.preventDefault();
-                positionModalInventoryTouchDragGhost(state);
-                updateNpcPartyTouchDropHighlight(state);
-            };
-
-            const finishPointerTouchDrag = (event) => {
-                const state = partyNpcTouchDragState;
-                if (!state || state.card !== card || state.inputType !== 'pointer' || state.pointerId !== event.pointerId) {
-                    return;
-                }
-                state.currentX = event.clientX;
-                state.currentY = event.clientY;
-
-                if (!state.dragStarted) {
-                    cancelNpcPartyTouchDrag();
-                    return;
-                }
-
-                event.preventDefault();
-                event.stopPropagation();
-                const dropState = { ...state };
-                cancelNpcPartyTouchDrag({ suppressClick: true });
-                finishNpcPartyTouchDrag(dropState).catch(error => {
-                    console.warn('Failed to complete NPC touch drag:', error);
-                    alert(`Failed to update party membership: ${error?.message || error}`);
-                });
-            };
-
-            const cancelPointerTouchDrag = (event) => {
-                const state = partyNpcTouchDragState;
-                if (state?.card === card && state.inputType === 'pointer' && state.pointerId === event.pointerId) {
-                    cancelNpcPartyTouchDrag({ suppressClick: state.dragStarted });
-                }
-            };
-
-            card.addEventListener('pointerdown', startPointerTouchDrag);
-            card.addEventListener('pointermove', updatePointerTouchDrag);
-            card.addEventListener('pointerup', finishPointerTouchDrag);
-            card.addEventListener('pointercancel', cancelPointerTouchDrag);
-            card.addEventListener('lostpointercapture', cancelPointerTouchDrag);
-
-            card.addEventListener('touchstart', (event) => {
-                if (!isTouchOrCoarsePointerContext() || event.touches.length !== 1 || partyNpcTouchDragState || modalInventoryTouchDragState) {
-                    return;
-                }
-                if (isTouchDragInteractiveTarget(event.target)) {
-                    return;
-                }
-                const touch = event.changedTouches[0];
-                createTouchDragState({
-                    inputType: 'touch',
-                    identifier: touch.identifier,
-                    startX: touch.clientX,
-                    startY: touch.clientY
-                });
-            }, { passive: true });
-
-            card.addEventListener('touchmove', (event) => {
-                const state = partyNpcTouchDragState;
-                if (!state || state.card !== card || state.inputType !== 'touch') {
-                    return;
-                }
-                const touch = getTouchByIdentifier(event.changedTouches, state.identifier)
-                    || getTouchByIdentifier(event.touches, state.identifier);
-                if (!touch) {
-                    return;
-                }
-                const dx = touch.clientX - state.startX;
-                const dy = touch.clientY - state.startY;
-                state.currentX = touch.clientX;
-                state.currentY = touch.clientY;
-                if (!state.dragStarted && getTouchDragDistance(dx, dy) > touchDragSlopDistance) {
-                    beginNpcPartyTouchDrag(state);
-                }
-                if (!state.dragStarted) {
-                    return;
-                }
-
-                event.preventDefault();
-                positionModalInventoryTouchDragGhost(state);
-                updateNpcPartyTouchDropHighlight(state);
-            }, { passive: false });
-
-            card.addEventListener('touchend', (event) => {
-                const state = partyNpcTouchDragState;
-                if (!state || state.card !== card || state.inputType !== 'touch') {
-                    return;
-                }
-                const touch = getTouchByIdentifier(event.changedTouches, state.identifier);
-                if (touch) {
-                    state.currentX = touch.clientX;
-                    state.currentY = touch.clientY;
-                }
-
-                if (!state.dragStarted) {
-                    cancelNpcPartyTouchDrag();
-                    return;
-                }
-
-                event.preventDefault();
-                event.stopPropagation();
-                const dropState = { ...state };
-                cancelNpcPartyTouchDrag({ suppressClick: true });
-                finishNpcPartyTouchDrag(dropState).catch(error => {
-                    console.warn('Failed to complete NPC touch drag:', error);
-                    alert(`Failed to update party membership: ${error?.message || error}`);
-                });
-            }, { passive: false });
-
-            card.addEventListener('touchcancel', () => {
-                const state = partyNpcTouchDragState;
-                if (state?.card === card && state.inputType === 'touch') {
-                    cancelNpcPartyTouchDrag({ suppressClick: state.dragStarted });
-                }
-            }, { passive: true });
-
-            card.addEventListener('click', (event) => {
-                if (card.dataset.touchDragSuppressClick === 'true') {
-                    event.preventDefault();
-                    event.stopPropagation();
-                    event.stopImmediatePropagation();
-                }
-            }, true);
+            });
         }
 
         function registerNpcPartyDragSource(card, npc, source) {
@@ -22089,7 +21938,7 @@
             return state;
         }
 
-        function closeThingListSortPopover(state, { force = false } = {}) {
+        function closeThingListSortViewPopover(state, { force = false } = {}) {
             if (!state || !state.popoverShell || !state.toggleButton) {
                 return;
             }
@@ -22103,7 +21952,15 @@
             updateThingListPanelPopoverClass(state.panel);
         }
 
-        function updateThingListSortPopoverLayout(state) {
+        function closeThingListSortPopover(state, { force = false } = {}) {
+            closeThingListSortViewPopover(state, { force });
+        }
+
+        function closeThingListViewPopover(state, { force = false } = {}) {
+            closeThingListSortViewPopover(state, { force });
+        }
+
+        function updateThingListSortViewPopoverLayout(state) {
             if (!state || !state.panel || !state.toggleButton || !state.popoverShell) {
                 return;
             }
@@ -22125,6 +21982,56 @@
                 state.toggleButton.setAttribute('aria-expanded', 'false');
             }
             updateThingListPanelPopoverClass(state.panel);
+        }
+
+        function updateThingListSortPopoverLayout(state) {
+            updateThingListSortViewPopoverLayout(state);
+        }
+
+        function updateThingListViewPopoverLayout(state) {
+            updateThingListSortViewPopoverLayout(state);
+        }
+
+        function initializeThingListSortViewPopover({
+            kind,
+            states,
+            panel,
+            toggleButton,
+            popoverShell
+        } = {}) {
+            if (!panel || !toggleButton || !popoverShell) {
+                return null;
+            }
+
+            const state = {
+                kind,
+                panel,
+                toggleButton,
+                popoverShell,
+                isOpen: false,
+                observer: null
+            };
+
+            toggleButton.addEventListener('click', (event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                closeAllThingListPopovers({ except: state });
+                state.isOpen = !state.isOpen;
+                updateThingListSortViewPopoverLayout(state);
+            });
+
+            if (typeof ResizeObserver === 'function') {
+                state.observer = new ResizeObserver(() => {
+                    updateThingListSortViewPopoverLayout(state);
+                });
+                state.observer.observe(panel);
+            } else {
+                window.addEventListener('resize', () => updateThingListSortViewPopoverLayout(state));
+            }
+
+            states.push(state);
+            updateThingListSortViewPopoverLayout(state);
+            return state;
         }
 
         function initializeThingListSortPopover({
@@ -22132,77 +22039,13 @@
             toggleButton,
             popoverShell
         } = {}) {
-            if (!panel || !toggleButton || !popoverShell) {
-                return null;
-            }
-
-            const state = {
+            return initializeThingListSortViewPopover({
                 kind: 'sort',
+                states: thingListSortPopoverStates,
                 panel,
                 toggleButton,
-                popoverShell,
-                isOpen: false,
-                observer: null
-            };
-
-            toggleButton.addEventListener('click', (event) => {
-                event.preventDefault();
-                event.stopPropagation();
-                closeAllThingListPopovers({ except: state });
-                state.isOpen = !state.isOpen;
-                updateThingListSortPopoverLayout(state);
+                popoverShell
             });
-
-            if (typeof ResizeObserver === 'function') {
-                state.observer = new ResizeObserver(() => {
-                    updateThingListSortPopoverLayout(state);
-                });
-                state.observer.observe(panel);
-            } else {
-                window.addEventListener('resize', () => updateThingListSortPopoverLayout(state));
-            }
-
-            thingListSortPopoverStates.push(state);
-            updateThingListSortPopoverLayout(state);
-            return state;
-        }
-
-        function closeThingListViewPopover(state, { force = false } = {}) {
-            if (!state || !state.popoverShell || !state.toggleButton) {
-                return;
-            }
-            if (!force && !state.isOpen) {
-                return;
-            }
-            state.isOpen = false;
-            state.popoverShell.hidden = true;
-            state.popoverShell.classList.remove('is-open');
-            state.toggleButton.setAttribute('aria-expanded', 'false');
-            updateThingListPanelPopoverClass(state.panel);
-        }
-
-        function updateThingListViewPopoverLayout(state) {
-            if (!state || !state.panel || !state.toggleButton || !state.popoverShell) {
-                return;
-            }
-            const toggleTop = Number(state.toggleButton.offsetTop) || 0;
-            const toggleHeight = Number(state.toggleButton.offsetHeight) || 0;
-            const toggleLeft = Number(state.toggleButton.offsetLeft) || 0;
-            const toggleWidth = Number(state.toggleButton.offsetWidth) || 0;
-            const panelWidth = Number(state.panel.clientWidth) || 0;
-            const computedRight = Math.max(0, panelWidth - (toggleLeft + toggleWidth));
-            state.popoverShell.style.top = `${toggleTop + toggleHeight + 8}px`;
-            state.popoverShell.style.right = `${computedRight}px`;
-            if (state.isOpen) {
-                state.popoverShell.hidden = false;
-                state.popoverShell.classList.add('is-open');
-                state.toggleButton.setAttribute('aria-expanded', 'true');
-            } else {
-                state.popoverShell.hidden = true;
-                state.popoverShell.classList.remove('is-open');
-                state.toggleButton.setAttribute('aria-expanded', 'false');
-            }
-            updateThingListPanelPopoverClass(state.panel);
         }
 
         function initializeThingListViewPopover({
@@ -22210,39 +22053,13 @@
             toggleButton,
             popoverShell
         } = {}) {
-            if (!panel || !toggleButton || !popoverShell) {
-                return null;
-            }
-
-            const state = {
+            return initializeThingListSortViewPopover({
                 kind: 'view',
+                states: thingListViewPopoverStates,
                 panel,
                 toggleButton,
-                popoverShell,
-                isOpen: false,
-                observer: null
-            };
-
-            toggleButton.addEventListener('click', (event) => {
-                event.preventDefault();
-                event.stopPropagation();
-                closeAllThingListPopovers({ except: state });
-                state.isOpen = !state.isOpen;
-                updateThingListViewPopoverLayout(state);
+                popoverShell
             });
-
-            if (typeof ResizeObserver === 'function') {
-                state.observer = new ResizeObserver(() => {
-                    updateThingListViewPopoverLayout(state);
-                });
-                state.observer.observe(panel);
-            } else {
-                window.addEventListener('resize', () => updateThingListViewPopoverLayout(state));
-            }
-
-            thingListViewPopoverStates.push(state);
-            updateThingListViewPopoverLayout(state);
-            return state;
         }
 
         document.addEventListener('click', (event) => {
@@ -35986,6 +35803,36 @@
                 containerContents
             };
 
+            const buildLocationThingCard = (thing, { viewMode } = {}) => buildThingCollectionEntry(thing, {
+                viewMode,
+                contextMenuOptions: { context: 'location', locationId: safeLocation?.id || null },
+                tooltipOptions: {
+                    equipmentOwner: () => window.currentPlayerData || null
+                },
+                decorateCard: ({ card, thing }) => {
+                    if (!thing?.id) {
+                        return;
+                    }
+                    card.draggable = true;
+                    card.dataset.thingType = normalizeThingTypeForDrag(thing.thingType);
+                    card.addEventListener('dragstart', () => {
+                        draggedLocationThing = {
+                            id: thing.id,
+                            locationId: safeLocation?.id || null,
+                            thingType: normalizeThingTypeForDrag(thing.thingType),
+                            element: card,
+                            thing
+                        };
+                        card.classList.add('is-dragging');
+                    });
+                    card.addEventListener('dragend', () => {
+                        card.classList.remove('is-dragging');
+                    });
+                    registerThingModuleDropTarget(card, thing, { context: 'location', locationId: safeLocation?.id || null });
+                    registerThingContainerDropTarget(card, thing, { locationId: safeLocation?.id || null });
+                }
+            });
+
             renderThingCollectionPanel({
                 items: sceneryThings,
                 panelKey: 'locationScenery',
@@ -36006,35 +35853,7 @@
                 pluralLabel: 'objects',
                 enableEquipmentFilters: true,
                 keepGridVisibleWhenEmpty: true,
-                buildCard: (thing, { viewMode } = {}) => buildThingCollectionEntry(thing, {
-                    viewMode,
-                    contextMenuOptions: { context: 'location', locationId: safeLocation?.id || null },
-                    tooltipOptions: {
-                        equipmentOwner: () => window.currentPlayerData || null
-                    },
-                    decorateCard: ({ card, thing }) => {
-                        if (!thing?.id) {
-                            return;
-                        }
-                        card.draggable = true;
-                        card.dataset.thingType = normalizeThingTypeForDrag(thing.thingType);
-                        card.addEventListener('dragstart', () => {
-                            draggedLocationThing = {
-                                id: thing.id,
-                                locationId: safeLocation?.id || null,
-                                thingType: normalizeThingTypeForDrag(thing.thingType),
-                                element: card,
-                                thing
-                            };
-                            card.classList.add('is-dragging');
-                        });
-                        card.addEventListener('dragend', () => {
-                            card.classList.remove('is-dragging');
-                        });
-                        registerThingModuleDropTarget(card, thing, { context: 'location', locationId: safeLocation?.id || null });
-                        registerThingContainerDropTarget(card, thing, { locationId: safeLocation?.id || null });
-                    }
-                })
+                buildCard: buildLocationThingCard
             });
 
             renderThingCollectionPanel({
@@ -36057,35 +35876,7 @@
                 pluralLabel: 'items',
                 enableEquipmentFilters: true,
                 keepGridVisibleWhenEmpty: true,
-                buildCard: (thing, { viewMode } = {}) => buildThingCollectionEntry(thing, {
-                    viewMode,
-                    contextMenuOptions: { context: 'location', locationId: safeLocation?.id || null },
-                    tooltipOptions: {
-                        equipmentOwner: () => window.currentPlayerData || null
-                    },
-                    decorateCard: ({ card, thing }) => {
-                        if (!thing?.id) {
-                            return;
-                        }
-                        card.draggable = true;
-                        card.dataset.thingType = normalizeThingTypeForDrag(thing.thingType);
-                        card.addEventListener('dragstart', () => {
-                            draggedLocationThing = {
-                                id: thing.id,
-                                locationId: safeLocation?.id || null,
-                                thingType: normalizeThingTypeForDrag(thing.thingType),
-                                element: card,
-                                thing
-                            };
-                            card.classList.add('is-dragging');
-                        });
-                        card.addEventListener('dragend', () => {
-                            card.classList.remove('is-dragging');
-                        });
-                        registerThingModuleDropTarget(card, thing, { context: 'location', locationId: safeLocation?.id || null });
-                        registerThingContainerDropTarget(card, thing, { locationId: safeLocation?.id || null });
-                    }
-                })
+                buildCard: buildLocationThingCard
             });
         }
 
@@ -36925,59 +36716,7 @@
                                 card.className = 'entity-card entity-card--npc location-entity-card is-npc';
                                 card.classList.toggle('is-hidden-from-player', shouldStyleLocationNpcAsHidden(npc, locationNpcsShowHidden));
 
-                                const portrait = document.createElement('div');
-                                portrait.className = 'entity-icon location-entity-icon';
-
-                                const portraitImage = document.createElement('div');
-                                portraitImage.className = 'entity-image location-entity-image';
-                                portrait.appendChild(portraitImage);
-
-                                const levelBadge = createCharacterLevelBadge();
-                                const levelStack = ensureCharacterLevelStack(portrait);
-                                if (levelStack) {
-                                    levelStack.appendChild(levelBadge);
-                                } else {
-                                    portrait.appendChild(levelBadge);
-                                }
-
-                                const { bar: npcHealthBar, fill: npcHealthFill } = createHealthBar('npc-health-bar');
-                                npcHealthFill.classList.add('npc-health-bar-fill');
-                                portrait.appendChild(npcHealthBar);
-
-                                const npcNeedBars = document.createElement('div');
-                                npcNeedBars.className = 'npc-need-bars need-bars';
-                                portrait.appendChild(npcNeedBars);
-
-                                renderEntityImage({
-                                    element: portraitImage,
-                                    entityType: npc.isNPC ? 'npc' : 'player',
-                                    entityId: npc.id,
-                                    imageId: npc.imageId || null,
-                                    altText: npc.name || 'NPC portrait',
-                                    placeholderIcon: '🎭',
-                                    placeholderClass: 'entity-icon-placeholder location-entity-placeholder'
-                                });
-
-                                if (npcHealthBar) {
-                                    if (npc?.name) {
-                                        npcHealthBar.setAttribute('aria-label', `${npc.name} health`);
-                                    } else {
-                                        npcHealthBar.removeAttribute('aria-label');
-                                    }
-                                }
-
-                                updateCharacterLevelBadge(levelBadge, npc?.level);
-                                updateHealthBar(npcHealthBar, npcHealthFill, npc?.health, npc?.maxHealth);
-
-                                renderNeedBars(
-                                    npcNeedBars,
-                                    Array.isArray(npc?.needBars) ? npc.needBars : [],
-                                    {
-                                        includePlayerOnly: false,
-                                        variant: 'npc',
-                                        compact: true
-                                    }
-                                );
+                                const { portrait } = buildEntityPortraitContent(npc, { altText: 'NPC portrait' });
 
                                 applyNpcDeathStyling(card, portrait, npc);
 
@@ -39452,22 +39191,8 @@
                 selectedId: null
             };
 
-            const splitList = (value) => {
-                if (typeof value !== 'string') {
-                    return [];
-                }
-                return value
-                    .split(/[\n,]+/)
-                    .map(entry => entry.trim())
-                    .filter(Boolean);
-            };
-
-            const joinList = (entries) => {
-                if (!Array.isArray(entries)) {
-                    return '';
-                }
-                return entries.join('\n');
-            };
+            const splitList = window.FactionEditor.splitList;
+            const joinList = window.FactionEditor.joinList;
 
             const isEmptyFactionFieldValue = (value) => {
                 if (value === null || value === undefined) {
@@ -39485,27 +39210,7 @@
                 return false;
             };
 
-            const resolveStandingTierLabel = (value, tiers = []) => {
-                if (!Number.isFinite(value)) {
-                    return '—';
-                }
-                const sorted = Array.isArray(tiers)
-                    ? tiers.slice().sort((a, b) => Number(a.threshold) - Number(b.threshold))
-                    : [];
-                let resolved = null;
-                for (const tier of sorted) {
-                    const threshold = Number(tier?.threshold);
-                    if (!Number.isFinite(threshold)) {
-                        continue;
-                    }
-                    if (value >= threshold) {
-                        resolved = tier;
-                    } else {
-                        break;
-                    }
-                }
-                return resolved?.label || '—';
-            };
+            const resolveStandingTierLabel = window.FactionEditor.resolveStandingTierLabel;
 
             const clearDetail = () => {
                 if (placeholderEl) {
@@ -39520,140 +39225,9 @@
                 state.selectedId = null;
             };
 
-            const buildAssetRow = (asset = {}) => {
-                const row = document.createElement('div');
-                row.className = 'faction-asset-row';
-
-                const nameField = document.createElement('input');
-                nameField.type = 'text';
-                nameField.placeholder = 'Asset name';
-                nameField.value = asset.name || '';
-                nameField.className = 'faction-asset-name';
-
-                const typeField = document.createElement('input');
-                typeField.type = 'text';
-                typeField.placeholder = 'Type';
-                typeField.value = asset.type || '';
-                typeField.className = 'faction-asset-type';
-
-                const descField = document.createElement('textarea');
-                descField.rows = 2;
-                descField.placeholder = 'Short description';
-                descField.value = asset.description || '';
-                descField.className = 'faction-asset-description';
-
-                const removeButton = document.createElement('button');
-                removeButton.type = 'button';
-                removeButton.className = 'btn btn-link btn-sm';
-                removeButton.textContent = 'Remove';
-                removeButton.addEventListener('click', () => row.remove());
-
-                row.appendChild(nameField);
-                row.appendChild(typeField);
-                row.appendChild(descField);
-                row.appendChild(removeButton);
-                return row;
-            };
-
-            const buildTierRow = (tier = {}) => {
-                const row = document.createElement('div');
-                row.className = 'faction-tier-row';
-
-                const thresholdField = document.createElement('input');
-                thresholdField.type = 'number';
-                thresholdField.placeholder = 'Threshold';
-                thresholdField.value = Number.isFinite(Number(tier.threshold)) ? tier.threshold : '';
-                thresholdField.className = 'faction-tier-threshold';
-
-                const labelField = document.createElement('input');
-                labelField.type = 'text';
-                labelField.placeholder = 'Label';
-                labelField.value = tier.label || '';
-                labelField.className = 'faction-tier-label';
-
-                const perksField = document.createElement('textarea');
-                perksField.rows = 2;
-                perksField.placeholder = 'Perks (one per line)';
-                perksField.value = joinList(tier.perks || []);
-                perksField.className = 'faction-tier-perks';
-
-                const penaltiesField = document.createElement('textarea');
-                penaltiesField.rows = 2;
-                penaltiesField.placeholder = 'Penalties (one per line)';
-                penaltiesField.value = joinList(tier.penalties || []);
-                penaltiesField.className = 'faction-tier-penalties';
-
-                const removeButton = document.createElement('button');
-                removeButton.type = 'button';
-                removeButton.className = 'btn btn-link btn-sm';
-                removeButton.textContent = 'Remove';
-                removeButton.addEventListener('click', () => row.remove());
-
-                row.appendChild(thresholdField);
-                row.appendChild(labelField);
-                row.appendChild(perksField);
-                row.appendChild(penaltiesField);
-                row.appendChild(removeButton);
-                return row;
-            };
-
-            const buildRelationRow = (targetFaction, relation) => {
-                const row = document.createElement('div');
-                row.className = 'faction-relation-row';
-                row.dataset.targetId = targetFaction.id;
-
-                const nameField = document.createElement('div');
-                nameField.className = 'faction-relation-name';
-                nameField.textContent = targetFaction.name || targetFaction.id;
-
-                const statusField = document.createElement('select');
-                statusField.className = 'faction-relation-status';
-                const options = [
-                    { value: '', label: 'None' },
-                    { value: 'allied', label: 'Allied' },
-                    { value: 'neutral', label: 'Neutral' },
-                    { value: 'hostile', label: 'Hostile' },
-                    { value: 'rival', label: 'Rival' }
-                ];
-                options.forEach(option => {
-                    const opt = document.createElement('option');
-                    opt.value = option.value;
-                    opt.textContent = option.label;
-                    statusField.appendChild(opt);
-                });
-                statusField.value = relation?.status || '';
-
-                const notesField = document.createElement('textarea');
-                notesField.rows = 2;
-                notesField.placeholder = 'Relationship notes';
-                notesField.className = 'faction-relation-notes';
-                notesField.value = relation?.notes || '';
-                notesField.disabled = !statusField.value;
-
-                statusField.addEventListener('change', () => {
-                    const hasStatus = Boolean(statusField.value);
-                    notesField.disabled = !hasStatus;
-                    if (!hasStatus) {
-                        notesField.value = '';
-                    }
-                });
-
-                const clearButton = document.createElement('button');
-                clearButton.type = 'button';
-                clearButton.className = 'btn btn-link btn-sm';
-                clearButton.textContent = 'Clear';
-                clearButton.addEventListener('click', () => {
-                    statusField.value = '';
-                    notesField.value = '';
-                    notesField.disabled = true;
-                });
-
-                row.appendChild(nameField);
-                row.appendChild(statusField);
-                row.appendChild(notesField);
-                row.appendChild(clearButton);
-                return row;
-            };
+            const buildAssetRow = window.FactionEditor.buildAssetRow;
+            const buildTierRow = window.FactionEditor.buildTierRow;
+            const buildRelationRow = window.FactionEditor.buildRelationRow;
 
             const renderList = () => {
                 listEl.innerHTML = '';
@@ -39761,85 +39335,9 @@
                 }
             };
 
-            const collectAssetsFrom = (container) => {
-                if (!container) {
-                    return [];
-                }
-                const rows = Array.from(container.querySelectorAll('.faction-asset-row'));
-                return rows.map(row => {
-                    const nameField = row.querySelector('.faction-asset-name');
-                    const typeField = row.querySelector('.faction-asset-type');
-                    const descField = row.querySelector('.faction-asset-description');
-                    const name = nameField ? nameField.value.trim() : '';
-                    const type = typeField ? typeField.value.trim() : '';
-                    const description = descField ? descField.value.trim() : '';
-
-                    if (!name && !type && !description) {
-                        return null;
-                    }
-                    if (!name) {
-                        throw new Error('All assets must include a name.');
-                    }
-                    const asset = { name };
-                    if (type) asset.type = type;
-                    if (description) asset.description = description;
-                    return asset;
-                }).filter(Boolean);
-            };
-
-            const collectRelationsFrom = (container) => {
-                if (!container) {
-                    return {};
-                }
-                const rows = Array.from(container.querySelectorAll('.faction-relation-row'));
-                const relations = {};
-                rows.forEach(row => {
-                    const targetId = row.dataset.targetId || '';
-                    const statusField = row.querySelector('.faction-relation-status');
-                    const notesField = row.querySelector('.faction-relation-notes');
-                    const status = statusField ? statusField.value.trim() : '';
-                    const notes = notesField ? notesField.value.trim() : '';
-                    if (!status) {
-                        return;
-                    }
-                    if (!notes) {
-                        throw new Error('All relations with a status require notes.');
-                    }
-                    relations[targetId] = { status, notes };
-                });
-                return relations;
-            };
-
-            const collectTiersFrom = (container) => {
-                if (!container) {
-                    return [];
-                }
-                const rows = Array.from(container.querySelectorAll('.faction-tier-row'));
-                return rows.map(row => {
-                    const thresholdField = row.querySelector('.faction-tier-threshold');
-                    const labelField = row.querySelector('.faction-tier-label');
-                    const perksField = row.querySelector('.faction-tier-perks');
-                    const penaltiesField = row.querySelector('.faction-tier-penalties');
-                    const thresholdValue = thresholdField ? thresholdField.value.trim() : '';
-                    const label = labelField ? labelField.value.trim() : '';
-                    const perks = perksField ? splitList(perksField.value) : [];
-                    const penalties = penaltiesField ? splitList(penaltiesField.value) : [];
-
-                    if (!thresholdValue && !label && perks.length === 0 && penalties.length === 0) {
-                        return null;
-                    }
-                    const numericThreshold = Number(thresholdValue);
-                    if (!Number.isFinite(numericThreshold)) {
-                        throw new Error('Reputation tiers require a numeric threshold.');
-                    }
-                    return {
-                        threshold: numericThreshold,
-                        label,
-                        perks,
-                        penalties
-                    };
-                }).filter(Boolean);
-            };
+            const collectAssetsFrom = (container) => window.FactionEditor.collectAssetsFrom(container);
+            const collectRelationsFrom = (container) => window.FactionEditor.collectRelationsFrom(container);
+            const collectTiersFrom = (container) => window.FactionEditor.collectTiersFrom(container);
 
             const collectAssets = () => collectAssetsFrom(assetsList);
             const collectRelations = () => collectRelationsFrom(relationsList);

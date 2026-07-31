@@ -1,3 +1,5 @@
+const sanitizeString = require('../sanitizeString.js');
+
 function stripQuotes(value) {
   if (typeof value !== 'string') {
     return '';
@@ -22,11 +24,7 @@ function sanitizeLookupKey(value) {
     return '';
   }
 
-  return value
-    .replace(/[^\w\s]|_/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim()
-    .toLowerCase();
+  return sanitizeString(value);
 }
 
 function tokenizePositionalArgs(value) {

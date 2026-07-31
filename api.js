@@ -49153,23 +49153,47 @@ module.exports = function registerApiRoutes(scope) {
                 } = req.body || {};
                 const backend = CodexBridgeClient.normalizeBackend(rawBackend);
 
-                if (backend === CodexBridgeClient.backendName) {
+                const bridgeBackends = [
+                    {
+                        matches: backend === CodexBridgeClient.backendName,
+                        client: CodexBridgeClient,
+                        bridgeConfig: { codex_bridge: codexBridge },
+                        label: 'Codex',
+                        resolveModel: () => model
+                    },
+                    {
+                        matches: backend === ClineBridgeClient.backendName,
+                        client: ClineBridgeClient,
+                        bridgeConfig: { cline_bridge: clineBridge },
+                        label: 'Cline',
+                        resolveModel: () => model
+                    },
+                    {
+                        matches: backend === KimiBridgeClient.backendName,
+                        client: KimiBridgeClient,
+                        bridgeConfig: { kimi_bridge: kimiBridge },
+                        label: 'Kimi',
+                        resolveModel: (aiConfig) => KimiBridgeClient.resolveResponseModel(aiConfig)
+                    }
+                ];
+                const bridgeBackend = bridgeBackends.find(entry => entry.matches);
+                if (bridgeBackend) {
                     const aiConfig = {
                         backend,
                         model,
-                        codex_bridge: codexBridge
+                        ...bridgeBackend.bridgeConfig
                     };
-                    const configurationErrors = CodexBridgeClient.getConfigurationErrors(aiConfig);
+                    const configurationErrors = bridgeBackend.client.getConfigurationErrors(aiConfig);
                     if (configurationErrors.length) {
                         return res.status(400).json({ error: configurationErrors.join('. ') });
                     }
 
-                    const response = await CodexBridgeClient.chatCompletion({
+                    const response = await bridgeBackend.client.chatCompletion({
                         messages: [
-                            { role: 'system', content: 'You are validating a Codex bridge configuration.' },
+                            { role: 'system', content: `You are validating a ${bridgeBackend.label} bridge configuration.` },
                             { role: 'user', content: 'Return a short confirmation that the bridge is working.' }
                         ],
-                        model,
+                        model: bridgeBackend.resolveModel(aiConfig),
                         timeoutMs: baseTimeoutMilliseconds,
                         metadataLabel: 'config_test',
                         aiConfig
@@ -49178,63 +49202,7 @@ module.exports = function registerApiRoutes(scope) {
                     if (response?.data?.choices?.length > 0) {
                         return res.json({ success: true, message: 'Configuration test successful' });
                     }
-                    return res.status(500).json({ error: 'Invalid response from Codex bridge' });
-                }
-
-                if (backend === ClineBridgeClient.backendName) {
-                    const aiConfig = {
-                        backend,
-                        model,
-                        cline_bridge: clineBridge
-                    };
-                    const configurationErrors = ClineBridgeClient.getConfigurationErrors(aiConfig);
-                    if (configurationErrors.length) {
-                        return res.status(400).json({ error: configurationErrors.join('. ') });
-                    }
-
-                    const response = await ClineBridgeClient.chatCompletion({
-                        messages: [
-                            { role: 'system', content: 'You are validating a Cline bridge configuration.' },
-                            { role: 'user', content: 'Return a short confirmation that the bridge is working.' }
-                        ],
-                        model,
-                        timeoutMs: baseTimeoutMilliseconds,
-                        metadataLabel: 'config_test',
-                        aiConfig
-                    });
-
-                    if (response?.data?.choices?.length > 0) {
-                        return res.json({ success: true, message: 'Configuration test successful' });
-                    }
-                    return res.status(500).json({ error: 'Invalid response from Cline bridge' });
-                }
-
-                if (backend === KimiBridgeClient.backendName) {
-                    const aiConfig = {
-                        backend,
-                        model,
-                        kimi_bridge: kimiBridge
-                    };
-                    const configurationErrors = KimiBridgeClient.getConfigurationErrors(aiConfig);
-                    if (configurationErrors.length) {
-                        return res.status(400).json({ error: configurationErrors.join('. ') });
-                    }
-
-                    const response = await KimiBridgeClient.chatCompletion({
-                        messages: [
-                            { role: 'system', content: 'You are validating a Kimi bridge configuration.' },
-                            { role: 'user', content: 'Return a short confirmation that the bridge is working.' }
-                        ],
-                        model: KimiBridgeClient.resolveResponseModel(aiConfig),
-                        timeoutMs: baseTimeoutMilliseconds,
-                        metadataLabel: 'config_test',
-                        aiConfig
-                    });
-
-                    if (response?.data?.choices?.length > 0) {
-                        return res.json({ success: true, message: 'Configuration test successful' });
-                    }
-                    return res.status(500).json({ error: 'Invalid response from Kimi bridge' });
+                    return res.status(500).json({ error: `Invalid response from ${bridgeBackend.label} bridge` });
                 }
 
                 if (!endpoint || !apiKey || !model) {

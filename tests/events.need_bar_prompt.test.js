@@ -1,32 +1,19 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('fs');
-const os = require('os');
-const path = require('path');
 
 const Globals = require('../Globals.js');
 const Player = require('../Player.js');
 const Events = require('../Events.js');
 const LLMClient = require('../LLMClient.js');
+const {
+    createTempDefsDir
+} = require('./helpers/needBarFixtures.js');
 
 function createTempNeedBarEnvironment() {
-    const tempBaseDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ai-rpg-event-need-bars-'));
-
-    const writeFile = (relativePath, content) => {
-        const targetPath = path.join(tempBaseDir, relativePath);
-        fs.mkdirSync(path.dirname(targetPath), { recursive: true });
-        fs.writeFileSync(targetPath, content, 'utf8');
-    };
-
-    writeFile('defs/attributes.yaml', `
-attributes:
-  strength:
-    label: Strength
-    default: 5
-`);
-    writeFile('defs/gear_slots.yaml', 'gear_slots: {}\n');
-    writeFile('defs/dispositions.yaml', 'dispositions: {}\nrange: {}\n');
-    writeFile('defs/need_bars.yaml', `
+    return createTempDefsDir({
+        prefix: 'ai-rpg-event-need-bars-',
+        needBarsYaml: `
 need_values:
   increase:
     small: 10
@@ -75,9 +62,8 @@ need_bars:
         name: Energized
         effect: Feels great.
         sentence: "%CHARACTER% is energized."
-`);
-
-    return tempBaseDir;
+`
+    });
 }
 
 test('runEventChecks applies dedicated need-bar prompt changes with reason and icon metadata', async () => {

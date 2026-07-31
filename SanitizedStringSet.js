@@ -1,14 +1,12 @@
+const sanitizeString = require('./sanitizeString.js');
+
 class SanitizedStringSet extends Set {
   // Adds items after trimming, replacing punctuation with spaces, collapsing spaces, and converting to lowercase
   static #sanitizeValue(value) {
     if (typeof value !== 'string') {
       throw new TypeError('SanitizedStringSet only accepts string values.');
     }
-    return value
-      .replace(/[^\w\s]|_/g, ' ')
-      .replace(/\s+/g, ' ')
-      .trim()
-      .toLowerCase();
+    return sanitizeString(value);
   }
 
   static fromArray(arr) {

@@ -1,199 +1,20 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('fs');
-const path = require('path');
 const vm = require('vm');
-const nunjucks = require('nunjucks');
 
 const {
-    buildActorRelationshipPromptContext
-} = require('../base_context_relationships.js');
-
-function createPromptEnv() {
-    const env = nunjucks.configure(path.join(process.cwd(), 'prompts'), {
-        autoescape: false,
-        throwOnUndefined: true
-    });
-    env.addGlobal('randomword', () => 'test');
-    return env;
-}
+    createPromptEnv,
+    buildBaseRenderContext,
+    loadBuildBasePromptContext
+} = require('./helpers/baseContextFixtures.js');
 
 function buildRenderContext(overrides = {}) {
-    return {
-        config: {
-            extra_system_instructions: '',
-            prompt_uses_caching: false
-        },
-        promptType: 'question',
-        question: 'What is here?',
-        setting: {
-            baseContextPreamble: '',
-            name: 'Test Setting',
-            description: 'A test setting.',
-            theme: 'Test',
-            genre: 'Fantasy',
-            startingLocationType: 'Town',
-            magicLevel: 'Low',
-            techLevel: 'Low',
-            tone: 'Neutral',
-            difficulty: 'Normal',
-            currencyName: 'gold',
-            currencyNamePlural: 'gold',
-            currencyValueNotes: '',
-            writingStyleNotes: '',
-            races: [],
-            attributes: [],
-            skills: []
-        },
-        rarityDefinitions: [],
-        gameHistory: '',
-        recentGameHistory: '',
-        omitGameHistory: false,
-        worldOutline: { regions: [] },
-        allNpcs: [],
-        factions: [],
-        trackers: [],
-        currentRegion: {
-            name: 'Test Region',
-            description: '',
-            secrets: [],
-            locations: [],
-            connectedRegions: []
-        },
-        currentLocation: null,
-        currentPlayer: {
-            name: 'Tester',
-            description: 'A player.',
-            class: 'Adventurer',
-            race: 'Human',
-            currency: 0,
-            statusEffects: [],
-            skills: [],
-            abilities: [],
-            inventory: [],
-            needs: [],
-            currentQuests: []
-        },
-        party: [],
-        npcs: [],
-        additionalLore: '',
-        itemContext: '',
-        abilityContext: '',
-        plotSummary: '',
-        plotExpander: '',
-        worldTime: {
-            dayIndex: 0,
-            timeMinutes: 720,
-            dateLabel: 'Day 1',
-            timeLabel: '12:00 PM',
-            segment: 'Noon',
-            season: 'Spring',
-            seasonDescription: '',
-            holiday: null,
-            lighting: 'Daylight',
-            hasLocalWeather: false,
-            weatherName: '',
-            weatherDescription: '',
-            lightLevelDescription: 'Bright'
-        },
-        currentVehicle: null,
-        omitInventoryItems: false,
-        omitAbilities: false,
-        suppressQuestList: false,
-        saveFileSaveVersion: 1,
-        Globals: {
-            saveFileSaveVersion: 1
-        },
-        ...overrides
-    };
-}
-
-function loadBuildBasePromptContext({ players, currentPlayer }) {
-    const source = fs.readFileSync(require.resolve('../server.js'), 'utf8');
-    const start = source.indexOf('function buildBasePromptContext');
-    const end = source.indexOf('\nfunction getBaseContextTurnKey', start);
-    assert.notEqual(start, -1, 'Could not locate buildBasePromptContext');
-    assert.notEqual(end, -1, 'Could not locate getBaseContextTurnKey');
-
-    const context = {
-        Boolean,
-        Error,
-        Map,
-        Number,
-        Object,
-        Set,
-        String,
-        console,
-        config: {},
-        currentPlayer,
-        currentTurnToken: null,
-        chatHistory: [],
-        factions: new Map(),
-        gameLocations: new Map(),
-        pendingRegionStubs: new Map(),
-        players,
-        regions: new Map(),
-        skills: new Map(),
-        things: new Map(),
-        attributeDefinitionsForPrompt: {
-            intelligence: {},
-            strength: {}
-        },
-        Globals: {
-            ensureWorldTimeInitialized: () => ({}),
-            getPlotAnalysis: () => null,
-            getSerializedCalendarDefinition: () => ({}),
-            saveFileSaveVersion: 1
-        },
-        Player: {
-            getAvailableSkills: () => new Map(),
-            getDispositionDefinitions: () => ({ types: {}, range: {} }),
-            getNeedBarDefinitionsForContext: () => []
-        },
-        StatusEffect: {
-            normalizeDuration: value => value
-        },
-        Thing: {
-            generateRandomRarityDefinition: () => ({ label: 'Common' }),
-            getAllRarityDefinitions: () => [{ label: 'Common', description: 'Common item.' }]
-        },
-        buildActiveMysteryThreadsForPrompt: () => [],
-        buildNpcRepresentationSummaryForPrompt: () => '',
-        buildActorRelationshipPromptContext,
-        buildTrackersForPrompt: () => [],
-        buildSettingPromptContext: () => ({
-            name: 'Test Setting',
-            description: 'A test setting.',
-            genre: 'science fantasy',
-            tone: 'neutral',
-            skills: ['Cybernetics'],
-            attributes: ['intelligence', 'strength']
-        }),
-        collectNpcNamesForContext: () => [],
-        describeSettingForPrompt: () => 'A test setting.',
-        extractPersonality: () => ({}),
-        findRegionByLocationId: () => null,
-        getActiveSettingSnapshot: () => ({ name: 'Test Setting' }),
-        getExperiencePointValues: () => ({}),
-        getGearSlotNames: () => ['head', 'body'],
-        getGearSlotTypes: () => ['head', 'body'],
-        getThingGeneratorPromptFields: () => [],
-        getRegisteredPlayerEntityFields: () => [],
-        getPlayerGeneratorPromptFields: () => [],
-        getWorldOutline: () => ({ regions: [] }),
-        modExtensionRegistry: null,
-        normalizeLocationWeatherExposure: () => 'no',
-        resolveLocationHasWeather: () => null,
-        resolveMysteryThreadMaxActive: () => 0,
-        resolveRegionWeatherForPrompt: () => null
-    };
-    vm.createContext(context);
-    vm.runInContext(
-        `${source.slice(start, end)}
-this.buildBasePromptContext = buildBasePromptContext;`,
-        context
-    );
-    return context.buildBasePromptContext;
+    return buildBaseRenderContext({
+        allNpcs: true,
+        trackers: true,
+        overrides
+    });
 }
 
 function loadGetWorldOutline({ players, currentPlayer, regionsByName }) {

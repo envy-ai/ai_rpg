@@ -375,6 +375,58 @@ function dispatchNewExitSummarySelected(target, metadata) {
     }));
 }
 
+function currentChatTimestampString() {
+    return new Date().toISOString().replace('T', ' ').replace('Z', '');
+}
+
+function formatSignedNumber(value) {
+    if (typeof value !== 'number' || Number.isNaN(value)) {
+        return null;
+    }
+    return value >= 0 ? `+${value}` : `${value}`;
+}
+
+function findNeedBarDefinition(change, resolvedBarName) {
+    const definitions = Array.isArray(window.needBarDefinitions) ? window.needBarDefinitions : [];
+    const barId = typeof change?.needBarId === 'string' ? change.needBarId.trim() : '';
+    return definitions.find((definition) => {
+        if (!definition || typeof definition !== 'object') {
+            return false;
+        }
+        const definitionId = typeof definition.id === 'string' ? definition.id.trim() : '';
+        if (definitionId && barId && definitionId === barId) {
+            return true;
+        }
+        const definitionName = typeof definition.name === 'string' ? definition.name.trim().toLowerCase() : '';
+        return Boolean(resolvedBarName && definitionName && definitionName === resolvedBarName);
+    });
+}
+
+function formatCircumstanceEntryText(entry) {
+    if (!entry) {
+        return null;
+    }
+    const hasAmount = typeof entry.amount === 'number' && !Number.isNaN(entry.amount);
+    const amountText = hasAmount
+        ? (formatSignedNumber(entry.amount) ?? String(entry.amount))
+        : null;
+    const reasonText = entry.reason ? String(entry.reason) : null;
+
+    const parts = [];
+    if (amountText) {
+        parts.push(amountText);
+    }
+    if (reasonText) {
+        parts.push(amountText ? `– ${reasonText}` : reasonText);
+    }
+
+    if (!parts.length) {
+        return null;
+    }
+
+    return `${parts.join(' ')}`;
+}
+
 class AIRPGChat {
     constructor() {
         this.chatLog = document.getElementById('chatLog');
@@ -435,7 +487,7 @@ class AIRPGChat {
         this.chatBubbleTypes = new Map();
         this.chatBubbleFilterBound = false;
 
-        this.clientId = this.loadClientId();
+        this.clientId = window.DomUtils.loadClientId();
         this.pendingRequests = new Map();
         this.ws = null;
         this.wsReconnectDelay = 1000;
@@ -754,41 +806,53 @@ class AIRPGChat {
         }
     }
 
-    bindPlayerInputRequestDrag() {
-        const panel = this.playerInputRequestPanel;
-        const header = this.playerInputRequestHeader;
-        if (!panel || !header || panel.dataset.dragBound === 'true') {
+    bindPanelDragInteractions(panel, header, {
+        dragState,
+        shouldIgnorePointerDown = null,
+        extraMoveGuard = null,
+        onDragStart = null,
+        onDragMove = null,
+        onDragEnd = null
+    } = {}) {
+        if (!panel || !header || !dragState || panel.dataset.dragBound === 'true') {
             return;
         }
 
         const clamp = (value, min, max) => Math.min(Math.max(value, min), max);
 
         const onPointerMove = (event) => {
-            if (!this.playerInputRequestDragState.active || event.pointerId !== this.playerInputRequestDragState.pointerId) {
+            if (!dragState.active || event.pointerId !== dragState.pointerId) {
+                return;
+            }
+            if (extraMoveGuard && extraMoveGuard(event)) {
                 return;
             }
             const rect = panel.getBoundingClientRect();
             const maxLeft = Math.max(0, window.innerWidth - rect.width);
             const maxTop = Math.max(0, window.innerHeight - rect.height);
-            const left = clamp(event.clientX - this.playerInputRequestDragState.offsetX, 0, maxLeft);
-            const top = clamp(event.clientY - this.playerInputRequestDragState.offsetY, 0, maxTop);
+            const left = clamp(event.clientX - dragState.offsetX, 0, maxLeft);
+            const top = clamp(event.clientY - dragState.offsetY, 0, maxTop);
             panel.style.left = `${left}px`;
             panel.style.top = `${top}px`;
             panel.style.right = 'auto';
-            panel.style.transform = 'none';
+            if (onDragMove) {
+                onDragMove(panel);
+            }
             panel.classList.add('is-dragging');
-            panel.dataset.dragPositioned = 'true';
         };
 
         const stopDragging = (event) => {
-            if (!this.playerInputRequestDragState.active) {
+            if (!dragState.active) {
                 return;
             }
-            if (event && event.pointerId !== undefined && event.pointerId !== this.playerInputRequestDragState.pointerId) {
+            if (event && event.pointerId !== undefined && event.pointerId !== dragState.pointerId) {
                 return;
             }
-            this.playerInputRequestDragState.active = false;
-            this.playerInputRequestDragState.pointerId = null;
+            dragState.active = false;
+            dragState.pointerId = null;
+            if (onDragEnd) {
+                onDragEnd();
+            }
             panel.classList.remove('is-dragging');
             window.removeEventListener('pointermove', onPointerMove);
             window.removeEventListener('pointerup', stopDragging);
@@ -799,14 +863,17 @@ class AIRPGChat {
             if (event.button !== 0) {
                 return;
             }
-            if (event.target && event.target.closest('button, input, textarea, select, a')) {
+            if (shouldIgnorePointerDown && shouldIgnorePointerDown(event)) {
                 return;
             }
             const rect = panel.getBoundingClientRect();
-            this.playerInputRequestDragState.active = true;
-            this.playerInputRequestDragState.pointerId = event.pointerId;
-            this.playerInputRequestDragState.offsetX = event.clientX - rect.left;
-            this.playerInputRequestDragState.offsetY = event.clientY - rect.top;
+            dragState.active = true;
+            dragState.pointerId = event.pointerId;
+            if (onDragStart) {
+                onDragStart(panel, event);
+            }
+            dragState.offsetX = event.clientX - rect.left;
+            dragState.offsetY = event.clientY - rect.top;
             window.addEventListener('pointermove', onPointerMove);
             window.addEventListener('pointerup', stopDragging);
             window.addEventListener('pointercancel', stopDragging);
@@ -814,6 +881,19 @@ class AIRPGChat {
         });
 
         panel.dataset.dragBound = 'true';
+    }
+
+    bindPlayerInputRequestDrag() {
+        this.bindPanelDragInteractions(this.playerInputRequestPanel, this.playerInputRequestHeader, {
+            dragState: this.playerInputRequestDragState,
+            shouldIgnorePointerDown: (event) => Boolean(
+                event.target && event.target.closest('button, input, textarea, select, a')
+            ),
+            onDragMove: (panel) => {
+                panel.style.transform = 'none';
+                panel.dataset.dragPositioned = 'true';
+            }
+        });
     }
 
     normalizePlayerInputRequest(payload) {
@@ -2052,27 +2132,6 @@ class AIRPGChat {
         }
     }
 
-    loadClientId() {
-        const storageKey = 'airpg:clientId';
-        try {
-            const existing = window.localStorage.getItem(storageKey);
-            if (existing && existing.length > 0) {
-                return existing;
-            }
-        } catch (_) {
-            // Ignore localStorage failures
-        }
-        const generated = (window.crypto && typeof window.crypto.randomUUID === 'function')
-            ? window.crypto.randomUUID()
-            : `client-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
-        try {
-            window.localStorage.setItem(storageKey, generated);
-        } catch (_) {
-            // Ignore storage write errors
-        }
-        return generated;
-    }
-
     normalizeLocalEntry(entry) {
         if (!entry || typeof entry !== 'object') {
             return null;
@@ -2993,18 +3052,13 @@ class AIRPGChat {
             );
         }
 
-        const timestampDiv = document.createElement('div');
-        timestampDiv.className = 'message-timestamp';
-        timestampDiv.textContent = this.formatTimestamp(entry.timestamp);
-
-        messageDiv.appendChild(senderDiv);
-        messageDiv.appendChild(contentDiv);
-        messageDiv.appendChild(timestampDiv);
-
         const actions = this.createMessageActions(entry, { allowSystem: true, allowEdit: false, persistent: true });
-        if (actions) {
-            messageDiv.appendChild(actions);
-        }
+        this.appendMessageSections(messageDiv, {
+            senderDiv,
+            bodyDiv: contentDiv,
+            timestampText: this.formatTimestamp(entry.timestamp),
+            actions
+        });
 
         return messageDiv;
     }
@@ -3177,18 +3231,13 @@ class AIRPGChat {
             );
         }
 
-        const timestampDiv = document.createElement('div');
-        timestampDiv.className = 'message-timestamp';
-        timestampDiv.textContent = this.formatTimestamp(entry.timestamp);
-
-        messageDiv.appendChild(senderDiv);
-        messageDiv.appendChild(contentDiv);
-        messageDiv.appendChild(timestampDiv);
-
         const actions = this.createMessageActions(entry);
-        if (actions) {
-            messageDiv.appendChild(actions);
-        }
+        this.appendMessageSections(messageDiv, {
+            senderDiv,
+            bodyDiv: contentDiv,
+            timestampText: this.formatTimestamp(entry.timestamp),
+            actions
+        });
 
         return messageDiv;
     }
@@ -3517,13 +3566,6 @@ class AIRPGChat {
             return null;
         }
 
-        const formatSigned = (value) => {
-            if (typeof value !== 'number' || Number.isNaN(value)) {
-                return null;
-            }
-            return value >= 0 ? `+${value}` : `${value}`;
-        };
-
         const lines = [];
         const effectParts = [];
         if (summary.areaShape) {
@@ -3589,7 +3631,7 @@ class AIRPGChat {
             if (result.attackSummary?.hitDegree !== undefined && result.attackSummary?.hitDegree !== null) {
                 const hitDegree = Number(result.attackSummary.hitDegree);
                 if (Number.isFinite(hitDegree)) {
-                    resultParts.push(`Degree ${formatSigned(hitDegree) ?? hitDegree}`);
+                    resultParts.push(`Degree ${formatSignedNumber(hitDegree) ?? hitDegree}`);
                 }
             }
 
@@ -3863,18 +3905,13 @@ class AIRPGChat {
             listWrapper.appendChild(list);
         }
 
-        const timestampDiv = document.createElement('div');
-        timestampDiv.className = 'message-timestamp';
-        timestampDiv.textContent = this.formatTimestamp(entry.timestamp);
-
-        container.appendChild(senderDiv);
-        container.appendChild(listWrapper);
-        container.appendChild(timestampDiv);
-
         const actions = this.createMessageActions(entry);
-        if (actions) {
-            container.appendChild(actions);
-        }
+        this.appendMessageSections(container, {
+            senderDiv,
+            bodyDiv: listWrapper,
+            timestampText: this.formatTimestamp(entry.timestamp),
+            actions
+        });
 
         return container;
     }
@@ -3914,18 +3951,13 @@ class AIRPGChat {
 
         listWrapper.appendChild(list);
 
-        const timestampDiv = document.createElement('div');
-        timestampDiv.className = 'message-timestamp';
-        timestampDiv.textContent = this.formatTimestamp(entry.timestamp);
-
-        container.appendChild(senderDiv);
-        container.appendChild(listWrapper);
-        container.appendChild(timestampDiv);
-
         const actions = this.createMessageActions(entry);
-        if (actions) {
-            container.appendChild(actions);
-        }
+        this.appendMessageSections(container, {
+            senderDiv,
+            bodyDiv: listWrapper,
+            timestampText: this.formatTimestamp(entry.timestamp),
+            actions
+        });
 
         return container;
     }
@@ -4290,11 +4322,7 @@ class AIRPGChat {
     }
 
     formatHealthDisplayValue(value) {
-        const numericValue = Number(value);
-        if (!Number.isFinite(numericValue)) {
-            return null;
-        }
-        return Math.ceil(Math.max(0, numericValue));
+        return window.DomUtils.formatHealthDisplayValue(value);
     }
 
     isHealthNeedBarChange(change, barName = '') {
@@ -4309,20 +4337,8 @@ class AIRPGChat {
             return directMax;
         }
 
-        const definitions = Array.isArray(window.needBarDefinitions) ? window.needBarDefinitions : [];
-        const barId = typeof change?.needBarId === 'string' ? change.needBarId.trim() : '';
         const resolvedBarName = String(barName || change?.needBarName || change?.needBar || change?.bar || change?.needBarId || '').trim().toLowerCase();
-        const match = definitions.find((definition) => {
-            if (!definition || typeof definition !== 'object') {
-                return false;
-            }
-            const definitionId = typeof definition.id === 'string' ? definition.id.trim() : '';
-            if (definitionId && barId && definitionId === barId) {
-                return true;
-            }
-            const definitionName = typeof definition.name === 'string' ? definition.name.trim().toLowerCase() : '';
-            return Boolean(resolvedBarName && definitionName && definitionName === resolvedBarName);
-        });
+        const match = findNeedBarDefinition(change, resolvedBarName);
         const definitionMax = Number(match?.max);
         return Number.isFinite(definitionMax) ? definitionMax : null;
     }
@@ -4898,66 +4914,19 @@ class AIRPGChat {
     }
 
     bindPromptProgressOverlayInteractions(overlay, header, toggleButton) {
-        if (!overlay || !header || overlay.dataset.dragBound === 'true') {
-            return;
-        }
-
-        const clamp = (value, min, max) => Math.min(Math.max(value, min), max);
-
-        const onPointerMove = (event) => {
-            if (!this.promptProgressDragState.active || event.pointerId !== this.promptProgressDragState.pointerId) {
-                return;
+        this.bindPanelDragInteractions(overlay, header, {
+            dragState: this.promptProgressDragState,
+            shouldIgnorePointerDown: (event) => Boolean(
+                (toggleButton && toggleButton.contains(event.target))
+                || (event.target && event.target.closest('.prompt-progress-overlay__actions'))
+            ),
+            onDragStart: (panel) => {
+                panel.dataset.autoAnchored = 'false';
+            },
+            onDragMove: (panel) => {
+                panel.dataset.autoAnchored = 'false';
             }
-            const overlayRect = overlay.getBoundingClientRect();
-            const maxLeft = Math.max(0, window.innerWidth - overlayRect.width);
-            const maxTop = Math.max(0, window.innerHeight - overlayRect.height);
-            const targetLeft = clamp(event.clientX - this.promptProgressDragState.offsetX, 0, maxLeft);
-            const targetTop = clamp(event.clientY - this.promptProgressDragState.offsetY, 0, maxTop);
-            overlay.style.left = `${targetLeft}px`;
-            overlay.style.top = `${targetTop}px`;
-            overlay.style.right = 'auto';
-            overlay.classList.add('is-dragging');
-            overlay.dataset.autoAnchored = 'false';
-        };
-
-        const stopDragging = (event) => {
-            if (!this.promptProgressDragState.active) {
-                return;
-            }
-            if (event && event.pointerId !== undefined && event.pointerId !== this.promptProgressDragState.pointerId) {
-                return;
-            }
-            this.promptProgressDragState.active = false;
-            this.promptProgressDragState.pointerId = null;
-            overlay.classList.remove('is-dragging');
-            window.removeEventListener('pointermove', onPointerMove);
-            window.removeEventListener('pointerup', stopDragging);
-            window.removeEventListener('pointercancel', stopDragging);
-        };
-
-        header.addEventListener('pointerdown', (event) => {
-            if (event.button !== 0) {
-                return;
-            }
-            if (toggleButton && toggleButton.contains(event.target)) {
-                return;
-            }
-            if (event.target && event.target.closest('.prompt-progress-overlay__actions')) {
-                return;
-            }
-            const rect = overlay.getBoundingClientRect();
-            this.promptProgressDragState.active = true;
-            this.promptProgressDragState.pointerId = event.pointerId;
-            this.promptProgressDragState.offsetX = event.clientX - rect.left;
-            this.promptProgressDragState.offsetY = event.clientY - rect.top;
-            overlay.dataset.autoAnchored = 'false';
-            window.addEventListener('pointermove', onPointerMove);
-            window.addEventListener('pointerup', stopDragging);
-            window.addEventListener('pointercancel', stopDragging);
-            event.preventDefault();
         });
-
-        overlay.dataset.dragBound = 'true';
     }
 
     getPromptProgressSafeTopOffsetPx() {
@@ -5288,69 +5257,25 @@ class AIRPGChat {
     }
 
     bindPromptProgressViewerInteractions(viewer, header, viewerState = null) {
-        if (!viewer || !header || viewer.dataset.dragBound === 'true') {
-            return;
-        }
-
-        const clamp = (value, min, max) => Math.min(Math.max(value, min), max);
-
-        const onPointerMove = (event) => {
-            if (
-                !this.promptProgressViewerDragState.active
-                || event.pointerId !== this.promptProgressViewerDragState.pointerId
-                || (viewerState?.id && this.promptProgressViewerDragState.viewerId !== viewerState.id)
-            ) {
-                return;
+        this.bindPanelDragInteractions(viewer, header, {
+            dragState: this.promptProgressViewerDragState,
+            shouldIgnorePointerDown: (event) => Boolean(
+                event.target && event.target.closest('.prompt-progress-viewer__actions')
+            ),
+            extraMoveGuard: () => Boolean(
+                viewerState?.id && this.promptProgressViewerDragState.viewerId !== viewerState.id
+            ),
+            onDragStart: (panel) => {
+                this.promptProgressViewerDragState.viewerId = viewerState?.id || null;
+                panel.dataset.autoAnchored = 'false';
+            },
+            onDragMove: (panel) => {
+                panel.dataset.autoAnchored = 'false';
+            },
+            onDragEnd: () => {
+                this.promptProgressViewerDragState.viewerId = null;
             }
-            const viewerRect = viewer.getBoundingClientRect();
-            const maxLeft = Math.max(0, window.innerWidth - viewerRect.width);
-            const maxTop = Math.max(0, window.innerHeight - viewerRect.height);
-            const targetLeft = clamp(event.clientX - this.promptProgressViewerDragState.offsetX, 0, maxLeft);
-            const targetTop = clamp(event.clientY - this.promptProgressViewerDragState.offsetY, 0, maxTop);
-            viewer.style.left = `${targetLeft}px`;
-            viewer.style.top = `${targetTop}px`;
-            viewer.style.right = 'auto';
-            viewer.classList.add('is-dragging');
-            viewer.dataset.autoAnchored = 'false';
-        };
-
-        const stopDragging = (event) => {
-            if (!this.promptProgressViewerDragState.active) {
-                return;
-            }
-            if (event && event.pointerId !== undefined && event.pointerId !== this.promptProgressViewerDragState.pointerId) {
-                return;
-            }
-            this.promptProgressViewerDragState.active = false;
-            this.promptProgressViewerDragState.pointerId = null;
-            this.promptProgressViewerDragState.viewerId = null;
-            viewer.classList.remove('is-dragging');
-            window.removeEventListener('pointermove', onPointerMove);
-            window.removeEventListener('pointerup', stopDragging);
-            window.removeEventListener('pointercancel', stopDragging);
-        };
-
-        header.addEventListener('pointerdown', (event) => {
-            if (event.button !== 0) {
-                return;
-            }
-            if (event.target && event.target.closest('.prompt-progress-viewer__actions')) {
-                return;
-            }
-            const rect = viewer.getBoundingClientRect();
-            this.promptProgressViewerDragState.active = true;
-            this.promptProgressViewerDragState.pointerId = event.pointerId;
-            this.promptProgressViewerDragState.viewerId = viewerState?.id || null;
-            this.promptProgressViewerDragState.offsetX = event.clientX - rect.left;
-            this.promptProgressViewerDragState.offsetY = event.clientY - rect.top;
-            viewer.dataset.autoAnchored = 'false';
-            window.addEventListener('pointermove', onPointerMove);
-            window.addEventListener('pointerup', stopDragging);
-            window.addEventListener('pointercancel', stopDragging);
-            event.preventDefault();
         });
-
-        viewer.dataset.dragBound = 'true';
     }
 
     applyPromptProgressViewerAutoAnchor(viewer) {
@@ -6218,7 +6143,7 @@ class AIRPGChat {
         const dock = this.ensurePromptProgressDock();
         this.promptProgressMessage = dock;
         const tableHeaderHtml = '<tr><th class="prompt-progress-cancel-header">Actions</th><th>Prompt</th><th>Progress</th><th>Model</th><th>Received</th><th>Seconds</th><th>Timeout In</th><th>Latency</th><th>Retries</th></tr>';
-        const renderTimestamp = () => new Date().toISOString().replace('T', ' ').replace('Z', '');
+        const renderTimestamp = () => currentChatTimestampString();
 
         if (this.promptProgressHideTimer) {
             clearTimeout(this.promptProgressHideTimer);
@@ -6733,14 +6658,49 @@ class AIRPGChat {
         });
     }
 
-    addMessage(sender, content, isError = false, debugInfo = null, options = {}) {
+    appendChatBubble({ className, senderText, contentDiv, bubbleType, scroll = true, decorate = null }) {
         const messageDiv = document.createElement('div');
-        messageDiv.className = `message ${sender === 'user' ? 'user-message' : 'ai-message'}${isError ? ' error' : ''}`;
+        messageDiv.className = className;
 
         const senderDiv = document.createElement('div');
         senderDiv.className = 'message-sender';
-        senderDiv.textContent = sender === 'user' ? '👤 You' : '🤖 AI Game Master';
+        senderDiv.textContent = senderText;
 
+        const timestampDiv = document.createElement('div');
+        timestampDiv.className = 'message-timestamp';
+        timestampDiv.textContent = currentChatTimestampString();
+
+        messageDiv.appendChild(senderDiv);
+        messageDiv.appendChild(contentDiv);
+        messageDiv.appendChild(timestampDiv);
+
+        if (typeof decorate === 'function') {
+            decorate(messageDiv);
+        } else {
+            this.decorateChatBubbleElement(messageDiv, bubbleType);
+        }
+        this.chatLog.appendChild(messageDiv);
+        if (scroll) {
+            this.scrollToBottom();
+        }
+        return messageDiv;
+    }
+
+    appendMessageSections(container, { senderDiv, bodyDiv, timestampText, actions }) {
+        const timestampDiv = document.createElement('div');
+        timestampDiv.className = 'message-timestamp';
+        timestampDiv.textContent = timestampText;
+
+        container.appendChild(senderDiv);
+        container.appendChild(bodyDiv);
+        container.appendChild(timestampDiv);
+
+        if (actions) {
+            container.appendChild(actions);
+        }
+    }
+
+    addMessage(sender, content, isError = false, debugInfo = null, options = {}) {
         const contentDiv = document.createElement('div');
         contentDiv.className = 'message-content';
         const allowMarkdown = options.allowMarkdown !== false;
@@ -6749,22 +6709,14 @@ class AIRPGChat {
             && content.charAt(0) === '#';
         this.setMessageContent(contentDiv, content, { allowMarkdown: allowMarkdown && !disableMarkdown });
 
-        const timestampDiv = document.createElement('div');
-        timestampDiv.className = 'message-timestamp';
-        const timestamp = new Date().toISOString().replace('T', ' ').replace('Z', '');
-        timestampDiv.textContent = timestamp;
-
-        messageDiv.appendChild(senderDiv);
-        messageDiv.appendChild(contentDiv);
-
         // Add debug information if available (for AI responses)
-        messageDiv.appendChild(timestampDiv);
         const bubbleType = options.bubbleType || (isError ? 'error' : (sender === 'user' ? 'user' : sender || 'assistant'));
-        this.decorateChatBubbleElement(messageDiv, options.bubbleType || bubbleType);
-        this.chatLog.appendChild(messageDiv);
-
-        this.scrollToBottom();
-        return messageDiv;
+        return this.appendChatBubble({
+            className: `message ${sender === 'user' ? 'user-message' : 'ai-message'}${isError ? ' error' : ''}`,
+            senderText: sender === 'user' ? '👤 You' : '🤖 AI Game Master',
+            contentDiv,
+            decorate: (messageDiv) => this.decorateChatBubbleElement(messageDiv, options.bubbleType || bubbleType)
+        });
     }
 
     addNpcMessage(npcName, content) {
@@ -6772,29 +6724,16 @@ class AIRPGChat {
             return;
         }
 
-        const messageDiv = document.createElement('div');
-        messageDiv.className = 'message ai-message';
-
-        const senderDiv = document.createElement('div');
-        senderDiv.className = 'message-sender';
-        senderDiv.textContent = `🧑 ${npcName || 'NPC'}`;
-
         const contentDiv = document.createElement('div');
         contentDiv.className = 'message-content';
         this.setMessageContent(contentDiv, content, { allowMarkdown: true });
 
-        const timestampDiv = document.createElement('div');
-        timestampDiv.className = 'message-timestamp';
-        const timestamp = new Date().toISOString().replace('T', ' ').replace('Z', '');
-        timestampDiv.textContent = timestamp;
-
-        messageDiv.appendChild(senderDiv);
-        messageDiv.appendChild(contentDiv);
-        messageDiv.appendChild(timestampDiv);
-
-        this.decorateChatBubbleElement(messageDiv, 'npc-message');
-        this.chatLog.appendChild(messageDiv);
-        this.scrollToBottom();
+        this.appendChatBubble({
+            className: 'message ai-message',
+            senderText: `🧑 ${npcName || 'NPC'}`,
+            contentDiv,
+            bubbleType: 'npc-message'
+        });
     }
 
     updateRegisteredNpcTurnMessage(turn) {
@@ -7080,28 +7019,15 @@ class AIRPGChat {
             return;
         }
 
-        const messageDiv = document.createElement('div');
-        messageDiv.className = 'message event-summary xp-award';
-
-        const senderDiv = document.createElement('div');
-        senderDiv.className = 'message-sender';
-        senderDiv.textContent = '✨ Experience Gained';
-
         const contentDiv = document.createElement('div');
         this.setMessageContent(contentDiv, summaryText, { allowMarkdown: true });
 
-        const timestampDiv = document.createElement('div');
-        timestampDiv.className = 'message-timestamp';
-        const timestamp = new Date().toISOString().replace('T', ' ').replace('Z', '');
-        timestampDiv.textContent = timestamp;
-
-        messageDiv.appendChild(senderDiv);
-        messageDiv.appendChild(contentDiv);
-        messageDiv.appendChild(timestampDiv);
-
-        this.decorateChatBubbleElement(messageDiv, 'event-summary');
-        this.chatLog.appendChild(messageDiv);
-        this.scrollToBottom();
+        this.appendChatBubble({
+            className: 'message event-summary xp-award',
+            senderText: '✨ Experience Gained',
+            contentDiv,
+            bubbleType: 'event-summary'
+        });
     }
 
     addExperienceAwards(awards) {
@@ -7148,28 +7074,15 @@ class AIRPGChat {
             return;
         }
 
-        const messageDiv = document.createElement('div');
-        messageDiv.className = 'message event-summary currency-change';
-
-        const senderDiv = document.createElement('div');
-        senderDiv.className = 'message-sender';
-        senderDiv.textContent = '💰 Currency Update';
-
         const contentDiv = document.createElement('div');
         this.setMessageContent(contentDiv, summaryText, { allowMarkdown: true });
 
-        const timestampDiv = document.createElement('div');
-        timestampDiv.className = 'message-timestamp';
-        const timestamp = new Date().toISOString().replace('T', ' ').replace('Z', '');
-        timestampDiv.textContent = timestamp;
-
-        messageDiv.appendChild(senderDiv);
-        messageDiv.appendChild(contentDiv);
-        messageDiv.appendChild(timestampDiv);
-
-        this.decorateChatBubbleElement(messageDiv, 'event-summary');
-        this.chatLog.appendChild(messageDiv);
-        this.scrollToBottom();
+        this.appendChatBubble({
+            className: 'message event-summary currency-change',
+            senderText: '💰 Currency Update',
+            contentDiv,
+            bubbleType: 'event-summary'
+        });
     }
 
     addCurrencyChanges(changes) {
@@ -7201,22 +7114,10 @@ class AIRPGChat {
                 return directIcon;
             }
 
-            const definitions = Array.isArray(window.needBarDefinitions) ? window.needBarDefinitions : [];
-            const barId = typeof change?.needBarId === 'string' ? change.needBarId.trim() : '';
             const barName = typeof change?.needBarName === 'string'
                 ? change.needBarName.trim().toLowerCase()
                 : (typeof change?.bar === 'string' ? change.bar.trim().toLowerCase() : '');
-            const match = definitions.find((definition) => {
-                if (!definition || typeof definition !== 'object') {
-                    return false;
-                }
-                const definitionId = typeof definition.id === 'string' ? definition.id.trim() : '';
-                if (definitionId && barId && definitionId === barId) {
-                    return true;
-                }
-                const definitionName = typeof definition.name === 'string' ? definition.name.trim().toLowerCase() : '';
-                return Boolean(barName && definitionName && definitionName === barName);
-            });
+            const match = findNeedBarDefinition(change, barName);
 
             const fallbackIcon = typeof match?.icon === 'string' ? match.icon.trim() : '';
             return fallbackIcon || '🧪';
@@ -7375,27 +7276,16 @@ class AIRPGChat {
                 segments.push(`→ ${thresholdParts.join(' – ')}`);
             }
 
-            const messageDiv = document.createElement('div');
-            messageDiv.className = 'message event-summary needbar-change';
-
-            const senderDiv = document.createElement('div');
-            senderDiv.className = 'message-sender';
-            senderDiv.textContent = `${resolveNeedBarIcon(change)} Need Bar Update`;
-
             const contentDiv = document.createElement('div');
             contentDiv.innerHTML = segments.join(' ');
 
-            const timestampDiv = document.createElement('div');
-            timestampDiv.className = 'message-timestamp';
-            const timestamp = new Date().toISOString().replace('T', ' ').replace('Z', '');
-            timestampDiv.textContent = timestamp;
-
-            messageDiv.appendChild(senderDiv);
-            messageDiv.appendChild(contentDiv);
-            messageDiv.appendChild(timestampDiv);
-
-            this.decorateChatBubbleElement(messageDiv, 'event-summary');
-            this.chatLog.appendChild(messageDiv);
+            this.appendChatBubble({
+                className: 'message event-summary needbar-change',
+                senderText: `${resolveNeedBarIcon(change)} Need Bar Update`,
+                contentDiv,
+                bubbleType: 'event-summary',
+                scroll: false
+            });
             appendedCount += 1;
         });
 
@@ -7432,28 +7322,15 @@ class AIRPGChat {
             return;
         }
 
-        const messageDiv = document.createElement('div');
-        messageDiv.className = 'message event-summary environmental-damage';
-
-        const senderDiv = document.createElement('div');
-        senderDiv.className = 'message-sender';
-        senderDiv.textContent = isHealing ? '🌿 Environmental Healing' : '☠️ Environmental Damage';
-
         const contentDiv = document.createElement('div');
         this.setMessageContent(contentDiv, summaryMessage, { allowMarkdown: true });
 
-        const timestampDiv = document.createElement('div');
-        timestampDiv.className = 'message-timestamp';
-        const timestamp = new Date().toISOString().replace('T', ' ').replace('Z', '');
-        timestampDiv.textContent = timestamp;
-
-        messageDiv.appendChild(senderDiv);
-        messageDiv.appendChild(contentDiv);
-        messageDiv.appendChild(timestampDiv);
-
-        this.decorateChatBubbleElement(messageDiv, 'event-summary');
-        this.chatLog.appendChild(messageDiv);
-        this.scrollToBottom();
+        this.appendChatBubble({
+            className: 'message event-summary environmental-damage',
+            senderText: isHealing ? '🌿 Environmental Healing' : '☠️ Environmental Damage',
+            contentDiv,
+            bubbleType: 'event-summary'
+        });
     }
 
     addDispositionChanges(changes) {
@@ -7998,13 +7875,6 @@ class AIRPGChat {
     }
 
     renderStandaloneEventSummary(icon, summaryText, item = null) {
-        const messageDiv = document.createElement('div');
-        messageDiv.className = 'message event-summary';
-
-        const senderDiv = document.createElement('div');
-        senderDiv.className = 'message-sender';
-        senderDiv.textContent = `${icon || '📣'} Event`;
-
         const contentDiv = document.createElement('div');
         if (item && typeof item === 'object' && item.metadata?.newExitDiscovered) {
             const list = document.createElement('ul');
@@ -8022,18 +7892,12 @@ class AIRPGChat {
             this.setMessageContent(contentDiv, summaryText, { allowMarkdown: true });
         }
 
-        const timestampDiv = document.createElement('div');
-        timestampDiv.className = 'message-timestamp';
-        const timestamp = new Date().toISOString().replace('T', ' ').replace('Z', '');
-        timestampDiv.textContent = timestamp;
-
-        messageDiv.appendChild(senderDiv);
-        messageDiv.appendChild(contentDiv);
-        messageDiv.appendChild(timestampDiv);
-
-        this.decorateChatBubbleElement(messageDiv, 'event-summary');
-        this.chatLog.appendChild(messageDiv);
-        this.scrollToBottom();
+        this.appendChatBubble({
+            className: 'message event-summary',
+            senderText: `${icon || '📣'} Event`,
+            contentDiv,
+            bubbleType: 'event-summary'
+        });
     }
 
     renderDispositionSummaryBatch(items) {
@@ -8058,8 +7922,7 @@ class AIRPGChat {
 
         const timestampDiv = document.createElement('div');
         timestampDiv.className = 'message-timestamp';
-        const timestamp = new Date().toISOString().replace('T', ' ').replace('Z', '');
-        timestampDiv.textContent = timestamp;
+        timestampDiv.textContent = currentChatTimestampString();
 
         messageDiv.appendChild(senderDiv);
         messageDiv.appendChild(contentDiv);
@@ -8071,28 +7934,15 @@ class AIRPGChat {
     }
 
     renderStandaloneStatusSummary(icon, summaryText) {
-        const messageDiv = document.createElement('div');
-        messageDiv.className = 'message status-summary';
-
-        const senderDiv = document.createElement('div');
-        senderDiv.className = 'message-sender';
-        senderDiv.textContent = `${icon || '🌀'} Status Change`;
-
         const contentDiv = document.createElement('div');
         this.setMessageContent(contentDiv, summaryText, { allowMarkdown: true });
 
-        const timestampDiv = document.createElement('div');
-        timestampDiv.className = 'message-timestamp';
-        const timestamp = new Date().toISOString().replace('T', ' ').replace('Z', '');
-        timestampDiv.textContent = timestamp;
-
-        messageDiv.appendChild(senderDiv);
-        messageDiv.appendChild(contentDiv);
-        messageDiv.appendChild(timestampDiv);
-
-        this.decorateChatBubbleElement(messageDiv, 'status-summary');
-        this.chatLog.appendChild(messageDiv);
-        this.scrollToBottom();
+        this.appendChatBubble({
+            className: 'message status-summary',
+            senderText: `${icon || '🌀'} Status Change`,
+            contentDiv,
+            bubbleType: 'status-summary'
+        });
     }
 
     pushEventBundleItem(icon, text, category = 'other', metadata = {}) {
@@ -8449,26 +8299,40 @@ class AIRPGChat {
         this.scrollToBottom();
     }
 
-    buildPlausibilityMessageElement({ data, timestamp }) {
-        const markup = this.renderPlausibilityMarkup(data);
-
+    buildCollapsibleDetailsMessageElement({
+        className,
+        type,
+        timestamp,
+        senderText,
+        summaryText,
+        bodyHtml,
+        contentClass = '',
+        bodyClass = '',
+        bubbleType
+    }) {
         const messageDiv = document.createElement('div');
-        messageDiv.className = 'message plausibility-message';
-        messageDiv.dataset.type = 'plausibility';
+        messageDiv.className = className;
+        messageDiv.dataset.type = type;
         messageDiv.dataset.timestamp = timestamp || '';
 
         const senderDiv = document.createElement('div');
         senderDiv.className = 'message-sender';
-        senderDiv.textContent = '🧭 Plausibility Check';
+        senderDiv.textContent = senderText;
 
         const contentDiv = document.createElement('div');
+        if (contentClass) {
+            contentDiv.className = contentClass;
+        }
         const details = document.createElement('details');
         const summaryEl = document.createElement('summary');
-        summaryEl.textContent = 'Plausibility Check';
+        summaryEl.textContent = summaryText;
         details.appendChild(summaryEl);
 
         const body = document.createElement('div');
-        body.innerHTML = markup;
+        if (bodyClass) {
+            body.className = bodyClass;
+        }
+        body.innerHTML = bodyHtml;
         details.appendChild(body);
 
         contentDiv.appendChild(details);
@@ -8481,8 +8345,78 @@ class AIRPGChat {
         messageDiv.appendChild(contentDiv);
         messageDiv.appendChild(timestampDiv);
 
-        this.decorateChatBubbleElement(messageDiv, 'plausibility');
+        this.decorateChatBubbleElement(messageDiv, bubbleType);
         return messageDiv;
+    }
+
+    buildLabeledModifierLine(label, name, value) {
+        if (!name && typeof value !== 'number') {
+            return null;
+        }
+        const parts = [];
+        if (name) {
+            parts.push(this.escapeHtml(String(name)));
+        }
+        if (typeof value === 'number') {
+            const modifier = formatSignedNumber(value);
+            parts.push(modifier !== null ? `(${modifier})` : `(${value})`);
+        }
+        if (!parts.length) {
+            return null;
+        }
+        return `<li><strong>${label}:</strong> ${parts.join(' ')}</li>`;
+    }
+
+    buildCircumstancesLine(roll, { preEscaped = false } = {}) {
+        const circumstanceEntries = Array.isArray(roll.circumstanceModifiers)
+            ? roll.circumstanceModifiers
+            : [];
+        const formattedCircumstances = circumstanceEntries
+            .map((entry) => {
+                const text = formatCircumstanceEntryText(entry);
+                return preEscaped && text !== null ? this.escapeHtml(text) : text;
+            })
+            .filter(Boolean);
+
+        const hasCircumstanceReason = Boolean(roll.circumstanceReason);
+        const circumstanceTotalAvailable = typeof roll.circumstanceModifier === 'number' && !Number.isNaN(roll.circumstanceModifier);
+        const shouldShowCircumstances = formattedCircumstances.length > 0
+            || hasCircumstanceReason
+            || (circumstanceTotalAvailable && roll.circumstanceModifier !== 0);
+
+        let line = null;
+        if (shouldShowCircumstances) {
+            const parts = [];
+            if (circumstanceTotalAvailable && (roll.circumstanceModifier !== 0 || formattedCircumstances.length > 0)) {
+                const totalText = formatSignedNumber(roll.circumstanceModifier) ?? roll.circumstanceModifier;
+                parts.push(`Total ${totalText}`);
+            }
+            if (formattedCircumstances.length) {
+                parts.push(preEscaped
+                    ? `<small>${formattedCircumstances.join('<br>')}</small>`
+                    : `<small>${formattedCircumstances.map(item => this.escapeHtml(item)).join('<br>')}</small>`);
+            } else if (hasCircumstanceReason) {
+                parts.push(this.escapeHtml(String(roll.circumstanceReason)));
+            }
+
+            line = `<li><strong>Circumstances:</strong> ${parts.join('<br>')}</li>`;
+        }
+
+        return { line, formattedCircumstances, circumstanceTotalAvailable };
+    }
+
+    buildPlausibilityMessageElement({ data, timestamp }) {
+        const markup = this.renderPlausibilityMarkup(data);
+
+        return this.buildCollapsibleDetailsMessageElement({
+            className: 'message plausibility-message',
+            type: 'plausibility',
+            timestamp,
+            senderText: '🧭 Plausibility Check',
+            summaryText: 'Plausibility Check',
+            bodyHtml: markup,
+            bubbleType: 'plausibility'
+        });
     }
 
     buildSlopRemovalMessageElement({ data, timestamp }) {
@@ -8491,37 +8425,15 @@ class AIRPGChat {
             return null;
         }
 
-        const messageDiv = document.createElement('div');
-        messageDiv.className = 'message slop-remover-message';
-        messageDiv.dataset.type = 'slop-remover';
-        messageDiv.dataset.timestamp = timestamp || '';
-
-        const senderDiv = document.createElement('div');
-        senderDiv.className = 'message-sender';
-        senderDiv.textContent = '🧹 Slop Remover';
-
-        const contentDiv = document.createElement('div');
-        const details = document.createElement('details');
-        const summaryEl = document.createElement('summary');
-        summaryEl.textContent = 'Slop Remover';
-        details.appendChild(summaryEl);
-
-        const body = document.createElement('div');
-        body.innerHTML = markup;
-        details.appendChild(body);
-
-        contentDiv.appendChild(details);
-
-        const timestampDiv = document.createElement('div');
-        timestampDiv.className = 'message-timestamp';
-        timestampDiv.textContent = this.formatTimestamp(timestamp);
-
-        messageDiv.appendChild(senderDiv);
-        messageDiv.appendChild(contentDiv);
-        messageDiv.appendChild(timestampDiv);
-
-        this.decorateChatBubbleElement(messageDiv, 'slop-remover');
-        return messageDiv;
+        return this.buildCollapsibleDetailsMessageElement({
+            className: 'message slop-remover-message',
+            type: 'slop-remover',
+            timestamp,
+            senderText: '🧹 Slop Remover',
+            summaryText: 'Slop Remover',
+            bodyHtml: markup,
+            bubbleType: 'slop-remover'
+        });
     }
 
     createSlopRemovalEntryElement(entry) {
@@ -8537,17 +8449,6 @@ class AIRPGChat {
             return null;
         }
 
-        const messageDiv = document.createElement('div');
-        messageDiv.className = 'message skill-check-message';
-        messageDiv.dataset.type = 'skill-check';
-        messageDiv.dataset.timestamp = timestamp || '';
-
-        const senderDiv = document.createElement('div');
-        senderDiv.className = 'message-sender';
-        senderDiv.textContent = '🎯 Skill Check';
-
-        const contentDiv = document.createElement('div');
-
         const lines = [];
         const rawRoll = resolution.roll;
         const roll = rawRoll && typeof rawRoll === 'object' ? rawRoll : {};
@@ -8558,39 +8459,14 @@ class AIRPGChat {
             ? resolution.opponent
             : null;
 
-        const formatSigned = (value) => {
-            if (typeof value !== 'number' || Number.isNaN(value)) {
-                return null;
-            }
-            return value >= 0 ? `+${value}` : `${value}`;
-        };
-
-        if (skill || typeof roll.skillValue === 'number') {
-            const parts = [];
-            if (skill) {
-                parts.push(this.escapeHtml(String(skill)));
-            }
-            if (typeof roll.skillValue === 'number') {
-                const modifier = formatSigned(roll.skillValue);
-                parts.push(modifier !== null ? `(${modifier})` : `(${roll.skillValue})`);
-            }
-            if (parts.length) {
-                lines.push(`<li><strong>Skill:</strong> ${parts.join(' ')}</li>`);
-            }
+        const skillLine = this.buildLabeledModifierLine('Skill', skill, roll.skillValue);
+        if (skillLine) {
+            lines.push(skillLine);
         }
 
-        if (attribute || typeof roll.attributeBonus === 'number') {
-            const parts = [];
-            if (attribute) {
-                parts.push(this.escapeHtml(String(attribute)));
-            }
-            if (typeof roll.attributeBonus === 'number') {
-                const modifier = formatSigned(roll.attributeBonus);
-                parts.push(modifier !== null ? `(${modifier})` : `(${roll.attributeBonus})`);
-            }
-            if (parts.length) {
-                lines.push(`<li><strong>Attribute:</strong> ${parts.join(' ')}</li>`);
-            }
+        const attributeLine = this.buildLabeledModifierLine('Attribute', attribute, roll.attributeBonus);
+        if (attributeLine) {
+            lines.push(attributeLine);
         }
 
         if (difficulty && (difficulty.label || typeof difficulty.dc === 'number')) {
@@ -8610,86 +8486,24 @@ class AIRPGChat {
             lines.push(`<li><strong>Opponent:</strong> ${this.escapeHtml(String(opponent.name))}</li>`);
         }
 
-        if (opponent && (opponent.skill || typeof roll.opponentSkillValue === 'number')) {
-            const parts = [];
-            if (opponent.skill) {
-                parts.push(this.escapeHtml(String(opponent.skill)));
-            }
-            if (typeof roll.opponentSkillValue === 'number') {
-                const modifier = formatSigned(roll.opponentSkillValue);
-                parts.push(modifier !== null ? `(${modifier})` : `(${roll.opponentSkillValue})`);
-            }
-            if (parts.length) {
-                lines.push(`<li><strong>Opponent Skill:</strong> ${parts.join(' ')}</li>`);
-            }
+        const opponentSkillLine = opponent
+            ? this.buildLabeledModifierLine('Opponent Skill', opponent.skill, roll.opponentSkillValue)
+            : null;
+        if (opponentSkillLine) {
+            lines.push(opponentSkillLine);
         }
 
-        if (opponent && (opponent.attribute || typeof roll.opponentAttributeBonus === 'number')) {
-            const parts = [];
-            if (opponent.attribute) {
-                parts.push(this.escapeHtml(String(opponent.attribute)));
-            }
-            if (typeof roll.opponentAttributeBonus === 'number') {
-                const modifier = formatSigned(roll.opponentAttributeBonus);
-                parts.push(modifier !== null ? `(${modifier})` : `(${roll.opponentAttributeBonus})`);
-            }
-            if (parts.length) {
-                lines.push(`<li><strong>Opponent Attribute:</strong> ${parts.join(' ')}</li>`);
-            }
+        const opponentAttributeLine = opponent
+            ? this.buildLabeledModifierLine('Opponent Attribute', opponent.attribute, roll.opponentAttributeBonus)
+            : null;
+        if (opponentAttributeLine) {
+            lines.push(opponentAttributeLine);
         }
 
-        const circumstanceEntries = Array.isArray(roll.circumstanceModifiers)
-            ? roll.circumstanceModifiers
-            : [];
-        const formatCircumstanceEntry = (entry) => {
-            if (!entry) {
-                return null;
-            }
-            const hasAmount = typeof entry.amount === 'number' && !Number.isNaN(entry.amount);
-            const amountText = hasAmount
-                ? (formatSigned(entry.amount) ?? String(entry.amount))
-                : null;
-            const reasonText = entry.reason ? String(entry.reason) : null;
-
-            const parts = [];
-            if (amountText) {
-                parts.push(amountText);
-            }
-            if (reasonText) {
-                parts.push(amountText ? `– ${reasonText}` : reasonText);
-            }
-
-            if (!parts.length) {
-                return null;
-            }
-
-            return `${parts.join(' ')}`;
-        };
-
-        const formattedCircumstances = circumstanceEntries
-            .map(formatCircumstanceEntry)
-            .filter(Boolean);
-
-        const hasCircumstanceDetails = formattedCircumstances.length > 0;
-        const hasCircumstanceReason = Boolean(roll.circumstanceReason);
-        const circumstanceTotalAvailable = typeof roll.circumstanceModifier === 'number' && !Number.isNaN(roll.circumstanceModifier);
-        const shouldShowCircumstances = hasCircumstanceDetails
-            || hasCircumstanceReason
-            || (circumstanceTotalAvailable && roll.circumstanceModifier !== 0);
-
-        if (shouldShowCircumstances) {
-            const parts = [];
-            if (circumstanceTotalAvailable && (roll.circumstanceModifier !== 0 || hasCircumstanceDetails)) {
-                const totalText = formatSigned(roll.circumstanceModifier) ?? roll.circumstanceModifier;
-                parts.push(`Total ${totalText}`);
-            }
-            if (formattedCircumstances.length) {
-                parts.push(`<small>${formattedCircumstances.map(item => this.escapeHtml(item)).join('<br>')}</small>`);
-            } else if (hasCircumstanceReason) {
-                parts.push(this.escapeHtml(String(roll.circumstanceReason)));
-            }
-
-            lines.push(`<li><strong>Circumstances:</strong> ${parts.join('<br>')}</li>`);
+        const circumstances = this.buildCircumstancesLine(roll);
+        const formattedCircumstances = circumstances.formattedCircumstances;
+        if (circumstances.line) {
+            lines.push(circumstances.line);
         }
 
         if (roll && (typeof roll.die === 'number' || typeof roll.total === 'number')) {
@@ -8698,17 +8512,17 @@ class AIRPGChat {
                 segments.push(`d20 ${roll.die}`);
             }
             if (typeof roll.skillValue === 'number') {
-                const modifier = formatSigned(roll.skillValue);
+                const modifier = formatSignedNumber(roll.skillValue);
                 segments.push(`Skill ${modifier !== null ? modifier : roll.skillValue}`);
             }
             if (typeof roll.attributeBonus === 'number') {
-                const modifier = formatSigned(roll.attributeBonus);
+                const modifier = formatSignedNumber(roll.attributeBonus);
                 segments.push(`Attribute ${modifier !== null ? modifier : roll.attributeBonus}`);
             }
             if (typeof roll.circumstanceModifier === 'number'
                 && !Number.isNaN(roll.circumstanceModifier)
                 && (roll.circumstanceModifier !== 0 || formattedCircumstances.length)) {
-                const modifier = formatSigned(roll.circumstanceModifier);
+                const modifier = formatSignedNumber(roll.circumstanceModifier);
                 segments.push(`Circumstances ${modifier !== null ? modifier : roll.circumstanceModifier}`);
             }
             if (typeof roll.total === 'number') {
@@ -8729,11 +8543,11 @@ class AIRPGChat {
                 segments.push(`d20 ${roll.opponentDie}`);
             }
             if (typeof roll.opponentSkillValue === 'number') {
-                const modifier = formatSigned(roll.opponentSkillValue);
+                const modifier = formatSignedNumber(roll.opponentSkillValue);
                 segments.push(`Skill ${modifier !== null ? modifier : roll.opponentSkillValue}`);
             }
             if (typeof roll.opponentAttributeBonus === 'number') {
-                const modifier = formatSigned(roll.opponentAttributeBonus);
+                const modifier = formatSignedNumber(roll.opponentAttributeBonus);
                 segments.push(`Attribute ${modifier !== null ? modifier : roll.opponentAttributeBonus}`);
             }
             if (typeof roll.opponentTotal === 'number') {
@@ -8767,28 +8581,16 @@ class AIRPGChat {
             return null;
         }
 
-        const details = document.createElement('details');
-        const summaryEl = document.createElement('summary');
-        summaryEl.textContent = 'Skill Check';
-        details.appendChild(summaryEl);
-
-        const wrapper = document.createElement('div');
-        wrapper.className = 'skill-check-details';
-        wrapper.innerHTML = `<ul>${lines.join('\n')}</ul>`;
-        details.appendChild(wrapper);
-
-        contentDiv.appendChild(details);
-
-        const timestampDiv = document.createElement('div');
-        timestampDiv.className = 'message-timestamp';
-        timestampDiv.textContent = this.formatTimestamp(timestamp);
-
-        messageDiv.appendChild(senderDiv);
-        messageDiv.appendChild(contentDiv);
-        messageDiv.appendChild(timestampDiv);
-
-        this.decorateChatBubbleElement(messageDiv, 'skill-check');
-        return messageDiv;
+        return this.buildCollapsibleDetailsMessageElement({
+            className: 'message skill-check-message',
+            type: 'skill-check',
+            timestamp,
+            senderText: '🎯 Skill Check',
+            summaryText: 'Skill Check',
+            bodyHtml: `<ul>${lines.join('\n')}</ul>`,
+            bodyClass: 'skill-check-details',
+            bubbleType: 'skill-check'
+        });
     }
 
     createPlausibilityEntryElement(entry) {
@@ -8844,13 +8646,6 @@ class AIRPGChat {
         if (!summary || typeof summary !== 'object') {
             return null;
         }
-
-        const formatSigned = (value) => {
-            if (typeof value !== 'number' || Number.isNaN(value)) {
-                return null;
-            }
-            return value >= 0 ? `+${value}` : `${value}`;
-        };
 
         const normalizeNumber = (value) => {
             if (typeof value !== 'number' || Number.isNaN(value)) {
@@ -8921,11 +8716,11 @@ class AIRPGChat {
                 parts.push(this.escapeHtml(String(attacker.attackSkill.name)));
             }
             if (typeof attacker.attackSkill.value === 'number') {
-                const modifier = formatSigned(attacker.attackSkill.value);
+                const modifier = formatSignedNumber(attacker.attackSkill.value);
                 parts.push(modifier !== null ? modifier : String(attacker.attackSkill.value));
             }
             if (typeof attacker.attackSkill.levelBonus === 'number' && attacker.attackSkill.levelBonus !== 0) {
-                const levelText = formatSigned(attacker.attackSkill.levelBonus) ?? attacker.attackSkill.levelBonus;
+                const levelText = formatSignedNumber(attacker.attackSkill.levelBonus) ?? attacker.attackSkill.levelBonus;
                 parts.push(`(Level bonus ${levelText})`);
             }
             if (parts.length) {
@@ -8939,7 +8734,7 @@ class AIRPGChat {
                 parts.push(this.escapeHtml(String(attacker.attackAttribute.name)));
             }
             if (typeof attacker.attackAttribute.modifier === 'number') {
-                const modifier = formatSigned(attacker.attackAttribute.modifier);
+                const modifier = formatSignedNumber(attacker.attackAttribute.modifier);
                 parts.push(modifier !== null ? modifier : String(attacker.attackAttribute.modifier));
             }
             if (parts.length) {
@@ -8962,11 +8757,11 @@ class AIRPGChat {
                 defenceSegments.push(this.escapeHtml(String(defenseSkill.name)));
             }
             if (typeof defenseSkill.value === 'number') {
-                const modifier = formatSigned(defenseSkill.value);
+                const modifier = formatSignedNumber(defenseSkill.value);
                 defenceSegments.push(modifier !== null ? modifier : String(defenseSkill.value));
             }
             if (typeof defenseSkill.levelBonus === 'number' && defenseSkill.levelBonus !== 0) {
-                const levelText = formatSigned(defenseSkill.levelBonus) ?? defenseSkill.levelBonus;
+                const levelText = formatSignedNumber(defenseSkill.levelBonus) ?? defenseSkill.levelBonus;
                 defenceSegments.push(`(Level bonus ${levelText})`);
             }
             if (defenseSkill.source) {
@@ -8994,11 +8789,11 @@ class AIRPGChat {
                 const defenseSegments = [this.escapeHtml(String(defenseSkill.name))];
 
                 if (typeof defenseSkill.value === 'number' && !Number.isNaN(defenseSkill.value)) {
-                    const modifier = formatSigned(defenseSkill.value);
+                    const modifier = formatSignedNumber(defenseSkill.value);
                     defenseSegments.push(modifier !== null ? modifier : String(defenseSkill.value));
                 }
                 if (typeof defenseSkill.levelBonus === 'number' && defenseSkill.levelBonus !== 0) {
-                    const levelText = formatSigned(defenseSkill.levelBonus) ?? defenseSkill.levelBonus;
+                    const levelText = formatSignedNumber(defenseSkill.levelBonus) ?? defenseSkill.levelBonus;
                     defenseSegments.push(`(Level bonus ${levelText})`);
                 }
 
@@ -9012,9 +8807,9 @@ class AIRPGChat {
                     && defenseSkill.rawValue !== defenseSkill.value;
 
                 if (wasCapped) {
-                    const rawText = formatSigned(defenseSkill.rawValue) ?? String(defenseSkill.rawValue);
+                    const rawText = formatSignedNumber(defenseSkill.rawValue) ?? String(defenseSkill.rawValue);
                     const capText = capValue !== null
-                        ? (formatSigned(capValue) ?? String(capValue))
+                        ? (formatSignedNumber(capValue) ?? String(capValue))
                         : null;
                     const levelText = typeof difficulty.defenderLevel === 'number'
                         ? `5 + Lvl ${difficulty.defenderLevel}`
@@ -9038,55 +8833,11 @@ class AIRPGChat {
         }
 
         const roll = summary.roll || {};
-        const circumstanceEntries = Array.isArray(roll.circumstanceModifiers)
-            ? roll.circumstanceModifiers
-            : [];
-        const formatCircumstanceEntry = (entry) => {
-            if (!entry) {
-                return null;
-            }
-            const hasAmount = typeof entry.amount === 'number' && !Number.isNaN(entry.amount);
-            const amountText = hasAmount
-                ? (formatSigned(entry.amount) ?? String(entry.amount))
-                : null;
-            const reasonText = entry.reason ? String(entry.reason) : null;
-
-            const parts = [];
-            if (amountText) {
-                parts.push(amountText);
-            }
-            if (reasonText) {
-                parts.push(amountText ? `– ${reasonText}` : reasonText);
-            }
-
-            if (!parts.length) {
-                return null;
-            }
-            return this.escapeHtml(parts.join(' '));
-        };
-
-        const formattedCircumstances = circumstanceEntries
-            .map(formatCircumstanceEntry)
-            .filter(Boolean);
-        const totalCircumstanceAvailable = typeof roll.circumstanceModifier === 'number' && !Number.isNaN(roll.circumstanceModifier);
-        const hasCircumstanceReason = Boolean(roll.circumstanceReason);
-        const shouldShowCircumstances = formattedCircumstances.length
-            || hasCircumstanceReason
-            || (totalCircumstanceAvailable && roll.circumstanceModifier !== 0);
-
-        if (shouldShowCircumstances) {
-            const parts = [];
-            if (totalCircumstanceAvailable && (roll.circumstanceModifier !== 0 || formattedCircumstances.length)) {
-                const totalText = formatSigned(roll.circumstanceModifier) ?? roll.circumstanceModifier;
-                parts.push(`Total ${totalText}`);
-            }
-            if (formattedCircumstances.length) {
-                parts.push(`<small>${formattedCircumstances.join('<br>')}</small>`);
-            } else if (hasCircumstanceReason) {
-                parts.push(this.escapeHtml(String(roll.circumstanceReason)));
-            }
-
-            lines.push(`<li><strong>Circumstances:</strong> ${parts.join('<br>')}</li>`);
+        const circumstances = this.buildCircumstancesLine(roll, { preEscaped: true });
+        const formattedCircumstances = circumstances.formattedCircumstances;
+        const totalCircumstanceAvailable = circumstances.circumstanceTotalAvailable;
+        if (circumstances.line) {
+            lines.push(circumstances.line);
         }
 
         if (typeof roll.die === 'number' || typeof roll.total === 'number' || roll.attackSkill || roll.attackAttribute) {
@@ -9096,14 +8847,14 @@ class AIRPGChat {
             }
             if (roll.attackSkill && typeof roll.attackSkill.value === 'number') {
                 const skillName = roll.attackSkill.name ? `${this.escapeHtml(String(roll.attackSkill.name))} ` : '';
-                const modifier = formatSigned(roll.attackSkill.value);
+                const modifier = formatSignedNumber(roll.attackSkill.value);
                 let skillText = `${skillName}${modifier !== null ? modifier : roll.attackSkill.value}`;
                 const skillMods = Array.isArray(roll.attackSkill.modifiers) ? roll.attackSkill.modifiers : [];
                 if (skillMods.length) {
                     const modDetails = skillMods
                         .map(entry => {
                             const label = entry?.effectName ? String(entry.effectName) : 'Status Effect';
-                            const mod = formatSigned(entry?.modifier);
+                            const mod = formatSignedNumber(entry?.modifier);
                             return mod ? `${mod} (${this.escapeHtml(label)})` : null;
                         })
                         .filter(Boolean);
@@ -9112,19 +8863,19 @@ class AIRPGChat {
                     }
                 }
                 if (typeof roll.attackSkill.levelBonus === 'number' && roll.attackSkill.levelBonus !== 0) {
-                    const levelText = formatSigned(roll.attackSkill.levelBonus) ?? roll.attackSkill.levelBonus;
+                    const levelText = formatSignedNumber(roll.attackSkill.levelBonus) ?? roll.attackSkill.levelBonus;
                     skillText += `<br><small>Level bonus ${levelText}</small>`;
                 }
                 rollSegments.push(skillText);
             }
             if (roll.attackAttribute && typeof roll.attackAttribute.modifier === 'number') {
                 const attrName = roll.attackAttribute.name ? `${this.escapeHtml(String(roll.attackAttribute.name))} ` : '';
-                const modifier = formatSigned(roll.attackAttribute.modifier);
+                const modifier = formatSignedNumber(roll.attackAttribute.modifier);
                 rollSegments.push(`${attrName}${modifier !== null ? modifier : roll.attackAttribute.modifier}`);
             }
             if (totalCircumstanceAvailable
                 && (roll.circumstanceModifier !== 0 || formattedCircumstances.length)) {
-                const modifier = formatSigned(roll.circumstanceModifier);
+                const modifier = formatSignedNumber(roll.circumstanceModifier);
                 rollSegments.push(`Circumstances ${modifier !== null ? modifier : roll.circumstanceModifier}`);
             }
             if (typeof roll.total === 'number') {
@@ -9190,11 +8941,11 @@ class AIRPGChat {
                     parts.push(this.escapeHtml(String(damage.damageAttribute.name)));
                 }
                 if (typeof damage.damageAttribute.modifier === 'number') {
-                    const modifier = formatSigned(damage.damageAttribute.modifier);
+                    const modifier = formatSignedNumber(damage.damageAttribute.modifier);
                     parts.push(modifier !== null ? modifier : String(damage.damageAttribute.modifier));
                 }
                 if (typeof damage.damageAttribute.levelBonus === 'number' && damage.damageAttribute.levelBonus !== 0) {
-                    const levelText = formatSigned(damage.damageAttribute.levelBonus) ?? damage.damageAttribute.levelBonus;
+                    const levelText = formatSignedNumber(damage.damageAttribute.levelBonus) ?? damage.damageAttribute.levelBonus;
                     parts.push(`(Level bonus ${levelText})`);
                 }
                 if (parts.length) {
@@ -9326,40 +9077,17 @@ class AIRPGChat {
             return null;
         }
 
-        const messageDiv = document.createElement('div');
-        messageDiv.className = 'message attack-check-message';
-        messageDiv.dataset.type = 'attack-check';
-        messageDiv.dataset.timestamp = timestamp || '';
-
-        const senderDiv = document.createElement('div');
-        senderDiv.className = 'message-sender';
-        senderDiv.textContent = '⚔️ Attack Check';
-
-        const contentDiv = document.createElement('div');
-        contentDiv.className = 'message-content';
-
-        const details = document.createElement('details');
-        const summaryEl = document.createElement('summary');
-        summaryEl.textContent = 'Attack Check';
-        details.appendChild(summaryEl);
-
-        const wrapper = document.createElement('div');
-        wrapper.className = 'skill-check-details attack-check-details';
-        wrapper.innerHTML = `<ul>${lines.join('\n')}</ul>`;
-        details.appendChild(wrapper);
-
-        contentDiv.appendChild(details);
-
-        const timestampDiv = document.createElement('div');
-        timestampDiv.className = 'message-timestamp';
-        timestampDiv.textContent = this.formatTimestamp(timestamp);
-
-        messageDiv.appendChild(senderDiv);
-        messageDiv.appendChild(contentDiv);
-        messageDiv.appendChild(timestampDiv);
-
-        this.decorateChatBubbleElement(messageDiv, 'attack-check');
-        return messageDiv;
+        return this.buildCollapsibleDetailsMessageElement({
+            className: 'message attack-check-message',
+            type: 'attack-check',
+            timestamp,
+            senderText: '⚔️ Attack Check',
+            summaryText: 'Attack Check',
+            bodyHtml: `<ul>${lines.join('\n')}</ul>`,
+            contentClass: 'message-content',
+            bodyClass: 'skill-check-details attack-check-details',
+            bubbleType: 'attack-check'
+        });
     }
 
     addAttackCheckMessage(summary) {
@@ -9456,9 +9184,7 @@ class AIRPGChat {
     }
 
     escapeHtml(text) {
-        const div = document.createElement('div');
-        div.textContent = text;
-        return div.innerHTML;
+        return window.DomUtils.escapeHtml(text);
     }
 
     showLoading(requestId, message = 'Thinking...') {
@@ -10110,7 +9836,7 @@ class AIRPGChat {
                 || 'a new exit';
             console.log('Discovered new exit:');
             console.log(exitName);
-            const detail = formatNewExitDiscoveredSummaryDetail({
+            const newExitEntry = {
                 kind: payload.created?.type || 'location',
                 name: exitName,
                 destinationId: payload.created?.destinationId || payload.created?.stubId || '',
@@ -10123,21 +9849,9 @@ class AIRPGChat {
                 destinationRegionName: payload.created?.type === 'region'
                     ? exitName
                     : (payload.created?.destinationRegionName || '')
-            }, getCurrentNewExitSummaryContext());
-            const newExitMetadata = buildNewExitDiscoveredSummaryMetadata({
-                kind: payload.created?.type || 'location',
-                name: exitName,
-                destinationId: payload.created?.destinationId || payload.created?.stubId || '',
-                destinationRegionId: payload.created?.regionId || payload.created?.destinationRegionId || '',
-                exitId: payload.created?.exitId || '',
-                originLocationName: payload.originLocationName || '',
-                originLocationId: payload.originLocationId || '',
-                originRegionName: payload.originRegionName || '',
-                originRegionId: payload.originRegionId || '',
-                destinationRegionName: payload.created?.type === 'region'
-                    ? exitName
-                    : (payload.created?.destinationRegionName || '')
-            }, detail);
+            };
+            const detail = formatNewExitDiscoveredSummaryDetail(newExitEntry, getCurrentNewExitSummaryContext());
+            const newExitMetadata = buildNewExitDiscoveredSummaryMetadata(newExitEntry, detail);
             const summary = `New exit discovered: ${detail}`;
             const metadata = newExitMetadata
                 ? { newExitDiscovered: newExitMetadata }
@@ -10630,24 +10344,7 @@ class AIRPGChat {
         }
 
         try {
-            const response = await fetch('/api/slash-command/upload', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(uploadRequestBody)
-            });
-
-            let data = {};
-            try {
-                data = await response.json();
-            } catch (_) {
-                data = {};
-            }
-
-            if (!response.ok || !data?.success) {
-                const errorText = (data && (data.error || (Array.isArray(data.errors) ? data.errors.join(', ') : null)))
-                    || `HTTP ${response.status}`;
-                throw new Error(errorText);
-            }
+            const data = await this.postSlashCommandRequest('/api/slash-command/upload', uploadRequestBody);
 
             await this.processSlashCommandReplies(Array.isArray(data.replies) ? data.replies : [], {
                 requestBody: uploadRequestBody,
@@ -10661,6 +10358,29 @@ class AIRPGChat {
                 // ignore overlay errors
             }
         }
+    }
+
+    async postSlashCommandRequest(url, requestBody) {
+        const response = await fetch(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(requestBody)
+        });
+
+        let data = {};
+        try {
+            data = await response.json();
+        } catch (_) {
+            data = {};
+        }
+
+        if (!response.ok || !data?.success) {
+            const errorText = (data && (data.error || (Array.isArray(data.errors) ? data.errors.join(', ') : null)))
+                || `HTTP ${response.status}`;
+            throw new Error(errorText);
+        }
+
+        return data;
     }
 
     async executeSlashCommand(rawCommand) {
@@ -10703,24 +10423,7 @@ class AIRPGChat {
         showOverlayAfterDelay();
 
         try {
-            const response = await fetch('/api/slash-command', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(requestBody)
-            });
-
-            let data = {};
-            try {
-                data = await response.json();
-            } catch (_) {
-                data = {};
-            }
-
-            if (!response.ok || !data?.success) {
-                const errorText = (data && (data.error || (Array.isArray(data.errors) ? data.errors.join(', ') : null)))
-                    || `HTTP ${response.status}`;
-                throw new Error(errorText);
-            }
+            const data = await this.postSlashCommandRequest('/api/slash-command', requestBody);
 
             const showExecutionOverlay = data?.executionOptions?.showExecutionOverlay !== false;
             if (!showExecutionOverlay) {

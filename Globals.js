@@ -1209,70 +1209,38 @@ class Globals {
     return Region.get(id);
   }
 
-  static get locationsById() {
+  static #indexedLookupMap(getterName, modulePath, indexProperty) {
     if (!Globals.config) {
-      console.warn('Globals.locationsById accessed before config was set.');
+      console.warn(`Globals.${getterName} accessed before config was set.`);
       console.trace();
       return new Map();
     }
 
-    const Location = require('./Location.js');
-    return Location.indexById;
+    return require(modulePath)[indexProperty];
+  }
+
+  static get locationsById() {
+    return Globals.#indexedLookupMap('locationsById', './Location.js', 'indexById');
   }
 
   static get regionsById() {
-    if (!Globals.config) {
-      console.warn('Globals.regionsById accessed before config was set.');
-      console.trace();
-      return new Map();
-    }
-
-    const Region = require('./Region.js');
-    return Region.indexById;
+    return Globals.#indexedLookupMap('regionsById', './Region.js', 'indexById');
   }
 
   static get locationsByName() {
-    if (!Globals.config) {
-      console.warn('Globals.locationsByName accessed before config was set.');
-      console.trace();
-      return new Map();
-    }
-
-    const Location = require('./Location.js');
-    return Location.indexByName;
+    return Globals.#indexedLookupMap('locationsByName', './Location.js', 'indexByName');
   }
 
   static get regionsByName() {
-    if (!Globals.config) {
-      console.warn('Globals.regionsByName accessed before config was set.');
-      console.trace();
-      return new Map();
-    }
-
-    const Region = require('./Region.js');
-    return Region.indexByName;
+    return Globals.#indexedLookupMap('regionsByName', './Region.js', 'indexByName');
   }
 
   static get playersById() {
-    if (!Globals.config) {
-      console.warn('Globals.playersById accessed before config was set.');
-      console.trace();
-      return new Map();
-    }
-
-    const Player = require('./Player.js');
-    return Player.indexById;
+    return Globals.#indexedLookupMap('playersById', './Player.js', 'indexById');
   }
 
   static get playersByName() {
-    if (!Globals.config) {
-      console.warn('Globals.playersByName accessed before config was set.');
-      console.trace();
-      return new Map();
-    }
-
-    const Player = require('./Player.js');
-    return Player.indexByName;
+    return Globals.#indexedLookupMap('playersByName', './Player.js', 'indexByName');
   }
 
   static emitToClient(clientId, type, payload = {}, options = {}) {

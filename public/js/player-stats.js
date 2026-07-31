@@ -13,13 +13,7 @@ document.addEventListener('DOMContentLoaded', function () {
   const DEFAULT_HEALTH_ATTRIBUTE = 'constitution';
   let playerHealthAttributeKey = DEFAULT_HEALTH_ATTRIBUTE;
 
-  function formatHealthDisplayValue(value) {
-    const numericValue = Number(value);
-    if (!Number.isFinite(numericValue)) {
-      return null;
-    }
-    return Math.ceil(Math.max(0, numericValue));
-  }
+  const formatHealthDisplayValue = window.DomUtils.formatHealthDisplayValue;
 
   const playerStatusModifierTemplates = {
     buildOptions(selectEl) {
@@ -661,11 +655,7 @@ document.addEventListener('DOMContentLoaded', function () {
   /**
    * Utility function to escape HTML in user input
    */
-  function escapeHtml(text) {
-    const div = document.createElement('div');
-    div.textContent = text;
-    return div.innerHTML;
-  }
+  const escapeHtml = window.DomUtils.escapeHtml;
 
   async function primePlayerStatusEffects() {
     if (!playerStatusEffectsList) {

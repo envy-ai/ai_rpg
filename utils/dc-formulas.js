@@ -1,3 +1,5 @@
+const { normalizeFormula, evaluateFormulasAtLevelOne } = require('./formula-utils.js');
+
 const DC_FORMULA_KEYS = Object.freeze([
   'trivial',
   'easy',
@@ -15,20 +17,6 @@ const DEFAULT_DC_FORMULAS = Object.freeze({
   very_hard: '25',
   legendary: '30'
 });
-
-const normalizeFormula = (value, label) => {
-  if (value === undefined || value === null) {
-    throw new Error(`Config ${label} is required.`);
-  }
-  if (typeof value !== 'string') {
-    throw new Error(`Config ${label} must be a string.`);
-  }
-  const trimmed = value.trim();
-  if (!trimmed) {
-    throw new Error(`Config ${label} must be a non-empty string.`);
-  }
-  return trimmed;
-};
 
 const normalizeDifficultyKey = (label) => {
   if (!label || typeof label !== 'string') {
@@ -57,10 +45,7 @@ const validateDifficultyDcFormulas = (config = {}, { formulaEvaluator = null } =
   }
 
   const formulas = resolveDifficultyDcFormulas(config);
-  for (const [key, formula] of Object.entries(formulas)) {
-    const evaluator = formulaEvaluator.compile(formula);
-    evaluator({ level: 1 });
-  }
+  evaluateFormulasAtLevelOne(formulas, formulaEvaluator);
   return formulas;
 };
 

@@ -1,3 +1,5 @@
+const { evaluateFormulasAtLevelOne } = require('./formula-utils.js');
+
 const CRITICAL_THRESHOLD_MODES = Object.freeze(['normal', 'crafting']);
 const CRITICAL_THRESHOLD_DIRECTIONS = Object.freeze(['success', 'failure']);
 
@@ -74,11 +76,7 @@ const validateCriticalThresholdFormulas = (config = {}, { formulaEvaluator = nul
 
   const formulas = resolveCriticalThresholdFormulas(config);
   for (const mode of CRITICAL_THRESHOLD_MODES) {
-    const values = {};
-    for (const direction of CRITICAL_THRESHOLD_DIRECTIONS) {
-      const evaluator = formulaEvaluator.compile(formulas[mode][direction]);
-      values[direction] = evaluator({ level: 1 });
-    }
+    const values = evaluateFormulasAtLevelOne(formulas[mode], formulaEvaluator);
     validateCriticalThresholdValues(values, { label: `Critical threshold formulas.${mode}` });
   }
   return formulas;

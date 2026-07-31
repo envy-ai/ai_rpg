@@ -5,18 +5,16 @@ const Globals = require('../Globals.js');
 const Location = require('../Location.js');
 const Region = require('../Region.js');
 const Utils = require('../Utils.js');
-
-function resetWorldState() {
-    Region.clear();
-}
-
-function removeLocationsFromIndex(locations) {
-    for (const location of locations) {
-        if (location) {
-            Location.removeFromIndex(location);
-        }
-    }
-}
+const {
+    withBaseHealthOnly
+} = require('./helpers/needBarFixtures.js');
+const {
+    resetWorldState,
+    removeLocationsFromIndex,
+    createSceneSummariesStub,
+    createSerializationContext,
+    createHydrationContext
+} = require('./helpers/locationFixtures.js');
 
 test('Location favorites persist through toJSON and constructor hydration', () => {
     const region = new Region({
@@ -61,18 +59,8 @@ test('Utils.hydrateGameState restores saved location favorites and defaults old 
     const hydratedLocations = [];
 
     resetWorldState();
-    Globals.config = {
-        ...(previousConfig && typeof previousConfig === 'object' ? previousConfig : {}),
-        baseHealthPerLevel: Number.isFinite(previousConfig?.baseHealthPerLevel)
-            ? previousConfig.baseHealthPerLevel
-            : 10
-    };
-    Globals.sceneSummaries = {
-        serialize() {
-            return {};
-        },
-        load() {}
-    };
+    Globals.config = withBaseHealthOnly(previousConfig);
+    Globals.sceneSummaries = createSceneSummariesStub();
 
     try {
         const region = new Region({
@@ -96,18 +84,10 @@ test('Utils.hydrateGameState restores saved location favorites and defaults old 
         });
         sourceLocations.push(marked, legacy);
 
-        const serialized = Utils.serializeGameState({
+        const serialized = Utils.serializeGameState(createSerializationContext({
             gameLocations: new Map(sourceLocations.map(location => [location.id, location])),
-            gameLocationExits: new Map(),
-            regions: new Map([[region.id, region]]),
-            chatHistory: [],
-            generatedImages: new Map(),
-            things: new Map(),
-            players: new Map(),
-            skills: new Map(),
-            factions: new Map(),
-            pendingRegionStubs: new Map()
-        });
+            regions: new Map([[region.id, region]])
+        }));
 
         delete serialized.gameWorld.locations[legacy.id].favorite;
 
@@ -115,22 +95,7 @@ test('Utils.hydrateGameState restores saved location favorites and defaults old 
         resetWorldState();
 
         const gameLocations = new Map();
-        Utils.hydrateGameState(serialized, {
-            gameLocations,
-            gameLocationExits: new Map(),
-            regions: new Map(),
-            chatHistoryRef: [],
-            generatedImages: new Map(),
-            things: new Map(),
-            players: new Map(),
-            skills: new Map(),
-            factions: new Map(),
-            jobQueue: [],
-            imageJobs: new Map(),
-            pendingLocationImages: new Map(),
-            npcGenerationPromises: new Map(),
-            pendingRegionStubs: new Map()
-        });
+        Utils.hydrateGameState(serialized, createHydrationContext({ gameLocations }));
         hydratedLocations.push(...gameLocations.values());
 
         const restoredMarked = Array.from(gameLocations.values()).find(location => location.name === marked.name);

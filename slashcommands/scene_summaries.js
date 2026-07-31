@@ -1,7 +1,9 @@
 const SlashCommandBase = require('../SlashCommandBase.js');
 const Globals = require('../Globals.js');
 const {
-    countSceneSummaryIndexEntries
+    countSceneSummaryIndexEntries,
+    normalizeSceneSummaryIntervals,
+    walkSceneSummaryIntervals
 } = require('../scene_summary_index.js');
 
 function formatEntryRange(startIndex, endIndex, { capitalize = false } = {}) {
@@ -35,42 +37,8 @@ function computeCoverageGaps(scenes, totalEntries) {
         return [];
     }
 
-    const intervals = scenes
-        .map(scene => ({
-            start: Number(scene?.startIndex),
-            end: Number(scene?.endIndex)
-        }))
-        .filter(interval => (
-            Number.isInteger(interval.start)
-            && Number.isInteger(interval.end)
-            && interval.start > 0
-            && interval.end >= interval.start
-        ))
-        .map(interval => ({
-            start: Math.max(1, interval.start),
-            end: Math.min(total, interval.end)
-        }))
-        .filter(interval => interval.end >= interval.start)
-        .sort((a, b) => a.start - b.start);
-
-    const gaps = [];
-    let cursor = 1;
-    for (const interval of intervals) {
-        if (interval.end < cursor) {
-            continue;
-        }
-        if (interval.start > cursor) {
-            gaps.push({ start: cursor, end: interval.start - 1 });
-        }
-        cursor = Math.max(cursor, interval.end + 1);
-        if (cursor > total) {
-            break;
-        }
-    }
-    if (cursor <= total) {
-        gaps.push({ start: cursor, end: total });
-    }
-    return gaps;
+    const intervals = normalizeSceneSummaryIntervals(scenes, total, { requirePositiveStart: true });
+    return walkSceneSummaryIntervals(intervals, total).gaps;
 }
 
 function formatCoverageLine(scenes, chatHistory) {

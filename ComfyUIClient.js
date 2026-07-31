@@ -2,6 +2,7 @@ const axios = require('axios');
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
+const { ensureDirectory, resolveImageFilePath } = require('./image_client_utils.js');
 
 /**
  * ComfyUI API Client
@@ -315,15 +316,10 @@ class ComfyUIClient {
    */
   async saveImage(imageData, imageId, originalFilename, saveDirectory) {
     try {
-      // Extract file extension
-      const ext = path.extname(originalFilename) || '.png';
-      const filename = `${imageId}${ext}`;
-      const filepath = path.join(saveDirectory, filename);
+      const { filename, filepath } = resolveImageFilePath(imageId, originalFilename, saveDirectory);
 
       // Ensure directory exists
-      if (!fs.existsSync(saveDirectory)) {
-        fs.mkdirSync(saveDirectory, { recursive: true });
-      }
+      ensureDirectory(saveDirectory);
 
       // Write file
       fs.writeFileSync(filepath, imageData);

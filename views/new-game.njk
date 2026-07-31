@@ -26,6 +26,7 @@
     <script>
         window.NEW_GAME_DEFAULTS = {{ (newGameDefaults or {}) | dump | safe }};
     </script>
+    <script defer src="/js/dom-utils.js"></script>
     <script defer src="/js/formula-evaluator.js"></script>
     <script defer src="/js/attribute-skill-allocator.js"></script>
     <script defer src="/js/new-game.js"></script>
