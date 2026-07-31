@@ -24,6 +24,30 @@ test('player-action scheduling starts plot analysis before awaiting the player-a
     assert.ok(scheduleIndex < directCompletionIndex, 'plot analysis must be scheduled before direct player-action await.');
 });
 
+test('tiny-brain player action retains one queue reservation for its complete staged run', () => {
+    const tinyBrainBranchStart = apiSource.indexOf('if (useTinyBrainPlayerAction) {');
+    const regularToolLoopBranch = apiSource.indexOf('} else if (Array.isArray(enabledChatTools)', tinyBrainBranchStart);
+    assert.notEqual(tinyBrainBranchStart, -1, 'Unable to locate tiny-brain player-action branch.');
+    assert.notEqual(regularToolLoopBranch, -1, 'Unable to locate the end of the tiny-brain player-action branch.');
+
+    const tinyBrainBranch = apiSource.slice(tinyBrainBranchStart, regularToolLoopBranch);
+    assert.match(
+        tinyBrainBranch,
+        /LLMClient\.withPromptQueueReservation\(async \(queueReservation\) => \{/
+    );
+    assert.match(
+        tinyBrainBranch,
+        /const stageRequestOptions = \{[\s\S]*?messages,[\s\S]*?queueReservation[\s\S]*?\};/
+    );
+    assert.match(
+        tinyBrainBranch,
+        /const progressGroupId = tinyBrainPromptState\.runId/
+    );
+    assert.match(tinyBrainBranch, /recordPromptProgressGroupFailure\(progressGroupId, response\)/);
+    assert.match(tinyBrainBranch, /clearPromptProgressGroup\(progressGroupId\)/);
+    assert.match(tinyBrainBranch, /return await tinyBrainRunner\.run\(\{/);
+});
+
 test('plot analysis scheduling is enabled by default and gated by config', () => {
     assert.equal(defaultConfig.plot_analysis?.enabled, true);
     assert.ok(Number.isInteger(defaultConfig.plot_analysis?.max_plot_threads));

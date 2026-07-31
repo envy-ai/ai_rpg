@@ -260,7 +260,7 @@ const CHAT_TOOL_DEFINITIONS = Object.freeze([
         type: 'function',
         function: {
             name: 'moreInfo',
-            description: 'Return compact JSON objects for NPCs, things, locations, and regions whose names contain the given query substring. Use includeFullState only for debugging raw persisted/runtime fields.',
+            description: 'Return compact JSON objects for NPCs, things, locations, and regions whose names contain the given query substring. Do not call this for items or characters whose full XML is already visible in the prompt; it would return redundant information. Use includeFullState only for debugging raw persisted/runtime fields.',
             parameters: {
                 type: 'object',
                 properties: {
@@ -11133,7 +11133,8 @@ const createChatToolRuntime = ({
         defaultToolActor = null,
         includeAllHistoryEntryTypes = false,
         requestUserInput: requestUserInputHandler = null,
-        forcedSkillCheckRoll = null
+        forcedSkillCheckRoll = null,
+        promptLogFile = null
     }) => {
         if (!requestOptions || typeof requestOptions !== 'object') {
             throw new Error('runChatCompletionWithToolLoop requires requestOptions.');
@@ -11149,6 +11150,9 @@ const createChatToolRuntime = ({
         }
         if (forcedSkillCheckRoll !== null && forcedSkillCheckRoll !== undefined && typeof forcedSkillCheckRoll !== 'function') {
             throw new Error('runChatCompletionWithToolLoop forcedSkillCheckRoll must be a function when provided.');
+        }
+        if (promptLogFile !== null && promptLogFile !== undefined && typeof promptLogFile !== 'string') {
+            throw new Error('runChatCompletionWithToolLoop promptLogFile must be a string when provided.');
         }
 
         const config = getConfig();
@@ -11183,6 +11187,7 @@ const createChatToolRuntime = ({
         let toolRoundsUsed = 0;
         let toolsDisabledAfterExhaustion = false;
         let exhaustionErrorRounds = 0;
+        let lastAssistantMessage = null;
         const toolInvocations = [];
         const resultCache = normalizeToolResultCache(toolResultCache, { metadataLabel });
         const defaultActorName = normalizeOptionalString(defaultToolActor);
@@ -11235,21 +11240,39 @@ const createChatToolRuntime = ({
             }
             if (LLMClient && typeof LLMClient.logPrompt === 'function') {
                 try {
-                    LLMClient.logPrompt({
-                        prefix: `${metadataLabel || 'chat'}_tool_call_error`,
-                        metadataLabel: `${metadataLabel || 'chat'}_tool_call_error`,
-                        systemPrompt: '',
-                        generationPrompt: [
-                            `Tool: ${functionName}`,
-                            `Arguments: ${toTrimmedString(toolCall?.argumentsText) || '{}'}`,
-                            `Code: ${code}`,
-                            `Message: ${message}`
-                        ].join('\n'),
-                        response: toolResult?.content || '',
-                        sections: stack ? [{ title: 'Stack', content: stack }] : [],
-                        output: 'silent'
-                    });
+                    const toolErrorDetails = [
+                        `Tool: ${functionName}`,
+                        `Arguments: ${toTrimmedString(toolCall?.argumentsText) || '{}'}`,
+                        `Code: ${code}`,
+                        `Message: ${message}`,
+                        `Result: ${toolResult?.content || ''}`
+                    ].join('\n');
+                    const promptLogResult = promptLogFile
+                        ? LLMClient.logPrompt({
+                            filePath: promptLogFile,
+                            append: true,
+                            sections: [
+                                { title: `${metadataLabel || 'chat'} tool error`, content: toolErrorDetails },
+                                ...(stack ? [{ title: 'Stack', content: stack }] : [])
+                            ],
+                            output: 'silent'
+                        })
+                        : LLMClient.logPrompt({
+                            prefix: `${metadataLabel || 'chat'}_tool_call_error`,
+                            metadataLabel: `${metadataLabel || 'chat'}_tool_call_error`,
+                            systemPrompt: '',
+                            generationPrompt: toolErrorDetails,
+                            response: toolResult?.content || '',
+                            sections: stack ? [{ title: 'Stack', content: stack }] : [],
+                            output: 'silent'
+                        });
+                    if (promptLogFile && promptLogResult !== promptLogFile) {
+                        throw new Error(`Failed to append tool error "${functionName}" to prompt log ${promptLogFile}.`);
+                    }
                 } catch (logError) {
+                    if (promptLogFile) {
+                        throw logError;
+                    }
                     console.warn(`Failed to write chat tool error log for "${functionName}":`, logError?.message || logError);
                 }
             }
@@ -11298,6 +11321,7 @@ const createChatToolRuntime = ({
             lastResponse = roundResponse;
 
             const assistantMessage = roundResponse?.data?.choices?.[0]?.message || null;
+            lastAssistantMessage = assistantMessage;
             const rawToolCalls = Array.isArray(assistantMessage?.tool_calls)
                 ? assistantMessage.tool_calls
                 : [];
@@ -11305,7 +11329,7 @@ const createChatToolRuntime = ({
                 sourceLabel: `${metadataLabel} round ${rounds}`
             });
 
-            if (toolLoopActivated || toolCalls.length) {
+            if ((promptLogFile && toolCalls.length) || (!promptLogFile && (toolLoopActivated || toolCalls.length))) {
                 const roundLabel = `${metadataLabel}_tool_loop_round`;
                 const toolCallSummary = toolCalls.length
                     ? toolCalls.map((call, index) => {
@@ -11319,19 +11343,27 @@ const createChatToolRuntime = ({
                         ].join('\n');
                     }).join('\n\n')
                     : 'No tool calls returned this round.';
-                LLMClient.logPrompt({
+                const toolRoundLogPath = LLMClient.logPrompt({
                     prefix: roundLabel,
                     metadataLabel: roundLabel,
                     systemPrompt: '',
                     generationPrompt: LLMClient.formatMessagesForErrorLog(messages),
                     response: aiResponse || '',
+                    responseLabel: `${metadataLabel} tool round ${rounds} LLM response`,
+                    markResponseBoundaries: Boolean(promptLogFile),
                     sections: [
                         {
                             title: 'TOOL CALLS',
                             content: toolCallSummary
                         }
-                    ]
+                    ],
+                    filePath: promptLogFile || null,
+                    append: Boolean(promptLogFile),
+                    output: promptLogFile ? 'silent' : 'stdout'
                 });
+                if (promptLogFile && toolRoundLogPath !== promptLogFile) {
+                    throw new Error(`Failed to append tool round ${rounds} to prompt log ${promptLogFile}.`);
+                }
             }
 
             if (!toolCalls.length) {
@@ -11451,6 +11483,20 @@ const createChatToolRuntime = ({
                         name: toolCall.functionName,
                         content: toolResult.content
                     });
+                    if (promptLogFile) {
+                        const toolResultLogPath = LLMClient.logPrompt({
+                            filePath: promptLogFile,
+                            append: true,
+                            sections: [{
+                                title: `${metadataLabel} tool result ${toolCall.functionName}`,
+                                content: toolResult.content
+                            }],
+                            output: 'silent'
+                        });
+                        if (toolResultLogPath !== promptLogFile) {
+                            throw new Error(`Failed to append tool result "${toolCall.functionName}" to prompt log ${promptLogFile}.`);
+                        }
+                    }
                 } catch (error) {
                     await notifyToolCallLifecycle({
                         ...debugBase,
@@ -11464,11 +11510,25 @@ const createChatToolRuntime = ({
             }
         }
 
+        const conversationMessages = messages.map(message => (
+            message && typeof message === 'object'
+                ? JSON.parse(JSON.stringify(message))
+                : message
+        ));
+        const terminalAssistantMessage = lastAssistantMessage && typeof lastAssistantMessage === 'object'
+            ? JSON.parse(JSON.stringify(lastAssistantMessage))
+            : { role: 'assistant', content: aiResponse };
+        terminalAssistantMessage.role = 'assistant';
+        terminalAssistantMessage.content = aiResponse;
+        delete terminalAssistantMessage.tool_calls;
+        conversationMessages.push(terminalAssistantMessage);
+
         return {
             aiResponse,
             response: lastResponse,
             rounds,
-            toolInvocations
+            toolInvocations,
+            conversationMessages
         };
     };
 

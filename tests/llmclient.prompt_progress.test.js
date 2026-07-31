@@ -336,12 +336,14 @@ test('prompt progress uses established average output characters as target', { c
         const result = await LLMClient.chatCompletion({
             messages: [{ role: 'user', content: 'Use average progress target.' }],
             metadataLabel: 'player_action',
+            progressGroupId: 'tinybrain-test-run',
             validateXML: false,
             retryAttempts: 0,
             output: 'stdout'
         });
 
         assert.equal(result, 'abcd');
+        LLMClient.recordPromptProgressGroupFailure('tinybrain-test-run', 'Malformed prior answer.');
         await LLMClient.waitForPromptDrain({ timeoutMs: 3000, pollIntervalMs: 25 });
         const activeEntries = emittedEvents
             .filter(event => event.type === 'prompt_progress')
@@ -351,6 +353,7 @@ test('prompt progress uses established average output characters as target', { c
         assert.equal(preview.targetCharacters, 120);
         assert.equal(preview.averageOutputCharacters, 120);
         assert.equal(preview.runCount, 1);
+        assert.equal(preview.progressGroupId, 'tinybrain-test-run');
         assert.equal(
             preview.progressFraction,
             LLMClient.calculatePromptProgressFraction(4, 120)
@@ -360,7 +363,16 @@ test('prompt progress uses established average output characters as target', { c
         assert.ok(completed, 'expected a completed prompt_progress entry before clear');
         assert.equal(completed.progressFraction, 1);
         assert.equal(completed.targetCharacters, 120);
+        assert.equal(completed.progressGroupId, 'tinybrain-test-run');
+        const failed = activeEntries.find(entry => entry.responseFailed === true);
+        assert.ok(failed, 'expected the completed prompt entry to be marked as a failed response');
+        assert.deepEqual(failed.failedResponses, ['Malformed prior answer.']);
+        const failureEvent = emittedEvents.find(event => event.type === 'prompt_progress_group_failure');
+        assert.ok(failureEvent, 'expected an immediate prompt-group failure event');
+        assert.equal(failureEvent.payload.progressGroupId, 'tinybrain-test-run');
+        assert.deepEqual(failureEvent.payload.failedResponses, ['Malformed prior answer.']);
     } finally {
+        LLMClient.clearPromptProgressGroup('tinybrain-test-run');
         axios.post = originalAxiosPost;
         Globals.realtimeHub = originalRealtimeHub;
         LLMClient.resetPromptOutputCharacterStatsForTests();

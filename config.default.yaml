@@ -59,6 +59,7 @@ ai:
   # - openai_compatible: send requests to an OpenAI-style /chat/completions endpoint
   # - codex_cli_bridge: run requests through the local Codex CLI bridge
   # - cline_cli_bridge: run requests through the local Cline CLI bridge
+  # - kimi_cli_bridge: run requests through the authenticated local Kimi Code CLI
   backend: openai_compatible
 
   # API endpoint URL (examples):
@@ -83,7 +84,8 @@ ai:
   # oauth-key: ""
   # oauth-client-id: ""
 
-  # Used by both backends. For codex_cli_bridge this becomes the `codex -m` model.
+  # Default model for OpenAI-compatible, Codex, and Cline requests. Kimi uses
+  # kimi_bridge.model when set, or the saved Kimi CLI default when blank.
   model: zai-org/glm-4.7
 
   # Codex bridge settings. These are used only when ai.backend is codex_cli_bridge.
@@ -123,6 +125,19 @@ ai:
     # Optional instructions prepended ahead of the generated bridge wrapper prompt.
     prompt_preamble: ""
 
+  # Kimi bridge settings. These are used only when ai.backend is kimi_cli_bridge.
+  # Kimi must already be authenticated locally; no API key is used by this backend.
+  kimi_bridge:
+    command: kimi
+    # Isolated working directory for fresh one-shot Kimi sessions.
+    cwd: ./tmp/kimi-bridge-cwd
+    # Optional Kimi model alias. Blank uses default_model from Kimi's config.toml.
+    model: ""
+    # Optional per-process Kimi thinking effort passed through KIMI_MODEL_THINKING_EFFORT.
+    thinking: ""
+    # Optional instructions prepended ahead of the generated bridge wrapper prompt.
+    prompt_preamble: ""
+
   # Optional: Additional parameters
   maxTokens: 10000
   lowTemperature: 0.0
@@ -145,6 +160,8 @@ ai:
   waitAfterRateLimitError: 10
   # Prepends a random [cachebuster:<uuid>] line to the final user message when true.
   cachebuster: false
+  # Runs normal player-action prompts as a staged conversation for smaller local models.
+  tinybrain: false
   max_concurrent_requests: 6
 
   # Streaming -- enable if API supports it (it probably does)

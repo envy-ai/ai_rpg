@@ -135,6 +135,14 @@
         message: data.message || null
       };
 
+      if (typeof data.imagePrompt === 'string') {
+        this._dispatch('image:prompt-updated', {
+          entityType,
+          entityId,
+          imagePrompt: data.imagePrompt
+        });
+      }
+
       if (baseResult.skipped && !force) {
         this._dispatch('image:skipped', baseResult);
         return baseResult;

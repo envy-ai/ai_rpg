@@ -2086,7 +2086,15 @@ class Utils {
     if (!sceneSummaries || typeof sceneSummaries.load !== 'function') {
       throw new Error('Scene summaries are unavailable during hydration.');
     }
-    sceneSummaries.load(serialized.sceneSummaries || {});
+    try {
+      sceneSummaries.load(serialized.sceneSummaries || {});
+    } catch (error) {
+      if (typeof sceneSummaries.clear !== 'function') {
+        throw new Error(`Scene summary hydration failed and the store cannot be cleared: ${error?.message || error}`);
+      }
+      sceneSummaries.clear();
+      console.warn(`⚠️ Ignoring invalid scene summary save data and continuing with an empty summary store: ${error?.message || error}`);
+    }
 
     if (Array.isArray(jobQueue)) {
       jobQueue.length = 0;
@@ -2266,6 +2274,7 @@ class Utils {
         checkRegionId: false,
         name: locationData.name ?? null,
         imageId: locationData.imageId ?? null,
+        imagePrompt: locationData.imagePrompt ?? '',
         imageVariants: locationData.imageVariants ?? null,
         isStub: locationData.isStub ?? false,
         stubMetadata: locationData.stubMetadata ?? null,
@@ -2305,6 +2314,8 @@ class Utils {
             }),
             bidirectional: exitInfo.bidirectional !== false,
             id: exitId,
+            imageId: exitInfo.imageId ?? null,
+            imagePrompt: exitInfo.imagePrompt ?? '',
             isVehicle: Boolean(exitInfo.isVehicle || exitInfo.vehicleType),
             vehicleType: exitInfo.vehicleType || null
           });
@@ -2326,6 +2337,12 @@ class Utils {
             exit.bidirectional = exitInfo.bidirectional !== false;
           } catch (_) {
             exit.update({ bidirectional: exitInfo.bidirectional !== false });
+          }
+          if (Object.prototype.hasOwnProperty.call(exitInfo, 'imageId')) {
+            exit.imageId = exitInfo.imageId ?? null;
+          }
+          if (Object.prototype.hasOwnProperty.call(exitInfo, 'imagePrompt')) {
+            exit.imagePrompt = exitInfo.imagePrompt ?? '';
           }
           try {
             exit.destinationRegion = exitInfo.destinationRegion || null;
@@ -2374,6 +2391,8 @@ class Utils {
         }),
         bidirectional: exitData.bidirectional,
         id: exitData.id,
+        imageId: exitData.imageId ?? null,
+        imagePrompt: exitData.imagePrompt ?? '',
         isVehicle: Boolean(exitData.isVehicle || exitData.vehicleType),
         vehicleType: exitData.vehicleType || null
       });

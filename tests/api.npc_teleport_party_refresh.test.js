@@ -78,3 +78,23 @@ test('player menu teleport route returns after setting location only when story-
     assert.notEqual(normalPlayerProcessingIndex, -1, 'non-story player teleports should keep normal arrival processing');
     assert.ok(storyToolIndex < normalPlayerProcessingIndex, 'story-tool fast path should be before normal player processing');
 });
+
+test('committed player travel reports arrival-processing failures without returning teleport failure', () => {
+    const apiSource = fs.readFileSync(path.join(rootDir, 'api.js'), 'utf8');
+    const route = extractBlock(apiSource, "app.post('/api/npcs/:id/teleport'", '// Delete an NPC entirely');
+    const clientSource = fs.readFileSync(path.join(rootDir, 'views', 'index.njk'), 'utf8');
+    const helper = extractBlock(clientSource, 'async function teleportNpcToLocation', 'async function showTeleportLocationModal');
+
+    const setLocationIndex = route.indexOf('npc.setLocation(destinationLocation.id);', route.indexOf('const effectiveOriginLocationId'));
+    const arrivalTryIndex = route.indexOf('let arrivalProcessingError = null;', setLocationIndex);
+    const whileAwayIndex = route.indexOf('await runWhileYouWereAwayPrompt({', arrivalTryIndex);
+    const responseIndex = route.indexOf('arrivalProcessingError,', whileAwayIndex);
+
+    assert.ok(setLocationIndex !== -1, 'normal travel should commit the destination');
+    assert.ok(arrivalTryIndex > setLocationIndex, 'arrival processing should be tracked after travel commits');
+    assert.ok(whileAwayIndex > arrivalTryIndex, 'while-you-were-away should run inside tracked arrival processing');
+    assert.ok(responseIndex > whileAwayIndex, 'successful teleport response should include any arrival-processing error');
+    assert.match(route, /catch \(arrivalError\) \{[\s\S]*?arrivalProcessingError = \{[\s\S]*?message:[\s\S]*?stack:/);
+    assert.match(helper, /result\.arrivalProcessingError/);
+    assert.match(helper, /showChatErrorPopup/);
+});

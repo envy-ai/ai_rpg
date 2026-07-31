@@ -33,3 +33,5 @@ The mod registers three stage-1 player-action prompt checks:
 - `lustAdvance`: asks whether an NPC should make a romantic or sexual advance.
 - `takeTheLead`: asks involved NPCs to participate actively according to personality.
 - `descriptiveness`: asks for explicit anatomical detail during intimate or sexual acts.
+
+Each registration also supplies `tinyBrainText`. These variants ask for an immediate list or `N/A`, allowing each check to run as an independent tiny-brain checkpoint; ordinary prompts continue using the original `text` wording.

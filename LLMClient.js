@@ -10,6 +10,7 @@ const { dump } = require('js-yaml');
 const readline = require('readline');
 const CodexBridgeClient = require('./CodexBridgeClient.js');
 const ClineBridgeClient = require('./ClineBridgeClient.js');
+const KimiBridgeClient = require('./KimiBridgeClient.js');
 let sharpModule = null;
 
 const PROMPT_PROGRESS_BROADCAST_INTERVAL_MS = 500;
@@ -116,6 +117,7 @@ class LLMClient {
     static #semaphoreLimit = null;
     static #allModelsSemaphore = null;
     static #allModelsSemaphoreLimit = null;
+    static #promptQueueReservationStates = new WeakMap();
     static #forcedOutputFixtureSource = null;
     static #forcedOutputFixtureData = null;
     static #forcedOutputLabelCounters = new Map();
@@ -127,7 +129,8 @@ class LLMClient {
         lastLines: 0,
         lastWidth: 0,
         lastBroadcastHadEntries: false,
-        hadEntries: false
+        hadEntries: false,
+        failedResponsesByGroup: new Map()
     };
     static #streamCounter = 0;
     static #abortControllers = new Map();
@@ -228,7 +231,7 @@ class LLMClient {
         }, 1000);
     }
 
-    static #trackStreamStart(label, { startTimeoutMs = null, continueTimeoutMs = null, isBackground = false, model = null, promptText = '', receivedUnit = 'characters' } = {}) {
+    static #trackStreamStart(label, { startTimeoutMs = null, continueTimeoutMs = null, isBackground = false, model = null, promptText = '', progressGroupId = null, receivedUnit = 'characters' } = {}) {
         if (!LLMClient.#shouldTrackPromptProgress()) {
             return null;
         }
@@ -257,6 +260,11 @@ class LLMClient {
             countedPreviewText: '',
             promptText: typeof promptText === 'string' ? promptText : '',
             previewText: '',
+            progressGroupId,
+            failedResponses: progressGroupId
+                ? [...(LLMClient.#streamProgress.failedResponsesByGroup.get(progressGroupId) || [])]
+                : [],
+            responseFailed: false,
             hasTextPreview: false,
             startTs,
             startDeadline,
@@ -543,9 +551,14 @@ class LLMClient {
         return backend === ClineBridgeClient.backendName;
     }
 
+    static #isKimiBridgeBackend(backend) {
+        return backend === KimiBridgeClient.backendName;
+    }
+
     static #isCliBridgeBackend(backend) {
         return LLMClient.#isCodexBridgeBackend(backend)
-            || LLMClient.#isClineBridgeBackend(backend);
+            || LLMClient.#isClineBridgeBackend(backend)
+            || LLMClient.#isKimiBridgeBackend(backend);
     }
 
     static #resolveCliBridgeClient(backend) {
@@ -554,6 +567,9 @@ class LLMClient {
         }
         if (LLMClient.#isClineBridgeBackend(backend)) {
             return ClineBridgeClient;
+        }
+        if (LLMClient.#isKimiBridgeBackend(backend)) {
+            return KimiBridgeClient;
         }
         return null;
     }
@@ -1027,6 +1043,54 @@ class LLMClient {
         }, PROMPT_PROGRESS_COMPLETION_HOLD_MS);
     }
 
+    static recordPromptProgressGroupFailure(progressGroupId, responseText) {
+        const resolvedGroupId = typeof progressGroupId === 'string' ? progressGroupId.trim() : '';
+        if (!resolvedGroupId) {
+            throw new Error('Prompt progress group id is required when recording a failed response.');
+        }
+        if (typeof responseText !== 'string') {
+            throw new Error('Prompt progress failed response text must be a string.');
+        }
+
+        const failedResponses = [
+            ...(LLMClient.#streamProgress.failedResponsesByGroup.get(resolvedGroupId) || []),
+            responseText
+        ];
+        LLMClient.#streamProgress.failedResponsesByGroup.set(resolvedGroupId, failedResponses);
+
+        let latestEntry = null;
+        let latestPromptId = null;
+        for (const [promptId, entry] of LLMClient.#streamProgress.active.entries()) {
+            if (entry?.progressGroupId !== resolvedGroupId) {
+                continue;
+            }
+            entry.failedResponses = [...failedResponses];
+            latestEntry = entry;
+            latestPromptId = promptId;
+        }
+        if (latestEntry) {
+            latestEntry.responseFailed = true;
+            LLMClient.#broadcastProgress(false, { force: true });
+        }
+        const hub = Globals?.realtimeHub;
+        if (hub && typeof hub.emit === 'function') {
+            hub.emit(null, 'prompt_progress_group_failure', {
+                type: 'prompt_progress_group_failure',
+                progressGroupId: resolvedGroupId,
+                promptId: latestPromptId,
+                failedResponses: [...failedResponses]
+            });
+        }
+    }
+
+    static clearPromptProgressGroup(progressGroupId) {
+        const resolvedGroupId = typeof progressGroupId === 'string' ? progressGroupId.trim() : '';
+        if (!resolvedGroupId) {
+            throw new Error('Prompt progress group id is required when clearing group state.');
+        }
+        LLMClient.#streamProgress.failedResponsesByGroup.delete(resolvedGroupId);
+    }
+
     static cancelPrompt(streamId, reason = 'Prompt canceled by user') {
         return LLMClient.#abortPrompt(streamId, {
             reason,
@@ -1189,6 +1253,11 @@ class LLMClient {
                     : null,
                 promptText: typeof entry.promptText === 'string' ? entry.promptText : '',
                 previewText: typeof entry.previewText === 'string' ? entry.previewText : '',
+                progressGroupId: typeof entry.progressGroupId === 'string' ? entry.progressGroupId : null,
+                failedResponses: Array.isArray(entry.failedResponses)
+                    ? entry.failedResponses.filter(response => typeof response === 'string')
+                    : [],
+                responseFailed: entry.responseFailed === true,
                 seconds: Math.round((now - entry.startTs) / 1000),
                 timeoutSeconds,
                 retries: entry.retries ?? 0,
@@ -1259,6 +1328,9 @@ class LLMClient {
         if (LLMClient.#isClineBridgeBackend(backend)) {
             return ClineBridgeClient.getConfigurationErrors(config);
         }
+        if (LLMClient.#isKimiBridgeBackend(backend)) {
+            return KimiBridgeClient.getConfigurationErrors(config);
+        }
         return CodexBridgeClient.getConfigurationErrors(config);
     }
 
@@ -1278,6 +1350,9 @@ class LLMClient {
         }
         if (LLMClient.#isClineBridgeBackend(backend)) {
             return ClineBridgeClient.getMaxConcurrent(config);
+        }
+        if (LLMClient.#isKimiBridgeBackend(backend)) {
+            return KimiBridgeClient.getMaxConcurrent(config);
         }
         const raw = Number(config?.max_concurrent_requests);
         if (Number.isInteger(raw) && raw > 0) {
@@ -1681,6 +1756,120 @@ class LLMClient {
         return LLMClient.#allModelsSemaphore;
     }
 
+    static #beginPromptQueueReservationRequest(reservation) {
+        if (reservation === null || reservation === undefined) {
+            return null;
+        }
+        if ((typeof reservation !== 'object' && typeof reservation !== 'function') || !reservation) {
+            throw new Error('queueReservation must be created by LLMClient.withPromptQueueReservation().');
+        }
+        const state = LLMClient.#promptQueueReservationStates.get(reservation);
+        if (!state || state.released) {
+            throw new Error('queueReservation is invalid or has already been released.');
+        }
+        if (state.activeRequest) {
+            throw new Error('A prompt queue reservation cannot be used by concurrent chatCompletion requests.');
+        }
+        state.activeRequest = true;
+        return state;
+    }
+
+    static #endPromptQueueReservationRequest(state) {
+        if (state) {
+            state.activeRequest = false;
+        }
+    }
+
+    static async #retainPromptQueueReservationPermits(state, {
+        semaphore,
+        semaphoreKey,
+        allModelsSemaphore,
+        background = false
+    } = {}) {
+        if (!state) {
+            throw new Error('Prompt queue reservation state is required.');
+        }
+        if (!semaphore || typeof semaphore.acquire !== 'function' || typeof semaphore.release !== 'function') {
+            throw new Error('Prompt queue reservation requires a valid model semaphore.');
+        }
+        const isBackground = Boolean(background);
+        if (state.acquired) {
+            if (state.semaphore !== semaphore || state.semaphoreKey !== semaphoreKey) {
+                throw new Error(
+                    `Prompt queue reservation cannot change semaphore keys from "${state.semaphoreKey}" to "${semaphoreKey}".`
+                );
+            }
+            if (state.allModelsSemaphore !== allModelsSemaphore) {
+                throw new Error('Prompt queue reservation cannot change the all-model concurrency configuration while active.');
+            }
+            if (state.background !== isBackground) {
+                throw new Error('Prompt queue reservation cannot change foreground/background priority while active.');
+            }
+            return;
+        }
+
+        const semaphorePermit = await semaphore.acquire({ background: isBackground });
+        let allModelsSemaphorePermit = null;
+        try {
+            if (allModelsSemaphore) {
+                allModelsSemaphorePermit = await allModelsSemaphore.acquire({ background: isBackground });
+            }
+        } catch (error) {
+            semaphore.release(semaphorePermit);
+            throw error;
+        }
+
+        state.acquired = true;
+        state.semaphore = semaphore;
+        state.semaphoreKey = semaphoreKey;
+        state.semaphorePermit = semaphorePermit;
+        state.allModelsSemaphore = allModelsSemaphore;
+        state.allModelsSemaphorePermit = allModelsSemaphorePermit;
+        state.background = isBackground;
+    }
+
+    static #releasePromptQueueReservation(state) {
+        if (!state || state.released) {
+            return;
+        }
+        if (state.activeRequest) {
+            throw new Error('Cannot release a prompt queue reservation while chatCompletion is still active.');
+        }
+        state.released = true;
+        if (!state.acquired) {
+            return;
+        }
+        if (state.allModelsSemaphore) {
+            state.allModelsSemaphore.release(state.allModelsSemaphorePermit);
+        }
+        state.semaphore.release(state.semaphorePermit);
+        state.acquired = false;
+    }
+
+    static async withPromptQueueReservation(callback) {
+        if (typeof callback !== 'function') {
+            throw new Error('withPromptQueueReservation requires an async callback.');
+        }
+        const reservation = Object.freeze({});
+        const state = {
+            acquired: false,
+            activeRequest: false,
+            released: false,
+            semaphore: null,
+            semaphoreKey: null,
+            semaphorePermit: null,
+            allModelsSemaphore: null,
+            allModelsSemaphorePermit: null,
+            background: false
+        };
+        LLMClient.#promptQueueReservationStates.set(reservation, state);
+        try {
+            return await callback(reservation);
+        } finally {
+            LLMClient.#releasePromptQueueReservation(state);
+        }
+    }
+
     static writeLogFile({
         prefix = 'log',
         metadataLabel = '',
@@ -2018,7 +2207,11 @@ class LLMClient {
         endpoint = null,
         requestPayload = null,
         responsePayload = null,
-        output = 'stdout'
+        output = 'stdout',
+        filePath = null,
+        append = false,
+        responseLabel = 'RESPONSE',
+        markResponseBoundaries = false
     } = {}) {
         const resolvedOutput = LLMClient.resolveOutput(output);
         const isSilent = resolvedOutput === 'silent';
@@ -2035,14 +2228,37 @@ class LLMClient {
                 fs.mkdirSync(logDir, { recursive: true });
             }
 
-            const safeLabel = metadataLabel
-                ? metadataLabel.replace(/[^a-z0-9_-]/gi, '_')
-                : 'unknown';
-            const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-            const filePath = path.join(logDir, `${timestamp}_${prefix}_${safeLabel}.log`);
+            let resolvedFilePath = null;
+            if (filePath !== null && filePath !== undefined && filePath !== '') {
+                if (typeof filePath !== 'string') {
+                    throw new Error('Prompt log filePath must be a string when provided.');
+                }
+                resolvedFilePath = path.resolve(filePath);
+                const resolvedLogDir = path.resolve(logDir);
+                if (
+                    resolvedFilePath !== resolvedLogDir
+                    && !resolvedFilePath.startsWith(`${resolvedLogDir}${path.sep}`)
+                ) {
+                    throw new Error('Prompt log filePath must be inside the configured logs directory.');
+                }
+                if (append && !fs.existsSync(resolvedFilePath)) {
+                    throw new Error(`Cannot append to missing prompt log file: ${resolvedFilePath}`);
+                }
+            } else {
+                if (append) {
+                    throw new Error('Prompt log append requires filePath.');
+                }
+                const safeLabel = metadataLabel
+                    ? metadataLabel.replace(/[^a-z0-9_-]/gi, '_')
+                    : 'unknown';
+                const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+                resolvedFilePath = path.join(logDir, `${timestamp}_${prefix}_${safeLabel}.log`);
+            }
 
             const lines = [];
-            lines.push(...statsHeaderLines);
+            if (!append) {
+                lines.push(...statsHeaderLines);
+            }
 
             const resolveModelAndEndpoint = () => {
                 const globalConfig = Globals?.config || {};
@@ -2075,7 +2291,7 @@ class LLMClient {
             };
 
             const { resolvedModel, resolvedEndpoint } = resolveModelAndEndpoint();
-            if (resolvedModel || resolvedEndpoint || Number.isFinite(totalTokens)) {
+            if (!append && (resolvedModel || resolvedEndpoint || Number.isFinite(totalTokens))) {
                 lines.push('=== MODEL INFO ===');
                 if (resolvedModel) {
                     lines.push(`Model: ${resolvedModel}`);
@@ -2143,19 +2359,36 @@ class LLMClient {
                 }
             }
 
-            if (response) {
-                lines.push('=== RESPONSE ===', response, '');
+            if (response || markResponseBoundaries) {
+                const normalizedResponseLabel = typeof responseLabel === 'string' && responseLabel.trim()
+                    ? responseLabel.trim().toUpperCase()
+                    : 'RESPONSE';
+                if (markResponseBoundaries) {
+                    lines.push(
+                        `=== ${normalizedResponseLabel} BEGIN ===`,
+                        response || '',
+                        `=== ${normalizedResponseLabel} END ===`,
+                        ''
+                    );
+                } else {
+                    lines.push(`=== ${normalizedResponseLabel} ===`, response, '');
+                }
             }
 
             if (!lines.length) {
                 return null;
             }
 
-            fs.writeFileSync(filePath, lines.join('\n'), 'utf8');
-            if (!isSilent) {
-                outputConsole.log(`Prompt log written to ${filePath}`);
+            const logText = lines.join('\n');
+            if (append) {
+                fs.appendFileSync(resolvedFilePath, `\n${logText}`, 'utf8');
+            } else {
+                fs.writeFileSync(resolvedFilePath, logText, 'utf8');
             }
-            return filePath;
+            if (!isSilent) {
+                outputConsole.log(`Prompt log written to ${resolvedFilePath}`);
+            }
+            return resolvedFilePath;
         } catch (error) {
             const errorMessage = error?.message || String(error);
             console.error(`Failed to write prompt log file: ${errorMessage}`);
@@ -3731,6 +3964,8 @@ class LLMClient {
         reasoningEffort = null,
         prefill = undefined,
         assistantResponseSeed = undefined,
+        queueReservation = null,
+        progressGroupId = null,
     } = {}) {
         const resolvedOutput = LLMClient.resolveOutput(output);
         const isSilent = resolvedOutput === 'silent';
@@ -3811,9 +4046,20 @@ class LLMClient {
                 reasoningEffort,
                 prefill,
                 assistantResponseSeed,
+                progressGroupId,
                 forceOutput: forceOutput !== null && forceOutput !== undefined ? '[provided]' : null
             });
         }
+        const resolvedProgressGroupId = (() => {
+            if (progressGroupId === null || progressGroupId === undefined) {
+                return null;
+            }
+            if (typeof progressGroupId !== 'string' || !progressGroupId.trim()) {
+                throw new Error('chatCompletion progressGroupId must be a non-empty string when provided.');
+            }
+            return progressGroupId.trim();
+        })();
+        const promptQueueReservationState = LLMClient.#beginPromptQueueReservationRequest(queueReservation);
         let currentTime = Date.now();
         try {
             dumpReasoningToConsole = true;
@@ -3961,7 +4207,9 @@ class LLMClient {
                     payload.top_p = resolvedTopP;
                 }
 
-                const resolvedModel = model || payload.model || aiConfig.model;
+                const resolvedModel = LLMClient.#isKimiBridgeBackend(resolvedBackend)
+                    ? KimiBridgeClient.resolveResponseModel(aiConfig)
+                    : (model || payload.model || aiConfig.model);
                 if (!resolvedModel) {
                     throw new Error('AI model is not configured.');
                 }
@@ -4323,19 +4571,33 @@ class LLMClient {
                             }
                         }
 
-                        attemptSemaphore = LLMClient.#ensureSemaphore(
+                        const resolvedAttemptSemaphore = LLMClient.#ensureSemaphore(
                             attemptRuntime.semaphoreKey,
                             attemptRuntime.effectiveMaxConcurrent,
                             log
                         );
-                        attemptSemaphorePermit = await attemptSemaphore.acquire({
-                            background: Boolean(runInBackground)
-                        });
-                        attemptAllModelsSemaphore = LLMClient.#ensureAllModelsSemaphore(log);
-                        if (attemptAllModelsSemaphore) {
-                            attemptAllModelsSemaphorePermit = await attemptAllModelsSemaphore.acquire({
+                        const resolvedAttemptAllModelsSemaphore = LLMClient.#ensureAllModelsSemaphore(log);
+                        if (promptQueueReservationState) {
+                            await LLMClient.#retainPromptQueueReservationPermits(
+                                promptQueueReservationState,
+                                {
+                                    semaphore: resolvedAttemptSemaphore,
+                                    semaphoreKey: attemptRuntime.semaphoreKey,
+                                    allModelsSemaphore: resolvedAttemptAllModelsSemaphore,
+                                    background: Boolean(runInBackground)
+                                }
+                            );
+                        } else {
+                            attemptSemaphore = resolvedAttemptSemaphore;
+                            attemptSemaphorePermit = await attemptSemaphore.acquire({
                                 background: Boolean(runInBackground)
                             });
+                            attemptAllModelsSemaphore = resolvedAttemptAllModelsSemaphore;
+                            if (attemptAllModelsSemaphore) {
+                                attemptAllModelsSemaphorePermit = await attemptAllModelsSemaphore.acquire({
+                                    background: Boolean(runInBackground)
+                                });
+                            }
                         }
 
                         const shouldTrackPromptProgress = !isSilent
@@ -4347,6 +4609,7 @@ class LLMClient {
                                 isBackground: Boolean(runInBackground),
                                 model: resolvedModel,
                                 promptText: LLMClient.formatMessagesForErrorLog(payload.messages),
+                                progressGroupId: resolvedProgressGroupId,
                                 receivedUnit: 'characters'
                             })
                             : null;
@@ -4388,6 +4651,38 @@ class LLMClient {
                             });
                         } else if (LLMClient.#isClineBridgeBackend(resolvedBackend)) {
                             response = await ClineBridgeClient.chatCompletion({
+                                messages: requestMessages,
+                                model: resolvedModel,
+                                timeoutMs: resolvedTimeout,
+                                metadataLabel,
+                                additionalPayload: payload,
+                                aiConfig: attemptRuntime.aiConfig,
+                                signal: controller.signal,
+                                onStdoutEvent: (event) => {
+                                    if (!streamTrackerId) {
+                                        return;
+                                    }
+                                    const previewUpdate = LLMClient.#extractCodexPreviewUpdate(event);
+                                    if (previewUpdate) {
+                                        LLMClient.#applyCodexPreviewUpdate(
+                                            streamTrackerId,
+                                            previewUpdate,
+                                            streamContinueTimeoutMs
+                                        );
+                                        return;
+                                    }
+                                    const statusLine = LLMClient.#formatCodexProgressEvent(event);
+                                    if (statusLine) {
+                                        LLMClient.#trackStreamStatus(
+                                            streamTrackerId,
+                                            statusLine,
+                                            streamContinueTimeoutMs
+                                        );
+                                    }
+                                }
+                            });
+                        } else if (LLMClient.#isKimiBridgeBackend(resolvedBackend)) {
+                            response = await KimiBridgeClient.chatCompletion({
                                 messages: requestMessages,
                                 model: resolvedModel,
                                 timeoutMs: resolvedTimeout,
@@ -4925,7 +5220,8 @@ class LLMClient {
             });
             return responseContent;
         } finally {
-            // per-attempt resources are released inside the retry loop.
+            LLMClient.#endPromptQueueReservationRequest(promptQueueReservationState);
+            // Non-reserved per-attempt resources are released inside the retry loop.
         }
     }
 }

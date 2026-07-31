@@ -69,4 +69,67 @@ test.describe('modal prompt-progress bar', () => {
 
         await pushPromptProgress(page, []);
     });
+
+    test('tinybrain viewer follows staged prompts and retains parse failures in red', async ({ page }) => {
+        const progressGroupId = 'tinybrain-viewer-test';
+        await pushPromptProgress(page, [{
+            id: 'tinybrain-stage-1',
+            label: 'player_action[1]',
+            model: 'test-model',
+            progressGroupId,
+            promptText: 'First tinybrain checkpoint prompt.',
+            previewText: 'Malformed checkpoint response.',
+            progressFraction: 0.5,
+            failedResponses: [],
+            responseFailed: false
+        }]);
+        await page.evaluate(() => window.AIRPG_CHAT.openPromptProgressViewer('tinybrain-stage-1'));
+
+        const viewer = page.locator('.prompt-progress-viewer');
+        await expect(viewer).toHaveCount(1);
+        await expect(viewer).toHaveAttribute('data-prompt-id', 'tinybrain-stage-1');
+        await expect(viewer.locator('.prompt-progress-viewer__follow-input')).toBeChecked();
+
+        await page.evaluate((groupId) => {
+            window.AIRPG_CHAT.handlePromptProgressGroupFailure({
+                progressGroupId: groupId,
+                promptId: 'tinybrain-stage-1',
+                failedResponses: ['Malformed checkpoint response.']
+            });
+        }, progressGroupId);
+        await expect(viewer.locator('.prompt-progress-viewer__failed-response-inline'))
+            .toHaveText('Malformed checkpoint response.');
+
+        await pushPromptProgress(page, [{
+            id: 'tinybrain-stage-2',
+            label: 'player_action[2]',
+            model: 'test-model',
+            progressGroupId,
+            promptText: 'Second tinybrain checkpoint prompt.',
+            previewText: 'Valid retry response.',
+            progressFraction: 0.25,
+            failedResponses: ['Malformed checkpoint response.'],
+            responseFailed: false
+        }]);
+
+        await expect(viewer).toHaveCount(1);
+        await expect(viewer).toHaveAttribute('data-prompt-id', 'tinybrain-stage-2');
+        await expect(viewer.locator('.prompt-progress-viewer__prompt-inline'))
+            .toHaveText('Second tinybrain checkpoint prompt.');
+        await expect(viewer.locator('.prompt-progress-viewer__failed-response-inline'))
+            .toHaveText('Malformed checkpoint response.');
+        await expect(viewer.locator('.prompt-progress-viewer__response-inline'))
+            .toHaveText('Valid retry response.');
+
+        const colors = await viewer.evaluate(element => ({
+            prompt: getComputedStyle(element.querySelector('.prompt-progress-viewer__prompt-inline')).color,
+            failed: getComputedStyle(element.querySelector('.prompt-progress-viewer__failed-response-inline')).color,
+            response: getComputedStyle(element.querySelector('.prompt-progress-viewer__response-inline')).color
+        }));
+        expect(new Set(Object.values(colors)).size).toBe(3);
+        expect(colors.failed).toBe('rgb(252, 165, 165)');
+
+        await page.screenshot({ path: 'tmp/tinybrain-prompt-viewer.png', fullPage: true });
+        await pushPromptProgress(page, []);
+    });
 });

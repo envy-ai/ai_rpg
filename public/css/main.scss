@@ -9224,16 +9224,21 @@ body.dark .thing-toggle-hint {
 }
 
 .prompt-progress-viewer__prompt-inline,
+.prompt-progress-viewer__failed-response-inline,
 .prompt-progress-viewer__response-inline {
   display: inline;
 }
 
 .prompt-progress-viewer__prompt-inline {
-  color: #fef3c7;
+  color: #fcd34d;
 }
 
 .prompt-progress-viewer__response-inline {
-  color: #f8fafc;
+  color: #67e8f9;
+}
+
+.prompt-progress-viewer__failed-response-inline {
+  color: #fca5a5;
 }
 
 .prompt-progress-viewer.is-prompt-empty .prompt-progress-viewer__prompt-inline,

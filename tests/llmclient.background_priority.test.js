@@ -253,3 +253,342 @@ test('root max_concurrent_requests_all_models rejects invalid values loudly', { 
         Globals.config = originalConfig;
     }
 });
+
+test('prompt queue reservation retains a model semaphore permit between staged calls', { concurrency: false }, async () => {
+    const originalAxiosPost = axios.post;
+    const originalConfig = Globals.config;
+    const modelName = `reserved-model-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    const started = [];
+    let competingRequest = null;
+
+    Globals.config = {
+        ai: {
+            backend: 'openai_compatible',
+            endpoint: 'https://example.invalid/v1/chat/completions',
+            apiKey: 'test-key',
+            model: modelName,
+            stream: false,
+            retryAttempts: 0,
+            max_concurrent_requests: 1
+        }
+    };
+
+    axios.post = async (_endpoint, payload) => {
+        const label = payload?.messages?.[0]?.content || '';
+        started.push(label);
+        return {
+            status: 200,
+            statusText: 'OK',
+            headers: {},
+            config: {},
+            data: {
+                id: `response-${label.replace(/\s+/g, '-')}`,
+                object: 'chat.completion',
+                created: 1,
+                model: modelName,
+                choices: [{
+                    index: 0,
+                    finish_reason: 'stop',
+                    message: { role: 'assistant', content: label }
+                }]
+            }
+        };
+    };
+
+    try {
+        await LLMClient.withPromptQueueReservation(async (queueReservation) => {
+            await LLMClient.chatCompletion({
+                messages: [{ role: 'user', content: 'reserved stage one' }],
+                metadataLabel: 'player_action',
+                queueReservation,
+                validateXML: false,
+                output: 'silent'
+            });
+
+            competingRequest = LLMClient.chatCompletion({
+                messages: [{ role: 'user', content: 'competing prompt' }],
+                metadataLabel: 'plot_analysis',
+                validateXML: false,
+                output: 'silent'
+            });
+            await flushTurn();
+            assert.deepEqual(started, ['reserved stage one']);
+
+            await LLMClient.chatCompletion({
+                messages: [{ role: 'user', content: 'reserved stage two' }],
+                metadataLabel: 'player_action',
+                queueReservation,
+                validateXML: false,
+                output: 'silent'
+            });
+            assert.deepEqual(started, ['reserved stage one', 'reserved stage two']);
+        });
+
+        await competingRequest;
+        assert.deepEqual(started, [
+            'reserved stage one',
+            'reserved stage two',
+            'competing prompt'
+        ]);
+    } finally {
+        axios.post = originalAxiosPost;
+        Globals.config = originalConfig;
+    }
+});
+
+test('prompt queue reservation retains the all-model permit across staged calls', { concurrency: false }, async () => {
+    const originalAxiosPost = axios.post;
+    const originalConfig = Globals.config;
+    const modelOne = `reserved-global-one-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    const modelTwo = `reserved-global-two-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    const started = [];
+    let competingRequest = null;
+
+    Globals.config = {
+        max_concurrent_requests_all_models: 1,
+        ai: {
+            backend: 'openai_compatible',
+            endpoint: 'https://example.invalid/v1/chat/completions',
+            apiKey: 'test-key',
+            model: modelOne,
+            stream: false,
+            retryAttempts: 0,
+            max_concurrent_requests: 2
+        }
+    };
+
+    axios.post = async (_endpoint, payload) => {
+        const label = payload?.messages?.[0]?.content || '';
+        started.push(`${payload?.model || ''}:${label}`);
+        return {
+            status: 200,
+            statusText: 'OK',
+            headers: {},
+            config: {},
+            data: {
+                id: `response-${label.replace(/\s+/g, '-')}`,
+                object: 'chat.completion',
+                created: 1,
+                model: payload?.model || modelOne,
+                choices: [{
+                    index: 0,
+                    finish_reason: 'stop',
+                    message: { role: 'assistant', content: label }
+                }]
+            }
+        };
+    };
+
+    try {
+        await LLMClient.withPromptQueueReservation(async (queueReservation) => {
+            await LLMClient.chatCompletion({
+                messages: [{ role: 'user', content: 'reserved global stage one' }],
+                model: modelOne,
+                metadataLabel: 'player_action',
+                queueReservation,
+                validateXML: false,
+                output: 'silent'
+            });
+
+            competingRequest = LLMClient.chatCompletion({
+                messages: [{ role: 'user', content: 'other model prompt' }],
+                model: modelTwo,
+                metadataLabel: 'plot_analysis',
+                validateXML: false,
+                output: 'silent'
+            });
+            await flushTurn();
+            assert.deepEqual(started, [`${modelOne}:reserved global stage one`]);
+
+            await LLMClient.chatCompletion({
+                messages: [{ role: 'user', content: 'reserved global stage two' }],
+                model: modelOne,
+                metadataLabel: 'player_action',
+                queueReservation,
+                validateXML: false,
+                output: 'silent'
+            });
+            assert.deepEqual(started, [
+                `${modelOne}:reserved global stage one`,
+                `${modelOne}:reserved global stage two`
+            ]);
+        });
+
+        await competingRequest;
+        assert.deepEqual(started, [
+            `${modelOne}:reserved global stage one`,
+            `${modelOne}:reserved global stage two`,
+            `${modelTwo}:other model prompt`
+        ]);
+    } finally {
+        axios.post = originalAxiosPost;
+        Globals.config = originalConfig;
+    }
+});
+
+test('prompt queue reservation releases permits when its callback fails', { concurrency: false }, async () => {
+    const originalAxiosPost = axios.post;
+    const originalConfig = Globals.config;
+    const modelName = `reserved-failure-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    const started = [];
+
+    Globals.config = {
+        ai: {
+            backend: 'openai_compatible',
+            endpoint: 'https://example.invalid/v1/chat/completions',
+            apiKey: 'test-key',
+            model: modelName,
+            stream: false,
+            retryAttempts: 0,
+            max_concurrent_requests: 1
+        }
+    };
+
+    axios.post = async (_endpoint, payload) => {
+        const label = payload?.messages?.[0]?.content || '';
+        started.push(label);
+        return {
+            status: 200,
+            statusText: 'OK',
+            headers: {},
+            config: {},
+            data: {
+                id: `response-${label.replace(/\s+/g, '-')}`,
+                object: 'chat.completion',
+                created: 1,
+                model: modelName,
+                choices: [{
+                    index: 0,
+                    finish_reason: 'stop',
+                    message: { role: 'assistant', content: label }
+                }]
+            }
+        };
+    };
+
+    try {
+        await assert.rejects(
+            () => LLMClient.withPromptQueueReservation(async (queueReservation) => {
+                await LLMClient.chatCompletion({
+                    messages: [{ role: 'user', content: 'reserved before failure' }],
+                    metadataLabel: 'player_action',
+                    queueReservation,
+                    validateXML: false,
+                    output: 'silent'
+                });
+                throw new Error('intentional reservation failure');
+            }),
+            /intentional reservation failure/
+        );
+
+        await LLMClient.chatCompletion({
+            messages: [{ role: 'user', content: 'request after failure' }],
+            metadataLabel: 'plot_analysis',
+            validateXML: false,
+            output: 'silent'
+        });
+        assert.deepEqual(started, ['reserved before failure', 'request after failure']);
+    } finally {
+        axios.post = originalAxiosPost;
+        Globals.config = originalConfig;
+    }
+});
+
+test('prompt queue reservation retains its permit across transport retries', { concurrency: false }, async () => {
+    const originalAxiosPost = axios.post;
+    const originalConfig = Globals.config;
+    const modelName = `reserved-retry-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    const started = [];
+    let retryStageAttempts = 0;
+    let competingRequest = null;
+
+    Globals.config = {
+        ai: {
+            backend: 'openai_compatible',
+            endpoint: 'https://example.invalid/v1/chat/completions',
+            apiKey: 'test-key',
+            model: modelName,
+            stream: false,
+            retryAttempts: 1,
+            waitAfterError: 0,
+            waitAfterNetworkError: 0,
+            max_concurrent_requests: 1
+        }
+    };
+
+    axios.post = async (_endpoint, payload) => {
+        const label = payload?.messages?.[0]?.content || '';
+        started.push(label);
+        if (label === 'reserved retry stage') {
+            retryStageAttempts += 1;
+            if (retryStageAttempts === 1) {
+                const error = new Error('intentional retryable network failure');
+                error.code = 'ECONNRESET';
+                throw error;
+            }
+        }
+        return {
+            status: 200,
+            statusText: 'OK',
+            headers: {},
+            config: {},
+            data: {
+                id: `response-${label.replace(/\s+/g, '-')}`,
+                object: 'chat.completion',
+                created: 1,
+                model: modelName,
+                choices: [{
+                    index: 0,
+                    finish_reason: 'stop',
+                    message: { role: 'assistant', content: label }
+                }]
+            }
+        };
+    };
+
+    try {
+        await LLMClient.withPromptQueueReservation(async (queueReservation) => {
+            await LLMClient.chatCompletion({
+                messages: [{ role: 'user', content: 'reserved initial stage' }],
+                metadataLabel: 'player_action',
+                queueReservation,
+                validateXML: false,
+                output: 'silent'
+            });
+
+            competingRequest = LLMClient.chatCompletion({
+                messages: [{ role: 'user', content: 'competing during retry' }],
+                metadataLabel: 'plot_analysis',
+                validateXML: false,
+                output: 'silent'
+            });
+            await flushTurn();
+
+            const response = await LLMClient.chatCompletion({
+                messages: [{ role: 'user', content: 'reserved retry stage' }],
+                metadataLabel: 'player_action',
+                queueReservation,
+                validateXML: false,
+                output: 'silent'
+            });
+            assert.equal(response, 'reserved retry stage');
+            assert.equal(retryStageAttempts, 2);
+            assert.deepEqual(started, [
+                'reserved initial stage',
+                'reserved retry stage',
+                'reserved retry stage'
+            ]);
+        });
+
+        await competingRequest;
+        assert.deepEqual(started, [
+            'reserved initial stage',
+            'reserved retry stage',
+            'reserved retry stage',
+            'competing during retry'
+        ]);
+    } finally {
+        axios.post = originalAxiosPost;
+        Globals.config = originalConfig;
+    }
+});

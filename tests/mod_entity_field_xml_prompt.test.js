@@ -111,6 +111,7 @@ function loadBuildBasePromptContext(registry) {
             getAllRarityDefinitions: () => [{ label: 'Common', description: 'Common item.' }]
         },
         buildActiveMysteryThreadsForPrompt: () => [],
+        buildMysteryCleanupThreadsForPrompt: () => [],
         buildNpcRepresentationSummaryForPrompt: () => '',
         buildActorRelationshipPromptContext,
         buildTrackersForPrompt: () => [],
@@ -283,6 +284,7 @@ test('base prompt context exposes registered player-action prompt steps', () => 
         step: 3,
         number: '3l',
         text: 'Check whether implant behavior stayed consistent with installed hardware.',
+        tinyBrainText: 'Check whether implant behavior stayed consistent with installed hardware.',
         order: 1
     }]);
 });

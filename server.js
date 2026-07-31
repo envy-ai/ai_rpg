@@ -14,6 +14,10 @@ const { spawn } = require('child_process');
 const { XMLSerializer } = require('@xmldom/xmldom');
 const Utils = require('./Utils.js');
 const { loadMergedConfig } = require('./ConfigLoader.js');
+const {
+    loadStartupGameFromPath,
+    resolveCliStartupGamePath
+} = require('./StartupGameLoad.js');
 const { resolvePointPoolFormulas } = require('./utils/point-pool-formulas.js');
 const {
     normalizeDifficultyKey,
@@ -115,6 +119,7 @@ const RealtimeHub = require('./RealtimeHub.js');
 const QuestConfirmationManager = require('./QuestConfirmationManager.js');
 const ModLoader = require('./ModLoader.js');
 const ModExtensionRegistry = require('./ModExtensionRegistry.js');
+const { TinyBrainPromptExtension } = require('./TinyBrainPromptRunner.js');
 const {
     CHAT_TOOL_DEFINITIONS,
     createChatToolRuntime,
@@ -635,11 +640,13 @@ fs.readdirSync(logsDir)
 // Load configuration
 let config;
 let cliConfigOverridePath = null;
+let cliStartupGamePath = null;
 let cliTestModes = new Set();
 let cliRegionExitDebug = false;
 let cliVehicleDebug = false;
 try {
     cliConfigOverridePath = resolveCliConfigOverridePath();
+    cliStartupGamePath = resolveCliStartupGamePath();
     cliTestModes = resolveCliTestModes();
     cliRegionExitDebug = cliTestModes.has('all') || cliTestModes.has('region-exits');
     cliVehicleDebug = cliTestModes.has('all') || cliTestModes.has('vehicles');
@@ -662,6 +669,9 @@ try {
     Globals.debugVehicles = cliVehicleDebug;
     if (cliConfigOverridePath) {
         console.log(`🔧 Applied config override: ${cliConfigOverridePath}`);
+    }
+    if (cliStartupGamePath) {
+        console.log(`💾 Startup game requested: ${cliStartupGamePath}`);
     }
     if (cliTestModes.size) {
         console.log(`🧪 Enabled CLI test modes: ${Array.from(cliTestModes).sort().join(', ')}`);
@@ -2582,6 +2592,9 @@ async function validateConfiguration() {
 
     // Validate AI configuration
     validationErrors.push(...LLMClient.getConfigurationErrors(config.ai));
+    if (config.ai?.tinybrain !== undefined && typeof config.ai.tinybrain !== 'boolean') {
+        validationErrors.push('ai.tinybrain must be a boolean when provided');
+    }
     try {
         LLMClient.resolveMaxConcurrentAllModels(config);
     } catch (error) {
@@ -4540,6 +4553,7 @@ function serializeNpcForClient(npc, options = {}) {
         maxHealth: npc.maxHealth,
         healthAttribute: npc.healthAttribute,
         imageId: npc.imageId,
+        imagePrompt: npc.imagePrompt,
         isNPC: Boolean(npc.isNPC),
         isPlayer: !Boolean(npc.isNPC),
         hiddenFromPlayer: Boolean(npc.hiddenFromPlayer && !npc.isDead),
@@ -8233,18 +8247,8 @@ async function summarizeScenesForHistoryRange({ chatHistory, startIndex, endInde
     let parsedStart = null;
     let parsedEnd = null;
     if (isAllRange) {
-        if (redo) {
-            parsedStart = 1;
-            parsedEnd = totalEntries;
-        } else {
-            const sceneSummaries = Globals.getSceneSummaries();
-            const firstUnsummarized = sceneSummaries.getFirstUnsummarizedIndex(totalEntries);
-            if (!firstUnsummarized) {
-                throw new Error('All entries are already summarized.');
-            }
-            parsedStart = firstUnsummarized;
-            parsedEnd = totalEntries;
-        }
+        parsedStart = 1;
+        parsedEnd = totalEntries;
     } else {
         parsedStart = Number(startToken);
         parsedEnd = Number(endToken);
@@ -8270,7 +8274,7 @@ async function summarizeScenesForHistoryRange({ chatHistory, startIndex, endInde
         }));
     }
 
-    if (redo) {
+    if (redo && !isAllRange) {
         const sceneSummaries = Globals.getSceneSummaries();
         const removedRange = sceneSummaries.deleteSummariesOverlappingRange(parsedStart, parsedEnd);
         const maxEntriesPerPrompt = resolveSceneSummaryMaxEntries();
@@ -8509,12 +8513,20 @@ async function summarizeScenesForHistoryRange({ chatHistory, startIndex, endInde
     if (!sceneSummaries || typeof sceneSummaries.addSummaryResult !== 'function') {
         throw new Error('Scene summary store is unavailable.');
     }
-    sceneSummaries.addSummaryResult({
+    const summaryResult = {
         range: { start: parsedStart, end: parsedEnd },
         summarizedRange: { start: summarizedStartIndex, end: summarizedEndIndex },
         entryIndexMap,
         scenes: scenesWithBounds
-    });
+    };
+    if (isAllRange) {
+        if (typeof sceneSummaries.replaceWithSummaryResult !== 'function') {
+            throw new Error('Scene summary store cannot atomically rebuild all summaries.');
+        }
+        sceneSummaries.replaceWithSummaryResult(summaryResult);
+    } else {
+        sceneSummaries.addSummaryResult(summaryResult);
+    }
 
     return {
         range: { start: parsedStart, end: parsedEnd },
@@ -10513,7 +10525,7 @@ function normalizeRegionLocationName(name) {
     return typeof name === 'string' ? name.trim().toLowerCase() : '';
 }
 
-function ensureExitConnection(fromLocation, toLocation, { description, bidirectional = false, destinationRegion, travelTimeMinutes = undefined, updateExistingExitTravelTime = true, isVehicle = undefined, vehicleType = undefined } = {}) {
+function ensureExitConnection(fromLocation, toLocation, { description, bidirectional = false, destinationRegion, travelTimeMinutes = undefined, updateExistingExitTravelTime = true, isVehicle = undefined, vehicleType = undefined, imagePrompt = undefined } = {}) {
     if (!fromLocation || !toLocation) {
         console.log('🧭 ensureExitConnection aborted: missing from/to location');
         console.trace();
@@ -10654,6 +10666,10 @@ function ensureExitConnection(fromLocation, toLocation, { description, bidirecti
 
     if (vehicleType !== undefined) {
         exit.vehicleType = vehicleType;
+    }
+
+    if (imagePrompt !== undefined) {
+        exit.imagePrompt = imagePrompt;
     }
 
     const resolvedIsVehicle = isVehicle !== undefined ? Boolean(isVehicle) : Boolean(exit?.isVehicle);
@@ -12911,6 +12927,7 @@ const promptEnv = nunjucks.configure('prompts', {
     autoescape: false,
     dev: true
 });
+promptEnv.addExtension('TinyBrainPromptExtension', new TinyBrainPromptExtension());
 
 // Configure Nunjucks for image generation templates (no autoescape)
 const imagePromptEnv = nunjucks.configure('imagegen', {
@@ -26679,6 +26696,24 @@ async function renderRegionGeneratorPrompt(options = {}) {
     }
 }
 
+function assignEntityImagePrompt(entity, promptText, entityLabel = 'Entity') {
+    if (!entity || typeof entity !== 'object') {
+        throw new Error(`${entityLabel} is required to store an image prompt.`);
+    }
+    if (typeof promptText !== 'string') {
+        throw new TypeError(`${entityLabel} image prompt must be a string.`);
+    }
+    const prompt = promptText.trim();
+    if (!prompt) {
+        throw new Error(`${entityLabel} image prompt cannot be empty.`);
+    }
+    if (!('imagePrompt' in entity)) {
+        throw new Error(`${entityLabel} does not expose an imagePrompt field.`);
+    }
+    entity.imagePrompt = prompt;
+    return prompt;
+}
+
 // Function to generate player portrait image
 async function generatePlayerImage(player, options = {}) {
     if (!currentSetting) {
@@ -26799,6 +26834,7 @@ async function generatePlayerImage(player, options = {}) {
                     throw error;
                 }
             }
+            finalImagePrompt = assignEntityImagePrompt(player, finalImagePrompt, 'Character');
 
             // Create image generation job with player-specific settings
             const jobId = generateImageId();
@@ -27384,7 +27420,7 @@ async function generateEditableEntityImagePrompt(entity, entityType) {
             const portraitPrompt = renderPlayerPortraitPrompt(entity);
             const { prompt } = await generateImagePromptFromTemplate(portraitPrompt, { prefixType: 'character' });
             return {
-                prompt,
+                prompt: assignEntityImagePrompt(entity, prompt, 'Character'),
                 promptType: 'character',
                 renderedTemplate: portraitPrompt.renderedTemplate || null
             };
@@ -27394,7 +27430,7 @@ async function generateEditableEntityImagePrompt(entity, entityType) {
             const { prompt: generatedImagePrompt } = await generateImagePromptFromTemplate(promptTemplate, { prefixType: 'location' });
             const prompt = renderLocationFinalImagePrompt(entity, generatedImagePrompt);
             return {
-                prompt,
+                prompt: assignEntityImagePrompt(entity, prompt, 'Location'),
                 promptType: 'location',
                 generatedPrompt: generatedImagePrompt,
                 renderedTemplate: promptTemplate.renderedTemplate || null
@@ -27407,7 +27443,7 @@ async function generateEditableEntityImagePrompt(entity, entityType) {
             const thingPrefixType = entity.thingType === 'item' ? 'item' : 'scenery';
             const { prompt } = await generateImagePromptFromTemplate(promptTemplate, { prefixType: thingPrefixType });
             return {
-                prompt,
+                prompt: assignEntityImagePrompt(entity, prompt, 'Thing'),
                 promptType: thingPrefixType,
                 renderedTemplate: promptTemplate.renderedTemplate || null
             };
@@ -27538,6 +27574,7 @@ async function generateLocationImage(location, options = {}) {
                     throw error;
                 }
             }
+            finalImagePrompt = assignEntityImagePrompt(location, finalImagePrompt, 'Location');
 
             // Create image generation job with location-specific settings
             const jobId = generateImageId();
@@ -27815,6 +27852,17 @@ async function generateLocationWeatherVariant(location, options = {}) {
 async function generateLocationExitImage(locationExit, options = {}) {
     try {
         const { force = false, clientId = null } = options || {};
+        const hasFinalImagePrompt = Object.prototype.hasOwnProperty.call(options || {}, 'finalImagePrompt');
+        let finalImagePromptOverride = null;
+        if (hasFinalImagePrompt) {
+            if (typeof options.finalImagePrompt !== 'string') {
+                throw new TypeError('Confirmed location exit image prompt must be a string.');
+            }
+            finalImagePromptOverride = options.finalImagePrompt.trim();
+            if (!finalImagePromptOverride) {
+                throw new Error('Confirmed location exit image prompt cannot be empty.');
+            }
+        }
         // Check if image generation is enabled
         if (!config.imagegen || !config.imagegen.enabled) {
             //console.log('Image generation is not enabled, skipping location exit passage generation');
@@ -27864,8 +27912,13 @@ async function generateLocationExitImage(locationExit, options = {}) {
         }
 
         // Generate the location exit passage prompt
-        const passagePrompt = renderLocationExitImagePrompt(locationExit);
-        const prefixedPassagePrompt = applyImagePromptPrefix(passagePrompt, 'scenery');
+        const prefixedPassagePrompt = finalImagePromptOverride
+            ? assignEntityImagePrompt(locationExit, finalImagePromptOverride, 'Location exit')
+            : assignEntityImagePrompt(
+                locationExit,
+                applyImagePromptPrefix(renderLocationExitImagePrompt(locationExit), 'scenery'),
+                'Location exit'
+            );
 
         // Create image generation job with location exit-specific settings
         const jobId = generateImageId();
@@ -28005,6 +28058,7 @@ async function generateThingImage(thing, options = {}) {
                 throw error;
             }
         }
+        finalImagePrompt = assignEntityImagePrompt(thing, finalImagePrompt, 'Thing');
 
         // Create image generation job with thing-specific settings
         const jobId = generateImageId();
@@ -32076,8 +32130,12 @@ function createDefaultPlayer() {
     }
 }
 
-// Initialize default player
-createDefaultPlayer();
+// Initialize a default player only when startup is not going to hydrate a save.
+if (cliStartupGamePath) {
+    console.log('💾 Skipping default player creation because --load-game was provided.');
+} else {
+    createDefaultPlayer();
+}
 
 // Async server initialization
 async function startServer() {
@@ -32109,6 +32167,18 @@ async function startServer() {
         // Non-fatal - continue without lorebooks
     }
 
+    // Step 2.75: Hydrate an explicitly requested save before opening the HTTP port.
+    if (cliStartupGamePath) {
+        if (typeof apiScope.performGameLoad !== 'function') {
+            throw new Error('Startup game loading is unavailable because performGameLoad was not registered.');
+        }
+        await loadStartupGameFromPath({
+            saveDirectory: cliStartupGamePath,
+            performGameLoad: apiScope.performGameLoad,
+            logger: console
+        });
+    }
+
     // Step 3: Prepare realtime hub and start the server
     try {
         realtimeHub.attach(server, { path: '/ws' });
@@ -32123,8 +32193,15 @@ async function startServer() {
         onListening: () => {
             console.log(`🚀 Server is running on http://${HOST}:${PORT}`);
             console.log(`📡 API endpoint available at http://${HOST}:${PORT}/api/hello`);
-            console.log(`🎮 Using AI model: ${config.ai.model}`);
             const resolvedAiBackend = LLMClient.resolveBackend(config.ai);
+            const displayedAiModel = resolvedAiBackend === 'kimi_cli_bridge'
+                ? (
+                    typeof config?.ai?.kimi_bridge?.model === 'string' && config.ai.kimi_bridge.model.trim()
+                        ? config.ai.kimi_bridge.model.trim()
+                        : '(saved Kimi default)'
+                )
+                : config.ai.model;
+            console.log(`🎮 Using AI model: ${displayedAiModel}`);
             console.log(`🤖 AI backend: ${resolvedAiBackend}`);
             if (resolvedAiBackend === 'openai_compatible') {
                 console.log(`🌐 AI endpoint: ${config.ai.endpoint}`);
@@ -32142,6 +32219,23 @@ async function startServer() {
                     : '(repo root)';
                 console.log(`🧰 Cline bridge command: ${clineCommand}`);
                 console.log(`🧰 Cline bridge cwd: ${clineCwd}`);
+            } else if (resolvedAiBackend === 'kimi_cli_bridge') {
+                const kimiCommand = typeof config?.ai?.kimi_bridge?.command === 'string' && config.ai.kimi_bridge.command.trim()
+                    ? config.ai.kimi_bridge.command.trim()
+                    : 'kimi';
+                const kimiCwd = typeof config?.ai?.kimi_bridge?.cwd === 'string' && config.ai.kimi_bridge.cwd.trim()
+                    ? config.ai.kimi_bridge.cwd.trim()
+                    : './tmp/kimi-bridge-cwd';
+                const kimiModel = typeof config?.ai?.kimi_bridge?.model === 'string' && config.ai.kimi_bridge.model.trim()
+                    ? config.ai.kimi_bridge.model.trim()
+                    : '(saved Kimi default)';
+                const kimiThinking = typeof config?.ai?.kimi_bridge?.thinking === 'string' && config.ai.kimi_bridge.thinking.trim()
+                    ? config.ai.kimi_bridge.thinking.trim()
+                    : '(saved Kimi default)';
+                console.log(`🧰 Kimi bridge command: ${kimiCommand}`);
+                console.log(`🧰 Kimi bridge cwd: ${kimiCwd}`);
+                console.log(`🧰 Kimi bridge model: ${kimiModel}`);
+                console.log(`🧰 Kimi bridge thinking: ${kimiThinking}`);
             }
 
             if (config.imagegen && config.imagegen.enabled) {

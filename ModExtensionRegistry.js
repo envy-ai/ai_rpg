@@ -26,6 +26,7 @@ class ModExtensionRegistry {
         'shortDescription',
         'thingType',
         'imageId',
+        'imagePrompt',
         'createdAt',
         'lastUpdated',
         'rarity',
@@ -93,6 +94,7 @@ class ModExtensionRegistry {
         'description',
         'shortDescription',
         'imageId',
+        'imagePrompt',
         'class',
         'race',
         'gender',
@@ -827,12 +829,19 @@ class ModExtensionRegistry {
         id,
         step,
         text,
+        tinyBrainText = null,
         order = null
     } = {}) {
         const normalizedModName = ModExtensionRegistry.#normalizeModName(modName);
         const normalizedId = ModExtensionRegistry.#normalizeIdentifier(id, 'player-action prompt step id');
         const normalizedStep = ModExtensionRegistry.#normalizePlayerActionPromptStep(step);
         const normalizedText = ModExtensionRegistry.#normalizeString(text, `player-action prompt step "${normalizedId}" text`);
+        const normalizedTinyBrainText = tinyBrainText === null || tinyBrainText === undefined || tinyBrainText === ''
+            ? normalizedText
+            : ModExtensionRegistry.#normalizeString(
+                tinyBrainText,
+                `player-action prompt step "${normalizedId}" tinyBrainText`
+            );
         const fullId = `${normalizedModName}:${normalizedId}`;
         if (this.#playerActionPromptSteps.has(fullId)) {
             throw new Error(`Player-action prompt step "${fullId}" is already registered.`);
@@ -850,6 +859,7 @@ class ModExtensionRegistry {
             fullId,
             step: normalizedStep,
             text: normalizedText,
+            tinyBrainText: normalizedTinyBrainText,
             order: numericOrder,
             sequence
         });
@@ -885,6 +895,7 @@ class ModExtensionRegistry {
                 step: record.step,
                 number: `${prefix}${ModExtensionRegistry.#stepNumberSuffixFromIndex(startIndex + stepIndex)}`,
                 text: record.text,
+                tinyBrainText: record.tinyBrainText,
                 order: record.order
                 };
             });
@@ -1193,6 +1204,7 @@ class ModExtensionRegistry {
         edit = undefined,
         xmlPrompt = undefined,
         toolSchema = undefined,
+        validateValue = undefined,
         descriptionProvider = undefined,
         xmlPromptPlaceholderProvider = undefined
     } = {}) {
@@ -1225,6 +1237,9 @@ class ModExtensionRegistry {
         if (descriptionProvider !== undefined && descriptionProvider !== null && typeof descriptionProvider !== 'function') {
             throw new Error(`Entity field "${normalizedEntityType}.${normalizedFieldName}" descriptionProvider must be a function when provided.`);
         }
+        if (validateValue !== undefined && validateValue !== null && typeof validateValue !== 'function') {
+            throw new Error(`Entity field "${normalizedEntityType}.${normalizedFieldName}" validateValue must be a function when provided.`);
+        }
 
         const record = {
             modName: normalizedModName,
@@ -1234,6 +1249,7 @@ class ModExtensionRegistry {
             defaultValue,
             description: typeof description === 'string' ? description.trim() : '',
             descriptionProvider: descriptionProvider || null,
+            validateValue: validateValue || null,
             exposeToCreateTool: ModExtensionRegistry.#normalizeBoolean(exposeToCreateTool),
             exposeToUpdateTool: ModExtensionRegistry.#normalizeBoolean(exposeToUpdateTool),
             exposeToGeneratorPrompt: normalizedExposeToGeneratorPrompt,

@@ -29,10 +29,11 @@ Registry-backed hooks are process-local. The enabled mod set is fixed at startup
 
 ## Prompt Context and Prompt Instructions
 - `scope.registerBaseContextContributor(fn)` contributes arbitrary mod context. The server collects contributor results under `modContext` while building base prompt context.
-- `scope.registerPlayerActionPromptStep({ id, step, text, order? })` appends an instruction to `prompts/_includes/player-action.njk`.
+- `scope.registerPlayerActionPromptStep({ id, step, text, tinyBrainText?, order? })` appends an instruction to `prompts/_includes/player-action.njk`. `tinyBrainText` supplies the smaller instruction used by the staged template and falls back to `text` when omitted.
 - Player-action `step` accepts only `1` or `3`. Step `1` entries render after built-in `1f`; step `3` entries render after built-in `3k` in the GLM editing/pruning sequence.
 - The `id` is scoped to the registering mod; duplicate ids for the same mod throw. The server assigns labels automatically per stage: step `1` starts at `1g`, and step `3` starts at `3l`.
 - `order` is optional. When omitted, registration order is used; when provided, it controls sorting before automatic numbering.
+- In `player-action.tinybrain.njk`, each registered step is its own `llmparse('mod_step_<number>')` checkpoint, so phrase `tinyBrainText` as a direct request for an immediate non-empty answer. The answer and any tool results remain available to later prompt steps.
 - `scope.registerGenerationPromptInstruction({ id, generationType, generationTypes, text, textProvider, order? })` contributes instructional text to item, location, and/or region generation prompts.
 - `generationType` accepts `item`, `location`, or `region`; `generationTypes` accepts a list. Item instructions render in single-item, container-content, inventory, and location item/scenery generation prompts. Location and region instructions render in their respective generator prompts.
 - Use `text` for static guidance or `textProvider(context)` for dynamic guidance. Providers receive the prompt-render context plus shared maps such as `things`, and may return an empty string to omit the instruction for that render. Non-string provider results throw.
@@ -60,6 +61,7 @@ Registry-backed hooks are process-local. The enabled mod set is fixed at startup
 - Supported field types are `string`, `number`, `integer`, `boolean`, `array`, and `object`.
 - Registered Thing fields persist as top-level `Thing` JSON, are available through `thing.getExtensionField(fieldName)` / `thing.setExtensionField(fieldName, value)`, and are installed as direct instance accessors when possible.
 - Registered Player fields persist as top-level `Player` JSON, are available through `player.getExtensionField(fieldName)` / `player.setExtensionField(fieldName, value)`, and are installed as direct instance accessors when possible.
+- Optional `validateValue(value, context)` runs after core field-type normalization and before a Thing or Player value is persisted by construction, save hydration, or setters. It receives `{ entity, entityType, fieldName }` and should throw a clear error for malformed values.
 - `Thing.fromJSON(...)` restores only fields registered in `Globals.modExtensionRegistry` at hydration time. Mods that own Thing fields must register them before save hydration.
 - `Player.fromJSON(...)` restores only fields registered in `Globals.modExtensionRegistry` at hydration time. Mods that own Player fields must register them before save hydration.
 - Entity field names cannot collide with built-in fields for their entity type or runtime properties, and must be JavaScript-style property names.

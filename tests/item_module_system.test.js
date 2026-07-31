@@ -92,6 +92,13 @@ test('validates module fields only on compatible item shapes', () => {
         moduleSlots: [{ type: 'core' }],
         moduleType: 'core'
     }), { slotTypes }), /must not have module slots/i);
+
+    assert.throws(() => system.validateItemModuleFields(item({
+        name: 'Broken Visor',
+        slot: 'head',
+        moduleSlots: [{ type: 'core' }],
+        installedModuleIds: [1201]
+    }), { slotTypes }), /installedModuleIds\[0\].*non-empty string/i);
 });
 
 test('installing and removing a module updates both the base item and backlink', () => {

@@ -19,7 +19,7 @@ The Codex bridge requires `ai.model` and accepts `ai.codex_bridge` settings. Def
 - `prompt_preamble`: optional text prepended to the generated bridge wrapper instructions.
 - `idle_timeout_ms`: positive no-stdout idle timeout for app-server requests; default `30000`.
 
-`normalizeBackend(...)` accepts `openai`, `openai-compatible`, and `openai_compatible` for the OpenAI-compatible backend, `codex`, `codex-bridge`, `codex_cli`, and `codex_cli_bridge` for Codex, plus `cline`, `cline-bridge`, `cline_cli`, and `cline_cli_bridge` for Cline. Cline-specific validation and transport live in [ClineBridgeClient.md](ClineBridgeClient.md). Unknown backend values throw.
+`normalizeBackend(...)` accepts `openai`, `openai-compatible`, and `openai_compatible` for the OpenAI-compatible backend; `codex`, `codex-bridge`, `codex_cli`, and `codex_cli_bridge` for Codex; `cline`, `cline-bridge`, `cline_cli`, and `cline_cli_bridge` for Cline; and `kimi`, `kimi-bridge`, `kimi_cli`, and `kimi_cli_bridge` for Kimi. Cline-specific validation and transport live in [ClineBridgeClient.md](ClineBridgeClient.md); Kimi-specific behavior lives in [KimiBridgeClient.md](KimiBridgeClient.md). Unknown backend values throw.
 
 ## Session Modes
 - `fresh`: sends `thread/start` with `ephemeral: true` for each request.

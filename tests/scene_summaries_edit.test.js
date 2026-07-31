@@ -108,3 +108,43 @@ test('SceneSummaries anchors generated coverage to the requested summarized rang
     assert.equal(scenes[0].endIndex, 5);
     assert.equal(sceneSummaries.getFirstUnsummarizedIndex(5), null);
 });
+
+test('SceneSummaries atomically replaces scenes and stale entry mappings', () => {
+    const sceneSummaries = buildSceneSummaries();
+    const original = sceneSummaries.serialize();
+
+    assert.throws(
+        () => sceneSummaries.replaceWithSummaryResult({
+            entryIndexMap: [{ entryId: 'replacement-1', index: 1 }],
+            scenes: []
+        }),
+        /must include scenes/i
+    );
+    assert.deepEqual(sceneSummaries.serialize(), original);
+
+    sceneSummaries.replaceWithSummaryResult({
+        summarizedRange: { start: 1, end: 2 },
+        entryIndexMap: [
+            { entryId: 'replacement-1', index: 1 },
+            { entryId: 'replacement-2', index: 2 }
+        ],
+        scenes: [
+            {
+                startIndex: 1,
+                endIndex: 2,
+                startEntryId: 'replacement-1',
+                endEntryId: 'replacement-2',
+                summary: 'The replacement scene.'
+            }
+        ]
+    });
+
+    assert.deepEqual(
+        sceneSummaries.getScenesInOrder().map(scene => scene.summary),
+        ['The replacement scene.']
+    );
+    assert.deepEqual(
+        sceneSummaries.serialize().entryIndexMap.map(entry => entry.entryId),
+        ['replacement-1', 'replacement-2']
+    );
+});

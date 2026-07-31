@@ -70,6 +70,7 @@ npm run test:e2e:headless -- tests/e2e/settings.persistence.spec.js
 - Default port: `4173`
 - Default base URL: `http://127.0.0.1:4173`
 - Web server command: `npm run start -- --port <port>`
+- Live-save browser command: `npm run start -- --port <port> --load-game <save-directory>`. The server loads the requested save before opening the port, so a browser can navigate immediately without posting `/api/load` or racing hydration.
 - Web server reuse: enabled when a compatible server is already listening.
 - Test timeout: 30 seconds by default; the opt-in playthrough and vehicle regressions use 5 minutes because they can exercise multi-stage generation and save/load processing.
 - Expect timeout: 5 seconds.

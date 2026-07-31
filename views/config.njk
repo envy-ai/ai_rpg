@@ -84,6 +84,7 @@
                     {% set aiBackend = config.ai.backend or 'openai_compatible' %}
                     {% set codexBridgeConfig = config.ai.codex_bridge or {} %}
                     {% set clineBridgeConfig = config.ai.cline_bridge or {} %}
+                    {% set kimiBridgeConfig = config.ai.kimi_bridge or {} %}
                     {% set codexCommandValue = codexBridgeConfig.command or 'codex' %}
                     {% set codexHomeValue = codexBridgeConfig.home or './tmp/codex-bridge-home' %}
                     {% set codexSessionModeValue = codexBridgeConfig.session_mode or 'fresh' %}
@@ -100,6 +101,11 @@
                     {% set clineConfigValue = clineBridgeConfig.config or '' %}
                     {% set clineDataDirValue = clineBridgeConfig.data_dir or '' %}
                     {% set clinePromptPreambleValue = clineBridgeConfig.prompt_preamble or '' %}
+                    {% set kimiCommandValue = kimiBridgeConfig.command or 'kimi' %}
+                    {% set kimiCwdValue = kimiBridgeConfig.cwd or './tmp/kimi-bridge-cwd' %}
+                    {% set kimiModelValue = kimiBridgeConfig.model or '' %}
+                    {% set kimiThinkingValue = kimiBridgeConfig.thinking or '' %}
+                    {% set kimiPromptPreambleValue = kimiBridgeConfig.prompt_preamble or '' %}
                     {% set aiSyspromptAppendValue = config.ai.sysprompt_append or '' %}
                     <div class="form-grid">
                         <div class="form-group full-width">
@@ -108,8 +114,9 @@
                                 <option value="openai_compatible" {% if aiBackend == 'openai_compatible' %}selected{% endif %}>openai_compatible</option>
                                 <option value="codex_cli_bridge" {% if aiBackend == 'codex_cli_bridge' %}selected{% endif %}>codex_cli_bridge</option>
                                 <option value="cline_cli_bridge" {% if aiBackend == 'cline_cli_bridge' %}selected{% endif %}>cline_cli_bridge</option>
+                                <option value="kimi_cli_bridge" {% if aiBackend == 'kimi_cli_bridge' %}selected{% endif %}>kimi_cli_bridge</option>
                             </select>
-                            <span class="help-text">Choose the text-generation backend. The OpenAI-compatible path remains available, and Codex or Cline can be enabled as separate bridge-backed options.</span>
+                            <span class="help-text">Choose the text-generation backend. Codex, Cline, and authenticated Kimi Code are available as local CLI bridges.</span>
                         </div>
 
                         <div class="form-group full-width"
@@ -193,16 +200,66 @@
                                    value="{{ clineCwdValue }}">
                             <span class="help-text">Optional working directory. Relative paths are resolved from the repo root.</span>
                         </div>
+
+                        <div class="form-group full-width"
+                             data-ai-backend-section="kimi_cli_bridge"
+                             {% if aiBackend != 'kimi_cli_bridge' %}hidden{% endif %}>
+                            <label for="ai-kimi-command">Kimi Command:</label>
+                            <input type="text"
+                                   id="ai-kimi-command"
+                                   name="ai.kimi_bridge.command::string"
+                                   value="{{ kimiCommandValue }}"
+                                   data-required-backend="kimi_cli_bridge">
+                            <span class="help-text">Command or absolute path used to launch the already-authenticated Kimi Code CLI.</span>
+                        </div>
+
+                        <div class="form-group"
+                             data-ai-backend-section="kimi_cli_bridge"
+                             {% if aiBackend != 'kimi_cli_bridge' %}hidden{% endif %}>
+                            <label for="ai-kimi-cwd">Kimi CWD:</label>
+                            <input type="text"
+                                   id="ai-kimi-cwd"
+                                   name="ai.kimi_bridge.cwd::string"
+                                   value="{{ kimiCwdValue }}">
+                            <span class="help-text">Isolated working directory for fresh one-shot sessions. Relative paths resolve from the repo root.</span>
+                        </div>
+
+                        <div class="form-group"
+                             data-ai-backend-section="kimi_cli_bridge"
+                             {% if aiBackend != 'kimi_cli_bridge' %}hidden{% endif %}>
+                            <label for="ai-kimi-model">Kimi Model Alias:</label>
+                            <input type="text"
+                                   id="ai-kimi-model"
+                                   name="ai.kimi_bridge.model::string"
+                                   value="{{ kimiModelValue }}">
+                            <span class="help-text">Optional alias passed with `--model`. Blank uses Kimi's saved default model.</span>
+                        </div>
+
+                        <div class="form-group"
+                             data-ai-backend-section="kimi_cli_bridge"
+                             {% if aiBackend != 'kimi_cli_bridge' %}hidden{% endif %}>
+                            <label for="ai-kimi-thinking">Kimi Thinking:</label>
+                            <input type="text"
+                                   id="ai-kimi-thinking"
+                                   name="ai.kimi_bridge.thinking::string"
+                                   value="{{ kimiThinkingValue }}">
+                            <span class="help-text">Optional per-process thinking effort, such as low. Blank uses Kimi's saved default.</span>
+                        </div>
                         
                         <div class="form-group full-width">
                             <label for="ai-model">Model:</label>
-                            <select id="ai-model" name="ai.model::string" required>
+                            <select id="ai-model"
+                                    name="ai.model::string"
+                                    {% if aiBackend != 'kimi_cli_bridge' %}required{% endif %}>
+                                {% if aiBackend == 'kimi_cli_bridge' and not config.ai.model %}
+                                    <option value="" selected>Kimi CLI default (shared model unused)</option>
+                                {% endif %}
                                 {% for option in modelOptions %}
                                     <option value="{{ option }}" {% if option == config.ai.model %}selected{% endif %}>{{ option }}</option>
                                 {% endfor %}
                                 <option value="__add_new__">Add New...</option>
                             </select>
-                            <span class="help-text">Select the AI model to use</span>
+                            <span class="help-text">Select the default AI model. Kimi uses the separate optional alias above or its saved CLI default.</span>
                         </div>
 
                         <div class="form-group"
@@ -365,6 +422,16 @@
                                       name="ai.cline_bridge.prompt_preamble::string"
                                       rows="4">{{ clinePromptPreambleValue }}</textarea>
                             <span class="help-text">Optional instructions prepended ahead of the Cline bridge wrapper prompt.</span>
+                        </div>
+
+                        <div class="form-group full-width"
+                             data-ai-backend-section="kimi_cli_bridge"
+                             {% if aiBackend != 'kimi_cli_bridge' %}hidden{% endif %}>
+                            <label for="ai-kimi-promptPreamble">Kimi Prompt Preamble:</label>
+                            <textarea id="ai-kimi-promptPreamble"
+                                      name="ai.kimi_bridge.prompt_preamble::string"
+                                      rows="4">{{ kimiPromptPreambleValue }}</textarea>
+                            <span class="help-text">Optional instructions prepended ahead of the Kimi bridge wrapper prompt.</span>
                         </div>
 
                         <div class="form-group full-width">

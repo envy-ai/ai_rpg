@@ -218,6 +218,34 @@ Original prompt: Horizontally center the submit abilities button in the modal an
 - Updated `public/css/main.scss`:
   - `.player-ability-selection-footer` now centers content.
   - `#playerAbilitySelectionSubmitBtn` now has `margin-bottom: 1.5em`.
+
+Original prompt: Surface an error to the client if the summary fails.
+
+- Automatic post-turn summary failures now emit a targeted `summary_error` realtime event containing the server error message and stack trace.
+- The chat client handles `summary_error` independently of chat request lifecycle events and displays the stack in a modal browser alert.
+- Added server scheduling, client handler, and browser alert regression tests.
+- Updated `docs/api/chat.md`, `docs/ui/modals_overlays.md`, and `docs/README.md`.
+- Validation: `node --check api.js`, `node --check public/js/chat.js`, and the two focused Node tests all pass. `npm run test:e2e:headless` passes with 34 tests passed and 4 fixture-gated tests skipped.
+- The first focused browser alert test run deadlocked because the test awaited `page.evaluate()` while the native alert was open; the test was corrected to accept the dialog before awaiting the dispatch evaluation.
+- A second focused run encountered an unrelated directory-listing server on Playwright's default port 4173; the isolated-port config in `tmp/playwright.summary-error.config.js` avoided that listener. The final focused Chromium test passed and verified the alert heading, summary error text, and server stack location.
+
+Original prompt: Make summarize all clear and rebuild those mappings.
+
+- `/summarize all` and `/summarize all true` now generate from scene-summary entry 1 through the current end instead of resuming at the first gap.
+- Successful all-range generation atomically replaces the complete scene list and entry-id index map through `SceneSummaries.replaceWithSummaryResult(...)`; invalid replacement data leaves the prior store unchanged.
+- Numeric-range and numeric redo behavior remains unchanged.
+- Updated `docs/classes/SceneSummaries.md`, `docs/slashcommands/SceneSummaryCommand.md`, and `docs/README.md`.
+- Validation: syntax checks passed for `SceneSummaies.js` and `server.js`; five focused scene-summary test files pass.
+- Isolated-port Chromium regression suite passes with 35 tests passed and 4 fixture-gated tests skipped.
+
+Original prompt: Incomplete scene summary data shouldn't block loading.
+
+- `Utils.hydrateGameState(...)` now catches invalid or incomplete `sceneSummaries.json` payload errors, clears the scene-summary store, warns with the validation error, and continues loading the rest of the save.
+- A missing scene-summary runtime store remains a fatal hydration configuration error, and recovery also fails explicitly if the store cannot be cleared.
+- Added a hydration regression test for the persisted `scenes: []` plus stale non-empty `entryIndexMap` case.
+- Updated `docs/classes/Utils.md`, `docs/classes/SceneSummaries.md`, and `docs/README.md`.
+- Validation: `Utils.js` and the new test pass syntax checks; four focused hydration/scene-summary test files pass.
+- Isolated-port Chromium regression suite passes with 35 tests passed and 4 fixture-gated tests skipped.
 - Rebuilt CSS output: `npm run scss:build:main` (updates `public/css/main.css`).
 - Updated docs:
   - `docs/ui/modals_overlays.md`
@@ -480,3 +508,227 @@ Follow-up: Change the timeout to 5m and re-run the tests.
   - Vehicle regression ran for about 5.1 minutes and hit the 300,000 ms timeout inside `/api/new-game` while live Starfall Station NPC/ability generation was still running; vehicle assertions were not reached.
   - Develop-web-game browser review captured `tmp/five-minute-regression-review/shot-0.png`, showing Vehicle Regression Hero at Unknown Location with live NPC ability generation still active. One generic 404 resource console error was captured.
 - Conclusion: the five-minute timeout override is active, but it does not make the regressions deterministic or sufficient while config reloads discard their forced-output settings.
+
+Original prompt: Add an optional `ai.tinybrain` player-action prompt program using `player-action.tinybrain.njk`, with staged LLM calls, parser checkpoints and resumable parse retries, preserved tool-call results, and one progressively written prompt log.
+
+- Confirmed defaults and implementation direction:
+  - `ai.tinybrain` defaults to `false`; the existing player-action path remains unchanged when disabled.
+  - Extend the user's instruction/checkpoint pattern through the rest of `player-action.tinybrain.njk` with minimal wording changes.
+  - `llm_dummy_action` requires a non-whitespace response.
+  - `llmparse` routes by parser name, accepts parser arguments, and retries only the failed checkpoint.
+  - Preserve tool calls/results across stages and parse retries.
+  - Write one incrementally updated log per tinybrain run with explicit LLM response start/end markers.
+  - Add optional `tinyBrainText` to mod player-action prompt steps and fall back to `text`.
+- Added `TinyBrainPromptRunner.js` and a Nunjucks prompt extension implementing staged `{% llm_dummy_action %}` and `{% llmparse(...) %}` checkpoints.
+  - `llm_dummy_action` requires a non-whitespace response.
+  - `llmparse` routes by parser name, accepts additional parser arguments, and supports `as variable` assignments used by later Nunjucks branches.
+  - Parser failures retry only the current checkpoint using `ai.retryAttempts`; successful prior stages are retained.
+  - Tool-call assistant messages and tool results remain in the accumulated conversation across later stages and retries, while an unparseable terminal assistant response is removed before retrying.
+- Completed the staged instructions in `prompts/_includes/player-action.tinybrain.njk` with minimal wording changes:
+  - staged NPC selection, action validation, information gathering, needs/initiative analysis, travel classification, mental-compulsion analysis, first draft, editing, second draft, final analysis, and final XML response;
+  - attack and non-repetition-buster prompt branches retain their existing one-shot behavior because they contain no checkpoints.
+- Added `ai.tinybrain: false` to `config.default.yaml`, strict boolean configuration validation, prompt-environment extension registration, and `/api/chat` routing for normal `player-action` prompts when enabled.
+- Extended player-action mod prompt steps with optional `tinyBrainText`, falling back to `text`, and supplied staged-response wording for the three `nsfw-boost` prompt steps.
+- Extended `LLMClient.logPrompt()` with explicit append support and response-boundary labels. Each tiny-brain run now writes one progressive prompt log, including every staged prompt, LLM response BEGIN/END markers, parse failures/retries, tool-call rounds, and tool results.
+- Updated documentation:
+  - `docs/classes/TinyBrainPromptRunner.md`
+  - `docs/classes/LLMClient.md`
+  - `docs/classes/ModExtensionRegistry.md`
+  - `docs/config.md`
+  - `docs/api/chat.md`
+  - `docs/modding.md`
+  - `docs/modding_hooks.md`
+  - `docs/mods/nsfw-boost.md`
+  - `docs/mods/need-bar-lust.md`
+  - `docs/server_llm_notes.md`
+  - `docs/README.md`
+- Added/updated targeted regression coverage in `tests/tiny_brain_prompt_runner.test.js`, `tests/chat_tool_calls.test.js`, `tests/mod_extension_hooks.test.js`, and `tests/mod_entity_field_xml_prompt.test.js`.
+- Validation:
+  - Syntax checks passed for all altered JavaScript and test files.
+  - `config.default.yaml` parses successfully with the project's `js-yaml` dependency.
+  - Targeted tiny-brain/tool/mod test files pass.
+  - Direct prompt rendering produced 14 ordered checkpoints, including both stage-1 and stage-3 mod steps.
+  - A real append-log smoke test verified one shared path and explicit LLM response BEGIN/END markers.
+  - Full `npm run test:e2e:headless` passed with no failed tests after clearing a stale unrelated static server from the Playwright port.
+  - Develop-web-game browser smoke completed without captured browser/page errors; inspected `tmp/tinybrain-browser-smoke/shot-0.png` and confirmed the Play screen renders normally.
+  - Broad `node --test tests/*.test.js` result was 295 passing and 15 failing. Representative failures are pre-existing source-extraction/config-fixture issues unrelated to tiny-brain (for example obsolete helper extraction and a local plot-analysis config expectation); the tiny-brain-related targeted tests all pass.
+- TODO: none for the tiny-brain staged prompt runtime.
+
+Original prompt: I made additional changes to player-action.tinybrain.njk. Make sure that the njk doesn't have any nesting issues or other errors, and make sure what I'm doing is covered by the parsing functions.
+
+- Fixed a real Nunjucks nesting error in `prompts/_includes/player-action.tinybrain.njk`: the final travel/non-travel `{% if response %}` was missing its closing `{% endif %}` before the outer repetition-buster `{% else %}`.
+- Added built-in `response_or_na` parsing to `TinyBrainPromptRunner.js`:
+  - direct normalized no-result answers (`N/A`, `not applicable`, `none`, `no`, `no issues`, `nothing`, and common identified/found variants) become `false`;
+  - every other non-whitespace answer becomes `true` so the corresponding revision checkpoint renders.
+- Added built-in `yes_no` parsing for the final travel decision. It accepts answers beginning with `yes` or `no`, including an optional `Answer:` prefix, and stores a boolean in the assigned Nunjucks variable.
+- Added parser unit coverage and a real-template runner regression that exercises the repeated `response` assignment, a substantive editing result, skipped N/A editing results, and the final travel branch.
+- Updated `docs/classes/TinyBrainPromptRunner.md` and `docs/README.md`.
+- Validation:
+  - `player-action.tinybrain.njk` eager Nunjucks compilation passes.
+  - `node --check TinyBrainPromptRunner.js` passes.
+  - `node --check tests/tiny_brain_prompt_runner.test.js` passes.
+  - `node tests/tiny_brain_prompt_runner.test.js` passes all 4 tests.
+- A direct real-template render matrix passes for repetition-enabled non-attacks with and without action text, simple non-attacks, and both attack configurations. It confirms 20–21 initial checkpoints for repetition-enabled non-attacks, one NPC-selection checkpoint for simple non-attacks, and zero checkpoints for attacks.
+- Corrected the runner/API documentation to reflect the existing simple non-attack NPC-selection checkpoint; only attack branches are one-completion tiny-brain programs.
+- TODO: none for the updated tiny-brain template/parser audit.
+
+Original prompt: Add a command line option to automatically load game saved at an arbitrary path at startup, if something similar doesn't already exist. I'd like you to be able to use this to write live browser tests.
+
+- Confirmed there was no existing CLI save-path option. The pending-load mechanism is browser-mediated, restricted to normal save roots, and therefore does not provide pre-listen hydration for live browser tests.
+- Added `StartupGameLoad.js`:
+  - parses `--load-game <save-directory>` and `--load-game=<save-directory>`;
+  - resolves relative paths against the launch working directory;
+  - rejects duplicate, missing, nonexistent, root, and non-directory targets with explicit errors;
+  - delegates to the normal `performGameLoad()` helper using the arbitrary directory's parent and basename.
+- Integrated startup hydration into `server.js`:
+  - skips the dummy Adventurer and its background inventory generation when `--load-game` is present;
+  - performs the full save load after configuration/image/lorebook initialization and before attaching/listening on the HTTP server;
+  - aborts startup when hydration fails, including mod mismatch and save validation errors.
+- Added `tests/startup_game_load.test.js` covering both CLI forms, relative/absolute resolution, invalid targets, delegation to the normal loader, pre-listen ordering, and dummy-player suppression.
+- Updated `README.md`, `docs/api/game.md`, `docs/playwright.md`, and `docs/README.md`.
+- Validation:
+  - `node --check StartupGameLoad.js` passed.
+  - `node --check server.js` passed.
+  - `node --check tests/startup_game_load.test.js` passed.
+  - `node tests/startup_game_load.test.js` passed all 5 tests.
+  - A real server startup on port 4175 loaded the arbitrary-path save for Exis at Living Stair before logging that the port was listening.
+  - Develop-web-game browser client completed without captured browser/page errors; inspected `tmp/startup-game-load-browser/shot-0.png` and confirmed Exis (level 5), Living Stair, saved chat history, and exits rendered correctly.
+- `npm run test:e2e:headless` passed on a clean rerun with Playwright reporting no failed tests. The first attempt reached an unrelated Python directory server already occupying port 4173; after stopping that stale process, Playwright started this application's server and the suite passed.
+- TODO: none for startup CLI game loading.
+
+Original prompt: Stop the live tinybrain test, then make a tinybrain prompt retain its current queue spot until the entire staged prompt finishes instead of switching between queued prompts.
+
+- Stopped the requested live browser probe and its test server at the user's direction.
+- The probe used `config.yaml.qwen27B-ternary`, the newest timestamped Exis/Living Stair save, and submitted the exact text `"What do you make of this, Ilyarra?"` including the double quotes.
+- The run reached tinybrain checkpoint 2, where the model repeatedly returned prose instead of `<accepted></accepted>` or `<rejected>...</rejected>`. The resumable parser correctly retried checkpoint 2; the run was stopped before retry exhaustion and never reached event processing.
+- The server log showed `plot_analysis` and staged `player_action` calls interleaving because each `LLMClient.chatCompletion()` currently releases its semaphore permits independently.
+- Added `LLMClient.withPromptQueueReservation(callback)` and opaque `queueReservation` support in `chatCompletion()`:
+  - the first real reserved request acquires and retains its normal per-model permit and optional all-model permit;
+  - later sequential requests reuse the permits across staged calls and transport retries;
+  - concurrent reuse, semaphore-key changes, all-model configuration changes, and foreground/background priority changes fail explicitly;
+  - permits release in `finally` on success or failure.
+- Wrapped the complete tinybrain player-action runner in one reservation and passed it through every direct completion and tool-loop round.
+- Added scheduler tests for per-model retention, all-model retention across a competing model key, and failure-path release, plus a source-level API integration assertion.
+- Updated `docs/classes/LLMClient.md`, `docs/classes/TinyBrainPromptRunner.md`, `docs/api/chat.md`, `docs/server_llm_notes.md`, `docs/config.md`, and `docs/README.md`.
+- Targeted validation:
+  - syntax checks pass for all altered JavaScript and test files;
+  - all 7 `llmclient.background_priority` tests pass, including transport-retry retention;
+  - the new API integration assertion passes;
+  - all 4 tinybrain runner tests and all 36 chat-tool-loop tests pass;
+  - LLM force-output, network-retry-wait, prompt-progress, and Codex bridge files pass;
+  - the Cline bridge file still has its unrelated local nvm/npm-prefix fixture launch failure;
+  - the full plot-analysis scheduling file still has its pre-existing local-config assertion expecting `improvement_prompt.enabled: true` while the current local config is false.
+- Full `npm run test:e2e:headless` passed: 33 passed and 4 opt-in scenarios skipped.
+- Develop-web-game browser smoke completed without captured console/page errors; inspected `tmp/tinybrain-queue-reservation-smoke/shot-0.png` and confirmed the Play page, chat input, prompt-status area, and player sidebar render normally.
+- TODO: none for tinybrain queue reservation.
+
+Original prompt: Re-run the latest-save tinybrain test with `config.yaml.qwen27B-ternary`, then stop the server at the user's direction.
+
+- Started the game on port 4175 with `config.yaml.qwen27B-ternary` and the latest timestamped Exis/Living Stair save.
+- Submitted the exact chat text `"What do you make of this, Ilyarra?"`, including the double quotes.
+- The revised tinybrain flow recovered from an invalid checkpoint-2 response on retry and advanced through checkpoint 8 into checkpoint 9; it had not reached event processing.
+- Observed the player-action queue reservation retaining its queue slot throughout the staged calls while the independently queued plot analysis used the other configured global slot.
+- Stopped both the server and the headless browser probe at the user's request. Port 4175 is clear.
+- The interrupted browser result is in `tmp/tinybrain-live-rerun/result.json`; the progressive prompt log is `logs/2026-07-15T05-38-07-226Z_player_action_tinybrain_player_action.log`.
+- TODO: none; the run was intentionally stopped before completion.
+
+Original prompt: Keep one prompt-text viewer persistent throughout a tinybrain run, use distinct prompt/response colors, retry parse failures without exposing diagnostics to the model, and retain failed text in red.
+
+- Added `progressGroupId` support to `LLMClient.chatCompletion()` and prompt-progress payloads. Every tinybrain checkpoint, retry, final response, and tool-loop round uses the render state's stable run id, so an opened viewer follows the logical run as individual stream ids change.
+- Prompt viewers now render the current prompt in amber, live response in cyan, and ordered parse-failed responses in red. Empty/whitespace failed output is represented as `(empty response)`.
+- Added immediate `prompt_progress_group_failure` broadcasts plus transient grouped failure history, so a completed response can be recolored even after its normal progress entry hold window.
+- Tinybrain parse retries now remove the malformed terminal assistant response and resend the unchanged checkpoint conversation without appending the failed response, parser error, or backtrace to model messages. Preceding tool calls/results remain retained.
+- Parse errors/backtraces continue to be written to the progressive prompt/server logs; only the raw failed response is exposed as red viewer display metadata.
+- Updated `docs/classes/TinyBrainPromptRunner.md`, `docs/classes/LLMClient.md`, `docs/ui/modals_overlays.md`, `docs/server_llm_notes.md`, `docs/api/chat.md`, and `docs/README.md`.
+- Validation:
+  - JavaScript syntax checks passed for all altered runtime/test files.
+  - SCSS compiled successfully to `public/css/main.css`.
+  - Tinybrain runner tests pass: 4/4.
+  - LLM prompt-progress tests pass: 10/10.
+  - Prompt-progress dock/UI source tests pass: 15/15.
+  - Tinybrain API integration assertion passes; the same test file retains its known unrelated local-config failure because `config.yaml` has `improvement_prompt.enabled: false` while the fixture expects true.
+  - Focused prompt-viewer Playwright tests pass: 3/3.
+  - Full `npm run test:e2e:headless` passes: 34 passed, 4 opt-in scenarios skipped.
+  - Inspected `tmp/tinybrain-prompt-viewer.png`: one viewer advanced from stage 1 to stage 2 and visibly showed amber prompt, red failed response, and cyan retry response.
+  - Required reusable browser smoke client passed without reported browser errors; inspected `tmp/tinybrain-persistent-viewer-smoke/shot-0.png` and confirmed the idle Play UI remained intact.
+- Test servers were stopped; ports 4173 and 4175 are clear.
+- TODO: none.
+
+Original prompt: Add a brief note to the `moreInfo` description not to call it for items or characters whose full XML is already visible because the result would be redundant.
+
+- Updated the model-facing `moreInfo` tool description with the requested redundancy warning.
+- Added a tool-definition regression assertion.
+- Updated `docs/api/chat.md` and `docs/README.md`.
+- Validation:
+  - `node --check chat_tool_calls.js` passed.
+  - `node --check tests/chat_tool_calls.test.js` passed.
+  - All 37 chat-tool-loop tests passed.
+  - No Playwright was run, honoring the user's manual-testing preference.
+- TODO: none.
+
+Original prompt: The N/A-normalizing tinybrain parser should treat a trimmed response that starts or ends with N/A as N/A.
+
+- Updated `parseResponseOrNa()` to return `false` when a trimmed response begins or ends with a standalone `N/A` token.
+- The boundary matcher accepts `N/A`, `N.A.`, and compact `NA` variants while avoiding substring matches inside words such as `narrative` and `banana`.
+- Added focused start/end and false-positive regression cases to `tests/tiny_brain_prompt_runner.test.js`.
+- Updated `docs/classes/TinyBrainPromptRunner.md` and `docs/README.md`.
+- Validation:
+  - `node --check TinyBrainPromptRunner.js` passed.
+  - `node --check tests/tiny_brain_prompt_runner.test.js` passed.
+  - All 4 tinybrain runner/template tests passed.
+  - No Playwright was run, honoring the user's manual-testing instruction.
+- The already-running qwen server was deliberately left untouched to avoid interrupting the user's active manual session; it must be restarted before it will use this code change.
+- TODO: restart the qwen server when the user is ready.
+
+Original prompt: Re-run the qwen-configured server after the N/A parser change.
+
+- Stopped the prior qwen server and restarted it with `--config-override config.yaml.qwen27B-ternary`.
+- The restarted server is listening on port 7777 and now includes the boundary-aware N/A parser change.
+- No Playwright was run.
+- TODO: none.
+
+Original prompt: Add a persisted `imagePrompt` field to every image-capable entity, update it when prompts are generated, expose it in entity editors, and add `Regenerate Image (same prompt)` context-menu actions without changing initial entity-generation behavior.
+
+- Added blank-by-default, validated, persisted `imagePrompt` state to Player/NPC, Thing, Location, and LocationExit models and their save hydration/API serialization paths.
+- Initial player/NPC, item/scenery, location/stub, and exit creation remains unchanged: constructors never generate prompts and the new field starts blank.
+- Final prompts are stored immediately before image jobs are queued for normal, deterministic exit, and user-confirmed prompt paths. `/api/images/prompt` also stores its returned editable final prompt. Weather/lighting variants do not overwrite a location's base prompt.
+- Added `/api/images/request` support for `useExistingPrompt: true`; it bypasses prompt generation, rejects conflicts with an explicit `prompt`, and returns `409` when no saved prompt exists.
+- Added editable Image Prompt fields to the shared player/NPC, Thing, hydrated Location, and exit edit modes. Thing creation, stub editing, and exit creation keep the field hidden/blank.
+- Added `Regenerate Image (same prompt)` to player/NPC, Thing, current-location, and map-location image context menus. Location request failures restore the pre-request image in the client.
+- Excluded Thing `imagePrompt` from stack checksums so prompt generation/editing does not alter stack compatibility.
+- Automatic image-manager requests broadcast stored prompt updates back into current client entity caches.
+- Updated Player, Thing, Location, LocationExit, images API, chat UI, modal UI, and documentation index references.
+- Validation:
+  - JavaScript syntax checks passed for every altered runtime and test file.
+  - Focused model, serialization, hydration, API, generator, UI-source, race, variant, checksum, and mod-extension tests all pass.
+  - Full `npm run test:e2e:headless` passes: 35 passed, 4 opt-in scenarios skipped.
+  - Focused browser inspection confirmed the location context menu renders `Regenerate Image (same prompt)` and the Location editor renders an editable Image Prompt textarea without page errors. Screenshots are in `tmp/entity-image-prompt-location-menu.png` and `tmp/entity-image-prompt-location-editor.png`.
+- TODO: none.
+
+Original prompt: Make it so abilties are alphabetized in any modal they show up in.
+
+- Audited the documented ability-bearing modals. The player sidebar ability picker already alphabetizes its cards; the level-up picker, character View modal, and character Edit modal still need the same ordering.
+- Added focused regression coverage for one shared, non-mutating, case-insensitive modal ability sorter and all four modal render paths.
+- Added `alphabetizeAbilities()` in `views/index.njk` and routed the player ability picker, level-up ability selection, character View cards, and character Edit rows through it.
+- Targeted modal ability tests pass, including existing player picker and declined-option behavior coverage.
+- Updated `docs/ui/modals_overlays.md`, `docs/ui/chat_interface.md`, and `docs/README.md` to document alphabetical ability ordering in every modal.
+- Validation:
+  - `node --test tests/ability_modal_sorting.test.js tests/player_abilities_modal_ui.test.js tests/player_ability_selection_declined.test.js` passed.
+  - Full `npm run test:e2e:headless` passed: 35 tests passed and 4 opt-in scenarios skipped.
+  - The required reusable browser smoke client opened the live player Abilities modal from a loaded save without console/page errors.
+  - Inspected `tmp/ability-modal-smoke/shot-0.png` and confirmed the visible cards are alphabetized by ability name.
+- TODO: none.
+
+Original prompt: In the modal that shows the prompt as it's running, check the Follow button by default.
+
+- New prompt-progress viewer windows now initialize with `followStream: true`, so the `Follow` checkbox is checked and the combined prompt/response pane follows streamed updates immediately.
+- Users can still uncheck `Follow` for an individual open viewer; subsequent syncs preserve that viewer-local choice.
+- Added source-level and Playwright assertions for the checked-by-default state.
+- Updated `docs/ui/modals_overlays.md`, `docs/ui/chat_interface.md`, and `docs/README.md`.
+- Validation:
+  - JavaScript syntax checks passed for all altered runtime and test files.
+  - All 15 focused prompt-progress dock/UI source tests passed.
+  - The focused Playwright prompt-progress suite passed: 3/3, including the checked-by-default assertion.
+  - Inspected `tmp/tinybrain-prompt-viewer.png`; Follow is visibly checked and the existing prompt/failed/response color treatments remain intact.
+  - The required reusable browser smoke client passed against the live Kimi-backed server without reported page or console errors; `tmp/follow-default-webgame/shot-0.png` confirms the Play UI still renders normally.
+- TODO: none.

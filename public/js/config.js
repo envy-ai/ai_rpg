@@ -295,6 +295,9 @@ class ConfigManager {
     updateAiBackendVisibility() {
         const backend = this.aiBackendSelect?.value || 'openai_compatible';
         const codexSessionMode = this.codexSessionModeSelect?.value || 'fresh';
+        if (this.modelSelect) {
+            this.modelSelect.required = backend !== 'kimi_cli_bridge';
+        }
 
         this.aiBackendSections.forEach((section) => {
             const requiredBackend = section.dataset.aiBackendSection;
@@ -512,8 +515,9 @@ async function testConnection() {
     const codexSessionMode = document.getElementById('ai-codex-sessionMode')?.value || 'fresh';
     const codexSessionId = document.getElementById('ai-codex-sessionId')?.value || '';
     const clineCommand = document.getElementById('ai-cline-command')?.value || '';
+    const kimiCommand = document.getElementById('ai-kimi-command')?.value || '';
 
-    if (!model) {
+    if (!model && backend !== 'kimi_cli_bridge') {
         showTestResult('Please fill in the model before testing.', 'error');
         return;
     }
@@ -527,6 +531,10 @@ async function testConnection() {
     }
     if (backend === 'cline_cli_bridge' && !clineCommand.trim()) {
         showTestResult('Please provide a Cline command before testing.', 'error');
+        return;
+    }
+    if (backend === 'kimi_cli_bridge' && !kimiCommand.trim()) {
+        showTestResult('Please provide a Kimi command before testing.', 'error');
         return;
     }
     
@@ -568,6 +576,13 @@ async function testConnection() {
                     config: document.getElementById('ai-cline-config')?.value || '',
                     data_dir: document.getElementById('ai-cline-dataDir')?.value || '',
                     prompt_preamble: document.getElementById('ai-cline-promptPreamble')?.value || ''
+                },
+                kimiBridge: {
+                    command: kimiCommand,
+                    cwd: document.getElementById('ai-kimi-cwd')?.value || '',
+                    model: document.getElementById('ai-kimi-model')?.value || '',
+                    thinking: document.getElementById('ai-kimi-thinking')?.value || '',
+                    prompt_preamble: document.getElementById('ai-kimi-promptPreamble')?.value || ''
                 }
             })
         });

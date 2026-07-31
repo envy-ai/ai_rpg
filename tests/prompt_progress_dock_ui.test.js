@@ -196,10 +196,21 @@ test('prompt view action spawns persistent modeless prompt viewers', () => {
     assert.doesNotMatch(createActionsBlock, /togglePromptProgressViewer/);
     assert.match(createViewerBlock, /viewer\.setAttribute\('role', 'dialog'\)/);
     assert.match(createViewerBlock, /viewer\.setAttribute\('aria-modal', 'false'\)/);
+    assert.match(chatSource, /followStream:\s*true/);
     assert.match(createViewerBlock, /closeButton\.addEventListener\('click', \(\) => this\.closePromptProgressViewer\(viewerState\.id\)\)/);
     assert.match(syncViewerWindowBlock, /viewerState\.lastEntry/);
+    assert.match(syncViewerWindowBlock, /getPromptProgressEntryForGroup\(progressGroupId\)/);
+    assert.match(syncViewerWindowBlock, /viewerState\.promptId = liveEntry\.id/);
+    assert.match(syncViewerWindowBlock, /viewerState\.progressGroupId = liveEntry\.progressGroupId \|\| progressGroupId/);
     assert.doesNotMatch(syncViewerWindowBlock, /closePromptProgressViewer/);
     assert.match(scssSource, /\.prompt-progress-viewer\s*\{[\s\S]*pointer-events:\s*auto/);
+    assert.match(scssSource, /\.prompt-progress-viewer__prompt-inline\s*\{[\s\S]*color:\s*#fcd34d/);
+    assert.match(scssSource, /\.prompt-progress-viewer__response-inline\s*\{[\s\S]*color:\s*#67e8f9/);
+    assert.match(chatSource, /failedResponses[\s\S]*\(empty response\)/);
+    assert.match(chatSource, /entry\.responseFailed === true \? '' : renderedResponseText/);
+    assert.match(chatSource, /case 'prompt_progress_group_failure':[\s\S]*handlePromptProgressGroupFailure\(payload\)/);
+    assert.match(chatSource, /handlePromptProgressGroupFailure\(payload\)[\s\S]*failedResponses:\s*\[\.\.\.failedResponses\]/);
+    assert.match(scssSource, /\.prompt-progress-viewer__failed-response-inline\s*\{[\s\S]*color:\s*#fca5a5/);
 });
 
 test('open modals mirror the prompt-progress aggregate as a thin bottom bar', () => {

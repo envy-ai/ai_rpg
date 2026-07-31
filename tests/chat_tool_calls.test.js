@@ -16,6 +16,7 @@ function findToolDefinition(name) {
 function createMinimalRuntime({
     llmResponses = [],
     capturedMessagesByRound = [],
+    promptLogCalls = [],
     debugEvents = [],
     chatHistory = [],
     isAssistantProseLikeEntry = () => true,
@@ -55,7 +56,10 @@ function createMinimalRuntime({
                 options.onResponse?.(response);
                 return response.data.choices[0].message.content || '';
             },
-            logPrompt: () => {},
+            logPrompt: (options) => {
+                promptLogCalls.push(options);
+                return options.filePath || '/test/logs/chat-tool.log';
+            },
             formatMessagesForErrorLog: (messages) => JSON.stringify(messages)
         },
         Player: { getAll: () => characters },
@@ -87,6 +91,13 @@ test('requestUserInput tool definition asks a required question only', () => {
     assert.deepEqual(definition.parameters.required, ['question']);
     assert.deepEqual(Object.keys(definition.parameters.properties).sort(), ['question']);
     assert.equal(definition.parameters.additionalProperties, false);
+});
+
+test('moreInfo tool description discourages redundant lookups for visible full XML', () => {
+    const definition = findToolDefinition('moreInfo');
+
+    assert.ok(definition, 'Expected moreInfo chat tool definition.');
+    assert.match(definition.description, /do not call.*items or characters.*full XML.*redundant information/i);
 });
 
 test('deleteThing tool definition requires only a thing identifier', () => {
@@ -301,8 +312,10 @@ test('updateMysteryBoxFields tool replaces selected mystery box fields', async (
 
     try {
         const capturedMessagesByRound = [];
+        const promptLogCalls = [];
         const runtime = createMinimalRuntime({
             capturedMessagesByRound,
+            promptLogCalls,
             llmResponses: [
                 {
                     data: {
@@ -346,11 +359,23 @@ test('updateMysteryBoxFields tool replaces selected mystery box fields', async (
                 messages: [{ role: 'user', content: 'Update the mystery box.' }],
                 tools: CHAT_TOOL_DEFINITIONS
             },
-            metadataLabel: 'update_mystery_box_fields_test'
+            metadataLabel: 'update_mystery_box_fields_test',
+            promptLogFile: '/test/logs/tinybrain.log'
         });
 
         assert.equal(result.aiResponse, 'Done.');
         assert.equal(result.toolInvocations[0].metadata.status, 'success');
+        assert.ok(result.conversationMessages.some(message => message.role === 'tool'));
+        assert.deepEqual(result.conversationMessages.at(-1), {
+            role: 'assistant',
+            content: 'Done.'
+        });
+        assert.ok(promptLogCalls.length >= 2);
+        assert.ok(promptLogCalls.every(call => call.filePath === '/test/logs/tinybrain.log'));
+        assert.ok(promptLogCalls.some(call => (
+            Array.isArray(call.sections)
+            && call.sections.some(section => /tool result/i.test(section.title))
+        )));
         assert.equal(box.name, 'Director Ellison');
         assert.deepEqual(box.keys, ['Director Ellison', 'Meridian Traitor']);
         assert.equal(box.text, 'Updated private note.');

@@ -1,12 +1,12 @@
 # Need Bar: Lust Mod
 
-`mods/need-bar-lust` is a hybrid mod. Its `defs/` overlays contribute a sexual-satisfaction need bar and slop tuning, while `mod.js` registers player-action prompt guidance for lust-driven NPC initiative and explicit intimate-scene prose.
+`mods/need-bar-lust` is a defs-only mod. Its `defs/` overlay contributes a sexual-satisfaction need bar. Optional sexually proactive player-action guidance belongs to the separate `mods/nsfw-boost` runtime mod.
 
 ## Enablement
 
 The mod has no `config.json`, presets, public assets, or mod-owned prompt templates. Mod discovery treats missing enablement flags as enabled, so the mod is active unless runtime config disables it with `mods.need-bar-lust.enabled: false`.
 
-When enabled, its defs overlays participate in the normal alphabetical definition merge, and its runtime hooks are registered through `ModLoader` and `ModExtensionRegistry`.
+When enabled, its defs overlay participates in the normal alphabetical definition merge. The mod has no `mod.js` runtime hooks.
 
 ## Need-Bar Definition
 
@@ -50,13 +50,7 @@ The bar also includes `while_you_were_away_prompt_notes`. The while-away prompt 
 
 ## Runtime Behavior
 
-`mod.js` registers three `scope.registerPlayerActionPromptStep(...)` entries, all at `step: 1`:
-
-- `lustAdvance`: checks whether an NPC should initiate a romantic or sexual advance.
-- `takeTheLead`: asks sexually or romantically involved NPCs to participate actively according to personality.
-- `descriptiveness`: asks for explicit anatomical detail during intimate or sexual acts.
-
-The prompt registry sorts player-action steps by stage, order, registration sequence, and id. Since these entries have no explicit `order`, their order follows registration sequence. Their visible numbers are assigned by the server with the stage-1 suffix series such as `1g`, but exact suffixes depend on any other enabled stage-1 mod steps.
+The shared need-bar runtime handles this defs-only bar. `mods/nsfw-boost` separately registers the `lustAdvance`, `takeTheLead`, and `descriptiveness` player-action prompt steps, including checkpoint-sized `tinyBrainText` variants.
 
 General need-bar handling applies to this bar:
 
@@ -84,21 +78,12 @@ HTTP routes use the same model methods:
 
 Need-bar values and applicability persist in `Player.toJSON()` as `needBars`, `needBarApplicability`, and `needBarRatesAppliedAt`.
 
-## Slop Tuning
-
-`defs/slopwords.yaml` contributes:
-
-- Regex rule: `/\bdon't you dare stop\b/i` with `ppm: 0`
-- Slopword budget: `wrecked: 200`
-
-These entries merge with the root slopword definitions when the mod is enabled.
-
 ## Relevant Coverage
 
 Current behavior is covered through shared mod and need-bar tests rather than a dedicated lust-mod test:
 
-- `tests/definition_overlays.test.js`: hybrid mod loading, defs overlays, enablement precedence.
-- `tests/mod_extension_hooks.test.js`: player-action prompt step registration, numbering, ordering, and duplicate validation.
+- `tests/definition_overlays.test.js`: defs overlays and enablement precedence.
+- `tests/mod_extension_hooks.test.js`: NSFW Boost player-action prompt step registration, tiny-brain text, numbering, ordering, and duplicate validation.
 - `tests/events.need_bar_prompt.test.js`: dedicated need-bar prompt parsing, `needBarChanges` metadata, icon preservation, and trigger buckets.
 - `tests/player.need_bar_audience.test.js`: audience filtering, stored versus active bars, passive drift, and per-bar magnitude overrides.
 - `tests/player.need_bar_applicability.test.js`: per-NPC applicability persistence and re-enable value behavior.

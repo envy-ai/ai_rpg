@@ -1,0 +1,345 @@
+const test = require('node:test');
+const assert = require('node:assert/strict');
+const path = require('node:path');
+const nunjucks = require('nunjucks');
+const {
+    TinyBrainPromptExtension,
+    TinyBrainPromptRunner,
+    parseResponseOrNa,
+    parseYesNo
+} = require('../TinyBrainPromptRunner.js');
+
+class MemoryLoader extends nunjucks.Loader {
+    constructor(templates) {
+        super();
+        this.templates = templates;
+    }
+
+    getSource(name) {
+        const src = this.templates[name];
+        return typeof src === 'string'
+            ? { src, path: name, noCache: true }
+            : null;
+    }
+}
+
+function createEnvironment(programTemplate) {
+    const environment = new nunjucks.Environment(new MemoryLoader({
+        'wrapper.xml.njk': [
+            '<template>',
+            '<systemPrompt><![CDATA[Test system prompt.]]></systemPrompt>',
+            '<generationPrompt><![CDATA[Fixed base context. ',
+            '{{ __tinyBrainState.programStartMarker }}',
+            '{% include "program.njk" %}',
+            ']]></generationPrompt>',
+            '</template>'
+        ].join(''),
+        'program.njk': programTemplate
+    }), { autoescape: false });
+    environment.addExtension('TinyBrainPromptExtension', new TinyBrainPromptExtension());
+    return environment;
+}
+
+function parseTemplate(rendered) {
+    const systemMatch = rendered.match(/<systemPrompt><!\[CDATA\[([\s\S]*?)\]\]><\/systemPrompt>/);
+    const generationMatch = rendered.match(/<generationPrompt><!\[CDATA\[([\s\S]*?)\]\]><\/generationPrompt>/);
+    if (!systemMatch || !generationMatch) {
+        throw new Error('Test wrapper did not render both prompt fields.');
+    }
+    return {
+        systemPrompt: systemMatch[1],
+        generationPrompt: generationMatch[1]
+    };
+}
+
+test('tiny-brain runner keeps tool results and retries only the failed checkpoint', async () => {
+    const environment = createEnvironment([
+        'Decide travel. ',
+        "{% llmparse('travel_with_reason', 'expected parser argument') as travel %}",
+        '{% if travel %}Travel branch YES.{% else %}Travel branch NO.{% endif %} ',
+        'Analyze the scene now. {% llm_dummy_action %}',
+        'Write final XML now.'
+    ].join(''));
+    const renderState = TinyBrainPromptRunner.createRenderState();
+    const templateContext = { __tinyBrainState: renderState };
+    const initialRenderedTemplate = environment.render('wrapper.xml.njk', templateContext);
+    const completionCalls = [];
+    const logCalls = [];
+    const parseFailures = [];
+    const logFilePath = '/test/logs/tinybrain.log';
+
+    const runner = new TinyBrainPromptRunner({
+        promptEnv: environment,
+        parseXMLTemplate: parseTemplate,
+        retryAttempts: 1,
+        parsers: {
+            travel_with_reason(response, parserArgument) {
+                assert.equal(parserArgument, 'expected parser argument');
+                assert.match(response, /yes/i);
+                return { value: true };
+            }
+        },
+        onParseFailure(failure) {
+            parseFailures.push(failure);
+        },
+        finalParser(response) {
+            assert.match(response, /<turnResult>/);
+            return { value: true };
+        },
+        logPrompt(options) {
+            logCalls.push(options);
+            return options.filePath || logFilePath;
+        },
+        async complete({ messages, checkpoint, attempt, isFinal, logFilePath: activeLogFile }) {
+            assert.equal(activeLogFile, logFilePath);
+            completionCalls.push({ messages, checkpoint, attempt, isFinal });
+            if (completionCalls.length === 1) {
+                const aiResponse = '<travel>yes</travel>';
+                return {
+                    aiResponse,
+                    conversationMessages: [...messages, { role: 'assistant', content: aiResponse }],
+                    toolInvocations: []
+                };
+            }
+            if (completionCalls.length === 2) {
+                const aiResponse = '   ';
+                return {
+                    aiResponse,
+                    conversationMessages: [
+                        ...messages,
+                        {
+                            role: 'assistant',
+                            content: '',
+                            tool_calls: [{ id: 'tool_1', type: 'function', function: { name: 'moreInfo', arguments: '{}' } }]
+                        },
+                        { role: 'tool', tool_call_id: 'tool_1', name: 'moreInfo', content: 'Useful retained result.' },
+                        { role: 'assistant', content: aiResponse }
+                    ],
+                    toolInvocations: [{ id: 'tool_1', name: 'moreInfo' }]
+                };
+            }
+            if (completionCalls.length === 3) {
+                assert.equal(attempt, 1);
+                assert.ok(messages.some(message => message.role === 'tool' && message.content === 'Useful retained result.'));
+                assert.ok(!messages.some(message => message.role === 'assistant' && message.content === '   '));
+                const checkpointPrompt = completionCalls[1].messages.at(-1).content;
+                assert.equal(
+                    messages.filter(message => message.role === 'user' && message.content === checkpointPrompt).length,
+                    1
+                );
+                assert.ok(!messages.some(message => (
+                    message.role === 'user'
+                    && /parser error|previous response could not be parsed/i.test(message.content)
+                )));
+                const aiResponse = 'Scene analysis complete.';
+                return {
+                    aiResponse,
+                    conversationMessages: [...messages, { role: 'assistant', content: aiResponse }],
+                    toolInvocations: []
+                };
+            }
+            assert.equal(isFinal, true);
+            assert.match(messages[messages.length - 1].content, /Write final XML now\./);
+            const aiResponse = '<turnResult><prose>Done.</prose><timePassed><reasoning>Talk.</reasoning><duration>1 minute</duration></timePassed></turnResult>';
+            return {
+                aiResponse,
+                conversationMessages: [...messages, { role: 'assistant', content: aiResponse }],
+                toolInvocations: []
+            };
+        }
+    });
+
+    const result = await runner.run({
+        initialRenderedTemplate,
+        templateContext,
+        renderState,
+        programTemplateName: 'program.njk'
+    });
+
+    assert.equal(completionCalls.length, 4);
+    assert.match(completionCalls[1].messages.at(-1).content, /Travel branch YES/);
+    assert.equal(result.toolInvocations.length, 1);
+    assert.equal(result.logFilePath, logFilePath);
+    assert.ok(logCalls.every(call => !call.filePath || call.filePath === logFilePath));
+    const responseLogCalls = logCalls.filter(call => call.markResponseBoundaries);
+    assert.equal(responseLogCalls.length, 4);
+    assert.ok(responseLogCalls.every(call => /LLM response/i.test(call.responseLabel)));
+    const initialCheckpointPromptLog = logCalls.find(call => (
+        call.sections?.[0]?.title === 'Tiny-brain checkpoint 2 prompt'
+    ));
+    const retryCheckpointPromptLog = logCalls.find(call => (
+        call.sections?.[0]?.title === 'Tiny-brain checkpoint 2 prompt retry 1'
+    ));
+    assert.equal(
+        retryCheckpointPromptLog?.sections?.[0]?.content,
+        initialCheckpointPromptLog?.sections?.[0]?.content
+    );
+    assert.equal(parseFailures.length, 1);
+    assert.equal(parseFailures[0].response, '   ');
+    assert.equal(parseFailures[0].checkpoint.index, 1);
+    assert.equal(parseFailures[0].attempt, 0);
+    assert.equal(parseFailures[0].isFinal, false);
+});
+
+test('tiny-brain accept_or_reject parser terminates the program on rejection', async () => {
+    const environment = createEnvironment([
+        'Accept or reject now. {% llmparse(\'accept_or_reject\') %}',
+        'This instruction must never run. {% llm_dummy_action %}',
+        'This final instruction must never run.'
+    ].join(''));
+    const renderState = TinyBrainPromptRunner.createRenderState();
+    const templateContext = { __tinyBrainState: renderState };
+    const initialRenderedTemplate = environment.render('wrapper.xml.njk', templateContext);
+    let completionCount = 0;
+
+    const runner = new TinyBrainPromptRunner({
+        promptEnv: environment,
+        parseXMLTemplate: parseTemplate,
+        retryAttempts: 0,
+        logPrompt(options) {
+            return options.filePath || '/test/logs/rejected.log';
+        },
+        async complete({ messages }) {
+            completionCount += 1;
+            const aiResponse = '<rejected>Incomplete action.</rejected>';
+            return {
+                aiResponse,
+                conversationMessages: [...messages, { role: 'assistant', content: aiResponse }],
+                toolInvocations: []
+            };
+        }
+    });
+
+    const result = await runner.run({
+        initialRenderedTemplate,
+        templateContext,
+        renderState,
+        programTemplateName: 'program.njk'
+    });
+
+    assert.equal(completionCount, 1);
+    assert.equal(result.aiResponse, '<rejected>Incomplete action.</rejected>');
+    assert.equal(result.terminatedAtCheckpoint, 0);
+});
+
+test('tiny-brain short-response parsers normalize N/A and yes/no answers', () => {
+    for (const response of [
+        'N/A',
+        'n.a.',
+        'not applicable',
+        'None identified.',
+        'No issues found.',
+        'N/A - no revision is needed.',
+        'No revision is needed: n/a',
+        'NA because the draft is already clear.',
+        'The draft is already clear — n.a.'
+    ]) {
+        assert.equal(parseResponseOrNa(response).value, false, response);
+    }
+    assert.equal(parseResponseOrNa('The draft reveals the outcome before the player can act.').value, true);
+    assert.equal(parseResponseOrNa('Narrative continuity needs work.').value, true);
+    assert.equal(parseResponseOrNa('The banana example is substantive.').value, true);
+    assert.throws(() => parseResponseOrNa('   '), /non-whitespace/i);
+
+    assert.equal(parseYesNo('Yes.').value, true);
+    assert.equal(parseYesNo('Answer: no, the player remains here.').value, false);
+    assert.throws(() => parseYesNo('Maybe.'), /begin with yes or no/i);
+});
+
+test('real tiny-brain player-action template renders conditional parser branches in sequence', async () => {
+    const promptEnv = new nunjucks.Environment(
+        new nunjucks.FileSystemLoader(path.join(__dirname, '..', 'prompts'), { noCache: true }),
+        { autoescape: false }
+    );
+    promptEnv.addExtension('TinyBrainPromptExtension', new TinyBrainPromptExtension());
+
+    const renderState = TinyBrainPromptRunner.createRenderState();
+    const templateContext = {
+        __tinyBrainState: renderState,
+        actionText: 'Walk through the archway.',
+        characterName: 'Tester',
+        config: {
+            prose_instructions: 'Write clear prose.',
+            prose_length: 'three paragraphs',
+            prose_prompt_suffix: '',
+            repetition_buster: true,
+            use_legacy_prompt_checks: false
+        },
+        currentLocationLastSeenNpcs: [],
+        currentVehicle: {
+            destination: '',
+            name: '',
+            timeToDestination: '',
+            vehicleInfo: {
+                hasArrived: false,
+                isUnderway: false
+            }
+        },
+        isAttack: false,
+        modPlayerActionPromptSteps: [],
+        npcs: [],
+        party: [],
+        setting: {
+            writingStyleNotes: 'Keep it concrete.'
+        }
+    };
+    const programTemplateName = '_includes/player-action.tinybrain.njk';
+    const renderedProgram = promptEnv.render(programTemplateName, templateContext);
+    const initialRenderedTemplate = [
+        '<template>',
+        '<systemPrompt><![CDATA[Test system prompt.]]></systemPrompt>',
+        '<generationPrompt><![CDATA[Fixed base context.',
+        renderState.programStartMarker,
+        renderedProgram,
+        ']]></generationPrompt>',
+        '</template>'
+    ].join('');
+    const completionPrompts = [];
+    let responseOrNaCount = 0;
+
+    const runner = new TinyBrainPromptRunner({
+        promptEnv,
+        parseXMLTemplate: parseTemplate,
+        retryAttempts: 0,
+        finalParser: response => ({ value: /<moveTurnResult>/.test(response) }),
+        logPrompt(options) {
+            return options.filePath || '/test/logs/real-template.log';
+        },
+        async complete({ messages, checkpoint, isFinal }) {
+            completionPrompts.push(messages.at(-1).content);
+            let aiResponse = 'Done.';
+            if (isFinal) {
+                aiResponse = '<moveTurnResult><playerDestination><location>Beyond the Archway</location><travelTime>1 minute</travelTime></playerDestination><destinationProse>Tester crosses the threshold.</destinationProse></moveTurnResult>';
+            } else if (checkpoint.parserName === 'accept_or_reject') {
+                aiResponse = '<accepted></accepted>';
+            } else if (checkpoint.parserName === 'player_is_traveling') {
+                aiResponse = '<travel>no</travel>';
+            } else if (checkpoint.parserName === 'response_or_na') {
+                responseOrNaCount += 1;
+                aiResponse = responseOrNaCount === 1
+                    ? 'The draft resolves the scene before the player can respond.'
+                    : 'N/A';
+            } else if (checkpoint.parserName === 'yes_no') {
+                aiResponse = 'Yes.';
+            }
+            return {
+                aiResponse,
+                conversationMessages: [...messages, { role: 'assistant', content: aiResponse }],
+                toolInvocations: []
+            };
+        }
+    });
+
+    const result = await runner.run({
+        initialRenderedTemplate,
+        templateContext,
+        renderState,
+        programTemplateName
+    });
+
+    assert.equal(responseOrNaCount, 8);
+    assert.ok(completionPrompts.some(prompt => /addresses the railroading issue/i.test(prompt)));
+    assert.ok(!completionPrompts.some(prompt => /addresses the superfluous dialogue issue/i.test(prompt)));
+    assert.match(completionPrompts.at(-1), /<moveTurnResult>/);
+    assert.match(result.aiResponse, /<moveTurnResult>/);
+});

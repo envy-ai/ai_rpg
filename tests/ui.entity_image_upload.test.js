@@ -82,3 +82,11 @@ test('entity image prompt regeneration modal requests and submits editable promp
     assertIncludes(chatDocs, 'Regenerate Image +');
     assertIncludes(modalDocs, '#entityImagePromptModal');
 });
+
+test('entity image context menus can regenerate from the saved prompt', () => {
+    assertIncludes(viewSource, 'id="locationImageRegenerateSamePromptButton"');
+    assertIncludes(viewSource, 'id="mapLocationMenuRegenerateSamePromptButton"');
+    assertIncludes(viewSource, "regenerateImageSamePromptButton.textContent = 'Regenerate Image (same prompt)';");
+    assertIncludes(viewSource, 'payload.useExistingPrompt = true;');
+    assertIncludes(apiSource, 'generatorOptions.finalImagePrompt = existingPrompt;');
+});

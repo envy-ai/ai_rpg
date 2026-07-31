@@ -14,6 +14,7 @@ const LLMClient = require('./LLMClient.js');
 const IdGenerator = require('./IdGenerator.js');
 const CodexBridgeClient = require('./CodexBridgeClient.js');
 const ClineBridgeClient = require('./ClineBridgeClient.js');
+const KimiBridgeClient = require('./KimiBridgeClient.js');
 const SlashCommandRegistry = require('./SlashCommandRegistry.js');
 const SanitizedStringSet = require('./SanitizedStringSet.js');
 const Events = require('./Events.js');
@@ -30,6 +31,7 @@ const {
     validateCriticalThresholdValues
 } = require('./utils/critical-threshold-formulas.js');
 const { createChatToolRuntime, getChatToolDefinitions } = require('./chat_tool_calls.js');
+const { TinyBrainPromptRunner } = require('./TinyBrainPromptRunner.js');
 const {
     buildHousekeepingUpdateLogEntries
 } = require('./housekeeping_update_log.js');
@@ -5279,7 +5281,10 @@ module.exports = function registerApiRoutes(scope) {
             }
         }
 
-        async function parsePlayerActionProseFromXml(rawResponse, { logJson = false } = {}) {
+        async function parsePlayerActionProseFromXml(rawResponse, {
+            logJson = false,
+            repairMalformed = true
+        } = {}) {
             if (typeof rawResponse !== 'string') {
                 throw new TypeError('Player action response must be a string.');
             }
@@ -5292,6 +5297,9 @@ module.exports = function registerApiRoutes(scope) {
                 doc = Utils.parseXmlDocumentStrict(sanitizeForXml(xmlPayload), 'text/xml');
             } catch (error) {
                 const firstFatalError = extractXmlFatalErrorText(error) || 'Unknown XML parse error.';
+                if (!repairMalformed) {
+                    throw new Error(`Player action XML parse error: ${firstFatalError}`);
+                }
                 console.warn(`Player action XML malformed; attempting xml-fix retry: ${firstFatalError}`);
                 let repairedXmlPayload = '';
                 try {
@@ -23157,6 +23165,9 @@ module.exports = function registerApiRoutes(scope) {
             eventsProcessedThisTurn = false;
             let promptTemplateName = null;
             let promptVariablesSnapshot = null;
+            let useTinyBrainPlayerAction = false;
+            let tinyBrainPromptState = null;
+            let tinyBrainRenderedPrompt = null;
             const renderPlayerActionPrompt = (forceRepetitionBuster = null) => {
                 if (!promptTemplateName || !promptVariablesSnapshot) {
                     return null;
@@ -24370,7 +24381,18 @@ module.exports = function registerApiRoutes(scope) {
                             promptVariables.success_or_failure = actionResolution?.label || 'success';
                         }
 
+                        useTinyBrainPlayerAction = promptType === 'player-action'
+                            && Globals.config?.ai?.tinybrain === true;
+                        if (useTinyBrainPlayerAction) {
+                            tinyBrainPromptState = TinyBrainPromptRunner.createRenderState();
+                            promptVariables.useTinyBrainPrompt = true;
+                            promptVariables.__tinyBrainState = tinyBrainPromptState;
+                        }
+
                         const renderedPrompt = promptEnv.render(templateName, promptVariables);
+                        if (useTinyBrainPlayerAction) {
+                            tinyBrainRenderedPrompt = renderedPrompt;
+                        }
 
                         const promptData = parseXMLTemplate(renderedPrompt);
 
@@ -24390,10 +24412,12 @@ module.exports = function registerApiRoutes(scope) {
                             ? templateGenerationPrompt.trim()
                             : null;
 
-                        playerActionLogPayload = {
-                            systemPrompt: trimmedSystemPrompt,
-                            generationPrompt: generationPromptForLog
-                        };
+                        playerActionLogPayload = useTinyBrainPlayerAction
+                            ? null
+                            : {
+                                systemPrompt: trimmedSystemPrompt,
+                                generationPrompt: generationPromptForLog
+                            };
 
                         const rebuiltMessages = [];
                         if (trimmedSystemPrompt) {
@@ -24733,7 +24757,106 @@ module.exports = function registerApiRoutes(scope) {
 
                 stream.status('player_action:prompt', 'Awaiting response from AI...');
                 let aiResponse = '';
-                if (Array.isArray(enabledChatTools) && enabledChatTools.length > 0) {
+                if (useTinyBrainPlayerAction) {
+                    if (!tinyBrainPromptState || !tinyBrainRenderedPrompt || !promptVariablesSnapshot) {
+                        throw new Error('Tiny-brain player-action prompt was not initialized during rendering.');
+                    }
+                    const tinyBrainRetryAttempts = Number(Globals.config?.ai?.retryAttempts);
+                    const tinyBrainResult = await LLMClient.withPromptQueueReservation(async (queueReservation) => {
+                        const progressGroupId = tinyBrainPromptState.runId;
+                        try {
+                            const tinyBrainRunner = new TinyBrainPromptRunner({
+                                promptEnv,
+                                parseXMLTemplate,
+                                retryAttempts: tinyBrainRetryAttempts,
+                                metadataLabel: promptMetadataLabel,
+                                onParseFailure: ({ response }) => {
+                                    LLMClient.recordPromptProgressGroupFailure(progressGroupId, response);
+                                },
+                                finalParser: shouldUseRepetitionBusterXml
+                                    ? async (response) => {
+                                        await parsePlayerActionProseFromXml(response, {
+                                            logJson: false,
+                                            repairMalformed: false
+                                        });
+                                        return { value: true };
+                                    }
+                                    : null,
+                                complete: async ({
+                                    messages,
+                                    checkpoint,
+                                    attempt,
+                                    isFinal,
+                                    logFilePath
+                                }) => {
+                                    const stepLabel = isFinal
+                                        ? 'final response'
+                                        : `checkpoint ${checkpoint.index + 1}`;
+                                    stream.status('player_action:prompt', `Awaiting tiny-brain ${stepLabel} (attempt ${attempt + 1})...`);
+                                    const stageRequestOptions = {
+                                        ...requestOptions,
+                                        messages,
+                                        queueReservation,
+                                        progressGroupId
+                                    };
+                                    delete stageRequestOptions.requiredRegex;
+
+                                    if (Array.isArray(enabledChatTools) && enabledChatTools.length > 0) {
+                                        const toolLoopResult = await runChatCompletionWithToolLoop({
+                                            requestOptions: stageRequestOptions,
+                                            streamEmitter: stream,
+                                            metadataLabel: promptMetadataLabel,
+                                            toolResultCache,
+                                            includeAllHistoryEntryTypes: allowWorldMutationTools,
+                                            requestUserInput: createRequestUserInputHandler({
+                                                stream,
+                                                promptLabel: promptMetadataLabel
+                                            }),
+                                            forcedSkillCheckRoll: createForcedSkillCheckRollResolver({
+                                                enabled: forceSkillCheckRolls,
+                                                stream,
+                                                promptLabel: promptMetadataLabel
+                                            }),
+                                            onToolCallEvent: event => checkResultsRecorder.record(event),
+                                            onToolCallDebug: toolCallDebugRecorder
+                                                ? event => toolCallDebugRecorder.record(event)
+                                                : null,
+                                            promptLogFile: logFilePath
+                                        });
+                                        return {
+                                            aiResponse: toolLoopResult.aiResponse,
+                                            conversationMessages: toolLoopResult.conversationMessages,
+                                            toolInvocations: toolLoopResult.toolInvocations
+                                        };
+                                    }
+
+                                    const response = await LLMClient.chatCompletion(stageRequestOptions);
+                                    return {
+                                        aiResponse: response,
+                                        conversationMessages: [
+                                            ...messages,
+                                            { role: 'assistant', content: response }
+                                        ],
+                                        toolInvocations: []
+                                    };
+                                }
+                            });
+                            return await tinyBrainRunner.run({
+                                initialRenderedTemplate: tinyBrainRenderedPrompt,
+                                templateContext: promptVariablesSnapshot,
+                                renderState: tinyBrainPromptState
+                            });
+                        } finally {
+                            LLMClient.clearPromptProgressGroup(progressGroupId);
+                        }
+                    });
+                    aiResponse = tinyBrainResult.aiResponse;
+                    toolInvocations = tinyBrainResult.toolInvocations;
+                    if (debugInfo) {
+                        debugInfo.tinyBrain = true;
+                        debugInfo.tinyBrainLogFile = tinyBrainResult.logFilePath;
+                    }
+                } else if (Array.isArray(enabledChatTools) && enabledChatTools.length > 0) {
                     const toolLoopResult = await runChatCompletionWithToolLoop({
                         requestOptions,
                         streamEmitter: stream,
@@ -24834,7 +24957,7 @@ module.exports = function registerApiRoutes(scope) {
 
                 if (typeof aiResponse === 'string' && aiResponse.trim()) {
 
-                    if (playerActionLogPayload) {
+                    if (!useTinyBrainPlayerAction && playerActionLogPayload) {
                         const promptLogPrefix = promptType === 'question'
                             ? 'question'
                             : (promptType === 'generic-prompt'
@@ -24852,7 +24975,10 @@ module.exports = function registerApiRoutes(scope) {
                             endpoint: requestOptions.endpoint
                         });
                         playerActionLogPayload = null;
-                    } else if (debugInfo?.systemMessage || debugInfo?.generationPrompt) {
+                    } else if (
+                        !useTinyBrainPlayerAction
+                        && (debugInfo?.systemMessage || debugInfo?.generationPrompt)
+                    ) {
                         const promptLogPrefix = promptType === 'question'
                             ? 'question'
                             : (promptType === 'generic-prompt'
@@ -24882,7 +25008,13 @@ module.exports = function registerApiRoutes(scope) {
                         playerActionTimePassedMinutes = parsedProse.timePassedMinutes ?? null;
                     }
 
-                    if (!Globals.config.repetition_buster && recentProseContents.length && promptTemplateName && promptVariablesSnapshot) {
+                    if (
+                        !useTinyBrainPlayerAction
+                        && !Globals.config.repetition_buster
+                        && recentProseContents.length
+                        && promptTemplateName
+                        && promptVariablesSnapshot
+                    ) {
                         try {
                             let overlapMatch = null;
                             const hitSimilarity = recentProseContents.some((prior) => {
@@ -26305,7 +26437,15 @@ module.exports = function registerApiRoutes(scope) {
                     }
 
                     void summarizePendingEntriesIfThresholdReached().catch((summaryBatchError) => {
-                        console.warn('Failed to summarize pending chat entries:', summaryBatchError.message);
+                        const summaryErrorMessage = summaryBatchError?.message || String(summaryBatchError);
+                        const summaryErrorStack = typeof summaryBatchError?.stack === 'string'
+                            ? summaryBatchError.stack
+                            : summaryErrorMessage;
+                        console.warn('Failed to summarize pending chat entries:', summaryErrorMessage);
+                        stream.emit('summary_error', {
+                            message: summaryErrorMessage,
+                            stack: summaryErrorStack
+                        });
                     });
 
                     console.log(`Finalizing turns for all players (count: ${Globals.playersById.size})`);
@@ -29773,6 +29913,7 @@ module.exports = function registerApiRoutes(scope) {
                 const body = req.body || {};
                 const hasNeedBarApplicability = Object.prototype.hasOwnProperty.call(body, 'needBarApplicability');
                 const hasHiddenFromPlayer = Object.prototype.hasOwnProperty.call(body, 'hiddenFromPlayer');
+                const hasImagePrompt = Object.prototype.hasOwnProperty.call(body, 'imagePrompt');
                 const {
                     name,
                     description,
@@ -29796,6 +29937,7 @@ module.exports = function registerApiRoutes(scope) {
                     aiNotes,
                     statusEffects,
                     aliases,
+                    imagePrompt,
                     needBarApplicability
                 } = body;
                 const hasResistances = Object.prototype.hasOwnProperty.call(body, 'resistances')
@@ -29854,6 +29996,13 @@ module.exports = function registerApiRoutes(scope) {
                     });
                 }
 
+                if (hasImagePrompt && typeof imagePrompt !== 'string') {
+                    return res.status(400).json({
+                        success: false,
+                        error: 'imagePrompt must be a string.'
+                    });
+                }
+
                 if (typeof name === 'string' && name.trim()) {
                     npc.setName(name.trim());
                 }
@@ -29876,6 +30025,10 @@ module.exports = function registerApiRoutes(scope) {
 
                 if (typeof shortDescription === 'string') {
                     npc.shortDescription = shortDescription;
+                }
+
+                if (hasImagePrompt) {
+                    npc.imagePrompt = imagePrompt;
                 }
 
                 if (hasFactionId) {
@@ -31184,33 +31337,42 @@ module.exports = function registerApiRoutes(scope) {
                 }
 
                 let whileYouWereAwayResult = null;
+                let arrivalProcessingError = null;
                 if (!isNpc) {
-	                    whileYouWereAwayResult = await runWhileYouWereAwayPrompt({
-	                        locationOverride: destinationLocation,
-	                        originLocationOverride: originLocation,
-	                        locationId: destinationLocation.id,
-	                        returnEntries: true,
-	                        clientId,
-	                        locationWasVisitedBeforeArrival: typeof Globals.getPlayerArrivalWasVisitedBeforeMove === 'function'
-	                            ? Globals.getPlayerArrivalWasVisitedBeforeMove(destinationLocation.id)
-	                            : undefined,
-                        locationLastVisitedTimeBeforeArrival: typeof Globals.getPlayerArrivalLastVisitedTimeBeforeMove === 'function'
-                            ? Globals.getPlayerArrivalLastVisitedTimeBeforeMove(destinationLocation.id)
-                            : undefined
-                    });
+                    try {
+                        whileYouWereAwayResult = await runWhileYouWereAwayPrompt({
+                            locationOverride: destinationLocation,
+                            originLocationOverride: originLocation,
+                            locationId: destinationLocation.id,
+                            returnEntries: true,
+                            clientId,
+                            locationWasVisitedBeforeArrival: typeof Globals.getPlayerArrivalWasVisitedBeforeMove === 'function'
+                                ? Globals.getPlayerArrivalWasVisitedBeforeMove(destinationLocation.id)
+                                : undefined,
+                            locationLastVisitedTimeBeforeArrival: typeof Globals.getPlayerArrivalLastVisitedTimeBeforeMove === 'function'
+                                ? Globals.getPlayerArrivalLastVisitedTimeBeforeMove(destinationLocation.id)
+                                : undefined
+                        });
 
-                    await runAutomaticHiddenNpcChecksForCurrentPlayer({
-                        player: npc,
-                        locationId: destinationLocation.id,
-                        previouslySharedNpcIds: npcIdsSharingPlayerLocationAtTurnStart,
-                        parentId: whileYouWereAwayResult?.visibleEntry?.id || null,
-                        requestId: null
-                    });
-                    Player.recordNpcSightingsForCurrentPlayer({
-                        player: npc,
-                        locationId: destinationLocation.id,
-                        previouslySharedNpcIds: npcIdsSharingPlayerLocationAtTurnStart
-                    });
+                        await runAutomaticHiddenNpcChecksForCurrentPlayer({
+                            player: npc,
+                            locationId: destinationLocation.id,
+                            previouslySharedNpcIds: npcIdsSharingPlayerLocationAtTurnStart,
+                            parentId: whileYouWereAwayResult?.visibleEntry?.id || null,
+                            requestId: null
+                        });
+                        Player.recordNpcSightingsForCurrentPlayer({
+                            player: npc,
+                            locationId: destinationLocation.id,
+                            previouslySharedNpcIds: npcIdsSharingPlayerLocationAtTurnStart
+                        });
+                    } catch (arrivalError) {
+                        arrivalProcessingError = {
+                            message: arrivalError?.message || 'Player arrival processing failed after travel completed.',
+                            stack: typeof arrivalError?.stack === 'string' ? arrivalError.stack : null
+                        };
+                        console.error('Player travel completed, but arrival processing failed:', arrivalError);
+                    }
                 }
 
                 let fastTravelSummaryEntry = null;
@@ -31255,6 +31417,7 @@ module.exports = function registerApiRoutes(scope) {
                     worldTime: fastTravelTimeAdjustment?.worldTime || null,
                     timeProgress: fastTravelTimeAdjustment?.timeProgress || null,
                     removedFromParty,
+                    arrivalProcessingError,
                     message: `${npc.name || (isNpc ? 'NPC' : 'Player')} teleported successfully.`
                 };
 
@@ -34073,6 +34236,10 @@ module.exports = function registerApiRoutes(scope) {
                 const hasStatusEffects = hasOwn.call(body, 'statusEffects');
                 const hasControllingFaction = hasOwn.call(body, 'controllingFactionId');
                 const hasWeatherHint = hasOwn.call(body, 'hasWeather');
+                const hasImagePrompt = hasOwn.call(body, 'imagePrompt');
+                if (hasImagePrompt && typeof body.imagePrompt !== 'string') {
+                    return res.status(400).json({ success: false, error: 'Image prompt must be a string' });
+                }
                 let resolvedControllingFactionId = null;
                 if (hasControllingFaction) {
                     try {
@@ -34196,6 +34363,7 @@ module.exports = function registerApiRoutes(scope) {
                 const previousShortDescription = location.shortDescription || null;
                 const previousLevel = location.baseLevel;
                 const previousImageId = location.imageId;
+                const previousImagePrompt = location.imagePrompt;
                 const previousVehicleInfo = JSON.stringify(location.vehicleInfo ?? null);
                 const previousGenerationHints = location.generationHints || {};
                 const previousHasWeatherHint = previousGenerationHints.hasWeather ?? null;
@@ -34216,6 +34384,12 @@ module.exports = function registerApiRoutes(scope) {
                 if (hasShortDescription && resolvedShortDescription !== previousShortDescription) {
                     location.shortDescription = resolvedShortDescription;
                     shortDescriptionChanged = true;
+                }
+
+                let imagePromptChanged = false;
+                if (hasImagePrompt && body.imagePrompt.trim() !== previousImagePrompt) {
+                    location.imagePrompt = body.imagePrompt;
+                    imagePromptChanged = true;
                 }
 
                 let levelChanged = false;
@@ -34284,6 +34458,7 @@ module.exports = function registerApiRoutes(scope) {
                         name: nameChanged,
                         description: descriptionChanged,
                         shortDescription: shortDescriptionChanged,
+                        imagePrompt: imagePromptChanged,
                         level: levelChanged,
                         vehicle: vehicleChanged,
                         hasWeather: hasWeatherChanged
@@ -35470,8 +35645,17 @@ module.exports = function registerApiRoutes(scope) {
                     clientId: initiatorClientIdRaw,
                     bidirectional: bidirectionalRaw,
                     imageDataUrl: imageDataUrlRaw,
-                    imageDataUrlOriginal: imageDataUrlOriginalRaw
+                    imageDataUrlOriginal: imageDataUrlOriginalRaw,
+                    imagePrompt: imagePromptRaw
                 } = req.body || {};
+                const hasImagePrompt = Object.prototype.hasOwnProperty.call(req.body || {}, 'imagePrompt');
+                if (hasImagePrompt && typeof imagePromptRaw !== 'string') {
+                    return res.status(400).json({
+                        success: false,
+                        error: 'imagePrompt must be a string.'
+                    });
+                }
+                const resolvedImagePrompt = hasImagePrompt ? imagePromptRaw.trim() : undefined;
                 const resolvedName = typeof name === 'string' ? name.trim() : '';
                 const resolvedDescription = typeof description === 'string' ? description.trim() : '';
                 const resolvedType = typeof type === 'string' ? type.trim().toLowerCase() : 'location';
@@ -35750,7 +35934,8 @@ module.exports = function registerApiRoutes(scope) {
                         description: exitDescription,
                         bidirectional: true,
                         destinationRegion: destinationRegionForExit,
-                        travelTimeMinutes
+                        travelTimeMinutes,
+                        imagePrompt: resolvedImagePrompt
                     };
 
                     if (isVehicleExit) {
@@ -35875,7 +36060,8 @@ module.exports = function registerApiRoutes(scope) {
                         description: exitDescription,
                         bidirectional: true,
                         destinationRegion: destinationRegionForExit,
-                        travelTimeMinutes
+                        travelTimeMinutes,
+                        imagePrompt: resolvedImagePrompt
                     };
 
                     if (isVehicleExit) {
@@ -35954,7 +36140,8 @@ module.exports = function registerApiRoutes(scope) {
                             description: exitDescription,
                             bidirectional: true,
                             destinationRegion: destinationRegionForExit,
-                            travelTimeMinutes
+                            travelTimeMinutes,
+                            imagePrompt: resolvedImagePrompt
                         };
 
                         if (isVehicleExit) {
@@ -41378,6 +41565,7 @@ module.exports = function registerApiRoutes(scope) {
                     shortDescription,
                     thingType,
                     imageId,
+                    imagePrompt,
                     rarity,
                     itemTypeDetail,
                     metadata,
@@ -41453,6 +41641,15 @@ module.exports = function registerApiRoutes(scope) {
                     }
                 }
                 if (imageId !== undefined) thing.imageId = imageId;
+                if (imagePrompt !== undefined) {
+                    if (typeof imagePrompt !== 'string') {
+                        return res.status(400).json({
+                            success: false,
+                            error: 'Image prompt must be a string.'
+                        });
+                    }
+                    thing.imagePrompt = imagePrompt;
+                }
 
                 if (slot !== undefined) {
                     thing.slot = registeredEditFieldPayload.shouldClearSlot ? null : slot;
@@ -48951,7 +49148,8 @@ module.exports = function registerApiRoutes(scope) {
                     apiKey,
                     model,
                     codexBridge,
-                    clineBridge
+                    clineBridge,
+                    kimiBridge
                 } = req.body || {};
                 const backend = CodexBridgeClient.normalizeBackend(rawBackend);
 
@@ -49009,6 +49207,34 @@ module.exports = function registerApiRoutes(scope) {
                         return res.json({ success: true, message: 'Configuration test successful' });
                     }
                     return res.status(500).json({ error: 'Invalid response from Cline bridge' });
+                }
+
+                if (backend === KimiBridgeClient.backendName) {
+                    const aiConfig = {
+                        backend,
+                        model,
+                        kimi_bridge: kimiBridge
+                    };
+                    const configurationErrors = KimiBridgeClient.getConfigurationErrors(aiConfig);
+                    if (configurationErrors.length) {
+                        return res.status(400).json({ error: configurationErrors.join('. ') });
+                    }
+
+                    const response = await KimiBridgeClient.chatCompletion({
+                        messages: [
+                            { role: 'system', content: 'You are validating a Kimi bridge configuration.' },
+                            { role: 'user', content: 'Return a short confirmation that the bridge is working.' }
+                        ],
+                        model: KimiBridgeClient.resolveResponseModel(aiConfig),
+                        timeoutMs: baseTimeoutMilliseconds,
+                        metadataLabel: 'config_test',
+                        aiConfig
+                    });
+
+                    if (response?.data?.choices?.length > 0) {
+                        return res.json({ success: true, message: 'Configuration test successful' });
+                    }
+                    return res.status(500).json({ error: 'Invalid response from Kimi bridge' });
                 }
 
                 if (!endpoint || !apiKey || !model) {
@@ -49315,7 +49541,13 @@ module.exports = function registerApiRoutes(scope) {
         // Image generation functionality
         app.post('/api/images/request', async (req, res) => {
             try {
-                const { entityType, entityId, force = false, clientId = null } = req.body || {};
+                const { entityType, entityId, force = false, clientId = null, useExistingPrompt = false } = req.body || {};
+                if (typeof useExistingPrompt !== 'boolean') {
+                    return res.status(400).json({
+                        success: false,
+                        error: 'useExistingPrompt must be a boolean'
+                    });
+                }
                 const confirmedPrompt = normalizeConfirmedEntityImagePrompt(req.body || {});
                 const target = resolveEntityImageGenerationTarget(entityType, entityId);
                 if (target.error) {
@@ -49327,6 +49559,13 @@ module.exports = function registerApiRoutes(scope) {
 
                 const resolvedType = target.entityType;
                 const generator = target.generator;
+
+                if (useExistingPrompt && confirmedPrompt.hasPrompt) {
+                    return res.status(400).json({
+                        success: false,
+                        error: 'prompt and useExistingPrompt cannot be supplied together'
+                    });
+                }
 
                 if (typeof generator !== 'function') {
                     return res.status(500).json({
@@ -49341,6 +49580,17 @@ module.exports = function registerApiRoutes(scope) {
                 };
                 if (confirmedPrompt.hasPrompt) {
                     generatorOptions.finalImagePrompt = confirmedPrompt.prompt;
+                } else if (useExistingPrompt) {
+                    const existingPrompt = typeof target.entity.imagePrompt === 'string'
+                        ? target.entity.imagePrompt.trim()
+                        : '';
+                    if (!existingPrompt) {
+                        return res.status(409).json({
+                            success: false,
+                            error: `${resolvedType} '${target.entityId}' does not have a saved image prompt.`
+                        });
+                    }
+                    generatorOptions.finalImagePrompt = existingPrompt;
                 }
 
                 const generationResult = await generator(generatorOptions);
@@ -49372,6 +49622,7 @@ module.exports = function registerApiRoutes(scope) {
                     message,
                     existingJob: Boolean(existingJob)
                 };
+                responsePayload.imagePrompt = target.entity.imagePrompt || '';
 
                 if (jobId) {
                     responsePayload.jobId = jobId;

@@ -22,6 +22,7 @@ Notes:
 - This endpoint is used by the browser's `Regenerate Image +` context-menu action.
 - Player/NPC, location, item, and scenery prompts run the same LLM prompt-writing templates as normal entity image generation.
 - The returned `prompt` is the final text intended for image rendering. Character, location, item, and scenery image prompt prefixes are already prepended as applicable. For locations, the returned prompt also includes the deterministic base location scene wrapper, such as baseline time and weather guidance from `templates/location-image-prompt.njk`.
+- A successful response stores that same final text on the target entity's persisted `imagePrompt`, even if the user later cancels the edit modal.
 - The endpoint does not clear current image ids, set pending image jobs, or queue rendering. The confirmed edited prompt is sent separately to `POST /api/images/request`.
 - Location exits are intentionally unsupported here because their image path does not use the LLM prompt-writing step.
 
@@ -29,10 +30,10 @@ Notes:
 Queue, join, or reuse image generation for a known entity.
 
 Request:
-- Body: `{ entityType: 'player'|'npc'|'location'|'exit'|'location-exit'|'location_exit'|'thing'|'item'|'scenery', entityId: string, force?: boolean, clientId?: string, prompt?: string }`
+- Body: `{ entityType: 'player'|'npc'|'location'|'exit'|'location-exit'|'location_exit'|'thing'|'item'|'scenery', entityId: string, force?: boolean, clientId?: string, prompt?: string, useExistingPrompt?: boolean }`
 
 Response:
-- 200: `{ success, entityType, entityId, jobId?, job?, imageId?, skipped, reason, message, existingJob }`
+- 200: `{ success, entityType, entityId, imagePrompt, jobId?, job?, imageId?, skipped, reason, message, existingJob }`
 - 202: same shape when generation is skipped without queueing an image-rendering job
 - 409: same shape when generation fails before a usable existing job is available
 - 400/404/500 with `{ success: false, error }`
@@ -46,6 +47,8 @@ Notes:
 - Thing image requests can target any known non-null `Thing`; current server eligibility does not require player inventory or current-location ownership.
 - Player/NPC, location, item, and scenery image paths use an LLM prompt-writing step before the image job is queued. Prompt generation retries up to `imagegen.prompt_generation_attempts` times, default `3`; empty final prompts, prompt/context XML, and wrapper text are rejected. Exhausted retries return `skipped: true`, `reason: "image-prompt-failed"`, and no image-rendering job.
 - When `prompt` is provided, it is treated as a user-confirmed final image prompt and must be a non-empty string. The LLM prompt-writing step is skipped, but the normal entity attachment, dimensions, negative prompt, realtime subscription, and forced-regeneration behavior still apply.
+- `useExistingPrompt: true` reads the target's persisted `imagePrompt`, skips LLM/template prompt generation, and uses that exact value. It cannot be combined with `prompt`; a target with no saved prompt returns `409` rather than falling back to prompt generation.
+- Every successfully generated, deterministic, or user-confirmed final base-entity prompt is stored in `imagePrompt` before the rendering job is queued. Initial entity construction leaves the field blank. Location weather variants remain display-only and do not overwrite the base location prompt.
 - LLM-authored image-prompt requests are debounced and batched unless `imagegen.prompt_batching.enabled` is `false`. The queue waits `imagegen.prompt_batching.delay_ms` after the last compatible request and sends up to `imagegen.prompt_batching.max_items` prompt-writing requests per batch. Image-rendering jobs are queued independently after prompt text is available.
 - Base location scene prompts are rendered through `templates/location-image-prompt.njk` after the LLM prompt-writing step. The template receives `image.prompt`, the full `location`, `hasLocalWeather`, and `weatherScope`; the default template adds neutral baseline time/weather guidance for the base image.
 - Thing image dimensions use `imagegen.default_settings.image`, with optional overrides from `imagegen.item_settings.image` or `imagegen.scenery_settings.image`. Character, location, and exit images use their respective configured settings or defaults.

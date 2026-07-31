@@ -11,8 +11,7 @@ Slash command `/summarize` (alias `/scene_summary`) summarizes scene-summary-ind
 - Reads chat history from `interaction.getChatHistory()` or `interaction.chatHistory`; unavailable or empty history produces an ephemeral reply.
 - `range=check` counts total, summarized, and unsummarized entries with the shared scene-summary index and replies without calling the LLM summarizer.
 - Other ranges call `Globals.summarizeScenesForHistoryRange({ chatHistory, startIndex, endIndex, redo })`; a missing summarizer throws `Scene summarization is unavailable on this server.`
-- `range=all` with `redo=false` starts at the first uncovered scene-summary index and fails when all indexed entries are already summarized.
-- `range=all` with `redo=true` rebuilds from entry 1 after removing overlapping stored summaries.
+- `range=all`, with or without `redo`, rebuilds from scene-summary entry 1 through the current end. The generated result atomically replaces the complete scene list and entry-id mapping store only after validation succeeds, so stale mappings are removed and a failed rebuild preserves the previous store.
 - `range=N` summarizes one indexed entry; `range=N-M` and `range=N..M` summarize inclusive indexed ranges. Invalid, reversed, zero, or negative ranges produce ephemeral replies.
 - Successful summarization requires at least one returned scene. The command writes `exports/summary-<timestamp>.txt`, echoes the formatted export to the server console, and replies with the output path.
 - Export or formatting failures produce ephemeral replies that include the failing operation and error message.

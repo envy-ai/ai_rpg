@@ -80,6 +80,7 @@
                                             <button type="button" class="entity-context-menu-item location-image-menu-item" id="locationSummonThingButton">Summon Item/Scenery</button>
                                             <button type="button" class="entity-context-menu-item location-image-menu-item" id="locationImageUploadButton">Upload Image</button>
                                             <button type="button" class="entity-context-menu-item location-image-menu-item" id="locationImageRegenerateButton">Regenerate Image</button>
+                                            <button type="button" class="entity-context-menu-item location-image-menu-item" id="locationImageRegenerateSamePromptButton">Regenerate Image (same prompt)</button>
                                             <button type="button" class="entity-context-menu-item location-image-menu-item" id="locationImageRegeneratePromptButton">Regenerate Image +</button>
                                         </div>
                                     </div>
@@ -494,6 +495,7 @@
                     <button type="button" class="entity-context-menu-item location-image-menu-item" id="mapLocationMenuSummonThingButton">Summon Item/Scenery</button>
                     <button type="button" class="entity-context-menu-item location-image-menu-item" id="mapLocationMenuUploadImageButton">Upload Image</button>
                     <button type="button" class="entity-context-menu-item location-image-menu-item" id="mapLocationMenuRegenerateImageButton">Regenerate Image</button>
+                    <button type="button" class="entity-context-menu-item location-image-menu-item" id="mapLocationMenuRegenerateSamePromptButton">Regenerate Image (same prompt)</button>
                     <button type="button" class="entity-context-menu-item location-image-menu-item" id="mapLocationMenuRegeneratePromptButton">Regenerate Image +</button>
                     <button type="button" class="entity-context-menu-item location-image-menu-item" id="mapLocationMenuDeleteButton">Delete Location</button>
                 </div>
@@ -2427,6 +2429,10 @@
                     <label for="newExitDescription">Description</label>
                     <textarea id="newExitDescription" name="description" rows="3" placeholder="Optional: Describe what lies beyond this exit..."></textarea>
                 </div>
+                <div class="new-exit-field" id="newExitImagePromptGroup" hidden>
+                    <label for="newExitImagePrompt">Image Prompt</label>
+                    <textarea id="newExitImagePrompt" name="imagePrompt" rows="5"></textarea>
+                </div>
                 <div class="new-exit-field" id="newExitTravelTimeGroup">
                     <label for="newExitTravelTime">Travel Time</label>
                     <input type="text" id="newExitTravelTime" name="travelTime" maxlength="80" placeholder="e.g. 1m, 1h10m, 2 hours" value="1m">
@@ -2532,6 +2538,11 @@
                 <div class="npc-edit-section">
                     <label for="npcEditDescription">Description</label>
                     <textarea id="npcEditDescription" rows="4"></textarea>
+                </div>
+
+                <div class="npc-edit-section">
+                    <label for="npcEditImagePrompt">Image Prompt</label>
+                    <textarea id="npcEditImagePrompt" rows="5"></textarea>
                 </div>
 
                 <div class="npc-edit-section">
@@ -2677,6 +2688,10 @@
                 <div class="npc-edit-section" id="thingEditShortDescriptionGroup">
                     <label for="thingEditShortDescription">Short Description</label>
                     <input id="thingEditShortDescription" type="text" autocomplete="off">
+                </div>
+                <div class="npc-edit-section" id="thingEditImagePromptGroup">
+                    <label for="thingEditImagePrompt">Image Prompt</label>
+                    <textarea id="thingEditImagePrompt" rows="5"></textarea>
                 </div>
                 <div class="npc-edit-section" id="thingEditNotesGroup" hidden>
                     <label for="thingEditNotes">Notes for generation</label>
@@ -2840,6 +2855,10 @@
                 <div class="location-edit-field" id="locationEditShortDescriptionGroup">
                     <label for="locationEditShortDescription">Short Description</label>
                     <input type="text" id="locationEditShortDescription" name="shortDescription" autocomplete="off">
+                </div>
+                <div class="location-edit-field" id="locationEditImagePromptGroup">
+                    <label for="locationEditImagePrompt">Image Prompt</label>
+                    <textarea id="locationEditImagePrompt" name="imagePrompt" rows="5"></textarea>
                 </div>
                 <div class="location-edit-field" id="locationEditRelativeLevelGroup" hidden>
                     <label for="locationEditRelativeLevel">Relative Level</label>
@@ -5090,8 +5109,7 @@
 
         function getPlayerAbilityEntriesForModal(player = {}) {
             return Array.isArray(player?.abilities)
-                ? player.abilities
-                    .filter(Boolean)
+                ? alphabetizeAbilities(player.abilities)
                     .map(ability => {
                         const name = typeof ability?.name === 'string' && ability.name.trim()
                             ? ability.name.trim()
@@ -5115,7 +5133,6 @@
                         };
                     })
                     .filter(entry => entry.name)
-                    .sort((left, right) => left.name.localeCompare(right.name))
                 : [];
         }
 
@@ -5345,6 +5362,21 @@
             }
             const trimmed = value.trim();
             return trimmed ? trimmed.toLowerCase() : '';
+        }
+
+        function alphabetizeAbilities(abilities = []) {
+            const entries = Array.isArray(abilities) ? abilities.filter(Boolean) : [];
+            return [...entries].sort((left, right) => {
+                const leftName = typeof left?.name === 'string' ? left.name.trim() : '';
+                const rightName = typeof right?.name === 'string' ? right.name.trim() : '';
+                if (!leftName) {
+                    return rightName ? 1 : 0;
+                }
+                if (!rightName) {
+                    return -1;
+                }
+                return leftName.localeCompare(rightName, undefined, { sensitivity: 'base' });
+            });
         }
 
         function normalizeAbilityTypeKey(value) {
@@ -5598,7 +5630,7 @@
             }
             playerAbilitySelectionCards.innerHTML = '';
             const selection = playerAbilitySelectionState.selection;
-            const options = Array.isArray(selection?.options) ? selection.options : [];
+            const options = alphabetizeAbilities(selection?.options);
             for (const option of options) {
                 const abilityName = typeof option?.name === 'string' ? option.name.trim() : '';
                 if (!abilityName) {
@@ -8822,6 +8854,23 @@
                 }
             }
 
+            if (result.arrivalProcessingError) {
+                const arrivalMessage = result.arrivalProcessingError.message || 'Arrival processing failed after travel completed.';
+                const arrivalStack = typeof result.arrivalProcessingError.stack === 'string'
+                    ? result.arrivalProcessingError.stack.trim()
+                    : '';
+                const popupMessage = [
+                    'Travel completed, but arrival processing failed.',
+                    arrivalMessage,
+                    arrivalStack
+                ].filter(Boolean).join('\n\n');
+                if (typeof window.AIRPG_CHAT?.showChatErrorPopup === 'function') {
+                    window.AIRPG_CHAT.showChatErrorPopup(popupMessage);
+                } else {
+                    window.alert(popupMessage);
+                }
+            }
+
             invalidateTeleportLocationCache();
 
             return result;
@@ -8935,6 +8984,9 @@
             if (typeof finalImagePrompt === 'string' && finalImagePrompt.trim()) {
                 payload.prompt = finalImagePrompt.trim();
             }
+            if (options.useExistingPrompt === true) {
+                payload.useExistingPrompt = true;
+            }
             if (context) {
                 payload.context = context;
             }
@@ -8991,16 +9043,19 @@
 
                 const nextThing = {
                     ...updatedThing,
+                    imagePrompt: data?.imagePrompt || updatedThing.imagePrompt || '',
                     pendingImageJobId: data?.jobId || null
                 };
                 thingDataCache.set(entityId, nextThing);
                 if (thing) {
+                    thing.imagePrompt = nextThing.imagePrompt;
                     thing.pendingImageJobId = data?.jobId || null;
                     if (data?.imageId) {
                         thing.imageId = data.imageId;
                     }
                 }
                 updateLocationThingReference(entityId, (entry) => {
+                    entry.imagePrompt = nextThing.imagePrompt;
                     entry.pendingImageJobId = data?.jobId || null;
                 });
 
@@ -9158,6 +9213,7 @@
             });
 
             let regenerateImageButton = null;
+            let regenerateImageSamePromptButton = null;
             let regenerateImagePromptButton = null;
             const imageGenerationEnabled = runtimeConfig?.imagegen?.enabled !== false;
             if (imageGenerationEnabled) {
@@ -9166,6 +9222,12 @@
                 regenerateImageButton.className = 'entity-context-menu-item thing-card-menu-item';
                 regenerateImageButton.textContent = 'Regenerate Image';
                 menu.appendChild(regenerateImageButton);
+
+                regenerateImageSamePromptButton = document.createElement('button');
+                regenerateImageSamePromptButton.type = 'button';
+                regenerateImageSamePromptButton.className = 'entity-context-menu-item thing-card-menu-item';
+                regenerateImageSamePromptButton.textContent = 'Regenerate Image (same prompt)';
+                menu.appendChild(regenerateImageSamePromptButton);
 
                 regenerateImagePromptButton = document.createElement('button');
                 regenerateImagePromptButton.type = 'button';
@@ -9372,6 +9434,21 @@
                         await regenerateThingImage(thingDataCache.get(thing.id) || thing, options);
                     } catch (error) {
                         alert(`Failed to regenerate image: ${error?.message || error}`);
+                    }
+                });
+            }
+
+            if (regenerateImageSamePromptButton) {
+                regenerateImageSamePromptButton.addEventListener('click', async (event) => {
+                    event.stopPropagation();
+                    closeThingContextMenu();
+                    try {
+                        await regenerateThingImage(thingDataCache.get(thing.id) || thing, {
+                            ...options,
+                            useExistingPrompt: true
+                        });
+                    } catch (error) {
+                        alert(`Failed to regenerate image with the saved prompt: ${error?.message || error}`);
                     }
                 });
             }
@@ -10339,10 +10416,12 @@
         const newExitLocationGroup = document.getElementById('newExitLocationGroup');
         const newExitNameGroup = document.getElementById('newExitNameGroup');
         const newExitDescriptionGroup = document.getElementById('newExitDescriptionGroup');
+        const newExitImagePromptGroup = document.getElementById('newExitImagePromptGroup');
         const newExitTravelTimeGroup = document.getElementById('newExitTravelTimeGroup');
         const newExitImageGroup = document.getElementById('newExitImageGroup');
         const newExitNameInput = document.getElementById('newExitName');
         const newExitDescriptionInput = document.getElementById('newExitDescription');
+        const newExitImagePromptInput = document.getElementById('newExitImagePrompt');
         const newExitTravelTimeInput = document.getElementById('newExitTravelTime');
         const newExitImageInput = document.getElementById('newExitImage');
         const newExitVehicleGroup = document.getElementById('newExitVehicleGroup');
@@ -10437,6 +10516,7 @@
         const npcEditExperienceInput = document.getElementById('npcEditExperience');
         const npcEditWillingToTradeInput = document.getElementById('npcEditWillingToTrade');
         const npcEditDescriptionInput = document.getElementById('npcEditDescription');
+        const npcEditImagePromptInput = document.getElementById('npcEditImagePrompt');
         const npcEditAliasesInput = document.getElementById('npcEditAliases');
         const npcEditResistancesInput = document.getElementById('npcEditResistances');
         const npcEditVulnerabilitiesInput = document.getElementById('npcEditVulnerabilities');
@@ -10659,6 +10739,7 @@
         const locationSummonThingButton = document.getElementById('locationSummonThingButton');
         const locationImageUploadButton = document.getElementById('locationImageUploadButton');
         const locationImageRegenerateButton = document.getElementById('locationImageRegenerateButton');
+        const locationImageRegenerateSamePromptButton = document.getElementById('locationImageRegenerateSamePromptButton');
         const locationImageRegeneratePromptButton = document.getElementById('locationImageRegeneratePromptButton');
         const mapLocationContextMenu = document.getElementById('mapLocationContextMenu');
         const worldMapReloadButton = document.getElementById('worldMapReloadButton');
@@ -10673,6 +10754,7 @@
         const mapLocationMenuSummonThingButton = document.getElementById('mapLocationMenuSummonThingButton');
         const mapLocationMenuUploadImageButton = document.getElementById('mapLocationMenuUploadImageButton');
         const mapLocationMenuRegenerateImageButton = document.getElementById('mapLocationMenuRegenerateImageButton');
+        const mapLocationMenuRegenerateSamePromptButton = document.getElementById('mapLocationMenuRegenerateSamePromptButton');
         const mapLocationMenuRegeneratePromptButton = document.getElementById('mapLocationMenuRegeneratePromptButton');
         const mapLocationMenuDeleteButton = document.getElementById('mapLocationMenuDeleteButton');
         const entityImageUploadModal = document.getElementById('entityImageUploadModal');
@@ -10715,6 +10797,8 @@
         const locationEditDescriptionInput = document.getElementById('locationEditDescription');
         const locationEditShortDescriptionInput = document.getElementById('locationEditShortDescription');
         const locationEditShortDescriptionGroup = document.getElementById('locationEditShortDescriptionGroup');
+        const locationEditImagePromptInput = document.getElementById('locationEditImagePrompt');
+        const locationEditImagePromptGroup = document.getElementById('locationEditImagePromptGroup');
         const locationEditRelativeLevelGroup = document.getElementById('locationEditRelativeLevelGroup');
         const locationEditRelativeLevelInput = document.getElementById('locationEditRelativeLevel');
         const locationEditLevelInput = document.getElementById('locationEditLevel');
@@ -10908,6 +10992,8 @@
         const thingEditLevelInput = document.getElementById('thingEditLevel');
         const thingEditImageIdInput = document.getElementById('thingEditImageId');
         const thingEditDescriptionInput = document.getElementById('thingEditDescription');
+        const thingEditImagePromptInput = document.getElementById('thingEditImagePrompt');
+        const thingEditImagePromptGroup = document.getElementById('thingEditImagePromptGroup');
         const thingEditShortDescriptionInput = document.getElementById('thingEditShortDescription');
         const thingEditShortDescriptionGroup = document.getElementById('thingEditShortDescriptionGroup');
         const thingEditNotesGroup = document.getElementById('thingEditNotesGroup');
@@ -11515,6 +11601,9 @@
             });
             if (mapLocationMenuRegenerateImageButton) {
                 mapLocationMenuRegenerateImageButton.hidden = isStub;
+            }
+            if (mapLocationMenuRegenerateSamePromptButton) {
+                mapLocationMenuRegenerateSamePromptButton.hidden = isStub;
             }
             if (mapLocationMenuRegeneratePromptButton) {
                 mapLocationMenuRegeneratePromptButton.hidden = isStub;
@@ -14055,6 +14144,13 @@
                     thingEditNotesGroup.setAttribute('hidden', '');
                 }
             }
+            if (thingEditImagePromptGroup) {
+                if (mode === 'edit') {
+                    thingEditImagePromptGroup.removeAttribute('hidden');
+                } else {
+                    thingEditImagePromptGroup.setAttribute('hidden', '');
+                }
+            }
             if (thingEditShortDescriptionGroup) {
                 thingEditShortDescriptionGroup.removeAttribute('hidden');
             }
@@ -14119,6 +14215,9 @@
 
             if (thingEditDescriptionInput) {
                 thingEditDescriptionInput.value = thing?.description || '';
+            }
+            if (thingEditImagePromptInput) {
+                thingEditImagePromptInput.value = mode === 'edit' ? (thing?.imagePrompt || '') : '';
             }
 
             if (thingEditIsVehicleInput) {
@@ -15842,7 +15941,7 @@
                 return;
             }
             npcEditAbilitiesContainer.innerHTML = '';
-            const entries = Array.isArray(abilities) ? abilities : [];
+            const entries = alphabetizeAbilities(abilities);
             if (!entries.length) {
                 createAbilityRow({});
                 return;
@@ -16102,6 +16201,9 @@
             }
             if (npcEditDescriptionInput) {
                 npcEditDescriptionInput.value = npc.description || '';
+            }
+            if (npcEditImagePromptInput) {
+                npcEditImagePromptInput.value = npc.imagePrompt || '';
             }
             if (npcEditAliasesInput) {
                 const aliases = Array.isArray(npc.aliases) ? npc.aliases : [];
@@ -18592,6 +18694,53 @@
             entityImagePromptTextarea?.select?.();
         }
 
+        function cacheEntityImagePrompt(entityType, entityId, prompt) {
+            const normalizedType = typeof entityType === 'string' ? entityType.trim().toLowerCase() : '';
+            const normalizedId = typeof entityId === 'string' ? entityId.trim() : '';
+            if (!normalizedId || typeof prompt !== 'string') {
+                return;
+            }
+            const normalizedPrompt = prompt.trim();
+            if (normalizedType === 'thing' || normalizedType === 'item' || normalizedType === 'scenery') {
+                const thingCache = window.currentThingData instanceof Map ? window.currentThingData : null;
+                const currentThing = thingCache?.get(normalizedId) || null;
+                if (thingCache && currentThing) {
+                    thingCache.set(normalizedId, { ...currentThing, imagePrompt: normalizedPrompt });
+                }
+                updateLocationThingReference(normalizedId, (entry) => {
+                    entry.imagePrompt = normalizedPrompt;
+                });
+                return;
+            }
+            if (normalizedType === 'player' || normalizedType === 'npc') {
+                const npcCache = window.currentNpcData instanceof Map ? window.currentNpcData : null;
+                const currentNpc = npcCache?.get(normalizedId) || null;
+                if (npcCache && currentNpc) {
+                    npcCache.set(normalizedId, { ...currentNpc, imagePrompt: normalizedPrompt });
+                }
+                if (window.currentPlayerData?.id === normalizedId) {
+                    window.currentPlayerData = {
+                        ...window.currentPlayerData,
+                        imagePrompt: normalizedPrompt
+                    };
+                }
+                return;
+            }
+            if (normalizedType === 'location') {
+                if (lastRenderedLocation?.id === normalizedId) {
+                    lastRenderedLocation.imagePrompt = normalizedPrompt;
+                }
+                if (locationMenuContextOverride?.id === normalizedId) {
+                    locationMenuContextOverride.imagePrompt = normalizedPrompt;
+                }
+            }
+        }
+
+        window.addEventListener('image:prompt-updated', (event) => {
+            const detail = event?.detail || {};
+            cacheEntityImagePrompt(detail.entityType, detail.entityId, detail.imagePrompt);
+        });
+
         async function openEditableImagePromptForEntity({ entityType, entityId, entityName, submitHandler }) {
             const normalizedEntityType = typeof entityType === 'string' ? entityType.trim().toLowerCase() : '';
             const normalizedEntityId = typeof entityId === 'string' ? entityId.trim() : '';
@@ -18622,6 +18771,11 @@
                 if (!response.ok || !data?.success) {
                     throw new Error(data?.error || `HTTP ${response.status}`);
                 }
+                cacheEntityImagePrompt(
+                    data.entityType || normalizedEntityType,
+                    data.entityId || normalizedEntityId,
+                    data.prompt || ''
+                );
                 openEntityImagePromptModal({
                     entityType: data.entityType || normalizedEntityType,
                     entityId: data.entityId || normalizedEntityId,
@@ -19043,6 +19197,16 @@
                     newExitDescriptionGroup.setAttribute('hidden', '');
                 }
             }
+            if (newExitImagePromptGroup) {
+                if (editingExitContext) {
+                    newExitImagePromptGroup.removeAttribute('hidden');
+                } else {
+                    newExitImagePromptGroup.setAttribute('hidden', '');
+                    if (newExitImagePromptInput) {
+                        newExitImagePromptInput.value = '';
+                    }
+                }
+            }
             if (newExitImageGroup) {
                 if (showFields) {
                     newExitImageGroup.removeAttribute('hidden');
@@ -19171,6 +19335,9 @@
             if (newExitDescriptionGroup) {
                 newExitDescriptionGroup.removeAttribute('hidden');
             }
+            if (newExitImagePromptGroup) {
+                newExitImagePromptGroup.setAttribute('hidden', '');
+            }
             if (newExitTravelTimeGroup) {
                 newExitTravelTimeGroup.removeAttribute('hidden');
             }
@@ -19179,6 +19346,9 @@
             }
             if (newExitImageInput) {
                 newExitImageInput.value = '';
+            }
+            if (newExitImagePromptInput) {
+                newExitImagePromptInput.value = '';
             }
             if (newExitVehicleInput) {
                 newExitVehicleInput.value = '';
@@ -19264,6 +19434,9 @@
                     }
                     if (newExitDescriptionInput) {
                         newExitDescriptionInput.value = exit.description || '';
+                    }
+                    if (newExitImagePromptInput) {
+                        newExitImagePromptInput.value = exit.imagePrompt || exit.exitObject?.imagePrompt || '';
                     }
                     if (newExitTravelTimeInput) {
                         newExitTravelTimeInput.value = formatMinutesCompactDurationLabel(resolveExitTravelTimeMinutesForUi(exit));
@@ -19435,6 +19608,9 @@
             }
             if (newExitMapMode && type === 'location') {
                 payload.bidirectional = true;
+            }
+            if (isEditing && newExitImagePromptInput) {
+                payload.imagePrompt = newExitImagePromptInput.value ?? '';
             }
 
             const imageFile = newExitImageInput?.files?.[0] || null;
@@ -19630,11 +19806,17 @@
             if (newExitDescriptionGroup) {
                 newExitDescriptionGroup.removeAttribute('hidden');
             }
+            if (newExitImagePromptGroup) {
+                newExitImagePromptGroup.setAttribute('hidden', '');
+            }
             if (newExitVehicleGroup) {
                 newExitVehicleGroup.removeAttribute('hidden');
             }
             if (newExitImageInput) {
                 newExitImageInput.value = '';
+            }
+            if (newExitImagePromptInput) {
+                newExitImagePromptInput.value = '';
             }
             if (newExitVehicleInput) {
                 newExitVehicleInput.value = '';
@@ -21143,6 +21325,9 @@
                 if (npcEditShortDescriptionInput) {
                     payload.shortDescription = npcEditShortDescriptionInput.value ?? '';
                 }
+                if (npcEditImagePromptInput) {
+                    payload.imagePrompt = npcEditImagePromptInput.value ?? '';
+                }
                 if (npcEditRaceInput) {
                     payload.race = npcEditRaceInput.value ?? '';
                 }
@@ -21512,6 +21697,9 @@
                 }
                 if (thingEditShortDescriptionInput) {
                     payload.shortDescription = thingEditShortDescriptionInput.value?.trim() ?? '';
+                }
+                if (thingEditImagePromptInput) {
+                    payload.imagePrompt = thingEditImagePromptInput.value ?? '';
                 }
 
                 if (thingEditTypeSelect) {
@@ -27970,7 +28158,7 @@
             }
 
             container.innerHTML = '';
-            const safeAbilities = Array.isArray(abilities) ? abilities.filter(Boolean) : [];
+            const safeAbilities = alphabetizeAbilities(abilities);
             if (!safeAbilities.length) {
                 if (emptyState) {
                     emptyState.removeAttribute('hidden');
@@ -29564,7 +29752,7 @@
                 }
             }
 
-            async function regenerateCharacterImage(npc, finalImagePrompt = null) {
+            async function regenerateCharacterImage(npc, finalImagePrompt = null, options = {}) {
                 const latestNpc = { ...(npcDataCache.get(npc?.id) || npc) };
                 const npcId = String(latestNpc?.id || '');
                 if (!npcId) {
@@ -29598,6 +29786,9 @@
                 };
                 if (typeof finalImagePrompt === 'string' && finalImagePrompt.trim()) {
                     payload.prompt = finalImagePrompt.trim();
+                }
+                if (options.useExistingPrompt === true) {
+                    payload.useExistingPrompt = true;
                 }
                 const clientId = window.AIRPG_CLIENT_ID || null;
                 if (clientId) {
@@ -29639,8 +29830,15 @@
                     const pendingJobId = data?.jobId || data?.imageGeneration?.jobId || null;
                     npcDataCache.set(npcId, {
                         ...baseNpcRecord,
+                        imagePrompt: data?.imagePrompt || baseNpcRecord.imagePrompt || '',
                         pendingImageJobId: pendingJobId
                     });
+                    if (!latestNpc.isNPC) {
+                        window.currentPlayerData = {
+                            ...(window.currentPlayerData || {}),
+                            imagePrompt: data?.imagePrompt || baseNpcRecord.imagePrompt || ''
+                        };
+                    }
 
                     renderEntityImages(entityType, npcId, {
                         imageId: null,
@@ -29712,6 +29910,7 @@
                 menu.appendChild(characterUploadImageButton);
 
                 let regenerateImageButton = null;
+                let regenerateImageSamePromptButton = null;
                 let regenerateImagePromptButton = null;
                 const canRegeneratePortrait = Boolean(npc && runtimeConfig?.imagegen?.enabled !== false);
                 if (canRegeneratePortrait) {
@@ -29720,6 +29919,12 @@
                     regenerateImageButton.className = 'entity-context-menu-item npc-card-menu-item';
                     regenerateImageButton.textContent = 'Regenerate Image';
                     menu.appendChild(regenerateImageButton);
+
+                    regenerateImageSamePromptButton = document.createElement('button');
+                    regenerateImageSamePromptButton.type = 'button';
+                    regenerateImageSamePromptButton.className = 'entity-context-menu-item npc-card-menu-item';
+                    regenerateImageSamePromptButton.textContent = 'Regenerate Image (same prompt)';
+                    menu.appendChild(regenerateImageSamePromptButton);
 
                     regenerateImagePromptButton = document.createElement('button');
                     regenerateImagePromptButton.type = 'button';
@@ -29884,6 +30089,22 @@
                             await regenerateCharacterImage(npcDataCache.get(npc.id) || npc);
                         } catch (error) {
                             alert(`Failed to regenerate portrait: ${error?.message || error}`);
+                        }
+                    });
+                }
+
+                if (regenerateImageSamePromptButton) {
+                    regenerateImageSamePromptButton.addEventListener('click', async (event) => {
+                        event.stopPropagation();
+                        closeNpcContextMenu();
+                        try {
+                            await regenerateCharacterImage(
+                                npcDataCache.get(npc.id) || npc,
+                                null,
+                                { useExistingPrompt: true }
+                            );
+                        } catch (error) {
+                            alert(`Failed to regenerate portrait with the saved prompt: ${error?.message || error}`);
                         }
                     });
                 }
@@ -32142,6 +32363,7 @@
             toggleLocationEditSection(locationEditAbsoluteLevelField, !isStubMode);
             toggleLocationEditSection(locationEditStatusSection, !isStubMode);
             toggleLocationEditSection(locationEditShortDescriptionGroup, !isStubMode);
+            toggleLocationEditSection(locationEditImagePromptGroup, !isStubMode);
             toggleLocationEditSection(locationEditRelativeLevelGroup, isStubMode);
             toggleLocationEditSection(locationEditRegionGroup, !isStubMode || showStubRegionSelector);
             toggleLocationEditSection(locationEditHasWeatherGroup, !isStubMode);
@@ -32164,6 +32386,12 @@
                 locationEditShortDescriptionInput.disabled = isStubMode;
                 if (isStubMode) {
                     locationEditShortDescriptionInput.value = '';
+                }
+            }
+            if (locationEditImagePromptInput) {
+                locationEditImagePromptInput.disabled = isStubMode;
+                if (isStubMode) {
+                    locationEditImagePromptInput.value = '';
                 }
             }
             if (locationEditRegionSelect) {
@@ -32226,6 +32454,9 @@
             }
             if (locationEditShortDescriptionInput) {
                 locationEditShortDescriptionInput.value = stubContext ? '' : (targetLocation.shortDescription || '');
+            }
+            if (locationEditImagePromptInput) {
+                locationEditImagePromptInput.value = stubContext ? '' : (targetLocation.imagePrompt || '');
             }
             if (stubContext && locationEditRelativeLevelInput) {
                 const relativeLevelValue = resolveStubRelativeLevel(targetLocation);
@@ -32486,6 +32717,7 @@
             payload.description = descriptionValue.trim();
             const shortDescriptionValue = locationEditShortDescriptionInput?.value ?? '';
             payload.shortDescription = shortDescriptionValue.trim();
+            payload.imagePrompt = locationEditImagePromptInput?.value ?? '';
 
             const levelValue = Number(locationEditLevelInput?.value ?? NaN);
             if (!Number.isFinite(levelValue) || levelValue < 1) {
@@ -34606,6 +34838,8 @@
             const locationId = String(targetLocation.id);
             const placeholderAlt = targetLocation.name || 'Location image';
             const affectsCurrentLocation = isCurrentLocationContext(targetLocation);
+            const previousImageId = targetLocation.imageId || null;
+            const previousPendingImageJobId = targetLocation.pendingImageJobId || null;
 
             if (affectsCurrentLocation) {
                 applyEntityImagePlaceholder('location', locationId);
@@ -34620,6 +34854,9 @@
             };
             if (typeof options.prompt === 'string' && options.prompt.trim()) {
                 payload.prompt = options.prompt.trim();
+            }
+            if (options.useExistingPrompt === true) {
+                payload.useExistingPrompt = true;
             }
 
             const clientId = window.AIRPG_CLIENT_ID || null;
@@ -34640,8 +34877,10 @@
 
                 if (data?.skipped) {
                     if (affectsCurrentLocation) {
+                        lastRenderedLocation.imageId = previousImageId;
+                        lastRenderedLocation.pendingImageJobId = previousPendingImageJobId;
                         renderEntityImages('location', locationId, {
-                            imageId: lastRenderedLocation.imageId || null,
+                            imageId: previousImageId,
                             force: false,
                             altText: placeholderAlt
                         });
@@ -34655,6 +34894,14 @@
                         lastRenderedLocation.imageId = data.imageId;
                     } else if (locationMenuContextOverride?.id === targetLocation.id) {
                         locationMenuContextOverride.imageId = data.imageId;
+                    }
+                }
+                if (typeof data?.imagePrompt === 'string') {
+                    targetLocation.imagePrompt = data.imagePrompt;
+                    if (affectsCurrentLocation) {
+                        lastRenderedLocation.imagePrompt = data.imagePrompt;
+                    } else if (locationMenuContextOverride?.id === targetLocation.id) {
+                        locationMenuContextOverride.imagePrompt = data.imagePrompt;
                     }
                 }
                 if (data?.jobId) {
@@ -34676,8 +34923,10 @@
                 console.warn('Failed to regenerate location image:', error);
                 alert(`Failed to regenerate image: ${error?.message || 'Unknown error'}`);
                 if (affectsCurrentLocation) {
+                    lastRenderedLocation.imageId = previousImageId;
+                    lastRenderedLocation.pendingImageJobId = previousPendingImageJobId;
                     renderEntityImages('location', locationId, {
-                        imageId: lastRenderedLocation.imageId || null,
+                        imageId: previousImageId,
                         force: false,
                         altText: placeholderAlt
                     });
@@ -34974,6 +35223,14 @@
             });
         }
 
+        if (locationImageRegenerateSamePromptButton) {
+            locationImageRegenerateSamePromptButton.addEventListener('click', async (event) => {
+                event.stopPropagation();
+                closeLocationImageMenu({ preserveContext: true });
+                await regenerateLocationImage({ useExistingPrompt: true });
+            });
+        }
+
         if (locationImageRegeneratePromptButton) {
             locationImageRegeneratePromptButton.addEventListener('click', async (event) => {
                 event.stopPropagation();
@@ -35113,6 +35370,14 @@
                 event.stopPropagation();
                 closeMapLocationContextMenu({ preserveContext: true });
                 await regenerateLocationImage();
+            });
+        }
+
+        if (mapLocationMenuRegenerateSamePromptButton) {
+            mapLocationMenuRegenerateSamePromptButton.addEventListener('click', async (event) => {
+                event.stopPropagation();
+                closeMapLocationContextMenu({ preserveContext: true });
+                await regenerateLocationImage({ useExistingPrompt: true });
             });
         }
 

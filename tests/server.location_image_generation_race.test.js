@@ -63,6 +63,10 @@ function loadGenerateLocationImageHarness() {
             return { prompt: 'final generated location prompt' };
         },
         renderLocationFinalImagePrompt: (location, prompt) => `${prompt}\n\nTime: noon\nWeather: clear\nLocation ID: ${location.id}`,
+        assignEntityImagePrompt: (entity, prompt) => {
+            entity.imagePrompt = String(prompt).trim();
+            return entity.imagePrompt;
+        },
         generateImageId: () => `job-${nextJobNumber++}`,
         buildNegativePrompt: value => value,
         resolveMegapixels: value => value || null,
@@ -138,6 +142,7 @@ test('concurrent location image requests share the pre-job prompt generation', a
     assert.equal(firstResult.jobId, 'job-1');
     assert.equal(secondResult.jobId, 'job-1');
     assert.equal(context.pendingLocationImages.get(location.id), 'job-1');
+    assert.equal(location.imagePrompt, 'final generated location prompt\n\nTime: noon\nWeather: clear\nLocation ID: location-1');
 
     const job = context.imageJobs.get('job-1');
     assert.ok(job);

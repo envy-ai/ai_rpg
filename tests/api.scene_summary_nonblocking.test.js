@@ -12,4 +12,6 @@ test('automatic post-turn summary threshold check is fire-and-forget', () => {
     const postRandomEventSource = source.slice(randomEventStart, finalizeStart);
     assert.doesNotMatch(postRandomEventSource, /await\s+summarizePendingEntriesIfThresholdReached\s*\(/);
     assert.match(postRandomEventSource, /void\s+summarizePendingEntriesIfThresholdReached\s*\(\)\s*\.catch\s*\(/);
+    assert.match(postRandomEventSource, /stream\.emit\('summary_error'/);
+    assert.match(postRandomEventSource, /stack:\s*summaryErrorStack/);
 });

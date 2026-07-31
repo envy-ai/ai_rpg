@@ -23,6 +23,7 @@ class Location {
   #visited;
   #favorite;
   #imageId;
+  #imagePrompt;
   #imageVariants;
   #createdAt;
   #lastUpdated;
@@ -312,8 +313,9 @@ class Location {
    * @param {number} [options.baseLevel=1] - Base level for the location (defaults to 1)
    * @param {string} [options.id] - Custom ID (if not provided, one will be generated)
    * @param {string} [options.imageId] - Image ID for generated location scene (defaults to null)
+   * @param {string} [options.imagePrompt] - Stored final image prompt (defaults to blank)
    */
-  constructor({ description, shortDescription = null, baseLevel = 1, id = null, imageId = null, imageVariants = null, name = null, isStub = false, stubMetadata = null, hasGeneratedStubs = false, statusEffects = [], npcIds = [], thingIds = [], generationHints = null, randomEvents = [], regionId = null, controllingFactionId = null, vehicleInfo = null, checkRegionId = true, visited = false, favorite = false, lastVisitedTime = null, characterConcepts = [], enemyConcepts = [] } = {}) {
+  constructor({ description, shortDescription = null, baseLevel = 1, id = null, imageId = null, imagePrompt = '', imageVariants = null, name = null, isStub = false, stubMetadata = null, hasGeneratedStubs = false, statusEffects = [], npcIds = [], thingIds = [], generationHints = null, randomEvents = [], regionId = null, controllingFactionId = null, vehicleInfo = null, checkRegionId = true, visited = false, favorite = false, lastVisitedTime = null, characterConcepts = [], enemyConcepts = [] } = {}) {
     const creatingStub = Boolean(isStub);
 
     if (!creatingStub) {
@@ -336,6 +338,10 @@ class Location {
 
     if (shortDescription !== null && shortDescription !== undefined && typeof shortDescription !== 'string') {
       throw new Error('Location shortDescription must be a string or null');
+    }
+
+    if (imagePrompt !== null && imagePrompt !== undefined && typeof imagePrompt !== 'string') {
+      throw new Error('Location imagePrompt must be a string');
     }
 
     // Verify region exists
@@ -381,6 +387,7 @@ class Location {
     this.#baseLevel = creatingStub ? (typeof baseLevel === 'number' ? Math.floor(baseLevel) : null) : Math.floor(baseLevel);
     this.#exits = new Map(); // Map of direction -> LocationExit
     this.#imageId = imageId;
+    this.#imagePrompt = typeof imagePrompt === 'string' ? imagePrompt.trim() : '';
     this.#imageVariants = Location.#normalizeImageVariants(imageVariants);
     this.#createdAt = new Date();
     this.#lastUpdated = this.#createdAt;
@@ -1150,6 +1157,10 @@ class Location {
     return this.#imageId;
   }
 
+  get imagePrompt() {
+    return this.#imagePrompt;
+  }
+
   get imageVariants() {
     return Location.#serializeImageVariants(this.#imageVariants);
   }
@@ -1260,6 +1271,14 @@ class Location {
       throw new Error('Image ID must be a string or null');
     }
     this.#imageId = newImageId;
+    this.#lastUpdated = new Date();
+  }
+
+  set imagePrompt(newImagePrompt) {
+    if (typeof newImagePrompt !== 'string') {
+      throw new Error('Location imagePrompt must be a string');
+    }
+    this.#imagePrompt = newImagePrompt.trim();
     this.#lastUpdated = new Date();
   }
 
@@ -1479,6 +1498,7 @@ class Location {
       favorite: this.#favorite,
       lastVisitedTime: this.#lastVisitedTime,
       imageId: this.#imageId,
+      imagePrompt: this.#imagePrompt,
       imageVariants: this.imageVariants,
       regionId: this.#regionId,
       controllingFactionId: this.#controllingFactionId,
@@ -1514,6 +1534,8 @@ class Location {
         destinationRegion: Globals.locationById(exit.destination)?.region?.id,
         travelTimeMinutes: Number.isFinite(exit.travelTimeMinutes) ? exit.travelTimeMinutes : 0,
         bidirectional: exit.bidirectional !== false,
+        imageId: exit.imageId,
+        imagePrompt: exit.imagePrompt,
         isVehicle: Boolean(exit.isVehicle),
         name: exit.name,
         relativeName: exit.relativeName,
@@ -1529,6 +1551,7 @@ class Location {
       shortDescription: this.#shortDescription,
       baseLevel: this.#baseLevel,
       imageId: this.#imageId,
+      imagePrompt: this.#imagePrompt,
       imageVariants: this.imageVariants,
       visited: this.#visited,
       favorite: this.#favorite,

@@ -4,7 +4,7 @@
 Represents a player or NPC with attributes, skills, inventory, gear, status effects, need bars, dispositions, party membership, quests, progression, and optional alias names. Maintains static indexes and shared definitions (gear slots, disposition types, need bars), loaded from root `defs/*.yaml` plus any matching mod defs overlays, with the disposition first-impression multiplier loaded from merged config.
 
 ## Key State
-- Identity: `#id`, `#name`, `#aliases`, `#description`, `#shortDescription`, `#imageId`, `#class`, `#race`, `#gender`, `#isNPC`.
+- Identity: `#id`, `#name`, `#aliases`, `#description`, `#shortDescription`, `#imageId`, `#imagePrompt`, `#class`, `#race`, `#gender`, `#isNPC`. `imagePrompt` defaults to an empty string and is only populated when an image prompt is actually generated or manually edited.
 - Core stats: `#attributes`, `#level`, `#experience`, `#health` (finite float), `#healthAttribute`, `#healthRegenAppliedAt`.
 - Inventory/gear: `#inventory`, `#gearSlots`, `#gearSlotsByType`, `#gearSlotNameIndex`.
 - Barter: `#barterInventory`, `#willingToTrade`, `#tradeRefusalExpiresAt`, `#barterStockUpdatedAt`, `#barterProfile`.
@@ -47,7 +47,7 @@ Represents a player or NPC with attributes, skills, inventory, gear, status effe
   - `setNpcInventoryChangeHandler(handler)`, `setLevelUpHandler(handler)`.
 
 ## Accessors (Grouped)
-- Identity and descriptors: `id`, `name`, `aliases`, `description`, `shortDescription`, `imageId`, `class`, `race`, `gender`, `personalityType`, `personalityTraits`, `personalityNotes`, `aiNotes`, `resistances`, `vulnerabilities`. Direct character-field chat tools may also accept the serialized `personality` object, but only its `type`, `traits`, `notes`, and `aiNotes` keys map back to these persisted fields.
+- Identity and descriptors: `id`, `name`, `aliases`, `description`, `shortDescription`, `imageId`, `imagePrompt`, `class`, `race`, `gender`, `personalityType`, `personalityTraits`, `personalityNotes`, `aiNotes`, `resistances`, `vulnerabilities`. Direct character-field chat tools may also accept the serialized `personality` object, but only its `type`, `traits`, `notes`, and `aiNotes` keys map back to these persisted fields.
 - Factions: `factionId`.
 - State: `level`, `experience`, `health`, `maxHealth`, `healthAttribute`, `isDead`, `persistWhenDead`, `isDisabled` (dead, zero-health, or carrying an exact `Incapacitated` status effect), `inCombat`, `isHostile`, `hiddenFromPlayer` / `isHiddenFromPlayer`, `corpseCountdown`, `elapsedTime`, `createdAt`, `lastUpdated`.
 - Locations: `currentLocation`, `location`, `currentVehicle`, `previousLocationId`, `previousLocation`, `currentLocationObject`, `lastVisitedTime`, `last_seen_time`, `last_seen_location`, `was_in_player_location_previous_round` (plus camelCase aliases).
@@ -136,7 +136,8 @@ Represents a player or NPC with attributes, skills, inventory, gear, status effe
   - `updatePreviousLocation()`.
   - `recordLastSeenByPlayer({ time, locationId, wasInPlayerLocationPreviousRound })`.
 - Serialization:
-  - `getStatus()`, `toJSON()`, `static fromJSON(data)`. `toJSON()` writes registered Player extension fields at top level, and `fromJSON()` restores only fields registered in `Globals.modExtensionRegistry` at hydration time.
+  - `getStatus()`, `toJSON()`, `static fromJSON(data)`. `toJSON()` writes registered Player extension fields at top level, and `fromJSON()` restores only fields registered in `Globals.modExtensionRegistry` at hydration time. Registered `validateValue` callbacks run after core type normalization and before constructor, hydration, or setter persistence.
+  - `imagePrompt` is included in status/API/save payloads; old saves hydrate it as blank.
 - Misc:
   - `generateAttributes(method, diceModule)`, `getGenerationMethods()`.
   - `finalizeTurn()`.

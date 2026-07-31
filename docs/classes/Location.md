@@ -4,7 +4,7 @@
 Represents a game location, including descriptive text, exits, NPCs, items/scenery, status effects, visit/favorite state, weather/image hints, and optional vehicle metadata. Supports stub locations that can be promoted into generated locations.
 
 ## Key State
-- Core fields: `#id`, `#name`, `#description`, `#shortDescription`, `#baseLevel`, `#imageId`, `#imageVariants`.
+- Core fields: `#id`, `#name`, `#description`, `#shortDescription`, `#baseLevel`, `#imageId`, `#imagePrompt`, `#imageVariants`. `imagePrompt` defaults to blank and is not generated during location construction or stub expansion.
 - Region linkage: `#regionId`, `#controllingFactionId`.
 - Vehicle state: `#vehicleInfo` (`VehicleInfo` or `null`).
 - Exits: `#exits` (Map of direction -> LocationExit).
@@ -37,7 +37,7 @@ Represents a game location, including descriptive text, exits, NPCs, items/scene
 ## Accessors
 - `regionId` (get/set) and `region` (get). Reassigning `regionId` requires a live target region, removes the location from the previous live region when present, adds it to the target region, updates `stubMetadata.regionId`, and lets `Region.removeLocationId(...)` repair the previous region's `entranceLocationId`. If the previous region id is stale/missing, reassignment logs a warning and links the location into the target live region.
 - `controllingFactionId` (get/set).
-- Basic fields: `id`, `name`, `description`, `shortDescription`, `baseLevel`, `imageId`, `imageVariants`, `createdAt`, `lastUpdated`.
+- Basic fields: `id`, `name`, `description`, `shortDescription`, `baseLevel`, `imageId`, `imagePrompt`, `imageVariants`, `createdAt`, `lastUpdated`.
 - Visit tracking: `visited` (get/set), `lastVisitedTime` (get/set, minutes), `minutesSinceLastVisit(currentTime?)`. Setting `lastVisitedTime` also stamps the owning live region's `lastVisitedTime`.
 - Favorite marker: `favorite` (get/set) and `isFavorite` (read alias).
 - Stub metadata: `isStub`, `stubMetadata` (get/set), `hasGeneratedStubs` (get/set).
@@ -53,7 +53,7 @@ Represents a game location, including descriptive text, exits, NPCs, items/scene
 - Visit tracking: `markVisited(visitedAt?)` marks the location visited and, when a minute timestamp is available, updates `lastVisitedTime`. With no argument it uses `Globals.elapsedTime`; with `null` it marks `visited` without a timestamp.
 - Image variants: `getImageVariant(variantKey)`, `setImageVariant(variantKey, entry)`, `removeImageVariant(variantKey)`, and `clearImageVariants({ sourceImageId? })` manage persisted display-only image variants such as weather/lighting renders.
 - Exit management: `addExit(direction, exit)`, `removeExit(direction)`, `getExit(direction)`, `getAvailableDirections()`, `hasExit(direction)`, `clearExits()`. Directions are lower-cased and trimmed.
-- Summaries: `getSummary()` returns a lightweight snapshot with counts/directions. `getDetails()` and `toJSON()` return the save/API location payload, including visit/favorite fields, image variants, vehicle info, generation hints, exits, NPC/Thing ids, status effects, random events, and concept tags.
+- Summaries: `getSummary()` returns a lightweight snapshot with counts/directions. `getDetails()` and `toJSON()` return the save/API location payload, including `imagePrompt`, visit/favorite fields, image variants, vehicle info, generation hints, exits, NPC/Thing ids, status effects, random events, and concept tags.
 - Random events: `addRandomEvent(event)`, `removeRandomEvent(event)`.
 - NPC helpers: `getNPCIds()`, `getNPCs()`, `getNPCNames()`, `addNpcId(id)`, `removeNpcId(id)`, `setNpcIds(ids)`, `clearNpcIds()`.
 - Thing helpers: `addThingId(id, { mergeStacks = true } = {})`, `removeThingId(id)`, `setThingIds(ids)`, `clearThingIds()`.

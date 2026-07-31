@@ -135,6 +135,12 @@ test('bundled modules mod registers settings, Thing fields, badges, actions, too
     assert.ok(fields.every(field => field.exposeToCreateTool));
     assert.ok(fields.every(field => field.exposeToUpdateTool));
     assert.ok(fields.every(field => field.exposeToXmlParser));
+    const installedModuleIdsField = fields.find(field => field.fieldName === 'installedModuleIds');
+    assert.equal(typeof installedModuleIdsField?.validateValue, 'function');
+    assert.throws(
+        () => installedModuleIdsField.validateValue([1201], { entity: { name: 'Broken Visor' } }),
+        /installedModuleIds\[0\].*non-empty string/i
+    );
 
     assert.ok(registry.getThingImageBadges().some(badge => badge.fullId === 'modules:module-compatible'));
     assert.ok(registry.getThingImageBadges().some(badge => badge.fullId === 'modules:module-type'));

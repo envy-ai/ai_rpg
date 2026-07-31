@@ -8,7 +8,7 @@ Exits can point at fully generated locations, location stubs, or region-entry st
 `LocationExit` is the low-level graph edge. Location, map, and image API payloads enrich it with destination display names, stub/visit state, vehicle display state, and image-job state.
 
 ## Key State
-- Identity and text: `#id`, `#description`, `#destination`, `#imageId`.
+- Identity and text: `#id`, `#description`, `#destination`, `#imageId`, `#imagePrompt`.
 - Destination hints: `#destinationRegion`.
 - Travel data: `#travelTimeMinutes`, `#bidirectional`.
 - Vehicle-edge data: `#isVehicle`, `#vehicleType`.
@@ -16,7 +16,7 @@ Exits can point at fully generated locations, location stubs, or region-entry st
 - Runtime diagnostics: `#backtrace`.
 
 ## Construction And Validation
-- Constructor options are `description`, `destination`, `destinationRegion`, `travelTimeMinutes`, `bidirectional`, `id`, `imageId`, `isVehicle`, and `vehicleType`.
+- Constructor options are `description`, `destination`, `destinationRegion`, `travelTimeMinutes`, `bidirectional`, `id`, `imageId`, `imagePrompt`, `isVehicle`, and `vehicleType`. `imagePrompt` defaults to blank and does not invoke image generation.
 - The constructor rejects missing or non-string `destination` values and stores the trimmed string. Callers are expected to pass a non-empty destination id.
 - `description` defaults to an empty string and must be a string when supplied.
 - Missing `id` values are allocated through `IdGenerator.next('exit')`; every id is registered with `IdGenerator.register('exit', id)`.
@@ -29,9 +29,9 @@ Exits can point at fully generated locations, location stubs, or region-entry st
 - `backtrace` captures the runtime stack for diagnostics and is not serialized.
 
 ## Accessors
-- Basic getters: `id`, `description`, `destination`, `travelTimeMinutes`, `bidirectional`, `isVehicle`, `vehicleType`, `imageId`, `createdAt`, `lastUpdated`, `backtrace`.
+- Basic getters: `id`, `description`, `destination`, `travelTimeMinutes`, `bidirectional`, `isVehicle`, `vehicleType`, `imageId`, `imagePrompt`, `createdAt`, `lastUpdated`, `backtrace`.
 - Destination helpers: `destinationRegion`, `associatedRegionStub`, `region`, `location`, `name`, `relativeName`.
-- Basic setters: `description`, `destination`, `travelTimeMinutes`, `bidirectional`, `imageId`, `isVehicle`, `vehicleType`.
+- Basic setters: `description`, `destination`, `travelTimeMinutes`, `bidirectional`, `imageId`, `imagePrompt`, `isVehicle`, `vehicleType`.
 - `destinationRegion` has a setter for compatibility, but the setter only logs/traces a warning and leaves stored state unchanged.
 - Setting `isVehicle=false` clears `vehicleType`.
 - Setting `vehicleType` to a non-empty string sets `isVehicle=true`.
@@ -50,9 +50,9 @@ Exits can point at fully generated locations, location stubs, or region-entry st
 ## Instance API
 - `isReversible()` returns `bidirectional`.
 - `createReverse(reverseDescription, { destination })` returns `null` for one-way exits. For reversible exits it requires a reverse description, points at the supplied destination id, copies `travelTimeMinutes`, and sets `bidirectional=true`. If `destination` is omitted, it uses the literal placeholder `source_location_id`. It does not copy vehicle metadata, image metadata, or destination-region hints.
-- `update({ description, destination, travelTimeMinutes, bidirectional, isVehicle, vehicleType })` applies the same setters as direct mutation. A `destinationRegion` argument is accepted by the signature but is not applied.
+- `update({ description, destination, travelTimeMinutes, bidirectional, imagePrompt, isVehicle, vehicleType })` applies the same setters as direct mutation. A `destinationRegion` argument is accepted by the signature but is not applied.
 - `getSummary()` returns `getDetails()`.
-- `getDetails()` returns the serialized exit shape: `id`, `description`, `destination`, stored `destinationRegion`, `travelTimeMinutes`, resolved `name`, `bidirectional`, `imageId`, `isVehicle`, `vehicleType`, `type`, `createdAt`, and `lastUpdated`.
+- `getDetails()` returns the serialized exit shape: `id`, `description`, `destination`, stored `destinationRegion`, `travelTimeMinutes`, resolved `name`, `bidirectional`, `imageId`, `imagePrompt`, `isVehicle`, `vehicleType`, `type`, `createdAt`, and `lastUpdated`.
 - `toJSON()` returns `getDetails()`.
 - `toString()` includes id, description, vehicle marker, minute count, direction arrow, and destination id.
 
@@ -86,7 +86,7 @@ Exits can point at fully generated locations, location stubs, or region-entry st
 ## Image Generation
 - `imageId` stores the generated passage-scene image id for the exit.
 - `/api/images/generate` accepts exit entity types `exit`, `location-exit`, and `location_exit`; it resolves the exit from `gameLocationExits` and queues `generateLocationExitImage(...)`.
-- `generateLocationExitImage(...)` uses the location-exit image prompt template, reuses an existing image unless `force=true`, clears `imageId` before forced regeneration, attaches a runtime `pendingImageJobId`, and writes the completed image id back to `imageId`.
+- `generateLocationExitImage(...)` uses the location-exit image prompt template, stores its final prefixed text in `imagePrompt`, reuses an existing image unless `force=true`, clears `imageId` before forced regeneration, attaches a runtime `pendingImageJobId`, and writes the completed image id back to `imageId`. A supplied final prompt bypasses template rendering and becomes the stored prompt.
 - `pendingImageJobId` is a runtime property assigned by the generator path; it is not part of `LocationExit.toJSON()`.
 
 ## Travel And Map Semantics

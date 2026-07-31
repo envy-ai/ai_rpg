@@ -4849,6 +4849,9 @@ class AIRPGChat {
             case 'chat_error':
                 this.handleChatError(payload);
                 break;
+            case 'summary_error':
+                this.handleSummaryError(payload);
+                break;
             case 'generation_status':
                 this.handleGenerationStatus(payload);
                 break;
@@ -4872,6 +4875,9 @@ class AIRPGChat {
                 break;
             case 'prompt_progress':
                 this.handlePromptProgress(payload);
+                break;
+            case 'prompt_progress_group_failure':
+                this.handlePromptProgressGroupFailure(payload);
                 break;
             case 'prompt_progress_cleared':
                 this.handlePromptProgressCleared(payload);
@@ -5262,6 +5268,25 @@ class AIRPGChat {
         return this.promptProgressEntries.find(entry => entry && entry.id === resolvedId) || null;
     }
 
+    getPromptProgressEntryForGroup(progressGroupId) {
+        const resolvedGroupId = typeof progressGroupId === 'string' ? progressGroupId.trim() : '';
+        if (!resolvedGroupId || !Array.isArray(this.promptProgressEntries)) {
+            return null;
+        }
+        let latestMatch = null;
+        for (let index = this.promptProgressEntries.length - 1; index >= 0; index -= 1) {
+            const entry = this.promptProgressEntries[index];
+            if (!entry || entry.progressGroupId !== resolvedGroupId) {
+                continue;
+            }
+            latestMatch = latestMatch || entry;
+            if (entry.isComplete !== true) {
+                return entry;
+            }
+        }
+        return latestMatch;
+    }
+
     bindPromptProgressViewerInteractions(viewer, header, viewerState = null) {
         if (!viewer || !header || viewer.dataset.dragBound === 'true') {
             return;
@@ -5409,6 +5434,11 @@ class AIRPGChat {
             model: typeof entry.model === 'string' ? entry.model : '',
             promptText: typeof entry.promptText === 'string' ? entry.promptText : '',
             previewText: typeof entry.previewText === 'string' ? entry.previewText : '',
+            progressGroupId: typeof entry.progressGroupId === 'string' ? entry.progressGroupId : null,
+            failedResponses: Array.isArray(entry.failedResponses)
+                ? entry.failedResponses.filter(response => typeof response === 'string')
+                : [],
+            responseFailed: entry.responseFailed === true,
             receivedCount: entry.receivedCount ?? entry.bytes ?? null,
             bytes: entry.bytes ?? entry.receivedCount ?? null
         };
@@ -5419,8 +5449,14 @@ class AIRPGChat {
         if (!resolvedId || !(this.promptProgressViewerWindows instanceof Map)) {
             return false;
         }
+        const liveEntry = this.getPromptProgressEntry(resolvedId);
+        const progressGroupId = typeof liveEntry?.progressGroupId === 'string'
+            ? liveEntry.progressGroupId
+            : null;
         for (const viewerState of this.promptProgressViewerWindows.values()) {
-            if (viewerState?.promptId === resolvedId && viewerState?.element?.isConnected) {
+            const followsPrompt = viewerState?.promptId === resolvedId;
+            const followsGroup = progressGroupId && viewerState?.progressGroupId === progressGroupId;
+            if ((followsPrompt || followsGroup) && viewerState?.element?.isConnected) {
                 return true;
             }
         }
@@ -5437,6 +5473,7 @@ class AIRPGChat {
         viewer.dataset.autoAnchored = 'true';
         viewer.dataset.viewerId = viewerState.id;
         viewer.dataset.promptId = viewerState.promptId;
+        viewer.dataset.progressGroupId = viewerState.progressGroupId || '';
         viewer.dataset.stackOffset = String(viewerState.stackOffset || 0);
 
         const header = document.createElement('div');
@@ -5547,11 +5584,18 @@ class AIRPGChat {
 
         const separatorText = document.createTextNode('');
 
+        const failedResponseText = document.createElement('span');
+        failedResponseText.className = 'prompt-progress-viewer__failed-response-inline';
+
+        const failedResponseSeparatorText = document.createTextNode('');
+
         const responseText = document.createElement('span');
         responseText.className = 'prompt-progress-viewer__response-inline';
 
         streamText.appendChild(promptText);
         streamText.appendChild(separatorText);
+        streamText.appendChild(failedResponseText);
+        streamText.appendChild(failedResponseSeparatorText);
         streamText.appendChild(responseText);
 
         streamSection.appendChild(streamLabel);
@@ -5570,9 +5614,15 @@ class AIRPGChat {
         if (!viewerState) {
             return;
         }
-        const liveEntry = this.getPromptProgressEntry(viewerState.promptId);
+        const exactEntry = this.getPromptProgressEntry(viewerState.promptId);
+        const progressGroupId = viewerState.progressGroupId || exactEntry?.progressGroupId || null;
+        const liveEntry = progressGroupId
+            ? this.getPromptProgressEntryForGroup(progressGroupId)
+            : exactEntry;
         if (liveEntry) {
             viewerState.lastEntry = this.createPromptProgressViewerEntrySnapshot(liveEntry);
+            viewerState.promptId = liveEntry.id;
+            viewerState.progressGroupId = liveEntry.progressGroupId || progressGroupId;
             viewerState.isLive = true;
         } else {
             viewerState.isLive = false;
@@ -5591,9 +5641,13 @@ class AIRPGChat {
         const followCheckbox = viewer.querySelector('.prompt-progress-viewer__follow-input');
         const streamTextElement = viewer.querySelector('.prompt-progress-viewer__stream-text');
         const promptTextElement = viewer.querySelector('.prompt-progress-viewer__prompt-inline');
+        const failedResponseTextElement = viewer.querySelector('.prompt-progress-viewer__failed-response-inline');
         const responseTextElement = viewer.querySelector('.prompt-progress-viewer__response-inline');
         const promptText = typeof entry.promptText === 'string' ? entry.promptText : '';
         const previewText = typeof entry.previewText === 'string' ? entry.previewText : '';
+        const failedResponses = Array.isArray(entry.failedResponses)
+            ? entry.failedResponses.filter(response => typeof response === 'string')
+            : [];
         const receivedLabel = this.formatPromptProgressReceived(entry);
         const statusLabel = viewerState.isLive ? 'Streaming response' : 'Saved prompt snapshot';
         const metaParts = [statusLabel, entry.model || null, receivedLabel !== '-' ? receivedLabel : null].filter(Boolean);
@@ -5606,6 +5660,7 @@ class AIRPGChat {
             delete copyButton.dataset.feedbackActive;
         }
         viewer.dataset.promptId = entry.id || viewerState.promptId || '';
+        viewer.dataset.progressGroupId = viewerState.progressGroupId || '';
 
         if (title) {
             title.textContent = entry.label || 'Streaming response';
@@ -5627,17 +5682,27 @@ class AIRPGChat {
         if (promptTextElement) {
             promptTextElement.textContent = renderedPromptText;
         }
-        if (streamTextElement && promptTextElement && responseTextElement) {
+        if (failedResponseTextElement) {
+            failedResponseTextElement.textContent = failedResponses
+                .map(response => response.trim() ? response : '(empty response)')
+                .join('\n\n');
+        }
+        if (streamTextElement && promptTextElement && failedResponseTextElement && responseTextElement) {
             const separatorNode = promptTextElement.nextSibling;
             if (separatorNode && separatorNode.nodeType === Node.TEXT_NODE) {
                 separatorNode.textContent = '\n\n';
             }
+            const failedResponseSeparatorNode = failedResponseTextElement.nextSibling;
+            if (failedResponseSeparatorNode && failedResponseSeparatorNode.nodeType === Node.TEXT_NODE) {
+                failedResponseSeparatorNode.textContent = failedResponses.length ? '\n\n' : '';
+            }
         }
         if (responseTextElement) {
-            responseTextElement.textContent = renderedResponseText;
+            responseTextElement.textContent = entry.responseFailed === true ? '' : renderedResponseText;
         }
         viewer.classList.toggle('is-prompt-empty', !promptText);
-        viewer.classList.toggle('is-response-empty', !previewText);
+        viewer.classList.toggle('has-failed-responses', failedResponses.length > 0);
+        viewer.classList.toggle('is-response-empty', !previewText || entry.responseFailed === true);
         this.applyPromptProgressViewerAutoAnchor(viewer);
 
         if (!viewer.isConnected) {
@@ -5670,7 +5735,8 @@ class AIRPGChat {
         const viewerState = {
             id: `prompt-progress-viewer-${this.promptProgressViewerCounter}`,
             promptId: resolvedId,
-            followStream: false,
+            progressGroupId: typeof entry.progressGroupId === 'string' ? entry.progressGroupId : null,
+            followStream: true,
             isLive: true,
             lastEntry: this.createPromptProgressViewerEntrySnapshot(entry),
             stackOffset: ((this.promptProgressViewerCounter - 1) % 6) * 24,
@@ -6295,6 +6361,40 @@ class AIRPGChat {
         if (entries.length) {
             this.schedulePromptProgressRender(entries);
         }
+    }
+
+    handlePromptProgressGroupFailure(payload) {
+        const progressGroupId = typeof payload?.progressGroupId === 'string'
+            ? payload.progressGroupId.trim()
+            : '';
+        if (!progressGroupId || !Array.isArray(payload?.failedResponses)) {
+            throw new Error('Invalid prompt_progress_group_failure payload.');
+        }
+        const failedResponses = payload.failedResponses.filter(response => typeof response === 'string');
+        const failedPromptId = typeof payload.promptId === 'string' ? payload.promptId : null;
+
+        this.promptProgressEntries = this.promptProgressEntries.map(entry => {
+            if (entry?.progressGroupId !== progressGroupId) {
+                return entry;
+            }
+            return {
+                ...entry,
+                failedResponses: [...failedResponses],
+                responseFailed: !failedPromptId || entry.id === failedPromptId
+            };
+        });
+
+        for (const viewerState of this.promptProgressViewerWindows.values()) {
+            if (viewerState?.progressGroupId !== progressGroupId || !viewerState.lastEntry) {
+                continue;
+            }
+            viewerState.lastEntry = {
+                ...viewerState.lastEntry,
+                failedResponses: [...failedResponses],
+                responseFailed: !failedPromptId || viewerState.lastEntry.id === failedPromptId
+            };
+        }
+        this.renderPromptProgress(this.promptProgressEntries);
     }
 
     ensureRequestContext(requestId) {
@@ -9924,6 +10024,23 @@ class AIRPGChat {
                 this.finalizeChatRequest(requestId);
             }
         }
+    }
+
+    handleSummaryError(payload) {
+        if (!payload || typeof payload !== 'object') {
+            throw new Error('Invalid summary_error payload.');
+        }
+        const message = typeof payload.message === 'string' && payload.message.trim()
+            ? payload.message.trim()
+            : 'Automatic summary failed.';
+        const stack = typeof payload.stack === 'string' && payload.stack.trim()
+            ? payload.stack.trim()
+            : message;
+        console.error('Automatic summary failed:', stack);
+        if (typeof alert !== 'function') {
+            throw new Error('Unable to display the automatic summary error because alert() is unavailable.');
+        }
+        alert(`Automatic summary failed:\n\n${stack}`);
     }
 
     handleGenerationStatus(payload) {

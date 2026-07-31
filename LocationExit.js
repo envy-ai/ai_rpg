@@ -17,6 +17,7 @@ class LocationExit {
   #isVehicle;
   #vehicleType;
   #imageId;
+  #imagePrompt;
   #createdAt;
   #lastUpdated;
   #backtrace;
@@ -57,8 +58,9 @@ class LocationExit {
    * @param {boolean} [options.bidirectional=true] - Whether the exit works both ways (defaults to true)
    * @param {string} [options.id] - Custom ID (if not provided, one will be generated)
    * @param {string} [options.imageId] - Image ID for generated exit passage scene (defaults to null)
+   * @param {string} [options.imagePrompt] - Stored final image prompt (defaults to blank)
    */
-  constructor({ description = '', destination, destinationRegion = null, travelTimeMinutes = 0, bidirectional = true, id = null, imageId = null, isVehicle = false, vehicleType = null } = {}) {
+  constructor({ description = '', destination, destinationRegion = null, travelTimeMinutes = 0, bidirectional = true, id = null, imageId = null, imagePrompt = '', isVehicle = false, vehicleType = null } = {}) {
     // Validate required parameters
     if (description !== undefined && typeof description !== 'string') {
       throw new Error('Exit description must be a string when provided');
@@ -82,6 +84,11 @@ class LocationExit {
       throw new Error('vehicleType must be a string or null');
     }
 
+
+    if (imagePrompt !== null && imagePrompt !== undefined && typeof imagePrompt !== 'string') {
+      throw new Error('Exit imagePrompt must be a string');
+    }
+
     const normalizedTravelTimeMinutes = LocationExit.#normalizeTravelTimeMinutes(travelTimeMinutes);
 
     // Initialize private fields
@@ -93,6 +100,7 @@ class LocationExit {
     this.#travelTimeMinutes = normalizedTravelTimeMinutes;
     this.#bidirectional = bidirectional;
     this.#imageId = imageId;
+    this.#imagePrompt = typeof imagePrompt === 'string' ? imagePrompt.trim() : '';
     this.#isVehicle = isVehicle;
     this.#vehicleType = vehicleType && typeof vehicleType === 'string' ? vehicleType.trim() || null : null;
     if (this.#vehicleType && !this.#isVehicle) {
@@ -486,6 +494,10 @@ class LocationExit {
     return this.#imageId;
   }
 
+  get imagePrompt() {
+    return this.#imagePrompt;
+  }
+
   get lastUpdated() {
     return new Date(this.#lastUpdated);
   }
@@ -542,6 +554,14 @@ class LocationExit {
       throw new Error('Image ID must be a string or null');
     }
     this.#imageId = newImageId;
+    this.#lastUpdated = new Date();
+  }
+
+  set imagePrompt(newImagePrompt) {
+    if (typeof newImagePrompt !== 'string') {
+      throw new Error('Exit imagePrompt must be a string');
+    }
+    this.#imagePrompt = newImagePrompt.trim();
     this.#lastUpdated = new Date();
   }
 
@@ -609,8 +629,9 @@ class LocationExit {
    * @param {string|null} [updates.destinationRegion] - Region ID the exit leads to (for inter-region exits)
    * @param {number} [updates.travelTimeMinutes] - New travel time in minutes
    * @param {boolean} [updates.bidirectional] - New bidirectional flag
+   * @param {string} [updates.imagePrompt] - Stored final image prompt
    */
-  update({ description, destination, destinationRegion, travelTimeMinutes, bidirectional, isVehicle, vehicleType } = {}) {
+  update({ description, destination, destinationRegion, travelTimeMinutes, bidirectional, imagePrompt, isVehicle, vehicleType } = {}) {
     if (description !== undefined) {
       this.description = description;
     }
@@ -622,6 +643,9 @@ class LocationExit {
     }
     if (bidirectional !== undefined) {
       this.bidirectional = bidirectional;
+    }
+    if (imagePrompt !== undefined) {
+      this.imagePrompt = imagePrompt;
     }
     if (isVehicle !== undefined) {
       this.isVehicle = isVehicle;
@@ -653,6 +677,7 @@ class LocationExit {
       name: this.name,
       bidirectional: this.#bidirectional,
       imageId: this.#imageId,
+      imagePrompt: this.#imagePrompt,
       isVehicle: this.#isVehicle,
       vehicleType: this.#vehicleType,
       type: this.#bidirectional ? 'two-way' : 'one-way',

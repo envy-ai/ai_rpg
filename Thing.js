@@ -18,6 +18,7 @@ class Thing {
   #description;
   #thingType;
   #imageId;
+  #imagePrompt;
   #createdAt;
   #lastUpdated;
   #rarity;
@@ -52,6 +53,7 @@ class Thing {
   static #checksumExcludedTopLevelKeys = new Set([
     'id',
     'count',
+    'imagePrompt',
     'createdAt',
     'lastUpdated'
   ]);
@@ -551,6 +553,7 @@ class Thing {
    * @param {string} options.thingType - Type of thing ('scenery' or 'item')
    * @param {string} [options.id] - Custom ID (if not provided, one will be generated)
    * @param {string} [options.imageId] - Image ID for generated thing visual (defaults to null)
+   * @param {string} [options.imagePrompt] - Stored final image prompt (defaults to blank)
    */
   constructor({
     name,
@@ -559,6 +562,7 @@ class Thing {
     thingType,
     id = null,
     imageId = null,
+    imagePrompt = '',
     rarity = null,
     itemTypeDetail = null,
     metadata = null,
@@ -606,6 +610,10 @@ class Thing {
       throw new Error('Thing shortDescription must be a string or null');
     }
 
+    if (imagePrompt !== null && imagePrompt !== undefined && typeof imagePrompt !== 'string') {
+      throw new Error('Thing imagePrompt must be a string');
+    }
+
     // Initialize private fields
     this.#id = id || Thing.#generateId();
     IdGenerator.register('thing', this.#id);
@@ -613,6 +621,7 @@ class Thing {
     this.#description = description.trim();
     this.#thingType = thingType.toLowerCase();
     this.#imageId = imageId;
+    this.#imagePrompt = typeof imagePrompt === 'string' ? imagePrompt.trim() : '';
     this.#rarity = typeof rarity === 'string' ? rarity.trim() : null;
     this.#itemTypeDetail = typeof itemTypeDetail === 'string' ? itemTypeDetail.trim() : null;
     this.#metadata = metadata && typeof metadata === 'object' ? { ...metadata } : {};
@@ -712,6 +721,10 @@ class Thing {
 
   get imageId() {
     return this.#imageId;
+  }
+
+  get imagePrompt() {
+    return this.#imagePrompt;
   }
 
   get createdAt() {
@@ -1367,6 +1380,14 @@ class Thing {
     this.#lastUpdated = new Date().toISOString();
   }
 
+  set imagePrompt(newImagePrompt) {
+    if (typeof newImagePrompt !== 'string') {
+      throw new Error('Thing imagePrompt must be a string');
+    }
+    this.#imagePrompt = newImagePrompt.trim();
+    this.#lastUpdated = new Date().toISOString();
+  }
+
   // Static methods for managing thing instances
   static getAll() {
     return Array.from(Thing.#indexByID.values());
@@ -1877,6 +1898,13 @@ class Thing {
 
   #setExtensionFieldValue(field, value, { updateTimestamp = false } = {}) {
     const normalized = Thing.#normalizeExtensionFieldValue(field, value);
+    if (typeof field.validateValue === 'function') {
+      field.validateValue(Thing.#cloneExtensionFieldValue(normalized), {
+        entity: this,
+        entityType: 'thing',
+        fieldName: field.fieldName
+      });
+    }
     if (Thing.#shouldStoreExtensionFieldValue(normalized)) {
       this.#extensionFields[field.fieldName] = normalized;
     } else {
@@ -1919,6 +1947,7 @@ class Thing {
       shortDescription: this.#shortDescription || undefined,
       thingType: this.#thingType,
       imageId: this.#imageId,
+      imagePrompt: this.#imagePrompt,
       createdAt: this.#createdAt,
       lastUpdated: this.#lastUpdated,
       rarity: this.#rarity,
@@ -1979,6 +2008,7 @@ class Thing {
       shortDescription: data.shortDescription ?? data.metadata?.shortDescription ?? null,
       thingType: data.thingType,
       imageId: data.imageId,
+      imagePrompt: data.imagePrompt,
       rarity: data.rarity,
       itemTypeDetail: data.itemTypeDetail,
       metadata: data.metadata,

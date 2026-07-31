@@ -145,7 +145,8 @@ test('ModExtensionRegistry registers and numbers player-action prompt steps for 
         modName: 'need-bar-lust',
         id: 'need-awareness',
         step: 1,
-        text: 'Check whether urgent lust needs should affect selected NPC initiative.'
+        text: 'Check whether urgent lust needs should affect selected NPC initiative.',
+        tinyBrainText: 'List any urgent lust needs affecting NPC initiative, or respond N/A.'
     });
     registry.registerPlayerActionPromptStep({
         modName: 'spells',
@@ -162,6 +163,7 @@ test('ModExtensionRegistry registers and numbers player-action prompt steps for 
             step: 1,
             number: '1g',
             text: 'Check whether urgent lust needs should affect selected NPC initiative.',
+            tinyBrainText: 'List any urgent lust needs affecting NPC initiative, or respond N/A.',
             order: 2
         },
         {
@@ -171,6 +173,7 @@ test('ModExtensionRegistry registers and numbers player-action prompt steps for 
             step: 3,
             number: '3l',
             text: 'Check whether implant behavior stayed consistent with installed hardware.',
+            tinyBrainText: 'Check whether implant behavior stayed consistent with installed hardware.',
             order: 1
         },
         {
@@ -180,6 +183,7 @@ test('ModExtensionRegistry registers and numbers player-action prompt steps for 
             step: 3,
             number: '3m',
             text: 'Check whether any spellcasting respected configured costs.',
+            tinyBrainText: 'Check whether any spellcasting respected configured costs.',
             order: 3
         }
     ]);
@@ -335,15 +339,18 @@ test('player-action prompt renders mod-registered steps at stages 1 and 3', () =
     );
 });
 
-test('need-bar-lust mod registers stage 1 player-action prompt steps', () => {
+test('nsfw-boost mod registers tiny-brain stage 1 player-action prompt steps', () => {
     const registry = new ModExtensionRegistry();
-    const lustMod = require('../mods/need-bar-lust/mod.js');
+    const lustMod = require('../mods/nsfw-boost/mod.js');
 
     lustMod.register({
+        modDir: path.join(process.cwd(), 'mods', 'nsfw-boost'),
+        registerEntityField() {},
+        registerBaseContextContributor() {},
         registerPlayerActionPromptStep(options = {}) {
             return registry.registerPlayerActionPromptStep({
                 ...options,
-                modName: 'need-bar-lust'
+                modName: 'nsfw-boost'
             });
         }
     });
@@ -357,19 +364,27 @@ test('need-bar-lust mod registers stage 1 player-action prompt steps', () => {
         })),
         [
             {
-                fullId: 'need-bar-lust:lustAdvance',
+                fullId: 'nsfw-boost:lustAdvance',
                 step: 1,
                 number: '1g'
             },
             {
-                fullId: 'need-bar-lust:takeTheLead',
+                fullId: 'nsfw-boost:takeTheLead',
                 step: 1,
                 number: '1h'
+            },
+            {
+                fullId: 'nsfw-boost:descriptiveness',
+                step: 1,
+                number: '1i'
             }
         ]
     );
     assert.match(steps[0].text, /romantic and\/or sexual advance/);
     assert.match(steps[1].text, /active participant/);
+    assert.match(steps[0].tinyBrainText, /respond N\/A/);
+    assert.match(steps[1].tinyBrainText, /List who will take the lead/);
+    assert.match(steps[2].tinyBrainText, /list the vivid anatomical details/);
 });
 
 test('ModExtensionRegistry registers world setting tabs and groups fields by tab', () => {
@@ -765,6 +780,50 @@ test('Thing persists registered first-class mod fields at the top level', () => 
         assert.equal(roundTripped.getExtensionField('implantSlot'), 'dermal');
         assert.equal(roundTripped.implantSlot, 'dermal');
         assert.equal(roundTripped.toJSON().implantSlot, 'dermal');
+    } finally {
+        Globals.modExtensionRegistry = previousRegistry;
+    }
+});
+
+test('Thing applies registered extension-field value validators before persistence', () => {
+    const registry = new ModExtensionRegistry();
+    registry.registerEntityField({
+        modName: 'modules',
+        entityType: 'thing',
+        fieldName: 'installedModuleIds',
+        type: 'array',
+        defaultValue: [],
+        validateValue(value, { entity }) {
+            value.forEach((entry, index) => {
+                if (typeof entry !== 'string' || !entry.trim()) {
+                    throw new Error(`Item "${entity?.name || 'unknown'}" installedModuleIds[${index}] must be a non-empty string.`);
+                }
+            });
+        }
+    });
+    const previousRegistry = Globals.modExtensionRegistry;
+    Globals.modExtensionRegistry = registry;
+    try {
+        assert.throws(() => new Thing({
+            id: 'thing-invalid-module-link',
+            name: 'Broken Visor',
+            description: 'A visor with malformed module state.',
+            thingType: 'item',
+            installedModuleIds: [1201]
+        }), /installedModuleIds\[0\].*non-empty string/i);
+
+        const visor = new Thing({
+            id: 'thing-valid-module-link',
+            name: 'Working Visor',
+            description: 'A visor with valid module state.',
+            thingType: 'item',
+            installedModuleIds: ['thing-focus-crystal']
+        });
+        assert.deepEqual(visor.installedModuleIds, ['thing-focus-crystal']);
+        assert.throws(
+            () => visor.setExtensionField('installedModuleIds', ['']),
+            /installedModuleIds\[0\].*non-empty string/i
+        );
     } finally {
         Globals.modExtensionRegistry = previousRegistry;
     }

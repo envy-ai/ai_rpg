@@ -13,7 +13,7 @@ The implementation class lives in `SceneSummaies.js` (the project filename uses 
 
 `startIndex` and `endIndex` are inclusive positions in the shared scene-summary index, not raw `chatHistory` array offsets. `startEntryId` and `endEntryId` anchor each stored range back to saved chat entries.
 
-Saves store the serialized payload in `sceneSummaries.json`. `Utils.serializeGameState()` requires a serializable scene-summary store, `Utils.writeSerializedGameState()` writes the file, `Utils.loadSerializedGameState()` reads it with `{}` as the missing-file default, and `Utils.hydrateGameState()` loads it into `Globals.getSceneSummaries()`.
+Saves store the serialized payload in `sceneSummaries.json`. `Utils.serializeGameState()` requires a serializable scene-summary store, `Utils.writeSerializedGameState()` writes the file, and `Utils.loadSerializedGameState()` reads it with `{}` as the missing-file default. `Utils.hydrateGameState()` loads it into `Globals.getSceneSummaries()`; validation failures warn, clear the summary store, and allow the rest of the save to load.
 
 ## Shared Scene-Summary Index
 `scene_summary_index.js` defines the indexed entry set used by generation, range diagnostics, slash commands, chat tools, and automatic threshold summarization.
@@ -36,8 +36,8 @@ Indexed text comes from `content` or, if content is empty, `summary`. Normalizat
 - It requires a configured AI backend.
 - It builds the shared index with `excludeSummaries: true`.
 - `startIndex` and `endIndex` accept positive integers or `"all"`.
-- `"all"` with `redo: false` starts at `SceneSummaries.getFirstUnsummarizedIndex(totalEntries)`.
-- `redo: true` deletes overlapping stored summaries through `deleteSummariesOverlappingRange(...)`, then reruns the uncovered range with a bounded overlap extension based on `summaries.scene_summary_max_entries_per_prompt`.
+- `"all"`, with or without `redo`, always generates from entry 1 through the current end and atomically replaces the complete stored scene list and entry-id index map only after generation and validation succeed.
+- Numeric-range `redo: true` deletes overlapping stored summaries through `deleteSummariesOverlappingRange(...)`, then reruns the uncovered range with a bounded overlap extension based on `summaries.scene_summary_max_entries_per_prompt`.
 - Long ranges are chunked against `summaries.scene_summary_max_entries_per_prompt` or the default of `500`.
 - Each chunk renders `prompts/scene-summarize.xml.njk` and calls `LLMClient.chatCompletion(...)` with `metadataLabel: 'scene_summarize'`, `runInBackground: true`, and whole-response XML validation disabled.
 - The returned prompt and response are logged through `LLMClient.logPrompt(...)` under the `scene_summarize` prefix.
@@ -52,6 +52,7 @@ Range errors use `scene_summary_diagnostics.js` and include scalar call context:
 ## Instance API
 - `clear()`: empties scenes, entry maps, NPC-name maps, and metadata.
 - `addSummaryResult(summaryResult)`: validates `scenes` and `entryIndexMap`, ingests entry ids and NPC names, anchors to `summarizedRange` when supplied, removes stored scenes overlapping the incoming coverage, stores the normalized scenes, and updates metadata.
+- `replaceWithSummaryResult(summaryResult)`: validates a result in a temporary `SceneSummaries` instance, then atomically replaces scenes, entry mappings, NPC-name mappings, and metadata. Invalid replacement data leaves the existing store unchanged.
 - `containsEntry(entryId)`: resolves an entry id through `_entryIdToIndex` and returns whether that index is covered by a stored scene.
 - `getFirstUnsummarizedIndex(totalEntries)`: returns the first uncovered 1-based index or `null` when all entries through `totalEntries` are covered.
 - `deleteSummariesOverlappingRange(startIndex, endIndex)`: removes overlapping stored scenes and returns the uncovered range that should be summarized.
@@ -89,8 +90,7 @@ Because base-context scene numbers are local to the emitted older-history window
 ## Commands
 - `/scene_summaries` and `/summary_ranges` list stored summaries in display order, show `Entry N` or `Entries N-M`, and report coverage gaps against the shared scene-summary index.
 - `/summarize check` reports unsummarized indexed-entry counts.
-- `/summarize all` summarizes from the first uncovered indexed entry through the end of the indexed history.
-- `/summarize all true` rebuilds from entry 1 after deleting overlapping stored summaries.
+- `/summarize all` and `/summarize all true` rebuild every scene from entry 1 and replace the complete mapping store after successful validation. A failed rebuild preserves the previous store.
 - `/summarize N` and `/summarize N-M` summarize explicit shared-index ranges.
 - Successful `/summarize` runs write a text export under `exports/`.
 - `/scrub_legacy_debug [dry_run]` removes stored diagnostic pollution such as `Checks: ...` and `Tool call debug: ...` lines from chat history and scene summaries without running the scene summarizer. It refuses to blank a required scene summary.

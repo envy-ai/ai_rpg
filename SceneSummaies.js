@@ -66,6 +66,16 @@ class SceneSummaries {
         }
     }
 
+    replaceWithSummaryResult(summaryResult) {
+        const replacement = new SceneSummaries();
+        replacement.addSummaryResult(summaryResult);
+
+        this._scenes = replacement._scenes;
+        this._entryIdToIndex = replacement._entryIdToIndex;
+        this._entryIdToNpcNames = replacement._entryIdToNpcNames;
+        this._metadata = replacement._metadata;
+    }
+
     containsEntry(entryId) {
         const normalizedId = typeof entryId === 'string' ? entryId.trim() : '';
         if (!normalizedId) {

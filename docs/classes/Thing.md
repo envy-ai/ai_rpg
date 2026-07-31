@@ -6,7 +6,7 @@
 The class maintains runtime indexes by id and normalized name. Rarity definitions come from merged `defs/rarities.yaml` data, including enabled mod overlays.
 
 ## Key State
-- Core identity: `#id`, `#name`, `#description`, `#shortDescription`, `#thingType`, `#imageId`, `#createdAt`, `#lastUpdated`.
+- Core identity: `#id`, `#name`, `#description`, `#shortDescription`, `#thingType`, `#imageId`, `#imagePrompt`, `#createdAt`, `#lastUpdated`. `imagePrompt` defaults to blank and does not cause prompt generation during construction.
 - Item mechanics: `#rarity`, `#itemTypeDetail`, `#slot`, `#attributeBonuses`, `#unscaledAttributeBonuses`, `#level`, `#relativeLevel`, `#count`.
 - Effects: `#statusEffects` for effects on the thing itself and `#causeStatusEffect` for effects applied to a target or equipper.
 - Placement helpers: `#metadata`, which mirrors ownership, location, container, slot, bonus, level, count, and boolean-flag data used by callers and save compatibility.
@@ -30,7 +30,7 @@ Construction normalizes metadata mirrors, boolean flags, status effects, cause e
 - Flag metadata: `booleanFlagMap` and `booleanFlagKeys`.
 
 ## Accessors
-- Identity and serialization state: `id`, `name`, `description`, `shortDescription`, `thingType`, `imageId`, `createdAt`, `lastUpdated`, `checksum`, and `count`.
+- Identity and serialization state: `id`, `name`, `description`, `shortDescription`, `thingType`, `imageId`, `imagePrompt`, `createdAt`, `lastUpdated`, `checksum`, and `count`.
 - Equipment helpers: `equippedBy`, `isEquipped`, and `equippedSlot`.
 - Boolean flags: `isVehicle`, `isCraftingStation`, `isProcessingStation`, `isHarvestable`, `isSalvageable`, `isContainer`, and `requiresCheckToOpen`.
 - Container data: `containedThingIds`, `containerContents`, `getInventoryItems()`, `addInventoryItem()`, `removeInventoryItem()`, `hasInventoryItem()`, `containsThingRecursive()`, `setInventory()`, `clearInventory()`, `clearContainerContents()`, and `whoseContainer()`.
@@ -43,11 +43,11 @@ Construction normalizes metadata mirrors, boolean flags, status effects, cause e
 - Type helpers: `isType(type)`, `isScenery()`, `isItem()`, and `toString()`.
 
 ## Serialization And Saves
-`toJSON()` writes the top-level Thing state used in `things.json`, including split cause-effect fields (the singular `causeStatusEffectOnTarget`/`causeStatusEffectOnEquipper` plus the full `causeStatusEffects` array for multi-effect items), boolean flags, stack count, levels, harvest history, container state, registered extension fields, metadata mirrors, and status effects. `Utils.serializeGameState(...)` persists the runtime `things` map with `thing.toJSON()`, and `Utils.hydrateGameState(...)` hydrates each payload through `Thing.fromJSON(...)`.
+`toJSON()` writes the top-level Thing state used in `things.json`, including `imagePrompt`, split cause-effect fields (the singular `causeStatusEffectOnTarget`/`causeStatusEffectOnEquipper` plus the full `causeStatusEffects` array for multi-effect items), boolean flags, stack count, levels, harvest history, container state, registered extension fields, metadata mirrors, and status effects. `Utils.serializeGameState(...)` persists the runtime `things` map with `thing.toJSON()`, and `Utils.hydrateGameState(...)` hydrates each payload through `Thing.fromJSON(...)`.
 
 `Thing.fromJSON(...)` accepts top-level fields and metadata mirrors for compatibility. It restores only extension fields currently registered in `Globals.modExtensionRegistry`; mods that own Thing fields must register those fields before save hydration.
 
-`checksum` is a fast FNV-1a hash of canonicalized `toJSON()` data. It excludes identity/timestamps (`id`, `createdAt`, `lastUpdated`), stack quantity (`count`), prompt-roundtrip raw bonuses (`unscaledAttributeBonuses`), and placement/ownership metadata (`location*`, `owner*`, `player*`, `inventoryOwnerId`, `containerId`) so equivalent items hash the same across movement, saves, and stack quantity differences.
+`checksum` is a fast FNV-1a hash of canonicalized `toJSON()` data. It excludes identity/timestamps (`id`, `createdAt`, `lastUpdated`), stack quantity (`count`), the presentation-only `imagePrompt`, prompt-roundtrip raw bonuses (`unscaledAttributeBonuses`), and placement/ownership metadata (`location*`, `owner*`, `player*`, `inventoryOwnerId`, `containerId`) so equivalent items hash the same across movement, saves, prompt edits, and stack quantity differences.
 
 `copy({...})` creates a fresh `Thing` id/timestamps with the same hashable data and image by default. Stack splitting uses it to preserve item details while overriding count and placement metadata. `containedThingIds` and pending `containerContents` are reset unless explicitly supplied in the copy overrides.
 
@@ -88,7 +88,7 @@ For fields with `clearThingSlotWhenPresent`, generation and API write paths clea
 The modules mod registers `moduleSlots`, `moduleType`, `installedModuleIds`, and `moduleInstalledOnItemId`. Base equippable items use normal `Thing.slot` plus `moduleSlots`; module items use `moduleType`; installed modules remain real Things in the same holder as their base item, with backlinks and UI filtering handled by the modules mod.
 
 ## Validation And Errors
-Invalid required constructor fields, invalid `thingType`, invalid count values, invalid extension field values, invalid non-array container contents, invalid non-string contained ids, malformed status-effect entries, and unresolved destructive container operations throw explicit errors. Several API routes catch these errors and return structured `{ success: false, error }` responses.
+Invalid required constructor fields, invalid `thingType`, invalid count values, invalid extension field values, invalid non-array container contents, invalid non-string contained ids, malformed status-effect entries, and unresolved destructive container operations throw explicit errors. Registered extension fields may supply `validateValue(value, context)`, which runs after core type normalization and before constructor, hydration, or setter persistence. Several API routes catch these errors and return structured `{ success: false, error }` responses.
 
 Level values are rounded to positive integers in the model. `relativeLevel` is rounded into the model-supported relative range. Stack `count` must be an integer `0` or greater and defaults to `1` when absent.
 

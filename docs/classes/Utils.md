@@ -52,6 +52,7 @@ Static utility helpers used across the server for set math, title casing, durati
   - Reads the same file set and returns defaults for missing files. JSON/text read failures are warned and return the file's default shape.
 - `hydrateGameState(serialized, context)`.
   - Runs save migrations before object hydration, resets and seeds `IdGenerator`, restores `metadata.plotAnalysis` through `Globals.setPlotAnalysis(...)`, restores world time/calendar through `Globals.hydrateWorldTime(...)`, and loads chat and scene summaries.
+  - Invalid or incomplete persisted scene-summary data is warning-cleared so it cannot block loading the rest of a save. The scene-summary runtime store must still exist and support both `load()` and recovery `clear()` operations.
   - Clears transient queues/maps supplied in `context` (`jobQueue`, image jobs, pending image work, NPC generation promises, generated images) and clears live registries/maps before re-instantiating saved entities.
   - Hydrates skills first, then factions, mystery boxes, mystery threads, scheduled events, things, players, generated images, chat history, locations, location exits, regions, and pending region stubs. Invalid skill/faction/thing/player/region entries are skipped with warnings.
   - Calls `Player.clearRuntimeRegistries()` and clears static indexes for `Quest`, `Thing`, `Location`, `Region`, `Faction`, `MysteryBox`, `MysteryThread`, `ScheduledEvent`, and `Tracker` before rebuilding records so stale in-memory instances do not survive a load.

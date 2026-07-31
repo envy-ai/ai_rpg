@@ -105,6 +105,24 @@ Behavior:
 - `gameConfigOverride.yaml` persists the active per-game YAML override exactly as normalized by `Globals.setGameConfigOverrideYaml`.
 - Manual saves use `saves/`. Autosaves use `autosaves/` through the shared save helper and may omit a duplicate final chat entry when it matches the last autosave.
 
+## Startup CLI game loading
+
+The server can hydrate a save directory before accepting HTTP connections:
+
+```bash
+npm start -- --load-game /absolute/path/to/save-directory
+npm start -- --load-game=./relative/path/to/save-directory
+```
+
+Behavior:
+- `--load-game` accepts a save directory, not an individual JSON file. Relative paths resolve against the process working directory.
+- The option may only be supplied once and requires a non-empty value.
+- The server skips creation and background inventory generation for the dummy `Adventurer` when startup loading is requested.
+- Startup loading calls the same `performGameLoad()` hydration path as `POST /api/load`, including save config reload, migrations, reconciliation, summary behavior, and pending ability-state resolution.
+- Hydration finishes before `listen()`, allowing browser tests to treat a reachable HTTP port as proof that the requested save is ready.
+- Missing paths, non-directory paths, malformed saves, load-time validation failures, and enabled-mod mismatches fail server startup instead of silently starting an empty game.
+- Startup loading has no browser `clientId`, so it does not register a client-specific short-description backfill plan.
+
 ## POST /api/load
 
 Load a saved game.

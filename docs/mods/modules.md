@@ -18,6 +18,8 @@ These fields are registered first-class Thing extension fields, serialize at top
 
 Validation rejects module slots on non-item or non-equippable Things, unknown slot types, malformed slot entries, malformed installed-id arrays, duplicate installed ids, and module items that also define module slots. Install/remove operations reject missing owners, missing stable ids, self-installation, equipped module items, already-installed modules, wrong requested slot types, full slots, missing inventory/location ownership, and stale installed-module references.
 
+The `installedModuleIds` registered field validates every entry at the Thing persistence boundary. Non-string, blank, and duplicate ids therefore fail during Thing construction, save hydration, or field updates instead of remaining latent until a base-context prompt tries to render the item.
+
 ## Prompt, Tool, And Event Hooks
 - The mod registers a dynamic item-generation prompt instruction. Item-generation prompts count persisted Things with non-empty `moduleSlots` as modular items and persisted Things with a meaningful `moduleType` as module items, including installed modules because they remain real Things.
 - If there are fewer than two module items per modular item, the prompt receives guidance naming the current gap and asking the generator to make at least one generated item use the active module item label, such as `Module`, `Crystal`, `Mod`, or `Materia`.

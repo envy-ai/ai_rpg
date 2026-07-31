@@ -24,6 +24,7 @@ The modules mod registers these as first-class Thing extension fields, so they s
 - Only equippable items, meaning items with a meaningful normal equipment `slot`, may have module slots.
 - Module items cannot also have module slots.
 - Unknown slot types, malformed slot entries, malformed installed-id arrays, duplicate installed ids, and malformed slot-type definitions throw explicit errors.
+- `installedModuleIds` uses the entity-field `validateValue` hook, so malformed entries are rejected when a Thing is constructed, hydrated, or edited rather than surfacing later during prompt serialization. `validateItemModuleFields(...)` also validates the array for plain objects and direct module operations.
 
 ## Core Methods
 - `getModuleType(item)`, `isModuleItem(item)`, `getModuleSlots(item, { slotTypes, validate })`, `getInstalledModuleIds(baseItem)`, and `getModuleInstalledOnItemId(moduleItem)` normalize field access across real `Thing` instances and plain test objects.

@@ -9,8 +9,9 @@ Callers use it from gameplay routes, world-generation helpers, event checks, sta
 - `openai_compatible`: sends HTTP requests with `axios` to a normalized `/chat/completions` endpoint using `ai.endpoint`, `ai.apiKey` or OAuth refresh-token auth, and `ai.model`.
 - `codex_cli_bridge`: delegates transport to `CodexBridgeClient.chatCompletion(...)`. `LLMClient` keeps ownership of retry handling, validation, progress tracking, prompt stats, cancellation, and Codex usage/quota reporting around the bridge response.
 - `cline_cli_bridge`: delegates transport to `ClineBridgeClient.chatCompletion(...)`. It uses the authenticated local Cline CLI, keeps retry/validation/progress/cancellation behavior in `LLMClient`, and does not use endpoint/API-key config.
+- `kimi_cli_bridge`: delegates transport to `KimiBridgeClient.chatCompletion(...)`. It uses the authenticated local Kimi Code CLI through a fresh ACP stdin session, streams decoded wrapper `content` deltas into prompt progress, rejects native tool events, keeps retry/validation/cancellation behavior in `LLMClient`, and does not use endpoint/API-key config.
 
-Backend aliases are normalized through `CodexBridgeClient.normalizeBackend(...)`; backend-specific validation routes to the selected adapter. See [CodexBridgeClient.md](CodexBridgeClient.md) for Codex app-server transport and [ClineBridgeClient.md](ClineBridgeClient.md) for Cline one-shot CLI transport.
+Backend aliases are normalized through `CodexBridgeClient.normalizeBackend(...)`; backend-specific validation routes to the selected adapter. See [CodexBridgeClient.md](CodexBridgeClient.md) for Codex app-server transport, [ClineBridgeClient.md](ClineBridgeClient.md) for Cline one-shot CLI transport, and [KimiBridgeClient.md](KimiBridgeClient.md) for Kimi ACP JSON-RPC transport.
 
 ## Configuration Inputs
 - `Globals.config.ai` is cloned for each request attempt. Matching `ai_model_overrides` profiles are applied by normalized `metadataLabel` before that attempt is dispatched.
@@ -26,15 +27,18 @@ Backend aliases are normalized through `CodexBridgeClient.normalizeBackend(...)`
 
 ## Public API
 - `chatCompletion(options)`: runs one completion request and returns assistant text.
+- `withPromptQueueReservation(callback)`: creates an opaque queue reservation, passes it to an awaited callback, and releases any retained permits in `finally`. Sequential `chatCompletion(...)` calls can pass that reservation to keep the same queue position across a logical multi-call prompt.
 - `cancelPrompt(streamId, reason)`: aborts one tracked in-flight prompt and causes that request to return `''`.
 - `retryPrompt(streamId, reason)`: aborts one tracked attempt and restarts the same `chatCompletion(...)` loop without consuming an automatic retry attempt.
+- `recordPromptProgressGroupFailure(progressGroupId, responseText)`: records one parse-failed response for a logical prompt group, marks its current progress entry failed, and broadcasts an immediate `prompt_progress_group_failure` update.
+- `clearPromptProgressGroup(progressGroupId)`: releases transient failed-response history after a grouped logical prompt ends; active/completed entry snapshots keep their copied display data.
 - `cancelAllPrompts(reason)`: aborts all prompts currently registered in the abort-controller map and returns cancellation counts.
 - `waitForPromptDrain({ timeoutMs, pollIntervalMs })`: waits until prompt-progress entries and abort-controller entries are empty.
 - `ensureAiConfig()`, `resolveBackend(aiConfigOverride)`, `getConfigurationErrors(aiConfigOverride)`, `isConfigured(aiConfigOverride)`, `getMaxConcurrent(aiConfigOverride)`, `resolveMaxConcurrentAllModels(configOverride)`: configuration helpers used by settings and tests.
 - `resolveChatEndpoint(endpoint)`, `baseTimeoutMilliseconds()`, `resolveTimeout(timeoutMs, multiplier)`, `resolveTemperature(explicit, fallback)`, `resolveOutput(output, fallback)`: request utility helpers.
 - `calculatePromptProgressFraction(receivedCharacters, targetCharacters)` and `resolvePromptProgressCharacterTarget(label, config)`: prompt-progress math and configured target lookup.
 - `getPromptOutputCharacterStats(label)`, `listPromptOutputCharacterStats(options)`, `recordPromptOutputCharacters(label, outputCharacters)`, `clearPromptOutputCharacterStats()`: persistent output-character statistics helpers used by `/promptstats`.
-- `logPrompt(options)`: writes prompt/response logs under `logs/`.
+- `logPrompt(options)`: writes prompt/response logs under `logs/`; callers can append later sections to the same file with `filePath` and `append: true`.
 - `writeLogFile(options)`: writes `ERROR_<prefix>_<metadataLabel>_<timestamp>.log` files for validation, chat-completion, and tool-call failures.
 - `formatMessagesForErrorLog(messages)`: renders chat messages into readable system/prompt/other sections for logs.
 - `resetForcedOutputState()` and `resetPromptOutputCharacterStatsForTests()`: test helpers.
@@ -52,6 +56,8 @@ Important options:
 - `timeoutMs`, `timeoutScale`, `retryAttempts`, `waitAfterError`, `waitAfterRateLimitError`, `waitAfterNetworkError`: timeout and retry controls.
 - `stream`: OpenAI-compatible streaming control. CLI bridge requests are sent through the bridge with `stream: false` while bridge events feed prompt progress.
 - `runInBackground`: marks the request as background for progress display and lower semaphore priority.
+- `queueReservation`: an opaque reservation supplied by `withPromptQueueReservation(...)`. Reserved calls must be sequential and must keep the same model semaphore key, all-model concurrency configuration, and foreground/background priority.
+- `progressGroupId`: optional non-empty logical prompt id copied into prompt-progress entries. Sequential tiny-brain calls use one group id so a viewer can follow the run while individual stream ids change.
 - `multimodal`: merges `Globals.config.ai_multimodal` into the effective AI config.
 - `validateXML`, `validateXMLStrict`, `requiredTags`, `requiredRegex`: response validation controls.
 - `forceOutput`: deterministic string or response-shaped object that skips network transport and runs normalization, validation, stats, and hooks.
@@ -65,9 +71,9 @@ Request flow:
 2. Resolve deterministic output from `forceOutput` or a forced-output fixture, if configured.
 3. Resolve retry count from the call option or `ai.retryAttempts`.
 4. For each attempt, clone AI config, apply `ai_model_overrides`, merge custom args/headers, resolve backend, append configured system-prompt text, apply cachebuster, append OpenAI-compatible assistant prefill when configured, resolve model/temperature/token/top-p/reasoning settings, and choose a semaphore key.
-5. Acquire the per-key semaphore, then the optional all-model semaphore from root `max_concurrent_requests_all_models`. Background requests share the same semaphores but foreground requests are dispatched first; with a limit above one, background work leaves one slot available for foreground prompts.
+5. Acquire the per-key semaphore, then the optional all-model semaphore from root `max_concurrent_requests_all_models`. Background requests share the same semaphores but foreground requests are dispatched first; with a limit above one, background work leaves one slot available for foreground prompts. A valid queue reservation retains these permits between sequential calls instead of releasing and reacquiring them.
 6. Start prompt-progress tracking when the request is trackable and output is not `silent`.
-7. Dispatch through `axios.post(...)`, `CodexBridgeClient.chatCompletion(...)`, or `ClineBridgeClient.chatCompletion(...)`.
+7. Dispatch through `axios.post(...)`, `CodexBridgeClient.chatCompletion(...)`, `ClineBridgeClient.chatCompletion(...)`, or `KimiBridgeClient.chatCompletion(...)`.
 8. Normalize the response into an OpenAI-style `chat.completion` payload, merge assistant prefill into returned text exactly once, call capture/on-response hooks, strip `<think>...</think>` blocks from returned text, validate output, update prompt stats, and return assistant text.
 
 ## Response Normalization And Validation
@@ -86,6 +92,7 @@ Progress entries include:
 - `id`, `label`, `model`, elapsed seconds, timeout seconds, retry count, and background flag.
 - `promptText` from `formatMessagesForErrorLog(...)`.
 - `previewText` from streamed assistant text or CLI bridge assistant-content events.
+- `progressGroupId`, `failedResponses`, and `responseFailed` when a logical staged prompt groups requests and reports parse failures.
 - `receivedCount` and `receivedUnit`; OpenAI-compatible streaming and CLI bridge progress count decoded JavaScript characters.
 - `targetCharacters`, `progressFraction`, `runCount`, and `averageOutputCharacters`.
 
@@ -93,14 +100,18 @@ Cold-start targets come from `config.prompt_progress.character_targets`. Label m
 
 High-frequency progress broadcasts are coalesced to at most one active update every 500 ms. Completion sends an immediate `progressFraction: 1` update, holds the completed entry for 250 ms, then emits the clear event. Prompt-progress `id` values are the ids accepted by `cancelPrompt(...)` and `retryPrompt(...)`.
 
+`recordPromptProgressGroupFailure(...)` force-broadcasts the updated progress entry and also emits `prompt_progress_group_failure`, allowing the browser to recolor a failed response even if the completed stream entry has already left the normal 250 ms hold window. The failed text is display metadata only and is not added to request messages.
+
 ## Concurrency
 `LLMClient` keeps a semaphore per backend/model/auth/session key, plus an optional process-wide semaphore when root `max_concurrent_requests_all_models` is set.
 
 - OpenAI-compatible keys use the resolved API credential or OAuth cache key plus model.
-- Codex fresh-mode and Cline bridge keys use backend plus model and honor `ai.max_concurrent_requests`.
+- Codex fresh-mode, Cline, and Kimi bridge keys use backend plus model identity and honor `ai.max_concurrent_requests`.
 - Codex resumed-session keys serialize by Codex home and, for `resume_id`, session id.
 - The all-model semaphore caps real outbound text-generation attempts across every key. It is acquired only after the per-key permit so a request waiting on a busy model does not occupy an all-model slot.
 - `runInBackground: true` lowers queue priority and limits concurrent background occupancy so foreground gameplay prompts can start ahead of queued background prompts.
+- `withPromptQueueReservation(...)` retains one acquired per-key permit and its optional all-model permit until the callback completes. This prevents another queued prompt from taking that logical prompt's slot between stages or retries without reducing configured capacity or blocking other genuinely free slots.
+- Reservations reject concurrent reuse, model/semaphore-key changes, all-model concurrency changes, and foreground/background priority changes. Permits are released in `finally` when the callback succeeds or fails.
 
 ## Prompt Logging
 `logPrompt(...)` writes `logs/<timestamp>_<prefix>_<metadataLabel>.log` with:
@@ -108,6 +119,8 @@ High-frequency progress broadcasts are coalesced to at most one active update ev
 - model, endpoint, and token metadata when available.
 - request and response JSON payload sections when supplied.
 - system prompt, generation prompt, reasoning, custom sections, and response text.
+
+For incremental logs, pass the path returned by the first call back as `filePath` with `append: true`. Append targets must already exist inside the runtime `logs/` directory. `markResponseBoundaries: true` writes explicit `BEGIN` and `END` headings around the response; `responseLabel` customizes the heading. The tiny-brain player-action runner uses these options so an entire staged conversation occupies one file.
 
 `writeLogFile(...)` writes error files under `logs/` using sanitized labels. It serializes `Error` objects, including retry metadata (`attemptNumber`, `maxAttempts`, `willRetry`) and common Axios/custom error fields. Chat tool failures use this path for structured `ERROR_tool_call_failed_*` JSON logs.
 
@@ -126,7 +139,7 @@ Forced-output fixtures are loaded from `LLM_FORCE_OUTPUTS_FILE` or `ai.force_out
 ## Codex Usage And Quota Reporting
 When the Codex bridge response includes normalized `usage`, `LLMClient` writes a server-console usage line for that prompt with input, cached-input, output, and total token counts.
 
-Cline bridge responses do not currently report quota usage because Cline's documented NDJSON stream does not guarantee token usage metadata.
+Cline and Kimi bridge responses do not currently report quota usage because their CLI JSONL streams do not guarantee token-usage metadata.
 
 Quota snapshots are based on unique gameplay-turn metadata rather than raw prompt count. A prompt counts only when `metadata.__codexQuotaCountAsTurn === true` and `metadata.__codexQuotaTurnKey` is a non-empty stable string. Duplicate keys are ignored; a missing key with counting enabled throws. Every fifth counted turn calls `CodexBridgeClient.readRateLimits(...)`.
 

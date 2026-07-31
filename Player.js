@@ -42,6 +42,7 @@ class Player {
     #id;
     #currentLocation;
     #imageId;
+    #imagePrompt;
     #createdAt;
     #lastUpdated;
     #isNPC;
@@ -2240,6 +2241,10 @@ class Player {
 
         // Player image ID for generated portrait
         this.#imageId = options.imageId ?? null;
+        if (options.imagePrompt !== undefined && options.imagePrompt !== null && typeof options.imagePrompt !== 'string') {
+            throw new Error('Image prompt must be a string');
+        }
+        this.#imagePrompt = typeof options.imagePrompt === 'string' ? options.imagePrompt.trim() : '';
         this.#isNPC = Boolean(options.isNPC);
         this.#hiddenFromPlayer = this.#isNPC && !this.#isDead && Boolean(options.hiddenFromPlayer);
         this.#isHostile = this.#isNPC && Boolean(options.isHostile);
@@ -4150,6 +4155,13 @@ class Player {
 
     #setExtensionFieldValue(field, value, { updateTimestamp = false } = {}) {
         const normalized = Player.#normalizeExtensionFieldValue(field, value);
+        if (typeof field.validateValue === 'function') {
+            field.validateValue(Player.#cloneExtensionFieldValue(normalized), {
+                entity: this,
+                entityType: 'player',
+                fieldName: field.fieldName
+            });
+        }
         if (Player.#shouldStoreExtensionFieldValue(normalized)) {
             this.#extensionFields[field.fieldName] = normalized;
         } else {
@@ -4451,6 +4463,10 @@ class Player {
         return this.#imageId;
     }
 
+    get imagePrompt() {
+        return this.#imagePrompt;
+    }
+
     get elapsedTime() {
         // Error out if called for an NPC
         if (this.#isNPC) {
@@ -4475,6 +4491,14 @@ class Player {
             throw new Error('Image ID must be a string or null');
         }
         this.#imageId = newImageId;
+        this.#lastUpdated = new Date().toISOString();
+    }
+
+    set imagePrompt(newImagePrompt) {
+        if (typeof newImagePrompt !== 'string') {
+            throw new Error('Image prompt must be a string');
+        }
+        this.#imagePrompt = newImagePrompt.trim();
         this.#lastUpdated = new Date().toISOString();
     }
 
@@ -6537,6 +6561,7 @@ class Player {
             last_seen_location: this.#lastSeenLocation,
             was_in_player_location_previous_round: this.#wasInPlayerLocationPreviousRound,
             imageId: this.#imageId,
+            imagePrompt: this.#imagePrompt,
             isNPC: this.#isNPC,
             isInPlayerParty: this.isInPlayerParty,
             hiddenFromPlayer: this.#hiddenFromPlayer,
@@ -6624,6 +6649,7 @@ class Player {
             last_seen_location: this.#lastSeenLocation,
             was_in_player_location_previous_round: this.#wasInPlayerLocationPreviousRound,
             imageId: this.#imageId,
+            imagePrompt: this.#imagePrompt,
             attributes: this.#attributes,
             isNPC: this.#isNPC,
             hiddenFromPlayer: this.#hiddenFromPlayer,
@@ -6711,6 +6737,7 @@ class Player {
             health: data.health,
             attributes: data.attributes,
             imageId: data.imageId,
+            imagePrompt: data.imagePrompt,
             id: data.id,
             description: data.description,
             location: data.currentLocation,

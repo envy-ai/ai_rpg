@@ -101,7 +101,17 @@ Start the server with:
 npm start
 ```
 
-By default the app binds to `http://0.0.0.0:7777`. Pass `--port <number>` to `node server.js` (or edit `config.yaml`) if you need a different port. Once running you can:
+By default the app binds to `http://0.0.0.0:7777`. Pass `--port <number>` to `node server.js` (or edit `config.yaml`) if you need a different port.
+
+To start with an existing game already loaded, pass the save directory through `--load-game`:
+
+```bash
+npm start -- --load-game /path/to/save-directory
+```
+
+Relative save paths resolve from the directory where the command is launched. Startup fails before opening the HTTP port if the path is missing, is not a directory, cannot be loaded, or has an enabled-mod mismatch.
+
+Once running you can:
 
 - Visit `/` for the chat client, player sheet, and regional map.
 - Use `/new-game` to roll a fresh campaign.
