@@ -503,6 +503,125 @@ function extractRegisteredThingBlueprintFields(blueprint = {}) {
     return { values, shouldClearSlot };
 }
 
+function getRegisteredPlayerPayloadFields({ create = false, edit = false } = {}) {
+    const registry = Globals.modExtensionRegistry || null;
+    if (!registry || typeof registry.getEntityFields !== 'function') {
+        return [];
+    }
+    return registry.getEntityFields('player')
+        .filter(field => (
+            (create && field.exposeToCreateTool === true)
+            || (edit && field.exposeToEditModal === true)
+        ));
+}
+
+function parseRegisteredPlayerBooleanValue(rawValue, fieldName) {
+    if (typeof rawValue === 'boolean') {
+        return rawValue;
+    }
+    if (typeof rawValue === 'number') {
+        if (rawValue === 1) {
+            return true;
+        }
+        if (rawValue === 0) {
+            return false;
+        }
+        throw new Error(`Registered Player field "${fieldName}" must be a boolean. Use 1 or 0.`);
+    }
+    if (typeof rawValue === 'string') {
+        const normalized = rawValue.trim().toLowerCase();
+        if (!normalized || normalized === 'null') {
+            return null;
+        }
+        if (normalized === 'true' || normalized === '1' || normalized === 'yes' || normalized === 'y' || normalized === 'on') {
+            return true;
+        }
+        if (normalized === 'false' || normalized === '0' || normalized === 'no' || normalized === 'n' || normalized === 'off') {
+            return false;
+        }
+        throw new Error(`Registered Player field "${fieldName}" must be a boolean.`);
+    }
+    throw new Error(`Registered Player field "${fieldName}" must be a boolean.`);
+}
+
+function parseRegisteredPlayerPayloadFieldValue(rawValue, field) {
+    if (rawValue === undefined) {
+        return undefined;
+    }
+    if (rawValue === null) {
+        return null;
+    }
+    const fieldType = typeof field?.type === 'string' ? field.type.trim().toLowerCase() : 'string';
+    if (fieldType === 'boolean') {
+        return parseRegisteredPlayerBooleanValue(rawValue, field.fieldName);
+    }
+    if (typeof rawValue === 'string' && !rawValue.trim()) {
+        return null;
+    }
+    if (fieldType === 'string') {
+        return String(rawValue).trim();
+    }
+    if (fieldType === 'number') {
+        const numeric = Number(rawValue);
+        if (!Number.isFinite(numeric)) {
+            throw new Error(`Registered Player field "${field.fieldName}" must be a finite number.`);
+        }
+        return numeric;
+    }
+    if (fieldType === 'integer') {
+        const numeric = Number(rawValue);
+        if (!Number.isInteger(numeric)) {
+            throw new Error(`Registered Player field "${field.fieldName}" must be an integer.`);
+        }
+        return numeric;
+    }
+    if (fieldType === 'array') {
+        if (Array.isArray(rawValue)) {
+            return rawValue;
+        }
+        const parsed = JSON.parse(String(rawValue));
+        if (!Array.isArray(parsed)) {
+            throw new Error(`Registered Player field "${field.fieldName}" must be an array.`);
+        }
+        return parsed;
+    }
+    if (fieldType === 'object') {
+        if (rawValue && typeof rawValue === 'object' && !Array.isArray(rawValue)) {
+            return rawValue;
+        }
+        const parsed = JSON.parse(String(rawValue));
+        if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+            throw new Error(`Registered Player field "${field.fieldName}" must be an object.`);
+        }
+        return parsed;
+    }
+    throw new Error(`Registered Player field "${field.fieldName}" has unsupported type "${fieldType}".`);
+}
+
+function extractRegisteredPlayerPayloadFieldValues(payload = {}, fields = []) {
+    const values = {};
+    for (const field of fields) {
+        if (!field || typeof field.fieldName !== 'string') {
+            continue;
+        }
+        if (!Object.prototype.hasOwnProperty.call(payload, field.fieldName)) {
+            continue;
+        }
+        values[field.fieldName] = parseRegisteredPlayerPayloadFieldValue(payload[field.fieldName], field);
+    }
+    return values;
+}
+
+function applyRegisteredPlayerPayloadFieldValues(player, values = {}) {
+    for (const [fieldName, value] of Object.entries(values)) {
+        if (typeof player.setExtensionField === 'function') {
+            player.setExtensionField(fieldName, value);
+        } else {
+            player[fieldName] = value;
+        }
+    }
+}
+
 function isRegularProseChatToolAllowed(functionName, modExtensionRegistry = null) {
     if (typeof functionName !== 'string' || !functionName.trim()) {
         return false;
@@ -530,6 +649,18 @@ function isRequestUserInputToolEnabled() {
 
 function isPlotAnalysisPromptEnabled() {
     return Globals.config?.plot_analysis?.enabled !== false;
+}
+
+function resolvePlotAnalysisPromptInterval() {
+    const rawInterval = Globals.config?.plot_analysis?.interval;
+    if (rawInterval === undefined || rawInterval === null || rawInterval === '') {
+        return 1;
+    }
+    const interval = Number(rawInterval);
+    if (!Number.isInteger(interval) || interval < 1) {
+        throw new Error('plot_analysis.interval must be an integer greater than or equal to 1 when provided.');
+    }
+    return interval;
 }
 
 function isImprovementPromptEnabled() {
@@ -2938,6 +3069,7 @@ module.exports = function registerApiRoutes(scope) {
         let improvementPromptTurnCounter = 0;
         let tonalScaleEvaluationTurnCounter = 0;
         let mysteryBoxCleanupTurnCounter = 0;
+        let plotAnalysisTurnCounter = 0;
         let plotAnalysisPromptSequence = 0;
         let plotAnalysisPromptToken = randomUUID();
         let offscreenNpcActivityInProgress = false;
@@ -6034,6 +6166,18 @@ module.exports = function registerApiRoutes(scope) {
             return supplementalStoryInfoTurnCounter % frequency === 0;
         }
 
+        function resolvePlotSummaryPromptFrequency() {
+            const rawFrequency = config?.plot_summary_prompt_frequency;
+            if (rawFrequency === undefined || rawFrequency === null || rawFrequency === '') {
+                return PLOT_SUMMARY_PROMPT_FREQUENCY;
+            }
+            const numericFrequency = Number(rawFrequency);
+            if (!Number.isInteger(numericFrequency) || numericFrequency < 1) {
+                throw new Error('plot_summary_prompt_frequency must be an integer greater than or equal to 1.');
+            }
+            return numericFrequency;
+        }
+
         function shouldRunPlotSummaryThisTurn() {
             if (!isExtraPlotPromptEnabled('plot_summary')) {
                 return false;
@@ -6043,7 +6187,7 @@ module.exports = function registerApiRoutes(scope) {
                 return true;
             }
             plotSummaryTurnCounter += 1;
-            return plotSummaryTurnCounter % PLOT_SUMMARY_PROMPT_FREQUENCY === 0;
+            return plotSummaryTurnCounter % resolvePlotSummaryPromptFrequency() === 0;
         }
 
         function resolvePlotExpanderPromptFrequency() {
@@ -6150,6 +6294,7 @@ module.exports = function registerApiRoutes(scope) {
         }
 
         function resetPlotAnalysisPromptRuntime() {
+            plotAnalysisTurnCounter = 0;
             plotAnalysisPromptSequence = 0;
             plotAnalysisPromptToken = randomUUID();
         }
@@ -7652,7 +7797,10 @@ module.exports = function registerApiRoutes(scope) {
                 ],
                 metadataLabel: 'scheduled_event_resolution',
                 validateXML: false,
-                tools: scheduledEventTools
+                additionalPayload: {
+                    tools: scheduledEventTools,
+                    tool_choice: 'auto'
+                }
             };
             if (typeof parsedTemplate.temperature === 'number') {
                 requestOptions.temperature = parsedTemplate.temperature;
@@ -9182,7 +9330,10 @@ module.exports = function registerApiRoutes(scope) {
                     },
                     validateXML: false,
                     runInBackground: true,
-                    tools: plotAnalysisTools
+                    additionalPayload: {
+                        tools: plotAnalysisTools,
+                        tool_choice: 'auto'
+                    }
                 };
 
                 if (typeof parsedTemplate.temperature === 'number') {
@@ -9266,6 +9417,10 @@ module.exports = function registerApiRoutes(scope) {
             sourceRequestId = null
         } = {}) {
             if (!isPlotAnalysisPromptEnabled()) {
+                return false;
+            }
+            plotAnalysisTurnCounter += 1;
+            if (plotAnalysisTurnCounter % resolvePlotAnalysisPromptInterval() !== 0) {
                 return false;
             }
             const sequence = ++plotAnalysisPromptSequence;
@@ -30318,6 +30473,19 @@ module.exports = function registerApiRoutes(scope) {
                     npc.vulnerabilities = typeof submittedVulnerabilities === 'string' ? submittedVulnerabilities : '';
                 }
 
+                const registeredPlayerFields = getRegisteredPlayerPayloadFields({ edit: true });
+                if (registeredPlayerFields.length) {
+                    try {
+                        const modFieldValues = extractRegisteredPlayerPayloadFieldValues(body, registeredPlayerFields);
+                        applyRegisteredPlayerPayloadFieldValues(npc, modFieldValues);
+                    } catch (modFieldError) {
+                        return res.status(400).json({
+                            success: false,
+                            error: modFieldError?.message || 'Invalid mod field value.'
+                        });
+                    }
+                }
+
                 const npcProfile = serializeNpcForClient(npc);
                 res.json({
                     success: true,
@@ -31164,14 +31332,53 @@ module.exports = function registerApiRoutes(scope) {
                         : null;
                     const originLocation = resolveLocationById(originLocationId);
 
-                    if (originLocationId && originLocationId === destinationLocation.id) {
+                    let effectiveDestinationLocation = destinationLocation;
+                    if (effectiveDestinationLocation.isStub) {
+                        if (effectiveDestinationLocation.stubMetadata?.isRegionEntryStub) {
+                            // Region entry stubs expand the whole stubbed region.
+                            if (typeof expandRegionEntryStub !== 'function') {
+                                return res.status(500).json({
+                                    success: false,
+                                    error: 'Region entry stub expansion is unavailable.'
+                                });
+                            }
+                            const expanded = await expandRegionEntryStub(effectiveDestinationLocation);
+                            if (!expanded) {
+                                return res.status(500).json({
+                                    success: false,
+                                    error: `Failed to expand the region for stubbed location '${effectiveDestinationLocation.name || effectiveDestinationLocation.id}'.`
+                                });
+                            }
+                            effectiveDestinationLocation = expanded;
+                        } else {
+                            if (typeof scheduleStubExpansion !== 'function') {
+                                return res.status(500).json({
+                                    success: false,
+                                    error: 'Location stub expansion is unavailable.'
+                                });
+                            }
+                            await scheduleStubExpansion(effectiveDestinationLocation, {});
+                            const refreshedDestination = resolveLocationById(effectiveDestinationLocation.id);
+                            if (refreshedDestination) {
+                                effectiveDestinationLocation = refreshedDestination;
+                            }
+                            if (effectiveDestinationLocation.isStub) {
+                                return res.status(500).json({
+                                    success: false,
+                                    error: `Location stub '${effectiveDestinationLocation.name || effectiveDestinationLocation.id}' is still stubbed after expansion.`
+                                });
+                            }
+                        }
+                    }
+
+                    if (originLocationId && originLocationId === effectiveDestinationLocation.id) {
                         return res.status(400).json({
                             success: false,
                             error: `${npc.name || 'Player'} is already at the requested location`
                         });
                     }
 
-                    npc.setLocation(destinationLocation.id);
+                    npc.setLocation(effectiveDestinationLocation.id);
                     if (typeof Globals.clearPlayerArrivalVisitStates === 'function') {
                         Globals.clearPlayerArrivalVisitStates();
                     }
@@ -31181,7 +31388,7 @@ module.exports = function registerApiRoutes(scope) {
                     }
 
                     if (gameLocations instanceof Map) {
-                        gameLocations.set(destinationLocation.id, destinationLocation);
+                        gameLocations.set(effectiveDestinationLocation.id, effectiveDestinationLocation);
                     }
 
                     let previousLocationPayload = null;
@@ -31196,7 +31403,7 @@ module.exports = function registerApiRoutes(scope) {
                     let destinationPayload = null;
                     if (typeof buildLocationResponse === 'function') {
                         try {
-                            destinationPayload = buildLocationResponse(destinationLocation);
+                            destinationPayload = buildLocationResponse(effectiveDestinationLocation);
                         } catch (error) {
                             console.warn('Failed to serialize destination location after player teleport:', error?.message || error);
                         }
@@ -31208,7 +31415,7 @@ module.exports = function registerApiRoutes(scope) {
                         destination: destinationPayload,
                         previousLocation: previousLocationPayload,
                         locationIds: Array.from(new Set([
-                            destinationLocation.id,
+                            effectiveDestinationLocation.id,
                             originLocation?.id || null
                         ].filter(Boolean))),
                         worldTime: null,
@@ -46702,6 +46909,9 @@ module.exports = function registerApiRoutes(scope) {
             metadata.tonalScaleEvaluationTurnCounter = Number.isInteger(tonalScaleEvaluationTurnCounter) && tonalScaleEvaluationTurnCounter >= 0
                 ? tonalScaleEvaluationTurnCounter
                 : 0;
+            metadata.plotAnalysisTurnCounter = Number.isInteger(plotAnalysisTurnCounter) && plotAnalysisTurnCounter >= 0
+                ? plotAnalysisTurnCounter
+                : 0;
             if (
                 typeof metadata.tonalScaleEvaluationResult === 'string'
                 && metadata.tonalScaleEvaluationResult.trim()
@@ -47044,6 +47254,14 @@ module.exports = function registerApiRoutes(scope) {
                     tonalScaleEvaluationTurnCounter = parsedTonalScaleEvaluationCounter;
                 } else {
                     tonalScaleEvaluationTurnCounter = 0;
+                }
+            }
+            {
+                const parsedPlotAnalysisCounter = Number(metadata.plotAnalysisTurnCounter);
+                if (Number.isInteger(parsedPlotAnalysisCounter) && parsedPlotAnalysisCounter >= 0) {
+                    plotAnalysisTurnCounter = parsedPlotAnalysisCounter;
+                } else {
+                    plotAnalysisTurnCounter = 0;
                 }
             }
             {
@@ -50274,6 +50492,11 @@ module.exports.parseGeneratedBarterStockCount = parseGeneratedBarterStockCount;
 module.exports.clearNewGameRuntimeRegistries = clearNewGameRuntimeRegistries;
 module.exports.shouldIncludePlayerActionForEventChecks = shouldIncludePlayerActionForEventChecks;
 module.exports.extractRegisteredThingBlueprintFields = extractRegisteredThingBlueprintFields;
+module.exports.resolvePlotAnalysisPromptInterval = resolvePlotAnalysisPromptInterval;
+module.exports.getRegisteredPlayerPayloadFields = getRegisteredPlayerPayloadFields;
+module.exports.parseRegisteredPlayerPayloadFieldValue = parseRegisteredPlayerPayloadFieldValue;
+module.exports.extractRegisteredPlayerPayloadFieldValues = extractRegisteredPlayerPayloadFieldValues;
+module.exports.applyRegisteredPlayerPayloadFieldValues = applyRegisteredPlayerPayloadFieldValues;
 module.exports.parseUploadedEntityImageDataUrl = parseUploadedEntityImageDataUrl;
 module.exports.extractInlineRollControls = extractInlineRollControls;
 module.exports.resetNewGameRuntimeState = resetNewGameRuntimeState;

@@ -1355,6 +1355,42 @@ function renderMap(region, options = {}) {
       }
     });
 
+    const teleportBtn = createContextMenuButton({
+      color: '#93c5fd',
+      hoverBackground: 'rgba(59,130,246,0.12)'
+    });
+    teleportBtn.textContent = 'Teleport player here';
+    teleportBtn.addEventListener('click', async () => {
+      try {
+        const playerRecord = (window.currentPlayerData && window.currentPlayerData.id)
+          ? window.currentPlayerData
+          : null;
+        if (!playerRecord || !playerRecord.id) {
+          throw new Error('Player data is unavailable.');
+        }
+        if (typeof window.teleportNpcToLocation !== 'function') {
+          throw new Error('Teleport is unavailable.');
+        }
+        if (playerRecord.locationId === stubId) {
+          window.alert('The player is already at this location.');
+          return;
+        }
+        const confirmed = window.confirm(
+          `Teleport the player to this stubbed ${isRegionStub ? 'region entry' : 'location'}? It will be expanded first.`
+        );
+        if (!confirmed) {
+          return;
+        }
+        // The story-tool teleport endpoint expands stub destinations before moving the player.
+        await window.teleportNpcToLocation(playerRecord, stubId, { storyToolTeleport: true });
+        await window.loadRegionMap?.(activeRegionId || null);
+      } catch (error) {
+        window.alert(error?.message || 'Failed to teleport');
+      } finally {
+        closeEdgeMenu();
+      }
+    });
+
     const editBtn = createContextMenuButton({
       color: '#e2e8f0',
       hoverBackground: 'rgba(148,163,184,0.15)'
@@ -1411,6 +1447,7 @@ function renderMap(region, options = {}) {
     });
 
     menu.appendChild(unstubBtn);
+    menu.appendChild(teleportBtn);
     menu.appendChild(editBtn);
     menu.appendChild(deleteBtn);
     showContextMenu(menu);

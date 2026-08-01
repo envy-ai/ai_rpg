@@ -672,6 +672,104 @@ test('LLMClient.chatCompletion prepends cachebuster to the final user message on
     }
 });
 
+test('LLMClient.chatCompletion turns the recent-story marker into a user-message boundary before cachebusting', async () => {
+    const originalAxiosPost = axios.post;
+    const originalConfig = Globals.config;
+    const marker = LLMClient.getRecentStoryMessageBoundaryMarker();
+    const messages = [
+        { role: 'system', content: 'System instructions.' },
+        {
+            role: 'user',
+            content: `<gameState><stableContext>Stable.</stableContext>${marker}  <recentStoryHistory>Recent.</recentStoryHistory></gameState>`
+        }
+    ];
+    const originalMessagesSnapshot = JSON.stringify(messages);
+    let capturedRequest = null;
+
+    axios.post = async (_endpoint, payload) => ({
+        status: 200,
+        statusText: 'OK',
+        headers: {},
+        config: {},
+        data: {
+            id: 'mock_response',
+            model: payload.model,
+            choices: [
+                {
+                    message: { content: 'Boundary response.' },
+                    finish_reason: 'stop'
+                }
+            ],
+            usage: { total_tokens: 12 }
+        }
+    });
+    Globals.config = {
+        ai: {
+            endpoint: 'https://example.invalid/v1/chat/completions',
+            apiKey: 'test-key',
+            model: 'mock-model',
+            stream: false,
+            cachebuster: true,
+            retryAttempts: 0,
+            supress_seed: true
+        }
+    };
+
+    try {
+        const result = await LLMClient.chatCompletion({
+            messages,
+            validateXML: false,
+            output: 'silent',
+            retryAttempts: 0,
+            captureRequestPayload: (payload) => {
+                capturedRequest = payload;
+            }
+        });
+
+        assert.equal(result, 'Boundary response.');
+        assert.equal(JSON.stringify(messages), originalMessagesSnapshot);
+        assert.equal(capturedRequest.messages.length, 3);
+        assert.equal(capturedRequest.messages[1].role, 'user');
+        assert.equal(
+            capturedRequest.messages[1].content,
+            '<gameState><stableContext>Stable.</stableContext>'
+        );
+        assert.equal(capturedRequest.messages[2].role, 'user');
+        assert.match(
+            capturedRequest.messages[2].content,
+            /^\[cachebuster:[0-9a-f-]{36}\]\n\n  <recentStoryHistory>Recent\.<\/recentStoryHistory><\/gameState>$/
+        );
+        assert.equal(
+            capturedRequest.messages.some(message => String(message.content).includes(marker)),
+            false
+        );
+    } finally {
+        axios.post = originalAxiosPost;
+        Globals.config = originalConfig;
+    }
+});
+
+test('LLMClient recent-story expansion preserves later TinyBrain transcript chronology', () => {
+    const marker = LLMClient.getRecentStoryMessageBoundaryMarker();
+    const messages = [
+        { role: 'system', content: 'System instructions.' },
+        { role: 'user', content: `Stable base.${marker}<recentStoryHistory>Recent.</recentStoryHistory>` },
+        { role: 'assistant', content: 'Checkpoint one response.' },
+        { role: 'user', content: 'Checkpoint two prompt.' }
+    ];
+
+    const expanded = LLMClient.expandPromptMessageBoundaries(messages);
+
+    assert.deepEqual(expanded, [
+        { role: 'system', content: 'System instructions.' },
+        { role: 'user', content: 'Stable base.' },
+        { role: 'user', content: '<recentStoryHistory>Recent.</recentStoryHistory>' },
+        { role: 'assistant', content: 'Checkpoint one response.' },
+        { role: 'user', content: 'Checkpoint two prompt.' }
+    ]);
+    assert.equal(JSON.stringify(messages).includes(marker), true);
+});
+
 test('LLMClient.chatCompletion supports forceOutput tool calls and skips regex validation for tool rounds', async () => {
     const originalAxiosPost = axios.post;
     const originalConfig = Globals.config;

@@ -1,5 +1,19 @@
 Original prompt: NPC ability and skill generation are being really wonky and returning gibberish, and those two prompts are contiunuations of previous prompts, so I'm converting them into base_context prompts instead.
 
+Original prompt: When prompt_uses_caching is true, include every omission-controlled base-context piece before recentStoryHistory.
+
+- Caching mode now ignores `omitGameHistory`, `omitInventoryItems`, `omitAbilities`, `suppressQuestList`, and per-call `omitEventSummaryHistory`.
+- `omitCraftHistory` and `includeAllHistoryEntryTypes` remain active as accepted rare/specialized exceptions; without them, `<recentStoryHistory>` is the first omission-sensitive point.
+- Plot-analysis and tonal-scale-evaluation self-context exclusions remain unchanged.
+- Validation passed: syntax checks for `server.js` and the altered test files, plus all five targeted base-context/history/mod-field suites.
+
+Original prompt: Preserve the chronological order in the live prompt/response viewer.
+
+- Added `LLMClient.formatMessagesForPromptProgress(...)` to label request messages and preserve their system/user/assistant/tool chronology in live prompt-progress payloads.
+- Kept the existing grouped `formatMessagesForErrorLog(...)` output unchanged for prompt and error log files.
+- Updated prompt-progress regression coverage and UI/LLM documentation.
+- Validation passed: `node --check LLMClient.js`, targeted Node prompt-progress/UI tests, the three-test prompt-progress Playwright spec, and visual inspection of a chronological tiny-brain viewer capture under `tmp/`.
+
 - Added slash command `/respec_skills` in `slashcommands/respec_skills.js` to rebuild an NPC's skills for its current level by requesting a fresh NPC progression assignment, resetting registered skills to baseline, and reapplying the full formula-derived skill budget with rollback on failure.
 - Updated `/respec_skills` target resolution to accept NPC aliases, prefer a unique match at the invoking player's current location when names are ambiguous, and abort with a warning if multiple matches still remain.
 - Added shared slash-command character targeting helpers in `slashcommand_utils/characterTargeting.js` for alias-aware resolution, current-location ambiguity tie-breaking, and raw character-argument extraction from `interaction.argsText`.
@@ -653,6 +667,60 @@ Original prompt: Keep one prompt-text viewer persistent throughout a tinybrain r
   - Required reusable browser smoke client passed without reported browser errors; inspected `tmp/tinybrain-persistent-viewer-smoke/shot-0.png` and confirmed the idle Play UI remained intact.
 - Test servers were stopped; ports 4173 and 4175 are clear.
 - TODO: none.
+
+Original prompt: Make the same tools available across all non-generic base-context prompts. For prompts that previously had no tools, prepend "Do not make tool calls." immediately after the base context.
+
+- Added an internal end-of-base-context marker immediately before every prompt-specific base-context include.
+- Added centralized `LLMClient` policy that replaces every non-generic base-context request's tool payload with one ordered built-in-plus-mod schema.
+- Generic prompts explicitly bypass the shared schema and retain their prior tools and tool-choice behavior.
+- Previously tool-less base-context requests receive `Do not make tool calls.` at the internal boundary before their prompt-specific instructions.
+- Corrected scheduled-event, plot-analysis, and mystery-box-update tool-loop request options so their existing tool definitions are passed through `additionalPayload` and count as previously tool-enabled.
+- Explicit `tool_choice: none` remains disabled while retaining the canonical schema, so an exhausted tool loop cannot be re-enabled by normalization or cause a schema cache divergence.
+- Updated `docs/classes/LLMClient.md`, `docs/classes/TinyBrainPromptRunner.md`, `docs/classes/Events.md`, `docs/server_llm_notes.md`, `docs/api/chat.md`, `docs/config.md`, `docs/slop_and_repetition.md`, and `docs/README.md`.
+- Validation:
+  - JavaScript syntax checks pass for `LLMClient.js`, `api.js`, `Events.js`, and the focused tests.
+  - Base-context render/policy and actual outbound transport tests pass, including shared ordered schemas, exact no-tool instruction placement, generic exclusion, marker removal, recent-story chronology, and explicit tool-choice disabling.
+  - Related LLMClient, base-context history, chat-tool loop, scheduled-event, plot-analysis, mystery-box/event parser, container-open, and TinyBrain focused suites all pass.
+  - Full `npm run test:e2e:headless` passes: 35 passed and 4 fixture-dependent scenarios skipped.
+  - The required reusable browser smoke client completed without a browser error artifact; inspected `tmp/base-context-shared-tools-smoke/shot-0.png` and confirmed the live Play interface renders normally.
+- No SCSS files changed, so no stylesheet compilation was required.
+- TODO: restart the live game when the user wants the running process to load this change.
+
+Original prompt: Add a chat-message boundary immediately before recentStoryHistory so recurrent llama.cpp models can checkpoint the cache-stable base-context prefix.
+
+- Added a caching-only internal boundary marker immediately before `<recentStoryHistory>` in `base-context.xml.njk`.
+- Added outbound `LLMClient` expansion that removes the marker and sends the stable prefix and recent-story suffix as two consecutive user messages before cachebusting or transport.
+- Added focused template and outbound-payload regression coverage.
+- Confirmed the real rendered base-context text splits exactly before `<recentStoryHistory>` and recombines byte-for-byte after removing the internal marker.
+- Added TinyBrain transcript-order coverage for a retained marker-bearing first user message followed by assistant and later user messages.
+- Updated `docs/classes/LLMClient.md`, `docs/server_llm_notes.md`, `docs/config.md`, and `docs/README.md`.
+- Validation:
+  - Syntax checks pass for the altered runtime and test files.
+  - Focused base-context and outbound-payload tests pass (8/8 and 16/16); related LLMClient/base-context regression suites also pass.
+  - The targeted TinyBrain runner coverage passes. The full TinyBrain runner file retains one unrelated pre-existing conditional-parser fixture failure that does not load `base-context.xml.njk` or call `LLMClient`.
+  - llama.cpp's `/apply-template` endpoint confirmed that the active `peg-native` template preserves the two consecutive user messages as distinct chat turns.
+  - Full `npm run test:e2e:headless` passed: 35 tests passed and 4 opt-in scenarios skipped.
+  - The required reusable browser smoke client completed without reported browser/page errors. Inspected `tmp/recent-story-boundary-smoke/shot-0.png` and confirmed the live Play interface renders normally.
+- TODO: restart the live game when the user wants the running process to load this change.
+
+Original prompt: Change base-context history so automatic scene summarization occurs at the configured unsummarized boundary and prompts show only genuinely unsummarized entries raw, keeping the summarized prefix stable between summary batches.
+
+- Confirmed automatic scene summarization already triggers when the shared scene-summary index reaches `summaries.max_unsummarized_log_entries`.
+- Identified the prompt-assembly defect: `buildBasePromptContext()` independently slides `relevantHistory.slice(-max_unsummarized_log_entries)` on every render instead of using stored contiguous scene-summary coverage.
+- Implementation defaults confirmed: uncovered history may exceed the configured boundary while summarization is pending/failed; non-indexed event-summary rows follow the contiguous coverage frontier; summarization remains nonblocking.
+- Added `SceneSummaries.getContiguousSummarizedEndIndex()` and made `getFirstUnsummarizedIndex()` derive from the same contiguous coverage calculation.
+- Added `partitionBaseContextHistoryBySceneCoverage()` and switched scene-style base-context assembly from a sliding last-N raw window to the stored contiguous scene-summary frontier.
+- Covered records remain capped by `max_summarized_log_entries`; every uncovered prompt-visible record remains raw, including event-summary rows after the frontier. Raw history may exceed the configured trigger while summary generation is pending or failed.
+- Line-summary saves retain their existing per-entry window behavior; automatic scene summarization remains nonblocking and still triggers at `max_unsummarized_log_entries`.
+- Added regression coverage for contiguous gaps, event-summary boundary placement, preservation of more raw records than the configured trigger, and prefix stability as uncovered entries are appended.
+- Updated `docs/classes/base_context_history.md`, `docs/classes/SceneSummaries.md`, `docs/config.md`, and `docs/README.md`.
+- Validation:
+  - Syntax checks pass for all altered runtime and new test files.
+  - Focused history/summary tests pass; the broader related run passed 14 files and exposed only two unrelated stale `quantity 1` expectations in `tests/base_context_inventory_value.test.js`.
+  - The current autosave contains 72 uncovered scene-index entries and 108 prompt-visible uncovered records; the new partition retains all 108 instead of hiding eight behind the former 100-record window.
+  - Full `npm run test:e2e:headless` passed: 35 tests passed and 4 opt-in scenarios skipped.
+  - The required reusable browser smoke client completed without reported browser/page errors against a temporary dummy-game server. Inspected `tmp/history-coverage-browser-smoke/shot-0.png` and confirmed the Play interface renders normally.
+- TODO: restart the live Q35B-A3B server when the user wants the running process to load this change.
 
 Original prompt: Add a brief note to the `moreInfo` description not to call it for items or characters whose full XML is already visible because the result would be redundant.
 

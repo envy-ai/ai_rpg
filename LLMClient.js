@@ -11,6 +11,7 @@ const readline = require('readline');
 const CodexBridgeClient = require('./CodexBridgeClient.js');
 const ClineBridgeClient = require('./ClineBridgeClient.js');
 const KimiBridgeClient = require('./KimiBridgeClient.js');
+const { getChatToolDefinitions } = require('./chat_tool_calls.js');
 const { formatMessageContent: formatBridgeMessageContent } = require('./bridge_client_utils.js');
 let sharpModule = null;
 
@@ -25,6 +26,17 @@ const PROMPT_PROGRESS_COMPLETION_HOLD_MS = 250;
 const OAUTH_REFRESH_THRESHOLD_SECONDS = 300;
 const PROMPT_OUTPUT_CHARACTER_STATS_FILENAME = 'prompt-output-character-stats.json';
 const PROMPT_OUTPUT_CHARACTER_STATS_VERSION = 1;
+const RECENT_STORY_MESSAGE_BOUNDARY_MARKER = '[[[AI_RPG_INTERNAL_MESSAGE_BOUNDARY_RECENT_STORY_HISTORY_V1]]]';
+const BASE_CONTEXT_END_MARKER = '[[[AI_RPG_INTERNAL_BASE_CONTEXT_END_V1]]]';
+const BASE_CONTEXT_NO_TOOL_CALLS_INSTRUCTION = 'Do not make tool calls.';
+const BASE_CONTEXT_LEGACY_CHECK_TOOL_NAMES = new Set([
+    'resolveAttack',
+    'resolveAreaAttack',
+    'resolveSkillCheck',
+    'resolveOpposedSkillCheck',
+    'resolvePlausibilityCheck',
+    'resolveOpposedPlausibilityCheck'
+]);
 const PROMPT_OUTPUT_CHARACTER_STATS_BASE_LABEL_PREFIXES = Object.freeze([
     'inventory_generation',
     'npc_memories',
@@ -2014,6 +2026,250 @@ class LLMClient {
         }
 
         return lines.join('\n');
+    }
+
+    static formatMessagesForPromptProgress(messages = []) {
+        const formattedMessages = [];
+        if (Array.isArray(messages)) {
+            messages.forEach(message => {
+                if (!message || typeof message !== 'object') {
+                    return;
+                }
+                const role = typeof message.role === 'string'
+                    ? message.role.trim().toLowerCase()
+                    : 'unknown';
+                const content = LLMClient.#formatMessageContent(message.content).trim();
+                if (!content) {
+                    return;
+                }
+                let heading;
+                switch (role) {
+                    case 'system':
+                        heading = 'SYSTEM PROMPT';
+                        break;
+                    case 'developer':
+                        heading = 'DEVELOPER PROMPT';
+                        break;
+                    case 'user':
+                        heading = 'USER PROMPT';
+                        break;
+                    case 'assistant':
+                        heading = 'ASSISTANT RESPONSE';
+                        break;
+                    case 'tool':
+                        heading = 'TOOL RESPONSE';
+                        break;
+                    default:
+                        heading = `${role.toUpperCase() || 'UNKNOWN'} MESSAGE`;
+                        break;
+                }
+                formattedMessages.push(`=== ${heading} ===\n${content}`);
+            });
+        }
+        return formattedMessages.length
+            ? formattedMessages.join('\n\n')
+            : '=== PROMPT ===\n(none)';
+    }
+
+    static getRecentStoryMessageBoundaryMarker() {
+        return RECENT_STORY_MESSAGE_BOUNDARY_MARKER;
+    }
+
+    static getBaseContextEndMarker() {
+        return BASE_CONTEXT_END_MARKER;
+    }
+
+    static getBaseContextNoToolCallsInstruction() {
+        return BASE_CONTEXT_NO_TOOL_CALLS_INSTRUCTION;
+    }
+
+    static #cloneToolDefinition(toolDefinition, sourceLabel) {
+        if (!toolDefinition || typeof toolDefinition !== 'object' || Array.isArray(toolDefinition)) {
+            throw new Error(`${sourceLabel} contains an invalid tool definition.`);
+        }
+        try {
+            return JSON.parse(JSON.stringify(toolDefinition));
+        } catch (error) {
+            throw new Error(`Failed to clone ${sourceLabel} tool definition: ${error.message}`);
+        }
+    }
+
+    static #resolveSharedBaseContextToolDefinitions() {
+        const modExtensionRegistry = Globals?.modExtensionRegistry || null;
+        const builtInTools = getChatToolDefinitions({ modExtensionRegistry });
+        const modTools = modExtensionRegistry && typeof modExtensionRegistry.getChatToolDefinitions === 'function'
+            ? modExtensionRegistry.getChatToolDefinitions()
+            : [];
+        const requestUserInputEnabled = Globals?.config?.chat_tools?.request_user_input_enabled !== false;
+        const useLegacyPromptChecks = Globals?.config?.use_legacy_prompt_checks === true;
+        const tools = [...builtInTools, ...modTools]
+            .filter(toolDefinition => {
+                const functionName = typeof toolDefinition?.function?.name === 'string'
+                    ? toolDefinition.function.name.trim()
+                    : '';
+                if (!requestUserInputEnabled && functionName === 'requestUserInput') {
+                    return false;
+                }
+                if (useLegacyPromptChecks && BASE_CONTEXT_LEGACY_CHECK_TOOL_NAMES.has(functionName)) {
+                    return false;
+                }
+                return true;
+            })
+            .map((toolDefinition, index) => LLMClient.#cloneToolDefinition(
+                toolDefinition,
+                `shared base-context tool #${index + 1}`
+            ));
+        if (!tools.length) {
+            throw new Error('Shared base-context tool definitions are empty.');
+        }
+
+        const toolNames = new Set();
+        for (const toolDefinition of tools) {
+            const functionName = typeof toolDefinition?.function?.name === 'string'
+                ? toolDefinition.function.name.trim()
+                : '';
+            if (!functionName) {
+                throw new Error('Shared base-context tool definition is missing function.name.');
+            }
+            if (toolNames.has(functionName)) {
+                throw new Error(`Shared base-context tool definitions contain duplicate function name "${functionName}".`);
+            }
+            toolNames.add(functionName);
+        }
+        return tools;
+    }
+
+    static applyBaseContextToolPolicy(messages = [], {
+        metadataLabel = '',
+        additionalPayload = {}
+    } = {}) {
+        if (!Array.isArray(messages)) {
+            throw new Error('Base-context tool policy requires a messages array.');
+        }
+        if (!additionalPayload || typeof additionalPayload !== 'object' || Array.isArray(additionalPayload)) {
+            throw new Error('Base-context tool policy requires additionalPayload to be an object.');
+        }
+
+        let markerCount = 0;
+        let markerMessageIndex = -1;
+        for (let index = 0; index < messages.length; index += 1) {
+            const content = messages[index]?.content;
+            if (typeof content !== 'string' || !content.includes(BASE_CONTEXT_END_MARKER)) {
+                continue;
+            }
+            const parts = content.split(BASE_CONTEXT_END_MARKER);
+            markerCount += parts.length - 1;
+            markerMessageIndex = index;
+        }
+        if (markerCount === 0) {
+            return {
+                messages,
+                additionalPayload,
+                isBaseContextPrompt: false,
+                sharedToolsApplied: false,
+                noToolCallsInstructionAdded: false
+            };
+        }
+        if (markerCount !== 1 || markerMessageIndex < 0) {
+            throw new Error('A base-context prompt must contain exactly one internal end marker.');
+        }
+
+        const markerMessage = messages[markerMessageIndex];
+        const markerRole = typeof markerMessage?.role === 'string'
+            ? markerMessage.role.trim().toLowerCase()
+            : '';
+        if (markerRole !== 'user') {
+            throw new Error('The base-context end marker may only appear in a user message.');
+        }
+        const markerParts = markerMessage.content.split(BASE_CONTEXT_END_MARKER);
+        if (markerParts.length !== 2 || !markerParts[0].trim() || !markerParts[1].trim()) {
+            throw new Error('The base-context end marker requires non-empty content on both sides.');
+        }
+
+        const normalizedLabel = LLMClient.#normalizePromptLabel(metadataLabel);
+        const isGenericPrompt = normalizedLabel === 'generic_prompt'
+            || normalizedLabel === 'generic_prompt_nocontext';
+        const hadToolDefinitions = LLMClient.#payloadHasToolDefinitions(additionalPayload);
+        const explicitlyDisablesToolCalls = (
+            typeof additionalPayload.tool_choice === 'string'
+            && additionalPayload.tool_choice.trim().toLowerCase() === 'none'
+        ) || (
+            typeof additionalPayload.function_call === 'string'
+            && additionalPayload.function_call.trim().toLowerCase() === 'none'
+        );
+        const noToolCallsInstructionAdded = !isGenericPrompt
+            && !hadToolDefinitions
+            && !explicitlyDisablesToolCalls;
+        const replacement = noToolCallsInstructionAdded
+            ? `\n\n${BASE_CONTEXT_NO_TOOL_CALLS_INSTRUCTION}\n\n`
+            : '';
+        const normalizedMessages = messages.map((message, index) => (
+            index === markerMessageIndex
+                ? { ...message, content: `${markerParts[0]}${replacement}${markerParts[1]}` }
+                : message
+        ));
+
+        if (isGenericPrompt) {
+            return {
+                messages: normalizedMessages,
+                additionalPayload,
+                isBaseContextPrompt: true,
+                sharedToolsApplied: false,
+                noToolCallsInstructionAdded: false
+            };
+        }
+
+        return {
+            messages: normalizedMessages,
+            additionalPayload: {
+                ...additionalPayload,
+                tools: LLMClient.#resolveSharedBaseContextToolDefinitions(),
+                tool_choice: explicitlyDisablesToolCalls ? 'none' : 'auto'
+            },
+            isBaseContextPrompt: true,
+            sharedToolsApplied: true,
+            noToolCallsInstructionAdded
+        };
+    }
+
+    static expandPromptMessageBoundaries(messages = []) {
+        if (!Array.isArray(messages)) {
+            throw new Error('Prompt message-boundary expansion requires a messages array.');
+        }
+
+        const expandedMessages = [];
+        let boundaryCount = 0;
+
+        for (const message of messages) {
+            const content = message?.content;
+            if (typeof content !== 'string' || !content.includes(RECENT_STORY_MESSAGE_BOUNDARY_MARKER)) {
+                expandedMessages.push(message);
+                continue;
+            }
+
+            const role = typeof message?.role === 'string'
+                ? message.role.trim().toLowerCase()
+                : '';
+            if (role !== 'user') {
+                throw new Error('The recent-story prompt message boundary may only appear in a user message.');
+            }
+
+            const parts = content.split(RECENT_STORY_MESSAGE_BOUNDARY_MARKER);
+            boundaryCount += parts.length - 1;
+            if (boundaryCount > 1 || parts.length !== 2) {
+                throw new Error('A prompt may contain only one recent-story message boundary.');
+            }
+            if (!parts[0].trim() || !parts[1].trim()) {
+                throw new Error('The recent-story prompt message boundary requires non-empty content on both sides.');
+            }
+
+            expandedMessages.push(
+                { ...message, content: parts[0] },
+                { ...message, content: parts[1] }
+            );
+        }
+
+        return boundaryCount > 0 ? expandedMessages : messages;
     }
 
     static #buildPromptCachebusterLine() {
@@ -4010,7 +4266,7 @@ class LLMClient {
                 traceLog();
             }
 
-            const basePayload = additionalPayload && typeof additionalPayload === 'object'
+            let basePayload = additionalPayload && typeof additionalPayload === 'object'
                 ? { ...additionalPayload }
                 : {};
             if (headers !== undefined && headers !== null && !LLMClient.#isPlainObject(headers)) {
@@ -4021,6 +4277,13 @@ class LLMClient {
                 throw new Error('LLMClient.chatCompletion requires at least one message.');
             }
 
+            const baseContextToolPolicy = LLMClient.applyBaseContextToolPolicy(messages, {
+                metadataLabel,
+                additionalPayload: basePayload
+            });
+            messages = baseContextToolPolicy.messages;
+            basePayload = baseContextToolPolicy.additionalPayload;
+            messages = LLMClient.expandPromptMessageBoundaries(messages);
             messages = await LLMClient.#convertMessagesToWebp(messages);
             const resolvedForcedOutput = (forceOutput !== null && forceOutput !== undefined)
                 ? forceOutput
@@ -4547,7 +4810,7 @@ class LLMClient {
                                 continueTimeoutMs: streamContinueTimeoutMs,
                                 isBackground: Boolean(runInBackground),
                                 model: resolvedModel,
-                                promptText: LLMClient.formatMessagesForErrorLog(payload.messages),
+                                promptText: LLMClient.formatMessagesForPromptProgress(payload.messages),
                                 progressGroupId: resolvedProgressGroupId,
                                 receivedUnit: 'characters'
                             })

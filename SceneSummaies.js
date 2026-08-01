@@ -88,28 +88,31 @@ class SceneSummaries {
         return this._scenes.some(scene => scene.startIndex <= index && index <= scene.endIndex);
     }
 
+    getContiguousSummarizedEndIndex() {
+        if (this._scenes.length === 0) {
+            return 0;
+        }
+
+        const ordered = this.getScenesInOrder();
+        let cursor = 1;
+        for (const scene of ordered) {
+            if (scene.startIndex > cursor) {
+                break;
+            }
+            if (scene.endIndex >= cursor) {
+                cursor = scene.endIndex + 1;
+            }
+        }
+        return cursor - 1;
+    }
+
     getFirstUnsummarizedIndex(totalEntries) {
         const total = Number(totalEntries);
         if (!Number.isInteger(total) || total <= 0) {
             throw new Error('Total entries must be a positive integer.');
         }
-        if (this._scenes.length === 0) {
-            return 1;
-        }
-        const ordered = this.getScenesInOrder();
-        let cursor = 1;
-        for (const scene of ordered) {
-            if (scene.startIndex > cursor) {
-                return cursor;
-            }
-            if (scene.endIndex >= cursor) {
-                cursor = scene.endIndex + 1;
-            }
-            if (cursor > total) {
-                return null;
-            }
-        }
-        return cursor <= total ? cursor : null;
+        const summarizedEndIndex = this.getContiguousSummarizedEndIndex();
+        return summarizedEndIndex >= total ? null : summarizedEndIndex + 1;
     }
 
     deleteSummariesOverlappingRange(startIndex, endIndex) {

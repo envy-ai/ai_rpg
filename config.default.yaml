@@ -36,6 +36,8 @@ trackers:
 plot_analysis:
   # Schedules the non-blocking background plot-analysis prompt after player actions.
   enabled: true
+  # Number of eligible player-action turns between automatic plot-analysis runs.
+  interval: 3
   max_plot_threads: 3 # Currently does nothing
   max_plot_complications: 3
 
@@ -570,7 +572,7 @@ autosaves_to_retain: 50
 recent_history_turns: 25
 
 # When true, base-context templates ignore prompt-level omission flags such as omitGameHistory.
-prompt_uses_caching: false
+prompt_uses_caching: true
 
 # When true, player/NPC action checks use the legacy attack/plausibility prompts
 # instead of resolving attacks and skill checks through prose-prompt tool calls.
@@ -600,6 +602,9 @@ hide_hide_checks: true
 # Number of eligible player-action turns between automatic plot-expander prompt runs.
 # Set to 0 to disable automatic plot-expander runs.
 plot_expander_prompt_frequency: 10
+
+# Number of eligible player-action turns between automatic plot-summary prompt runs.
+plot_summary_prompt_frequency: 10
 
 # Maximum number of active mystery threads included in base-context prompts and
 # available for automatic mystery tracking. Set to 0 to keep all mystery thread

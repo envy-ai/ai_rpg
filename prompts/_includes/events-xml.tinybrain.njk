@@ -1,0 +1,37 @@
+{% include "_includes/events-xml-context.njk" %}
+{%- include "_includes/events-xml-schema.njk" %}
+<task>
+You will extract events from the text in stages. Do not write any XML in this first step.
+
+1. Go through the list of tags above and, for each tag, make an informal non-xml list of any events in the text that would qualify. If unsure if something is an event, include it. In some cases, events must be *inferred* from the text rather than explicitly stated. In those cases, note your inference with a sentence or two explaining it and the text that supports it. The ultimate purpose of event extraction is to keep the game state up to date with the prose.
+
+2. For any events that you listed more than once, determine which is the best fit. Err on the side of keeping events rather than omitting them entirely; just remove duplicates.
+
+3. In text format, list each tracker by name along with its current value and no more than 10 words about whether it needs to be updated based on the text. Countdown trackers already display remaining time; do not update them just because time passed. Update them only if the deadline changes or the countdown target is reached/resolved.
+
+Write this informal analysis now, in plain text (no XML).
+</task>
+
+{% llm_dummy_action %}
+
+Based on your analysis, write the FIRST 1 or 2 events (at most 2) in chronological order as one `<events>...</events>` XML block, using only the tag schema documented above. Annotate inferred events with <!-- XML comment --> notes explaining the inference. Output only the XML block, with no commentary and no markdown fences. If there are no events at all, output exactly <done/> instead.
+
+{% llmparse('event_xml_chunk') %}
+
+Write the NEXT 1 or 2 events (at most 2) in chronological order as one `<events>...</events>` XML block, continuing from where your previous block ended. Output only the XML block, with no commentary and no markdown fences. If no events remain, output exactly <done/> instead.
+
+{% llmparse('event_xml_chunk') %}
+
+Write the NEXT 1 or 2 events (at most 2) in chronological order as one `<events>...</events>` XML block, continuing from where your previous block ended. Output only the XML block, with no commentary and no markdown fences. If no events remain, output exactly <done/> instead.
+
+{% llmparse('event_xml_chunk') %}
+
+Write the NEXT 1 or 2 events (at most 2) in chronological order as one `<events>...</events>` XML block, continuing from where your previous block ended. Output only the XML block, with no commentary and no markdown fences. If no events remain, output exactly <done/> instead.
+
+{% llmparse('event_xml_chunk') %}
+
+Write the NEXT 1 or 2 events (at most 2) in chronological order as one `<events>...</events>` XML block, continuing from where your previous block ended. Output only the XML block, with no commentary and no markdown fences. If no events remain, output exactly <done/> instead.
+
+{% llmparse('event_xml_chunk') %}
+
+Write the LAST 1 or 2 events (at most 2) in chronological order as one `<events>...</events>` XML block, continuing from where your previous block ended. Output only the XML block, with no commentary and no markdown fences. If no events remain, output exactly <done/> instead.

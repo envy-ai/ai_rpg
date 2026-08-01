@@ -635,7 +635,9 @@ test('mystery_box_mention update prompt can use mystery box search tool', async 
 
     try {
         LLMClient.chatCompletion = async (options) => {
-            toolNamesByRound.push((options.tools || []).map((tool) => tool?.function?.name).filter(Boolean));
+            toolNamesByRound.push((options.additionalPayload?.tools || [])
+                .map((tool) => tool?.function?.name)
+                .filter(Boolean));
             const response = responses.shift();
             assert.ok(response, 'Expected a queued LLM response.');
             options.onResponse?.(response);

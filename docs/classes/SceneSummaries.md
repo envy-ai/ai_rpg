@@ -54,6 +54,7 @@ Range errors use `scene_summary_diagnostics.js` and include scalar call context:
 - `addSummaryResult(summaryResult)`: validates `scenes` and `entryIndexMap`, ingests entry ids and NPC names, anchors to `summarizedRange` when supplied, removes stored scenes overlapping the incoming coverage, stores the normalized scenes, and updates metadata.
 - `replaceWithSummaryResult(summaryResult)`: validates a result in a temporary `SceneSummaries` instance, then atomically replaces scenes, entry mappings, NPC-name mappings, and metadata. Invalid replacement data leaves the existing store unchanged.
 - `containsEntry(entryId)`: resolves an entry id through `_entryIdToIndex` and returns whether that index is covered by a stored scene.
+- `getContiguousSummarizedEndIndex()`: returns the last scene-summary index covered without a gap from index `1`, or `0` when no contiguous coverage exists. Base-context history uses this stable frontier to separate covered and raw records.
 - `getFirstUnsummarizedIndex(totalEntries)`: returns the first uncovered 1-based index or `null` when all entries through `totalEntries` are covered.
 - `deleteSummariesOverlappingRange(startIndex, endIndex)`: removes overlapping stored scenes and returns the uncovered range that should be summarized.
 - `getScenes()`: returns cloned scenes in insertion order.
@@ -67,7 +68,9 @@ Range errors use `scene_summary_diagnostics.js` and include scalar call context:
 Required scene fields are validated with explicit errors: positive `startIndex`, valid `endIndex`, non-empty `startEntryId`, non-empty `endEntryId`, and non-empty `summary`. `details` defaults to `[]` when omitted and must be an array when provided. `quotes` defaults to `[]`; quote objects require non-empty `character` and `text`.
 
 ## Prompt Context Rendering
-Base-context rendering uses stored scenes for the older portion of history selected by `max_summarized_log_entries` and `max_unsummarized_log_entries`.
+Base-context rendering uses the stored contiguous scene coverage for older history. `max_summarized_log_entries` caps the covered records considered for rendering; `max_unsummarized_log_entries` triggers automatic scene summarization but does not truncate uncovered prompt history.
+
+Until a new summary block succeeds, all prompt-visible records after the contiguous coverage frontier remain raw, even when their count temporarily exceeds the configured trigger. This keeps the already summarized prompt prefix stable and prevents unsummarized records from disappearing. Non-indexed records such as event summaries follow the chronological position of the same frontier.
 
 `buildSceneSummarySegments(...)`:
 - reads ordered scenes and serialized entry mappings from `Globals.getSceneSummaries()`;

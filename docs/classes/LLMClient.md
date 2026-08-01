@@ -32,6 +32,7 @@ Backend aliases are normalized through `CodexBridgeClient.normalizeBackend(...)`
 - `retryPrompt(streamId, reason)`: aborts one tracked attempt and restarts the same `chatCompletion(...)` loop without consuming an automatic retry attempt.
 - `recordPromptProgressGroupFailure(progressGroupId, responseText)`: records one parse-failed response for a logical prompt group, marks its current progress entry failed, and broadcasts an immediate `prompt_progress_group_failure` update.
 - `clearPromptProgressGroup(progressGroupId)`: releases transient failed-response history after a grouped logical prompt ends; active/completed entry snapshots keep their copied display data.
+- `getBaseContextEndMarker()`, `getBaseContextNoToolCallsInstruction()`, and `applyBaseContextToolPolicy(messages, options)`: internal base-context prompt-policy helpers exposed for template and transport tests.
 - `cancelAllPrompts(reason)`: aborts all prompts currently registered in the abort-controller map and returns cancellation counts.
 - `waitForPromptDrain({ timeoutMs, pollIntervalMs })`: waits until prompt-progress entries and abort-controller entries are empty.
 - `ensureAiConfig()`, `resolveBackend(aiConfigOverride)`, `getConfigurationErrors(aiConfigOverride)`, `isConfigured(aiConfigOverride)`, `getMaxConcurrent(aiConfigOverride)`, `resolveMaxConcurrentAllModels(configOverride)`: configuration helpers used by settings and tests.
@@ -67,7 +68,7 @@ Important options:
 
 Request flow:
 
-1. Convert any `image_url` data URLs in message content to WebP through `sharp`. Non-data image URLs in this preprocessing path fail with an explicit error.
+1. Detect base-context prompts through their internal end marker, remove that marker, and apply the non-generic shared-tool policy before any provider-visible payload is built. Then expand internal message-boundary markers and convert any `image_url` data URLs in message content to WebP through `sharp`. Non-data image URLs in this preprocessing path fail with an explicit error.
 2. Resolve deterministic output from `forceOutput` or a forced-output fixture, if configured.
 3. Resolve retry count from the call option or `ai.retryAttempts`.
 4. For each attempt, clone AI config, apply `ai_model_overrides`, merge custom args/headers, resolve backend, append configured system-prompt text, apply cachebuster, append OpenAI-compatible assistant prefill when configured, resolve model/temperature/token/top-p/reasoning settings, and choose a semaphore key.
@@ -90,7 +91,7 @@ Prompt progress is active when output is not `silent` and either an interactive 
 
 Progress entries include:
 - `id`, `label`, `model`, elapsed seconds, timeout seconds, retry count, and background flag.
-- `promptText` from `formatMessagesForErrorLog(...)`.
+- `promptText` from `formatMessagesForPromptProgress(...)`, which labels each request message and preserves chronological system/user/assistant/tool order. This keeps the current staged user checkpoint immediately before its live response in the prompt viewer. Error-log formatting remains separately grouped by system, user, and other messages.
 - `previewText` from streamed assistant text or CLI bridge assistant-content events.
 - `progressGroupId`, `failedResponses`, and `responseFailed` when a logical staged prompt groups requests and reports parse failures.
 - `receivedCount` and `receivedUnit`; OpenAI-compatible streaming and CLI bridge progress count decoded JavaScript characters.
@@ -101,6 +102,12 @@ Cold-start targets come from `config.prompt_progress.character_targets`. Label m
 High-frequency progress broadcasts are coalesced to at most one active update every 500 ms. Completion sends an immediate `progressFraction: 1` update, holds the completed entry for 250 ms, then emits the clear event. Prompt-progress `id` values are the ids accepted by `cancelPrompt(...)` and `retryPrompt(...)`.
 
 `recordPromptProgressGroupFailure(...)` force-broadcasts the updated progress entry and also emits `prompt_progress_group_failure`, allowing the browser to recolor a failed response even if the completed stream entry has already left the normal 250 ms hold window. The failed text is display metadata only and is not added to request messages.
+
+## Internal prompt message boundaries
+
+Every `base-context.xml.njk` render places an internal end marker after the shared context and immediately before the prompt-specific include. `chatCompletion(...)` removes it before prompt-progress display or transport. For non-generic base-context prompts, that marker activates one canonical ordered tool schema containing all built-in definitions plus all registered mod tools. `requestUserInput` is removed globally when `chat_tools.request_user_input_enabled` is false, and resolution/check tools are removed globally when `use_legacy_prompt_checks` is true. A non-generic caller that supplied no tool definitions before this policy also receives the exact instruction `Do not make tool calls.` at the marker position; it still uses its existing direct-completion path and does not execute emitted calls. An explicit `tool_choice: "none"` remains `none` while the schema stays serialized, allowing exhausted tool loops to disable further calls without changing the tool prefix. Base-context generic prompts (`generic_prompt`) only have the marker removed: their existing tool payload and behavior are preserved. Prompts not rendered through base context are untouched.
+
+Caching-enabled base-context templates also place a second internal marker immediately before `<recentStoryHistory>`. Before system-prompt append text, cachebusting, progress display, or backend transport, `chatCompletion(...)` replaces that marker with a real boundary between two consecutive `user` messages. This gives hybrid/recurrent llama.cpp servers a user-message checkpoint after the cache-stable base-context prefix and before recent history. The expansion preserves later assistant, tool, and user messages, so TinyBrain and tool-loop transcripts keep their original chronology. Internal markers are never sent to the model. Invalid placement, duplication, or empty content around a required boundary raises an explicit error.
 
 ## Concurrency
 `LLMClient` keeps a semaphore per backend/model/auth/session key, plus an optional process-wide semaphore when root `max_concurrent_requests_all_models` is set.
@@ -147,7 +154,7 @@ When a rate-limit snapshot contains multiple buckets, reporting prefers an exact
 
 ## Current Call Patterns
 - `/api/chat` uses `player_action`, `question`, `generic_prompt`, and `generic_prompt_nocontext` labels, passes chat tools through `additionalPayload`, and uses `metadata.__codexQuotaCountAsTurn` only for player-action turns.
-- Silent housekeeping prompts call `LLMClient.chatCompletion` as plain XML generation without mutation tool schemas. The returned `<housekeeping>` XML is parsed and applied afterward by `Events.js`, so tracker, quest, and relationship maintenance no longer depends on provider-emitted tool calls.
+- Silent housekeeping prompts call `LLMClient.chatCompletion` as plain XML generation. As non-generic base-context prompts, they serialize the canonical shared schema for prefix-cache stability and receive `Do not make tool calls.`, but they do not run a model tool loop. The returned `<housekeeping>` XML is parsed and applied afterward by `Events.js`, so tracker, quest, and relationship maintenance does not depend on provider-emitted tool calls.
 - `chat_tool_calls.js` relies on `onResponse` to inspect normalized tool calls across multiple tool-loop rounds, and logs tool-loop rounds with `LLMClient.logPrompt(...)`.
 - `Events.js` uses labels such as `event_checks`, `need_bar_event_checks`, `quest_check`, `mystery_thread_check`, `mystery_box_update`, `alter_location`, and `alter_npc`, with regex/XML validation on structured prompts.
 - `server.js` uses the client for generation, summaries, image-prompt writing, NPC/item/location/region creation, and background prompts. Region/location/item/character generation prompts that can use random integers go through the chat-tool loop with only `generateRandomInteger` exposed. Background prompt callers set `runInBackground: true`.

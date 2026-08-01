@@ -56,6 +56,7 @@ const {
     getCurrentWorldTimeSnapshotForHistoryEntry
 } = require('./history_time_labels.js');
 const {
+    partitionBaseContextHistoryBySceneCoverage,
     shouldIncludeEntryInBaseContextHistory
 } = require('./base_context_history.js');
 const {
@@ -2651,11 +2652,23 @@ async function validateConfiguration() {
         const plotAnalysisConfig = config.plot_analysis;
         if (!plotAnalysisConfig || typeof plotAnalysisConfig !== 'object' || Array.isArray(plotAnalysisConfig)) {
             validationErrors.push('plot_analysis must be an object when provided');
-        } else if (
-            plotAnalysisConfig.enabled !== undefined
-            && typeof plotAnalysisConfig.enabled !== 'boolean'
-        ) {
-            validationErrors.push('plot_analysis.enabled must be a boolean when provided');
+        } else {
+            if (
+                plotAnalysisConfig.enabled !== undefined
+                && typeof plotAnalysisConfig.enabled !== 'boolean'
+            ) {
+                validationErrors.push('plot_analysis.enabled must be a boolean when provided');
+            }
+            if (
+                plotAnalysisConfig.interval !== undefined
+                && plotAnalysisConfig.interval !== null
+                && plotAnalysisConfig.interval !== ''
+            ) {
+                const interval = Number(plotAnalysisConfig.interval);
+                if (!Number.isInteger(interval) || interval < 1) {
+                    validationErrors.push('plot_analysis.interval must be an integer greater than or equal to 1 when provided');
+                }
+            }
         }
     }
     if (config.improvement_prompt !== undefined) {
@@ -4617,6 +4630,14 @@ function serializeNpcForClient(npc, options = {}) {
         relationships
     };
 
+    if (typeof npc.getExtensionFields === 'function') {
+        try {
+            Object.assign(serialized, npc.getExtensionFields());
+        } catch (_) {
+            // ignore extension field serialization failures
+        }
+    }
+
     if (factionId) {
         serialized.factionId = factionId;
     }
@@ -5761,11 +5782,13 @@ function buildBasePromptContext({
         baseContextConfig?.omit_craft_history,
         'base_context.omit_craft_history'
     );
-    const shouldOmitEventSummaryHistory = resolveBooleanOption(
+    const requestedOmitEventSummaryHistory = resolveBooleanOption(
         omitEventSummaryHistory,
         null,
         'buildBasePromptContext.omitEventSummaryHistory'
     );
+    const shouldOmitEventSummaryHistory = requestedOmitEventSummaryHistory
+        && config?.prompt_uses_caching !== true;
     const shouldIncludeAllHistoryEntryTypes = resolveBooleanOption(
         includeAllHistoryEntryTypes,
         null,
@@ -7004,6 +7027,13 @@ function buildBasePromptContext({
         ? filterCraftHistoryEntries(historyEntries)
         : historyEntries;
     const summaryConfig = config?.summaries || {};
+    const runtimeMetadata = (typeof Globals.getSaveMetadata === 'function'
+        ? Globals.getSaveMetadata()
+        : Globals.saveMetadata) || {};
+    const normalizedSummaryStyle = typeof runtimeMetadata.summaryStyle === 'string'
+        ? runtimeMetadata.summaryStyle.trim().toLowerCase()
+        : '';
+    const usesSceneSummaryCoverage = normalizedSummaryStyle === 'scene';
     const rawMaxUnsummarized = Number(summaryConfig.max_unsummarized_log_entries);
     const maxUnsummarizedEntries = Number.isInteger(rawMaxUnsummarized) && rawMaxUnsummarized > 0
         ? rawMaxUnsummarized
@@ -7153,21 +7183,34 @@ function buildBasePromptContext({
     });
 
     const relevantHistory = effectiveHistoryEntries.filter(shouldIncludeEntryInHistory);
+    let summaryCandidates;
+    let tailEntries;
+    if (usesSceneSummaryCoverage) {
+        const sceneSummaries = typeof Globals.getSceneSummaries === 'function'
+            ? Globals.getSceneSummaries()
+            : null;
+        ({ summaryCandidates, tailEntries } = partitionBaseContextHistoryBySceneCoverage({
+            historyEntries,
+            relevantHistory,
+            sceneSummaries,
+            maxSummarizedEntries
+        }));
+    } else {
+        const totalHistoryLimit = maxUnsummarizedEntries + maxSummarizedEntries;
+        const limitedHistory = totalHistoryLimit > 0
+            ? relevantHistory.slice(-totalHistoryLimit)
+            : [];
 
-    const totalHistoryLimit = maxUnsummarizedEntries + maxSummarizedEntries;
-    const limitedHistory = totalHistoryLimit > 0
-        ? relevantHistory.slice(-totalHistoryLimit)
-        : [];
-
-    const tailCount = maxUnsummarizedEntries > 0
-        ? Math.min(maxUnsummarizedEntries, limitedHistory.length)
-        : 0;
-    const tailEntries = tailCount > 0
-        ? limitedHistory.slice(-tailCount)
-        : [];
-    const summaryCandidates = tailCount > 0
-        ? limitedHistory.slice(0, -tailCount)
-        : limitedHistory;
+        const tailCount = maxUnsummarizedEntries > 0
+            ? Math.min(maxUnsummarizedEntries, limitedHistory.length)
+            : 0;
+        tailEntries = tailCount > 0
+            ? limitedHistory.slice(-tailCount)
+            : [];
+        summaryCandidates = tailCount > 0
+            ? limitedHistory.slice(0, -tailCount)
+            : limitedHistory;
+    }
 
     const isProseTurnEntry = (entry) => {
         if (!entry || typeof entry !== 'object') {
@@ -7624,9 +7667,6 @@ function buildBasePromptContext({
         }
     }
 
-    const runtimeMetadata = (typeof Globals.getSaveMetadata === 'function'
-        ? Globals.getSaveMetadata()
-        : Globals.saveMetadata) || {};
     const tonalScaleEvaluation = typeof runtimeMetadata.tonalScaleEvaluationResult === 'string'
         ? runtimeMetadata.tonalScaleEvaluationResult.trim()
         : '';
@@ -15175,6 +15215,7 @@ function renderLocationNpcPrompt(location, options = {}) {
             bannedWords: options.bannedWords || getNpcPromptBannedWords(),
             lorebookEntries,
             npcRepresentation,
+            playerGeneratorPromptFields: getPlayerGeneratorPromptFields(),
             setting: settingContext
         });
     } catch (error) {
@@ -15227,6 +15268,7 @@ function renderRegionNpcPrompt(region, options = {}) {
             lorebookEntries,
             npcRepresentation,
             numImportantNPCs,
+            playerGeneratorPromptFields: getPlayerGeneratorPromptFields(),
             setting: settingContext
         });
     } catch (error) {
@@ -31391,6 +31433,7 @@ app.get('/', (req, res) => {
         thingImageBadges: modExtensionRegistry.getThingImageBadges(),
         thingContextActions: modExtensionRegistry.getThingContextActions(),
         thingEditFields: modExtensionRegistry.getEntityFields('thing', { exposeToEditModal: true }),
+        playerEditFields: modExtensionRegistry.getEntityFields('player', { exposeToEditModal: true }),
         modScripts: modScripts,
         modStyles: modStyles
     });

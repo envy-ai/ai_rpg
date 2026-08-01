@@ -103,7 +103,7 @@ See [`modding_hooks.md`](modding_hooks.md) and [`classes/ModExtensionRegistry.md
 - Setting tabs and fields render in World Profiles; fields without a tab stay in the Prompt Guidance Mod Settings block.
 - Non-persisted select fields with `action: "applyPreset"` can copy confirmed option values into editable mod setting fields without saving the selector itself.
 - First-class `thing` fields persist at top level on `Thing` JSON, install direct accessors when possible, and can expose themselves to `createThing`, `updateObjectFields`, generated item XML, XML parsing, and the item edit modal.
-- First-class `player` fields persist at top level on `Player` JSON, install direct accessors when possible, and can expose themselves to `createNpc`, `updateCharacterFields`, `updateObjectFields` for `character`, generated NPC XML, and character-alter XML parsing.
+- First-class `player` fields persist at top level on `Player` JSON, install direct accessors when possible, and can expose themselves to `createNpc`, `updateCharacterFields`, `updateObjectFields` for `character`, generated NPC XML, character-alter XML parsing, and the character edit modal.
 - Structured `thing` fields can provide a custom `createThing` `toolSchema`.
 - `clearThingSlotWhenPresent` clears normal `Thing.slot` when a registered special-system field has a meaningful value.
 - Thing image badges render mod-owned SVG or raster assets on item/scenery cards, with optional world-profile overrides for asset path and label.

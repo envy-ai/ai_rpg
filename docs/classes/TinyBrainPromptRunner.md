@@ -45,6 +45,8 @@ The optional `onParseFailure` callback receives the failed response, checkpoint,
 
 `runChatCompletionWithToolLoop()` returns `conversationMessages` for this purpose. Its terminal assistant response is included after any tool-call and tool-result messages.
 
+Because the initial player-action render uses `base-context.xml.njk`, every TinyBrain stage receives the same canonical non-generic base-context tool schema used by other specialized base-context prompts. The base-context marker is removed before the first request and the retained initial user message remains fixed across checkpoints.
+
 The player-action integration runs the complete `TinyBrainPromptRunner.run()` call inside `LLMClient.withPromptQueueReservation()`. Every checkpoint, parse retry, transport retry, and tool-call round passes the same opaque reservation. Once its first real completion acquires a per-model queue permit and optional all-model permit, those permits remain assigned to the staged prompt until the runner returns or throws; queued prompts cannot take that slot between checkpoints. The reservation releases in `finally`, including parser failures and cancellation paths. Other genuinely free concurrency slots remain available.
 
 Every stage also passes the render state's stable run id as `progressGroupId`. Prompt-progress viewers use that id to follow the same tiny-brain run when its individual completion stream id changes between checkpoints and retries. Parse-failed text is retained in order for that group and displayed separately from the live retry response.

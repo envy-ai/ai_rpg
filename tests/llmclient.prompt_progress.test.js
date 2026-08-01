@@ -79,6 +79,32 @@ test('prompt progress character targets resolve exact and prefix labels without 
     );
 });
 
+test('prompt progress message formatting preserves chronological conversation order', () => {
+    const formatted = LLMClient.formatMessagesForPromptProgress([
+        { role: 'system', content: 'System instructions.' },
+        { role: 'user', content: 'First checkpoint prompt.' },
+        { role: 'assistant', content: 'First checkpoint response.' },
+        { role: 'tool', content: 'Tool result.' },
+        { role: 'user', content: 'Second checkpoint prompt.' }
+    ]);
+
+    const expectedBlocks = [
+        '=== SYSTEM PROMPT ===\nSystem instructions.',
+        '=== USER PROMPT ===\nFirst checkpoint prompt.',
+        '=== ASSISTANT RESPONSE ===\nFirst checkpoint response.',
+        '=== TOOL RESPONSE ===\nTool result.',
+        '=== USER PROMPT ===\nSecond checkpoint prompt.'
+    ];
+    let previousIndex = -1;
+    expectedBlocks.forEach(block => {
+        const currentIndex = formatted.indexOf(block);
+        assert.ok(currentIndex > previousIndex, `expected chronological block after index ${previousIndex}: ${block}`);
+        previousIndex = currentIndex;
+    });
+    assert.equal(formatted.endsWith(expectedBlocks.at(-1)), true);
+    assert.doesNotMatch(formatted, /=== OTHER MESSAGES ===/);
+});
+
 test('default config prompt progress targets cover known prompt families', () => {
     const configPath = path.resolve(__dirname, '..', 'config.default.yaml');
     const config = load(fs.readFileSync(configPath, 'utf8'));

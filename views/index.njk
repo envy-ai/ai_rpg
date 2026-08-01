@@ -2623,6 +2623,11 @@
                     <p class="npc-edit-hint">Intrinsic status effects only; gear effects are applied automatically.</p>
                 </div>
 
+                <div class="npc-edit-section" id="npcEditModFieldsSection" hidden>
+                    <h3>Mod Fields</h3>
+                    <div id="npcEditModFieldsList" class="npc-edit-grid"></div>
+                </div>
+
                 <div class="npc-edit-footer">
                     <div id="npcEditStatus" class="npc-edit-status" role="status" aria-live="polite"></div>
                     <div class="npc-edit-actions">
@@ -3127,6 +3132,7 @@
         window.AIRPG_CONFIG.thingImageBadges = {{ (thingImageBadges or []) | dump | safe }};
         window.AIRPG_CONFIG.thingContextActions = {{ (thingContextActions or []) | dump | safe }};
         window.AIRPG_CONFIG.thingEditFields = {{ (thingEditFields or []) | dump | safe }};
+        window.AIRPG_CONFIG.playerEditFields = {{ (playerEditFields or []) | dump | safe }};
         const __knownSkillNameSet = new Set(
             (Array.isArray(window.availableSkillsList) ? window.availableSkillsList : [])
                 .map(skill => {
@@ -16170,6 +16176,114 @@
             npcEditNeedBarApplicabilitySection.hidden = false;
         }
 
+        function getRegisteredPlayerEditFields() {
+            const fields = Array.isArray(window.AIRPG_CONFIG?.playerEditFields)
+                ? window.AIRPG_CONFIG.playerEditFields
+                : [];
+            return fields
+                .filter(field => field && typeof field.fieldName === 'string' && field.fieldName.trim())
+                .map(field => ({
+                    ...field,
+                    edit: field.edit && typeof field.edit === 'object' ? field.edit : {}
+                }))
+                .sort((a, b) => {
+                    const orderA = Number.isFinite(Number(a.edit?.order)) ? Number(a.edit.order) : 1000;
+                    const orderB = Number.isFinite(Number(b.edit?.order)) ? Number(b.edit.order) : 1000;
+                    if (orderA !== orderB) {
+                        return orderA - orderB;
+                    }
+                    return a.fieldName.localeCompare(b.fieldName);
+                });
+        }
+
+        function renderNpcEditModFields(npc = {}) {
+            const section = document.getElementById('npcEditModFieldsSection');
+            const list = document.getElementById('npcEditModFieldsList');
+            if (!section || !list) {
+                return;
+            }
+            const fields = getRegisteredPlayerEditFields();
+            list.innerHTML = '';
+            if (!fields.length) {
+                section.setAttribute('hidden', '');
+                return;
+            }
+            section.removeAttribute('hidden');
+
+            fields.forEach(field => {
+                const fieldName = field.fieldName.trim();
+                const edit = field.edit || {};
+                const inputType = typeof edit.inputType === 'string' && edit.inputType.trim()
+                    ? edit.inputType.trim().toLowerCase()
+                    : (field.type === 'boolean' ? 'checkbox' : (field.type === 'number' || field.type === 'integer' ? 'number' : 'text'));
+                const fieldId = `npcEditModField_${fieldName}`;
+                const wrapper = document.createElement('div');
+                wrapper.className = inputType === 'textarea' ? 'npc-edit-field npc-edit-field--wide' : 'npc-edit-field';
+
+                const label = document.createElement('label');
+                label.setAttribute('for', fieldId);
+                label.textContent = edit.label || fieldName;
+                wrapper.appendChild(label);
+
+                const rawValue = npc[fieldName];
+                const value = rawValue === undefined ? field.defaultValue : rawValue;
+                let input;
+                if (inputType === 'textarea') {
+                    input = document.createElement('textarea');
+                    input.rows = 2;
+                    input.value = formatThingEditModFieldValue(value);
+                } else {
+                    input = document.createElement('input');
+                    input.type = inputType === 'checkbox' ? 'checkbox' : (inputType === 'number' ? 'number' : 'text');
+                    if (input.type === 'checkbox') {
+                        input.checked = Boolean(value);
+                    } else {
+                        input.value = formatThingEditModFieldValue(value);
+                    }
+                }
+                input.id = fieldId;
+                input.dataset.fieldName = fieldName;
+                input.dataset.fieldType = field.type || 'string';
+                input.className = 'npc-edit-mod-field-input';
+                if (edit.placeholder && input.type !== 'checkbox') {
+                    input.placeholder = edit.placeholder;
+                }
+                wrapper.appendChild(input);
+
+                if (edit.description) {
+                    const hint = document.createElement('p');
+                    hint.className = 'npc-edit-hint';
+                    hint.textContent = edit.description;
+                    wrapper.appendChild(hint);
+                }
+
+                list.appendChild(wrapper);
+            });
+        }
+
+        function collectNpcEditModFieldValues() {
+            const values = {};
+            const list = document.getElementById('npcEditModFieldsList');
+            const escapeSelectorValue = (value) => {
+                if (window.CSS && typeof window.CSS.escape === 'function') {
+                    return window.CSS.escape(value);
+                }
+                return String(value).replace(/["\\]/g, '\\$&');
+            };
+            for (const field of getRegisteredPlayerEditFields()) {
+                const fieldName = typeof field.fieldName === 'string' ? field.fieldName.trim() : '';
+                if (!fieldName) {
+                    continue;
+                }
+                const input = list?.querySelector(`[data-field-name="${escapeSelectorValue(fieldName)}"]`);
+                if (!input) {
+                    continue;
+                }
+                values[fieldName] = parseThingEditModFieldValue(input, field);
+            }
+            return values;
+        }
+
         function showNpcEditModal(npc) {
             if (!isNpcEditorAvailable() || !npc) {
                 return;
@@ -16271,6 +16385,7 @@
                 : (Array.isArray(npc.statusEffects) ? npc.statusEffects : []);
             renderNpcStatusEffects(intrinsicStatusEffects);
             renderNpcEditNeedBarApplicability(npc);
+            renderNpcEditModFields(npc);
             populateHealthAttributeOptions(npc.attributes || {}, npc.healthAttribute || '');
             updateNpcMaxHealth();
 
@@ -21314,6 +21429,13 @@
                         needBarApplicability[id] = Boolean(input.checked);
                     });
                     payload.needBarApplicability = needBarApplicability;
+                }
+
+                try {
+                    Object.assign(payload, collectNpcEditModFieldValues());
+                } catch (modFieldError) {
+                    updateNpcEditStatus(modFieldError.message || 'Invalid mod field value.', 'error');
+                    return;
                 }
 
                 const knownSkillSet = typeof window.getKnownSkillNameSet === 'function'

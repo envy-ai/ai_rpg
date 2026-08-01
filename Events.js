@@ -13,6 +13,11 @@ const MysteryThread = require("./MysteryThread.js");
 const Tracker = require("./Tracker.js");
 const { CHAT_TOOL_DEFINITIONS, createChatToolRuntime } = require("./chat_tool_calls.js");
 const { resolveQuestDispositionRewardDelta } = require("./quest_disposition_reward_delta.js");
+const {
+    TinyBrainPromptRunner,
+    requireNonWhitespaceResponse,
+    parseResponseOrNa,
+} = require("./TinyBrainPromptRunner.js");
 
 const BASE_TIMEOUT_MS = 120000;
 const DEFAULT_STATUS_DURATION = 3;
@@ -3373,7 +3378,11 @@ class Events {
     }) {
         const normalizedIgnoredEventKeys =
             this._normalizeIgnoredEventKeys(ignoredEventKeys);
-        const rendered = promptEnv.render("base-context.xml.njk", {
+        const useTinyBrainEventChecks = Globals.config?.ai?.tinybrain === true;
+        const tinyBrainRenderState = useTinyBrainEventChecks
+            ? TinyBrainPromptRunner.createRenderState()
+            : null;
+        const templateContext = {
             ...baseContext,
             promptType: "events-xml",
             textToCheck,
@@ -3386,7 +3395,12 @@ class Events {
                     ? eventCheckIgnoreInstructions.trim()
                     : "",
             omitGameHistory: true,
-        });
+        };
+        if (useTinyBrainEventChecks) {
+            templateContext.useTinyBrainEventsPrompt = true;
+            templateContext.__tinyBrainState = tinyBrainRenderState;
+        }
+        const rendered = promptEnv.render("base-context.xml.njk", templateContext);
 
         const parsedTemplate = parseXMLTemplate(rendered);
         if (!parsedTemplate?.systemPrompt || !parsedTemplate?.generationPrompt) {
@@ -3395,23 +3409,31 @@ class Events {
 
         let requestPayloadForLog = null;
         let responsePayloadForLog = null;
-        const eventCheckPromise = LLMClient.chatCompletion({
-            messages: [
-                { role: "system", content: parsedTemplate.systemPrompt },
-                { role: "user", content: parsedTemplate.generationPrompt },
-            ],
-            metadataLabel: "event_checks",
-            errorLogLabel: "events-xml",
-            metadata: { eventPipeline: "xml", promptType: "events-xml" },
-            timeoutMs: this._baseTimeout,
-            temperature: 0,
-            validateXML: false,
-            requiredRegex: /<events\b[\s\S]*<\/events>/i,
-            dumpReasoningToConsole: true,
-            stream: true,
-            // captureRequestPayload: (payload) => { requestPayloadForLog = payload; },
-            // captureResponsePayload: (payload) => { responsePayloadForLog = payload; }
-        });
+        const eventCheckPromise = useTinyBrainEventChecks
+            ? this._runTinyBrainEventXmlPrompt({
+                initialRenderedTemplate: rendered,
+                templateContext,
+                renderState: tinyBrainRenderState,
+                promptEnv,
+                parseXMLTemplate,
+            })
+            : LLMClient.chatCompletion({
+                messages: [
+                    { role: "system", content: parsedTemplate.systemPrompt },
+                    { role: "user", content: parsedTemplate.generationPrompt },
+                ],
+                metadataLabel: "event_checks",
+                errorLogLabel: "events-xml",
+                metadata: { eventPipeline: "xml", promptType: "events-xml" },
+                timeoutMs: this._baseTimeout,
+                temperature: 0,
+                validateXML: false,
+                requiredRegex: /<events\b[\s\S]*<\/events>/i,
+                dumpReasoningToConsole: true,
+                stream: true,
+                // captureRequestPayload: (payload) => { requestPayloadForLog = payload; },
+                // captureResponsePayload: (payload) => { responsePayloadForLog = payload; }
+            });
         const promptLaunchStaggerMs = this.resolvePromptLaunchStaggerMs();
         const needBarEventCheckPromise = suppressNeedBarEventChecks
             ? Promise.resolve({ responseText: "", entries: [] })
@@ -5124,6 +5146,155 @@ class Events {
             throw new Error("Event XML response missing <events> block.");
         }
         return match[0].trim();
+    }
+
+    static parseTinyBrainEventXmlChunk(response) {
+        const normalized = requireNonWhitespaceResponse(
+            response,
+            "Tiny-brain event chunk",
+        );
+        const hasDoneTag = /<done\b/i.test(normalized);
+        const hasEventsTag = /<events\b/i.test(normalized);
+        if (hasDoneTag && !hasEventsTag) {
+            return {
+                terminate: true,
+                response: normalized.trim(),
+                value: false,
+            };
+        }
+        if (!hasEventsTag) {
+            const naCheck = parseResponseOrNa(normalized);
+            if (naCheck.value === false) {
+                return {
+                    terminate: true,
+                    response: normalized.trim(),
+                    value: false,
+                };
+            }
+        }
+
+        const xml = this._extractEventsXmlBlock(normalized);
+        let doc;
+        try {
+            doc = Utils.parseXmlDocumentStrict(xml, "text/xml");
+        } catch (error) {
+            throw new Error(
+                `Failed to parse tiny-brain event chunk: ${error.message}`,
+            );
+        }
+        const root = doc?.documentElement;
+        if (!root || root.tagName !== "events") {
+            throw new Error(
+                "Tiny-brain event chunk must have an <events> root element.",
+            );
+        }
+        const eventElements = Array.from(root.childNodes || []).filter(
+            (node) => node && node.nodeType === 1,
+        );
+        if (eventElements.length === 0) {
+            throw new Error(
+                "Tiny-brain event chunk contained no event elements; output <done/> when no events remain.",
+            );
+        }
+        if (eventElements.length > 2) {
+            throw new Error(
+                `Tiny-brain event chunk contained ${eventElements.length} events; at most 2 are allowed per step.`,
+            );
+        }
+        const innerXml = eventElements
+            .map((node) => node.toString())
+            .join("\n");
+        return { value: { xml: innerXml } };
+    }
+
+    static async _runTinyBrainEventXmlPrompt({
+        initialRenderedTemplate,
+        templateContext,
+        renderState,
+        promptEnv,
+        parseXMLTemplate,
+    }) {
+        const configuredRetries = Number(Globals.config?.ai?.retryAttempts);
+        const retryAttempts =
+            Number.isInteger(configuredRetries) && configuredRetries >= 0
+                ? configuredRetries
+                : 1;
+        const runner = new TinyBrainPromptRunner({
+            promptEnv,
+            parseXMLTemplate,
+            retryAttempts,
+            metadataLabel: "event_checks",
+            logPrefix: "events_tinybrain",
+            parsers: {
+                event_xml_chunk: (response) =>
+                    this.parseTinyBrainEventXmlChunk(response),
+            },
+            finalParser: (response) => {
+                const parsed = this.parseTinyBrainEventXmlChunk(response);
+                return parsed && parsed.terminate ? { value: null } : parsed;
+            },
+            complete: async ({ messages }) => {
+                const response = await LLMClient.chatCompletion({
+                    messages,
+                    metadataLabel: "event_checks",
+                    errorLogLabel: "events-xml",
+                    metadata: {
+                        eventPipeline: "xml-tinybrain",
+                        promptType: "events-xml",
+                    },
+                    timeoutMs: this._baseTimeout,
+                    temperature: 0,
+                    validateXML: false,
+                    dumpReasoningToConsole: true,
+                    stream: true,
+                });
+                return {
+                    aiResponse: response,
+                    conversationMessages: [
+                        ...messages.map((message) => ({ ...message })),
+                        { role: "assistant", content: response },
+                    ],
+                    toolInvocations: [],
+                };
+            },
+        });
+
+        const result = await runner.run({
+            initialRenderedTemplate,
+            templateContext,
+            renderState,
+            programTemplateName: "_includes/events-xml.tinybrain.njk",
+        });
+
+        const chunks = [];
+        const completed = renderState.completedCheckpoints || {};
+        for (const key of Object.keys(completed).sort(
+            (a, b) => Number(a) - Number(b),
+        )) {
+            const value = completed[key]?.value;
+            if (value && typeof value.xml === "string" && value.xml.trim()) {
+                chunks.push(value.xml.trim());
+            }
+        }
+        if (
+            result &&
+            (result.terminatedAtCheckpoint === null ||
+                result.terminatedAtCheckpoint === undefined)
+        ) {
+            const finalChunk = this.parseTinyBrainEventXmlChunk(
+                result.aiResponse,
+            );
+            if (
+                finalChunk &&
+                !finalChunk.terminate &&
+                typeof finalChunk.value?.xml === "string" &&
+                finalChunk.value.xml.trim()
+            ) {
+                chunks.push(finalChunk.value.xml.trim());
+            }
+        }
+
+        return `<events>\n${chunks.join("\n")}\n</events>`;
     }
 
     static _extractHousekeepingXmlBlock(responseText) {
@@ -9172,7 +9343,10 @@ class Events {
                 timeoutMs: this._baseTimeout,
                 temperature: 0,
                 validateXML: false,
-                tools: MYSTERY_BOX_UPDATE_CHAT_TOOLS,
+                additionalPayload: {
+                    tools: MYSTERY_BOX_UPDATE_CHAT_TOOLS,
+                    tool_choice: "auto",
+                },
             },
             metadataLabel: "mystery_box_update",
         });

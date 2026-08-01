@@ -43,7 +43,8 @@ test('XML event path schedules need-bar prompt after configured stagger', () => 
     assert.match(eventsSource, /static PROMPT_LAUNCH_STAGGER_MS = 4000;/);
     assert.match(eventsSource, /static resolvePromptLaunchStaggerMs\(configOverride = Globals\?\.config\)/);
     assert.match(eventsSource, /static runAfterPromptLaunchDelay\(delayMs, task\)/);
-    assert.match(source, /const eventCheckPromise = LLMClient\.chatCompletion\(\{/);
+    assert.match(source, /const eventCheckPromise = useTinyBrainEventChecks/);
+    assert.match(source, /: LLMClient\.chatCompletion\(\{/);
     assert.match(source, /const promptLaunchStaggerMs = this\.resolvePromptLaunchStaggerMs\(\);/);
     assert.match(source, /const needBarEventCheckPromise = suppressNeedBarEventChecks[\s\S]*?this\.runAfterPromptLaunchDelay\(\s*promptLaunchStaggerMs,/);
     assert.match(source, /const \[responseText, needBarEventCheck\] = await Promise\.all\(\[/);

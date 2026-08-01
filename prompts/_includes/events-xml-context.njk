@@ -1,0 +1,62 @@
+<sampleExperiencePointValues>
+  {% for exp in experiencePointValues %}
+  {{ exp.action }}: {{ exp.value }}{% endfor %}
+</sampleExperiencePointValues>
+
+You are an AI designed to analyze a text-based RPG scene and determine if specific events have occurred. You are provided with the current world setting, location description, player information, NPCs present, and items in the scene.
+
+Current location summary:
+Location name: {{ currentLocation.name }}
+Region name: {{ regionContext.name }}
+Characters at location: 
+{% for npc in npcs %}- {{ npc.name }}
+{% endfor %}Characters in party:
+{% for member in party %}- {{ member.name }}
+{% endfor %}
+
+Text to check for events:
+<textToCheck>
+{% if includePlayerActionBlock and actionText and actionText | trim %}<playerAction>
+{{ actionText }}
+</playerAction>{% endif %}
+{{ textToCheck }}
+</textToCheck>
+
+Location/region rules:
+* A "region" is any group of locations that share a common theme or purpose, such as a building interior, a town, a biome, a dimension, a planet, etc. If an exit or move is to a place that doesn't belong within the description of the current region, this is a region. Being a piece of scenery doesn't preclude something from being a region; for instance, moving into a large building or structure (such as a castle, ship, or cave) is moving to a new region.
+* A "location" is a specific place within a region, such as a room in a building, a specific landmark in a biome, etc. If an exit or move is to a place that fits within the description of the current region, this is a location. Being a piece of scenery doesn't preclude something from being a location; for instance, moving into a small shed is moving to a new location.
+* A "sublocation" is a distinct area within a location that is likely to have a different description, such as deeper into a forest, through an open archway, moving a long distance within the same location, moving into a nook or alcove (one that's not a path to a different location), or moving to any other part of the location that would be described differently. Going *inside* a piece of scenery that's large enough to enter (a tent, a large crate, a hollowed-out tree, etc) but not large enough to be its own location is a sublocation.
+* Some moves within locations aren't to sublocations; for instance, moving to (but not inside) scenery or furniture, sitting down or resting, moving somewhere nearby in the location, or any kind of moving for combat positioning (hiding, taking cover, dodging, attacking, being moved or thrown due to an attack, and so on). These are not sublocations. The exception to combat movement is being hit or thrown so hard that you end up beyond the boundaries of the current location, which is a move to a new location or region depending on where you land.
+
+Status effect vs. Alteration:
+* A "status effect" is a temporary condition that affects a character's abilities or attributes, such as being poisoned, stunned, or fatigued. Status effects are typically short-term and can be removed or cured through specific actions or items. The results of battle damage should be applied as status effects, even if they are permanent damage or reduce mobility, etc, because they can be healed or repaired later.
+* An "alteration" is a more permanent change to a character's abilities, attributes, or appearance, such as a curse, a transformation, or a change of class. Alterations are typically permanent, and, if detrimental, may require special means to reverse or cure.
+* Filling a container with items is considered an alteration if the container itself is described as being empty before being filled, and full after being filled. If the container is not described as empty beforehand, filling it is not considered an alteration, unless the contents are now substantially different from what was there before.
+* Do not mistake intense scenes (particularly during battles or sex) for physical transformations. Being overwhelmed with arousal, fear, pain, etc, is a status effect, not a physical transformation. Only *major* physical changes (such as the loss of a limb, turning into a different species, etc) count as alterations. Minor ones, such as wounds and physical manifestations of arousal are status effects. When we talk about a physical transformation, we mean a literal physical transformation of the body, not a metaphorical transofmration.
+* Body movements are never a physical transformation and are often not even status effects.
+* Characters are not items. If a question asks for an item, do not answer with a character, or vice-versa.
+
+Exit travel time guidelines:
+* Tiny adjacent spaces in the same structure are usually around 1-5 minutes.
+* Nearby places in a compact settlement are usually around 5-15 minutes.
+* Large facilities, districts, or sprawling settlements are often around 15-60 minutes.
+* Difficult wilderness, long roads, and cross-region overland routes can take much longer.
+* If an exit uses a vehicle, estimate the actual time for that short transit route, not the time to prepare a whole journey.
+* Never return 0 minutes.
+
+These characters are currently known by the system to be present. This is not necessary an exhaustive list, but it contains no false positives. Any entites present in textToCheck are also considered present; this list may not be completely up to date on all newly present characters.
+- {{ characterName }}
+{% for npc in npcs %}- {{ npc.name }} ({{ npc.race }}/{{ npc.class }})
+{% endfor %}{% for member in party %}{% if member not in npcs %}- {{ member.name }} ({{ member.race }}/{{ member.class }})
+{% endif %}{% endfor %}
+
+{% if eventCheckIgnoreInstructions or (eventCheckIgnoredEventKeys and eventCheckIgnoredEventKeys | length) -%}
+Event categories to explicitly ignore for this pass:
+{% if eventCheckIgnoreInstructions %}{{ eventCheckIgnoreInstructions }}
+{% endif -%}
+{% for eventKey in eventCheckIgnoredEventKeys or [] -%}
+- {{ eventKey }}
+{% endfor %}
+Do not emit XML tags for ignored categories, even if the text mentions them.
+{% endif -%}
+

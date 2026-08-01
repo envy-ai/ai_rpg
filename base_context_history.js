@@ -94,7 +94,109 @@ function shouldIncludeEntryInBaseContextHistory(entry, {
     return true;
 }
 
+function normalizeEntryId(entry) {
+    return typeof entry?.id === 'string' ? entry.id.trim() : '';
+}
+
+function partitionBaseContextHistoryBySceneCoverage({
+    historyEntries,
+    relevantHistory,
+    sceneSummaries,
+    maxSummarizedEntries
+}) {
+    if (!Array.isArray(historyEntries)) {
+        throw new Error('Base-context history entries must be an array.');
+    }
+    if (!Array.isArray(relevantHistory)) {
+        throw new Error('Relevant base-context history must be an array.');
+    }
+    if (!sceneSummaries || typeof sceneSummaries !== 'object') {
+        throw new Error('Scene summary store is unavailable for base-context history partitioning.');
+    }
+    if (typeof sceneSummaries.getContiguousSummarizedEndIndex !== 'function') {
+        throw new Error('Scene summary store cannot resolve contiguous summary coverage.');
+    }
+    if (typeof sceneSummaries.serialize !== 'function') {
+        throw new Error('Scene summary store cannot serialize its entry mapping.');
+    }
+    if (!Number.isInteger(maxSummarizedEntries) || maxSummarizedEntries < 0) {
+        throw new Error('Maximum summarized base-context history entries must be a non-negative integer.');
+    }
+
+    const summarizedEndIndex = sceneSummaries.getContiguousSummarizedEndIndex();
+    if (!Number.isInteger(summarizedEndIndex) || summarizedEndIndex < 0) {
+        throw new Error('Scene summary store returned an invalid contiguous coverage boundary.');
+    }
+    if (summarizedEndIndex === 0) {
+        return {
+            summaryCandidates: [],
+            tailEntries: relevantHistory.slice(),
+            summarizedEndIndex: 0,
+            summarizedThroughEntryId: null
+        };
+    }
+
+    const serialized = sceneSummaries.serialize();
+    if (!Array.isArray(serialized?.entryIndexMap)) {
+        throw new Error('Scene summary store is missing its entry index mapping.');
+    }
+    const boundaryMapping = serialized.entryIndexMap.find(entry => Number(entry?.index) === summarizedEndIndex);
+    const summarizedThroughEntryId = normalizeEntryId({ id: boundaryMapping?.entryId });
+    if (!summarizedThroughEntryId) {
+        throw new Error(`Scene summary entry mapping is missing contiguous boundary index ${summarizedEndIndex}.`);
+    }
+
+    const historyPositionByEntry = new Map();
+    const historyPositionById = new Map();
+    for (let index = 0; index < historyEntries.length; index += 1) {
+        const entry = historyEntries[index];
+        historyPositionByEntry.set(entry, index);
+        const entryId = normalizeEntryId(entry);
+        if (!entryId) {
+            continue;
+        }
+        if (historyPositionById.has(entryId)) {
+            throw new Error(`Base-context history contains duplicate entry ID '${entryId}'.`);
+        }
+        historyPositionById.set(entryId, index);
+    }
+
+    const summarizedThroughHistoryPosition = historyPositionById.get(summarizedThroughEntryId);
+    if (!Number.isInteger(summarizedThroughHistoryPosition)) {
+        throw new Error(`Scene summary boundary entry '${summarizedThroughEntryId}' is missing from chat history.`);
+    }
+
+    const coveredEntries = [];
+    const uncoveredEntries = [];
+    for (const entry of relevantHistory) {
+        let historyPosition = historyPositionByEntry.get(entry);
+        if (!Number.isInteger(historyPosition)) {
+            const entryId = normalizeEntryId(entry);
+            historyPosition = entryId ? historyPositionById.get(entryId) : null;
+        }
+        if (!Number.isInteger(historyPosition)) {
+            throw new Error('Relevant base-context history contains an entry that is missing from chat history.');
+        }
+        if (historyPosition <= summarizedThroughHistoryPosition) {
+            coveredEntries.push(entry);
+        } else {
+            uncoveredEntries.push(entry);
+        }
+    }
+
+    const summaryCandidates = maxSummarizedEntries > 0
+        ? coveredEntries.slice(-maxSummarizedEntries)
+        : [];
+    return {
+        summaryCandidates,
+        tailEntries: uncoveredEntries,
+        summarizedEndIndex,
+        summarizedThroughEntryId
+    };
+}
+
 module.exports = {
+    partitionBaseContextHistoryBySceneCoverage,
     shouldExcludeEntryFromPromptHistory,
     shouldIncludeEntryInBaseContextHistory
 };

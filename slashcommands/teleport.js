@@ -33,7 +33,7 @@ class TeleportCommand extends SlashCommandBase {
     ];
   }
 
-  static execute(interaction, args = {}) {
+  static async execute(interaction, args = {}) {
     const invokingPlayerId = interaction?.user?.id;
     if (!invokingPlayerId) {
       throw new Error('Cannot teleport: invoking user ID is missing.');
@@ -77,12 +77,48 @@ class TeleportCommand extends SlashCommandBase {
       });
     }
 
+    if (destination.isStub) {
+      destination = await this.expandStubDestination(destination);
+    }
+
     player.setLocation(destination);
 
     return interaction.reply({
       content: `Teleported to ${destination.name || destination.id} (${destination.id}).`,
       ephemeral: false
     });
+  }
+
+  // Injectable for tests; the lazy require avoids a load-time cycle with server.js.
+  static _resolveExpansionHelpers() {
+    const { scheduleStubExpansion, expandRegionEntryStub } = require('../server.js');
+    return { scheduleStubExpansion, expandRegionEntryStub };
+  }
+
+  static async expandStubDestination(destination, helpers = this._resolveExpansionHelpers()) {
+    const { scheduleStubExpansion, expandRegionEntryStub } = helpers || {};
+
+    if (destination.stubMetadata?.isRegionEntryStub) {
+      // Region entry stubs expand the whole stubbed region, yielding a real location.
+      if (typeof expandRegionEntryStub !== 'function') {
+        throw new Error('Region entry stub expansion is unavailable.');
+      }
+      const expanded = await expandRegionEntryStub(destination);
+      if (!expanded) {
+        throw new Error(`Failed to expand the region for stubbed location '${destination.name || destination.id}'.`);
+      }
+      return expanded;
+    }
+
+    if (typeof scheduleStubExpansion !== 'function') {
+      throw new Error('Location stub expansion is unavailable.');
+    }
+    await scheduleStubExpansion(destination, {});
+    const refreshed = Location.get(destination.id) || destination;
+    if (refreshed.isStub) {
+      throw new Error(`Location stub '${destination.name || destination.id}' is still stubbed after expansion.`);
+    }
+    return refreshed;
   }
 }
 

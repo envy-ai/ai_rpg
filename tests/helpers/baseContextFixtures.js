@@ -7,6 +7,16 @@ const nunjucks = require('nunjucks');
 const {
     buildActorRelationshipPromptContext
 } = require('../../base_context_relationships.js');
+const {
+    shouldIncludeEntryInBaseContextHistory
+} = require('../../base_context_history.js');
+const {
+    containsOmittedMarker,
+    shouldExcludeSummaryEntry
+} = require('../../chat_history_utils.js');
+const {
+    formatSceneStartWorldTimeLabel
+} = require('../../history_time_labels.js');
 
 const PROMPTS_DIR = path.join(__dirname, '..', '..', 'prompts');
 
@@ -127,8 +137,12 @@ function loadBuildBasePromptContext({
     players = new Map(),
     currentPlayer = null,
     registry = null,
-    includeMysteryCleanup = false,
-    playerAvailableSkills = new Map()
+    includeMysteryCleanup = true,
+    playerAvailableSkills = new Map(),
+    config = {},
+    chatHistory = [],
+    sceneSummaries = null,
+    saveMetadata = null
 } = {}) {
     const source = fs.readFileSync(require.resolve('../../server.js'), 'utf8');
     const start = source.indexOf('function buildBasePromptContext');
@@ -145,7 +159,7 @@ function loadBuildBasePromptContext({
         Set,
         String,
         console,
-        config: {},
+        config,
         currentPlayer: currentPlayer || {
             id: 'player_1',
             name: 'Tester',
@@ -161,9 +175,10 @@ function loadBuildBasePromptContext({
             })
         },
         currentTurnToken: null,
-        chatHistory: [],
+        chatHistory,
         factions: new Map(),
         gameLocations: new Map(),
+        HIDDEN_CHAT_LABEL: 'Hidden from Player',
         pendingRegionStubs: new Map(),
         players,
         regions: new Map(),
@@ -176,6 +191,8 @@ function loadBuildBasePromptContext({
         Globals: {
             ensureWorldTimeInitialized: () => ({}),
             getPlotAnalysis: () => null,
+            getSaveMetadata: () => saveMetadata,
+            getSceneSummaries: () => sceneSummaries,
             getSerializedCalendarDefinition: () => ({}),
             saveFileSaveVersion: 1
         },
@@ -205,6 +222,7 @@ function loadBuildBasePromptContext({
             attributes: ['intelligence', 'strength']
         }),
         collectNpcNamesForContext: () => [],
+        containsOmittedMarker,
         describeSettingForPrompt: () => 'A test setting.',
         extractPersonality: () => ({}),
         findRegionByLocationId: () => null,
@@ -223,11 +241,18 @@ function loadBuildBasePromptContext({
                 .filter(field => field && field.xmlPrompt && typeof field.xmlPrompt.tagName === 'string')
             : () => [],
         getWorldOutline: () => ({ regions: [] }),
+        isHiddenChatEntry: () => false,
         modExtensionRegistry: registry,
         normalizeLocationWeatherExposure: () => 'no',
         resolveLocationHasWeather: () => null,
         resolveMysteryThreadMaxActive: () => 0,
-        resolveRegionWeatherForPrompt: () => null
+        resolveRegionWeatherForPrompt: () => null,
+        formatHistoryEntrySpeakerPrefix: (_entry, { roleLabel }) => `${roleLabel}:`,
+        formatSceneStartWorldTimeLabel,
+        partitionBaseContextHistoryBySceneCoverage: require('../../base_context_history.js')
+            .partitionBaseContextHistoryBySceneCoverage,
+        shouldExcludeSummaryEntry,
+        shouldIncludeEntryInBaseContextHistory
     };
     vm.createContext(context);
     vm.runInContext(

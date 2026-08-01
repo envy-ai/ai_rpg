@@ -59,13 +59,13 @@ test('character menu teleport sends story-tool flag through the teleport helper'
 test('player menu teleport route returns after setting location only when story-tool requested', () => {
     const source = fs.readFileSync(path.join(rootDir, 'api.js'), 'utf8');
     const route = extractBlock(source, "app.post('/api/npcs/:id/teleport'", '// Delete an NPC entirely');
-    const storyToolMatch = route.match(/if \(!isNpc && storyToolTeleport\) \{[\s\S]*?npc\.setLocation\(destinationLocation\.id\);[\s\S]*?res\.json\(responsePayload\);[\s\S]*?return;[\s\S]*?\n\s*\}/);
+    const storyToolMatch = route.match(/if \(!isNpc && storyToolTeleport\) \{[\s\S]*?npc\.setLocation\(effectiveDestinationLocation\.id\);[\s\S]*?res\.json\(responsePayload\);[\s\S]*?return;[\s\S]*?\n\s*\}/);
 
     assert.ok(storyToolMatch, 'player teleports should use a direct story-tool fast path');
     const storyToolBlock = storyToolMatch[0];
 
     assert.match(route, /const storyToolTeleport = body\.storyToolTeleport === true;/);
-    assert.match(storyToolBlock, /npc\.setLocation\(destinationLocation\.id\);/);
+    assert.match(storyToolBlock, /npc\.setLocation\(effectiveDestinationLocation\.id\);/);
     assert.match(storyToolBlock, /res\.json\(responsePayload\);[\s\S]*?return;/);
     assert.doesNotMatch(storyToolBlock, /runWhileYouWereAwayPrompt/);
     assert.doesNotMatch(storyToolBlock, /runAutomaticHiddenNpcChecksForCurrentPlayer/);

@@ -148,11 +148,14 @@ The value defaults to `4` and must be an integer greater than or equal to `1` wh
 ```yaml
 plot_analysis:
   enabled: true
+  interval: 3
   max_plot_threads: 3
   max_plot_complications: 3
 ```
 
 `enabled` defaults to `true` and must be a boolean when provided. When disabled, new player turns do not schedule background plot-analysis work; queued or in-flight plot-analysis work rechecks the gate before tool execution and response storage. The latest saved `Globals.plotAnalysis` value still loads, persists, appears in base-context prompts, and remains visible through `/plot_analysis`. `/rp` temporarily sets this flag to `false` while roleplay mode is active.
+
+`interval` sets how many eligible player-action turns pass between automatic plot-analysis runs. It defaults to `1` (every turn) when omitted and must be an integer `>= 1` when provided; the shipped `config.default.yaml` sets it to `3`. The turn counter is stored in save metadata as `plotAnalysisTurnCounter` and resets on new game, so cadence survives save/load.
 
 `max_plot_threads` and `max_plot_complications` default to the values shown in `config.default.yaml`. `prompts/_includes/plot-analysis-blurb.njk` uses `max_plot_complications`; `max_plot_threads` is available to prompt include customizations.
 
@@ -620,7 +623,7 @@ ai:
 - The original caller-provided `messages` array is not mutated; the tag is applied only to the request payload copy.
 - The live prompt-progress viewer and chat-completion error logs reflect the cachebusted prompt actually sent on that attempt.
 
-## Tiny-brain player-action prompts
+## Tiny-brain staged prompts
 
 `config.ai.tinybrain` runs normal player-action prompts as a staged conversation intended for smaller local models.
 
@@ -636,6 +639,8 @@ ai:
 - The run is written incrementally to one prompt log with explicit begin/end markers around every LLM response.
 - Attack and non-repetition-buster template branches currently contain no checkpoints, so those branches remain one completion even when the option is enabled.
 - `ai.cachebuster: true` is still honored for every staged request, but its changing final-user prefix works against provider prefix caching.
+
+The same flag also stages XML event checks. When `ai.tinybrain` is enabled, `Events.runEventChecks(...)` renders `prompts/_includes/events-xml.tinybrain.njk` instead of sending the monolithic `events-xml` prompt: after a plain-text analysis checkpoint, the model writes the turn's events as XML chunks of at most 2 events per checkpoint (up to five checkpoints plus a final chunk), answering `<done/>` when no events remain. The chunks are assembled into one `<events>` block and parsed by the same `Events._parseXmlEventCheckResponse(...)` pipeline used by the monolithic path, so event application, travel phase splitting, and logging are unchanged. The tag documentation shared by both templates lives in `prompts/_includes/events-xml-schema.njk`. Need-bar event checks remain a separate parallel prompt.
 
 See [TinyBrainPromptRunner.md](classes/TinyBrainPromptRunner.md) for tag syntax, parsers, retries, and transcript behavior.
 
@@ -1053,12 +1058,12 @@ summaries:
 - `party_generate_memory_interval` controls the party-memory generation cadence.
 - `autosaves_to_retain` is the autosave retention count; `0` disables autosaves.
 - `summaries.enabled` gates automatic summarization. `summaries.summarize_on_load` controls load-time summarization.
-- `batch_size`, `summary_word_length`, `max_unsummarized_log_entries`, and `max_summarized_log_entries` tune summary batching and base-context history windows.
+- `batch_size` and `summary_word_length` tune line-summary generation. `max_unsummarized_log_entries` triggers automatic summarization; in scene-summary saves it does not truncate raw prompt history, which remains visible until contiguous scene coverage advances. `max_summarized_log_entries` caps the covered history considered for prompt rendering.
 - `scene_summary_max_entries_per_prompt` must be a positive integer when provided and defaults to `500`.
 
 ## Base-context prompt caching hint
 
-`prompt_uses_caching` tells the base-context template to keep prompt-level history blocks present even when a caller requests `omitGameHistory: true`.
+`prompt_uses_caching` tells base-context prompts to keep their structured prefix stable when callers request prompt-specific omissions.
 
 ```yaml
 prompt_uses_caching: true
@@ -1067,10 +1072,13 @@ prompt_uses_caching: true
 Rules:
 - Must be a boolean when present.
 - Default is `false`.
-- When `true`, prompt-level omissions inside `prompts/base-context.xml.njk` are ignored so the prompt shape stays more stable for cache reuse experiments.
-- This affects the template-level `omitGameHistory` flag, causing `<olderStoryHistory>` to remain present for prompt families that would otherwise suppress it.
+- Independent of this flag, every non-generic prompt rendered through `base-context.xml.njk` sends the same ordered built-in-plus-mod tool schema. This keeps provider-visible tool serialization stable across base-context prompt types. The global `chat_tools.request_user_input_enabled` and `use_legacy_prompt_checks` gates still remove their affected tools consistently from every shared schema. Generic prompts are excluded and retain their existing tool behavior.
+- A non-generic base-context path that previously supplied no tool definitions receives `Do not make tool calls.` immediately after shared base context and before its prompt-specific instructions. The schema is present for cache stability, but the path remains a direct completion and does not execute model-emitted tool calls.
+- When `true`, the template ignores `omitGameHistory`, `omitInventoryItems`, `omitAbilities`, and `suppressQuestList`. Older history, actor inventories, actor abilities, and the player's quest list remain present before `<recentStoryHistory>`.
+- Per-call `omitEventSummaryHistory` is also ignored, so event-summary filtering cannot change older history near the start of the prompt.
+- The template inserts an internal boundary immediately before `<recentStoryHistory>`. `LLMClient` removes the marker and sends the content before and after it as two consecutive user messages. Hybrid/recurrent llama.cpp backends can therefore checkpoint the stable prefix at the point where recent history may change. Cachebusting runs after this split and changes only the final user message.
 - When `true`, slop-remover also switches from the standalone `prompts/slop-remover.xml.njk` template to the base-context include path (`prompts/base-context.xml.njk` with `promptType: slop-remover`). Legacy attack precheck still skips the cheap precheck when this is true, but can run the full legacy attack check when `use_legacy_prompt_checks` is enabled.
-- This does **not** override lower-level base-context builder exclusions such as `base_context.omit_inventory_items`, `base_context.omit_abilities`, `base_context.omit_craft_history`, or per-call `omitEventSummaryHistory`.
+- This does **not** override `omitCraftHistory` or `includeAllHistoryEntryTypes`. Those accepted rare/specialized exceptions can still change story-history text, including `<olderStoryHistory>` when affected entries are old enough. On ordinary prompt paths, `<recentStoryHistory>` is the first omission-sensitive point. The `plot-analysis` prompt still omits the prior `<plotAnalysis>` block, and `tonal-scale-evaluation` still omits the prior `<tonalScaleEvaluation>` block.
 
 ## Legacy prompt checks
 
@@ -1227,6 +1235,19 @@ plot_expander_prompt_frequency: 10
 - Automatic scheduling is also gated by `extra_plot_prompts.plot_expander`.
 - Value must be an integer `>= 0`; invalid values raise runtime errors when scheduling.
 - Runs use the base-context `plot-expander` include and store hidden `plot-expander` entries.
+
+## Plot summary cadence
+
+`plot_summary_prompt_frequency` controls automatic hidden `plot-summary` prompt cadence on eligible player-action turns.
+
+```yaml
+plot_summary_prompt_frequency: 10
+```
+
+- Default is `10` when omitted.
+- Value must be an integer `>= 1`; invalid values raise runtime errors when scheduling.
+- Automatic scheduling is also gated by `extra_plot_prompts.plot_summary`.
+- The turn counter is stored in save metadata as `plotSummaryTurnCounter`, so cadence survives save/load.
 - The latest `plot-expander` output is injected into base-context as `<plotExpander>` immediately after `<plotSummary>`.
 
 ## While-you-were-away location revisit threshold

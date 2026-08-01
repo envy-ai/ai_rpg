@@ -109,6 +109,37 @@ test('SceneSummaries anchors generated coverage to the requested summarized rang
     assert.equal(sceneSummaries.getFirstUnsummarizedIndex(5), null);
 });
 
+test('SceneSummaries reports only the contiguous summarized prefix', () => {
+    const sceneSummaries = new SceneSummaries();
+    sceneSummaries.addSummaryResult({
+        entryIndexMap: [
+            { entryId: 'entry-1', index: 1 },
+            { entryId: 'entry-2', index: 2 },
+            { entryId: 'entry-4', index: 4 },
+            { entryId: 'entry-5', index: 5 }
+        ],
+        scenes: [
+            {
+                startIndex: 1,
+                endIndex: 2,
+                startEntryId: 'entry-1',
+                endEntryId: 'entry-2',
+                summary: 'The contiguous opening scene.'
+            },
+            {
+                startIndex: 4,
+                endIndex: 5,
+                startEntryId: 'entry-4',
+                endEntryId: 'entry-5',
+                summary: 'A later scene beyond a gap.'
+            }
+        ]
+    });
+
+    assert.equal(sceneSummaries.getContiguousSummarizedEndIndex(), 2);
+    assert.equal(sceneSummaries.getFirstUnsummarizedIndex(5), 3);
+});
+
 test('SceneSummaries atomically replaces scenes and stale entry mappings', () => {
     const sceneSummaries = buildSceneSummaries();
     const original = sceneSummaries.serialize();

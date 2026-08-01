@@ -6,6 +6,9 @@
     {%- endif -%}
     {%- set ignorePromptLevelOmissions = config and config.prompt_uses_caching == true -%}
     {%- set effectiveOmitGameHistory = omitGameHistory and not ignorePromptLevelOmissions -%}
+    {%- set effectiveOmitInventoryItems = omitInventoryItems and not ignorePromptLevelOmissions -%}
+    {%- set effectiveOmitAbilities = omitAbilities and not ignorePromptLevelOmissions -%}
+    {%- set effectiveSuppressQuestList = suppressQuestList and not ignorePromptLevelOmissions -%}
     <systemPrompt><![CDATA[
 {%- if systemPromptPrefix -%}{{ systemPromptPrefix }}
 
@@ -19,6 +22,7 @@ You are an AI designed to perform various tasks related to managing novel writin
 You are able to write both explicit and non-explicit content, depending on the needs of the scene.
 {% if setting.unifiedTonalScalePrompt %}
 {{ setting.unifiedTonalScalePrompt }}
+{% endif %}
 
 # ste-writing - Follow these simple writing rules for all prompts!
 
@@ -51,7 +55,6 @@ STRUCTURE
 
 ## End of ASD-STE100 Simplified Technical English Writing Rules
 
-{% endif %}
 {{ config.extra_system_instructions | default('') }}
 
     ]]></systemPrompt>
@@ -307,7 +310,7 @@ This is a list of all characters in the story and a short description of each.
           <memory>{{ entry.memory }}</memory>
           {% endfor %}
         </importantMemories>
-        {% if not omitInventoryItems %}
+        {% if not effectiveOmitInventoryItems %}
         <inventory>{% if useShortDescriptions -%}
 {%- for item in npc.inventory -%}
 {%- set installedModuleBaseId = item.moduleInstalledOnItemId | default('', true) | lower -%}
@@ -330,7 +333,7 @@ This is a list of all characters in the story and a short description of each.
         <skills>
           {% for skill in npc.skills %}{% if skill.value > 1 %}{{ skill.name }}, {% endif %}{% endfor %}
         </skills>
-        {% if not omitAbilities %}
+        {% if not effectiveOmitAbilities %}
         <abilities>{% if useShortDescriptions -%}
 {%- for ability in npc.abilities -%}
 {{ ability.name }}: level {{ ability.level | default(1, true) }} - {{ ability.shortDescription | default(ability.description, true) }}{% if not loop.last %}{{ "\n" }}{% endif %}
@@ -466,7 +469,7 @@ This is a list of all characters in the story and a short description of each.
       <skills>
         {% for skill in currentPlayer.skills %}{% if skill.value > 1 %}{{ skill.name }}, {% endif %}{% endfor %}
       </skills>
-    {% if not omitAbilities %}
+    {% if not effectiveOmitAbilities %}
     <abilities>{% if useShortDescriptions -%}
 {%- for ability in currentPlayer.abilities -%}
 {{ ability.name }}: level {{ ability.level | default(1, true) }} - {{ ability.shortDescription | default(ability.description, true) }}{% if not loop.last %}{{ "\n" }}{% endif %}
@@ -482,7 +485,7 @@ This is a list of all characters in the story and a short description of each.
       {% endfor %}
     {% endif %}</abilities>
     {% endif %}
-    {% if not omitInventoryItems %}
+    {% if not effectiveOmitInventoryItems %}
     <inventory>{% if useShortDescriptions -%}
 {%- for item in currentPlayer.inventory -%}
 {%- set installedModuleBaseId = item.moduleInstalledOnItemId | default('', true) | lower -%}
@@ -540,7 +543,7 @@ This is a list of all characters in the story and a short description of each.
       {% endfor %}
     </modStatus>
     {% endif %}
-    {% if not suppressQuestList %}
+    {% if not effectiveSuppressQuestList %}
     <quests>
       {% for quest in currentPlayer.currentQuests %}
       <quest>
@@ -594,7 +597,7 @@ This is a list of all characters in the story and a short description of each.
         <memory>{{ entry.memory }}</memory>
         {% endfor %}
       </importantMemories>
-      {% if not omitInventoryItems %}
+      {% if not effectiveOmitInventoryItems %}
       <inventory>{% if useShortDescriptions -%}
 {%- for item in member.inventory -%}
 {%- set installedModuleBaseId = item.moduleInstalledOnItemId | default('', true) | lower -%}
@@ -616,7 +619,7 @@ This is a list of all characters in the story and a short description of each.
       <skills>
         {% for skill in member.skills %}{% if skill.value > 1 %}{{ skill.name }}, {% endif %}{% endfor %}
       </skills>
-      {% if not omitAbilities %}
+      {% if not effectiveOmitAbilities %}
       <abilities>{% if useShortDescriptions -%}
 {%- for ability in member.abilities -%}
 {{ ability.name }}: level {{ ability.level | default(1, true) }} - {{ ability.shortDescription | default(ability.description, true) }}{% if not loop.last %}{{ "\n" }}{% endif %}
@@ -724,7 +727,7 @@ This is a list of all characters in the story and a short description of each.
     {% endfor %}
   </trackers>
   {% endif %}
-  <recentStoryHistory>{{ recentGameHistory }}</recentStoryHistory>
+{% if ignorePromptLevelOmissions %}[[[AI_RPG_INTERNAL_MESSAGE_BOUNDARY_RECENT_STORY_HISTORY_V1]]]{% endif %}  <recentStoryHistory>{{ recentGameHistory }}</recentStoryHistory>
 </gameState>
 {% if promptType != 'plot-analysis' and plotAnalysisHasContent %}
 <plotAnalysis>
@@ -830,7 +833,8 @@ This evaluation is current as of {{ tonalScaleEvaluationTurnsAgo | default(0, tr
 
 {% include "_includes/randomwords.njk" %}
 
-{% if useTinyBrainPrompt %}{{ __tinyBrainState.programStartMarker }}{% include "_includes/player-action.tinybrain.njk" %}{% else %}{% include "_includes/" + promptType + ".njk" %}{% endif %}
+[[[AI_RPG_INTERNAL_BASE_CONTEXT_END_V1]]]
+{% if useTinyBrainPrompt %}{{ __tinyBrainState.programStartMarker }}{% include "_includes/player-action.tinybrain.njk" %}{% elif useTinyBrainEventsPrompt %}{{ __tinyBrainState.programStartMarker }}{% include "_includes/events-xml.tinybrain.njk" %}{% else %}{% include "_includes/" + promptType + ".njk" %}{% endif %}
 ]]></generationPrompt>
 
 </template>

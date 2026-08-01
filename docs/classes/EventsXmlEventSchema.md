@@ -4,6 +4,8 @@
 
 This is the informal XML schema for the default single-prompt event pipeline (`event_checks.use_xml: true`). The model reads one chat entry or prose segment and emits an `<events>` block. It is not an XSD document. `Events.js` requires a parseable `<events>...</events>` block and extracts it even when the model wraps the block in markdown fences.
 
+The same schema drives the staged tiny-brain variant (`ai.tinybrain: true`): `prompts/_includes/events-xml.tinybrain.njk` asks for the block in chunks of at most 2 event elements per checkpoint (or `<done/>`), and the chunks are concatenated into the single `<events>` block described here before parsing. Both templates share this schema text via `prompts/_includes/events-xml-schema.njk`.
+
 The XML element names use camelCase. Section headings use snake_case labels for readability; the XML examples show the exact tag names the model should emit. Unknown built-in tags throw parse errors unless an enabled mod has registered the tag.
 
 ## Top-Level Shape

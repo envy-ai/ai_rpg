@@ -131,6 +131,7 @@ Reference for the systems that reduce repeated phrasing, configured slop words, 
 - Entry point: `api.js` -> `applySlopRemoval(prose, { returnDiagnostics })`.
 - Standalone template: `prompts/slop-remover.xml.njk`.
 - Cached/base-context template path: `prompts/base-context.xml.njk` with `promptType: "slop-remover"`, which includes `prompts/_includes/slop-remover.njk`.
+- On the cached/base-context path, the request serializes the same canonical tool schema as every other non-generic base-context prompt so tool definitions do not cause an early prefix-cache divergence. Slop removal still uses direct completion rather than a tool loop, and `Do not make tool calls.` is inserted immediately after shared base context.
 - Prompt inputs include:
   - `systemPromptPrefix` resolved for `slop_remover`
   - normalized setting context

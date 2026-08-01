@@ -204,7 +204,8 @@ class TinyBrainPromptRunner {
         finalParser = null,
         onParseFailure = null,
         logPrompt = LLMClient.logPrompt.bind(LLMClient),
-        metadataLabel = 'player_action_tinybrain'
+        metadataLabel = 'player_action_tinybrain',
+        logPrefix = 'player_action_tinybrain'
     } = {}) {
         if (!promptEnv || typeof promptEnv.render !== 'function') {
             throw new Error('TinyBrainPromptRunner requires a Nunjucks prompt environment.');
@@ -246,6 +247,7 @@ class TinyBrainPromptRunner {
         this.onParseFailure = onParseFailure;
         this.logPrompt = logPrompt;
         this.metadataLabel = metadataLabel;
+        this.logPrefix = logPrefix;
     }
 
     static createRenderState() {
@@ -567,7 +569,7 @@ class TinyBrainPromptRunner {
         const title = `${this.#stepLabel(checkpoint, isFinal)} prompt${attempt > 0 ? ` retry ${attempt}` : ''}`;
         if (!logFilePath) {
             const createdPath = this.logPrompt({
-                prefix: 'player_action_tinybrain',
+                prefix: this.logPrefix,
                 metadataLabel: this.metadataLabel,
                 systemPrompt,
                 sections: [{ title, content: promptText }],
