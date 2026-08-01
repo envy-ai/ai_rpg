@@ -147,6 +147,8 @@ test('base-context render without the tiny-brain flag keeps the monolithic event
 test('staged tiny-brain run assembles chunks that parse identically to the monolithic block', async () => {
     const previousChatCompletion = LLMClient.chatCompletion;
     const previousLogPrompt = LLMClient.logPrompt;
+    const previousWithPromptProgressGroup = LLMClient.withPromptProgressGroup;
+    const previousClearPromptProgressGroup = LLMClient.clearPromptProgressGroup;
 
     const env = createEventsPromptEnv();
     const ctx = buildEventsContext();
@@ -165,8 +167,17 @@ test('staged tiny-brain run assembles chunks that parse identically to the monol
         '<done/>'
     ];
     let calls = 0;
+    const progressGroups = [];
+    const clearedProgressGroups = [];
     LLMClient.chatCompletion = async () => script[Math.min(calls++, script.length - 1)];
     LLMClient.logPrompt = () => '/tmp/tinybrain-events-test.log';
+    LLMClient.withPromptProgressGroup = async (options, callback) => {
+        progressGroups.push(options);
+        return await callback();
+    };
+    LLMClient.clearPromptProgressGroup = (progressGroupId, options) => {
+        clearedProgressGroups.push({ progressGroupId, options });
+    };
 
     try {
         const assembled = await Events._runTinyBrainEventXmlPrompt({
@@ -178,6 +189,14 @@ test('staged tiny-brain run assembles chunks that parse identically to the monol
         });
 
         assert.equal(calls, 5, 'brainstorm + 3 chunks + done should use 5 completions');
+        assert.deepEqual(progressGroups, [{
+            progressGroupId: state.runId,
+            progressGroupTargetLabel: 'event_checks_tinybrain'
+        }]);
+        assert.deepEqual(clearedProgressGroups, [{
+            progressGroupId: state.runId,
+            options: { recordOutputCharacters: true }
+        }]);
 
         const monolithic = `<events>
   <pickUpItem><actorName>Exis</actorName><fullItemName>lantern</fullItemName><quantity>1</quantity></pickUpItem>
@@ -206,6 +225,8 @@ test('staged tiny-brain run assembles chunks that parse identically to the monol
     } finally {
         LLMClient.chatCompletion = previousChatCompletion;
         LLMClient.logPrompt = previousLogPrompt;
+        LLMClient.withPromptProgressGroup = previousWithPromptProgressGroup;
+        LLMClient.clearPromptProgressGroup = previousClearPromptProgressGroup;
     }
 });
 

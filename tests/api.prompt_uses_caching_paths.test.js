@@ -3,12 +3,12 @@ const assert = require('node:assert/strict');
 const fs = require('fs');
 const vm = require('vm');
 
-function loadRenderSlopRemoverTemplate() {
+function loadBuildSlopRemoverPromptData() {
     const source = fs.readFileSync(require.resolve('../api.js'), 'utf8');
-    const start = source.indexOf('            const renderSlopRemoverTemplate = async ({');
+    const start = source.indexOf('            const buildSlopRemoverPromptData = async ({');
     const end = source.indexOf('\n            const parseSlopRemoverEditedTextResponse = (responseText) => {', start);
     if (start < 0 || end < 0) {
-        throw new Error('Unable to locate renderSlopRemoverTemplate in api.js');
+        throw new Error('Unable to locate buildSlopRemoverPromptData in api.js');
     }
 
     const functionSource = source.slice(start, end);
@@ -21,7 +21,21 @@ function loadRenderSlopRemoverTemplate() {
         promptEnv: {
             render(templateName, payload) {
                 renderCalls.push({ templateName, payload });
+                if (templateName === '_includes/slop-remover.njk') {
+                    return 'Rendered slop instructions';
+                }
                 return `<template>${templateName}</template>`;
+            }
+        },
+        parseXMLTemplate(rendered) {
+            return {
+                systemPrompt: `parsed system: ${rendered}`,
+                generationPrompt: `parsed generation: ${rendered}`
+            };
+        },
+        LLMClient: {
+            getBaseContextEndMarker() {
+                return '[[[BASE_END]]]';
             }
         },
         prepareBasePromptContext: async () => {
@@ -36,12 +50,12 @@ function loadRenderSlopRemoverTemplate() {
     vm.createContext(context);
     vm.runInContext(
         `${functionSource}
-this.renderSlopRemoverTemplate = renderSlopRemoverTemplate;`,
+this.buildSlopRemoverPromptData = buildSlopRemoverPromptData;`,
         context
     );
 
     return {
-        renderSlopRemoverTemplate: context.renderSlopRemoverTemplate,
+        buildSlopRemoverPromptData: context.buildSlopRemoverPromptData,
         setPromptUsesCaching(value) {
             context.config.prompt_uses_caching = value;
         },
@@ -118,9 +132,9 @@ this.runAttackPrecheck = runAttackPrecheck;`,
 }
 
 test('slop remover uses standalone template when prompt_uses_caching is false', async () => {
-    const runtime = loadRenderSlopRemoverTemplate();
+    const runtime = loadBuildSlopRemoverPromptData();
 
-    const rendered = await runtime.renderSlopRemoverTemplate({
+    const promptData = await runtime.buildSlopRemoverPromptData({
         systemPromptPrefix: 'Prefix',
         settingContext: { genre: 'Fantasy', tone: 'Neutral' },
         storyText: 'Older context',
@@ -131,7 +145,8 @@ test('slop remover uses standalone template when prompt_uses_caching is false', 
         forbiddenTropes: ['mouth opens. closes. opens again.']
     });
 
-    assert.equal(rendered, '<template>slop-remover.xml.njk</template>');
+    assert.equal(promptData.systemPrompt, 'parsed system: <template>slop-remover.xml.njk</template>');
+    assert.equal(promptData.generationPrompt, 'parsed generation: <template>slop-remover.xml.njk</template>');
     assert.equal(runtime.getPrepareCount(), 0);
     const call = runtime.getRenderCalls()[0];
     assert.equal(call.templateName, 'slop-remover.xml.njk');
@@ -142,10 +157,10 @@ test('slop remover uses standalone template when prompt_uses_caching is false', 
 });
 
 test('slop remover uses base-context include when prompt_uses_caching is true', async () => {
-    const runtime = loadRenderSlopRemoverTemplate();
+    const runtime = loadBuildSlopRemoverPromptData();
     runtime.setPromptUsesCaching(true);
 
-    const rendered = await runtime.renderSlopRemoverTemplate({
+    const promptData = await runtime.buildSlopRemoverPromptData({
         systemPromptPrefix: 'Prefix',
         settingContext: { genre: 'Fantasy', tone: 'Neutral' },
         storyText: 'Older context',
@@ -156,7 +171,8 @@ test('slop remover uses base-context include when prompt_uses_caching is true', 
         forbiddenTropes: ['mouth opens. closes. opens again.']
     });
 
-    assert.equal(rendered, '<template>base-context.xml.njk</template>');
+    assert.equal(promptData.systemPrompt, 'parsed system: <template>base-context.xml.njk</template>');
+    assert.equal(promptData.generationPrompt, 'parsed generation: <template>base-context.xml.njk</template>');
     assert.equal(runtime.getPrepareCount(), 1);
     const call = runtime.getRenderCalls()[0];
     assert.equal(call.templateName, 'base-context.xml.njk');
@@ -165,6 +181,51 @@ test('slop remover uses base-context include when prompt_uses_caching is true', 
     assert.equal(call.payload.currentPlayer.name, 'Tester');
     assert.deepEqual(call.payload.slopRegexes, ['Elara']);
     assert.deepEqual(call.payload.forbiddenTropes, ['mouth opens. closes. opens again.']);
+});
+
+test('cached slop remover reuses an explicitly supplied rendered player-action prefix', async () => {
+    const runtime = loadBuildSlopRemoverPromptData();
+    runtime.setPromptUsesCaching(true);
+    const baseContextOverride = {
+        systemPrompt: 'Exact player system prompt',
+        generationPromptPrefix: 'Exact player base context\n'
+    };
+
+    const promptData = await runtime.buildSlopRemoverPromptData({
+        systemPromptPrefix: '',
+        settingContext: { genre: 'Fantasy', tone: 'Neutral' },
+        storyText: 'Older context',
+        textToEdit: 'Current prose',
+        baseContextOverride
+    });
+
+    assert.equal(promptData.systemPrompt, 'Exact player system prompt');
+    assert.equal(
+        promptData.generationPrompt,
+        'Exact player base context\n[[[BASE_END]]]Rendered slop instructions'
+    );
+    assert.equal(runtime.getPrepareCount(), 0);
+    const call = runtime.getRenderCalls()[0];
+    assert.equal(call.templateName, '_includes/slop-remover.njk');
+    assert.equal(call.payload.storyText, 'Older context');
+    assert.equal(call.payload.textToEdit, 'Current prose');
+});
+
+test('cached slop remover rejects an invalid rendered-prefix override', async () => {
+    const runtime = loadBuildSlopRemoverPromptData();
+    runtime.setPromptUsesCaching(true);
+
+    await assert.rejects(
+        runtime.buildSlopRemoverPromptData({
+            systemPromptPrefix: '',
+            settingContext: { genre: 'Fantasy', tone: 'Neutral' },
+            storyText: 'Older context',
+            textToEdit: 'Current prose',
+            baseContextOverride: 'invalid'
+        }),
+        /must contain rendered systemPrompt and generationPromptPrefix strings/
+    );
+    assert.equal(runtime.getPrepareCount(), 0);
 });
 
 test('attack precheck is skipped when prompt_uses_caching is true', async () => {

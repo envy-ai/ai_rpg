@@ -24,28 +24,24 @@ test('player-action scheduling starts plot analysis before awaiting the player-a
     assert.ok(scheduleIndex < directCompletionIndex, 'plot analysis must be scheduled before direct player-action await.');
 });
 
-test('tiny-brain player action retains one queue reservation for its complete staged run', () => {
+test('tiny-brain player action delegates shared queue and progress lifecycle to the runner', () => {
     const tinyBrainBranchStart = apiSource.indexOf('if (useTinyBrainPlayerAction) {');
     const regularToolLoopBranch = apiSource.indexOf('} else if (Array.isArray(enabledChatTools)', tinyBrainBranchStart);
     assert.notEqual(tinyBrainBranchStart, -1, 'Unable to locate tiny-brain player-action branch.');
     assert.notEqual(regularToolLoopBranch, -1, 'Unable to locate the end of the tiny-brain player-action branch.');
 
     const tinyBrainBranch = apiSource.slice(tinyBrainBranchStart, regularToolLoopBranch);
+    assert.match(tinyBrainBranch, /const tinyBrainRunner = new TinyBrainPromptRunner\(\{/);
     assert.match(
         tinyBrainBranch,
-        /LLMClient\.withPromptQueueReservation\(async \(queueReservation\) => \{/
+        /complete: async \(\{[\s\S]*?queueReservation[\s\S]*?\}\) => \{/
     );
     assert.match(
         tinyBrainBranch,
         /const stageRequestOptions = \{[\s\S]*?messages,[\s\S]*?queueReservation[\s\S]*?\};/
     );
-    assert.match(
-        tinyBrainBranch,
-        /const progressGroupId = tinyBrainPromptState\.runId/
-    );
-    assert.match(tinyBrainBranch, /recordPromptProgressGroupFailure\(progressGroupId, response\)/);
-    assert.match(tinyBrainBranch, /clearPromptProgressGroup\(progressGroupId\)/);
-    assert.match(tinyBrainBranch, /return await tinyBrainRunner\.run\(\{/);
+    assert.match(tinyBrainBranch, /const tinyBrainResult = await tinyBrainRunner\.run\(\{/);
+    assert.doesNotMatch(tinyBrainBranch, /clearPromptProgressGroup|recordPromptProgressGroupFailure/);
 });
 
 test('plot analysis scheduling is enabled by default and gated by config', () => {

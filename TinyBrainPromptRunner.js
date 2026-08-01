@@ -22,7 +22,8 @@ function parseAcceptOrReject(response) {
         return {
             terminate: true,
             response: rejectedMatch[0].trim(),
-            value: false
+            value: false,
+            recordProgressOutput: false
         };
     }
     if (acceptedMatch) {
@@ -205,7 +206,8 @@ class TinyBrainPromptRunner {
         onParseFailure = null,
         logPrompt = LLMClient.logPrompt.bind(LLMClient),
         metadataLabel = 'player_action_tinybrain',
-        logPrefix = 'player_action_tinybrain'
+        logPrefix = 'player_action_tinybrain',
+        progressGroupTargetLabel = null
     } = {}) {
         if (!promptEnv || typeof promptEnv.render !== 'function') {
             throw new Error('TinyBrainPromptRunner requires a Nunjucks prompt environment.');
@@ -231,6 +233,18 @@ class TinyBrainPromptRunner {
         if (typeof logPrompt !== 'function') {
             throw new Error('TinyBrainPromptRunner requires a prompt logger.');
         }
+        if (typeof metadataLabel !== 'string' || !metadataLabel.trim()) {
+            throw new Error('TinyBrainPromptRunner metadataLabel must be a non-empty string.');
+        }
+        if (typeof logPrefix !== 'string' || !logPrefix.trim()) {
+            throw new Error('TinyBrainPromptRunner logPrefix must be a non-empty string.');
+        }
+        if (
+            progressGroupTargetLabel !== null
+            && (typeof progressGroupTargetLabel !== 'string' || !progressGroupTargetLabel.trim())
+        ) {
+            throw new Error('TinyBrainPromptRunner progressGroupTargetLabel must be a non-empty string when provided.');
+        }
 
         this.promptEnv = promptEnv;
         this.parseXMLTemplate = parseXMLTemplate;
@@ -246,8 +260,12 @@ class TinyBrainPromptRunner {
         this.finalParser = finalParser;
         this.onParseFailure = onParseFailure;
         this.logPrompt = logPrompt;
-        this.metadataLabel = metadataLabel;
-        this.logPrefix = logPrefix;
+        this.metadataLabel = metadataLabel.trim();
+        this.logPrefix = logPrefix.trim();
+        this.progressGroupTargetLabel = progressGroupTargetLabel?.trim()
+            || (this.metadataLabel.endsWith('_tinybrain')
+                ? this.metadataLabel
+                : `${this.metadataLabel}_tinybrain`);
     }
 
     static createRenderState() {
@@ -260,6 +278,44 @@ class TinyBrainPromptRunner {
         renderState,
         programTemplateName = '_includes/player-action.tinybrain.njk'
     } = {}) {
+        if (!renderState || typeof renderState !== 'object' || typeof renderState.runId !== 'string' || !renderState.runId.trim()) {
+            throw new Error('TinyBrainPromptRunner requires its initial render state.');
+        }
+        const progressGroupId = renderState.runId.trim();
+        return await LLMClient.withPromptQueueReservation(async (queueReservation) => (
+            LLMClient.withPromptProgressGroup({
+                progressGroupId,
+                progressGroupTargetLabel: this.progressGroupTargetLabel
+            }, async () => {
+                let recordOutputCharacters = false;
+                try {
+                    const result = await this.#runProgram({
+                        initialRenderedTemplate,
+                        templateContext,
+                        renderState,
+                        programTemplateName,
+                        queueReservation,
+                        progressGroupId
+                    });
+                    recordOutputCharacters = result.recordProgressOutput !== false;
+                    return result;
+                } finally {
+                    LLMClient.clearPromptProgressGroup(progressGroupId, {
+                        recordOutputCharacters
+                    });
+                }
+            })
+        ));
+    }
+
+    async #runProgram({
+        initialRenderedTemplate,
+        templateContext,
+        renderState,
+        programTemplateName,
+        queueReservation,
+        progressGroupId
+    }) {
         if (typeof initialRenderedTemplate !== 'string' || !initialRenderedTemplate.trim()) {
             throw new Error('TinyBrainPromptRunner requires the initially rendered prompt template.');
         }
@@ -315,7 +371,9 @@ class TinyBrainPromptRunner {
                     parser,
                     logFilePath,
                     systemPrompt,
-                    isFinal: false
+                    isFinal: false,
+                    queueReservation,
+                    progressGroupId
                 });
                 messages = stepResult.messages;
                 logFilePath = stepResult.logFilePath;
@@ -327,7 +385,8 @@ class TinyBrainPromptRunner {
                         conversationMessages: messages,
                         toolInvocations: allToolInvocations,
                         logFilePath,
-                        terminatedAtCheckpoint: completedCount
+                        terminatedAtCheckpoint: completedCount,
+                        recordProgressOutput: stepResult.parsed.recordProgressOutput !== false
                     };
                 }
 
@@ -363,7 +422,9 @@ class TinyBrainPromptRunner {
                 })),
                 logFilePath,
                 systemPrompt,
-                isFinal: true
+                isFinal: true,
+                queueReservation,
+                progressGroupId
             });
             allToolInvocations.push(...finalResult.toolInvocations);
             return {
@@ -371,7 +432,8 @@ class TinyBrainPromptRunner {
                 conversationMessages: finalResult.messages,
                 toolInvocations: allToolInvocations,
                 logFilePath: finalResult.logFilePath,
-                terminatedAtCheckpoint: null
+                terminatedAtCheckpoint: null,
+                recordProgressOutput: true
             };
         }
     }
@@ -450,7 +512,9 @@ class TinyBrainPromptRunner {
         parser,
         logFilePath,
         systemPrompt,
-        isFinal
+        isFinal,
+        queueReservation,
+        progressGroupId
     }) {
         const trimmedPrompt = typeof promptSegment === 'string' ? promptSegment.trim() : '';
         if (!trimmedPrompt) {
@@ -479,7 +543,8 @@ class TinyBrainPromptRunner {
                 checkpoint: { ...checkpoint },
                 attempt,
                 isFinal,
-                logFilePath: currentLogPath
+                logFilePath: currentLogPath,
+                queueReservation
             });
             const aiResponse = completion?.aiResponse;
             if (typeof aiResponse !== 'string') {
@@ -516,6 +581,7 @@ class TinyBrainPromptRunner {
                     logFilePath: currentLogPath
                 };
             } catch (error) {
+                LLMClient.recordPromptProgressGroupFailure(progressGroupId, aiResponse);
                 if (this.onParseFailure) {
                     await this.onParseFailure({
                         response: aiResponse,

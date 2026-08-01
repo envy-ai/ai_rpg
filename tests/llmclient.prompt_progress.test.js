@@ -41,6 +41,7 @@ function installPromptProgressConfig(baseDir) {
                 'npc_ability_assignments*': 10000,
                 'npc_alias_assignments*': 10000,
                 player_action: 5000,
+                player_action_tinybrain: 5000,
                 config_test: 5000
             }
         }
@@ -115,6 +116,7 @@ test('default config prompt progress targets cover known prompt families', () =>
     assert.equal(LLMClient.resolvePromptProgressCharacterTarget('location_modify_player_action', config), 10000);
     assert.equal(LLMClient.resolvePromptProgressCharacterTarget('npc_generation_single', config), 10000);
     assert.equal(LLMClient.resolvePromptProgressCharacterTarget('player_action_tool_loop_round', config), 5000);
+    assert.equal(LLMClient.resolvePromptProgressCharacterTarget('event_checks_tinybrain', config), 5000);
     assert.equal(LLMClient.resolvePromptProgressCharacterTarget('generic_prompt_tool_call_error', config), 5000);
     assert.equal(LLMClient.resolvePromptProgressCharacterTarget('inventory_generation_Barkeep', config), 5000);
     assert.equal(LLMClient.resolvePromptProgressCharacterTarget('scheduled_event_resolution', config), 5000);
@@ -327,7 +329,7 @@ test('tool-call-only completions do not update output character averages', async
     }
 });
 
-test('prompt progress uses established average output characters as target', { concurrency: false }, async () => {
+test('grouped prompt progress reuses one entry across stages and waits until group clear', { concurrency: false }, async () => {
     const originalAxiosPost = axios.post;
     const originalBaseDir = Globals.baseDir;
     const originalConfig = Globals.config;
@@ -357,46 +359,119 @@ test('prompt progress uses established average output characters as target', { c
     };
 
     try {
-        LLMClient.recordPromptOutputCharacters('player_action', 120);
+        LLMClient.recordPromptOutputCharacters('player_action_tinybrain', 120);
 
-        const result = await LLMClient.chatCompletion({
-            messages: [{ role: 'user', content: 'Use average progress target.' }],
-            metadataLabel: 'player_action',
+        await LLMClient.withPromptProgressGroup({
             progressGroupId: 'tinybrain-test-run',
-            validateXML: false,
-            retryAttempts: 0,
-            output: 'stdout'
+            progressGroupTargetLabel: 'player_action_tinybrain'
+        }, async () => {
+            const result = await LLMClient.chatCompletion({
+                messages: [{ role: 'user', content: 'Use inherited average progress target.' }],
+                metadataLabel: 'player_action',
+                validateXML: false,
+                retryAttempts: 0,
+                output: 'stdout'
+            });
+
+            assert.equal(result, 'abcd');
+            LLMClient.recordPromptProgressGroupFailure('tinybrain-test-run', 'Malformed prior answer.');
+
+            const secondResult = await LLMClient.chatCompletion({
+                messages: [{ role: 'user', content: 'Use the same inherited grouped progress entry.' }],
+                metadataLabel: 'player_action',
+                validateXML: false,
+                retryAttempts: 0,
+                output: 'stdout'
+            });
+            assert.equal(secondResult, 'abcd');
         });
 
-        assert.equal(result, 'abcd');
-        LLMClient.recordPromptProgressGroupFailure('tinybrain-test-run', 'Malformed prior answer.');
-        await LLMClient.waitForPromptDrain({ timeoutMs: 3000, pollIntervalMs: 25 });
-        const activeEntries = emittedEvents
+        const entriesBeforeClear = emittedEvents
             .filter(event => event.type === 'prompt_progress')
             .flatMap(event => Array.isArray(event.payload?.entries) ? event.payload.entries : []);
-        const preview = activeEntries.find(entry => entry.previewText === 'abcd');
+        const groupedEntriesBeforeClear = entriesBeforeClear
+            .filter(entry => entry.progressGroupId === 'tinybrain-test-run');
+        const groupedPromptIds = new Set(groupedEntriesBeforeClear.map(entry => entry.id));
+        assert.equal(groupedPromptIds.size, 1, 'every stage should reuse one stable progress id');
+
+        const preview = groupedEntriesBeforeClear.find(entry => entry.previewText === 'abcd');
         assert.ok(preview, 'expected a prompt_progress entry with streamed preview text');
         assert.equal(preview.targetCharacters, 120);
         assert.equal(preview.averageOutputCharacters, 120);
         assert.equal(preview.runCount, 1);
         assert.equal(preview.progressGroupId, 'tinybrain-test-run');
+        assert.equal(preview.progressGroupTargetLabel, 'player_action_tinybrain');
         assert.equal(
             preview.progressFraction,
             LLMClient.calculatePromptProgressFraction(4, 120)
         );
 
-        const completed = activeEntries.find(entry => entry.previewText === 'abcd' && entry.isComplete === true);
-        assert.ok(completed, 'expected a completed prompt_progress entry before clear');
-        assert.equal(completed.progressFraction, 1);
-        assert.equal(completed.targetCharacters, 120);
-        assert.equal(completed.progressGroupId, 'tinybrain-test-run');
-        const failed = activeEntries.find(entry => entry.responseFailed === true);
-        assert.ok(failed, 'expected the completed prompt entry to be marked as a failed response');
+        const waitingEntries = groupedEntriesBeforeClear
+            .filter(entry => entry.previewText === 'abcd' && entry.isGroupWaiting === true);
+        assert.ok(waitingEntries.length >= 2, 'expected one blue waiting state after each grouped stage');
+        const firstWaitingEntry = waitingEntries[0];
+        const finalWaitingEntry = waitingEntries.at(-1);
+        assert.equal(firstWaitingEntry.receivedCount, 4);
+        assert.equal(firstWaitingEntry.targetCharacters, 120);
+        assert.equal(
+            firstWaitingEntry.progressFraction,
+            LLMClient.calculatePromptProgressFraction(4, 120)
+        );
+        const secondStageStartEntry = groupedEntriesBeforeClear.find(entry => (
+            entry.isGroupWaiting === false
+            && entry.previewText === ''
+            && entry.receivedCount === 4
+            && entry.targetCharacters === 120
+        ));
+        assert.ok(secondStageStartEntry, 'expected the next stage to retain the previous group totals');
+        assert.equal(secondStageStartEntry.progressFraction, firstWaitingEntry.progressFraction);
+        assert.equal(finalWaitingEntry.receivedCount, 8);
+        assert.equal(finalWaitingEntry.targetCharacters, 120);
+        assert.equal(
+            finalWaitingEntry.progressFraction,
+            LLMClient.calculatePromptProgressFraction(8, 120)
+        );
+        assert.ok(
+            finalWaitingEntry.progressFraction > firstWaitingEntry.progressFraction,
+            'grouped progress must remain monotonic when the next stage begins'
+        );
+        assert.equal(
+            groupedEntriesBeforeClear.some(entry => entry.isComplete === true),
+            false,
+            'individual grouped stages should not complete or clear the shared entry'
+        );
+
+        const failed = groupedEntriesBeforeClear.find(entry => entry.responseFailed === true);
+        assert.ok(failed, 'expected the waiting prompt entry to be marked as a failed response');
         assert.deepEqual(failed.failedResponses, ['Malformed prior answer.']);
         const failureEvent = emittedEvents.find(event => event.type === 'prompt_progress_group_failure');
         assert.ok(failureEvent, 'expected an immediate prompt-group failure event');
         assert.equal(failureEvent.payload.progressGroupId, 'tinybrain-test-run');
         assert.deepEqual(failureEvent.payload.failedResponses, ['Malformed prior answer.']);
+
+        assert.equal(LLMClient.getPromptOutputCharacterStats('player_action').runs, 0);
+        LLMClient.clearPromptProgressGroup('tinybrain-test-run', { recordOutputCharacters: true });
+        await LLMClient.waitForPromptDrain({ timeoutMs: 3000, pollIntervalMs: 25 });
+        const entriesAfterClear = emittedEvents
+            .filter(event => event.type === 'prompt_progress')
+            .flatMap(event => Array.isArray(event.payload?.entries) ? event.payload.entries : []);
+        const completed = entriesAfterClear.find(entry => (
+            entry.progressGroupId === 'tinybrain-test-run'
+            && entry.previewText === 'abcd'
+            && entry.isComplete === true
+        ));
+        assert.ok(completed, 'expected the grouped prompt entry to complete only when the group clears');
+        assert.equal(completed.progressFraction, 1);
+        assert.equal(completed.receivedCount, 8);
+        assert.equal(completed.targetCharacters, 120);
+        assert.equal(completed.progressGroupId, 'tinybrain-test-run');
+        assert.deepEqual(LLMClient.getPromptOutputCharacterStats('player_action_tinybrain'), {
+            runs: 2,
+            totalOutputCharacters: 128,
+            averageOutputCharacters: 64,
+            lastOutputCharacters: 8,
+            updatedAt: LLMClient.getPromptOutputCharacterStats('player_action_tinybrain').updatedAt
+        });
     } finally {
         LLMClient.clearPromptProgressGroup('tinybrain-test-run');
         axios.post = originalAxiosPost;

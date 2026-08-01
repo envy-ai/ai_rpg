@@ -145,6 +145,30 @@ test('prompt progress dock styles completed entries with a single pulse', () => 
     assert.match(scssSource, /animation:\s*prompt-progress-complete-pulse 250ms ease-out/);
 });
 
+test('grouped tinybrain progress keeps one blue waiting bar between active stages', () => {
+    assert.match(chatSource, /entry\?\.isGroupWaiting === true/);
+    assert.match(chatSource, /prompt-progress-bar--group-waiting/);
+    assert.match(chatSource, /prompt-progress-dock__one-line-row--group-waiting/);
+    assert.match(chatSource, /prompt-progress-row-group-waiting/);
+    assert.match(chatSource, /modal__prompt-progress--group-waiting/);
+    assert.match(chatSource, /if \(isGroupWaiting\) \{[\s\S]*cancelButton\.disabled = true;[\s\S]*retryButton\.disabled = true;/);
+    assert.match(scssSource, /\.prompt-progress-bar--group-waiting \.prompt-progress-bar__fill\s*\{[\s\S]*#3b82f6/);
+    assert.match(scssSource, /\.prompt-progress-dock__one-line-row--group-waiting[\s\S]*rgba\(59, 130, 246/);
+    assert.match(scssSource, /\.modal__prompt-progress--group-waiting \.modal__prompt-progress-fill\s*\{[\s\S]*#3b82f6/);
+    const exactPercentBlock = extractBlock(
+        chatSource,
+        'formatPromptProgressPercent(entry) {',
+        'formatPromptProgressApproxPercent(entry) {'
+    );
+    const approximatePercentBlock = extractBlock(
+        chatSource,
+        'formatPromptProgressApproxPercent(entry) {',
+        'clearPendingPromptProgressRender() {'
+    );
+    assert.doesNotMatch(exactPercentBlock, /isGroupWaiting|waiting/);
+    assert.doesNotMatch(approximatePercentBlock, /isGroupWaiting|waiting/);
+});
+
 test('prompt progress dock styles include 4px collapsed bar and 3-row table cap', () => {
     assert.match(scssSource, /\.prompt-progress-dock/);
     assert.match(scssSource, /\.prompt-progress-dock--collapsed/);
@@ -230,6 +254,7 @@ test('open modals mirror the prompt-progress aggregate as a thin bottom bar', ()
     assert.match(updateBlock, /getPromptProgressAggregateFraction\(entries\)/);
     assert.match(updateBlock, /\.modal\[aria-hidden="false"\] \.modal__dialog/);
     assert.match(updateBlock, /modal__prompt-progress-fill/);
+    assert.match(updateBlock, /modal__prompt-progress--group-waiting/);
     assert.match(updateBlock, /bar\.remove\(\)/);
 
     // Rendering the dock also refreshes modal bars, and modal open/close is observed.

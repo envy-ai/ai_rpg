@@ -5083,6 +5083,8 @@ class AIRPGChat {
         const entries = Array.isArray(this.promptProgressEntries) ? this.promptProgressEntries : [];
         const aggregate = this.getPromptProgressAggregateFraction(entries);
         const isActive = entries.length > 0 && aggregate !== null;
+        const isGroupWaiting = entries.length > 0
+            && entries.every(entry => entry?.isGroupWaiting === true);
 
         if (!isActive) {
             document.querySelectorAll('.modal__prompt-progress').forEach(bar => bar.remove());
@@ -5110,6 +5112,7 @@ class AIRPGChat {
                 bar.appendChild(fill);
                 dialog.appendChild(bar);
             }
+            bar.classList.toggle('modal__prompt-progress--group-waiting', isGroupWaiting);
             const fill = bar.firstElementChild;
             if (fill) {
                 fill.style.width = `${fraction * 100}%`;
@@ -5821,11 +5824,14 @@ class AIRPGChat {
         }
     }
 
-    createPromptProgressBar(entryOrFraction = null, { aggregate = false } = {}) {
+    createPromptProgressBar(entryOrFraction = null, { aggregate = false, groupWaiting = false } = {}) {
         const bar = document.createElement('div');
         bar.className = aggregate ? 'prompt-progress-bar prompt-progress-bar--aggregate' : 'prompt-progress-bar';
         if (!aggregate && entryOrFraction?.isComplete === true) {
             bar.classList.add('prompt-progress-bar--complete');
+        }
+        if (groupWaiting || entryOrFraction?.isGroupWaiting === true) {
+            bar.classList.add('prompt-progress-bar--group-waiting');
         }
         const fill = document.createElement('div');
         fill.className = 'prompt-progress-bar__fill';
@@ -5872,6 +5878,7 @@ class AIRPGChat {
     createPromptProgressActions(entry, row = null) {
         const isViewerActive = this.hasPromptProgressViewerForPrompt(entry.id);
         const isComplete = entry?.isComplete === true;
+        const isGroupWaiting = entry?.isGroupWaiting === true;
         const actionWrap = document.createElement('div');
         actionWrap.className = 'prompt-progress-actions';
 
@@ -5907,20 +5914,25 @@ class AIRPGChat {
             viewButton.addEventListener('click', () => {
                 this.openPromptProgressViewer(entry.id);
             });
-            cancelButton.addEventListener('click', () => {
-                this.cancelPromptProgress(entry.id, entry.label || 'prompt', {
-                    cancelButton,
-                    retryButton,
-                    row
+            if (isGroupWaiting) {
+                cancelButton.disabled = true;
+                retryButton.disabled = true;
+            } else {
+                cancelButton.addEventListener('click', () => {
+                    this.cancelPromptProgress(entry.id, entry.label || 'prompt', {
+                        cancelButton,
+                        retryButton,
+                        row
+                    });
                 });
-            });
-            retryButton.addEventListener('click', () => {
-                this.retryPromptProgress(entry.id, entry.label || 'prompt', {
-                    cancelButton,
-                    retryButton,
-                    row
+                retryButton.addEventListener('click', () => {
+                    this.retryPromptProgress(entry.id, entry.label || 'prompt', {
+                        cancelButton,
+                        retryButton,
+                        row
+                    });
                 });
-            });
+            }
         }
 
         actionWrap.appendChild(viewButton);
@@ -5940,6 +5952,9 @@ class AIRPGChat {
         }
         if (entry?.isComplete === true) {
             row.classList.add('prompt-progress-row-complete');
+        }
+        if (entry?.isGroupWaiting === true) {
+            row.classList.add('prompt-progress-row-group-waiting');
         }
 
         const actionCell = document.createElement('td');
@@ -6030,8 +6045,10 @@ class AIRPGChat {
         row.className = 'prompt-progress-dock__one-line-row';
         const isIdle = !entry?.id;
         const isComplete = entry?.isComplete === true;
+        const isGroupWaiting = entry?.isGroupWaiting === true;
         row.classList.toggle('prompt-progress-dock__one-line-row--idle', isIdle);
         row.classList.toggle('prompt-progress-dock__one-line-row--complete', isComplete);
+        row.classList.toggle('prompt-progress-dock__one-line-row--group-waiting', isGroupWaiting);
 
         const progressFraction = Number(entry?.progressFraction);
         const fill = document.createElement('div');
@@ -6100,7 +6117,12 @@ class AIRPGChat {
 
     renderPromptProgressCollapsed(dock, entries = this.promptProgressEntries) {
         const aggregateProgress = this.getPromptProgressAggregateFraction(entries) || 0;
-        const aggregateBar = this.createPromptProgressBar(aggregateProgress, { aggregate: true });
+        const groupWaiting = entries.length > 0
+            && entries.every(entry => entry?.isGroupWaiting === true);
+        const aggregateBar = this.createPromptProgressBar(aggregateProgress, {
+            aggregate: true,
+            groupWaiting
+        });
         dock.replaceChildren(aggregateBar);
     }
 

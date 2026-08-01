@@ -8,6 +8,7 @@ const { response } = require('express');
 const Utils = require('./Utils.js');
 const { dump } = require('js-yaml');
 const readline = require('readline');
+const { AsyncLocalStorage } = require('async_hooks');
 const CodexBridgeClient = require('./CodexBridgeClient.js');
 const ClineBridgeClient = require('./ClineBridgeClient.js');
 const KimiBridgeClient = require('./KimiBridgeClient.js');
@@ -27,8 +28,10 @@ const OAUTH_REFRESH_THRESHOLD_SECONDS = 300;
 const PROMPT_OUTPUT_CHARACTER_STATS_FILENAME = 'prompt-output-character-stats.json';
 const PROMPT_OUTPUT_CHARACTER_STATS_VERSION = 1;
 const RECENT_STORY_MESSAGE_BOUNDARY_MARKER = '[[[AI_RPG_INTERNAL_MESSAGE_BOUNDARY_RECENT_STORY_HISTORY_V1]]]';
+const BASE_CONTEXT_SECTION_MESSAGE_BOUNDARY_MARKER = '[[[AI_RPG_INTERNAL_MESSAGE_BOUNDARY_BASE_CONTEXT_SECTION_V1]]]';
 const BASE_CONTEXT_END_MARKER = '[[[AI_RPG_INTERNAL_BASE_CONTEXT_END_V1]]]';
 const BASE_CONTEXT_NO_TOOL_CALLS_INSTRUCTION = 'Do not make tool calls.';
+const MAX_BASE_CONTEXT_SECTION_MESSAGE_BOUNDARIES = 12;
 const BASE_CONTEXT_LEGACY_CHECK_TOOL_NAMES = new Set([
     'resolveAttack',
     'resolveAreaAttack',
@@ -137,6 +140,7 @@ class LLMClient {
     static #allModelsSemaphore = null;
     static #allModelsSemaphoreLimit = null;
     static #promptQueueReservationStates = new WeakMap();
+    static #promptProgressGroupContext = new AsyncLocalStorage();
     static #forcedOutputFixtureSource = null;
     static #forcedOutputFixtureData = null;
     static #forcedOutputLabelCounters = new Map();
@@ -250,21 +254,77 @@ class LLMClient {
         }, 1000);
     }
 
-    static #trackStreamStart(label, { startTimeoutMs = null, continueTimeoutMs = null, isBackground = false, model = null, promptText = '', progressGroupId = null, receivedUnit = 'characters' } = {}) {
+    static #trackStreamStart(label, { startTimeoutMs = null, continueTimeoutMs = null, isBackground = false, model = null, promptText = '', progressGroupId = null, progressGroupTargetLabel = null, receivedUnit = 'characters' } = {}) {
         if (!LLMClient.#shouldTrackPromptProgress()) {
             return null;
         }
-        const idNum = ++LLMClient.#streamCounter;
         const promptLabel = typeof label === 'string' && label.trim() ? label.trim() : 'chat';
         const normalizedPromptLabel = LLMClient.#normalizePromptLabel(promptLabel) || 'chat';
-        const characterStats = LLMClient.getPromptOutputCharacterStats(promptLabel);
-        const targetCharacters = LLMClient.#resolvePromptProgressTargetForRun(promptLabel, characterStats);
-        const id = `${promptLabel}_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
         const startTs = Date.now();
-        const labelWithCounter = `${promptLabel}[${idNum}]`;
         const startDeadline = Number.isFinite(startTimeoutMs) ? startTs + startTimeoutMs : null;
         const continueDeadline = null; // set after first received data arrives
         const normalizedReceivedUnit = receivedUnit === 'bytes' ? 'bytes' : 'characters';
+        const resolvedProgressGroupId = typeof progressGroupId === 'string' && progressGroupId.trim()
+            ? progressGroupId.trim()
+            : null;
+        const resolvedProgressGroupTargetLabel = typeof progressGroupTargetLabel === 'string' && progressGroupTargetLabel.trim()
+            ? LLMClient.#normalizePromptLabel(progressGroupTargetLabel)
+            : null;
+        const progressTargetLabel = resolvedProgressGroupTargetLabel || promptLabel;
+        const characterStats = LLMClient.getPromptOutputCharacterStats(progressTargetLabel);
+        const targetCharacters = LLMClient.#resolvePromptProgressTargetForRun(progressTargetLabel, characterStats);
+
+        if (resolvedProgressGroupId) {
+            for (const [existingId, existingEntry] of LLMClient.#streamProgress.active.entries()) {
+                if (existingEntry?.progressGroupId !== resolvedProgressGroupId) {
+                    continue;
+                }
+                if (LLMClient.#abortControllers.has(existingId)) {
+                    throw new Error(`Prompt progress group '${resolvedProgressGroupId}' cannot run concurrent requests.`);
+                }
+                if (existingEntry.progressGroupTargetLabel !== resolvedProgressGroupTargetLabel) {
+                    throw new Error(`Prompt progress group '${resolvedProgressGroupId}' changed its target label.`);
+                }
+                const previousReceivedCount = Number.isFinite(existingEntry.receivedCount)
+                    ? existingEntry.receivedCount
+                    : (Number.isFinite(existingEntry.bytes) ? existingEntry.bytes : 0);
+                const previousBytes = Number.isFinite(existingEntry.bytes)
+                    ? existingEntry.bytes
+                    : previousReceivedCount;
+                Object.assign(existingEntry, {
+                    promptLabel,
+                    normalizedPromptLabel,
+                    model: model || null,
+                    bytes: previousBytes,
+                    receivedCount: previousReceivedCount,
+                    receivedUnit: normalizedReceivedUnit,
+                    countedPreviewText: '',
+                    promptText: typeof promptText === 'string' ? promptText : '',
+                    previewText: '',
+                    failedResponses: [
+                        ...(LLMClient.#streamProgress.failedResponsesByGroup.get(resolvedProgressGroupId) || [])
+                    ],
+                    responseFailed: false,
+                    hasTextPreview: false,
+                    stageStartTs: startTs,
+                    stageReceivedStartCount: previousReceivedCount,
+                    startDeadline,
+                    continueDeadline,
+                    firstByteTs: null,
+                    isBackground: Boolean(isBackground),
+                    isComplete: false,
+                    isGroupWaiting: false
+                });
+                delete existingEntry.completedAt;
+                LLMClient.#ensureProgressTicker();
+                LLMClient.#broadcastProgress(false, { force: true });
+                return existingId;
+            }
+        }
+
+        const idNum = ++LLMClient.#streamCounter;
+        const id = `${promptLabel}_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+        const labelWithCounter = `${promptLabel}[${idNum}]`;
         LLMClient.#streamProgress.active.set(id, {
             label: labelWithCounter,
             promptLabel,
@@ -279,17 +339,21 @@ class LLMClient {
             countedPreviewText: '',
             promptText: typeof promptText === 'string' ? promptText : '',
             previewText: '',
-            progressGroupId,
-            failedResponses: progressGroupId
-                ? [...(LLMClient.#streamProgress.failedResponsesByGroup.get(progressGroupId) || [])]
+            progressGroupId: resolvedProgressGroupId,
+            progressGroupTargetLabel: resolvedProgressGroupTargetLabel,
+            failedResponses: resolvedProgressGroupId
+                ? [...(LLMClient.#streamProgress.failedResponsesByGroup.get(resolvedProgressGroupId) || [])]
                 : [],
             responseFailed: false,
             hasTextPreview: false,
             startTs,
+            stageStartTs: startTs,
+            stageReceivedStartCount: 0,
             startDeadline,
             continueDeadline,
             firstByteTs: null,
-            isBackground: Boolean(isBackground)
+            isBackground: Boolean(isBackground),
+            isGroupWaiting: false
         });
         LLMClient.#ensureProgressTicker();
         return id;
@@ -1029,21 +1093,9 @@ class LLMClient {
         }
     }
 
-    static #trackStreamEnd(id) {
-        if (!id) return;
-        if (LLMClient.#streamProgress.broadcastTimer) {
-            LLMClient.#broadcastProgress(false, { force: true });
-        }
-        const entry = LLMClient.#streamProgress.active.get(id);
-        LLMClient.#abortControllers.delete(id);
-        if (!entry) {
-            if (!LLMClient.#streamProgress.active.size) {
-                LLMClient.#streamProgress.lastBroadcastHadEntries = false;
-                LLMClient.#broadcastProgress(true);
-            }
-            return;
-        }
+    static #completeStreamProgressEntry(id, entry) {
         entry.isComplete = true;
+        entry.isGroupWaiting = false;
         entry.startDeadline = null;
         entry.continueDeadline = null;
         entry.completedAt = Date.now();
@@ -1060,6 +1112,32 @@ class LLMClient {
             }
             LLMClient.#broadcastProgress(allDone, { force: true });
         }, PROMPT_PROGRESS_COMPLETION_HOLD_MS);
+    }
+
+    static #trackStreamEnd(id) {
+        if (!id) return;
+        if (LLMClient.#streamProgress.broadcastTimer) {
+            LLMClient.#broadcastProgress(false, { force: true });
+        }
+        const entry = LLMClient.#streamProgress.active.get(id);
+        LLMClient.#abortControllers.delete(id);
+        if (!entry) {
+            if (!LLMClient.#streamProgress.active.size) {
+                LLMClient.#streamProgress.lastBroadcastHadEntries = false;
+                LLMClient.#broadcastProgress(true);
+            }
+            return;
+        }
+        if (entry.progressGroupId) {
+            entry.isComplete = false;
+            entry.isGroupWaiting = true;
+            entry.startDeadline = null;
+            entry.continueDeadline = null;
+            entry.completedAt = Date.now();
+            LLMClient.#broadcastProgress(false, { force: true });
+            return;
+        }
+        LLMClient.#completeStreamProgressEntry(id, entry);
     }
 
     static recordPromptProgressGroupFailure(progressGroupId, responseText) {
@@ -1102,12 +1180,44 @@ class LLMClient {
         }
     }
 
-    static clearPromptProgressGroup(progressGroupId) {
+    static clearPromptProgressGroup(progressGroupId, { recordOutputCharacters = false } = {}) {
         const resolvedGroupId = typeof progressGroupId === 'string' ? progressGroupId.trim() : '';
         if (!resolvedGroupId) {
             throw new Error('Prompt progress group id is required when clearing group state.');
         }
+        if (typeof recordOutputCharacters !== 'boolean') {
+            throw new Error('Prompt progress group recordOutputCharacters must be a boolean.');
+        }
         LLMClient.#streamProgress.failedResponsesByGroup.delete(resolvedGroupId);
+        let recordingError = null;
+        let recordedOutput = false;
+        for (const [promptId, entry] of LLMClient.#streamProgress.active.entries()) {
+            if (entry?.progressGroupId !== resolvedGroupId) {
+                continue;
+            }
+            LLMClient.#abortControllers.delete(promptId);
+            if (recordOutputCharacters && !recordedOutput) {
+                try {
+                    if (entry.receivedUnit !== 'characters') {
+                        throw new Error(`Prompt progress group '${resolvedGroupId}' cannot record non-character output stats.`);
+                    }
+                    if (typeof entry.progressGroupTargetLabel !== 'string' || !entry.progressGroupTargetLabel) {
+                        throw new Error(`Prompt progress group '${resolvedGroupId}' is missing its target label.`);
+                    }
+                    const receivedCount = Number.isFinite(entry.receivedCount)
+                        ? entry.receivedCount
+                        : entry.bytes;
+                    LLMClient.recordPromptOutputCharacters(entry.progressGroupTargetLabel, receivedCount);
+                    recordedOutput = true;
+                } catch (error) {
+                    recordingError = error;
+                }
+            }
+            LLMClient.#completeStreamProgressEntry(promptId, entry);
+        }
+        if (recordingError) {
+            throw recordingError;
+        }
     }
 
     static cancelPrompt(streamId, reason = 'Prompt canceled by user') {
@@ -1244,13 +1354,19 @@ class LLMClient {
         const entries = Array.from(LLMClient.#streamProgress.active.entries()).map(([id, entry]) => {
             const deadline = entry.continueDeadline || entry.startDeadline || null;
             const timeoutSeconds = deadline ? Math.max(0, Math.round((deadline - now) / 1000)) : null;
-            const latencyMs = entry.firstByteTs ? (entry.firstByteTs - entry.startTs) : null;
+            const stageStartTs = Number.isFinite(entry.stageStartTs) ? entry.stageStartTs : entry.startTs;
+            const latencyMs = entry.firstByteTs ? (entry.firstByteTs - stageStartTs) : null;
             const elapsedAfterFirst = entry.firstByteTs ? Math.max(1, (now - entry.firstByteTs) / 1000) : null;
             const receivedCount = Number.isFinite(entry.receivedCount) ? entry.receivedCount : entry.bytes;
             const receivedUnit = entry.receivedUnit === 'characters' ? 'characters' : 'bytes';
-            const avgReceivedPerSecond = elapsedAfterFirst ? Math.round(receivedCount / elapsedAfterFirst) : null;
+            const stageReceivedStartCount = Number.isFinite(entry.stageReceivedStartCount)
+                ? entry.stageReceivedStartCount
+                : 0;
+            const stageReceivedCount = receivedCount - stageReceivedStartCount;
+            const avgReceivedPerSecond = elapsedAfterFirst ? Math.round(stageReceivedCount / elapsedAfterFirst) : null;
             const targetCharacters = Number.isFinite(entry.targetCharacters) ? entry.targetCharacters : null;
             const isComplete = entry.isComplete === true;
+            const isGroupWaiting = entry.isGroupWaiting === true;
             const progressFraction = isComplete
                 ? 1
                 : targetCharacters === null
@@ -1266,6 +1382,7 @@ class LLMClient {
                 targetCharacters,
                 progressFraction,
                 isComplete,
+                isGroupWaiting,
                 runCount: Number.isInteger(entry.runCount) ? entry.runCount : 0,
                 averageOutputCharacters: Number.isFinite(entry.averageOutputCharacters)
                     ? entry.averageOutputCharacters
@@ -1273,6 +1390,9 @@ class LLMClient {
                 promptText: typeof entry.promptText === 'string' ? entry.promptText : '',
                 previewText: typeof entry.previewText === 'string' ? entry.previewText : '',
                 progressGroupId: typeof entry.progressGroupId === 'string' ? entry.progressGroupId : null,
+                progressGroupTargetLabel: typeof entry.progressGroupTargetLabel === 'string'
+                    ? entry.progressGroupTargetLabel
+                    : null,
                 failedResponses: Array.isArray(entry.failedResponses)
                     ? entry.failedResponses.filter(response => typeof response === 'string')
                     : [],
@@ -1879,6 +1999,29 @@ class LLMClient {
         }
     }
 
+    static async withPromptProgressGroup({ progressGroupId, progressGroupTargetLabel } = {}, callback) {
+        if (typeof callback !== 'function') {
+            throw new Error('withPromptProgressGroup requires an async callback.');
+        }
+        if (typeof progressGroupId !== 'string' || !progressGroupId.trim()) {
+            throw new Error('withPromptProgressGroup requires a non-empty progressGroupId.');
+        }
+        if (typeof progressGroupTargetLabel !== 'string' || !progressGroupTargetLabel.trim()) {
+            throw new Error('withPromptProgressGroup requires a non-empty progressGroupTargetLabel.');
+        }
+        const normalizedTargetLabel = LLMClient.#normalizePromptLabel(progressGroupTargetLabel);
+        if (!normalizedTargetLabel) {
+            throw new Error('withPromptProgressGroup progressGroupTargetLabel must resolve to a prompt label.');
+        }
+        if (LLMClient.#promptProgressGroupContext.getStore()) {
+            throw new Error('Nested prompt progress groups are not supported.');
+        }
+        return await LLMClient.#promptProgressGroupContext.run(Object.freeze({
+            progressGroupId: progressGroupId.trim(),
+            progressGroupTargetLabel: normalizedTargetLabel
+        }), callback);
+    }
+
     static writeLogFile({
         prefix = 'log',
         metadataLabel = '',
@@ -2075,6 +2218,10 @@ class LLMClient {
         return RECENT_STORY_MESSAGE_BOUNDARY_MARKER;
     }
 
+    static getBaseContextSectionMessageBoundaryMarker() {
+        return BASE_CONTEXT_SECTION_MESSAGE_BOUNDARY_MARKER;
+    }
+
     static getBaseContextEndMarker() {
         return BASE_CONTEXT_END_MARKER;
     }
@@ -2203,11 +2350,18 @@ class LLMClient {
         const replacement = noToolCallsInstructionAdded
             ? `\n\n${BASE_CONTEXT_NO_TOOL_CALLS_INSTRUCTION}\n\n`
             : '';
-        const normalizedMessages = messages.map((message, index) => (
-            index === markerMessageIndex
-                ? { ...message, content: `${markerParts[0]}${replacement}${markerParts[1]}` }
-                : message
-        ));
+        const normalizedMessages = messages.flatMap((message, index) => {
+            if (index !== markerMessageIndex) {
+                return [message];
+            }
+            if (isGenericPrompt) {
+                return [{ ...message, content: `${markerParts[0]}${markerParts[1]}` }];
+            }
+            return [
+                { ...message, content: markerParts[0] },
+                { ...message, content: `${replacement}${markerParts[1]}` }
+            ];
+        });
 
         if (isGenericPrompt) {
             return {
@@ -2238,11 +2392,23 @@ class LLMClient {
         }
 
         const expandedMessages = [];
-        let boundaryCount = 0;
+        let recentStoryBoundaryCount = 0;
+        let sectionBoundaryCount = 0;
+        let sourceMessageCount = 0;
+        const boundaryDefinitions = [
+            {
+                marker: BASE_CONTEXT_SECTION_MESSAGE_BOUNDARY_MARKER,
+                type: 'section'
+            },
+            {
+                marker: RECENT_STORY_MESSAGE_BOUNDARY_MARKER,
+                type: 'recent-story'
+            }
+        ];
 
         for (const message of messages) {
             const content = message?.content;
-            if (typeof content !== 'string' || !content.includes(RECENT_STORY_MESSAGE_BOUNDARY_MARKER)) {
+            if (typeof content !== 'string' || !boundaryDefinitions.some(({ marker }) => content.includes(marker))) {
                 expandedMessages.push(message);
                 continue;
             }
@@ -2251,25 +2417,55 @@ class LLMClient {
                 ? message.role.trim().toLowerCase()
                 : '';
             if (role !== 'user') {
-                throw new Error('The recent-story prompt message boundary may only appear in a user message.');
+                throw new Error('Internal prompt message boundaries may only appear in a user message.');
             }
 
-            const parts = content.split(RECENT_STORY_MESSAGE_BOUNDARY_MARKER);
-            boundaryCount += parts.length - 1;
-            if (boundaryCount > 1 || parts.length !== 2) {
+            sourceMessageCount += 1;
+            if (sourceMessageCount > 1) {
+                throw new Error('Internal prompt message boundaries must all appear in one source user message.');
+            }
+
+            const parts = [];
+            let cursor = 0;
+            while (cursor < content.length) {
+                let nextBoundary = null;
+                for (const definition of boundaryDefinitions) {
+                    const index = content.indexOf(definition.marker, cursor);
+                    if (index < 0 || (nextBoundary && index >= nextBoundary.index)) {
+                        continue;
+                    }
+                    nextBoundary = { ...definition, index };
+                }
+                if (!nextBoundary) {
+                    break;
+                }
+
+                parts.push(content.slice(cursor, nextBoundary.index));
+                cursor = nextBoundary.index + nextBoundary.marker.length;
+                if (nextBoundary.type === 'recent-story') {
+                    recentStoryBoundaryCount += 1;
+                } else {
+                    sectionBoundaryCount += 1;
+                }
+            }
+            parts.push(content.slice(cursor));
+
+            if (recentStoryBoundaryCount > 1) {
                 throw new Error('A prompt may contain only one recent-story message boundary.');
             }
-            if (!parts[0].trim() || !parts[1].trim()) {
-                throw new Error('The recent-story prompt message boundary requires non-empty content on both sides.');
+            if (sectionBoundaryCount > MAX_BASE_CONTEXT_SECTION_MESSAGE_BOUNDARIES) {
+                throw new Error(`A prompt may contain at most ${MAX_BASE_CONTEXT_SECTION_MESSAGE_BOUNDARIES} base-context section message boundaries.`);
+            }
+            if (parts.some(part => !part.trim())) {
+                throw new Error('Internal prompt message boundaries require non-empty content between every boundary.');
             }
 
-            expandedMessages.push(
-                { ...message, content: parts[0] },
-                { ...message, content: parts[1] }
-            );
+            expandedMessages.push(...parts.map(part => ({ ...message, content: part })));
         }
 
-        return boundaryCount > 0 ? expandedMessages : messages;
+        return recentStoryBoundaryCount > 0 || sectionBoundaryCount > 0
+            ? expandedMessages
+            : messages;
     }
 
     static #buildPromptCachebusterLine() {
@@ -4161,6 +4357,7 @@ class LLMClient {
         assistantResponseSeed = undefined,
         queueReservation = null,
         progressGroupId = null,
+        progressGroupTargetLabel = null,
     } = {}) {
         const resolvedOutput = LLMClient.resolveOutput(output);
         const isSilent = resolvedOutput === 'silent';
@@ -4242,17 +4439,65 @@ class LLMClient {
                 prefill,
                 assistantResponseSeed,
                 progressGroupId,
+                progressGroupTargetLabel,
                 forceOutput: forceOutput !== null && forceOutput !== undefined ? '[provided]' : null
             });
         }
+        const inheritedProgressGroup = LLMClient.#promptProgressGroupContext.getStore() || null;
+        if (
+            inheritedProgressGroup
+            && progressGroupId !== null
+            && progressGroupId !== undefined
+            && (
+                typeof progressGroupId !== 'string'
+                || progressGroupId.trim() !== inheritedProgressGroup.progressGroupId
+            )
+        ) {
+            throw new Error('chatCompletion progressGroupId conflicts with its inherited prompt progress group.');
+        }
+        if (
+            inheritedProgressGroup
+            && progressGroupTargetLabel !== null
+            && progressGroupTargetLabel !== undefined
+            && (
+                typeof progressGroupTargetLabel !== 'string'
+                || LLMClient.#normalizePromptLabel(progressGroupTargetLabel)
+                    !== inheritedProgressGroup.progressGroupTargetLabel
+            )
+        ) {
+            throw new Error('chatCompletion progressGroupTargetLabel conflicts with its inherited prompt progress group.');
+        }
+        const effectiveProgressGroupId = progressGroupId ?? inheritedProgressGroup?.progressGroupId ?? null;
+        const effectiveProgressGroupTargetLabel = progressGroupTargetLabel
+            ?? inheritedProgressGroup?.progressGroupTargetLabel
+            ?? null;
         const resolvedProgressGroupId = (() => {
-            if (progressGroupId === null || progressGroupId === undefined) {
+            if (effectiveProgressGroupId === null || effectiveProgressGroupId === undefined) {
                 return null;
             }
-            if (typeof progressGroupId !== 'string' || !progressGroupId.trim()) {
+            if (typeof effectiveProgressGroupId !== 'string' || !effectiveProgressGroupId.trim()) {
                 throw new Error('chatCompletion progressGroupId must be a non-empty string when provided.');
             }
-            return progressGroupId.trim();
+            return effectiveProgressGroupId.trim();
+        })();
+        const resolvedProgressGroupTargetLabel = (() => {
+            if (effectiveProgressGroupTargetLabel === null || effectiveProgressGroupTargetLabel === undefined) {
+                if (resolvedProgressGroupId) {
+                    throw new Error('chatCompletion progressGroupTargetLabel is required with progressGroupId.');
+                }
+                return null;
+            }
+            if (!resolvedProgressGroupId) {
+                throw new Error('chatCompletion progressGroupTargetLabel requires progressGroupId.');
+            }
+            if (typeof effectiveProgressGroupTargetLabel !== 'string' || !effectiveProgressGroupTargetLabel.trim()) {
+                throw new Error('chatCompletion progressGroupTargetLabel must be a non-empty string when provided.');
+            }
+            const normalizedLabel = LLMClient.#normalizePromptLabel(effectiveProgressGroupTargetLabel);
+            if (!normalizedLabel) {
+                throw new Error('chatCompletion progressGroupTargetLabel must resolve to a prompt label.');
+            }
+            return normalizedLabel;
         })();
         const promptQueueReservationState = LLMClient.#beginPromptQueueReservationRequest(queueReservation);
         let currentTime = Date.now();
@@ -4812,6 +5057,7 @@ class LLMClient {
                                 model: resolvedModel,
                                 promptText: LLMClient.formatMessagesForPromptProgress(payload.messages),
                                 progressGroupId: resolvedProgressGroupId,
+                                progressGroupTargetLabel: resolvedProgressGroupTargetLabel,
                                 receivedUnit: 'characters'
                             })
                             : null;
@@ -4891,6 +5137,7 @@ class LLMClient {
                         let streamFinishReason = null;
                         let streamUsage = null;
                         let timer = null;
+                        let settled = false;
 
                         const rejectWithPartial = (err) => {
                             const error = err instanceof Error ? err : new Error(String(err));
@@ -4905,10 +5152,63 @@ class LLMClient {
                             }
                         };
 
+                        const logStreamChunk = (payloadStr) => {
+                            if (!shouldLogStreamChunks) {
+                                return;
+                            }
+                            const label = metadataLabel || 'unknown';
+                            console.log(`========== LLM STREAM CHUNK [${label}] ==========`);
+                            console.log(payloadStr);
+                            console.log('===============================================');
+                        };
+
+                        const removeStreamListeners = () => {
+                            response.data.removeListener('data', handleData);
+                            response.data.removeListener('end', handleEnd);
+                            response.data.removeListener('error', handleError);
+                        };
+
+                        const finishStream = () => {
+                            if (settled) {
+                                return;
+                            }
+                            settled = true;
+                            clear();
+                            removeStreamListeners();
+                            LLMClient.#trackStreamEnd(streamId);
+                            responseContent = assembled;
+                            try {
+                                const toolCalls = LLMClient.#normalizeToolCalls(
+                                    Array.from(streamToolCallMap.values()).sort((a, b) => a.index - b.index),
+                                    { sourceLabel: 'streamed response', requireJsonArguments: true }
+                                );
+                                resolve({
+                                    content: assembled,
+                                    toolCalls,
+                                    usage: streamUsage,
+                                    finishReason: streamFinishReason
+                                });
+                            } catch (error) {
+                                rejectWithPartial(error);
+                            }
+
+                        };
+
+                        const failStream = (error) => {
+                            if (settled) {
+                                return;
+                            }
+                            settled = true;
+                            clear();
+                            removeStreamListeners();
+                            LLMClient.#trackStreamEnd(streamId);
+                            rejectWithPartial(error);
+                        };
+
                         const resetTimer = (ms) => {
                             clear();
                             timer = setTimeout(() => {
-                                rejectWithPartial(new Error('Stream timeout'));
+                                failStream(new Error('Stream timeout'));
                             }, ms);
                             const entry = streamId ? LLMClient.#streamProgress.active.get(streamId) : null;
                             if (entry) {
@@ -4921,19 +5221,7 @@ class LLMClient {
                             }
                         };
 
-                        const logStreamChunk = (payloadStr) => {
-                            if (!shouldLogStreamChunks) {
-                                return;
-                            }
-                            const label = metadataLabel || 'unknown';
-                            console.log(`========== LLM STREAM CHUNK [${label}] ==========`);
-                            console.log(payloadStr);
-                            console.log('===============================================');
-                        };
-
-                        resetTimer(streamStartTimeoutMs);
-
-                        response.data.on('data', chunk => {
+                        const handleData = (chunk) => {
                             buffer += chunk.toString('utf8');
                             const lines = buffer.split('\n');
                             buffer = lines.pop() || '';
@@ -4971,28 +5259,16 @@ class LLMClient {
                                     warn('Failed to parse stream chunk:', parseError?.message || parseError);
                                 }
                             }
-                        });
+                        };
+                        const handleEnd = () => finishStream();
+                        const handleError = error => failStream(error);
 
-                        response.data.on('end', () => {
-                            clear();
-                            LLMClient.#trackStreamEnd(streamId);
-                            responseContent = assembled;
-                            const toolCalls = LLMClient.#normalizeToolCalls(
-                                Array.from(streamToolCallMap.values()).sort((a, b) => a.index - b.index),
-                                { sourceLabel: 'streamed response', requireJsonArguments: true }
-                            );
-                            resolve({
-                                content: assembled,
-                                toolCalls,
-                                usage: streamUsage,
-                                finishReason: streamFinishReason
-                            });
-                        });
-                        response.data.on('error', err => {
-                            clear();
-                            LLMClient.#trackStreamEnd(streamId);
-                            rejectWithPartial(err);
-                        });
+                        response.data.on('data', handleData);
+                        response.data.on('end', handleEnd);
+                        response.data.on('error', handleError);
+                        if (!settled) {
+                            resetTimer(streamStartTimeoutMs);
+                        }
                     });
 
                     if (payload.stream) {
@@ -5346,17 +5622,25 @@ class LLMClient {
             const finalProgressEntry = streamTrackerId && LLMClient.#streamProgress.active.has(streamTrackerId)
                 ? LLMClient.#streamProgress.active.get(streamTrackerId)
                 : null;
-            const finalReceivedCount = finalProgressEntry
+            const finalCumulativeReceivedCount = finalProgressEntry
                 ? (Number.isFinite(finalProgressEntry.receivedCount) ? finalProgressEntry.receivedCount : finalProgressEntry.bytes)
+                : null;
+            const finalStageReceivedStartCount = Number.isFinite(finalProgressEntry?.stageReceivedStartCount)
+                ? finalProgressEntry.stageReceivedStartCount
+                : 0;
+            const finalReceivedCount = Number.isFinite(finalCumulativeReceivedCount)
+                ? finalCumulativeReceivedCount - finalStageReceivedStartCount
                 : null;
             const finalReceivedKey = finalProgressEntry?.receivedUnit === 'characters' ? 'received' : 'bytes';
             const receivedNote = Number.isFinite(finalReceivedCount) ? ` | ${finalReceivedKey}=${finalReceivedCount}` : '';
             const tokensNote = Number.isFinite(lastTotalTokens) ? ` | tokens=${lastTotalTokens}` : '';
             const label = metadataLabel || 'unknown';
             log(`Prompt '${label}' completed after ${attempt} retries in ${totalTime / 1000} seconds.${receivedNote}${tokensNote}`);
-            LLMClient.#recordSuccessfulCompletionOutputCharacters(metadataLabel, responseContent, {
-                toolCalls: finalResponseToolCalls
-            });
+            if (!resolvedProgressGroupId) {
+                LLMClient.#recordSuccessfulCompletionOutputCharacters(metadataLabel, responseContent, {
+                    toolCalls: finalResponseToolCalls
+                });
+            }
             return responseContent;
         } finally {
             LLMClient.#endPromptQueueReservationRequest(promptQueueReservationState);

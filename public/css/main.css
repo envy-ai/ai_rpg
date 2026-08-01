@@ -7624,6 +7624,11 @@ body.dark .thing-toggle-hint {
   animation: prompt-progress-complete-pulse 250ms ease-out;
 }
 
+.prompt-progress-dock__one-line-row--group-waiting .prompt-progress-dock__one-line-fill {
+  background: linear-gradient(90deg, rgba(59, 130, 246, 0.48), rgba(37, 99, 235, 0.6) 52%, rgba(29, 78, 216, 0.52));
+  box-shadow: 0 0 18px rgba(59, 130, 246, 0.7);
+}
+
 .prompt-progress-dock__one-line-content {
   position: relative;
   z-index: 1;
@@ -7707,6 +7712,11 @@ body.dark .thing-toggle-hint {
 
 .prompt-progress-bar--complete .prompt-progress-bar__fill {
   animation: prompt-progress-complete-pulse 250ms ease-out;
+}
+
+.prompt-progress-bar--group-waiting .prompt-progress-bar__fill {
+  background: linear-gradient(90deg, #60a5fa, #3b82f6 48%, #1d4ed8);
+  box-shadow: 0 0 12px rgba(59, 130, 246, 0.92);
 }
 
 @keyframes prompt-progress-complete-pulse {
@@ -9203,6 +9213,11 @@ body.modal-open {
   background: linear-gradient(90deg, #fde047, #facc15 48%, #f97316);
   box-shadow: 0 0 10px rgba(250, 204, 21, 0.9);
   transition: width 0.3s ease;
+}
+
+.modal__prompt-progress--group-waiting .modal__prompt-progress-fill {
+  background: linear-gradient(90deg, #60a5fa, #3b82f6 48%, #1d4ed8);
+  box-shadow: 0 0 12px rgba(59, 130, 246, 0.92);
 }
 
 .modal__header,

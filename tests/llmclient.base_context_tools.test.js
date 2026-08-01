@@ -116,9 +116,21 @@ test('chatCompletion sends one shared tool schema for tool-enabled and formerly 
     assert.equal(toolLessPayload.tool_choice, 'auto');
     assert.deepEqual(toolEnabledPayload.tools, toolLessPayload.tools);
     assert.equal(toolEnabledPayload.tool_choice, 'auto');
-    assert.equal(toolLessPayload.messages.length, 3);
-    assert.match(toolLessPayload.messages[2].content, /Do not make tool calls\./);
-    assert.doesNotMatch(toolEnabledPayload.messages[2].content, /Do not make tool calls\./);
+    assert.equal(toolLessPayload.messages.length, 4);
+    assert.equal(toolEnabledPayload.messages.length, 4);
+    assert.deepEqual(
+        toolLessPayload.messages.slice(0, 3),
+        toolEnabledPayload.messages.slice(0, 3),
+        'the shared base context must remain byte-identical through current conditions'
+    );
+    assert.equal(toolLessPayload.messages[1].content, 'Stable base context.\n');
+    assert.equal(
+        toolLessPayload.messages[2].content,
+        '\nRecent story and current conditions.\n'
+    );
+    assert.match(toolLessPayload.messages[3].content, /Do not make tool calls\./);
+    assert.doesNotMatch(toolEnabledPayload.messages[3].content, /Do not make tool calls\./);
+    assert.match(toolEnabledPayload.messages[3].content, /Prompt-specific instructions\./);
     assert.doesNotMatch(JSON.stringify(toolLessPayload.messages), /AI_RPG_INTERNAL_/);
     assert.doesNotMatch(JSON.stringify(toolEnabledPayload.messages), /AI_RPG_INTERNAL_/);
 });

@@ -5233,9 +5233,10 @@ class Events {
                 const parsed = this.parseTinyBrainEventXmlChunk(response);
                 return parsed && parsed.terminate ? { value: null } : parsed;
             },
-            complete: async ({ messages }) => {
+            complete: async ({ messages, queueReservation }) => {
                 const response = await LLMClient.chatCompletion({
                     messages,
+                    queueReservation,
                     metadataLabel: "event_checks",
                     errorLogLabel: "events-xml",
                     metadata: {

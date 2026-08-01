@@ -800,3 +800,64 @@ Original prompt: In the modal that shows the prompt as it's running, check the F
   - Inspected `tmp/tinybrain-prompt-viewer.png`; Follow is visibly checked and the existing prompt/failed/response color treatments remain intact.
   - The required reusable browser smoke client passed against the live Kimi-backed server without reported page or console errors; `tmp/follow-default-webgame/shot-0.png` confirms the Play UI still renders normally.
 - TODO: none.
+
+Original prompt: Restart the server, then make TinyBrain prompts share one AI Prompts progress bar across all sub-prompts, with the grouped bar blue while no sub-prompt is actively streaming.
+
+- Restarted the live game on port 7777 with `config.yaml.qwen35B-A3B`; the server loaded the preceding shared base-context tool changes.
+- Changed grouped `LLMClient` progress tracking to reuse one stable entry/id across every sequential request with the same `progressGroupId`, including TinyBrain checkpoints, retries, and tool-loop rounds.
+- A completed sub-request now leaves that entry active as `isGroupWaiting: true` with a full progress fraction. The next request resets the same entry's per-stage prompt, preview, counts, target, timeout, and retry state; only `clearPromptProgressGroup()` supplies the final completion pulse/removal.
+- The dock's collapsed, one-line, and table bars plus open-modal aggregate bars render grouped waiting state in blue. One-line/table percent text says `waiting`; view remains enabled while retry/cancel are disabled until the next request starts.
+- Added server lifecycle, UI-source, and Chromium coverage. The focused server/UI tests and four prompt-progress Playwright scenarios pass.
+- Compiled `public/css/main.scss` to `public/css/main.css`.
+- Updated `docs/classes/LLMClient.md`, `docs/classes/TinyBrainPromptRunner.md`, `docs/server_llm_notes.md`, `docs/ui/modals_overlays.md`, `docs/ui/chat_interface.md`, and `docs/README.md`.
+- Inspected `tmp/tinybrain-shared-progress-blue-dock.png` and `tmp/tinybrain-shared-progress-blue.png`; the single waiting row and modal bar are visibly blue.
+- Full `npm run test:e2e:headless` passed: 36 tests passed and 4 opt-in scenarios skipped.
+- The required reusable browser smoke client completed without a browser-error artifact; `tmp/tinybrain-shared-progress-smoke/shot-0.png` was inspected and renders the Play UI normally.
+- The relevant TinyBrain runner cases pass. One unrelated pre-existing real-template fixture remains stale (`expected 8`, `actual 0`).
+- Restarted the live game again with `config.yaml.qwen35B-A3B` after implementation; the refreshed server is ready on port 7777 and `/api/hello` responds normally.
+- TODO: none.
+
+Original prompt: Make TinyBrain grouped progress accumulate received output across sub-prompts; keep the blue waiting bar at that accumulated progress and display its percentage instead of `waiting`.
+
+- Confirmed the tracker measures decoded output characters (the UI labels the count as `chars`), so this change will accumulate that existing received metric rather than inventing an inaccurate token estimate.
+- The cumulative percentage will use the sum of each sub-prompt's target estimate selected when that sub-prompt begins. Per-stage latency/rate accounting and completion logs will remain per-stage.
+- Grouped progress now preserves `receivedCount`/`bytes`, accumulates `targetCharacters`, and records a stage-start received offset so rate/log output remains per-stage.
+- Waiting entries no longer force `progressFraction: 1`; the browser percent formatters render their real exact/approximate percentage instead of `waiting`.
+- Focused lifecycle/UI source tests pass. The four-scenario Chromium prompt-progress suite passes.
+- Inspected `tmp/tinybrain-shared-progress-blue-dock.png` and `tmp/tinybrain-shared-progress-blue.png`; the blue waiting fill is visibly partial and the dock reads `84 chars ~35%`.
+- Updated the LLMClient, TinyBrain runner, server LLM, prompt dock/modal, and documentation index notes.
+- Full `npm run test:e2e:headless` passed: 36 tests passed and 4 opt-in scenarios skipped.
+- The required reusable browser smoke passed after rerunning outside the restricted Chromium sandbox. `tmp/tinybrain-cumulative-progress-smoke/shot-0.png` was inspected and the Play UI renders normally with no browser-error artifact.
+- Restarted the live server with `config.yaml.qwen35B-A3B`; it is ready on port 7777 and `/api/hello` responds normally.
+- TODO: none.
+
+Original prompt: Restart the server first, then fix TinyBrain grouped progress so it uses total received output over one fixed total expected output for the whole multiprompt instead of shrinking at each sub-prompt.
+
+- Restarted the live Q35B-A3B game server before beginning the fix; port 7777 responds normally.
+- Root cause: each stage preserved the numerator but added a new stage target to the denominator before receiving more output, making the displayed percentage fall at every boundary.
+- Chosen fix: select one dedicated multiprompt target at group start, preserve it for the run, use the direct accumulated-received / fixed-expected ratio, skip per-stage output-stat samples, and record one aggregate sample only after a successful full run.
+- Implemented required `progressGroupTargetLabel` support in `LLMClient`; player-action TinyBrain uses `player_action_tinybrain`, whose historical average or `player_action*` configured value is selected once and preserved.
+- Grouped sub-requests no longer write individual output-character samples. A successful non-rejected run records its accumulated total once when the group clears; errors and early rejection do not affect the expected-total history.
+- Grouped `progressFraction` is now the direct accumulated received count divided by the fixed group target. Focused lifecycle coverage confirms stage two begins at exactly stage one's waiting percentage and rises after new output.
+- Focused LLM lifecycle and four-scenario Chromium progress tests pass. The relevant API source integration test passes; the containing test file still has an unrelated existing local-config expectation failure for `improvement_prompt.enabled`.
+- Inspected `tmp/tinybrain-multiprompt-progress-monotonic.png`; the single blue TinyBrain row shows the accumulated `120 chars` at `~50%` after the next stage, with no boundary reset or percentage drop.
+- Full `npm run test:e2e:headless` passed: 36 tests passed and 4 opt-in scenarios skipped.
+- The required reusable browser smoke passed outside the restricted Chromium sandbox. `tmp/tinybrain-fixed-total-smoke/shot-0.png` was inspected, the Play UI renders normally, and no browser-error artifact was produced.
+- Updated LLMClient, TinyBrain, server-flow, prompt dock/modal, and documentation-index notes.
+- Restarted the finished server with `config.yaml.qwen35B-A3B`; exactly one process owns port 7777 and `/api/hello` responds normally.
+- TODO: none.
+
+Original prompt: Make every TinyBrain prompt, including event checks and future TinyBrain runners, keep one progress bar across sub-prompts; use the ordinary asymptotic progress curve and track one whole-run average.
+
+- Root cause: player actions manually owned their queue/progress-group lifecycle in `api.js`, while the TinyBrain XML event-check integration called `TinyBrainPromptRunner` without any group. Event-check stages therefore completed and cleared as independent prompts.
+- Moved queue reservation, async-scoped progress grouping, parse-failure reporting, final clearing, and aggregate-stat recording into `TinyBrainPromptRunner.run()` itself. Every current or future runner instance now receives the behavior without prompt-specific lifecycle code.
+- Added `LLMClient.withPromptProgressGroup(...)`, which makes every nested `chatCompletion()` and tool-loop round inherit one stable group id and dedicated `<metadataLabel>_tinybrain` target. Conflicting or nested group scopes fail explicitly.
+- Player actions use `player_action_tinybrain`; TinyBrain event checks use `event_checks_tinybrain`. Event `<done/>` is a successful whole-run completion and records the aggregate, while failed runs and rejected player actions do not alter the average.
+- Grouped progress now calls the same `calculatePromptProgressFraction(...)` curve as single prompts: 75% at the fixed expected whole-run total, then an asymptotic approach to 100%. Received output and target remain unchanged at stage boundaries, so the percentage stays monotonic.
+- Focused LLM progress, event TinyBrain, queue/concurrency, chat-tool-loop, prompt-dock, reusable future-runner lifecycle, and player-action integration tests pass. The full real-template runner file retains its unrelated existing stale fixture expectation (`expected 8`, `actual 0`), and the full API scheduling file retains its unrelated local `improvement_prompt.enabled` expectation.
+- Focused Chromium prompt-progress coverage passed 4/4. Inspected `tmp/tinybrain-multiprompt-progress-monotonic.png`; the blue shared row displays `120 chars ~37%`, the asymptotic value at half the target rather than the old direct 50%.
+- Full `npm run test:e2e:headless` passed: 36 tests passed and 4 fixture-dependent scenarios skipped.
+- Updated `docs/classes/LLMClient.md`, `docs/classes/TinyBrainPromptRunner.md`, `docs/classes/Events.md`, `docs/server_llm_notes.md`, `docs/config.md`, `docs/ui/modals_overlays.md`, `docs/ui/chat_interface.md`, and `docs/README.md`.
+- Restarted the live server with `config.yaml.qwen35B-A3B`; exactly one process owns port 7777 and `/api/hello` responds normally.
+- The required reusable browser smoke passed with no browser-error artifact. Inspected `tmp/tinybrain-universal-progress-smoke/shot-0.png`; the Play UI renders normally.
+- TODO: none.

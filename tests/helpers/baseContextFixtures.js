@@ -251,6 +251,10 @@ function loadBuildBasePromptContext({
         formatSceneStartWorldTimeLabel,
         partitionBaseContextHistoryBySceneCoverage: require('../../base_context_history.js')
             .partitionBaseContextHistoryBySceneCoverage,
+        resolveBatchedRecentHistoryTurnCount: require('../../base_context_history.js')
+            .resolveBatchedRecentHistoryTurnCount,
+        resolveRecentHistoryBatchInterval: require('../../base_context_history.js')
+            .resolveRecentHistoryBatchInterval,
         shouldExcludeSummaryEntry,
         shouldIncludeEntryInBaseContextHistory
     };

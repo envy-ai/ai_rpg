@@ -571,6 +571,9 @@ autosaves_to_retain: 50
 # Number of recent turns to include immediately before the AI generates prose. Previous turns are included further back in the prompt.
 recent_history_turns: 25
 
+# Move recent turns into older history in batches. A value of 1 preserves the former every-turn rollover.
+recent_history_batch_interval: 10
+
 # When true, base-context templates ignore prompt-level omission flags such as omitGameHistory.
 prompt_uses_caching: true
 

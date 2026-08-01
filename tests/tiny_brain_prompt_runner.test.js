@@ -2,6 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const path = require('node:path');
 const nunjucks = require('nunjucks');
+const LLMClient = require('../LLMClient.js');
 const {
     TinyBrainPromptExtension,
     TinyBrainPromptRunner,
@@ -220,6 +221,74 @@ test('tiny-brain accept_or_reject parser terminates the program on rejection', a
     assert.equal(completionCount, 1);
     assert.equal(result.aiResponse, '<rejected>Incomplete action.</rejected>');
     assert.equal(result.terminatedAtCheckpoint, 0);
+    assert.equal(result.recordProgressOutput, false);
+});
+
+test('tiny-brain runner owns one reusable progress group and aggregate-average lifecycle', { concurrency: false }, async () => {
+    const environment = createEnvironment('Write the final response.');
+    const renderState = TinyBrainPromptRunner.createRenderState();
+    const templateContext = { __tinyBrainState: renderState };
+    const initialRenderedTemplate = environment.render('wrapper.xml.njk', templateContext);
+    const originalWithQueueReservation = LLMClient.withPromptQueueReservation;
+    const originalWithProgressGroup = LLMClient.withPromptProgressGroup;
+    const originalClearProgressGroup = LLMClient.clearPromptProgressGroup;
+    const queueReservation = Object.freeze({ test: 'future-tinybrain-reservation' });
+    const progressGroups = [];
+    const clearedGroups = [];
+    let completionReservation = null;
+
+    LLMClient.withPromptQueueReservation = async (callback) => callback(queueReservation);
+    LLMClient.withPromptProgressGroup = async (options, callback) => {
+        progressGroups.push(options);
+        return await callback();
+    };
+    LLMClient.clearPromptProgressGroup = (progressGroupId, options) => {
+        clearedGroups.push({ progressGroupId, options });
+    };
+
+    try {
+        const runner = new TinyBrainPromptRunner({
+            promptEnv: environment,
+            parseXMLTemplate: parseTemplate,
+            retryAttempts: 0,
+            metadataLabel: 'future_prompt',
+            logPrefix: 'future_tinybrain',
+            logPrompt(options) {
+                return options.filePath || '/test/logs/future-tinybrain.log';
+            },
+            async complete({ messages, queueReservation: activeReservation }) {
+                completionReservation = activeReservation;
+                const aiResponse = 'Finished future prompt.';
+                return {
+                    aiResponse,
+                    conversationMessages: [...messages, { role: 'assistant', content: aiResponse }],
+                    toolInvocations: []
+                };
+            }
+        });
+
+        const result = await runner.run({
+            initialRenderedTemplate,
+            templateContext,
+            renderState,
+            programTemplateName: 'program.njk'
+        });
+
+        assert.equal(result.recordProgressOutput, true);
+        assert.equal(completionReservation, queueReservation);
+        assert.deepEqual(progressGroups, [{
+            progressGroupId: renderState.runId,
+            progressGroupTargetLabel: 'future_prompt_tinybrain'
+        }]);
+        assert.deepEqual(clearedGroups, [{
+            progressGroupId: renderState.runId,
+            options: { recordOutputCharacters: true }
+        }]);
+    } finally {
+        LLMClient.withPromptQueueReservation = originalWithQueueReservation;
+        LLMClient.withPromptProgressGroup = originalWithProgressGroup;
+        LLMClient.clearPromptProgressGroup = originalClearProgressGroup;
+    }
 });
 
 test('tiny-brain short-response parsers normalize N/A and yes/no answers', () => {

@@ -3,8 +3,76 @@ const assert = require('node:assert/strict');
 const fs = require('fs');
 
 const {
+    resolveBatchedRecentHistoryTurnCount,
+    resolveRecentHistoryBatchInterval,
     shouldIncludeEntryInBaseContextHistory
 } = require('../base_context_history.js');
+
+test('recent history grows between deterministic batch rollovers', () => {
+    const options = {
+        minimumRecentTurns: 10,
+        batchInterval: 10
+    };
+
+    assert.equal(resolveBatchedRecentHistoryTurnCount({ ...options, totalTurns: 9 }), 9);
+    assert.equal(resolveBatchedRecentHistoryTurnCount({ ...options, totalTurns: 10 }), 10);
+    assert.equal(resolveBatchedRecentHistoryTurnCount({ ...options, totalTurns: 11 }), 11);
+    assert.equal(resolveBatchedRecentHistoryTurnCount({ ...options, totalTurns: 19 }), 19);
+    assert.equal(resolveBatchedRecentHistoryTurnCount({ ...options, totalTurns: 20 }), 10);
+    assert.equal(resolveBatchedRecentHistoryTurnCount({ ...options, totalTurns: 21 }), 11);
+    assert.equal(resolveBatchedRecentHistoryTurnCount({ ...options, totalTurns: 29 }), 19);
+    assert.equal(resolveBatchedRecentHistoryTurnCount({ ...options, totalTurns: 30 }), 10);
+});
+
+test('recent-history batch interval one preserves per-turn rollover', () => {
+    assert.equal(resolveBatchedRecentHistoryTurnCount({
+        totalTurns: 27,
+        minimumRecentTurns: 10,
+        batchInterval: 1
+    }), 10);
+});
+
+test('recent-history batch interval resolves defaults and rejects invalid config', () => {
+    assert.equal(resolveRecentHistoryBatchInterval(undefined), 10);
+    assert.equal(resolveRecentHistoryBatchInterval(null), 10);
+    assert.equal(resolveRecentHistoryBatchInterval(''), 10);
+    assert.equal(resolveRecentHistoryBatchInterval('4'), 4);
+    assert.equal(resolveRecentHistoryBatchInterval(1), 1);
+
+    for (const value of [0, -1, 1.5, 'later']) {
+        assert.throws(
+            () => resolveRecentHistoryBatchInterval(value),
+            /recent_history_batch_interval must be an integer greater than or equal to 1/
+        );
+    }
+});
+
+test('recent-history batch settings reject invalid values', () => {
+    assert.throws(
+        () => resolveBatchedRecentHistoryTurnCount({
+            totalTurns: -1,
+            minimumRecentTurns: 10,
+            batchInterval: 10
+        }),
+        /total.*non-negative integer/i
+    );
+    assert.throws(
+        () => resolveBatchedRecentHistoryTurnCount({
+            totalTurns: 10,
+            minimumRecentTurns: -1,
+            batchInterval: 10
+        }),
+        /minimum recent.*non-negative integer/i
+    );
+    assert.throws(
+        () => resolveBatchedRecentHistoryTurnCount({
+            totalTurns: 10,
+            minimumRecentTurns: 5,
+            batchInterval: 0
+        }),
+        /batch interval.*greater than or equal to 1/i
+    );
+});
 
 test('base-context history includes prompt-excluded log entries only when all entry types are requested', () => {
     const hiddenGenericEntry = {

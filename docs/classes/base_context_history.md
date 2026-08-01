@@ -6,6 +6,8 @@
 
 - `shouldExcludeEntryFromPromptHistory(entry)`: returns `true` for entries that must stay out of LLM-facing prompt history in every mode.
 - `shouldIncludeEntryInBaseContextHistory(entry, options)`: applies the base-context inclusion predicate after the caller has decided whether the entry has renderable text.
+- `resolveRecentHistoryBatchInterval(value, defaultValue)`: resolves the configured interval and throws for invalid values.
+- `resolveBatchedRecentHistoryTurnCount(options)`: returns the deterministic recent-window size for a total prose-turn count, minimum recent window, and rollover interval.
 
 `shouldIncludeEntryInBaseContextHistory()` requires `hasRenderableContent: true`. Metadata-only records without content, usable summary text, or renderable structured event-summary rows do not enter `<olderStoryHistory>` or `<recentStoryHistory>`.
 
@@ -53,14 +55,14 @@ History assembly behavior:
 - Non-indexed prompt-visible records such as event summaries follow the same chronological coverage frontier. Records after the frontier remain raw. Records at or before it are part of the covered section and retain the existing scene-summary fallback rules.
 - `summaries.max_unsummarized_log_entries` remains the automatic scene-summary trigger. The asynchronous threshold check summarizes from the first uncovered scene-summary index entry through the current end, while prompt rendering continues to expose every uncovered record until the new block is installed.
 - Line-summary saves retain their per-entry summarized/raw window behavior: the filtered list is capped by `summaries.max_summarized_log_entries + summaries.max_unsummarized_log_entries`, and the configured unsummarized tail renders from full content.
-- The final history segments are split into `gameHistory` and `recentGameHistory` by `config.recent_history_turns`, counting prose-turn entries (`player-action`, `npc-action`, `quest-reward`, `random-event`, and untyped assistant prose).
+- The final history segments are split into `gameHistory` and `recentGameHistory` by `config.recent_history_turns`, counting prose-turn entries (`player-action`, `npc-action`, `quest-reward`, `random-event`, and untyped assistant prose). `config.recent_history_batch_interval` lets the recent window grow above that minimum and moves one complete interval-sized batch into older history at each deterministic rollover. An interval of `1` keeps the former per-turn rollover.
 - User and non-assistant entries receive speaker prefixes with saved in-world time labels when `metadata.worldTime` is present. Assistant prose uses `[Storyteller]`.
 - Location and absent-character lines are inserted when those annotations change.
 - Hidden server-side story-note entries that pass the predicate render with the `[Hidden from Player]` label. Plot summary and plot expander entries are injected separately as `<plotSummary>` and `<plotExpander>` rather than through ordinary history.
 
 `prompts/base-context.xml.njk` emits `<olderStoryHistory>` from `gameHistory` only when it is non-empty and prompt-level `omitGameHistory` is not active. `config.prompt_uses_caching === true` keeps that block available and also ignores prompt-level inventory, ability, and quest-list omissions. The builder also ignores per-call `omitEventSummaryHistory` in caching mode. It continues to honor `omitCraftHistory` and `includeAllHistoryEntryTypes` as accepted rare/specialized exceptions; those options can change story-history text, including `<olderStoryHistory>` when affected entries are old enough. Without those exceptions, `<recentStoryHistory>` is the first omission-sensitive point. The plot-analysis and tonal-scale-evaluation prompts retain their self-context exclusions after `</gameState>`.
 
-For scene-summary saves, adding chat records between summary batches only appends to the uncovered history. It does not slide an oldest raw record into the summarized section. The summarized prefix changes only when a newly generated contiguous scene-summary block is installed (or stored summaries are explicitly edited/rebuilt).
+For scene-summary saves, adding chat records between summary batches only appends to the uncovered history. It does not slide an oldest raw record into the summarized section. The summarized prefix changes only when a newly generated contiguous scene-summary block is installed (or stored summaries are explicitly edited/rebuilt). The recent/older split inside the resulting prompt history changes only at the configured recent-history batch interval.
 
 Character records in base context also include non-empty relationship sections. `<relationships>` lists how that character relates to other characters by resolved name, and `<reciprocalRelationships>` lists how off-scene/non-party characters relate to that character. Empty sections are omitted, and reciprocal labels from characters already present in the prompt cast are omitted because those characters render their own outgoing labels.
 

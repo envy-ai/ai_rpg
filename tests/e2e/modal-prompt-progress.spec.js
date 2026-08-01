@@ -70,6 +70,93 @@ test.describe('modal prompt-progress bar', () => {
         await pushPromptProgress(page, []);
     });
 
+    test('tinybrain keeps one row and turns its waiting bar blue between stages', async ({ page }) => {
+        const stablePromptId = 'tinybrain-stable-progress';
+        const progressGroupId = 'tinybrain-stable-group';
+
+        await pushPromptProgress(page, [{
+            id: stablePromptId,
+            label: 'player_action[1]',
+            model: 'test-model',
+            progressGroupId,
+            promptText: 'First checkpoint.',
+            previewText: 'First response.',
+            receivedCount: 84,
+            progressFraction: 0.2625,
+            isGroupWaiting: true
+        }]);
+
+        const row = page.locator('.prompt-progress-dock__one-line-row');
+        await expect(row).toHaveCount(1);
+        await expect(row).toHaveClass(/prompt-progress-dock__one-line-row--group-waiting/);
+        await expect(row.locator('.prompt-progress-cancel')).toBeDisabled();
+        await expect(row.locator('.prompt-progress-retry')).toBeDisabled();
+        await expect(row.locator('.prompt-progress-view')).toBeEnabled();
+        await expect(row.locator('.prompt-progress-dock__one-line-stat')).toHaveText('84 chars');
+        await expect(row.locator('.prompt-progress-dock__one-line-percent')).toHaveText('~26%');
+        await expect.poll(async () => (
+            row.locator('.prompt-progress-dock__one-line-fill').evaluate(element => parseFloat(element.style.width))
+        )).toBeCloseTo(26.25, 1);
+
+        const waitingFillColor = await row.locator('.prompt-progress-dock__one-line-fill')
+            .evaluate(element => getComputedStyle(element).backgroundImage);
+        expect(waitingFillColor).toContain('59, 130, 246');
+        await page.screenshot({ path: 'tmp/tinybrain-shared-progress-blue-dock.png', fullPage: true });
+
+        const modalId = await openSharedModal(page, 'tinybrain-progress-modal');
+        expect(modalId).toBeTruthy();
+        const modalBar = page.locator(`#${modalId} .modal__prompt-progress`);
+        await expect(modalBar).toHaveClass(/modal__prompt-progress--group-waiting/);
+        await expect.poll(async () => (
+            modalBar.locator('.modal__prompt-progress-fill').evaluate(element => parseFloat(element.style.width))
+        )).toBeCloseTo(26.25, 1);
+        await page.screenshot({ path: 'tmp/tinybrain-shared-progress-blue.png', fullPage: true });
+
+        await pushPromptProgress(page, [{
+            id: stablePromptId,
+            label: 'player_action[1]',
+            model: 'test-model',
+            progressGroupId,
+            promptText: 'Second checkpoint.',
+            previewText: '',
+            receivedCount: 84,
+            progressFraction: 0.2625,
+            isGroupWaiting: false
+        }]);
+
+        await expect(row).toHaveCount(1);
+        await expect(row).not.toHaveClass(/prompt-progress-dock__one-line-row--group-waiting/);
+        await expect(row.locator('.prompt-progress-cancel')).toBeEnabled();
+        await expect(row.locator('.prompt-progress-retry')).toBeEnabled();
+        await expect(modalBar).not.toHaveClass(/modal__prompt-progress--group-waiting/);
+        await expect(row.locator('.prompt-progress-dock__one-line-percent')).toHaveText('~26%');
+
+        await pushPromptProgress(page, [{
+            id: stablePromptId,
+            label: 'player_action[1]',
+            model: 'test-model',
+            progressGroupId,
+            promptText: 'Second checkpoint.',
+            previewText: 'Second response.',
+            receivedCount: 120,
+            progressFraction: 0.375,
+            isGroupWaiting: true
+        }]);
+
+        await expect(row).toHaveCount(1);
+        await expect(row).toHaveClass(/prompt-progress-dock__one-line-row--group-waiting/);
+        await expect(row.locator('.prompt-progress-dock__one-line-stat')).toHaveText('120 chars');
+        await expect(row.locator('.prompt-progress-dock__one-line-percent')).toHaveText('~37%');
+        await page.evaluate((id) => {
+            const modal = document.getElementById(id);
+            modal?.setAttribute('aria-hidden', 'true');
+            modal?.setAttribute('hidden', '');
+        }, modalId);
+        await page.screenshot({ path: 'tmp/tinybrain-multiprompt-progress-monotonic.png', fullPage: true });
+
+        await pushPromptProgress(page, []);
+    });
+
     test('tinybrain viewer follows staged prompts and retains parse failures in red', async ({ page }) => {
         const progressGroupId = 'tinybrain-viewer-test';
         await pushPromptProgress(page, [{

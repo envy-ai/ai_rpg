@@ -84,6 +84,7 @@ test('base-context keeps olderStoryHistory when prompt_uses_caching is true', ()
         rendered,
         /\[\[\[AI_RPG_INTERNAL_MESSAGE_BOUNDARY_RECENT_STORY_HISTORY_V1]]]\s*<recentStoryHistory>/
     );
+    assert.match(rendered, /AI_RPG_INTERNAL_MESSAGE_BOUNDARY_BASE_CONTEXT_SECTION_V1/);
 });
 
 test('base-context does not add a recent-story message boundary when prompt_uses_caching is false', () => {
@@ -94,29 +95,83 @@ test('base-context does not add a recent-story message boundary when prompt_uses
     }));
 
     assert.doesNotMatch(rendered, /AI_RPG_INTERNAL_MESSAGE_BOUNDARY_RECENT_STORY_HISTORY_V1/);
+    assert.doesNotMatch(rendered, /AI_RPG_INTERNAL_MESSAGE_BOUNDARY_BASE_CONTEXT_SECTION_V1/);
     assert.match(rendered, /AI_RPG_INTERNAL_BASE_CONTEXT_END_V1/);
     assert.match(rendered, /<recentStoryHistory>Recent story entry\.<\/recentStoryHistory>/);
 });
 
-test('base-context recent-story marker expands at the exact rendered history boundary', () => {
+test('base-context section markers expand at complete top-level XML boundaries', () => {
     const promptEnv = createPromptEnv();
-    const rendered = promptEnv.render('base-context.xml.njk', buildRenderContext({
+    const context = buildRenderContext({
         promptUsesCaching: true,
         omitGameHistory: false
-    }));
+    });
+    context.currentLocation = {
+        name: 'Cache Plaza',
+        description: 'A location used to verify cache boundaries.',
+        statusEffects: [],
+        exits: [],
+        items: []
+    };
+    context.trackers = [{
+        id: 'tracker_1',
+        name: 'Cache Tracker',
+        type: 'percentage',
+        value: '50%',
+        hidden: false,
+        lastUpdated: 'now',
+        guidance: 'Test the continuity boundary.',
+        note: ''
+    }];
+    const rendered = promptEnv.render('base-context.xml.njk', context);
     const generationPrompt = extractGenerationPrompt(rendered);
-    const marker = LLMClient.getRecentStoryMessageBoundaryMarker();
+    const recentStoryMarker = LLMClient.getRecentStoryMessageBoundaryMarker();
+    const sectionMarker = LLMClient.getBaseContextSectionMessageBoundaryMarker();
+    const expanded = LLMClient.expandPromptMessageBoundaries([
+        { role: 'system', content: 'System.' },
+        { role: 'user', content: generationPrompt }
+    ]);
+    const userMessages = expanded.slice(1);
+
+    assert.equal(generationPrompt.split(sectionMarker).length - 1, 8);
+    assert.equal(userMessages.length, 10);
+    assert.match(userMessages[0].content, /<setting>/);
+    assert.match(userMessages[1].content, /^\s*<olderStoryHistory>/);
+    assert.match(userMessages[2].content, /^\s*<allNpcs>/);
+    assert.match(userMessages[3].content, /^\s*<currentRegion>/);
+    assert.match(userMessages[4].content, /^\s*<currentLocation>/);
+    assert.match(userMessages[5].content, /^\s*<player>/);
+    assert.match(userMessages[6].content, /^\s*<playerParty>/);
+    assert.match(userMessages[7].content, /^\s*<additionalLore>/);
+    assert.match(userMessages[8].content, /^\s*<trackers>/);
+    assert.match(userMessages[9].content, /^\s*<recentStoryHistory>Recent story entry\.<\/recentStoryHistory>/);
+    assert.equal(userMessages.every(message => message.role === 'user'), true);
+    assert.equal(
+        userMessages.map(message => message.content).join(''),
+        generationPrompt
+            .split(sectionMarker).join('')
+            .replace(recentStoryMarker, '')
+    );
+});
+
+test('base-context section expansion remains valid when optional sections are absent', () => {
+    const promptEnv = createPromptEnv();
+    const generationPrompt = extractGenerationPrompt(promptEnv.render(
+        'base-context.xml.njk',
+        buildRenderContext({
+            promptUsesCaching: true,
+            omitGameHistory: false
+        })
+    ));
     const expanded = LLMClient.expandPromptMessageBoundaries([
         { role: 'system', content: 'System.' },
         { role: 'user', content: generationPrompt }
     ]);
 
-    assert.equal(expanded.length, 3);
-    assert.doesNotMatch(expanded[1].content, /<recentStoryHistory>/);
-    assert.match(expanded[2].content, /^\s*<recentStoryHistory>Recent story entry\.<\/recentStoryHistory>/);
+    assert.equal(expanded.length > 3, true);
     assert.equal(
-        expanded[1].content + expanded[2].content,
-        generationPrompt.replace(marker, '')
+        expanded.slice(1).every(message => typeof message.content === 'string' && message.content.trim()),
+        true
     );
 });
 
@@ -144,10 +199,13 @@ test('non-generic base-context prompts share one tool schema and mark formerly t
     assert.ok(Array.isArray(toolLessPolicy.additionalPayload.tools));
     assert.ok(toolLessPolicy.additionalPayload.tools.length > 0);
     assert.equal(toolLessPolicy.additionalPayload.tool_choice, 'auto');
+    assert.equal(toolLessPolicy.messages.length, 3);
     assert.doesNotMatch(toolLessPolicy.messages[1].content, /AI_RPG_INTERNAL_BASE_CONTEXT_END_V1/);
+    assert.match(toolLessPolicy.messages[1].content, /<\/currentConditions>/);
+    assert.doesNotMatch(toolLessPolicy.messages[1].content, /What happened\?/);
     assert.match(
-        toolLessPolicy.messages[1].content,
-        /<\/currentConditions>[\s\S]*Do not make tool calls\.[\s\S]*What happened\?/
+        toolLessPolicy.messages[2].content,
+        /^\s*Do not make tool calls\.[\s\S]*What happened\?/
     );
 
     const existingToolPolicy = LLMClient.applyBaseContextToolPolicy([
@@ -162,7 +220,13 @@ test('non-generic base-context prompts share one tool schema and mark formerly t
     });
     assert.equal(existingToolPolicy.sharedToolsApplied, true);
     assert.equal(existingToolPolicy.noToolCallsInstructionAdded, false);
-    assert.doesNotMatch(existingToolPolicy.messages[1].content, /Do not make tool calls\./);
+    assert.equal(existingToolPolicy.messages.length, 3);
+    assert.doesNotMatch(existingToolPolicy.messages[2].content, /Do not make tool calls\./);
+    assert.deepEqual(
+        existingToolPolicy.messages.slice(0, 2),
+        toolLessPolicy.messages.slice(0, 2),
+        'player-action and slop-remover requests should be identical through the base-context boundary'
+    );
     assert.deepEqual(
         existingToolPolicy.additionalPayload.tools,
         toolLessPolicy.additionalPayload.tools,

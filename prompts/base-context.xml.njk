@@ -158,8 +158,10 @@ The below context is an account of the current game state, including the setting
     {{ rarity.label }}: {{ rarity.description }}
 {% endfor %}  </itemRarityLevels>
   {% if gameHistory and gameHistory | trim and not effectiveOmitGameHistory %}
+{% if ignorePromptLevelOmissions %}[[[AI_RPG_INTERNAL_MESSAGE_BOUNDARY_BASE_CONTEXT_SECTION_V1]]]{% endif %}
   <olderStoryHistory>{{ gameHistory }}</olderStoryHistory>
   {% endif %}
+{% if ignorePromptLevelOmissions %}[[[AI_RPG_INTERNAL_MESSAGE_BOUNDARY_BASE_CONTEXT_SECTION_V1]]]{% endif %}
   <allNpcs>
 This is a list of all characters in the story and a short description of each.
 
@@ -200,6 +202,7 @@ This is a list of all characters in the story and a short description of each.
     {% endif %}
     <noneOption>None</noneOption>
   </factions>
+{% if ignorePromptLevelOmissions %}[[[AI_RPG_INTERNAL_MESSAGE_BOUNDARY_BASE_CONTEXT_SECTION_V1]]]{% endif %}
   <currentRegion>
     <name>{{ regionContext.name }}</name>
     <description>{{ regionContext.description }}</description>
@@ -216,6 +219,7 @@ This is a list of all characters in the story and a short description of each.
     </connectedRegions>
   </currentRegion>
   {% if currentLocation %}
+{% if ignorePromptLevelOmissions %}[[[AI_RPG_INTERNAL_MESSAGE_BOUNDARY_BASE_CONTEXT_SECTION_V1]]]{% endif %}
   <currentLocation>
     <name>{{ currentLocation.name }}</name>
     <description>{{ currentLocation.description }}</description>
@@ -448,6 +452,7 @@ This is a list of all characters in the story and a short description of each.
     {% endif %}</sceneryList>  
   </currentLocation>
   {% endif %}
+{% if ignorePromptLevelOmissions %}[[[AI_RPG_INTERNAL_MESSAGE_BOUNDARY_BASE_CONTEXT_SECTION_V1]]]{% endif %}
   <player>
     <name>{{ currentPlayer.name }}</name>
     <description>{{ currentPlayer.description }}</description>{#
@@ -561,6 +566,7 @@ This is a list of all characters in the story and a short description of each.
     </quests>
     {% endif %}
   </player>
+{% if ignorePromptLevelOmissions %}[[[AI_RPG_INTERNAL_MESSAGE_BOUNDARY_BASE_CONTEXT_SECTION_V1]]]{% endif %}
   <playerParty>
     {% for member in party %}
     <member>
@@ -670,6 +676,7 @@ This is a list of all characters in the story and a short description of each.
     </member>
     {% endfor %}
   </playerParty>
+{% if ignorePromptLevelOmissions %}[[[AI_RPG_INTERNAL_MESSAGE_BOUNDARY_BASE_CONTEXT_SECTION_V1]]]{% endif %}
   <additionalLore>
     {{ additionalLore }}
   </additionalLore>
@@ -684,6 +691,9 @@ This is a list of all characters in the story and a short description of each.
   {% endif %}
   {% if plotExpander and plotExpander | trim %}
   <plotExpander>{{ plotExpander }}</plotExpander>
+  {% endif %}
+  {% if ignorePromptLevelOmissions and ((activeMysteryThreads and activeMysteryThreads.length) or (trackers and trackers.length)) %}
+[[[AI_RPG_INTERNAL_MESSAGE_BOUNDARY_BASE_CONTEXT_SECTION_V1]]]
   {% endif %}
   {% if activeMysteryThreads and activeMysteryThreads.length %}
   <activeMysteryThreads max="{{ mysteryThreadMaxActive | default(activeMysteryThreads.length, true) }}">

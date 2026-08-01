@@ -130,6 +130,33 @@ const UPLOADED_ENTITY_IMAGE_TYPES = new Map([
     ['image/gif', { extension: 'gif', label: 'GIF' }]
 ]);
 
+function snapshotPlayerActionBaseContextForSlop(promptData) {
+    if (!promptData || typeof promptData !== 'object' || Array.isArray(promptData)) {
+        throw new TypeError('Player-action base-context snapshot requires parsed prompt data.');
+    }
+
+    const systemPrompt = typeof promptData.systemPrompt === 'string'
+        ? promptData.systemPrompt.trim()
+        : '';
+    const generationPrompt = typeof promptData.generationPrompt === 'string'
+        ? promptData.generationPrompt.trim()
+        : '';
+    if (!systemPrompt || !generationPrompt) {
+        throw new Error('Player-action base-context snapshot requires system and generation prompts.');
+    }
+
+    const marker = LLMClient.getBaseContextEndMarker();
+    const markerParts = generationPrompt.split(marker);
+    if (markerParts.length !== 2 || !markerParts[0].trim() || !markerParts[1].trim()) {
+        throw new Error('Player-action base-context snapshot requires exactly one internal end marker with content on both sides.');
+    }
+
+    return Object.freeze({
+        systemPrompt,
+        generationPromptPrefix: markerParts[0]
+    });
+}
+
 function parseUploadedEntityImageDataUrl(dataUrl) {
     if (typeof dataUrl !== 'string' || !dataUrl.trim()) {
         throw new Error('Image data URL is required.');
@@ -4622,7 +4649,10 @@ module.exports = function registerApiRoutes(scope) {
             return lines.join('\n\n');
         };
 
-        const applySlopRemoval = async (prose, { returnDiagnostics = false } = {}) => {
+        const applySlopRemoval = async (prose, {
+            returnDiagnostics = false,
+            baseContextOverride = null
+        } = {}) => {
             const scrubber = Globals.scrubGeneratedBrackets;
             if (typeof scrubber !== 'function') {
                 throw new Error('Slop remover requires scrubGeneratedBrackets helper.');
@@ -4687,7 +4717,7 @@ module.exports = function registerApiRoutes(scope) {
             }
 
             const slopContext = buildSlopContextText();
-            const renderSlopRemoverTemplate = async ({
+            const buildSlopRemoverPromptData = async ({
                 systemPromptPrefix,
                 settingContext,
                 storyText,
@@ -4695,11 +4725,41 @@ module.exports = function registerApiRoutes(scope) {
                 slopWords = [],
                 slopRegexes = [],
                 slopNgrams = [],
-                forbiddenTropes = []
+                forbiddenTropes = [],
+                baseContextOverride: renderBaseContextOverride = null
             }) => {
                 if (config?.prompt_uses_caching === true) {
+                    if (renderBaseContextOverride !== null) {
+                        if (!renderBaseContextOverride
+                            || typeof renderBaseContextOverride !== 'object'
+                            || Array.isArray(renderBaseContextOverride)
+                            || typeof renderBaseContextOverride.systemPrompt !== 'string'
+                            || !renderBaseContextOverride.systemPrompt.trim()
+                            || typeof renderBaseContextOverride.generationPromptPrefix !== 'string'
+                            || !renderBaseContextOverride.generationPromptPrefix.trim()) {
+                            throw new TypeError('Slop remover base-context override must contain rendered systemPrompt and generationPromptPrefix strings.');
+                        }
+                        const promptSpecificContent = promptEnv.render('_includes/slop-remover.njk', {
+                            systemPromptPrefix,
+                            setting: settingContext,
+                            config,
+                            storyText,
+                            textToEdit,
+                            slopWords,
+                            slopRegexes,
+                            slopNgrams,
+                            forbiddenTropes
+                        });
+                        if (typeof promptSpecificContent !== 'string' || !promptSpecificContent.trim()) {
+                            throw new Error('Slop remover prompt-specific include rendered empty content.');
+                        }
+                        return {
+                            systemPrompt: renderBaseContextOverride.systemPrompt,
+                            generationPrompt: `${renderBaseContextOverride.generationPromptPrefix}${LLMClient.getBaseContextEndMarker()}${promptSpecificContent}`
+                        };
+                    }
                     const baseContext = await prepareBasePromptContext();
-                    return promptEnv.render('base-context.xml.njk', {
+                    const rendered = promptEnv.render('base-context.xml.njk', {
                         ...baseContext,
                         promptType: 'slop-remover',
                         systemPromptPrefix,
@@ -4710,9 +4770,10 @@ module.exports = function registerApiRoutes(scope) {
                         slopNgrams,
                         forbiddenTropes
                     });
+                    return parseXMLTemplate(rendered);
                 }
 
-                return promptEnv.render('slop-remover.xml.njk', {
+                const rendered = promptEnv.render('slop-remover.xml.njk', {
                     systemPromptPrefix,
                     setting: settingContext,
                     config,
@@ -4723,6 +4784,7 @@ module.exports = function registerApiRoutes(scope) {
                     slopNgrams,
                     forbiddenTropes
                 });
+                return parseXMLTemplate(rendered);
             };
             const parseSlopRemoverEditedTextResponse = (responseText) => {
                 if (typeof responseText !== 'string') {
@@ -4786,7 +4848,7 @@ module.exports = function registerApiRoutes(scope) {
                     const systemPromptPrefix = typeof resolveSystemPromptPrefix === 'function'
                         ? resolveSystemPromptPrefix('slop_remover')
                         : '';
-                    const rendered = await renderSlopRemoverTemplate({
+                    promptData = await buildSlopRemoverPromptData({
                         systemPromptPrefix,
                         settingContext,
                         storyText: slopContext,
@@ -4794,9 +4856,9 @@ module.exports = function registerApiRoutes(scope) {
                         slopWords,
                         slopRegexes,
                         slopNgrams,
-                        forbiddenTropes
+                        forbiddenTropes,
+                        baseContextOverride
                     });
-                    promptData = parseXMLTemplate(rendered);
                     if (!promptData?.systemPrompt || !promptData?.generationPrompt) {
                         throw new Error('Slop remover template did not produce prompts.');
                     }
@@ -23320,6 +23382,7 @@ module.exports = function registerApiRoutes(scope) {
             eventsProcessedThisTurn = false;
             let promptTemplateName = null;
             let promptVariablesSnapshot = null;
+            let playerActionSlopBaseContextSnapshot = null;
             let useTinyBrainPlayerAction = false;
             let tinyBrainPromptState = null;
             let tinyBrainRenderedPrompt = null;
@@ -24551,6 +24614,10 @@ module.exports = function registerApiRoutes(scope) {
 
                         const promptData = parseXMLTemplate(renderedPrompt);
 
+                        if (promptType === 'player-action' && Globals.config?.prompt_uses_caching === true) {
+                            playerActionSlopBaseContextSnapshot = snapshotPlayerActionBaseContextForSlop(promptData);
+                        }
+
                         if (typeof promptData.temperature === 'number') {
                             templateTemperature = promptData.temperature;
                         }
@@ -24917,93 +24984,83 @@ module.exports = function registerApiRoutes(scope) {
                         throw new Error('Tiny-brain player-action prompt was not initialized during rendering.');
                     }
                     const tinyBrainRetryAttempts = Number(Globals.config?.ai?.retryAttempts);
-                    const tinyBrainResult = await LLMClient.withPromptQueueReservation(async (queueReservation) => {
-                        const progressGroupId = tinyBrainPromptState.runId;
-                        try {
-                            const tinyBrainRunner = new TinyBrainPromptRunner({
-                                promptEnv,
-                                parseXMLTemplate,
-                                retryAttempts: tinyBrainRetryAttempts,
-                                metadataLabel: promptMetadataLabel,
-                                onParseFailure: ({ response }) => {
-                                    LLMClient.recordPromptProgressGroupFailure(progressGroupId, response);
-                                },
-                                finalParser: shouldUseRepetitionBusterXml
-                                    ? async (response) => {
-                                        await parsePlayerActionProseFromXml(response, {
-                                            logJson: false,
-                                            repairMalformed: false
-                                        });
-                                        return { value: true };
-                                    }
-                                    : null,
-                                complete: async ({
-                                    messages,
-                                    checkpoint,
-                                    attempt,
-                                    isFinal,
-                                    logFilePath
-                                }) => {
-                                    const stepLabel = isFinal
-                                        ? 'final response'
-                                        : `checkpoint ${checkpoint.index + 1}`;
-                                    stream.status('player_action:prompt', `Awaiting tiny-brain ${stepLabel} (attempt ${attempt + 1})...`);
-                                    const stageRequestOptions = {
-                                        ...requestOptions,
-                                        messages,
-                                        queueReservation,
-                                        progressGroupId
-                                    };
-                                    delete stageRequestOptions.requiredRegex;
+                    const tinyBrainRunner = new TinyBrainPromptRunner({
+                        promptEnv,
+                        parseXMLTemplate,
+                        retryAttempts: tinyBrainRetryAttempts,
+                        metadataLabel: promptMetadataLabel,
+                        finalParser: shouldUseRepetitionBusterXml
+                            ? async (response) => {
+                                await parsePlayerActionProseFromXml(response, {
+                                    logJson: false,
+                                    repairMalformed: false
+                                });
+                                return { value: true };
+                            }
+                            : null,
+                        complete: async ({
+                            messages,
+                            checkpoint,
+                            attempt,
+                            isFinal,
+                            logFilePath,
+                            queueReservation
+                        }) => {
+                            const stepLabel = isFinal
+                                ? 'final response'
+                                : `checkpoint ${checkpoint.index + 1}`;
+                            stream.status('player_action:prompt', `Awaiting tiny-brain ${stepLabel} (attempt ${attempt + 1})...`);
+                            const stageRequestOptions = {
+                                ...requestOptions,
+                                messages,
+                                queueReservation
+                            };
+                            delete stageRequestOptions.requiredRegex;
 
-                                    if (Array.isArray(enabledChatTools) && enabledChatTools.length > 0) {
-                                        const toolLoopResult = await runChatCompletionWithToolLoop({
-                                            requestOptions: stageRequestOptions,
-                                            streamEmitter: stream,
-                                            metadataLabel: promptMetadataLabel,
-                                            toolResultCache,
-                                            includeAllHistoryEntryTypes: allowWorldMutationTools,
-                                            requestUserInput: createRequestUserInputHandler({
-                                                stream,
-                                                promptLabel: promptMetadataLabel
-                                            }),
-                                            forcedSkillCheckRoll: createForcedSkillCheckRollResolver({
-                                                enabled: forceSkillCheckRolls,
-                                                stream,
-                                                promptLabel: promptMetadataLabel
-                                            }),
-                                            onToolCallEvent: event => checkResultsRecorder.record(event),
-                                            onToolCallDebug: toolCallDebugRecorder
-                                                ? event => toolCallDebugRecorder.record(event)
-                                                : null,
-                                            promptLogFile: logFilePath
-                                        });
-                                        return {
-                                            aiResponse: toolLoopResult.aiResponse,
-                                            conversationMessages: toolLoopResult.conversationMessages,
-                                            toolInvocations: toolLoopResult.toolInvocations
-                                        };
-                                    }
+                            if (Array.isArray(enabledChatTools) && enabledChatTools.length > 0) {
+                                const toolLoopResult = await runChatCompletionWithToolLoop({
+                                    requestOptions: stageRequestOptions,
+                                    streamEmitter: stream,
+                                    metadataLabel: promptMetadataLabel,
+                                    toolResultCache,
+                                    includeAllHistoryEntryTypes: allowWorldMutationTools,
+                                    requestUserInput: createRequestUserInputHandler({
+                                        stream,
+                                        promptLabel: promptMetadataLabel
+                                    }),
+                                    forcedSkillCheckRoll: createForcedSkillCheckRollResolver({
+                                        enabled: forceSkillCheckRolls,
+                                        stream,
+                                        promptLabel: promptMetadataLabel
+                                    }),
+                                    onToolCallEvent: event => checkResultsRecorder.record(event),
+                                    onToolCallDebug: toolCallDebugRecorder
+                                        ? event => toolCallDebugRecorder.record(event)
+                                        : null,
+                                    promptLogFile: logFilePath
+                                });
+                                return {
+                                    aiResponse: toolLoopResult.aiResponse,
+                                    conversationMessages: toolLoopResult.conversationMessages,
+                                    toolInvocations: toolLoopResult.toolInvocations
+                                };
+                            }
 
-                                    const response = await LLMClient.chatCompletion(stageRequestOptions);
-                                    return {
-                                        aiResponse: response,
-                                        conversationMessages: [
-                                            ...messages,
-                                            { role: 'assistant', content: response }
-                                        ],
-                                        toolInvocations: []
-                                    };
-                                }
-                            });
-                            return await tinyBrainRunner.run({
-                                initialRenderedTemplate: tinyBrainRenderedPrompt,
-                                templateContext: promptVariablesSnapshot,
-                                renderState: tinyBrainPromptState
-                            });
-                        } finally {
-                            LLMClient.clearPromptProgressGroup(progressGroupId);
+                            const response = await LLMClient.chatCompletion(stageRequestOptions);
+                            return {
+                                aiResponse: response,
+                                conversationMessages: [
+                                    ...messages,
+                                    { role: 'assistant', content: response }
+                                ],
+                                toolInvocations: []
+                            };
                         }
+                    });
+                    const tinyBrainResult = await tinyBrainRunner.run({
+                        initialRenderedTemplate: tinyBrainRenderedPrompt,
+                        templateContext: promptVariablesSnapshot,
+                        renderState: tinyBrainPromptState
                     });
                     aiResponse = tinyBrainResult.aiResponse;
                     toolInvocations = tinyBrainResult.toolInvocations;
@@ -25285,7 +25342,10 @@ module.exports = function registerApiRoutes(scope) {
 
                     let slopRemovalInfo = null;
                     if (Globals.config?.slop_buster === true && !isQuestionAction && !isGenericPromptAction) {
-                        const slopResult = await applySlopRemoval(aiResponse, { returnDiagnostics: true });
+                        const slopResult = await applySlopRemoval(aiResponse, {
+                            returnDiagnostics: true,
+                            baseContextOverride: playerActionSlopBaseContextSnapshot
+                        });
                         aiResponse = slopResult.text;
                         if (slopResult.ran) {
                             slopRemovalInfo = {
@@ -50504,3 +50564,4 @@ module.exports.resolvePendingRegionEntryStubForTravelDestination = resolvePendin
 module.exports.resolveTravelTimeBackfillRegionIdentity = resolveTravelTimeBackfillRegionIdentity;
 module.exports.maybeBackfillRegionExitTravelTimesForArrival = maybeBackfillRegionExitTravelTimesForArrival;
 module.exports.assertSafeSaveDirectoryName = assertSafeSaveDirectoryName;
+module.exports.snapshotPlayerActionBaseContextForSlop = snapshotPlayerActionBaseContextForSlop;

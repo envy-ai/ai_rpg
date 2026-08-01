@@ -749,11 +749,23 @@ test('LLMClient.chatCompletion turns the recent-story marker into a user-message
     }
 });
 
-test('LLMClient recent-story expansion preserves later TinyBrain transcript chronology', () => {
-    const marker = LLMClient.getRecentStoryMessageBoundaryMarker();
+test('LLMClient section and recent-story expansion preserves later TinyBrain transcript chronology', () => {
+    const recentStoryMarker = LLMClient.getRecentStoryMessageBoundaryMarker();
+    const sectionMarker = LLMClient.getBaseContextSectionMessageBoundaryMarker();
     const messages = [
         { role: 'system', content: 'System instructions.' },
-        { role: 'user', content: `Stable base.${marker}<recentStoryHistory>Recent.</recentStoryHistory>` },
+        {
+            role: 'user',
+            content: [
+                '<setting>Stable.</setting>',
+                sectionMarker,
+                '<currentLocation>Scene.</currentLocation>',
+                sectionMarker,
+                '<player>Player.</player>',
+                recentStoryMarker,
+                '<recentStoryHistory>Recent.</recentStoryHistory>'
+            ].join('')
+        },
         { role: 'assistant', content: 'Checkpoint one response.' },
         { role: 'user', content: 'Checkpoint two prompt.' }
     ];
@@ -762,12 +774,32 @@ test('LLMClient recent-story expansion preserves later TinyBrain transcript chro
 
     assert.deepEqual(expanded, [
         { role: 'system', content: 'System instructions.' },
-        { role: 'user', content: 'Stable base.' },
+        { role: 'user', content: '<setting>Stable.</setting>' },
+        { role: 'user', content: '<currentLocation>Scene.</currentLocation>' },
+        { role: 'user', content: '<player>Player.</player>' },
         { role: 'user', content: '<recentStoryHistory>Recent.</recentStoryHistory>' },
         { role: 'assistant', content: 'Checkpoint one response.' },
         { role: 'user', content: 'Checkpoint two prompt.' }
     ]);
-    assert.equal(JSON.stringify(messages).includes(marker), true);
+    assert.equal(JSON.stringify(messages).includes(sectionMarker), true);
+    assert.equal(JSON.stringify(messages).includes(recentStoryMarker), true);
+});
+
+test('LLMClient rejects adjacent or misplaced internal message boundaries', () => {
+    const sectionMarker = LLMClient.getBaseContextSectionMessageBoundaryMarker();
+
+    assert.throws(
+        () => LLMClient.expandPromptMessageBoundaries([
+            { role: 'user', content: `First.${sectionMarker}${sectionMarker}Second.` }
+        ]),
+        /require non-empty content between every boundary/
+    );
+    assert.throws(
+        () => LLMClient.expandPromptMessageBoundaries([
+            { role: 'assistant', content: `First.${sectionMarker}Second.` }
+        ]),
+        /may only appear in a user message/
+    );
 });
 
 test('LLMClient.chatCompletion supports forceOutput tool calls and skips regex validation for tool rounds', async () => {

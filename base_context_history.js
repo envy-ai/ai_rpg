@@ -98,6 +98,45 @@ function normalizeEntryId(entry) {
     return typeof entry?.id === 'string' ? entry.id.trim() : '';
 }
 
+function resolveRecentHistoryBatchInterval(value, defaultValue = 10) {
+    if (!Number.isInteger(defaultValue) || defaultValue < 1) {
+        throw new Error('Default recent-history batch interval must be an integer greater than or equal to 1.');
+    }
+    if (value === undefined || value === null || value === '') {
+        return defaultValue;
+    }
+    const interval = Number(value);
+    if (!Number.isInteger(interval) || interval < 1) {
+        throw new Error('recent_history_batch_interval must be an integer greater than or equal to 1 when provided');
+    }
+    return interval;
+}
+
+function resolveBatchedRecentHistoryTurnCount({
+    totalTurns,
+    minimumRecentTurns,
+    batchInterval
+}) {
+    if (!Number.isInteger(totalTurns) || totalTurns < 0) {
+        throw new Error('Total base-context history turns must be a non-negative integer.');
+    }
+    if (!Number.isInteger(minimumRecentTurns) || minimumRecentTurns < 0) {
+        throw new Error('Minimum recent base-context history turns must be a non-negative integer.');
+    }
+    if (!Number.isInteger(batchInterval) || batchInterval < 1) {
+        throw new Error('Recent-history batch interval must be an integer greater than or equal to 1.');
+    }
+    if (minimumRecentTurns === 0 || totalTurns === 0) {
+        return 0;
+    }
+    if (totalTurns <= minimumRecentTurns) {
+        return totalTurns;
+    }
+
+    const turnsBeyondMinimum = totalTurns - minimumRecentTurns;
+    return minimumRecentTurns + (turnsBeyondMinimum % batchInterval);
+}
+
 function partitionBaseContextHistoryBySceneCoverage({
     historyEntries,
     relevantHistory,
@@ -197,6 +236,8 @@ function partitionBaseContextHistoryBySceneCoverage({
 
 module.exports = {
     partitionBaseContextHistoryBySceneCoverage,
+    resolveBatchedRecentHistoryTurnCount,
+    resolveRecentHistoryBatchInterval,
     shouldExcludeEntryFromPromptHistory,
     shouldIncludeEntryInBaseContextHistory
 };

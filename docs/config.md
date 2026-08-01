@@ -581,6 +581,8 @@ ai:
     User-Agent: "Firefox 99.0"
 ```
 
+For an OpenAI-compatible endpoint that leaves an SSE response transport open after its `[DONE]` event, `Connection: close` requests transport closure at the end of each response. This preserves streamed deltas while preventing the next sequential prompt from overlapping the provider's unfinished HTTP request. It trades HTTP connection reuse for a new connection per completion.
+
 Rules:
 - `headers` must be an object when present.
 - Header names must be non-empty strings.
@@ -625,7 +627,7 @@ ai:
 
 ## Tiny-brain staged prompts
 
-`config.ai.tinybrain` runs normal player-action prompts as a staged conversation intended for smaller local models.
+`config.ai.tinybrain` runs supported prompt programs as staged conversations intended for smaller local models. Player actions and XML event checks currently use it; new programs implemented through `TinyBrainPromptRunner` inherit the same lifecycle.
 
 ```yaml
 ai:
@@ -641,6 +643,8 @@ ai:
 - `ai.cachebuster: true` is still honored for every staged request, but its changing final-user prefix works against provider prefix caching.
 
 The same flag also stages XML event checks. When `ai.tinybrain` is enabled, `Events.runEventChecks(...)` renders `prompts/_includes/events-xml.tinybrain.njk` instead of sending the monolithic `events-xml` prompt: after a plain-text analysis checkpoint, the model writes the turn's events as XML chunks of at most 2 events per checkpoint (up to five checkpoints plus a final chunk), answering `<done/>` when no events remain. The chunks are assembled into one `<events>` block and parsed by the same `Events._parseXmlEventCheckResponse(...)` pipeline used by the monolithic path, so event application, travel phase splitting, and logging are unchanged. The tag documentation shared by both templates lives in `prompts/_includes/events-xml-schema.njk`. Need-bar event checks remain a separate parallel prompt.
+
+Every current or future prompt implemented through `TinyBrainPromptRunner` automatically reserves one queue position and one cumulative progress row for its complete staged run. The fixed expected-output label is derived as `<metadataLabel>_tinybrain` (`player_action_tinybrain`, `event_checks_tinybrain`, and so on). Successful completed runs record one aggregate output-character sample under that label, which becomes the next run's expected total. The bar uses the ordinary progress curve: 75% at that expected total and an asymptotic approach toward 100% beyond it.
 
 See [TinyBrainPromptRunner.md](classes/TinyBrainPromptRunner.md) for tag syntax, parsers, retries, and transcript behavior.
 
@@ -1023,14 +1027,18 @@ chat_completion_sound: assets/audio/bleep.mp3
 `recent_history_turns` and `client_message_history` control different history windows:
 
 - `recent_history_turns` affects only base-context prompt assembly (`<recentStoryHistory>` vs `<olderStoryHistory>`).
+- `recent_history_batch_interval` controls how often turns move from recent to older base-context history.
 - `client_message_history` affects only what the web client receives/renders via `/api/chat/history` and initial page load history.
 
 ```yaml
 recent_history_turns: 25
+recent_history_batch_interval: 10
 client_message_history:
   max_messages: 100
   prune_to: 80
 ```
+
+`recent_history_turns` is the minimum recent window. The recent window grows until `recent_history_batch_interval` additional prose turns accumulate. The complete interval-sized batch then moves into `<olderStoryHistory>`, and the recent window returns to its configured minimum. For example, minimum `10` and interval `10` produce recent-window sizes `10` through `19`, then `10` again. This keeps the cacheable older-history prefix unchanged for nine turns and changes it on the tenth. The interval must be an integer greater than or equal to `1`; use `1` for the former per-turn rollover behavior.
 
 `client_message_history.max_messages` is interpreted as a **turn cap** (anchored on user entries; assistant prose anchors are used only as fallback when user entries are unavailable). This does not change `recent_history_turns`.
 
@@ -1073,11 +1081,11 @@ Rules:
 - Must be a boolean when present.
 - Default is `false`.
 - Independent of this flag, every non-generic prompt rendered through `base-context.xml.njk` sends the same ordered built-in-plus-mod tool schema. This keeps provider-visible tool serialization stable across base-context prompt types. The global `chat_tools.request_user_input_enabled` and `use_legacy_prompt_checks` gates still remove their affected tools consistently from every shared schema. Generic prompts are excluded and retain their existing tool behavior.
-- A non-generic base-context path that previously supplied no tool definitions receives `Do not make tool calls.` immediately after shared base context and before its prompt-specific instructions. The schema is present for cache stability, but the path remains a direct completion and does not execute model-emitted tool calls.
+- The internal base-context end marker becomes a real `user`-message boundary for non-generic prompts. Shared context ends in one message and prompt-specific instructions begin in the next, giving hybrid/recurrent backends a checkpoint immediately before prompt types diverge. A path that previously supplied no tool definitions receives `Do not make tool calls.` at the start of that prompt-specific message. The schema is present for cache stability, but the path remains a direct completion and does not execute model-emitted tool calls. Generic prompts keep their prior message shape.
 - When `true`, the template ignores `omitGameHistory`, `omitInventoryItems`, `omitAbilities`, and `suppressQuestList`. Older history, actor inventories, actor abilities, and the player's quest list remain present before `<recentStoryHistory>`.
 - Per-call `omitEventSummaryHistory` is also ignored, so event-summary filtering cannot change older history near the start of the prompt.
-- The template inserts an internal boundary immediately before `<recentStoryHistory>`. `LLMClient` removes the marker and sends the content before and after it as two consecutive user messages. Hybrid/recurrent llama.cpp backends can therefore checkpoint the stable prefix at the point where recent history may change. Cachebusting runs after this split and changes only the final user message.
-- When `true`, slop-remover also switches from the standalone `prompts/slop-remover.xml.njk` template to the base-context include path (`prompts/base-context.xml.njk` with `promptType: slop-remover`). Legacy attack precheck still skips the cheap precheck when this is true, but can run the full legacy attack check when `use_legacy_prompt_checks` is enabled.
+- The template inserts repeatable internal boundaries between major top-level base-context sections, plus a dedicated boundary immediately before `<recentStoryHistory>`. `LLMClient` removes the markers and sends each complete section group as a consecutive user message. This gives hybrid/recurrent backends nearby checkpoint candidates when player, location, party, tracker, or history data changes. Cache reuse is still prefix-based, so sections after the first difference are reevaluated. The implementation permits at most 12 section boundaries and one recent-story boundary, rejects empty/invalid placement, preserves TinyBrain chronology, and applies cachebusting only to the final user message.
+- When `true`, slop-remover also switches from the standalone `prompts/slop-remover.xml.njk` template to the base-context include path (`prompts/base-context.xml.njk` with `promptType: slop-remover`). A player-action slop pass reuses the parsed system prompt and exact rendered generation-prefix text from that player action instead of cloning its live render objects or rebuilding world state. It appends the slop-specific include after the saved base-context marker. This keeps the shared messages byte-stable even if turn processing changes runtime state before editing. Legacy attack precheck still skips the cheap precheck when this is true, but can run the full legacy attack check when `use_legacy_prompt_checks` is enabled.
 - This does **not** override `omitCraftHistory` or `includeAllHistoryEntryTypes`. Those accepted rare/specialized exceptions can still change story-history text, including `<olderStoryHistory>` when affected entries are old enough. On ordinary prompt paths, `<recentStoryHistory>` is the first omission-sensitive point. The `plot-analysis` prompt still omits the prior `<plotAnalysis>` block, and `tonal-scale-evaluation` still omits the prior `<tonalScaleEvaluation>` block.
 
 ## Legacy prompt checks

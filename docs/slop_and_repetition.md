@@ -128,10 +128,11 @@ Reference for the systems that reduce repeated phrasing, configured slop words, 
 
 ### Slop Remover Prompt
 
-- Entry point: `api.js` -> `applySlopRemoval(prose, { returnDiagnostics })`.
+- Entry point: `api.js` -> `applySlopRemoval(prose, { returnDiagnostics, baseContextOverride })`.
 - Standalone template: `prompts/slop-remover.xml.njk`.
 - Cached/base-context template path: `prompts/base-context.xml.njk` with `promptType: "slop-remover"`, which includes `prompts/_includes/slop-remover.njk`.
-- On the cached/base-context path, the request serializes the same canonical tool schema as every other non-generic base-context prompt so tool definitions do not cause an early prefix-cache divergence. Slop removal still uses direct completion rather than a tool loop, and `Do not make tool calls.` is inserted immediately after shared base context.
+- On the cached/base-context path, the request serializes the same canonical tool schema as every other non-generic base-context prompt so tool definitions do not cause an early prefix-cache divergence. The base-context end marker becomes a user-message boundary immediately before slop-specific instructions, and `Do not make tool calls.` starts that new message. Slop removal still uses direct completion rather than a tool loop.
+- Player-action slop removal captures the parsed player-action system prompt and rendered generation-prefix text through the base-context end marker. The slop prompt reuses those exact strings and appends a freshly rendered slop-remover include after the marker. This avoids cloning live config, mod field validators, or other executable objects and preserves the exact text already sent for the player action. Other slop-removal callers omit the override and continue to prepare their current base context normally.
 - Prompt inputs include:
   - `systemPromptPrefix` resolved for `slop_remover`
   - normalized setting context

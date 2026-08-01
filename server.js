@@ -57,6 +57,8 @@ const {
 } = require('./history_time_labels.js');
 const {
     partitionBaseContextHistoryBySceneCoverage,
+    resolveBatchedRecentHistoryTurnCount,
+    resolveRecentHistoryBatchInterval,
     shouldIncludeEntryInBaseContextHistory
 } = require('./base_context_history.js');
 const {
@@ -2609,6 +2611,11 @@ async function validateConfiguration() {
 
     if (config.prompt_uses_caching !== undefined && typeof config.prompt_uses_caching !== 'boolean') {
         validationErrors.push('prompt_uses_caching must be a boolean when provided');
+    }
+    try {
+        resolveRecentHistoryBatchInterval(config.recent_history_batch_interval);
+    } catch (error) {
+        validationErrors.push(error.message);
     }
     if (config.use_legacy_prompt_checks !== undefined && typeof config.use_legacy_prompt_checks !== 'boolean') {
         validationErrors.push('use_legacy_prompt_checks must be a boolean when provided');
@@ -7536,6 +7543,9 @@ function buildBasePromptContext({
     const recentHistoryTurns = Number.isInteger(rawRecentTurns) && rawRecentTurns >= 0
         ? rawRecentTurns
         : 10;
+    const recentHistoryBatchInterval = resolveRecentHistoryBatchInterval(
+        config?.recent_history_batch_interval
+    );
 
     let gameHistory = '';
     let recentGameHistory = '';
@@ -7545,6 +7555,15 @@ function buildBasePromptContext({
     } else if (recentHistoryTurns <= 0) {
         gameHistory = fullGameHistory;
     } else {
+        const totalProseTurns = historySegments.reduce(
+            (count, segment) => count + (isProseTurnEntry(segment?.entry) ? 1 : 0),
+            0
+        );
+        const effectiveRecentHistoryTurns = resolveBatchedRecentHistoryTurnCount({
+            totalTurns: totalProseTurns,
+            minimumRecentTurns: recentHistoryTurns,
+            batchInterval: recentHistoryBatchInterval
+        });
         let turnCount = 0;
         let startIndex = historySegments.length;
         for (let idx = historySegments.length - 1; idx >= 0; idx -= 1) {
@@ -7552,7 +7571,7 @@ function buildBasePromptContext({
             if (isProseTurnEntry(entry)) {
                 turnCount += 1;
             }
-            if (turnCount >= recentHistoryTurns) {
+            if (turnCount >= effectiveRecentHistoryTurns) {
                 startIndex = idx;
                 break;
             }
@@ -7561,7 +7580,7 @@ function buildBasePromptContext({
         if (turnCount === 0) {
             gameHistory = fullGameHistory;
         } else {
-            if (turnCount < recentHistoryTurns) {
+            if (turnCount < effectiveRecentHistoryTurns) {
                 startIndex = 0;
             }
             const recentSegments = historySegments.slice(startIndex);
