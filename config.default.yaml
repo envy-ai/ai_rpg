@@ -55,6 +55,10 @@ mystery_box_cleanup:
   # Number of eligible player-action turns between automatic mystery cleanup checks.
   interval: 10
 
+housekeeping:
+  # Number of eligible top-level event-check passes between automatic housekeeping prompts.
+  interval: 1
+
 # OpenAI-compatible API configuration
 ai:
   # Text generation backend:
@@ -472,6 +476,8 @@ quests:
   enabled: true
 quest_checks:
   enabled: true
+  # Number of eligible checks with active quests between quest-check prompts.
+  interval: 5
 factions:
   count: 7
 

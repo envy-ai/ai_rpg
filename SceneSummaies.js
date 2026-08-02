@@ -14,6 +14,29 @@ class SceneSummaries {
     }
 
     addSummaryResult(summaryResult) {
+        const staged = new SceneSummaries();
+        staged._scenes = this.getScenes();
+        staged._entryIdToIndex = new Map(this._entryIdToIndex);
+        staged._entryIdToNpcNames = new Map(
+            Array.from(this._entryIdToNpcNames.entries()).map(([entryId, npcNames]) => [
+                entryId,
+                Array.isArray(npcNames) ? npcNames.slice() : npcNames
+            ])
+        );
+        staged._metadata = { ...this._metadata };
+        if (this._metadata.lastSummarizedRange) {
+            staged._metadata.lastSummarizedRange = { ...this._metadata.lastSummarizedRange };
+        }
+
+        staged.#applySummaryResult(summaryResult);
+
+        this._scenes = staged._scenes;
+        this._entryIdToIndex = staged._entryIdToIndex;
+        this._entryIdToNpcNames = staged._entryIdToNpcNames;
+        this._metadata = staged._metadata;
+    }
+
+    #applySummaryResult(summaryResult) {
         if (!summaryResult || typeof summaryResult !== 'object') {
             throw new Error('Scene summary result is required.');
         }
@@ -44,6 +67,20 @@ class SceneSummaries {
             if (scene.endIndex > replacementEnd) {
                 replacementEnd = scene.endIndex;
             }
+        }
+
+        const partialOverlap = this._scenes.find(scene => (
+            scene
+            && typeof scene === 'object'
+            && scene.startIndex <= replacementEnd
+            && scene.endIndex >= replacementStart
+            && (scene.startIndex < replacementStart || scene.endIndex > replacementEnd)
+        ));
+        if (partialOverlap) {
+            throw new Error(
+                `Scene summary replacement range ${replacementStart}-${replacementEnd} partially overlaps `
+                + `stored scene ${partialOverlap.startIndex}-${partialOverlap.endIndex}.`
+            );
         }
 
         this._scenes = this._scenes.filter(scene => {
@@ -238,6 +275,23 @@ class SceneSummaries {
             }
             lastScene.endIndex = end;
             lastScene.endEntryId = endEntryId;
+        }
+
+        let cursor = start;
+        for (const scene of ordered) {
+            if (scene.startIndex !== cursor) {
+                throw new Error(
+                    `Scene summary scenes do not continuously cover summarized range ${start}-${end}; `
+                    + `expected the next scene to start at ${cursor}, received ${scene.startIndex}.`
+                );
+            }
+            cursor = scene.endIndex + 1;
+        }
+        if (cursor !== end + 1) {
+            throw new Error(
+                `Scene summary scenes do not continuously cover summarized range ${start}-${end}; `
+                + `coverage ends at ${cursor - 1}.`
+            );
         }
     }
 

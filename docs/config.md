@@ -210,6 +210,23 @@ event_checks:
 
 `event_checks.use_xml` defaults to `true` and must be a boolean when provided. When enabled, `Events.runEventChecks(...)` uses the `events-xml` prompt for ordinary event categories and parses one `<events>` block. Need bars still use the dedicated `need-bars` prompt when need-bar definitions are present, and those results are injected as ordinary `needbar_change` events before outcomes are applied. Set `event_checks.use_xml` to `false` to use the legacy grouped `event-checks` prompts plus the same dedicated `need-bars` prompt. The `/config` page exposes the same option as “XML Event Pipeline”.
 
+## Housekeeping And Quest-Check Intervals
+
+The automatic housekeeping and quest-completion prompts have independent turn intervals:
+
+```yaml
+housekeeping:
+  interval: 1
+
+quest_checks:
+  enabled: true
+  interval: 1
+```
+
+Both intervals default to `1` and must be integers greater than or equal to `1`. An interval of `N` runs the prompt on every Nth eligible check. Housekeeping counts top-level automatic event-check passes; recursive and explicitly suppressed passes do not advance its counter. Split movement counts once after its origin and destination results are merged. The manual `/housekeeping` command bypasses the automatic interval. Quest checks count only when they are enabled and the player has at least one active, unpaused quest; calls with no eligible quests do not advance their counter. A true XML `anyQuestObjectivesCompleted` event signal runs the quest check during the same turn when it has not already run and resets the counter after a successful check.
+
+The two counters are persisted in save metadata and restored on load, so their cadence continues across restarts. A new game resets both counters. The `/config` page exposes both interval fields.
+
 ## Per-prompt reasoning effort
 
 OpenAI-compatible `ai.reasoning_effort` can also be set per prompt through `ai_model_overrides` profiles. Matching profiles are selected by the prompt's `metadataLabel`, so this can tune cheap background checks without enabling reasoning globally.

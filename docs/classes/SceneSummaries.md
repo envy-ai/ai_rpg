@@ -37,7 +37,7 @@ Indexed text comes from `content` or, if content is empty, `summary`. Normalizat
 - It builds the shared index with `excludeSummaries: true`.
 - `startIndex` and `endIndex` accept positive integers or `"all"`.
 - `"all"`, with or without `redo`, always generates from entry 1 through the current end and atomically replaces the complete stored scene list and entry-id index map only after generation and validation succeed.
-- Numeric-range `redo: true` deletes overlapping stored summaries through `deleteSummariesOverlappingRange(...)`, then reruns the uncovered range with a bounded overlap extension based on `summaries.scene_summary_max_entries_per_prompt`.
+- Numeric-range `redo: true` plans the overlapping replacement range in a staged store, adds bounded following-scene context based on `summaries.scene_summary_max_entries_per_prompt`, and commits only the exact replacement range after generation and validation succeed. A failed redo preserves the existing summaries.
 - Long ranges are chunked against `summaries.scene_summary_max_entries_per_prompt` or the default of `500`.
 - Each chunk renders `prompts/scene-summarize.xml.njk` and calls `LLMClient.chatCompletion(...)` with `metadataLabel: 'scene_summarize'`, `runInBackground: true`, and whole-response XML validation disabled.
 - The returned prompt and response are logged through `LLMClient.logPrompt(...)` under the `scene_summarize` prefix.
@@ -45,13 +45,14 @@ Indexed text comes from `content` or, if content is empty, `summary`. Normalizat
 - Parsed `<details>` text is split into trimmed bullet lines. `<quote>` nodes require non-empty `character` and `text`.
 - The final parsed scene is used as the boundary marker for the preceding scene and is not stored as a completed summary.
 - Stored `entryIndexMap` entries include `npcNames` from chat-entry metadata when present.
-- `addSummaryResult(...)` anchors the first and last stored scene to `summarizedRange` when the model skips leading or trailing indexed entries, provided the entry ids exist in the map.
+- Generation sets `summarizedRange.start` to the requested range start and anchors the first stored scene there when the model treats leading prompt entries as setup. Generated scenes must continuously cover the complete `summarizedRange`.
+- `addSummaryResult(...)` stages and validates the entire merge before changing live state. It rejects discontinuous generated coverage and replacements that would cut through only part of an existing scene.
 
 Range errors use `scene_summary_diagnostics.js` and include scalar call context: requested start/end, resolved range, `redo`, and indexed-entry count.
 
 ## Instance API
 - `clear()`: empties scenes, entry maps, NPC-name maps, and metadata.
-- `addSummaryResult(summaryResult)`: validates `scenes` and `entryIndexMap`, ingests entry ids and NPC names, anchors to `summarizedRange` when supplied, removes stored scenes overlapping the incoming coverage, stores the normalized scenes, and updates metadata.
+- `addSummaryResult(summaryResult)`: atomically validates `scenes` and `entryIndexMap`, ingests entry ids and NPC names, anchors to `summarizedRange` when supplied, rejects discontinuous coverage or partial stored-scene overlaps, replaces fully covered stored scenes, and updates metadata.
 - `replaceWithSummaryResult(summaryResult)`: validates a result in a temporary `SceneSummaries` instance, then atomically replaces scenes, entry mappings, NPC-name mappings, and metadata. Invalid replacement data leaves the existing store unchanged.
 - `containsEntry(entryId)`: resolves an entry id through `_entryIdToIndex` and returns whether that index is covered by a stored scene.
 - `getContiguousSummarizedEndIndex()`: returns the last scene-summary index covered without a gap from index `1`, or `0` when no contiguous coverage exists. Base-context history uses this stable frontier to separate covered and raw records.

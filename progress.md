@@ -258,6 +258,27 @@ Original prompt: Incomplete scene summary data shouldn't block loading.
 - A missing scene-summary runtime store remains a fatal hydration configuration error, and recovery also fails explicitly if the store cannot be cleared.
 - Added a hydration regression test for the persisted `scenes: []` plus stale non-empty `entryIndexMap` case.
 - Updated `docs/classes/Utils.md`, `docs/classes/SceneSummaries.md`, and `docs/README.md`.
+
+Original prompt: If not already, make housekeeping and quest_check run at configurable intervals.
+
+- Added persisted maintenance-prompt turn counters and strict interval resolution for `housekeeping.interval` and `quest_checks.interval`; both default to 1.
+- Added interval gates to normal event-check housekeeping, split-movement housekeeping, and active-quest checks. Suppressed/recursive checks and no-active-quest calls do not advance counters; manual `/housekeeping` remains immediate.
+- Added configuration form fields and focused regression coverage. Documentation and final validation remain to be completed.
+- Browser inspection against the already-running server exposed blank interval inputs because its in-memory config predates the new defaults. The form now renders `1` for either missing key; a follow-up browser capture is pending.
+- Updated `docs/config.md`, `docs/classes/Events.md`, `docs/api/chat.md`, `docs/api/quests.md`, `docs/api/game.md`, `docs/slashcommands/HousekeepingCommand.md`, and `docs/README.md` with cadence, manual-bypass, and persistence semantics.
+- Final validation passed: JS syntax checks, default YAML parsing, isolated Nunjucks defaults, and 10 focused test files covering intervals, housekeeping XML, quest prompt transport, event sequencing, new-game reset, config overrides, need bars, and the manual command.
+- Browser captures confirmed both controls are present and correctly laid out. Their values remained blank in the already-running process because it cached the pre-change template/config; the source-level Nunjucks validation confirms missing keys render as `1` after restart.
+- Unrelated existing issue: `tests/api.vehicle_travel_prose_timing.test.js` fails because it still searches `api.js` for the removed `runTravelProseEventChecks` source marker.
+- TODO: restart the actively used game server at a safe point so the new runtime interval logic and refreshed config template are loaded.
+
+Original prompt: Add parsing for the new `<anyQuestObjectivesCompleted>` event type in the event prompt. If true, run the quest check immediately and reset the counter, suppressing running it twice in one turn.
+
+- The prompt schema already contained the required XML field. Added strict boolean parsing, a query helper for merged/split results, interval bypass support, duplicate suppression against the normal per-turn quest check, and quest-counter reset after a successful check.
+- Added focused parser, interval-bypass, counter-reset, and API sequencing coverage. Documentation and final validation remain.
+- Clarified timing after user follow-up: normal quest-check staggering is unchanged. The event signal adds one interval-bypassing check later in the same turn only when the normal check returned no result; an existing result is reused and resets cadence without launching a second prompt.
+- Updated `docs/classes/EventsXmlEventSchema.md`, `docs/classes/EventsEventTypes.md`, `docs/classes/Events.md`, `docs/api/quests.md`, `docs/api/chat.md`, `docs/config.md`, and `docs/README.md`.
+- Validation passed: syntax checks; 4 focused parser/cadence/orchestration test files; 9 broader event, quest-objective, housekeeping, need-bar, save-reset, and config test files; and visual inspection of the final browser smoke capture in `tmp/quest-objective-signal-final-smoke/shot-0.png` with no reported browser errors.
+- TODO: restart the running game server at a safe point to load this backend change; the browser smoke used the currently active pre-change process.
 - Validation: `Utils.js` and the new test pass syntax checks; four focused hydration/scene-summary test files pass.
 - Isolated-port Chromium regression suite passes with 35 tests passed and 4 fixture-gated tests skipped.
 - Rebuilt CSS output: `npm run scss:build:main` (updates `public/css/main.css`).

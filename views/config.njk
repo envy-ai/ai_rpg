@@ -900,6 +900,12 @@
                             </div>
                             <span class="help-text">Generate quest completion prose</span>
                         </div>
+
+                        <div class="form-group">
+                            <label for="housekeeping-interval">Housekeeping Interval:</label>
+                            <input type="number" id="housekeeping-interval" name="housekeeping.interval::int" value="{{ config.housekeeping.interval | default(1) }}" min="1" step="1">
+                            <span class="help-text">Eligible top-level event checks between automatic housekeeping prompts</span>
+                        </div>
                     </div>
                 </div>
 
@@ -1025,6 +1031,12 @@
                                 <input type="checkbox" id="quest-checks-enabled" name="quest_checks.enabled::boolean" value="true" {% if config.quest_checks.enabled %}checked{% endif %}>
                             </div>
                             <span class="help-text">Enable quest completion checks</span>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="quest-checks-interval">Quest Check Interval:</label>
+                            <input type="number" id="quest-checks-interval" name="quest_checks.interval::int" value="{{ config.quest_checks.interval | default(1) }}" min="1" step="1">
+                            <span class="help-text">Eligible checks with active quests between quest-check prompts</span>
                         </div>
                     </div>
                 </div>

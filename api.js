@@ -1,6 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const { randomUUID } = require('crypto');
+const contentDisposition = require('content-disposition');
 const Player = require('./Player.js');
 const Thing = require('./Thing.js');
 const { getCurrencyLabel } = require('./public/js/currency-utils.js');
@@ -1231,6 +1232,124 @@ function getCollectionEntry(collection, key) {
         return collection[key] || null;
     }
     return null;
+}
+
+function sanitizeGeneratedImageDownloadLabel(value, fallback = 'generated-image') {
+    const normalizedFallback = typeof fallback === 'string' && fallback.trim()
+        ? fallback.trim()
+        : 'generated-image';
+    let label = typeof value === 'string' ? value.normalize('NFC').trim() : '';
+    label = label
+        .replace(/[<>:"/\\|?*\u0000-\u001f\u007f]+/g, ' ')
+        .replace(/\s+/g, ' ')
+        .replace(/^[.\s]+|[.\s]+$/g, '');
+    if (!label) {
+        label = normalizedFallback;
+    }
+    if (/^(?:con|prn|aux|nul|com[1-9]|lpt[1-9])$/i.test(label)) {
+        label = `${label}-image`;
+    }
+    return Array.from(label).slice(0, 120).join('').replace(/[.\s]+$/g, '') || 'generated-image';
+}
+
+function findGeneratedImageEntityLabel(imageId, {
+    metadata = null,
+    players = null,
+    things = null,
+    gameLocations = null,
+    gameLocationExits = null
+} = {}) {
+    const normalizedImageId = typeof imageId === 'string' ? imageId.trim() : '';
+    if (!normalizedImageId) {
+        return '';
+    }
+
+    const character = getCollectionValues(players).find(entry => entry?.imageId === normalizedImageId) || null;
+    if (character) {
+        return character.name || `character-${character.id || normalizedImageId}`;
+    }
+
+    const locations = getCollectionValues(gameLocations);
+    const location = locations.find(entry => {
+        if (entry?.imageId === normalizedImageId) {
+            return true;
+        }
+        return getCollectionValues(entry?.imageVariants)
+            .some(variant => variant?.imageId === normalizedImageId);
+    }) || null;
+    if (location) {
+        return location.name || `location-${location.id || normalizedImageId}`;
+    }
+
+    const thing = getCollectionValues(things).find(entry => entry?.imageId === normalizedImageId) || null;
+    if (thing) {
+        return thing.name || `${thing.thingType || 'thing'}-${thing.id || normalizedImageId}`;
+    }
+
+    const locationExit = getCollectionValues(gameLocationExits)
+        .find(entry => entry?.imageId === normalizedImageId) || null;
+    if (locationExit) {
+        const destination = getCollectionEntry(gameLocations, locationExit.destination);
+        const destinationName = typeof destination?.name === 'string' ? destination.name.trim() : '';
+        return destinationName
+            ? `Exit to ${destinationName}`
+            : `location-exit-${locationExit.id || normalizedImageId}`;
+    }
+
+    const metadataEntityType = typeof metadata?.entityType === 'string'
+        ? metadata.entityType.trim().toLowerCase()
+        : (typeof metadata?.upload?.entityType === 'string' ? metadata.upload.entityType.trim().toLowerCase() : '');
+    const metadataEntityId = typeof metadata?.entityId === 'string' && metadata.entityId.trim()
+        ? metadata.entityId.trim()
+        : (typeof metadata?.upload?.entityId === 'string' ? metadata.upload.entityId.trim() : '');
+    const locationId = typeof metadata?.locationId === 'string' && metadata.locationId.trim()
+        ? metadata.locationId.trim()
+        : (metadataEntityType === 'location' || metadataEntityType === 'location-variant' ? metadataEntityId : '');
+    if (locationId) {
+        const metadataLocation = getCollectionEntry(gameLocations, locationId);
+        if (metadataLocation) {
+            return metadataLocation.name || `location-${locationId}`;
+        }
+    }
+    if (metadataEntityId && (metadataEntityType === 'player' || metadataEntityType === 'npc')) {
+        const metadataCharacter = getCollectionEntry(players, metadataEntityId);
+        if (metadataCharacter) {
+            return metadataCharacter.name || `character-${metadataEntityId}`;
+        }
+    }
+    if (metadataEntityId && ['thing', 'item', 'scenery'].includes(metadataEntityType)) {
+        const metadataThing = getCollectionEntry(things, metadataEntityId);
+        if (metadataThing) {
+            return metadataThing.name || `${metadataEntityType}-${metadataEntityId}`;
+        }
+    }
+
+    return '';
+}
+
+function buildGeneratedImageDownloadFilename({
+    imageId,
+    filepath,
+    metadata = null,
+    players = null,
+    things = null,
+    gameLocations = null,
+    gameLocationExits = null
+} = {}) {
+    const normalizedImageId = typeof imageId === 'string' ? imageId.trim() : '';
+    const extension = typeof filepath === 'string' ? path.extname(filepath).toLowerCase() : '';
+    if (!extension || !UPLOADED_ENTITY_IMAGE_TYPES.has(`image/${extension.slice(1)}`) && extension !== '.jpg') {
+        throw new Error(`Generated image '${normalizedImageId || 'unknown'}' has an unsupported file extension.`);
+    }
+    const entityLabel = findGeneratedImageEntityLabel(normalizedImageId, {
+        metadata,
+        players,
+        things,
+        gameLocations,
+        gameLocationExits
+    });
+    const fallbackLabel = normalizedImageId ? `generated-image-${normalizedImageId}` : 'generated-image';
+    return `${sanitizeGeneratedImageDownloadLabel(entityLabel, fallbackLabel)}${extension}`;
 }
 
 function buildIdSuffix(id) {
@@ -16688,7 +16807,7 @@ module.exports = function registerApiRoutes(scope) {
                 }
                 splitEventResult.timeProgress = { ...playerMoveTimeAdjustment.timeProgress };
             }
-            if (combinedProse) {
+            if (combinedProse && Events.shouldRunAutomaticHousekeepingThisTurn()) {
                 await runHousekeepingPrompt({
                     textToCheck: combinedProse,
                     actionText: (includePlayerActionForEventChecks && userInput)
@@ -25736,6 +25855,20 @@ module.exports = function registerApiRoutes(scope) {
                         } catch (eventError) {
                             console.warn('Failed to run event checks:', eventError.message);
                             console.debug(eventError);
+                        }
+                    }
+
+                    if (Events.eventResultIndicatesAnyQuestObjectivesCompleted(eventResult)) {
+                        try {
+                            questResult = await Events.resolveEventSignaledQuestCheck({
+                                eventResult,
+                                existingQuestResult: questResult
+                            });
+                        } catch (eventSignaledQuestCheckError) {
+                            console.warn(
+                                'Failed to run event-signaled quest check this turn:',
+                                eventSignaledQuestCheckError?.message || eventSignaledQuestCheckError
+                            );
                         }
                     }
 
@@ -46117,6 +46250,7 @@ module.exports = function registerApiRoutes(scope) {
                 improvementPromptTurnCounter = 0;
                 tonalScaleEvaluationTurnCounter = 0;
                 mysteryBoxCleanupTurnCounter = 0;
+                Events.resetMaintenancePromptTurnCounters();
                 resetPlotAnalysisPromptRuntime();
                 Globals.setPlotAnalysis(null);
                 resetOffscreenNpcActivityState();
@@ -46984,6 +47118,9 @@ module.exports = function registerApiRoutes(scope) {
             metadata.mysteryBoxCleanupTurnCounter = Number.isInteger(mysteryBoxCleanupTurnCounter) && mysteryBoxCleanupTurnCounter >= 0
                 ? mysteryBoxCleanupTurnCounter
                 : 0;
+            const maintenancePromptTurnCounters = Events.getMaintenancePromptTurnCounters();
+            metadata.housekeepingTurnCounter = maintenancePromptTurnCounters.housekeepingTurnCounter;
+            metadata.questCheckTurnCounter = maintenancePromptTurnCounters.questCheckTurnCounter;
             metadata.offscreenNpcActivityState = normalizeOffscreenNpcActivityState(offscreenNpcActivityState);
             const currentLocationId = currentPlayer.currentLocation || null;
             const currentLocation = currentLocationId
@@ -47279,6 +47416,7 @@ module.exports = function registerApiRoutes(scope) {
             metadata.summaryStyle = normalizeSummaryStyle(metadata.summaryStyle);
             metadata.npcAliasesGenerated = normalizeNpcAliasesGeneratedFlag(metadata.npcAliasesGenerated);
             Globals.setSaveMetadata(metadata);
+            Events.hydrateMaintenancePromptTurnCounters(metadata);
             {
                 const hasStoredPlotSummaryCounter = Object.prototype.hasOwnProperty.call(metadata, 'plotSummaryTurnCounter');
                 const parsedPlotSummaryCounter = Number(metadata.plotSummaryTurnCounter);
@@ -50507,6 +50645,17 @@ module.exports = function registerApiRoutes(scope) {
                     error: 'Image file not found'
                 });
             }
+            const metadata = resolveGeneratedImageMetadata(imageId);
+            const downloadFilename = buildGeneratedImageDownloadFilename({
+                imageId,
+                filepath,
+                metadata,
+                players,
+                things,
+                gameLocations,
+                gameLocationExits
+            });
+            res.setHeader('Content-Disposition', contentDisposition(downloadFilename, { type: 'inline' }));
             return res.sendFile(filepath);
         });
 
@@ -50558,6 +50707,9 @@ module.exports.parseRegisteredPlayerPayloadFieldValue = parseRegisteredPlayerPay
 module.exports.extractRegisteredPlayerPayloadFieldValues = extractRegisteredPlayerPayloadFieldValues;
 module.exports.applyRegisteredPlayerPayloadFieldValues = applyRegisteredPlayerPayloadFieldValues;
 module.exports.parseUploadedEntityImageDataUrl = parseUploadedEntityImageDataUrl;
+module.exports.sanitizeGeneratedImageDownloadLabel = sanitizeGeneratedImageDownloadLabel;
+module.exports.findGeneratedImageEntityLabel = findGeneratedImageEntityLabel;
+module.exports.buildGeneratedImageDownloadFilename = buildGeneratedImageDownloadFilename;
 module.exports.extractInlineRollControls = extractInlineRollControls;
 module.exports.resetNewGameRuntimeState = resetNewGameRuntimeState;
 module.exports.resolvePendingRegionEntryStubForTravelDestination = resolvePendingRegionEntryStubForTravelDestination;

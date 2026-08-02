@@ -93,6 +93,7 @@ test('XML event parser converts core camelCase tags to existing event keys', () 
   <hostileToFriendly><npcName>Guard</npcName><previousDisposition>hostile</previousDisposition><newDisposition>neutral</newDisposition><reason>Accepted apology.</reason></hostileToFriendly>
   <deathIncapacitation><actorName>Goblin</actorName><outcome>incapacitated</outcome></deathIncapacitation>
   <inCombat><value>true</value></inCombat>
+  <anyQuestObjectivesCompleted><value>true</value></anyQuestObjectivesCompleted>
   <receivedQuest><giverName>Ada</giverName><summary>Find the missing key.</summary></receivedQuest>
   <completedQuestObjective><questIndex>2</questIndex><objectiveIndex>3</objectiveIndex><statusReason>The key was found.</statusReason></completedQuestObjective>
   <defeatedEnemy><enemyName>Goblin</enemyName></defeatedEnemy>
@@ -167,6 +168,7 @@ test('XML event parser converts core camelCase tags to existing event keys', () 
         assert.equal(events.hostile_to_friendly[0].newDisposition, 'neutral');
         assert.equal(events.death_incapacitation[0].status, 'incapacitated');
         assert.equal(events.in_combat, true);
+        assert.equal(events.any_quest_objectives_completed, true);
         assert.equal(events.received_quest[0].summary, 'Find the missing key.');
         assert.deepEqual(events.completed_quest_objective[0], {
             questIndex: 2,
@@ -182,6 +184,36 @@ test('XML event parser converts core camelCase tags to existing event keys', () 
     } finally {
         Globals.config = previousConfig;
     }
+});
+
+test('XML event parser strictly parses and aggregates anyQuestObjectivesCompleted', () => {
+    const parsed = Events._parseXmlEventCheckResponse(`
+<events>
+  <anyQuestObjectivesCompleted><value>false</value></anyQuestObjectivesCompleted>
+  <anyQuestObjectivesCompleted><value>true</value></anyQuestObjectivesCompleted>
+</events>
+`);
+
+    assert.equal(parsed.structured.parsed.any_quest_objectives_completed, true);
+    assert.equal(
+        Events.eventResultIndicatesAnyQuestObjectivesCompleted({ structured: parsed.structured }),
+        true
+    );
+    assert.equal(
+        Events.eventResultIndicatesAnyQuestObjectivesCompleted({
+            structured: { parsed: { any_quest_objectives_completed: [false, true] } }
+        }),
+        true
+    );
+
+    assert.throws(
+        () => Events._parseXmlEventCheckResponse(`
+<events>
+  <anyQuestObjectivesCompleted><value>maybe</value></anyQuestObjectivesCompleted>
+</events>
+`),
+        /anyQuestObjectivesCompleted\.value must be exactly true or false/
+    );
 });
 
 test('XML newExitDiscovered preserves destination location when destination kind is region', () => {

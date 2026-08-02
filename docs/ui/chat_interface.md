@@ -266,7 +266,7 @@ Chat entries can include attachments rendered as inline "insights":
 
 `views/index.njk` defines helpers:
 
-- `renderEntityImage({ element, entityType, entityId, imageId, ... })` sets `data-*`, resolves stored image IDs through the extension-agnostic `/api/images/:imageId/file` route, and delegates generation/job tracking to `window.AIRPG.imageManager`.
+- `renderEntityImage({ element, entityType, entityId, imageId, ... })` sets `data-*`, resolves stored image IDs through the extension-agnostic `/api/images/:imageId/file` route, and delegates generation/job tracking to `window.AIRPG.imageManager`. The shared file route supplies a descriptive inline filename based on the owning character, location, thing, or exit so browser `Save image as` actions do not default to `file.png`.
 - Context menus for locations, things, NPCs, and the player include `Upload Image`, which opens `#entityImageUploadModal`, posts the selected PNG/JPEG/WebP/GIF data URL to `/api/images/upload`, then rerenders every matching entity image element with the returned `imageId`. Location uploads also clear the client-side weather/lighting variant display cache for that location.
 - Context menus for locations, things, NPCs, and the player include `Regenerate Image +`, which requests `/api/images/prompt`, shows `#entityImagePromptModal` with the final prefixed prompt in an editable text area, and posts the confirmed prompt to `/api/images/request` with `force: true`.
 - Those same context menus include `Regenerate Image (same prompt)`, which posts `useExistingPrompt: true` with `force: true`, bypasses prompt generation and the prompt-edit modal, and surfaces an explicit error when the entity's persisted `imagePrompt` is blank.

@@ -16,7 +16,8 @@ function snapshotEventsState() {
         parsers: Events._parsers,
         aggregators: Events._aggregators,
         handlers: Events._handlers,
-        housekeepingRunner: Events._housekeepingPromptRunner
+        housekeepingRunner: Events._housekeepingPromptRunner,
+        maintenancePromptTurnCounters: Events.getMaintenancePromptTurnCounters()
     };
 }
 
@@ -27,16 +28,23 @@ function restoreEventsState(snapshot) {
     Events._aggregators = snapshot.aggregators;
     Events._handlers = snapshot.handlers;
     Events._housekeepingPromptRunner = snapshot.housekeepingRunner;
+    Events.hydrateMaintenancePromptTurnCounters(snapshot.maintenancePromptTurnCounters);
     LLMClient.chatCompletion = snapshot.chatCompletion;
     LLMClient.logPrompt = snapshot.logPrompt;
     Globals.config = snapshot.config;
     Globals.currentPlayer = snapshot.currentPlayer;
 }
 
-function initializeEventsForHousekeepingTest({ useXml = true, player, housekeepingCalls }) {
+function initializeEventsForHousekeepingTest({
+    useXml = true,
+    player,
+    housekeepingCalls,
+    housekeepingInterval = 1
+}) {
     Globals.config = {
         ai: {},
         event_checks: useXml ? { enabled: true } : { enabled: true, use_xml: false },
+        housekeeping: { interval: housekeepingInterval },
         quests: { enabled: false },
         omit_npc_generation: true
     };
@@ -130,6 +138,46 @@ test('XML event checks run silent housekeeping after applying event outcomes', a
     }
 });
 
+test('automatic housekeeping honors housekeeping.interval', async () => {
+    const snapshot = snapshotEventsState();
+    const housekeepingCalls = [];
+    const player = {
+        isNPC: false,
+        name: 'Wanderer',
+        currency: 0,
+        getCurrency() {
+            return this.currency;
+        },
+        adjustCurrency(amount) {
+            this.currency += amount;
+        }
+    };
+
+    try {
+        initializeEventsForHousekeepingTest({
+            useXml: true,
+            player,
+            housekeepingCalls,
+            housekeepingInterval: 2
+        });
+
+        await Events.runEventChecks({
+            textToCheck: 'The first maintenance interval begins.',
+            suppressNeedBarEventChecks: true
+        });
+        assert.equal(housekeepingCalls.length, 0);
+
+        await Events.runEventChecks({
+            textToCheck: 'The second maintenance interval completes.',
+            suppressNeedBarEventChecks: true
+        });
+        assert.equal(housekeepingCalls.length, 1);
+        assert.equal(Events.getMaintenancePromptTurnCounters().housekeepingTurnCounter, 2);
+    } finally {
+        restoreEventsState(snapshot);
+    }
+});
+
 test('legacy event checks run silent housekeeping after grouped event prompts', async () => {
     const snapshot = snapshotEventsState();
     const housekeepingCalls = [];
@@ -186,6 +234,7 @@ test('recursive follow-up event checks do not run duplicate housekeeping', async
         });
 
         assert.equal(housekeepingCalls.length, 0);
+        assert.equal(Events.getMaintenancePromptTurnCounters().housekeepingTurnCounter, 0);
     } finally {
         restoreEventsState(snapshot);
     }

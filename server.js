@@ -8333,13 +8333,20 @@ async function summarizeScenesForHistoryRange({ chatHistory, startIndex, endInde
         }));
     }
 
+    let redoReplacementRange = null;
     if (redo && !isAllRange) {
         const sceneSummaries = Globals.getSceneSummaries();
-        const removedRange = sceneSummaries.deleteSummariesOverlappingRange(parsedStart, parsedEnd);
+        if (!sceneSummaries || typeof sceneSummaries.serialize !== 'function') {
+            throw new Error('Scene summary store is unavailable for redo planning.');
+        }
+        const stagedSceneSummaries = new SceneSummaries();
+        stagedSceneSummaries.load(sceneSummaries.serialize());
+        const removedRange = stagedSceneSummaries.deleteSummariesOverlappingRange(parsedStart, parsedEnd);
         const maxEntriesPerPrompt = resolveSceneSummaryMaxEntries();
         const extraSpan = Math.max(1, Math.floor(maxEntriesPerPrompt / 4));
         const redoStart = removedRange.start;
-        const redoEnd = Math.min(removedRange.end, parsedEnd + extraSpan);
+        const redoEnd = Math.min(totalEntries, removedRange.end + extraSpan);
+        redoReplacementRange = { start: removedRange.start, end: removedRange.end };
         parsedStart = redoStart;
         parsedEnd = redoEnd;
     }
@@ -8515,9 +8522,24 @@ async function summarizeScenesForHistoryRange({ chatHistory, startIndex, endInde
         throw new Error('Scene summary response produced no scenes after removing the final scene.');
     }
 
-    const orderedScenes = aggregatedScenes.slice().sort((a, b) => a.startIndex - b.startIndex);
-    const summarizedStartIndex = orderedScenes[0].startIndex;
-    const summarizedEndIndex = removedScene.startIndex - 1;
+    const generatedBoundaryEndIndex = removedScene.startIndex - 1;
+    if (redoReplacementRange && generatedBoundaryEndIndex < redoReplacementRange.end) {
+        throw new Error(
+            `Scene summary redo did not generate a following-scene boundary beyond replacement range `
+            + `${redoReplacementRange.start}-${redoReplacementRange.end}; existing summaries were preserved.`
+        );
+    }
+
+    const summarizedStartIndex = parsedStart;
+    const summarizedEndIndex = redoReplacementRange
+        ? redoReplacementRange.end
+        : generatedBoundaryEndIndex;
+    const orderedScenes = aggregatedScenes
+        .filter(scene => scene.startIndex <= summarizedEndIndex)
+        .sort((a, b) => a.startIndex - b.startIndex);
+    if (orderedScenes.length === 0) {
+        throw new Error('Scene summary response produced no scenes inside the summarized range.');
+    }
     if (!Number.isInteger(summarizedStartIndex) || summarizedStartIndex <= 0) {
         throw new Error('Scene summary start index is invalid after removing the final scene.');
     }
@@ -8542,23 +8564,24 @@ async function summarizeScenesForHistoryRange({ chatHistory, startIndex, endInde
     const scenesWithBounds = [];
     for (let i = 0; i < orderedScenes.length; i += 1) {
         const scene = orderedScenes[i];
+        const sceneStartIndex = i === 0 ? summarizedStartIndex : scene.startIndex;
         const nextStartIndex = i + 1 < orderedScenes.length
             ? orderedScenes[i + 1].startIndex
             : removedScene.startIndex;
         if (!Number.isInteger(nextStartIndex) || nextStartIndex <= scene.startIndex) {
             throw new Error('Scene summary end index could not be resolved.');
         }
-        const endIndex = nextStartIndex - 1;
-        const startEntryId = entryIdByIndex.get(scene.startIndex);
+        const endIndex = Math.min(nextStartIndex - 1, summarizedEndIndex);
+        const startEntryId = entryIdByIndex.get(sceneStartIndex);
         if (!startEntryId) {
-            throw new Error(`Scene summary is missing entry ID for start index ${scene.startIndex}.`);
+            throw new Error(`Scene summary is missing entry ID for start index ${sceneStartIndex}.`);
         }
         const endEntryId = entryIdByIndex.get(endIndex);
         if (!endEntryId) {
             throw new Error(`Scene summary is missing entry ID for end index ${endIndex}.`);
         }
         scenesWithBounds.push({
-            startIndex: scene.startIndex,
+            startIndex: sceneStartIndex,
             endIndex,
             startEntryId,
             endEntryId,

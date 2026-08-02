@@ -109,6 +109,67 @@ test('SceneSummaries anchors generated coverage to the requested summarized rang
     assert.equal(sceneSummaries.getFirstUnsummarizedIndex(5), null);
 });
 
+test('SceneSummaries rejects discontinuous generated coverage atomically', () => {
+    const sceneSummaries = buildSceneSummaries();
+    const original = sceneSummaries.serialize();
+
+    assert.throws(
+        () => sceneSummaries.addSummaryResult({
+            summarizedRange: { start: 4, end: 7 },
+            entryIndexMap: [
+                { entryId: 'entry-4', index: 4 },
+                { entryId: 'entry-5', index: 5 },
+                { entryId: 'entry-6', index: 6 },
+                { entryId: 'entry-7', index: 7 }
+            ],
+            scenes: [
+                {
+                    startIndex: 4,
+                    endIndex: 5,
+                    startEntryId: 'entry-4',
+                    endEntryId: 'entry-5',
+                    summary: 'The first generated scene.'
+                },
+                {
+                    startIndex: 7,
+                    endIndex: 7,
+                    startEntryId: 'entry-7',
+                    endEntryId: 'entry-7',
+                    summary: 'The generated scene after a gap.'
+                }
+            ]
+        }),
+        /continuously cover/i
+    );
+
+    assert.deepEqual(sceneSummaries.serialize(), original);
+});
+
+test('SceneSummaries rejects a partial stored-scene overlap atomically', () => {
+    const sceneSummaries = buildSceneSummaries();
+    const original = sceneSummaries.serialize();
+
+    assert.throws(
+        () => sceneSummaries.addSummaryResult({
+            summarizedRange: { start: 2, end: 3 },
+            entryIndexMap: [
+                { entryId: 'entry-2', index: 2 },
+                { entryId: 'entry-3', index: 3 }
+            ],
+            scenes: [{
+                startIndex: 2,
+                endIndex: 3,
+                startEntryId: 'entry-2',
+                endEntryId: 'entry-3',
+                summary: 'A stale narrower replacement.'
+            }]
+        }),
+        /partially overlaps/i
+    );
+
+    assert.deepEqual(sceneSummaries.serialize(), original);
+});
+
 test('SceneSummaries reports only the contiguous summarized prefix', () => {
     const sceneSummaries = new SceneSummaries();
     sceneSummaries.addSummaryResult({

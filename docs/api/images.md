@@ -168,12 +168,13 @@ Notes:
 Serve a generated image without requiring the client to know the stored file extension.
 
 Response:
-- 200: image bytes via `res.sendFile(...)`
+- 200: image bytes via `res.sendFile(...)`, with an inline `Content-Disposition` filename derived from the owning character, location, thing, or exit
 - 404: `{ success: false, error }`
 
 Notes:
 - The route resolves saved image metadata first, then scans `public/generated-images/` for `.png`, `.jpg`, `.jpeg`, `.webp`, or `.gif`.
 - Public UI image rendering uses this route for `imageId` references.
+- Browser save actions receive a filesystem-safe descriptive filename such as `Aster Vale.png`, `Moonlit Blade.webp`, or `Exit to Glass Harbor.jpg`. Location weather/lighting variants use the owning location name. Images no longer attached to a known entity fall back to `generated-image-<imageId>.<extension>`.
 
 ## GET /api/images
 List generated image metadata currently tracked by the server.

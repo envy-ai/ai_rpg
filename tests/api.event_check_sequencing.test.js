@@ -106,6 +106,16 @@ test('event checks start housekeeping concurrently and apply it after outcomes',
     assert.match(eventsSource, /if \(pendingHousekeepingPrompt\) \{[\s\S]*?return runner\.finish\(pending,/);
 });
 
+test('quest objective event signal forces at most one quest check and resets its interval', () => {
+    const source = sourceBetween(
+        '                    let eventResult = null;',
+        '\n                    if (playerActionTimeProgress'
+    );
+
+    assert.match(source, /Events\.eventResultIndicatesAnyQuestObjectivesCompleted\(eventResult\)/);
+    assert.match(source, /questResult = await Events\.resolveEventSignaledQuestCheck\(\{[\s\S]*?eventResult,[\s\S]*?existingQuestResult: questResult/);
+});
+
 test('split moveTurnResult runs one merged housekeeping pass after sub-checks', () => {
     const source = sourceBetween(
         'async function runmoveTurnResultEventChecks({',
@@ -129,6 +139,7 @@ test('split moveTurnResult runs one merged housekeeping pass after sub-checks', 
 
     assert.match(originCall, /suppressHousekeeping:\s*true/);
     assert.match(destinationCall, /suppressHousekeeping:\s*true/);
+    assert.match(postMerge, /combinedProse && Events\.shouldRunAutomaticHousekeepingThisTurn\(\)/);
     assert.match(postMerge, /await runHousekeepingPrompt\(\{/);
     assert.match(postMerge, /textToCheck:\s*combinedProse,/);
     assert.match(postMerge, /eventResult:\s*splitEventResult,/);

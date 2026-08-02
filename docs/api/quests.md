@@ -94,7 +94,9 @@ Quest checks:
 - Require `quest_checks.enabled === true`.
 - Also require `event_checks.enabled !== false`, unless the caller passes `allowWithoutEventChecks`.
 - Use active, unpaused, incomplete quests from the current player's canonical quest order.
-- Return `null` without building a prompt when there are no active, unpaused quests.
+- Return `null` without building a prompt when there are no active, unpaused quests; these calls do not advance the interval counter.
+- Increment the persisted quest-check counter once per eligible call and run only on every `quest_checks.interval`th eligible call. The interval defaults to `1` and must be an integer greater than or equal to `1`.
+- A true XML event-check `anyQuestObjectivesCompleted` signal bypasses the interval and runs one quest check in the same turn when the normal check did not already run. When either path successfully ran the prompt, the signal resets the quest-check counter to zero. `quest_checks.enabled`, active-quest filtering, and duplicate suppression still apply.
 - Render the `quest-check` prompt and call `LLMClient.chatCompletion` with metadata label `quest_check`.
 - Parse completed objectives from quest-status XML using one-based quest and objective indices.
 

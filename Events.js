@@ -2261,6 +2261,10 @@ class Events {
     static _aggregators = {};
     static _handlers = {};
     static _baseTimeout = BASE_TIMEOUT_MS;
+    static _maintenancePromptTurnCounters = {
+        housekeepingTurnCounter: 0,
+        questCheckTurnCounter: 0,
+    };
 
     static resolvePromptLaunchStaggerMs(configOverride = Globals?.config) {
         const raw = configOverride?.stagger_concurrent_prompts;
@@ -2287,6 +2291,98 @@ class Events {
         return new Promise((resolve) => {
             setTimeout(resolve, delayMs);
         }).then(task);
+    }
+
+    static _resolveMaintenancePromptInterval(rawInterval, configPath) {
+        if (rawInterval === undefined || rawInterval === null || rawInterval === "") {
+            return 1;
+        }
+        const interval = Number(rawInterval);
+        if (!Number.isInteger(interval) || interval < 1) {
+            throw new Error(`${configPath} must be an integer greater than or equal to 1 when provided.`);
+        }
+        return interval;
+    }
+
+    static resolveHousekeepingInterval(configOverride = this.config || Globals?.config) {
+        return this._resolveMaintenancePromptInterval(
+            configOverride?.housekeeping?.interval,
+            "housekeeping.interval",
+        );
+    }
+
+    static resolveQuestCheckInterval(configOverride = this.config || Globals?.config) {
+        return this._resolveMaintenancePromptInterval(
+            configOverride?.quest_checks?.interval,
+            "quest_checks.interval",
+        );
+    }
+
+    static resetMaintenancePromptTurnCounters() {
+        this._maintenancePromptTurnCounters = {
+            housekeepingTurnCounter: 0,
+            questCheckTurnCounter: 0,
+        };
+    }
+
+    static resetQuestCheckTurnCounter() {
+        this._maintenancePromptTurnCounters.questCheckTurnCounter = 0;
+    }
+
+    static hydrateMaintenancePromptTurnCounters(metadata = {}) {
+        const resolveCounter = (value) => {
+            const numeric = Number(value);
+            return Number.isInteger(numeric) && numeric >= 0 ? numeric : 0;
+        };
+        this._maintenancePromptTurnCounters = {
+            housekeepingTurnCounter: resolveCounter(metadata?.housekeepingTurnCounter),
+            questCheckTurnCounter: resolveCounter(metadata?.questCheckTurnCounter),
+        };
+        return this.getMaintenancePromptTurnCounters();
+    }
+
+    static getMaintenancePromptTurnCounters() {
+        return { ...this._maintenancePromptTurnCounters };
+    }
+
+    static eventResultIndicatesAnyQuestObjectivesCompleted(eventResult) {
+        const parsed = eventResult?.structured?.parsed || eventResult?.parsed || null;
+        if (!parsed || typeof parsed !== "object") {
+            return false;
+        }
+        const signal = parsed.any_quest_objectives_completed;
+        return Array.isArray(signal)
+            ? signal.some((value) => value === true)
+            : signal === true;
+    }
+
+    static async resolveEventSignaledQuestCheck({
+        eventResult = null,
+        existingQuestResult = null,
+    } = {}) {
+        if (!this.eventResultIndicatesAnyQuestObjectivesCompleted(eventResult)) {
+            return existingQuestResult;
+        }
+
+        const questResult = existingQuestResult === null || existingQuestResult === undefined
+            ? await this.runQuestChecks({ bypassInterval: true })
+            : existingQuestResult;
+        if (questResult !== null && questResult !== undefined) {
+            this.resetQuestCheckTurnCounter();
+        }
+        return questResult;
+    }
+
+    static shouldRunAutomaticHousekeepingThisTurn(configOverride = this.config || Globals?.config) {
+        const interval = this.resolveHousekeepingInterval(configOverride);
+        this._maintenancePromptTurnCounters.housekeepingTurnCounter += 1;
+        return this._maintenancePromptTurnCounters.housekeepingTurnCounter % interval === 0;
+    }
+
+    static _shouldRunQuestCheckThisTurn(configOverride = this.config || Globals?.config) {
+        const interval = this.resolveQuestCheckInterval(configOverride);
+        this._maintenancePromptTurnCounters.questCheckTurnCounter += 1;
+        return this._maintenancePromptTurnCounters.questCheckTurnCounter % interval === 0;
     }
 
     static animatedItems = new SanitizedStringSet();
@@ -2923,6 +3019,7 @@ class Events {
         }
 
         this._deps = { ...deps };
+        this.resetMaintenancePromptTurnCounters();
         this._baseTimeout =
             Number.isFinite(deps.baseTimeoutMilliseconds) &&
                 deps.baseTimeoutMilliseconds > 0
@@ -2967,6 +3064,12 @@ class Events {
             return null;
         }
         const runner = this._getHousekeepingPromptRunner();
+        if (!runner) {
+            return null;
+        }
+        if (!this.shouldRunAutomaticHousekeepingThisTurn()) {
+            return { __housekeepingIntervalSkipped: true };
+        }
         const starter = typeof runner?.start === "function"
             ? runner.start.bind(runner)
             : null;
@@ -3000,6 +3103,9 @@ class Events {
         pendingHousekeepingPrompt = null,
     } = {}) {
         if (depth > 0 || suppressHousekeeping) {
+            return null;
+        }
+        if (pendingHousekeepingPrompt?.__housekeepingIntervalSkipped === true) {
             return null;
         }
         const runner = this._getHousekeepingPromptRunner();
@@ -3036,6 +3142,7 @@ class Events {
     static async runQuestChecks({
         allowWithoutEventChecks = false,
         recentTextOverride = null,
+        bypassInterval = false,
     } = {}) {
         const config = this.config || Globals.config || {};
         if (config?.event_checks?.enabled === false && !allowWithoutEventChecks) {
@@ -3108,6 +3215,13 @@ class Events {
 
         if (!currentQuestPromptList.length) {
             console.info("Quest checks skipped: no active quests.");
+            return null;
+        }
+        if (bypassInterval) {
+            this.resolveQuestCheckInterval(config);
+            console.info("Quest checks running this turn from an event objective-completion signal.");
+        } else if (!this._shouldRunQuestCheckThisTurn(config)) {
+            console.info("Quest checks skipped: quest_checks.interval cadence not reached.");
             return null;
         }
 
@@ -6258,6 +6372,11 @@ class Events {
                     key: "in_combat",
                     raw: this._getXmlDirectChildText(node, "value"),
                 };
+            case "anyQuestObjectivesCompleted":
+                return {
+                    key: "any_quest_objectives_completed",
+                    raw: this._getXmlDirectChildText(node, "value"),
+                };
             case "receivedQuest": {
                 const giverName = this._getXmlDirectChildText(node, "giverName");
                 const summary = this._getXmlDirectChildText(node, "summary");
@@ -7589,6 +7708,20 @@ class Events {
 
                 return normalized === "yes" || normalized === "true";
             },
+            any_quest_objectives_completed: (raw) => {
+                const normalized = typeof raw === "string"
+                    ? raw.trim().toLowerCase()
+                    : "";
+                if (normalized === "true") {
+                    return true;
+                }
+                if (normalized === "false") {
+                    return false;
+                }
+                throw new Error(
+                    "anyQuestObjectivesCompleted.value must be exactly true or false.",
+                );
+            },
             item_to_npc: (raw) =>
                 splitPipeList(raw)
                     .map((entry) => {
@@ -8520,6 +8653,8 @@ class Events {
                 }
                 return Boolean(values[values.length - 1]);
             },
+            any_quest_objectives_completed: (list) =>
+                flattenAndFilter(list).some((value) => value === true),
             consume_item: (list) => {
                 const entries = flattenAndFilter(list);
                 const normalized = [];

@@ -20,7 +20,7 @@ The response is a flat chronological list of event elements. Travel is the only 
 
 Rules:
 
-- Omit event tags when that event did not occur.
+- Omit event tags when that event did not occur, except required state/signal fields such as `inCombat` and `anyQuestObjectivesCompleted`, which report `false` when inactive.
 - Repeat event tags for multiple instances.
 - If no player/party travel occurred, all event elements remain direct children of `<events>` and belong to the active location.
 - The first `<moveLocation>` or `<moveNewLocation>` element is the travel boundary. Events before it happened at the origin; events after `<arriveAtLocation/>` happened after arrival at the destination. List events in chronological order.
@@ -517,6 +517,16 @@ Use this to indicate whether the player should currently be considered in physic
 <inCombat>
   <value>true|false</value>
 </inCombat>
+```
+
+### `any_quest_objectives_completed`
+
+Required exactly once in the XML event response. Use `true` when the checked prose makes it likely that at least one active quest objective completed, otherwise use `false`. A true value asks the chat turn to run the full quest-check prompt during the same turn; it does not identify or complete an objective by itself.
+
+```xml
+<anyQuestObjectivesCompleted>
+  <value>true|false</value>
+</anyQuestObjectivesCompleted>
 ```
 
 ### `received_quest`

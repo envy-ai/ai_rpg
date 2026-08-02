@@ -14,6 +14,8 @@ Slash command `/summarize` (alias `/scene_summary`) summarizes scene-summary-ind
 - `range=all`, with or without `redo`, rebuilds from scene-summary entry 1 through the current end. The generated result atomically replaces the complete scene list and entry-id mapping store only after validation succeeds, so stale mappings are removed and a failed rebuild preserves the previous store.
 - `range=N` summarizes one indexed entry; `range=N-M` and `range=N..M` summarize inclusive indexed ranges. Invalid, reversed, zero, or negative ranges produce ephemeral replies.
 - Successful summarization requires at least one returned scene. The command writes `exports/summary-<timestamp>.txt`, echoes the formatted export to the server console, and replies with the output path.
+- If the model starts its first scene after the first requested entry, that leading setup is included in the first stored scene so the requested range remains contiguous.
+- Redo generation uses following-scene context but replaces only the complete original overlap range. Existing summaries remain unchanged if the model does not return enough boundary context or validation otherwise fails.
 - Export or formatting failures produce ephemeral replies that include the failing operation and error message.
 
 ## Notes
