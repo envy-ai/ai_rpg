@@ -24,6 +24,7 @@ Raw text after the command is passed to the prompt as `housekeepingInstructions`
 - The API helper maps `instructions` to the prompt template's `housekeepingInstructions` value and creates a scoped stream emitter for request-user-input, quest confirmation, and XML-derived tool-call debug updates.
 - Automatic post-event housekeeping calls do not pass instructions; the runner default keeps `housekeepingInstructions` blank.
 - The manual command bypasses `housekeeping.interval` and does not advance the automatic housekeeping counter.
+- The manual command uses the same ordered multi-turn action/prose/event context as automatic housekeeping. A successful manual run advances `lastHousekeepingTurnId`, so the next run starts after the newest player turn it examined; when housekeeping has never run, the context is limited to the configured interval.
 - Successful non-hidden tracker mutations and relationship label mutations can create visible player-only `tracker-updates` and `relationship-updates` chat entries. These rows are excluded from all LLM prompt-history paths.
 - Requests both location and relationship-graph refresh flags after completion because housekeeping may update trackers, quests, or relationships.
 

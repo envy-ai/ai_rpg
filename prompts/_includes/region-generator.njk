@@ -113,9 +113,8 @@ Very important: follow the instructions in &lt;writingStyleNotes&gt; and any ton
     <!-- If this location is a building exterior, include a regionExits element with a stubRegion for the building interior. The description for this case should be of the place around the building, not the interior itself. As a rule, the name of building interiors should be "[building name] interior" -->
     <location>
       <name>Concise, evocative location name</name>
-      <description>Two-paragraph description emphasising sensory detail and interactive elements.</description>
-      <shortDescription>IMPORTANT: One sentence summary of the location (do not repeat the name).</shortDescription>
-      <hasWeather>yes/no/outside - Answer "yes" if dynamic weather effects occur here, "no" if they do not, or "outside" if the location is indoors but the weather is visible (such as through windows or the mouth of a cave, etc). Answer "no" if no outside weather effects are visible (no windows, deep in a cave, etc).</hasWeather>
+      <description>Two-paragraph description emphasising sensory detail and interactive elements. If this location is a building exterior, focus on the *surroundings* of the building (yard, city street, etc.) and what the building looks like *from the outside*.</description>
+      <shortDescription>IMPORTANT: One sentence summary of the location (do not repeat the name). Again, describe the *surroundings* if this is a building exterior.</shortDescription>
       <controllingFaction><!-- Full faction name from the list or "None" --></controllingFaction>
       <relativeLevel>Integer from +0 to +3 relative to the region average</relativeLevel>
       <notesAboutExits>Brief explanation of which neighbouring locations this place connects to and why it makes sense.</notesAboutExits>
@@ -139,7 +138,7 @@ Very important: follow the instructions in &lt;writingStyleNotes&gt; and any ton
             - Small: Equippable, like a jetpack or mech suit.
             - Medium: Something mount-sized, like a horse or motorcycle.
             - Large: Something car-sized, like a car, small boat, small bus, or small starship ("large" vehicles are implemented as single locations, so they should be small enough to fit into one location, but large enough to fit multiple people).
-            - Huge: Any vehicle large enough to have at least two rooms at least two rooms ("huge" vehicles are implemented as regions, so they can be larger than a single location, and can fit multiple rooms and many people).
+            - Huge: Any vehicle large enough to have at least two rooms ("huge" vehicles are implemented as regions, so they can be larger than a single location, and can fit multiple rooms and many people).
             
             Building interiors generally only have small (equippable) vehicles, and larger ones only under specific circumstances where it makes sense (a car or bike in a garage, a horse in a stable, or even a "huge" starship in space station hangar bay, etc).
             <!-- example: <size>medium</size> -->

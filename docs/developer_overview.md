@@ -6,7 +6,7 @@ This is a session warm-up map for the project shape, runtime flow, and first fil
 
 - Server-driven, setting-agnostic, LLM-assisted RPG with persistent world state. The LLM helps create settings, regions, locations, NPCs, items/scenery, factions, quests, and turn narration.
 - Core entities include players/NPCs, locations/regions/exits, things, quests, factions, skills, status effects, scheduled events, mystery boxes/threads, scene summaries, and world-profile settings.
-- Optional image generation runs through ComfyUI, NanoGPT, or OpenAI clients. Text generation runs through `LLMClient` using an OpenAI-compatible backend or the Codex, Cline, and Kimi CLI bridges.
+- Optional image generation runs through ComfyUI, NanoGPT, or OpenAI clients. Text generation runs through `LLMClient` using an OpenAI-compatible backend or the Codex, Cline, and Kimi CLI bridges. ComfyUI GPU handoff can either unload a llama.cpp router model or terminate and restart a locally managed startup-script process while retaining exclusive text-lifecycle ordering.
 
 ## Runtime architecture (high level)
 

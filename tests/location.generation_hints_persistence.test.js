@@ -26,7 +26,7 @@ test('Location generationHints persist through toJSON and constructor hydration'
             numScenery: 3,
             numNpcs: 1,
             numHostiles: 0,
-            hasWeather: false
+            hasWeather: 'sheltered'
         }
     });
 
@@ -37,7 +37,7 @@ test('Location generationHints persist through toJSON and constructor hydration'
         numScenery: 3,
         numNpcs: 1,
         numHostiles: 0,
-        hasWeather: 'no'
+        hasWeather: 'sheltered'
     });
 
     const hydrated = new Location({
@@ -52,12 +52,13 @@ test('Location generationHints persist through toJSON and constructor hydration'
         numScenery: 3,
         numNpcs: 1,
         numHostiles: 0,
-        hasWeather: 'no'
+        hasWeather: 'sheltered'
     });
 });
 
-test('Utils.hydrateGameState normalizes legacy boolean hasWeather fields on saved location stubs', () => {
+test('Utils.hydrateGameState converts legacy outside and boolean hasWeather fields', () => {
     const previousSceneSummaries = Globals.sceneSummaries;
+    let hydratedRegionForCleanup = null;
     Globals.sceneSummaries = {
         serialize() {
             return {};
@@ -76,11 +77,11 @@ test('Utils.hydrateGameState normalizes legacy boolean hasWeather fields on save
                         isStub: true,
                         stubMetadata: {
                             blueprintDescription: 'A legacy stub with boolean weather metadata.',
-                            hasWeather: true,
+                            hasWeather: 'outside',
                             locationHasWeather: false
                         },
                         generationHints: {
-                            hasWeather: true
+                            hasWeather: 'outside'
                         },
                         exits: {}
                     }
@@ -91,7 +92,12 @@ test('Utils.hydrateGameState normalizes legacy boolean hasWeather fields on save
                         id: 'legacy-weather-region',
                         name: 'Legacy Weather Region',
                         description: 'A region for legacy weather hydration.',
-                        locations: [],
+                        locationBlueprints: [{
+                            name: 'Legacy Weather Stub',
+                            description: 'A saved blueprint using the legacy weather value.',
+                            shortDescription: 'A legacy weather blueprint.',
+                            hasWeather: 'outside'
+                        }],
                         locationIds: ['legacy-weather-stub']
                     }
                 }
@@ -114,11 +120,12 @@ test('Utils.hydrateGameState normalizes legacy boolean hasWeather fields on save
             gameConfigOverrideYaml: ''
         };
         const gameLocations = new Map();
+        const regions = new Map();
 
         Utils.hydrateGameState(serialized, {
             gameLocations,
             gameLocationExits: new Map(),
-            regions: new Map(),
+            regions,
             chatHistoryRef: [],
             generatedImages: new Map(),
             things: new Map(),
@@ -135,12 +142,22 @@ test('Utils.hydrateGameState normalizes legacy boolean hasWeather fields on save
         assert.equal(gameLocations.size, 1);
         const hydrated = Array.from(gameLocations.values())[0];
         assert.ok(hydrated);
-        assert.equal(hydrated.generationHints.hasWeather, 'yes');
-        assert.equal(hydrated.stubMetadata.hasWeather, 'yes');
+        assert.equal(hydrated.generationHints.hasWeather, 'sheltered');
+        assert.equal(hydrated.stubMetadata.hasWeather, 'sheltered');
         assert.equal(hydrated.stubMetadata.locationHasWeather, 'no');
+        assert.equal(hydrated.toJSON().generationHints.hasWeather, 'sheltered');
+        assert.equal(hydrated.toJSON().stubMetadata.hasWeather, 'sheltered');
+
+        assert.equal(regions.size, 1);
+        hydratedRegionForCleanup = Array.from(regions.values())[0];
+        assert.ok(hydratedRegionForCleanup);
+        assert.equal(hydratedRegionForCleanup.locationBlueprints[0].hasWeather, 'sheltered');
+        assert.equal(hydratedRegionForCleanup.toJSON().locationBlueprints[0].hasWeather, 'sheltered');
     } finally {
         Globals.sceneSummaries = previousSceneSummaries;
         Location.clear();
-        Region.removeFromIndex('legacy-weather-region');
+        if (hydratedRegionForCleanup) {
+            Region.removeFromIndex(hydratedRegionForCleanup);
+        }
     }
 });

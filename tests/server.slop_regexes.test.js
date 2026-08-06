@@ -111,3 +111,27 @@ test('regex slop analysis removes asterisks before matching', async () => {
     assert.deepEqual(Array.from(directMatches), ["Don't you dare stop"]);
     assert.deepEqual(Array.from(analyzedMatches), ["Don't you dare stop"]);
 });
+
+test('detailed regex matches map asterisk-stripped matches back to raw source offsets', async () => {
+    const Globals = loadSlopRuntime({
+        default: 200,
+        ngram_default: 5,
+        slopwords: {},
+        ngrams: {},
+        regexes: [
+            {
+                pattern: "/\\bdon't you dare stop\\b/i",
+                name: "Don't you dare stop",
+                ppm: 0
+            }
+        ]
+    });
+    const text = "Please don't you **dare** stop now.";
+
+    const details = await Globals.findSlopRegexMatchDetails(text);
+
+    assert.equal(details.length, 1);
+    assert.equal(details[0].name, "Don't you dare stop");
+    assert.equal(details[0].index, text.indexOf("don't"));
+    assert.equal(text.slice(details[0].index, details[0].index + details[0].length), "don't you **dare** stop");
+});

@@ -1,0 +1,128 @@
+const test = require('node:test');
+const assert = require('node:assert/strict');
+const fs = require('fs');
+const path = require('path');
+const { load } = require('js-yaml');
+const axios = require('axios');
+const ComfyUIClient = require('../ComfyUIClient.js');
+const LLMClient = require('../LLMClient.js');
+
+const root = path.resolve(__dirname, '..');
+
+test('AI model unload during image generation defaults to false', () => {
+    const config = load(fs.readFileSync(path.join(root, 'config.default.yaml'), 'utf8'));
+    assert.equal(config.ai.unload_during_image_generation, false);
+    assert.equal(config.ai.terminate_during_image_generation, false);
+    assert.equal(config.ai.local_startup_script_path, null);
+});
+
+test('AI model unload setting rejects non-boolean values', () => {
+    const errors = LLMClient.getConfigurationErrors({
+        backend: 'openai_compatible',
+        endpoint: 'http://router.example:8080/v1',
+        apiKey: 'test-key',
+        model: 'test-model',
+        unload_during_image_generation: 'yes'
+    });
+    assert.match(errors.join('\n'), /unload_during_image_generation must be a boolean/i);
+});
+
+test('System Configuration exposes an explicit true/false AI unload checkbox', () => {
+    const source = fs.readFileSync(path.join(root, 'views', 'config.njk'), 'utf8');
+    assert.match(
+        source,
+        /name="ai\.unload_during_image_generation::boolean"[\s\S]*?value="false"/
+    );
+    assert.match(
+        source,
+        /id="ai-unload-during-image-generation"[\s\S]*?name="ai\.unload_during_image_generation::boolean"[\s\S]*?value="true"/
+    );
+    assert.match(
+        source,
+        /id="ai-terminate-during-image-generation"[\s\S]*?name="ai\.terminate_during_image_generation::boolean"[\s\S]*?value="true"/
+    );
+    assert.match(source, /name="ai\.local_startup_script_path::string"/);
+});
+
+test('AI model terminate setting requires a startup script and cannot combine with router unload', () => {
+    const missingScriptErrors = LLMClient.getConfigurationErrors({
+        backend: 'openai_compatible',
+        endpoint: 'http://localhost:5005/v1',
+        apiKey: 'test-key',
+        model: 'test-model',
+        terminate_during_image_generation: true
+    });
+    assert.match(missingScriptErrors.join('\n'), /local_startup_script_path is required/i);
+
+    const conflictingErrors = LLMClient.getConfigurationErrors({
+        backend: 'openai_compatible',
+        endpoint: 'http://localhost:5005/v1',
+        apiKey: 'test-key',
+        model: 'test-model',
+        unload_during_image_generation: true,
+        terminate_during_image_generation: true,
+        local_startup_script_path: '/tmp/start-llama.sh'
+    });
+    assert.match(conflictingErrors.join('\n'), /cannot both be true/i);
+});
+
+test('server initializes ComfyUI for strict pre-prompt cleanup even when rendering is disabled', () => {
+    const source = fs.readFileSync(path.join(root, 'server.js'), 'utf8');
+
+    assert.match(source, /function isComfyModelCleanupModeConfigured\(configuration = config\)/);
+    assert.match(source, /const promptCleanupEnabled = isComfyModelCleanupModeConfigured\(config\)/);
+    assert.match(source, /if \(!imageGenerationEnabled && !promptCleanupEnabled\)/);
+    assert.match(source, /LLMClient\.setComfyModelCleanupHandler\(async \(\{ metadataLabel \}\) =>/);
+    assert.match(source, /await comfyUIClient\.unloadModels\(\)/);
+    assert.match(source, /configureComfyModelCleanupBeforePrompts\(\)/);
+});
+
+test('all image job producers use the coordinated enqueue helper', () => {
+    const serverSource = fs.readFileSync(path.join(root, 'server.js'), 'utf8');
+    const apiSource = fs.readFileSync(path.join(root, 'api.js'), 'utf8');
+    const directServerPushes = serverSource.match(/jobQueue\.push\(jobId\)/g) || [];
+
+    assert.equal(directServerPushes.length, 1, 'only enqueueImageJob may push directly to jobQueue');
+    assert.doesNotMatch(apiSource, /jobQueue\.push\(jobId\)/);
+    assert.match(apiSource, /const job = createImageJob\(jobId, payload\);\s*enqueueImageJob\(jobId\);/);
+    assert.match(
+        serverSource,
+        /imageGenerationModelLifecycle\.run\(\{\s*mode: lifecycleMode,\s*renderBatch: drainImageJobQueue/
+    );
+});
+
+test('server initializes the managed local llama process only after ComfyUI and preserves strict cleanup ordering', () => {
+    const source = fs.readFileSync(path.join(root, 'server.js'), 'utf8');
+    assert.match(source, /await initializeImageEngine\(\)[\s\S]*?await initializeManagedLocalLlamaServer\(\)/);
+    assert.match(
+        source,
+        /beforeStart: clearComfyVramBeforeLocalLlamaStartup[\s\S]*?waitUntilReady: waitForManagedLlamaServerReady/
+    );
+    assert.match(source, /await comfyUIClient\.unloadModels\(\)/);
+});
+
+test('ComfyUI unloadModels posts both unload and free-memory flags', { concurrency: false }, async () => {
+    const originalPost = axios.post;
+    let captured = null;
+    axios.post = async (url, payload, options) => {
+        captured = { url, payload, options };
+        return { data: {} };
+    };
+
+    try {
+        const client = new ComfyUIClient({
+            imagegen: {
+                server: { host: 'comfy.example', port: 8188 }
+            }
+        });
+        const result = await client.unloadModels();
+        assert.equal(result.success, true);
+        assert.equal(captured.url, 'http://comfy.example:8188/free');
+        assert.deepEqual(captured.payload, {
+            unload_models: true,
+            free_memory: true
+        });
+    } finally {
+        axios.post = originalPost;
+    }
+});

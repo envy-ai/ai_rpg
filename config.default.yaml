@@ -13,6 +13,9 @@ max_memories_to_recall: 10
 # Optional positive integer cap across all simultaneous text-generation requests, regardless of model/backend key.
 max_concurrent_requests_all_models: null
 
+# When true, serialize real text transports and unload the prior llama.cpp router model before a prompt switches models.
+unload_model_on_switch: false
+
 # Seconds between staggered concurrent prompt launches such as event checks, need bars, and quest checks.
 stagger_concurrent_prompts: 4
 
@@ -57,7 +60,7 @@ mystery_box_cleanup:
 
 housekeeping:
   # Number of eligible top-level event-check passes between automatic housekeeping prompts.
-  interval: 1
+  interval: 4
 
 # OpenAI-compatible API configuration
 ai:
@@ -93,6 +96,16 @@ ai:
   # Default model for OpenAI-compatible, Codex, and Cline requests. Kimi uses
   # kimi_bridge.model when set, or the saved Kimi CLI default when blank.
   model: zai-org/glm-4.7
+
+  # When true for the image_prompt_generation model, drain prompt writing first,
+  # unload it through a llama.cpp router while ComfyUI renders, then reload it.
+  unload_during_image_generation: false
+
+  # Alternative to router unloading: start a local llama.cpp server with the
+  # configured script, terminate its saved process while ComfyUI renders, and
+  # restart it afterward. Cannot be enabled with unload_during_image_generation.
+  terminate_during_image_generation: false
+  local_startup_script_path: null
 
   # Codex bridge settings. These are used only when ai.backend is codex_cli_bridge.
   codex_bridge:
@@ -168,6 +181,8 @@ ai:
   cachebuster: false
   # Runs normal player-action prompts as a staged conversation for smaller local models.
   tinybrain: false
+  # Rewinds token-chunked player-action prose when the normal slop detector fires.
+  live_deslop: false
   max_concurrent_requests: 6
 
   # Streaming -- enable if API supports it (it probably does)

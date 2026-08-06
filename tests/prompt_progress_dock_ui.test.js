@@ -56,12 +56,22 @@ test('prompt progress updates the favicon with a dark blue bottom-to-top active 
     assert.match(chatSource, /favicon\.href = canvas\.toDataURL\('image\/png'\)/);
 });
 
-test('prompt progress dock mode controls use compress and expand icons without abort reload', () => {
+test('chat controls expose stop-and-undo independently from prompt dock mode controls', () => {
     assert.match(chatSource, /assets\/material-icons\/misc\/compress\.svg/);
     assert.match(chatSource, /assets\/material-icons\/misc\/expand\.svg/);
     assert.match(chatSource, /createPromptProgressModeButton/);
-    assert.doesNotMatch(chatSource, /Abort \+ Reload/);
-    assert.doesNotMatch(chatSource, /cancelAllPromptsAndLoadLatestAutosave\(\{ triggerButton/);
+    assert.match(viewSource, /id="abortTurnButton"/);
+    assert.match(viewSource, /class="abort-turn-icon" aria-hidden="true">🛑<\/span>/);
+    assert.match(viewSource, /id="abortTurnButton"[\s\S]*aria-label="Stop all prompts and restore the latest autosave"/);
+    assert.ok(
+        viewSource.indexOf('id="abortTurnButton"') < viewSource.indexOf('id="chatBubbleFilterToggle"'),
+        'stop-and-undo should render immediately before the chat visibility control'
+    );
+    assert.match(chatSource, /cancelAllPromptsAndLoadLatestAutosave\(\{ triggerButton = this\.abortTurnButton \} = \{\}\)/);
+    assert.match(chatSource, /fetch\('\/api\/turn\/cancel-and-rollback'/);
+    assert.match(scssSource, /\.abort-turn-button\s*\{/);
+    assert.match(scssSource, /\.abort-turn-button\s*\{[\s\S]*right:\s*52px[\s\S]*width:\s*34px[\s\S]*height:\s*34px/);
+    assert.doesNotMatch(chatSource, /triggerButton\.textContent = 'Stopping…'/);
 });
 
 test('prompt progress action buttons use white SVG icons on transparent chrome', () => {
@@ -145,6 +155,17 @@ test('prompt progress dock styles completed entries with a single pulse', () => 
     assert.match(scssSource, /animation:\s*prompt-progress-complete-pulse 250ms ease-out/);
 });
 
+test('completed prompt progress bypasses render throttling before the clear update', () => {
+    const progressHandlerBlock = extractBlock(
+        chatSource,
+        'handlePromptProgress(payload) {',
+        'handlePromptProgressGroupFailure(payload) {'
+    );
+
+    assert.match(progressHandlerBlock, /entries\.some\(entry => entry\?\.isComplete === true\)/);
+    assert.match(progressHandlerBlock, /schedulePromptProgressRender\(entries, \{ force: hasCompletedEntry \}\)/);
+});
+
 test('grouped tinybrain progress keeps one blue waiting bar between active stages', () => {
     assert.match(chatSource, /entry\?\.isGroupWaiting === true/);
     assert.match(chatSource, /prompt-progress-bar--group-waiting/);
@@ -195,6 +216,32 @@ test('multi-row prompt progress table omits target, average-output, run-count, a
     assert.doesNotMatch(rowSource, /formatPromptProgressOutputAverage/);
     assert.doesNotMatch(rowSource, /formatPromptProgressRunCount/);
     assert.doesNotMatch(rowSource, /formatPromptProgressAverage/);
+});
+
+test('running prompt model names use the shared ten-character display formatter', () => {
+    const formatterBlock = extractBlock(
+        chatSource,
+        'formatPromptProgressModelName(modelName) {',
+        'formatPromptProgressPercent(entry) {'
+    );
+    const rowBlock = extractBlock(
+        chatSource,
+        'createPromptProgressTableRow(entry',
+        'createPromptProgressHeader'
+    );
+    const viewerBlock = extractBlock(
+        chatSource,
+        'syncPromptProgressViewerWindow(viewerState) {',
+        'syncPromptProgressViewers() {'
+    );
+
+    assert.match(formatterBlock, /characters\.length > 10/);
+    assert.match(formatterBlock, /characters\.slice\(0, 10\)\.join\(''\)/);
+    assert.match(formatterBlock, /`\$\{characters\.slice\(0, 10\)\.join\(''\)\}\.\.\.`/);
+    assert.match(rowBlock, /formatPromptProgressModelName\(fullModelName\)/);
+    assert.match(rowBlock, /modelCell\.title = fullModelName/);
+    assert.match(viewerBlock, /formatPromptProgressModelName\(fullModelName\)/);
+    assert.match(viewerBlock, /subtitle\.title = fullModelName/);
 });
 
 test('prompt view action spawns persistent modeless prompt viewers', () => {

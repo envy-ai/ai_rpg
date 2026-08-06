@@ -87,23 +87,29 @@ test('event housekeeping prompt is silent, logged, and mutation-capable', () => 
     assert.match(source, /startingSequence:\s*0,/);
     assert.match(source, /onToolCallDebug:\s*toolCallDebugRecorder[\s\S]*?toolCallDebugRecorder\.record\(event\)/);
     assert.match(source, /LLMClient\.logPrompt\(\{\s*prefix:\s*'housekeeping'/);
-    assert.match(source, /runHousekeepingPrompt\.start = function startHousekeepingPromptForDeferredApply/);
-    assert.match(source, /runHousekeepingPrompt\.finish = function finishHousekeepingPromptForDeferredApply/);
+    assert.doesNotMatch(source, /runHousekeepingPrompt\.start/);
+    assert.doesNotMatch(source, /runHousekeepingPrompt\.finish/);
+    assert.match(source, /buildHousekeepingTurnHistory\(chatHistory,/);
+    assert.match(source, /currentEventText:\s*formatHousekeepingCurrentEventText\(eventResult\)/);
+    assert.match(source, /housekeepingTurnHistory:\s*housekeepingHistory\.turns/);
+    assert.match(source, /advanceLastHousekeepingTurnId/);
     assert.doesNotMatch(source, /toolLoopResult/);
     assert.doesNotMatch(source, /newChatEntries/);
 });
 
-test('event checks start housekeeping concurrently and apply it after outcomes', () => {
+test('event checks schedule housekeeping before checks and run it with finalized outcomes', () => {
     const eventsSource = fs.readFileSync(path.join(__dirname, '..', 'Events.js'), 'utf8');
     const source = eventsSource.slice(
         eventsSource.indexOf('        const baseContext = await prepareBasePromptContext({'),
         eventsSource.indexOf('        const promptGroups = EVENT_PROMPT_ORDER;')
     );
 
-    assert.match(source, /const pendingHousekeepingPrompt = this\._startHousekeepingForEventChecks\(\{/);
-    assert.match(source, /pendingHousekeepingPrompt,/);
-    assert.match(eventsSource, /static async _runHousekeepingAfterEventChecks\(\{\s*[\s\S]*?pendingHousekeepingPrompt = null,/);
-    assert.match(eventsSource, /if \(pendingHousekeepingPrompt\) \{[\s\S]*?return runner\.finish\(pending,/);
+    assert.match(source, /const housekeepingScheduled = this\._scheduleHousekeepingForEventChecks\(\{/);
+    assert.match(source, /housekeepingScheduled,/);
+    assert.match(eventsSource, /static async _runHousekeepingAfterEventChecks\(\{\s*[\s\S]*?housekeepingScheduled = false,/);
+    assert.match(eventsSource, /if \(depth > 0 \|\| suppressHousekeeping \|\| !housekeepingScheduled\)/);
+    assert.match(eventsSource, /return runner\(\{[\s\S]*?eventResult,/);
+    assert.doesNotMatch(eventsSource, /_startHousekeepingForEventChecks/);
 });
 
 test('quest objective event signal forces at most one quest check and resets its interval', () => {

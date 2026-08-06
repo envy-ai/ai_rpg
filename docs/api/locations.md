@@ -88,7 +88,7 @@ Request:
   - `name` (string or null, optional)
   - `shortDescription` (string or null, optional)
   - `controllingFactionId` (string or null, optional)
-  - `hasWeather` (`"yes"`, `"no"`, `"outside"`, boolean, or null, optional)
+  - `hasWeather` (`"yes"`, `"no"`, `"sheltered"`, legacy `"outside"`, boolean, or null, optional)
   - `isVehicle` (boolean, optional)
   - `vehicleInfo` (object or null, optional)
   - `statusEffects` (array or null, optional)
@@ -103,7 +103,7 @@ Responses:
 
 Notes:
 - `controllingFactionId` must reference an existing faction id or be `null` to clear.
-- `hasWeather` is stored as `generationHints.hasWeather`. `"yes"` means weather-exposed, `"no"` means sheltered/no local weather, `"outside"` means sheltered with exterior weather visible, and `null` returns to automatic region/weather behavior. Boolean values are accepted and normalized to `yes`/`no` for compatibility.
+- `hasWeather` is stored canonically as `generationHints.hasWeather`. `"yes"` means weather-exposed, `"sheltered"` means sheltered with exterior weather visible, `"no"` means no visible local weather, and `null` returns to automatic region/weather behavior. Boolean values normalize to `yes`/`no`; legacy `"outside"` input is accepted and normalized to `"sheltered"` for old clients and saves.
 - Name or description edits clear the base `location.imageId` and pending base-image job tracking. Name, description, short description, vehicle, or weather-exposure edits clear cached weather/lighting image variants.
 - Vehicle edits use `isVehicle` and `vehicleInfo` together:
   - `isVehicle=false` requires omitted/null `vehicleInfo` and clears vehicle info.
@@ -378,6 +378,7 @@ Request:
 - Body:
   - `name` (required non-empty string)
   - `description` (required string; may be empty)
+  - `shortDescription` (optional string; may be empty)
   - `relativeLevel` (optional number)
   - `targetRegionId` (live or pending region id; ordinary location stubs only)
   - `controllingFactionId` (string or null)
@@ -386,7 +387,7 @@ Request:
 
 Responses:
 - 200: `{ success: true, stub }`
-  - `stub`: `{ id, name, description, relativeLevel, isRegionEntryStub, targetRegionId, targetRegionName, controllingFactionId, isVehicle, vehicleInfo }`
+  - `stub`: `{ id, name, description, shortDescription, relativeLevel, isRegionEntryStub, targetRegionId, targetRegionName, controllingFactionId, isVehicle, vehicleInfo }`
 - 400: `{ success: false, error }`
 - 404: `{ success: false, error }`
 - 500: `{ success: false, error }`
@@ -396,6 +397,7 @@ Notes:
 - `targetRegionId` moves an ordinary location stub between live or pending regions by updating stub metadata and the relevant live `Region.locationIds` or pending-region `locationIds`.
 - Region-entry stubs reject `targetRegionId` because their target region identity is the region they represent.
 - Empty `description` values are accepted and clear the stub's presentation description fields.
+- When `shortDescription` is supplied, it is stored independently in the location and stub metadata. Empty values clear it. Omitting it retains the legacy behavior of mirroring `description` into the stub short description.
 - Vehicle edits follow the same `isVehicle` and `vehicleInfo` validation semantics as location and region updates.
 - Region-entry stub vehicle edits are mirrored into pending-region stub records so expansion uses the edited vehicle metadata.
 

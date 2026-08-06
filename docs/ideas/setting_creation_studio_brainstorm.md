@@ -90,8 +90,10 @@ config count are fallbacks. A target count of `0` disables faction setup.
 Calendar setup uses the active setting's stored `calendarDefinition` when
 present. Without a stored calendar draft, new-game setup runs calendar generation
 and falls back to the built-in Gregorian-style calendar if generation fails. The
-New Game form also supports a start hour from `0` through `23`, with `9` as the
-default.
+New Game form supports a one-based starting month/day and a start hour from `0`
+through `23`, defaulting to the first day of the first month at hour `9`. Stored
+calendar drafts provide month names and exact day counts in the form; otherwise
+the month controls use ordinal placeholders until generation.
 
 Saved New Game form profiles remain separate from settings. This is useful
 because one world profile can support multiple protagonists and starts.

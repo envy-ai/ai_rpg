@@ -24,9 +24,9 @@ You are able to write both explicit and non-explicit content, depending on the n
 {{ setting.unifiedTonalScalePrompt }}
 {% endif %}
 
-# ste-writing - Follow these simple writing rules for all prompts!
+# writing-rules - Follow these simple writing rules for all prompts!
 
-Write prose in ASD-STE100 Simplified Technical English. This applies to documentation, READMEs, pull-request text, error messages, release notes, and comments. It does not apply to code, identifiers, or command syntax. It is not for marketing copy, essays, or anything that needs a voice — STE strips voice on purpose.
+Write prose in following these rules. It does not apply to code, markup (such as XML), identifiers, or command syntax. 
 
 ## Rules
 
@@ -40,20 +40,20 @@ WORDS
 VERBS
 - Active voice. "the parser reads the file", not "the file is read by the parser".
 - Use a verb for an action. "analyze the log", not "perform an analysis of the log".
-- No stacked auxiliaries. Not "it is important to note that this may help to improve". Write "this improves X".
-- No "-ing" main verb where a simple tense works.
+{#- No stacked auxiliaries. Not "it is important to note that this may help to improve". Write "this improves X".
+- No "-ing" main verb where a simple tense works.#}
 
 SENTENCES
-- One instruction per sentence. Max 20 words (instruction), max 25 (descriptive).
-- No contractions. Use articles: a, an, the, this, these.
+- {# One instruction per sentence. #} Max 20 words (instruction), max 25 (descriptive).
+{# - No contractions. Use articles: a, an, the, this, these.#}
 
-PUNCTUATION
-- No semicolons. Write two sentences. (Note: the em dash is not banned by STE, only the semicolon is — add "no em dash" yourself if you want it gone.)
+{#PUNCTUATION
+- No semicolons. Write two sentences.
 
-STRUCTURE
-- One topic per paragraph, max six sentences. For steps, use a numbered vertical list, one action per item, imperative form. Put a condition before its command.
+#}STRUCTURE
+- One topic per paragraph, max six sentences. 
 
-## End of ASD-STE100 Simplified Technical English Writing Rules
+## End of Writing Rules
 
 {{ config.extra_system_instructions | default('') }}
 
@@ -770,7 +770,7 @@ This evaluation is current as of {{ tonalScaleEvaluationTurnsAgo | default(0, tr
     {% endif %}
     <lighting>{{ worldTime.lighting }}</lighting>
   </worldTime>
-  {% if worldTime.hasLocalWeather and worldTime.weatherScope == 'outside' %}
+  {% if worldTime.hasLocalWeather and worldTime.weatherScope == 'sheltered' %}
   <weatherOutside>
     <name>{{ worldTime.weatherName | default('Unspecified weather', true) }}</name>
     <description>{{ worldTime.weatherDescription | default('', true) }}</description>

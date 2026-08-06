@@ -222,3 +222,42 @@ test('thing XML parser maps registered item prompt fields onto first-class parse
         Globals.config = previousConfig;
     }
 });
+
+test('thing XML parser rejects nested XML emitted for a registered array field', async () => {
+    const registry = new ModExtensionRegistry();
+    registry.registerEntityField({
+        modName: 'modules',
+        entityType: 'thing',
+        fieldName: 'moduleSlots',
+        type: 'array',
+        exposeToGeneratorPrompt: true,
+        exposeToXmlParser: true,
+        xmlPrompt: {
+            placeholder: '[] unless this item has module slots.'
+        }
+    });
+    const previousRegistry = Globals.modExtensionRegistry;
+    const previousConfig = Globals.config;
+    Globals.modExtensionRegistry = registry;
+    Globals.config = { ...(previousConfig || {}), strictXMLParsing: false };
+    try {
+        const parseThingsXml = loadParseThingsXml();
+        await assert.rejects(
+            parseThingsXml(`
+<items>
+  <item>
+    <name>Gilded Harpy Feather Cloak</name>
+    <description>A feathered cloak.</description>
+    <shortDescription>Gilded harpy-feather cloak</shortDescription>
+    <itemOrScenery>item</itemOrScenery>
+    <type>armor</type>
+    <moduleSlots><type>crystal</type></moduleSlots>
+  </item>
+</items>`),
+            /<moduleSlots> must be a valid JSON array/
+        );
+    } finally {
+        Globals.modExtensionRegistry = previousRegistry;
+        Globals.config = previousConfig;
+    }
+});

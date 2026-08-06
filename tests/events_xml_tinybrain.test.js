@@ -69,18 +69,17 @@ test('tiny-brain event chunk parser handles done, N/A, and valid chunks', () => 
         '```xml\n<events><currency><amount>5</amount></currency><healRecover><characterName>Exis</characterName><amount>10</amount></healRecover></events>\n```'
     );
     assert.match(two.value.xml, /<healRecover>/);
+
+    const three = Events.parseTinyBrainEventXmlChunk(
+        '<events><currency><amount>1</amount></currency><currency><amount>2</amount></currency><currency><amount>3</amount></currency></events>'
+    );
+    assert.equal((three.value.xml.match(/<currency>/g) || []).length, 3);
 });
 
-test('tiny-brain event chunk parser rejects empty, oversized, and malformed chunks', () => {
+test('tiny-brain event chunk parser rejects empty and malformed chunks', () => {
     assert.throws(
         () => Events.parseTinyBrainEventXmlChunk('<events></events>'),
         /no event elements/
-    );
-    assert.throws(
-        () => Events.parseTinyBrainEventXmlChunk(
-            '<events><currency><amount>1</amount></currency><currency><amount>2</amount></currency><currency><amount>3</amount></currency></events>'
-        ),
-        /at most 2/
     );
     assert.throws(
         () => Events.parseTinyBrainEventXmlChunk('<events><currency></events>'),

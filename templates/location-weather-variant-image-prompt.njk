@@ -3,7 +3,7 @@ Change the image to reflect the following conditions:
 Lighting: {{ conditions.lightingLabel }}.
 {% endif %}
 {% if conditions.hasLocalWeather and conditions.weatherName %}
-{% if conditions.weatherScope == 'outside' %}
+{% if conditions.weatherScope == 'sheltered' %}
 Weather outside: {{ weatherDetail }}.
 {% else %}
 Weather: {{ weatherDetail }}.

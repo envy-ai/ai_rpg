@@ -96,14 +96,15 @@ Registered Thing and Player extension fields must be registered before load for 
 `/api/load` performs these steps:
 
 1. Resolve the requested save directory from `saves/` or `autosaves/`.
-2. Read raw serialized files with `Utils.loadSerializedGameState(saveDir)`.
-3. Compare `metadata.enabledMods` against the startup-active mod list when the metadata field exists.
-4. Apply `gameConfigOverride.yaml` through `Globals.reloadConfigAndDefs({ needBarSentenceValidationMode: 'throw' })`.
-5. Clear transient job/image/NPC-generation queues.
-6. Run `Utils.hydrateGameState(...)`.
-7. Reconcile faction references, party-member location state, missing image ids, world time on the current player, summary state, and short-description backfill planning.
-8. Resolve the current player from `metadata.playerId` or the first loaded actor.
-9. Return `loadedData` with the client-facing current-player profile and totals.
+2. Advance the runtime generation; cancel and drain active/queued LLM, player-input, quest-confirmation, chat-turn, NPC-generation, and image work. Active ComfyUI prompts are deleted/interrupted, and remote image HTTP/polling requests are aborted.
+3. Read raw serialized files with `Utils.loadSerializedGameState(saveDir)`.
+4. Compare `metadata.enabledMods` against the startup-active mod list when the metadata field exists.
+5. Apply `gameConfigOverride.yaml` through `Globals.reloadConfigAndDefs({ needBarSentenceValidationMode: 'throw' })`.
+6. Clear the remaining transient promise maps, job maps, queues, and pending image/backfill state.
+7. Run `Utils.hydrateGameState(...)`.
+8. Reconcile faction references, party-member location state, missing image ids, world time on the current player, summary state, and short-description backfill planning.
+9. Resolve the current player from `metadata.playerId` or the first loaded actor.
+10. Return `loadedData` and `runtimeCancellation` with the client-facing current-player profile, totals, and cancellation diagnostics.
 
 `hydrateGameState()` migrates compatible save data before registry rebuild, then loads skills, factions, mystery boxes, mystery threads, scheduled events, trackers, things, players, images, chat history, locations, exits, regions, pending region stubs, chat summaries, and scene summaries. Player runtime registries and static model indexes for quests, locations, things, regions, factions, mystery boxes/threads, scheduled events, and trackers are cleared before re-instantiating saved records.
 

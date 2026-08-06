@@ -6,6 +6,8 @@ document.addEventListener('DOMContentLoaded', () => {
   const loadNewGameSettingsBtn = document.getElementById('loadNewGameSettingsBtn');
   const newGameSettingsStatus = document.getElementById('newGameSettingsStatus');
   const startingCurrencyField = document.getElementById('startingCurrency');
+  const startMonthField = document.getElementById('startMonth');
+  const startDayField = document.getElementById('startDay');
   const startTimeField = document.getElementById('startTime');
   const levelField = document.getElementById('playerLevel');
   const attributeGrid = document.getElementById('attributeGrid');
@@ -35,6 +37,53 @@ document.addEventListener('DOMContentLoaded', () => {
     load: '/api/new-game/settings/load',
     list: '/api/new-game/settings/saves'
   };
+
+  const getSelectedStartingMonthLength = () => {
+    const selectedOption = startMonthField?.selectedOptions?.[0] || null;
+    if (!selectedOption) {
+      throw new Error('The starting month selector has no selected month.');
+    }
+    const configuredLength = Number(selectedOption.dataset.lengthDays);
+    return Number.isInteger(configuredLength) && configuredLength > 0
+      ? configuredLength
+      : 31;
+  };
+
+  const populateStartingDayOptions = (preferredDay) => {
+    if (!startDayField) {
+      return;
+    }
+    const monthLength = getSelectedStartingMonthLength();
+    const parsedPreferredDay = Number(preferredDay);
+    const hasValidPreferredDay = Number.isInteger(parsedPreferredDay)
+      && parsedPreferredDay >= 1
+      && parsedPreferredDay <= monthLength;
+
+    startDayField.replaceChildren();
+    if (!hasValidPreferredDay) {
+      const placeholder = document.createElement('option');
+      placeholder.value = '';
+      placeholder.textContent = 'Select a day';
+      placeholder.disabled = true;
+      placeholder.selected = true;
+      startDayField.appendChild(placeholder);
+    }
+    for (let day = 1; day <= monthLength; day += 1) {
+      const option = document.createElement('option');
+      option.value = String(day);
+      option.textContent = String(day);
+      option.selected = hasValidPreferredDay && day === parsedPreferredDay;
+      startDayField.appendChild(option);
+    }
+  };
+
+  if (startMonthField && startDayField) {
+    const defaultStartDay = Number(startDayField.dataset.defaultValue || NEW_GAME_DEFAULTS.startDay || 1);
+    populateStartingDayOptions(defaultStartDay);
+    startMonthField.addEventListener('change', () => {
+      populateStartingDayOptions(Number(startDayField.value));
+    });
+  }
   let isFormEnabled = true;
   let allocator = null;
 
@@ -474,6 +523,36 @@ document.addEventListener('DOMContentLoaded', () => {
     return 9;
   };
 
+  const resolveStartMonthForPayload = () => {
+    if (startMonthField && !startMonthField.value) {
+      throw new Error('Select a starting month.');
+    }
+    const parsedStartMonth = Number(startMonthField?.value);
+    const fallbackStartMonth = Number(startMonthField?.dataset?.defaultValue ?? '');
+    if (Number.isInteger(parsedStartMonth) && parsedStartMonth >= 1) {
+      return parsedStartMonth;
+    }
+    if (Number.isInteger(fallbackStartMonth) && fallbackStartMonth >= 1) {
+      return fallbackStartMonth;
+    }
+    return 1;
+  };
+
+  const resolveStartDayForPayload = () => {
+    if (startDayField && !startDayField.value) {
+      throw new Error('Select a valid starting day for the selected month.');
+    }
+    const parsedStartDay = Number(startDayField?.value);
+    const fallbackStartDay = Number(startDayField?.dataset?.defaultValue ?? '');
+    if (Number.isInteger(parsedStartDay) && parsedStartDay >= 1) {
+      return parsedStartDay;
+    }
+    if (Number.isInteger(fallbackStartDay) && fallbackStartDay >= 1) {
+      return fallbackStartDay;
+    }
+    return 1;
+  };
+
   const buildSettingsSaveDefaultName = () => {
     const playerName = (document.getElementById('playerName')?.value || '').trim() || 'adventurer';
     const level = resolveLevelForPayload();
@@ -489,6 +568,8 @@ document.addEventListener('DOMContentLoaded', () => {
       playerClass: resolveSelectionValue(classSelect, classOtherInput),
       playerRace: resolveSelectionValue(raceSelect, raceOtherInput),
       playerLevel: resolveLevelForPayload(),
+      startMonth: resolveStartMonthForPayload(),
+      startDay: resolveStartDayForPayload(),
       startTime: resolveStartTimeForPayload(),
       startingLocation: (document.getElementById('startingLocation')?.value || '').trim(),
       startingCurrency: resolveStartingCurrencyForPayload(),
@@ -533,6 +614,30 @@ document.addEventListener('DOMContentLoaded', () => {
     return 9;
   };
 
+  const resolveLoadedStartMonthValue = (savedSettings) => {
+    const fallbackStartMonth = Number(startMonthField?.dataset?.defaultValue ?? '');
+    const parsed = Number(savedSettings?.startMonth);
+    if (Number.isInteger(parsed) && parsed >= 1) {
+      return parsed;
+    }
+    if (Number.isInteger(fallbackStartMonth) && fallbackStartMonth >= 1) {
+      return fallbackStartMonth;
+    }
+    return 1;
+  };
+
+  const resolveLoadedStartDayValue = (savedSettings) => {
+    const fallbackStartDay = Number(startDayField?.dataset?.defaultValue ?? '');
+    const parsed = Number(savedSettings?.startDay);
+    if (Number.isInteger(parsed) && parsed >= 1) {
+      return parsed;
+    }
+    if (Number.isInteger(fallbackStartDay) && fallbackStartDay >= 1) {
+      return fallbackStartDay;
+    }
+    return 1;
+  };
+
   const applyLoadedNewGameSettings = async (savedSettings) => {
     if (!savedSettings || typeof savedSettings !== 'object' || Array.isArray(savedSettings)) {
       throw new Error('Loaded settings payload must be an object.');
@@ -566,6 +671,22 @@ document.addEventListener('DOMContentLoaded', () => {
 
     if (startingCurrencyField) {
       startingCurrencyField.value = String(resolveLoadedCurrencyValue(savedSettings));
+    }
+    if (startMonthField && startDayField) {
+      const loadedStartMonth = resolveLoadedStartMonthValue(savedSettings);
+      const matchingMonthOption = Array.from(startMonthField.options)
+        .find(option => Number(option.value) === loadedStartMonth);
+      if (!matchingMonthOption) {
+        throw new Error(`Saved starting month ${loadedStartMonth} is unavailable in the active calendar.`);
+      }
+      startMonthField.value = String(loadedStartMonth);
+      const loadedStartDay = resolveLoadedStartDayValue(savedSettings);
+      populateStartingDayOptions(loadedStartDay);
+      if (Number(startDayField.value) !== loadedStartDay) {
+        throw new Error(
+          `Saved starting day ${loadedStartDay} is unavailable in ${matchingMonthOption.textContent.trim()}.`
+        );
+      }
     }
     if (startTimeField) {
       startTimeField.value = String(resolveLoadedStartTimeValue(savedSettings));
@@ -741,6 +862,8 @@ document.addEventListener('DOMContentLoaded', () => {
         : (Number.isFinite(fallbackLevel) ? fallbackLevel : null);
       const playerClass = resolveSelectionValue(classSelect, classOtherInput);
       const playerRace = resolveSelectionValue(raceSelect, raceOtherInput);
+      const startMonth = resolveStartMonthForPayload();
+      const startDay = resolveStartDayForPayload();
       const startTime = resolveStartTimeForPayload();
       const startingCurrencyRaw = (startingCurrencyField?.value || '').trim();
       const parsedStartingCurrency = Number.parseInt(startingCurrencyRaw, 10);
@@ -779,6 +902,8 @@ document.addEventListener('DOMContentLoaded', () => {
           playerDescription,
           playerClass,
           playerRace,
+          startMonth,
+          startDay,
           startTime,
           startingLocation,
           startingCurrency,

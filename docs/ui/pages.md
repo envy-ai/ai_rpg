@@ -47,13 +47,14 @@ This page maps server-rendered routes to templates, shared page chrome, injected
 - Styles: `/css/main.css` plus page inline styles.
 - Scripts: inline navigation guard/default-data setup, `/js/formula-evaluator.js`, `/js/attribute-skill-allocator.js`, `/js/new-game.js`.
 - Data injected by `server.js`: `newGameDefaults`, `currentSetting`.
-- The form includes player name/description, level, start time (`0`-`23`, default `9`), class/race selectors with custom entries, starting location generation instructions, starting currency, attributes, and skills.
+- The form includes player name/description, level, starting month/day, start time (`0`-`23`, default `9`), class/race selectors with custom entries, starting location generation instructions, starting currency, attributes, and skills.
+- Starting month is a one-based calendar position. A stored world-profile calendar supplies its month names and exact day counts; profiles without a stored calendar show `Month 1` through `Month 12` until the calendar is generated. Changing months rebuilds the required day selector without silently coercing an invalid prior day.
 - Starting Location Generation Instructions use the multiline placeholder template for region name, summary, rooms/locations, and region exits.
 - Skills come from the active world profile's `defaultExistingSkills`, sort alphabetically in the allocation list, and can be edited on the form.
 - Attribute/skill allocation markup comes from `views/_includes/attribute-allocation.njk` and `views/_includes/skill-allocation.njk`. Formulas come from `config.formulas.character_creation`; formula errors display in the warning area and disable submit.
 - Pools can go negative, but submission is disabled until overspending is resolved. Positive unspent pools trigger a confirmation prompt. Submitted payloads include level/attributes/skills; unspent values are derived server-side.
 - Submitting posts `/api/new-game` with `keepalive: true` and immediately navigates to `/#tab-adventure`; websocket status updates drive the overlay spinner while the page is visible.
-- `Save Form Settings` / `Load Form Settings` use `/api/new-game/settings/save`, `/api/new-game/settings/load`, and `/api/new-game/settings/saves`.
+- `Save Form Settings` / `Load Form Settings` use `/api/new-game/settings/save`, `/api/new-game/settings/load`, and `/api/new-game/settings/saves`; saved profiles include `startMonth`, `startDay`, and `startTime`.
 - Loading saved form settings matches attributes/skills by name, definition label, and abbreviation aliases. Current attributes/skills without a loaded match reset to defaults.
 
 ## System Configuration

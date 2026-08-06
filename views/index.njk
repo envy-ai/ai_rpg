@@ -1,5 +1,8 @@
 <!DOCTYPE html>
-<html lang="en">
+<html
+    lang="en"
+    style="--character-portrait-aspect-ratio: {{ characterPortraitWidth }} / {{ characterPortraitHeight }}; --player-portrait-aspect-ratio: {{ characterPortraitWidth }} / {{ characterPortraitHeight }};"
+>
 {% set pageTitleValue = title | default("AI RPG Play") %}
 {% from "_includes/thing-list-filter-toggle.njk" import thingListFiltersToggle, thingListSortToggle, thingListSortShell, thingListViewToggle, thingListViewShell, thingListCombineButton %}
 <head>
@@ -236,6 +239,15 @@
 
                         <div class="chat-wrapper">
                             <div class="chat-container">
+                                <button
+                                    type="button"
+                                    class="abort-turn-button"
+                                    id="abortTurnButton"
+                                    aria-label="Stop all prompts and restore the latest autosave"
+                                    title="Stop all prompts and restore the latest autosave"
+                                >
+                                    <span class="abort-turn-icon" aria-hidden="true">🛑</span>
+                                </button>
                                 <button
                                     type="button"
                                     class="chat-bubble-filter-toggle"
@@ -2882,8 +2894,8 @@
                     <select id="locationEditHasWeather" name="hasWeather">
                         <option value="">Auto</option>
                         <option value="yes">Weather exposed</option>
-                        <option value="outside">Weather visible outside</option>
-                        <option value="no">Sheltered</option>
+                        <option value="sheltered">Weather visible outside (sheltered)</option>
+                        <option value="no">No visible local weather</option>
                     </select>
                 </div>
                 <div class="location-edit-field">
@@ -3127,6 +3139,10 @@
             window.AIRPG_CONFIG = {};
         }
         window.AIRPG_CONFIG.baseWeaponDamage = {{ (baseWeaponDamage if baseWeaponDamage is defined else null) | dump | safe }};
+        window.AIRPG_CONFIG.characterPortraitDimensions = {
+            width: {{ characterPortraitWidth | dump | safe }},
+            height: {{ characterPortraitHeight | dump | safe }}
+        };
         window.AIRPG_CONFIG.clientMessageHistory = {{ clientMessageHistory | dump | safe }};
         window.AIRPG_CONFIG.debugVehicles = {{ (vehicleDebugEnabled if vehicleDebugEnabled is defined else false) | dump | safe }};
         window.AIRPG_CONFIG.thingImageBadges = {{ (thingImageBadges or []) | dump | safe }};
@@ -3692,6 +3708,16 @@
             return `/api/images/${encodeURIComponent(normalizedImageId)}/file`;
         }
 
+        function normalizeImageEntityType(entityType) {
+            const normalizedType = typeof entityType === 'string'
+                ? entityType.trim().toLowerCase()
+                : '';
+            if (normalizedType === 'item' || normalizedType === 'scenery') {
+                return 'thing';
+            }
+            return normalizedType;
+        }
+
         function shouldPreserveDisplayImageOverride({ displayImageUrl, requestedImageId, force = false, result = null } = {}) {
             const resolvedDisplayImageUrl = typeof displayImageUrl === 'string' ? displayImageUrl.trim() : '';
             const resolvedRequestedImageId = typeof requestedImageId === 'string' ? requestedImageId.trim() : '';
@@ -3704,6 +3730,129 @@
                 && !force
             );
         }
+
+        function clearImageRenderProgress(element) {
+            if (!(element instanceof HTMLElement)) {
+                return;
+            }
+            element.querySelector(':scope > .entity-image-render-state')?.remove();
+            element.classList.remove('entity-image-render-host', 'entity-image-render-host--active');
+            delete element.dataset.imageRenderJobId;
+            delete element.dataset.imageRenderProgress;
+        }
+
+        function renderImageRenderProgress(element, detail, { seasonalLocationVariant = false } = {}) {
+            if (!(element instanceof HTMLElement)) {
+                return;
+            }
+            const job = detail?.job || {};
+            if (job.status !== 'processing' || job.isRendering !== true) {
+                clearImageRenderProgress(element);
+                return;
+            }
+
+            const numericProgress = Number(job.renderProgress);
+            const renderProgress = Number.isFinite(numericProgress)
+                && numericProgress >= 0
+                && numericProgress <= 100
+                ? numericProgress
+                : 0;
+            let overlay = element.querySelector(':scope > .entity-image-render-state');
+            if (!overlay) {
+                overlay = document.createElement('div');
+                overlay.className = 'entity-image-render-state';
+
+                const spinner = document.createElement('div');
+                spinner.className = 'entity-image-render-state__spinner';
+                spinner.setAttribute('aria-hidden', 'true');
+
+                const progressTrack = document.createElement('div');
+                progressTrack.className = 'entity-image-render-state__progress';
+                progressTrack.setAttribute('role', 'progressbar');
+                progressTrack.setAttribute('aria-valuemin', '0');
+                progressTrack.setAttribute('aria-valuemax', '100');
+                progressTrack.setAttribute('aria-label', 'Image rendering progress');
+
+                const progressFill = document.createElement('div');
+                progressFill.className = 'entity-image-render-state__progress-fill';
+                progressTrack.appendChild(progressFill);
+                overlay.append(spinner, progressTrack);
+                element.appendChild(overlay);
+            }
+
+            overlay.classList.toggle('entity-image-render-state--seasonal', seasonalLocationVariant);
+            overlay.setAttribute('role', 'status');
+            overlay.setAttribute('aria-label', `Rendering image: ${renderProgress}%`);
+            const progressTrack = overlay.querySelector('.entity-image-render-state__progress');
+            const progressFill = overlay.querySelector('.entity-image-render-state__progress-fill');
+            if (progressTrack) {
+                progressTrack.setAttribute('aria-valuenow', String(renderProgress));
+            }
+            if (progressFill) {
+                progressFill.style.width = `${renderProgress}%`;
+            }
+
+            element.classList.add('entity-image-render-host', 'entity-image-render-host--active');
+            element.dataset.imageRenderJobId = detail?.jobId || '';
+            element.dataset.imageRenderProgress = String(renderProgress);
+        }
+
+        function getImageRenderProgressTargets(detail = {}) {
+            const payload = detail.payload || {};
+            const entityType = normalizeImageEntityType(payload.entityType);
+            const entityId = typeof payload.entityId === 'string' ? payload.entityId.trim() : '';
+            const seasonalLocationVariant = payload.isLocationWeatherVariant === true || entityType === 'location-variant';
+            const targets = [];
+
+            if (entityType && entityId && !seasonalLocationVariant) {
+                getEntityImageElements(entityType, entityId).forEach(element => {
+                    targets.push({ element, seasonalLocationVariant: false });
+                });
+            }
+
+            if (seasonalLocationVariant && entityId) {
+                const locationImageElement = document.getElementById('locationImage');
+                if (locationImageElement?.dataset?.imageEntityId === entityId) {
+                    targets.push({ element: locationImageElement, seasonalLocationVariant: true });
+                }
+                const vehiclePipImage = document.getElementById('locationVehiclePipImage');
+                if (vehiclePipImage?.dataset?.vehiclePipLocationId === entityId) {
+                    targets.push({ element: vehiclePipImage, seasonalLocationVariant: true });
+                }
+            }
+
+            return targets;
+        }
+
+        function syncActiveImageRenderProgress(element, entityType, entityId) {
+            if (!(element instanceof HTMLElement)) {
+                return;
+            }
+            const manager = window.AIRPG?.imageManager;
+            if (!manager || typeof manager.getActiveRenderJob !== 'function' || !entityType || !entityId) {
+                clearImageRenderProgress(element);
+                return;
+            }
+            const normalizedEntityType = normalizeImageEntityType(entityType);
+            const seasonalDetail = normalizedEntityType === 'location'
+                ? manager.getActiveRenderJob('location-variant', entityId)
+                : null;
+            const detail = seasonalDetail || manager.getActiveRenderJob(normalizedEntityType, entityId);
+            if (!detail) {
+                clearImageRenderProgress(element);
+                return;
+            }
+            renderImageRenderProgress(element, detail, {
+                seasonalLocationVariant: Boolean(seasonalDetail)
+            });
+        }
+
+        window.addEventListener('image:job-progress', (event) => {
+            const detail = event?.detail || {};
+            getImageRenderProgressTargets(detail).forEach(({ element, seasonalLocationVariant }) => {
+                renderImageRenderProgress(element, detail, { seasonalLocationVariant });
+            });
+        });
 
         function renderEntityImage({
             element,
@@ -3725,6 +3874,8 @@
             if (!element) {
                 return Promise.resolve(null);
             }
+
+            const normalizedEntityType = normalizeImageEntityType(entityType);
 
             const safeAltText = escapeHtml(altText || '');
             const computedPlaceholderMarkup = placeholderMarkup !== null
@@ -3763,16 +3914,21 @@
                 renderBarterValueBadgeOverlay(element);
             };
 
+            const syncRenderProgressOverlay = () => {
+                syncActiveImageRenderProgress(element, normalizedEntityType, entityId);
+            };
+
             const applyImageMarkup = (url) => {
                 if (!url) {
                     element.innerHTML = computedPlaceholderMarkup;
                     applyBadgesOverlay();
+                    syncRenderProgressOverlay();
                     return;
                 }
 
                 element.innerHTML = `<img src="${url}" alt="${safeAltText}" loading="lazy" onerror="this.parentElement.innerHTML='<div class=\\'${placeholderClass}\\' role=\\'img\\'>${placeholderIcon}</div>'">`;
                 const img = element.querySelector('img');
-                if (img && entityType === 'thing') {
+                if (img && normalizedEntityType === 'thing') {
                     img.draggable = false;
                     img.setAttribute('draggable', 'false');
                 }
@@ -3783,14 +3939,16 @@
                     bindLightboxElement(img, lightboxDataProvider || undefined);
                 }
                 applyBadgesOverlay();
+                syncRenderProgressOverlay();
             };
 
             const setPlaceholder = () => {
                 element.innerHTML = computedPlaceholderMarkup;
                 applyBadgesOverlay();
+                syncRenderProgressOverlay();
             };
 
-            element.dataset.imageEntityType = entityType || '';
+            element.dataset.imageEntityType = normalizedEntityType;
             element.dataset.imageEntityId = entityId || '';
             element.dataset.imagePlaceholder = placeholderIcon || '🖼️';
             element.dataset.imagePlaceholderClass = placeholderClass || 'image-placeholder';
@@ -3830,12 +3988,12 @@
             };
 
             const manager = window.AIRPG?.imageManager;
-            if (!manager || !entityType || !entityId) {
+            if (!manager || !normalizedEntityType || !entityId) {
                 return Promise.resolve(finalize(null));
             }
 
             return manager.ensureImage({
-                entityType,
+                entityType: normalizedEntityType,
                 entityId,
                 existingImageId: imageId || null,
                 force: Boolean(force)
@@ -3861,9 +4019,10 @@
 
                 return finalize(result || null);
             }).catch(error => {
-                console.warn(`Image generation failed for ${entityType} ${entityId}:`, error?.message || error);
+                console.warn(`Image generation failed for ${normalizedEntityType} ${entityId}:`, error?.message || error);
                 element.innerHTML = `<div class="${placeholderClass} error">${placeholderIcon}</div>`;
                 applyBadgesOverlay();
+                clearImageRenderProgress(element);
                 return finalize(null);
             });
         }
@@ -3871,7 +4030,7 @@
         window.renderEntityImage = renderEntityImage;
 
         function getEntityImageElements(entityType, entityId) {
-            const targetType = typeof entityType === 'string' ? entityType.trim() : '';
+            const targetType = normalizeImageEntityType(entityType);
             const targetId = typeof entityId === 'string' ? entityId.trim() : '';
             if (!targetType || !targetId) {
                 return [];
@@ -3879,7 +4038,7 @@
             const all = Array.from(document.querySelectorAll('[data-image-entity-type]'));
             return all.filter(element => {
                 const dataset = element?.dataset || {};
-                return dataset.imageEntityType === targetType && dataset.imageEntityId === targetId;
+                return normalizeImageEntityType(dataset.imageEntityType) === targetType && dataset.imageEntityId === targetId;
             });
         }
 
@@ -3887,6 +4046,7 @@
             if (!element) {
                 return;
             }
+            clearImageRenderProgress(element);
             const dataset = element.dataset || {};
             const placeholderMarkup = dataset.imagePlaceholderMarkup;
             if (placeholderMarkup) {
@@ -3910,7 +4070,8 @@
         }
 
         function renderEntityImages(entityType, entityId, options = {}) {
-            const elements = getEntityImageElements(entityType, String(entityId || ''));
+            const normalizedEntityType = normalizeImageEntityType(entityType);
+            const elements = getEntityImageElements(normalizedEntityType, String(entityId || ''));
             return elements.map(element => {
                 const dataset = element.dataset || {};
                 const altText = options.altText ?? dataset.imageAlt ?? '';
@@ -3930,7 +4091,7 @@
 
                 return renderEntityImage({
                     element,
-                    entityType,
+                    entityType: normalizedEntityType,
                     entityId,
                     imageId: imageId || null,
                     displayImageId: displayImageId || null,
@@ -31981,8 +32142,8 @@
                     if (['false', '0', 'no'].includes(lowered)) {
                         return 'no';
                     }
-                    if (lowered === 'outside') {
-                        return 'outside';
+                    if (lowered === 'sheltered' || lowered === 'outside') {
+                        return 'sheltered';
                     }
                 }
                 return null;
@@ -32017,12 +32178,12 @@
                 return;
             }
             const hint = resolveLocationHasWeatherHint(location);
-            locationEditHasWeatherSelect.value = ['yes', 'no', 'outside'].includes(hint) ? hint : '';
+            locationEditHasWeatherSelect.value = ['yes', 'no', 'sheltered'].includes(hint) ? hint : '';
         }
 
         function collectLocationHasWeatherValue() {
             const raw = locationEditHasWeatherSelect?.value ?? '';
-            if (raw === 'yes' || raw === 'no' || raw === 'outside') {
+            if (raw === 'yes' || raw === 'no' || raw === 'sheltered') {
                 return raw;
             }
             return null;
@@ -32228,9 +32389,21 @@
             }
             const stubMetadata = location.stubMetadata || {};
             return location.description
-                || stubMetadata.shortDescription
+                || stubMetadata.stubDescription
                 || stubMetadata.targetRegionDescription
                 || stubMetadata.blueprintDescription
+                || stubMetadata.shortDescription
+                || '';
+        }
+
+        function resolveStubShortDescription(location) {
+            if (!location) {
+                return '';
+            }
+            const stubMetadata = location.stubMetadata || {};
+            return location.shortDescription
+                || stubMetadata.stubShortDescription
+                || stubMetadata.shortDescription
                 || '';
         }
 
@@ -32301,7 +32474,7 @@
             toggleLocationEditSection(locationEditLevelField, !isStubMode);
             toggleLocationEditSection(locationEditAbsoluteLevelField, !isStubMode);
             toggleLocationEditSection(locationEditStatusSection, !isStubMode);
-            toggleLocationEditSection(locationEditShortDescriptionGroup, !isStubMode);
+            toggleLocationEditSection(locationEditShortDescriptionGroup, true);
             toggleLocationEditSection(locationEditImagePromptGroup, !isStubMode);
             toggleLocationEditSection(locationEditRelativeLevelGroup, isStubMode);
             toggleLocationEditSection(locationEditRegionGroup, !isStubMode || showStubRegionSelector);
@@ -32322,10 +32495,7 @@
                 }
             }
             if (locationEditShortDescriptionInput) {
-                locationEditShortDescriptionInput.disabled = isStubMode;
-                if (isStubMode) {
-                    locationEditShortDescriptionInput.value = '';
-                }
+                locationEditShortDescriptionInput.disabled = false;
             }
             if (locationEditImagePromptInput) {
                 locationEditImagePromptInput.disabled = isStubMode;
@@ -32392,7 +32562,9 @@
                 locationEditDescriptionInput.value = description;
             }
             if (locationEditShortDescriptionInput) {
-                locationEditShortDescriptionInput.value = stubContext ? '' : (targetLocation.shortDescription || '');
+                locationEditShortDescriptionInput.value = stubContext
+                    ? resolveStubShortDescription(targetLocation)
+                    : (targetLocation.shortDescription || '');
             }
             if (locationEditImagePromptInput) {
                 locationEditImagePromptInput.value = stubContext ? '' : (targetLocation.imagePrompt || '');
@@ -32527,6 +32699,7 @@
                 }
 
                 const descriptionValue = locationEditDescriptionInput?.value ?? '';
+                const shortDescriptionValue = locationEditShortDescriptionInput?.value ?? '';
 
                 let relativeLevelValue = null;
                 if (locationEditRelativeLevelInput) {
@@ -32558,7 +32731,8 @@
 
                 const payload = {
                     name: nameValue.trim(),
-                    description: descriptionValue.trim()
+                    description: descriptionValue.trim(),
+                    shortDescription: shortDescriptionValue.trim()
                 };
                 if (relativeLevelValue !== null) {
                     payload.relativeLevel = relativeLevelValue;

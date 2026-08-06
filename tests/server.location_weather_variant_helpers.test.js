@@ -126,8 +126,8 @@ test('location weather variant prompt renders current lighting and weather condi
     assert.doesNotMatch(prompt, /<p>/);
 });
 
-test('outside-visible weather variant prompt labels weather as outside', () => {
-    const helpers = loadVariantHelpers({ hasWeather: 'outside' });
+test('sheltered weather variant prompt labels weather as outside', () => {
+    const helpers = loadVariantHelpers({ hasWeather: 'sheltered' });
     const conditions = helpers.resolveLocationWeatherVariantConditions({
         id: 'location-1',
         imageId: 'base-image'
@@ -146,7 +146,7 @@ test('outside-visible weather variant prompt labels weather as outside', () => {
         }
     );
 
-    assert.equal(conditions.weatherScope, 'outside');
+    assert.equal(conditions.weatherScope, 'sheltered');
     assert.match(prompt, /Weather outside: Heavy Rain/);
     assert.doesNotMatch(prompt, /Weather: Heavy Rain/);
 });

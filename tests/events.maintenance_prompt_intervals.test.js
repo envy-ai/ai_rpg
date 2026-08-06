@@ -29,8 +29,8 @@ test('default config and config page expose both maintenance intervals', () => {
     const defaultConfig = yaml.load(fs.readFileSync(path.join(rootDir, 'config.default.yaml'), 'utf8'));
     const configView = fs.readFileSync(path.join(rootDir, 'views', 'config.njk'), 'utf8');
 
-    assert.equal(defaultConfig.housekeeping.interval, 1);
-    assert.equal(defaultConfig.quest_checks.interval, 1);
+    assert.equal(defaultConfig.housekeeping.interval, 4);
+    assert.equal(defaultConfig.quest_checks.interval, 5);
     assert.match(configView, /name="housekeeping\.interval::int"[^>]*min="1"/);
     assert.match(configView, /name="quest_checks\.interval::int"[^>]*min="1"/);
 });
@@ -128,5 +128,7 @@ test('maintenance prompt counters are wired into new-game reset and save/load me
     assert.match(apiSource, /Events\.resetMaintenancePromptTurnCounters\(\);/);
     assert.match(apiSource, /metadata\.housekeepingTurnCounter = maintenancePromptTurnCounters\.housekeepingTurnCounter;/);
     assert.match(apiSource, /metadata\.questCheckTurnCounter = maintenancePromptTurnCounters\.questCheckTurnCounter;/);
+    assert.match(apiSource, /metadata\.lastHousekeepingTurnId = lastHousekeepingTurnId;/);
+    assert.match(apiSource, /lastRunTurnId:\s*getLastHousekeepingTurnId\(\)/);
     assert.match(apiSource, /Events\.hydrateMaintenancePromptTurnCounters\(metadata\);/);
 });

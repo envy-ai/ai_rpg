@@ -34,8 +34,20 @@ const {
 const { createChatToolRuntime, getChatToolDefinitions } = require('./chat_tool_calls.js');
 const { TinyBrainPromptRunner } = require('./TinyBrainPromptRunner.js');
 const {
+    LiveDeslopController,
+    LiveRepeatedNgramDetector,
+    locateDetectedSlop,
+    resolveTinyBrainLiveDeslopProseMode,
+    sanitizeLiveSlopText
+} = require('./LiveDeslop.js');
+const {
     buildHousekeepingUpdateLogEntries
 } = require('./housekeeping_update_log.js');
+const {
+    normalizeTurnId: normalizeHousekeepingTurnId,
+    collectHousekeepingPlayerTurns,
+    buildHousekeepingTurnHistory
+} = require('./housekeeping_history.js');
 const {
     createScheduledEventScheduler,
     parseScheduledEventResultXml
@@ -1846,6 +1858,105 @@ function assertSafeSaveDirectoryName(rawName) {
     return normalized;
 }
 
+function isExitButtonTravelToExterior({ isTravelAction = false, travelContext = null } = {}) {
+    if (isTravelAction !== true || !travelContext?.exit) {
+        return false;
+    }
+
+    const destinationLocation = travelContext.destinationLocation;
+    if (!destinationLocation || typeof destinationLocation !== 'object') {
+        throw new Error('Exit-button travel context is missing its destination location.');
+    }
+
+    const destinationName = typeof destinationLocation.name === 'string'
+        ? destinationLocation.name.trim()
+        : '';
+    if (!destinationName) {
+        throw new Error('Exit-button travel destination is missing its location name.');
+    }
+
+    return destinationName.toLowerCase().endsWith('exterior');
+}
+
+async function abortRuntimeWorkBeforeGameLoad({
+    reason = 'Game load requested; previous runtime work cancelled.',
+    timeoutMs = 30000,
+    advanceRuntimeGeneration,
+    clearCurrentTurnToken,
+    cancelAllPrompts,
+    waitForPromptDrain,
+    waitForActiveTurns,
+    cancelAllImageJobs,
+    cancelPendingPlayerInputRequests,
+    rejectQuestConfirmations,
+    clearPlayerMoveLocks,
+    settleRuntimeTick = () => new Promise(resolve => setImmediate(resolve))
+} = {}) {
+    const requiredCallbacks = {
+        advanceRuntimeGeneration,
+        clearCurrentTurnToken,
+        cancelAllPrompts,
+        waitForPromptDrain,
+        waitForActiveTurns,
+        cancelAllImageJobs,
+        cancelPendingPlayerInputRequests,
+        rejectQuestConfirmations,
+        clearPlayerMoveLocks,
+        settleRuntimeTick
+    };
+    for (const [label, callback] of Object.entries(requiredCallbacks)) {
+        if (typeof callback !== 'function') {
+            throw new Error(`${label} callback is required before loading a game.`);
+        }
+    }
+    if (!Number.isFinite(timeoutMs) || timeoutMs < 0) {
+        throw new Error('Game-load cancellation timeoutMs must be a finite number >= 0.');
+    }
+
+    const runtimeGenerationId = advanceRuntimeGeneration('game-load');
+    clearCurrentTurnToken();
+    const cancelledPlayerInputRequests = Number(cancelPendingPlayerInputRequests(reason)) || 0;
+    const rejectedQuestConfirmations = Number(rejectQuestConfirmations(reason)) || 0;
+    const cancellationPasses = [];
+    const cancelTextPrompts = () => {
+        const result = cancelAllPrompts(reason);
+        cancellationPasses.push(result);
+        return result;
+    };
+
+    cancelTextPrompts();
+    const imageCancellationOutcomePromise = Promise.resolve()
+        .then(() => cancelAllImageJobs(reason))
+        .then(value => ({ ok: true, value }), error => ({ ok: false, error }));
+
+    await waitForActiveTurns({
+        timeoutMs,
+        onPoll: cancelTextPrompts
+    });
+    clearCurrentTurnToken();
+    cancelTextPrompts();
+    const firstDrain = await waitForPromptDrain({ timeoutMs });
+    await settleRuntimeTick();
+    cancelTextPrompts();
+    const finalDrain = await waitForPromptDrain({ timeoutMs });
+    clearPlayerMoveLocks();
+
+    const imageCancellationOutcome = await imageCancellationOutcomePromise;
+    if (!imageCancellationOutcome.ok) {
+        throw imageCancellationOutcome.error;
+    }
+
+    return {
+        runtimeGenerationId,
+        cancellationPasses,
+        firstDrain,
+        finalDrain,
+        imageCancellation: imageCancellationOutcome.value,
+        cancelledPlayerInputRequests,
+        rejectedQuestConfirmations
+    };
+}
+
 module.exports = function registerApiRoutes(scope) {
     if (!scope || typeof scope !== 'object' || !scope.app || typeof scope.app.use !== 'function') {
         throw new Error('registerApiRoutes requires a scope object containing an Express app');
@@ -1870,6 +1981,9 @@ module.exports = function registerApiRoutes(scope) {
     if (typeof scope.stripHiddenNotesFromText !== 'function') {
         throw new Error('registerApiRoutes requires stripHiddenNotesFromText helper.');
     }
+    if (typeof scope.enqueueImageJob !== 'function') {
+        throw new Error('registerApiRoutes requires enqueueImageJob helper.');
+    }
 
     if (!scope[Symbol.unscopables]) {
         Object.defineProperty(scope, Symbol.unscopables, {
@@ -1881,6 +1995,54 @@ module.exports = function registerApiRoutes(scope) {
     with (scope) {
         if (typeof axios !== 'undefined') {
             maybeInstallAiDebugInterceptor(axios);
+        }
+
+        const activeChatTurnPromises = new Set();
+        let gameLoadInProgress = false;
+
+        function trackActiveChatTurn(res) {
+            let resolveTurn;
+            const turnPromise = new Promise(resolve => {
+                resolveTurn = resolve;
+            });
+            activeChatTurnPromises.add(turnPromise);
+            let finished = false;
+            const finish = () => {
+                if (finished) {
+                    return;
+                }
+                finished = true;
+                activeChatTurnPromises.delete(turnPromise);
+                resolveTurn();
+            };
+            res.once('finish', finish);
+            res.once('close', finish);
+            return turnPromise;
+        }
+
+        async function waitForActiveChatTurnDrain({ timeoutMs = 30000, onPoll = null } = {}) {
+            if (!Number.isFinite(timeoutMs) || timeoutMs < 0) {
+                throw new Error('Active-turn drain timeoutMs must be a finite number >= 0.');
+            }
+            if (onPoll !== null && typeof onPoll !== 'function') {
+                throw new Error('Active-turn drain onPoll must be a function when provided.');
+            }
+            const deadline = Date.now() + timeoutMs;
+            while (activeChatTurnPromises.size > 0) {
+                if (onPoll) {
+                    onPoll();
+                }
+                if (Date.now() >= deadline) {
+                    const error = new Error(`Timed out waiting for ${activeChatTurnPromises.size} active chat turn(s) to stop before game load.`);
+                    error.code = 'ACTIVE_TURN_DRAIN_TIMEOUT';
+                    throw error;
+                }
+                const activeSnapshot = Array.from(activeChatTurnPromises);
+                await Promise.race([
+                    Promise.allSettled(activeSnapshot),
+                    new Promise(resolve => setTimeout(resolve, 25))
+                ]);
+            }
         }
 
         // Log all API requests with received/finished timestamps
@@ -1910,6 +2072,21 @@ module.exports = function registerApiRoutes(scope) {
             });
 
             next();
+        });
+
+        app.use((req, res, next) => {
+            const method = String(req.method || '').toUpperCase();
+            const mutatesRuntime = method === 'POST'
+                || method === 'PUT'
+                || method === 'PATCH'
+                || method === 'DELETE';
+            if (gameLoadInProgress && mutatesRuntime) {
+                return res.status(409).json({
+                    success: false,
+                    error: 'A game load is in progress; runtime-changing requests are temporarily blocked.'
+                });
+            }
+            return next();
         });
 
         const isVehicleDebugEnabled = () => {
@@ -2957,6 +3134,7 @@ module.exports = function registerApiRoutes(scope) {
             getFactions: () => factions,
             getRegionsMap: () => regions,
             getPendingRegionStubs: () => pendingRegionStubs,
+            clearLocationImageVariants,
             getModExtensionRegistry: () => modExtensionRegistry || Globals.modExtensionRegistry || null
         });
 
@@ -3013,6 +3191,79 @@ module.exports = function registerApiRoutes(scope) {
                 : null;
         }
 
+        function getLastHousekeepingTurnId() {
+            const metadata = (typeof Globals.getSaveMetadata === 'function'
+                ? Globals.getSaveMetadata()
+                : Globals.saveMetadata) || {};
+            const rawTurnId = metadata?.lastHousekeepingTurnId;
+            if (rawTurnId === undefined || rawTurnId === null || rawTurnId === '') {
+                return null;
+            }
+            const normalizedTurnId = normalizeHousekeepingTurnId(rawTurnId);
+            if (!normalizedTurnId) {
+                throw new Error('Save metadata lastHousekeepingTurnId must be a non-empty string.');
+            }
+            return normalizedTurnId;
+        }
+
+        function advanceLastHousekeepingTurnId(turnId) {
+            const normalizedTurnId = normalizeHousekeepingTurnId(turnId);
+            if (!normalizedTurnId) {
+                return null;
+            }
+            const turns = collectHousekeepingPlayerTurns(chatHistory);
+            const nextIndex = turns.findIndex(turn => turn.turnId === normalizedTurnId);
+            if (nextIndex === -1) {
+                throw new Error(
+                    `Cannot advance housekeeping history boundary to missing turn ${normalizedTurnId}.`
+                );
+            }
+
+            const currentTurnId = getLastHousekeepingTurnId();
+            if (currentTurnId) {
+                const currentIndex = turns.findIndex(turn => turn.turnId === currentTurnId);
+                if (currentIndex === -1) {
+                    throw new Error(
+                        `The current housekeeping history boundary (${currentTurnId}) is missing from chat history.`
+                    );
+                }
+                if (currentIndex >= nextIndex) {
+                    return currentTurnId;
+                }
+            }
+
+            const currentMetadata = (typeof Globals.getSaveMetadata === 'function'
+                ? Globals.getSaveMetadata()
+                : Globals.saveMetadata) || {};
+            Globals.setSaveMetadata({
+                ...currentMetadata,
+                lastHousekeepingTurnId: normalizedTurnId
+            });
+            return normalizedTurnId;
+        }
+
+        function formatHousekeepingCurrentEventText(eventResult) {
+            if (!eventResult || typeof eventResult !== 'object') {
+                return '';
+            }
+            const events = eventResult.structured || eventResult.events || null;
+            const eventBundle = buildEventSummaryBundle({
+                events,
+                experienceAwards: eventResult.experienceAwards || [],
+                currencyChanges: eventResult.currencyChanges || [],
+                environmentalDamageEvents: eventResult.environmentalDamageEvents || [],
+                needBarChanges: eventResult.needBarChanges || [],
+                dispositionChanges: eventResult.dispositionChanges || [],
+                factionReputationChanges: eventResult.factionReputationChanges || [],
+                timeProgress: eventResult.timeProgress || null
+            });
+            const statusBundle = buildStatusSummaryBundle({ events });
+            return [
+                formatEventSummaryText(eventBundle.items, '📋 Events – Current Turn'),
+                formatEventSummaryText(statusBundle.items, '🌀 Status Changes – Current Turn')
+            ].filter(Boolean).join('\n');
+        }
+
         async function startHousekeepingPrompt({
             textToCheck = '',
             actionText = '',
@@ -3034,15 +3285,25 @@ module.exports = function registerApiRoutes(scope) {
                 'housekeeping update entry'
             );
 
+            const housekeepingInterval = Events.resolveHousekeepingInterval(config);
+            const housekeepingHistory = buildHousekeepingTurnHistory(chatHistory, {
+                lastRunTurnId: getLastHousekeepingTurnId(),
+                interval: housekeepingInterval,
+                currentTurnId: stream?.requestId || null,
+                currentActionText: actionText,
+                currentProse: textToCheck,
+                currentEventText: formatHousekeepingCurrentEventText(eventResult)
+            });
+
             const baseContext = await prepareBasePromptContext({
                 locationOverride: locationOverride || null
             });
             const renderedTemplate = promptEnv.render('base-context.xml.njk', {
                 ...baseContext,
                 promptType: 'housekeeping',
-                housekeepingEventText: typeof textToCheck === 'string' ? textToCheck : '',
-                housekeepingActionText: typeof actionText === 'string' ? actionText : '',
-                housekeepingEventResult: eventResult || null,
+                housekeepingTurnHistory: housekeepingHistory.turns,
+                housekeepingHistoryMode: housekeepingHistory.mode,
+                housekeepingInterval,
                 housekeepingInstructions: typeof housekeepingInstructions === 'string' ? housekeepingInstructions : ''
             });
             const parsedTemplate = parseXMLTemplate(renderedTemplate);
@@ -3073,7 +3334,8 @@ module.exports = function registerApiRoutes(scope) {
                 housekeepingLocationId,
                 stream,
                 entryCollector,
-                parentEntryId
+                parentEntryId,
+                housekeepingLastIncludedTurnId: housekeepingHistory.lastIncludedTurnId
             };
         }
 
@@ -3158,6 +3420,9 @@ module.exports = function registerApiRoutes(scope) {
                     ? event => toolCallDebugRecorder.record(event)
                     : null
             });
+            const lastHousekeepingTurnId = advanceLastHousekeepingTurnId(
+                pending.housekeepingLastIncludedTurnId
+            );
             const updateLogEntries = recordHousekeepingUpdateLogEntries({
                 toolInvocations: housekeepingXmlResult.toolInvocations,
                 locationId: housekeepingLocationId,
@@ -3170,7 +3435,8 @@ module.exports = function registerApiRoutes(scope) {
             return {
                 response: rawResponse,
                 toolInvocations: housekeepingXmlResult.toolInvocations,
-                updateLogEntries
+                updateLogEntries,
+                lastHousekeepingTurnId
             };
         }
 
@@ -3178,18 +3444,6 @@ module.exports = function registerApiRoutes(scope) {
             const pending = await startHousekeepingPrompt(options);
             return finishHousekeepingPrompt(pending, options);
         }
-
-        runHousekeepingPrompt.start = function startHousekeepingPromptForDeferredApply(options = {}) {
-            return startHousekeepingPrompt(options)
-                .catch(error => wrapHousekeepingDeferredError(error));
-        };
-
-        runHousekeepingPrompt.finish = function finishHousekeepingPromptForDeferredApply(
-            pendingHousekeepingPrompt,
-            options = {}
-        ) {
-            return finishHousekeepingPrompt(pendingHousekeepingPrompt, options);
-        };
 
         Events.setHousekeepingPromptRunner(runHousekeepingPrompt);
 
@@ -4503,6 +4757,21 @@ module.exports = function registerApiRoutes(scope) {
             return segments;
         };
 
+        const resolveSlopHistorySegments = historySegments => {
+            if (historySegments === null || historySegments === undefined) {
+                return getSlopHistorySegments();
+            }
+            if (!Array.isArray(historySegments)) {
+                throw new TypeError('Slop history override must be an array when provided.');
+            }
+            historySegments.forEach((segment, index) => {
+                if (typeof segment !== 'string') {
+                    throw new TypeError(`Slop history override segment ${index} must be a string.`);
+                }
+            });
+            return historySegments;
+        };
+
         const isAssistantProseLikeEntry = (entry) => {
             if (!entry || typeof entry !== 'object') {
                 return false;
@@ -4531,7 +4800,7 @@ module.exports = function registerApiRoutes(scope) {
             return segments;
         };
 
-        const getFilteredSlopWords = async (prose) => {
+        const getFilteredSlopWords = async (prose, { session = null, historySegments = null } = {}) => {
             if (typeof prose !== 'string' || !prose.trim()) {
                 throw new Error('Slopword analysis requires non-empty prose.');
             }
@@ -4539,8 +4808,8 @@ module.exports = function registerApiRoutes(scope) {
             if (typeof analyzer !== 'function') {
                 throw new Error('Slopword analysis is unavailable on this server.');
             }
-            const combinedText = [...getSlopHistorySegments(), prose].join('\n\n');
-            const flagged = await analyzer(combinedText);
+            const combinedText = [...resolveSlopHistorySegments(historySegments), prose].join('\n\n');
+            const flagged = await analyzer(combinedText, { session });
             if (!Array.isArray(flagged)) {
                 throw new Error('Slopword analysis returned an invalid result.');
             }
@@ -4555,7 +4824,7 @@ module.exports = function registerApiRoutes(scope) {
             return flagged.filter(word => tokenSet.has(word));
         };
 
-        const getFilteredSlopRegexes = async (prose) => {
+        const getFilteredSlopRegexes = async (prose, { session = null, historySegments = null } = {}) => {
             if (typeof prose !== 'string' || !prose.trim()) {
                 throw new Error('Slop regex analysis requires non-empty prose.');
             }
@@ -4568,16 +4837,18 @@ module.exports = function registerApiRoutes(scope) {
 
             const currentZeroPpmMatches = await matcher(prose, {
                 includeZeroPpm: true,
-                includePositivePpm: false
+                includePositivePpm: false,
+                session
             });
             if (!Array.isArray(currentZeroPpmMatches)) {
                 throw new Error('Slop regex matching returned an invalid zero-ppm result.');
             }
 
-            const combinedText = [...getSlopHistorySegments(), prose].join('\n\n');
+            const combinedText = [...resolveSlopHistorySegments(historySegments), prose].join('\n\n');
             const combinedPositivePpmMatches = await analyzer(combinedText, {
                 includeZeroPpm: false,
-                includePositivePpm: true
+                includePositivePpm: true,
+                session
             });
             if (!Array.isArray(combinedPositivePpmMatches)) {
                 throw new Error('Slop regex analysis returned an invalid positive-ppm result.');
@@ -4588,7 +4859,8 @@ module.exports = function registerApiRoutes(scope) {
                 currentPositivePpmMatches = await matcher(prose, {
                     includeZeroPpm: false,
                     includePositivePpm: true,
-                    names: combinedPositivePpmMatches
+                    names: combinedPositivePpmMatches,
+                    session
                 });
                 if (!Array.isArray(currentPositivePpmMatches)) {
                     throw new Error('Slop regex matching returned an invalid positive-ppm result.');
@@ -4623,9 +4895,16 @@ module.exports = function registerApiRoutes(scope) {
             return false;
         };
 
-        const getFilteredConfiguredNgrams = async (prose) => {
+        const getFilteredConfiguredNgrams = async (prose, {
+            session = null,
+            ngramSegments = null,
+            historySegments = null
+        } = {}) => {
             if (typeof prose !== 'string' || !prose.trim()) {
                 throw new Error('Configured ngram analysis requires non-empty prose.');
+            }
+            if (ngramSegments !== null && !Array.isArray(ngramSegments)) {
+                throw new TypeError('Configured ngram analysis segments must be an array when provided.');
             }
 
             const analyzer = Globals.analyzeConfiguredNgramsForText;
@@ -4633,8 +4912,8 @@ module.exports = function registerApiRoutes(scope) {
                 throw new Error('Configured ngram analysis is unavailable on this server.');
             }
 
-            const combinedText = [...getSlopHistorySegments(), prose].join('\n\n');
-            const flagged = await analyzer(combinedText);
+            const combinedText = [...resolveSlopHistorySegments(historySegments), prose].join('\n\n');
+            const flagged = await analyzer(combinedText, { session });
             if (!Array.isArray(flagged)) {
                 throw new Error('Configured ngram analysis returned an invalid result.');
             }
@@ -4642,8 +4921,17 @@ module.exports = function registerApiRoutes(scope) {
                 return [];
             }
 
-            const proseTokens = Utils.normalizeKgramTokens(prose);
-            if (!proseTokens.length) {
+            const proseTokenSegments = (ngramSegments === null
+                ? [prose]
+                : ngramSegments.map(segment => (typeof segment === 'string' ? segment : segment?.text)))
+                .map((segment, index) => {
+                    if (typeof segment !== 'string') {
+                        throw new TypeError(`Configured ngram analysis segment ${index} must contain text.`);
+                    }
+                    return Utils.normalizeKgramTokens(segment);
+                })
+                .filter(tokens => tokens.length > 0);
+            if (!proseTokenSegments.length) {
                 return [];
             }
 
@@ -4656,7 +4944,7 @@ module.exports = function registerApiRoutes(scope) {
                 if (normalizedTokens.length < 2) {
                     throw new Error(`Configured ngram analysis returned an invalid normalized ngram: "${flaggedNgram}".`);
                 }
-                if (containsNormalizedNgram(proseTokens, normalizedTokens)) {
+                if (proseTokenSegments.some(tokens => containsNormalizedNgram(tokens, normalizedTokens))) {
                     matches.push(normalizedTokens.join(' '));
                 }
             }
@@ -4720,15 +5008,135 @@ module.exports = function registerApiRoutes(scope) {
             return Utils.pruneContainedKgrams(Array.from(overlaps));
         };
 
-        const collectSlopNgrams = async (prose) => {
+        const collectSlopNgrams = async (prose, { session = null } = {}) => {
             const baseNgrams = collectRepeatedNgrams(prose, { minK: 3, maxEntries: 20 });
             const supplementalSegments = getRecentAssistantProseHistorySegments(80);
             const supplementalNgrams = collectRepeatedNgrams(prose, { minK: 6, segments: supplementalSegments });
-            const configuredNgrams = await getFilteredConfiguredNgrams(prose);
+            const configuredNgrams = await getFilteredConfiguredNgrams(prose, { session });
             if (!baseNgrams.length && !supplementalNgrams.length && !configuredNgrams.length) {
                 return [];
             }
             return Utils.pruneContainedKgrams([...baseNgrams, ...supplementalNgrams, ...configuredNgrams]);
+        };
+
+        const detectLiveSlop = async (prose, {
+            session = null,
+            repeatedNgramDetector = null,
+            ngramSegments = null,
+            historySegments = null
+        } = {}) => {
+            if (typeof prose !== 'string' || !prose.trim()) {
+                return null;
+            }
+            if (!(repeatedNgramDetector instanceof LiveRepeatedNgramDetector)) {
+                throw new TypeError('Live slop detection requires a LiveRepeatedNgramDetector.');
+            }
+            const [slopWords, slopRegexes, configuredNgrams] = await Promise.all([
+                getFilteredSlopWords(prose, { session, historySegments }),
+                getFilteredSlopRegexes(prose, { session, historySegments }),
+                getFilteredConfiguredNgrams(prose, { session, ngramSegments, historySegments })
+            ]);
+            const slopNgrams = Utils.pruneContainedKgrams([
+                ...repeatedNgramDetector.find(prose, { segments: ngramSegments }),
+                ...configuredNgrams
+            ]);
+            if (!slopWords.length && !slopRegexes.length && !slopNgrams.length) {
+                return null;
+            }
+            const regexDetailMatcher = Globals.findSlopRegexMatchDetails;
+            if (typeof regexDetailMatcher !== 'function') {
+                throw new Error('Detailed slop regex matching is unavailable on this server.');
+            }
+            const slopRegexMatches = slopRegexes.length
+                ? await regexDetailMatcher(prose, { names: slopRegexes, session })
+                : [];
+            return locateDetectedSlop({
+                prose,
+                slopWords,
+                slopRegexes,
+                slopRegexMatches,
+                slopNgrams,
+                ngramSegments
+            });
+        };
+
+        const LIVE_DESLOP_TOKEN_CHUNK_SIZE = 500;
+        const resolveLiveDeslopStreamCapabilityKey = () => {
+            const effectiveAiConfig = LLMClient.resolveEffectiveAiConfiguration(
+                'player_action',
+                Globals.config
+            ).aiConfig;
+            const chatEndpoint = LLMClient.resolveChatEndpoint(effectiveAiConfig.endpoint);
+            const localServerProcess = typeof scope.getLocalLlamaServerProcess === 'function'
+                ? scope.getLocalLlamaServerProcess()
+                : null;
+            const managedPid = typeof localServerProcess?.getPid === 'function'
+                ? localServerProcess.getPid()
+                : null;
+            const processIdentity = Number.isInteger(managedPid) && managedPid > 0
+                ? `managed-pid:${managedPid}`
+                : 'game-server-lifetime';
+            return `${chatEndpoint}::${processIdentity}`;
+        };
+        const configureLiveDeslopRequest = (requestOptions, controller, { proseMode = 'structured' } = {}) => {
+            if (!requestOptions || typeof requestOptions !== 'object' || Array.isArray(requestOptions)) {
+                throw new TypeError('Live deslop requires request options.');
+            }
+            if (!(controller instanceof LiveDeslopController)) {
+                throw new TypeError('Live deslop requires a LiveDeslopController.');
+            }
+            if (proseMode !== 'structured' && proseMode !== 'plain') {
+                throw new Error(`Unsupported live deslop prose mode: ${proseMode}`);
+            }
+            return {
+                ...requestOptions,
+                stream: true,
+                nonStreamTokenChunkSize: null,
+                liveTokenStreamFallbackChunkSize: LIVE_DESLOP_TOKEN_CHUNK_SIZE,
+                liveTokenStreamCapabilityKey: resolveLiveDeslopStreamCapabilityKey(),
+                additionalPayload: {
+                    ...(requestOptions.additionalPayload || {}),
+                    logprobs: true,
+                    top_logprobs: 20
+                },
+                onStreamToken: tokenState => controller.inspect({
+                    ...tokenState,
+                    proseMode,
+                    preserveTools: true
+                })
+            };
+        };
+        const formatLiveTokenStreamFallbackLogContent = (diagnostic) => {
+            if (!diagnostic || typeof diagnostic !== 'object' || Array.isArray(diagnostic)) {
+                throw new TypeError('Live token stream fallback logging requires a diagnostic object.');
+            }
+            if (typeof diagnostic.message !== 'string' || !diagnostic.message.trim()) {
+                throw new Error('Live token stream fallback diagnostic is missing its failure message.');
+            }
+            const lines = [diagnostic.message.trim()];
+            const fields = [
+                ['Timestamp', diagnostic.timestamp],
+                ['Prompt', diagnostic.metadataLabel],
+                ['Failure type', diagnostic.failureType],
+                ['Capability key', diagnostic.capabilityKey],
+                ['HTTP status', diagnostic.httpStatus],
+                ['Error name', diagnostic.errorName],
+                ['Error code', diagnostic.errorCode],
+                ['Error message', diagnostic.errorMessage],
+                ['Fallback chunk size', diagnostic.fallbackChunkSize]
+            ];
+            for (const [label, value] of fields) {
+                if (value !== null && value !== undefined && String(value).trim()) {
+                    lines.push(`${label}: ${value}`);
+                }
+            }
+            if (typeof diagnostic.responseBody === 'string' && diagnostic.responseBody.trim()) {
+                lines.push('', 'Server response:', diagnostic.responseBody.trim());
+            }
+            if (typeof diagnostic.stack === 'string' && diagnostic.stack.trim()) {
+                lines.push('', 'Backtrace:', diagnostic.stack.trim());
+            }
+            return lines.join('\n');
         };
 
         const buildSlopContextText = () => {
@@ -9809,11 +10217,11 @@ module.exports = function registerApiRoutes(scope) {
                 if (['false', '0', 'no'].includes(lowered)) {
                     return 'no';
                 }
-                if (lowered === 'outside') {
-                    return 'outside';
+                if (lowered === 'sheltered' || lowered === 'outside') {
+                    return 'sheltered';
                 }
             }
-            throw new Error(`${fieldName} must be "yes", "no", "outside", true, false, or null.`);
+            throw new Error(`${fieldName} must be "yes", "no", "sheltered", true, false, or null (legacy "outside" is also accepted).`);
         }
 
         function resolveLocationHasWeatherForWorldTime(location) {
@@ -9925,7 +10333,8 @@ module.exports = function registerApiRoutes(scope) {
             if (weather && typeof weather === 'object') {
                 context.hasLocalWeather = weather.hasLocalWeather;
                 context.weatherScope = weather.weatherScope;
-                context.hasWeatherOutside = weather.weatherScope === 'outside';
+                context.hasWeatherSheltered = weather.weatherScope === 'sheltered';
+                context.hasWeatherOutside = weather.weatherScope === 'sheltered';
                 context.weatherName = weather.weatherName;
                 context.weatherDescription = weather.weatherDescription;
             }
@@ -15097,6 +15506,14 @@ module.exports = function registerApiRoutes(scope) {
             const slopNgrams = Array.isArray(data.slopNgrams)
                 ? data.slopNgrams.map(ngram => (typeof ngram === 'string' ? ngram.trim() : '')).filter(Boolean)
                 : [];
+            const liveCorrections = Array.isArray(data.liveCorrections)
+                ? data.liveCorrections.map((correction) => {
+                    if (!correction || typeof correction !== 'object' || Array.isArray(correction)) {
+                        throw new Error('recordSlopRemovalEntry received an invalid live correction.');
+                    }
+                    return JSON.parse(JSON.stringify(correction));
+                })
+                : [];
 
             if (!slopWords.length && !slopRegexes.length && !slopNgrams.length) {
                 return null;
@@ -15112,7 +15529,8 @@ module.exports = function registerApiRoutes(scope) {
                 slopRemoval: {
                     slopWords,
                     slopRegexes,
-                    slopNgrams
+                    slopNgrams,
+                    ...(liveCorrections.length ? { liveCorrections } : {})
                 },
                 locationId: resolvedLocationId
             };
@@ -23169,6 +23587,15 @@ module.exports = function registerApiRoutes(scope) {
 
         // Chat API endpoint
         app.post('/api/chat', async (req, res) => {
+            if (gameLoadInProgress) {
+                return res.status(409).json({
+                    error: 'A game load is in progress; this turn was not started.'
+                });
+            }
+            trackActiveChatTurn(res);
+            const newTurnToken = `${Date.now().toString(36)}_${Math.random().toString(36).slice(2)}`;
+            currentTurnToken = newTurnToken;
+            scope.currentTurnToken = newTurnToken;
             const requestBody = req.body || {};
             const {
                 messages,
@@ -23908,7 +24335,6 @@ module.exports = function registerApiRoutes(scope) {
                 stream.status('player_action:received', 'Processing player action.');
                 Player.updatePreviousLocationsForAll();
 
-                const newTurnToken = `${Date.now().toString(36)}_${Math.random().toString(36).slice(2)}`;
                 currentTurnToken = newTurnToken;
 
                 // Store user message in history (last message from the request)
@@ -24559,10 +24985,17 @@ module.exports = function registerApiRoutes(scope) {
                 if (!isForcedEventAction && currentPlayer && userMessage && userMessage.role === 'user') {
                     try {
                         stream.status('player_action:prompt', 'Building prompt for AI response.');
+                        const promptTravelContext = currentActionIsTravel && travelMetadata
+                            ? resolveTravelContext()
+                            : null;
                         const baseContext = isNoContextPromptAction
                             ? null
                             : await prepareBasePromptContext({
                                 locationOverride: location,
+                                isExterior: isExitButtonTravelToExterior({
+                                    isTravelAction: currentActionIsTravel,
+                                    travelContext: promptTravelContext
+                                }),
                                 includeAllHistoryEntryTypes: isGenericPromptAction && !isNoContextPromptAction
                             });
                         const templateName = isNoContextPromptAction
@@ -24671,7 +25104,9 @@ module.exports = function registerApiRoutes(scope) {
                                 characterName: 'The player',
                                 additionalLore: additionalLore.trim(),
                                 itemContext: itemContextXml,
-                                abilityContext: abilityContextXml
+                                abilityContext: abilityContextXml,
+                                travelTargetLocationId: promptTravelContext?.destinationLocation?.id || null,
+                                travelTargetLocationName: promptTravelContext?.destinationLocation?.name || null
                             };
                         } else if (isQuestionAction) {
                             promptVariables = {
@@ -25045,6 +25480,34 @@ module.exports = function registerApiRoutes(scope) {
                 const usesActionXmlResponse = promptType === 'player-action'
                     || promptType === 'creative-mode-action';
                 const shouldUseRepetitionBusterXml = usesActionXmlResponse && Boolean(Globals.config.repetition_buster);
+                const shouldUseLiveDeslop = Globals.config?.ai?.live_deslop === true
+                    && Globals.config?.slop_buster === true
+                    && shouldUseRepetitionBusterXml
+                    && !isQuestionAction
+                    && !isGenericPromptAction;
+                let liveDeslopController = null;
+                if (shouldUseLiveDeslop) {
+                    const createSlopSession = Globals.createSlopAnalysisSession;
+                    if (typeof createSlopSession !== 'function') {
+                        throw new Error('Live deslop analysis sessions are unavailable on this server.');
+                    }
+                    const liveSlopSession = await createSlopSession();
+                    const liveRepeatedNgramDetector = new LiveRepeatedNgramDetector({
+                        baseSegments: getRecentSlopHistorySegments(20),
+                        supplementalSegments: getRecentAssistantProseHistorySegments(80)
+                    });
+                    const liveSlopHistorySegments = getSlopHistorySegments()
+                        .map(segment => sanitizeLiveSlopText(segment))
+                        .filter(segment => segment.trim());
+                    liveDeslopController = new LiveDeslopController({
+                        detectSlop: (prose, { ngramSegments = null } = {}) => detectLiveSlop(prose, {
+                            session: liveSlopSession,
+                            repeatedNgramDetector: liveRepeatedNgramDetector,
+                            ngramSegments,
+                            historySegments: liveSlopHistorySegments
+                        })
+                    });
+                }
                 const toolResultCache = {
                     roundKey: stream.requestId || `${promptMetadataLabel}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`,
                     entries: new Map()
@@ -25071,6 +25534,10 @@ module.exports = function registerApiRoutes(scope) {
                         __codexQuotaTurnKey: stream.requestId || `player_turn_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`
                     },
                     validateXML: false
+                };
+                const liveTokenStreamFallbackDiagnostics = [];
+                const collectLiveTokenStreamFallbackDiagnostic = async diagnostic => {
+                    liveTokenStreamFallbackDiagnostics.push({ ...diagnostic });
                 };
                 if (shouldUseRepetitionBusterXml) {
                     requestOptions.requiredRegex = playerActionProseRegex;
@@ -25123,7 +25590,8 @@ module.exports = function registerApiRoutes(scope) {
                             attempt,
                             isFinal,
                             logFilePath,
-                            queueReservation
+                            queueReservation,
+                            appendLogSection
                         }) => {
                             const stepLabel = isFinal
                                 ? 'final response'
@@ -25135,10 +25603,30 @@ module.exports = function registerApiRoutes(scope) {
                                 queueReservation
                             };
                             delete stageRequestOptions.requiredRegex;
+                            const liveDeslopProseMode = liveDeslopController
+                                ? resolveTinyBrainLiveDeslopProseMode({ messages, isFinal })
+                                : null;
+                            if (liveDeslopProseMode) {
+                                stageRequestOptions.onLiveTokenStreamFallback = async diagnostic => {
+                                    await collectLiveTokenStreamFallbackDiagnostic(diagnostic);
+                                    appendLogSection({
+                                        title: `${stepLabel} live token stream fallback`,
+                                        content: formatLiveTokenStreamFallbackLogContent(diagnostic)
+                                    });
+                                };
+                            }
+                            const effectiveStageRequestOptions = liveDeslopProseMode
+                                ? (() => {
+                                    liveDeslopController.beginGeneration();
+                                    return configureLiveDeslopRequest(stageRequestOptions, liveDeslopController, {
+                                        proseMode: liveDeslopProseMode
+                                    });
+                                })()
+                                : stageRequestOptions;
 
                             if (Array.isArray(enabledChatTools) && enabledChatTools.length > 0) {
                                 const toolLoopResult = await runChatCompletionWithToolLoop({
-                                    requestOptions: stageRequestOptions,
+                                    requestOptions: effectiveStageRequestOptions,
                                     streamEmitter: stream,
                                     metadataLabel: promptMetadataLabel,
                                     toolResultCache,
@@ -25165,7 +25653,7 @@ module.exports = function registerApiRoutes(scope) {
                                 };
                             }
 
-                            const response = await LLMClient.chatCompletion(stageRequestOptions);
+                            const response = await LLMClient.chatCompletion(effectiveStageRequestOptions);
                             return {
                                 aiResponse: response,
                                 conversationMessages: [
@@ -25188,8 +25676,17 @@ module.exports = function registerApiRoutes(scope) {
                         debugInfo.tinyBrainLogFile = tinyBrainResult.logFilePath;
                     }
                 } else if (Array.isArray(enabledChatTools) && enabledChatTools.length > 0) {
+                    const effectiveRequestOptions = liveDeslopController
+                        ? (() => {
+                            liveDeslopController.beginGeneration();
+                            return configureLiveDeslopRequest({
+                                ...requestOptions,
+                                onLiveTokenStreamFallback: collectLiveTokenStreamFallbackDiagnostic
+                            }, liveDeslopController);
+                        })()
+                        : requestOptions;
                     const toolLoopResult = await runChatCompletionWithToolLoop({
-                        requestOptions,
+                        requestOptions: effectiveRequestOptions,
                         streamEmitter: stream,
                         metadataLabel: promptMetadataLabel,
                         toolResultCache,
@@ -25213,7 +25710,17 @@ module.exports = function registerApiRoutes(scope) {
                         ? toolLoopResult.toolInvocations
                         : [];
                 } else {
-                    aiResponse = await LLMClient.chatCompletion(requestOptions);
+                    if (liveDeslopController) {
+                        liveDeslopController.beginGeneration();
+                        aiResponse = await LLMClient.chatCompletion(
+                            configureLiveDeslopRequest({
+                                ...requestOptions,
+                                onLiveTokenStreamFallback: collectLiveTokenStreamFallbackDiagnostic
+                            }, liveDeslopController)
+                        );
+                    } else {
+                        aiResponse = await LLMClient.chatCompletion(requestOptions);
+                    }
                 }
                 let moveTurnResultPayload = null;
                 let playerActionXmlPayload = null;
@@ -25302,6 +25809,10 @@ module.exports = function registerApiRoutes(scope) {
                             systemPrompt: playerActionLogPayload.systemPrompt || '',
                             generationPrompt: playerActionLogPayload.generationPrompt || '',
                             response: aiResponse,
+                            sections: liveTokenStreamFallbackDiagnostics.map((diagnostic, index) => ({
+                                title: `Live token stream fallback ${index + 1}`,
+                                content: formatLiveTokenStreamFallbackLogContent(diagnostic)
+                            })),
                             model: requestOptions.model,
                             endpoint: requestOptions.endpoint
                         });
@@ -25323,6 +25834,10 @@ module.exports = function registerApiRoutes(scope) {
                             systemPrompt: debugInfo.systemMessage || '',
                             generationPrompt: debugInfo.generationPrompt || '',
                             response: aiResponse,
+                            sections: liveTokenStreamFallbackDiagnostics.map((diagnostic, index) => ({
+                                title: `Live token stream fallback ${index + 1}`,
+                                content: formatLiveTokenStreamFallbackLogContent(diagnostic)
+                            })),
                             model: requestOptions.model,
                             endpoint: requestOptions.endpoint
                         });
@@ -25460,6 +25975,15 @@ module.exports = function registerApiRoutes(scope) {
                     }
 
                     let slopRemovalInfo = null;
+                    const liveDeslopInfo = liveDeslopController?.getDiagnostics() || null;
+                    if (liveDeslopInfo?.ran) {
+                        slopRemovalInfo = {
+                            slopWords: [...(liveDeslopInfo.slopWords || [])],
+                            slopRegexes: [...(liveDeslopInfo.slopRegexes || [])],
+                            slopNgrams: [...(liveDeslopInfo.slopNgrams || [])],
+                            liveCorrections: [...(liveDeslopInfo.corrections || [])]
+                        };
+                    }
                     if (Globals.config?.slop_buster === true && !isQuestionAction && !isGenericPromptAction) {
                         const slopResult = await applySlopRemoval(aiResponse, {
                             returnDiagnostics: true,
@@ -25467,10 +25991,15 @@ module.exports = function registerApiRoutes(scope) {
                         });
                         aiResponse = slopResult.text;
                         if (slopResult.ran) {
+                            const mergeDiagnostics = (existing, additions) => Array.from(new Set([
+                                ...(existing || []),
+                                ...(additions || [])
+                            ]));
                             slopRemovalInfo = {
-                                slopWords: slopResult.slopWords || [],
-                                slopRegexes: slopResult.slopRegexes || [],
-                                slopNgrams: slopResult.slopNgrams || []
+                                ...(slopRemovalInfo || {}),
+                                slopWords: mergeDiagnostics(slopRemovalInfo?.slopWords, slopResult.slopWords),
+                                slopRegexes: mergeDiagnostics(slopRemovalInfo?.slopRegexes, slopResult.slopRegexes),
+                                slopNgrams: mergeDiagnostics(slopRemovalInfo?.slopNgrams, slopResult.slopNgrams)
                             };
                         }
                     }
@@ -34678,7 +35207,7 @@ module.exports = function registerApiRoutes(scope) {
                         } catch (validationError) {
                             return res.status(400).json({
                                 success: false,
-                                error: validationError?.message || 'hasWeather must be "yes", "no", "outside", a boolean, or null'
+                                error: validationError?.message || 'hasWeather must be "yes", "no", "sheltered", a boolean, or null'
                             });
                         }
                     }
@@ -35795,7 +36324,12 @@ module.exports = function registerApiRoutes(scope) {
             };
         }
 
-        function syncStubPresentationWithExit(stubLocation, { name: rawName, description: rawDescription, relativeLevel } = {}) {
+        function syncStubPresentationWithExit(stubLocation, {
+            name: rawName,
+            description: rawDescription,
+            shortDescription: rawShortDescription,
+            relativeLevel
+        } = {}) {
             if (!stubLocation || !stubLocation.isStub) {
                 return;
             }
@@ -35803,6 +36337,11 @@ module.exports = function registerApiRoutes(scope) {
             const normalizedName = typeof rawName === 'string' && rawName.trim() ? rawName.trim() : null;
             const hasDescriptionUpdate = typeof rawDescription === 'string';
             const normalizedDescription = hasDescriptionUpdate ? rawDescription.trim() : null;
+            const hasShortDescriptionUpdate = typeof rawShortDescription === 'string';
+            const shouldUpdateShortDescription = hasShortDescriptionUpdate || hasDescriptionUpdate;
+            const normalizedShortDescription = hasShortDescriptionUpdate
+                ? rawShortDescription.trim()
+                : normalizedDescription;
             const normalizedRelativeLevel = Number.isFinite(relativeLevel)
                 ? Math.max(-10, Math.min(10, Math.round(relativeLevel)))
                 : null;
@@ -35818,8 +36357,8 @@ module.exports = function registerApiRoutes(scope) {
             const metadata = stubLocation.stubMetadata || {};
             let metadataChanged = false;
 
-            if (hasDescriptionUpdate && metadata.shortDescription !== normalizedDescription) {
-                metadata.shortDescription = normalizedDescription;
+            if (shouldUpdateShortDescription && metadata.shortDescription !== normalizedShortDescription) {
+                metadata.shortDescription = normalizedShortDescription;
                 metadataChanged = true;
             }
 
@@ -35833,8 +36372,8 @@ module.exports = function registerApiRoutes(scope) {
                 metadataChanged = true;
             }
 
-            if (hasDescriptionUpdate && metadata.stubShortDescription !== normalizedDescription) {
-                metadata.stubShortDescription = normalizedDescription;
+            if (shouldUpdateShortDescription && metadata.stubShortDescription !== normalizedShortDescription) {
+                metadata.stubShortDescription = normalizedShortDescription;
                 metadataChanged = true;
             }
 
@@ -35842,8 +36381,8 @@ module.exports = function registerApiRoutes(scope) {
                 stubLocation.description = normalizedDescription;
             }
 
-            if (hasDescriptionUpdate && (stubLocation.shortDescription || '') !== normalizedDescription) {
-                stubLocation.shortDescription = normalizedDescription;
+            if (shouldUpdateShortDescription && (stubLocation.shortDescription || '') !== normalizedShortDescription) {
+                stubLocation.shortDescription = normalizedShortDescription;
             }
 
             if (metadata.isRegionEntryStub) {
@@ -36964,6 +37503,7 @@ module.exports = function registerApiRoutes(scope) {
                 const hasOwn = Object.prototype.hasOwnProperty;
                 const hasName = hasOwn.call(body, 'name');
                 const hasDescription = hasOwn.call(body, 'description');
+                const hasShortDescription = hasOwn.call(body, 'shortDescription');
                 const hasControllingFaction = hasOwn.call(body, 'controllingFactionId');
                 const hasTargetRegion = hasOwn.call(body, 'targetRegionId');
                 let resolvedControllingFactionId = null;
@@ -37041,6 +37581,12 @@ module.exports = function registerApiRoutes(scope) {
                         error: 'Stub description must be a string'
                     });
                 }
+                if (hasShortDescription && typeof body.shortDescription !== 'string') {
+                    return res.status(400).json({
+                        success: false,
+                        error: 'Stub short description must be a string'
+                    });
+                }
 
                 const nameValue = typeof body.name === 'string' ? body.name.trim() : '';
                 if (!nameValue) {
@@ -37051,6 +37597,7 @@ module.exports = function registerApiRoutes(scope) {
                 }
 
                 const descriptionValue = typeof body.description === 'string' ? body.description.trim() : '';
+                const shortDescriptionValue = hasShortDescription ? body.shortDescription.trim() : undefined;
 
                 let relativeLevel = null;
                 if (hasOwn.call(body, 'relativeLevel')) {
@@ -37071,6 +37618,7 @@ module.exports = function registerApiRoutes(scope) {
                 syncStubPresentationWithExit(stubLocation, {
                     name: nameValue,
                     description: descriptionValue,
+                    shortDescription: shortDescriptionValue,
                     relativeLevel
                 });
 
@@ -37136,10 +37684,15 @@ module.exports = function registerApiRoutes(scope) {
                         || stubMetadata.targetRegionName
                         || null)
                     : null;
-                const resolvedDescription = stubMetadata.targetRegionDescription
-                    || stubMetadata.shortDescription
+                const resolvedDescription = stubLocation.description
+                    || stubMetadata.stubDescription
+                    || stubMetadata.targetRegionDescription
                     || stubMetadata.blueprintDescription
                     || descriptionValue;
+                const resolvedShortDescription = stubLocation.shortDescription
+                    || stubMetadata.stubShortDescription
+                    || stubMetadata.shortDescription
+                    || '';
                 const resolvedRelativeLevel = Number.isFinite(stubMetadata.targetRegionRelativeLevel)
                     ? Number(stubMetadata.targetRegionRelativeLevel)
                     : (Number.isFinite(stubMetadata.relativeLevel) ? Number(stubMetadata.relativeLevel) : null);
@@ -37159,6 +37712,7 @@ module.exports = function registerApiRoutes(scope) {
                         id: stubId,
                         name: stubLocation.name || nameValue,
                         description: resolvedDescription,
+                        shortDescription: resolvedShortDescription,
                         relativeLevel: resolvedRelativeLevel,
                         isRegionEntryStub: Boolean(stubMetadata.isRegionEntryStub),
                         targetRegionId: targetRegionId || null,
@@ -46077,6 +46631,8 @@ module.exports = function registerApiRoutes(scope) {
                     playerClass: playerClassInput,
                     playerRace: playerRaceInput,
                     playerLevel: playerLevelInput,
+                    startMonth: startMonthInput,
+                    startDay: startDayInput,
                     startTime: startTimeInput,
                     startingLocation,
                     startingCurrency: startingCurrencyInput,
@@ -46154,6 +46710,38 @@ module.exports = function registerApiRoutes(scope) {
                 const resolvedStartTime = hasRequestedStartTime
                     ? parsedRequestedStartTime
                     : (Number.isFinite(fallbackStartTime) ? fallbackStartTime : 9);
+                const hasRequestedStartMonth = startMonthInput !== undefined
+                    && startMonthInput !== null
+                    && `${startMonthInput}`.trim() !== '';
+                const parsedRequestedStartMonth = Number(startMonthInput);
+                if (hasRequestedStartMonth && (!Number.isInteger(parsedRequestedStartMonth) || parsedRequestedStartMonth < 1)) {
+                    const errorMessage = 'startMonth must be a positive integer.';
+                    reportError(errorMessage);
+                    return res.status(400).json({
+                        success: false,
+                        error: errorMessage
+                    });
+                }
+                const fallbackStartMonth = Number(newGameDefaults.startMonth);
+                const resolvedStartMonth = hasRequestedStartMonth
+                    ? parsedRequestedStartMonth
+                    : (Number.isInteger(fallbackStartMonth) && fallbackStartMonth >= 1 ? fallbackStartMonth : 1);
+                const hasRequestedStartDay = startDayInput !== undefined
+                    && startDayInput !== null
+                    && `${startDayInput}`.trim() !== '';
+                const parsedRequestedStartDay = Number(startDayInput);
+                if (hasRequestedStartDay && (!Number.isInteger(parsedRequestedStartDay) || parsedRequestedStartDay < 1)) {
+                    const errorMessage = 'startDay must be a positive integer.';
+                    reportError(errorMessage);
+                    return res.status(400).json({
+                        success: false,
+                        error: errorMessage
+                    });
+                }
+                const fallbackStartDay = Number(newGameDefaults.startDay);
+                const resolvedStartDay = hasRequestedStartDay
+                    ? parsedRequestedStartDay
+                    : (Number.isInteger(fallbackStartDay) && fallbackStartDay >= 1 ? fallbackStartDay : 1);
                 const parsedStartingCurrency = Number.parseInt(startingCurrencyInput, 10);
                 const fallbackStartingCurrencySource = newGameDefaults.startingCurrency;
                 const fallbackStartingCurrencyParsed = Number.parseInt(fallbackStartingCurrencySource, 10);
@@ -46193,6 +46781,26 @@ module.exports = function registerApiRoutes(scope) {
                 }
 
                 report('new_game:start', 'Preparing your adventure...');
+                report('new_game:calendar', 'Generating world calendar...');
+                const calendarDefinition = await resolveCalendarDefinitionForSetting({
+                    settingSnapshot: activeSetting,
+                    report
+                });
+                let startingDayIndex = null;
+                try {
+                    startingDayIndex = Globals.getCalendarDayIndex({
+                        monthNumber: resolvedStartMonth,
+                        dayOfMonth: resolvedStartDay,
+                        calendarDefinition
+                    });
+                } catch (error) {
+                    const errorMessage = `Invalid starting date: ${error.message}`;
+                    reportError(errorMessage);
+                    return res.status(400).json({
+                        success: false,
+                        error: errorMessage
+                    });
+                }
                 report('new_game:reset', 'Clearing previous game state...');
 
                 // Clear existing game state
@@ -46254,16 +46862,12 @@ module.exports = function registerApiRoutes(scope) {
                 resetPlotAnalysisPromptRuntime();
                 Globals.setPlotAnalysis(null);
                 resetOffscreenNpcActivityState();
-                report('new_game:calendar', 'Generating world calendar...');
-                const calendarDefinition = await resolveCalendarDefinitionForSetting({
-                    settingSnapshot: activeSetting,
-                    report
-                });
                 Globals.resetWorldTime({
                     settingName: activeSetting?.name || null,
                     calendarDefinition
                 });
-                Globals.elapsedTime = resolvedStartTime * 60;
+                const { cycleLengthMinutes } = Globals.getTimeConfig();
+                Globals.elapsedTime = (startingDayIndex * cycleLengthMinutes) + (resolvedStartTime * 60);
 
                 console.log('🎮 Starting new game...');
                 report('new_game:reset_complete', 'Game state cleared. Preparing skills...');
@@ -46772,6 +47376,45 @@ module.exports = function registerApiRoutes(scope) {
             return latest ? latest.path : null;
         };
 
+        const resolveLatestSaveDirByMetadataTimestamp = (saveRootPath) => {
+            if (!saveRootPath || typeof saveRootPath !== 'string') {
+                throw new Error('Save root path is required to locate the latest save.');
+            }
+            if (!fs.existsSync(saveRootPath)) {
+                return null;
+            }
+            const candidates = fs.readdirSync(saveRootPath, { withFileTypes: true })
+                .filter(entry => entry.isDirectory())
+                .map(entry => {
+                    const fullPath = path.join(saveRootPath, entry.name);
+                    let modifiedAt = 0;
+                    try {
+                        modifiedAt = fs.statSync(fullPath).mtimeMs || 0;
+                    } catch (error) {
+                        console.warn('Failed to stat save directory:', fullPath, error?.message || error);
+                        return null;
+                    }
+                    let metadataTimestamp = 0;
+                    const metadataPath = path.join(fullPath, 'metadata.json');
+                    if (fs.existsSync(metadataPath)) {
+                        try {
+                            const metadata = JSON.parse(fs.readFileSync(metadataPath, 'utf8'));
+                            const parsedTimestamp = new Date(metadata?.timestamp || '').getTime();
+                            metadataTimestamp = Number.isFinite(parsedTimestamp) ? parsedTimestamp : 0;
+                        } catch (error) {
+                            console.warn('Failed to read save metadata timestamp:', metadataPath, error?.message || error);
+                        }
+                    }
+                    return {
+                        path: fullPath,
+                        sortTimestamp: metadataTimestamp || modifiedAt
+                    };
+                })
+                .filter(Boolean)
+                .sort((a, b) => b.sortTimestamp - a.sortTimestamp);
+            return candidates[0]?.path || null;
+        };
+
         const getActiveEnabledModNames = () => normalizeEnabledModNames(
             getEnabledModDirectoryNames(resolveBaseDirectory()),
             'active enabled mods'
@@ -47121,6 +47764,12 @@ module.exports = function registerApiRoutes(scope) {
             const maintenancePromptTurnCounters = Events.getMaintenancePromptTurnCounters();
             metadata.housekeepingTurnCounter = maintenancePromptTurnCounters.housekeepingTurnCounter;
             metadata.questCheckTurnCounter = maintenancePromptTurnCounters.questCheckTurnCounter;
+            const lastHousekeepingTurnId = getLastHousekeepingTurnId();
+            if (lastHousekeepingTurnId) {
+                metadata.lastHousekeepingTurnId = lastHousekeepingTurnId;
+            } else {
+                delete metadata.lastHousekeepingTurnId;
+            }
             metadata.offscreenNpcActivityState = normalizeOffscreenNpcActivityState(offscreenNpcActivityState);
             const currentLocationId = currentPlayer.currentLocation || null;
             const currentLocation = currentLocationId
@@ -47355,13 +48004,68 @@ module.exports = function registerApiRoutes(scope) {
             await Utils.writeSerializedGameState(saveDir, serializedBackfill);
         }
 
-        async function performGameLoad(requestedSaveName, { skipSummary = false, saveRoot = null, clientId = null, modMismatchChoice = null } = {}) {
+        async function performGameLoad(requestedSaveName, {
+            skipSummary = false,
+            saveRoot = null,
+            clientId = null,
+            modMismatchChoice = null,
+            loadLatest = false
+        } = {}) {
+            if (gameLoadInProgress) {
+                const error = new Error('Another game load is already in progress.');
+                error.code = 'GAME_LOAD_IN_PROGRESS';
+                throw error;
+            }
+            gameLoadInProgress = true;
+            try {
+            const cancelRuntimeForLoad = reason => abortRuntimeWorkBeforeGameLoad({
+                reason,
+                advanceRuntimeGeneration,
+                clearCurrentTurnToken: () => {
+                    currentTurnToken = null;
+                    scope.currentTurnToken = null;
+                },
+                cancelAllPrompts: cancellationReason => LLMClient.cancelAllPrompts(cancellationReason),
+                waitForPromptDrain: options => LLMClient.waitForPromptDrain(options),
+                waitForActiveTurns: waitForActiveChatTurnDrain,
+                cancelAllImageJobs,
+                cancelPendingPlayerInputRequests: cancellationReason => cancelPendingPlayerInputRequests(
+                    null,
+                    cancellationReason,
+                    'game_load_started'
+                ),
+                rejectQuestConfirmations: cancellationReason => questConfirmationManager.rejectAll(cancellationReason),
+                clearPlayerMoveLocks: () => activePlayerMoveLocks.clear()
+            });
+
+            let targetSaveName = requestedSaveName;
+            let runtimeCancellation = null;
+            if (loadLatest === true) {
+                runtimeCancellation = await cancelRuntimeForLoad(
+                    'Loading the latest autosave; previous runtime work cancelled.'
+                );
+                const latestSaveDir = resolveLatestSaveDirByMetadataTimestamp(resolveSaveRootPath('autosaves'));
+                if (!latestSaveDir) {
+                    const error = new Error('No autosaves are available to restore.');
+                    error.code = 'AUTOSAVE_NOT_FOUND';
+                    throw error;
+                }
+                targetSaveName = path.basename(latestSaveDir);
+                saveRoot = 'autosaves';
+            }
+
             const {
                 baseDir,
                 normalizedName,
                 saveDir,
                 saveRootPath
-            } = resolveSaveDirForRequest(requestedSaveName, saveRoot);
+            } = resolveSaveDirForRequest(targetSaveName, saveRoot);
+
+            if (!runtimeCancellation) {
+                runtimeCancellation = await cancelRuntimeForLoad(
+                    `Loading game "${normalizedName}"; previous runtime work cancelled.`
+                );
+            }
 
             const serialized = Utils.loadSerializedGameState(saveDir);
             assertSaveEnabledModsCompatible(serialized.metadata, { modMismatchChoice });
@@ -47381,10 +48085,18 @@ module.exports = function registerApiRoutes(scope) {
 
             jobQueue.length = 0;
             imageJobs.clear();
+            activeImageJobs.clear();
+            entityImageJobs.clear();
             pendingLocationImages.clear();
             generatedImages.clear();
+            stubExpansionPromises.clear();
+            regionEntryExpansionPromises.clear();
             npcGenerationPromises.clear();
             playerAbilitySelectionPromises.clear();
+            playerImageGenerationPromises.clear();
+            locationImageGenerationPromises.clear();
+            levelUpAbilityPromises.clear();
+            shortDescriptionBackfillByClient.clear();
             isProcessingJob = false;
 
             const hydrationResult = Utils.hydrateGameState(serialized, {
@@ -47915,8 +48627,12 @@ module.exports = function registerApiRoutes(scope) {
             return {
                 saveName: normalizedName,
                 metadata,
-                loadedData
+                loadedData,
+                runtimeCancellation
             };
+            } finally {
+                gameLoadInProgress = false;
+            }
         }
 
         scope.performGameSave = performGameSave;
@@ -48007,12 +48723,30 @@ module.exports = function registerApiRoutes(scope) {
                 }
             }
 
+            const parsedStartMonth = Number(settings.startMonth);
+            const hasStartMonth = settings.startMonth !== undefined && settings.startMonth !== null && settings.startMonth !== '';
+            if (hasStartMonth && (!Number.isInteger(parsedStartMonth) || parsedStartMonth < 1)) {
+                const error = new Error('startMonth must be a positive integer.');
+                error.code = 'INVALID_NEW_GAME_SETTINGS';
+                throw error;
+            }
+
+            const parsedStartDay = Number(settings.startDay);
+            const hasStartDay = settings.startDay !== undefined && settings.startDay !== null && settings.startDay !== '';
+            if (hasStartDay && (!Number.isInteger(parsedStartDay) || parsedStartDay < 1)) {
+                const error = new Error('startDay must be a positive integer.');
+                error.code = 'INVALID_NEW_GAME_SETTINGS';
+                throw error;
+            }
+
             return {
                 playerName: normalizeNewGameSettingsString(settings.playerName, 'playerName'),
                 playerDescription: normalizeNewGameSettingsString(settings.playerDescription, 'playerDescription'),
                 playerClass: normalizeNewGameSettingsString(settings.playerClass, 'playerClass'),
                 playerRace: normalizeNewGameSettingsString(settings.playerRace, 'playerRace'),
                 playerLevel: hasPlayerLevel ? parsedLevel : 1,
+                startMonth: hasStartMonth ? parsedStartMonth : 1,
+                startDay: hasStartDay ? parsedStartDay : 1,
                 startTime: hasStartTime ? parsedStartTime : 9,
                 startingLocation: normalizeNewGameSettingsString(settings.startingLocation, 'startingLocation'),
                 startingCurrency: hasStartingCurrency ? parsedStartingCurrency : 0,
@@ -48455,7 +49189,7 @@ module.exports = function registerApiRoutes(scope) {
             }
         });
 
-        app.post('/api/mods/apply-save-config', (req, res) => {
+        app.post('/api/mods/apply-save-config', async (req, res) => {
             try {
                 const { saveName, saveType } = req.body || {};
                 const normalizedType = typeof saveType === 'string' && saveType.toLowerCase() === 'autosaves'
@@ -48494,7 +49228,7 @@ module.exports = function registerApiRoutes(scope) {
                     if (typeof requestServerRestart !== 'function') {
                         throw new Error('Self restart is enabled, but requestServerRestart is not available.');
                     }
-                    restartResult = requestServerRestart({
+                    restartResult = await requestServerRestart({
                         reason: 'mod-config-change',
                         saveName: normalizedName,
                         saveType: normalizedType
@@ -48566,6 +49300,7 @@ module.exports = function registerApiRoutes(scope) {
                     source: normalizedType,
                     metadata: result.metadata,
                     loadedData: result.loadedData,
+                    runtimeCancellation: result.runtimeCancellation,
                     message: `Game loaded successfully from: ${result.saveName}`
                 });
             } catch (error) {
@@ -48579,16 +49314,68 @@ module.exports = function registerApiRoutes(scope) {
                     statusCode = 404;
                 } else if (error.code === 'MOD_ENABLEMENT_MISMATCH') {
                     statusCode = 409;
+                } else if (error.code === 'GAME_LOAD_IN_PROGRESS') {
+                    statusCode = 409;
+                } else if (error.code === 'ACTIVE_TURN_DRAIN_TIMEOUT'
+                    || String(error?.message || '').includes('Timed out waiting for prompt drain')) {
+                    statusCode = 408;
                 }
                 const responsePayload = {
                     success: false,
-                    error: error.message
+                    error: error.message,
+                    stack: typeof error?.stack === 'string' ? error.stack : null
                 };
                 if (error.code === 'MOD_ENABLEMENT_MISMATCH') {
                     responsePayload.code = error.code;
                     responsePayload.modMismatch = error.modMismatch;
                 }
                 res.status(statusCode).json(responsePayload);
+            }
+        });
+
+        app.post('/api/turn/cancel-and-rollback', async (req, res) => {
+            try {
+                const body = req.body && typeof req.body === 'object' ? req.body : {};
+                const clientId = typeof body.clientId === 'string' && body.clientId.trim()
+                    ? body.clientId.trim()
+                    : null;
+                const result = await performGameLoad(null, {
+                    saveRoot: 'autosaves',
+                    clientId,
+                    loadLatest: true
+                });
+                return res.json({
+                    success: true,
+                    saveName: result.saveName,
+                    source: 'autosaves',
+                    metadata: result.metadata,
+                    loadedData: result.loadedData,
+                    runtimeCancellation: result.runtimeCancellation,
+                    message: `Stopped active work and restored autosave: ${result.saveName}`
+                });
+            } catch (error) {
+                console.error('Error cancelling turn and restoring latest autosave:', error);
+                let statusCode = 500;
+                if (error.code === 'AUTOSAVE_NOT_FOUND' || error.code === 'SAVE_NOT_FOUND') {
+                    statusCode = 404;
+                } else if (error.code === 'GAME_LOAD_IN_PROGRESS') {
+                    statusCode = 409;
+                } else if (error.code === 'ACTIVE_TURN_DRAIN_TIMEOUT'
+                    || String(error?.message || '').includes('Timed out waiting for prompt drain')) {
+                    statusCode = 408;
+                } else if (error.code === 'MOD_ENABLEMENT_MISMATCH') {
+                    statusCode = 409;
+                }
+                const responsePayload = {
+                    success: false,
+                    error: error?.message || 'Failed to cancel the turn and restore the latest autosave.',
+                    stack: typeof error?.stack === 'string' ? error.stack : null
+                };
+                if (error.code === 'MOD_ENABLEMENT_MISMATCH') {
+                    responsePayload.code = error.code;
+                    responsePayload.modMismatch = error.modMismatch;
+                }
+                return res.status(statusCode).json(responsePayload);
             }
         });
 
@@ -50107,10 +50894,7 @@ module.exports = function registerApiRoutes(scope) {
 
                 // Create and queue the job
                 const job = createImageJob(jobId, payload);
-                jobQueue.push(jobId);
-
-                // Start processing if not already running
-                setTimeout(() => processJobQueue(), 0);
+                enqueueImageJob(jobId);
 
                 // Return job ID for async tracking, or wait for completion if sync
                 if (isAsync !== false) {
@@ -50196,7 +50980,7 @@ module.exports = function registerApiRoutes(scope) {
             }
 
             // Include error if failed
-            if (job.status === JOB_STATUS.FAILED || job.status === JOB_STATUS.TIMEOUT) {
+            if (job.status === JOB_STATUS.FAILED || job.status === JOB_STATUS.TIMEOUT || job.status === JOB_STATUS.CANCELED) {
                 response.error = job.error;
             }
 
@@ -50712,8 +51496,10 @@ module.exports.findGeneratedImageEntityLabel = findGeneratedImageEntityLabel;
 module.exports.buildGeneratedImageDownloadFilename = buildGeneratedImageDownloadFilename;
 module.exports.extractInlineRollControls = extractInlineRollControls;
 module.exports.resetNewGameRuntimeState = resetNewGameRuntimeState;
+module.exports.abortRuntimeWorkBeforeGameLoad = abortRuntimeWorkBeforeGameLoad;
 module.exports.resolvePendingRegionEntryStubForTravelDestination = resolvePendingRegionEntryStubForTravelDestination;
 module.exports.resolveTravelTimeBackfillRegionIdentity = resolveTravelTimeBackfillRegionIdentity;
 module.exports.maybeBackfillRegionExitTravelTimesForArrival = maybeBackfillRegionExitTravelTimesForArrival;
 module.exports.assertSafeSaveDirectoryName = assertSafeSaveDirectoryName;
 module.exports.snapshotPlayerActionBaseContextForSlop = snapshotPlayerActionBaseContextForSlop;
+module.exports.isExitButtonTravelToExterior = isExitButtonTravelToExterior;

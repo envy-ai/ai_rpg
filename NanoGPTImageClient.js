@@ -6,6 +6,7 @@ const {
   initImageEngineConfig,
   validateImageSaveInputs,
   extractB64ImageData,
+  throwIfAborted,
   imageRequestError
 } = require('./image_client_utils.js');
 
@@ -27,8 +28,9 @@ class NanoGPTImageClient {
     return crypto.randomUUID();
   }
 
-  async generateImage({ prompt, negativePrompt = '', width = 1024, height = 1024, seed = null }) {
+  async generateImage({ prompt, negativePrompt = '', width = 1024, height = 1024, seed = null, signal = null }) {
     const requestId = this.generatePromptId();
+    throwIfAborted(signal, 'NanoGPT image request cancelled.');
 
     const payload = {
       model: this.model,
@@ -47,6 +49,7 @@ class NanoGPTImageClient {
         payload,
         {
           timeout: this.timeout,
+          signal: signal || undefined,
           headers: {
             'Content-Type': 'application/json',
             Authorization: `Bearer ${this.apiKey}`,
@@ -54,6 +57,7 @@ class NanoGPTImageClient {
         }
       );
 
+      throwIfAborted(signal, 'NanoGPT image request cancelled.');
       const data = response.data;
       const { imageBuffer, mimeType } = extractB64ImageData(data, 'NanoGPT');
       return { requestId, imageBuffer, mimeType };

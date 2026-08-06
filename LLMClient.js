@@ -12,6 +12,7 @@ const { AsyncLocalStorage } = require('async_hooks');
 const CodexBridgeClient = require('./CodexBridgeClient.js');
 const ClineBridgeClient = require('./ClineBridgeClient.js');
 const KimiBridgeClient = require('./KimiBridgeClient.js');
+const LlamaCppRouterClient = require('./LlamaCppRouterClient.js');
 const { getChatToolDefinitions } = require('./chat_tool_calls.js');
 const { formatMessageContent: formatBridgeMessageContent } = require('./bridge_client_utils.js');
 let sharpModule = null;
@@ -134,11 +135,89 @@ class Semaphore {
     }
 }
 
+class AsyncReadWriteGate {
+    constructor() {
+        this.activeReaders = 0;
+        this.writerActive = false;
+        this.queue = [];
+    }
+
+    acquireShared() {
+        const writerQueued = this.queue.some(entry => entry?.mode === 'exclusive');
+        if (!this.writerActive && !writerQueued) {
+            this.activeReaders += 1;
+            return Promise.resolve(this.createRelease('shared'));
+        }
+        return new Promise(resolve => {
+            this.queue.push({ mode: 'shared', resolve });
+        });
+    }
+
+    acquireExclusive() {
+        if (!this.writerActive && this.activeReaders === 0 && this.queue.length === 0) {
+            this.writerActive = true;
+            return Promise.resolve(this.createRelease('exclusive'));
+        }
+        return new Promise(resolve => {
+            this.queue.push({ mode: 'exclusive', resolve });
+            this.dispatch();
+        });
+    }
+
+    createRelease(mode) {
+        let released = false;
+        return () => {
+            if (released) {
+                return;
+            }
+            released = true;
+            if (mode === 'exclusive') {
+                this.writerActive = false;
+            } else if (this.activeReaders > 0) {
+                this.activeReaders -= 1;
+            }
+            this.dispatch();
+        };
+    }
+
+    dispatch() {
+        if (this.writerActive) {
+            return;
+        }
+        if (this.activeReaders === 0 && this.queue[0]?.mode === 'exclusive') {
+            const writer = this.queue.shift();
+            this.writerActive = true;
+            writer.resolve(this.createRelease('exclusive'));
+            return;
+        }
+        if (this.queue.some(entry => entry?.mode === 'exclusive')) {
+            const writerIndex = this.queue.findIndex(entry => entry?.mode === 'exclusive');
+            if (writerIndex === 0 || this.activeReaders > 0) {
+                return;
+            }
+            const readers = this.queue.splice(0, writerIndex);
+            for (const reader of readers) {
+                this.activeReaders += 1;
+                reader.resolve(this.createRelease('shared'));
+            }
+            return;
+        }
+        while (this.queue[0]?.mode === 'shared') {
+            const reader = this.queue.shift();
+            this.activeReaders += 1;
+            reader.resolve(this.createRelease('shared'));
+        }
+    }
+}
+
 class LLMClient {
     static #semaphores = new Map();
     static #semaphoreLimit = null;
     static #allModelsSemaphore = null;
     static #allModelsSemaphoreLimit = null;
+    static #modelLifecycleGate = new AsyncReadWriteGate();
+    static #comfyModelCleanupHandler = null;
+    static #lastPromptModelTarget = null;
     static #promptQueueReservationStates = new WeakMap();
     static #promptProgressGroupContext = new AsyncLocalStorage();
     static #forcedOutputFixtureSource = null;
@@ -168,6 +247,7 @@ class LLMClient {
     static #oauthRefreshPromises = new Map();
     static #promptOutputCharacterStats = null;
     static #promptOutputCharacterStatsPath = null;
+    static #failedLiveTokenStreamCapabilityKeys = new Set();
 
     static #isInteractive() {
         return process.stdout && process.stdout.isTTY;
@@ -1465,7 +1545,49 @@ class LLMClient {
             return [error.message];
         }
         const bridgeClient = LLMClient.#resolveCliBridgeClient(backend);
-        return (bridgeClient || CodexBridgeClient).getConfigurationErrors(config);
+        const errors = (bridgeClient || CodexBridgeClient).getConfigurationErrors(config);
+        if (config?.live_deslop !== undefined && typeof config.live_deslop !== 'boolean') {
+            errors.push('AI live_deslop must be a boolean when provided.');
+        }
+        if (
+            config?.unload_during_image_generation !== undefined
+            && typeof config.unload_during_image_generation !== 'boolean'
+        ) {
+            errors.push('AI unload_during_image_generation must be a boolean when provided.');
+        }
+        if (
+            config?.terminate_during_image_generation !== undefined
+            && typeof config.terminate_during_image_generation !== 'boolean'
+        ) {
+            errors.push('AI terminate_during_image_generation must be a boolean when provided.');
+        }
+        if (
+            config?.local_startup_script_path !== undefined
+            && config.local_startup_script_path !== null
+            && typeof config.local_startup_script_path !== 'string'
+        ) {
+            errors.push('AI local_startup_script_path must be a string when provided.');
+        }
+        if (
+            config?.terminate_during_image_generation === true
+            && (
+                typeof config.local_startup_script_path !== 'string'
+                || !config.local_startup_script_path.trim()
+            )
+        ) {
+            errors.push(
+                'AI local_startup_script_path is required when terminate_during_image_generation is true.'
+            );
+        }
+        if (
+            config?.unload_during_image_generation === true
+            && config?.terminate_during_image_generation === true
+        ) {
+            errors.push(
+                'AI unload_during_image_generation and terminate_during_image_generation cannot both be true.'
+            );
+        }
+        return errors;
     }
 
     static isConfigured(aiConfigOverride = null) {
@@ -1500,6 +1622,17 @@ class LLMClient {
             throw LLMClient.#configurationError('max_concurrent_requests_all_models must be a positive integer when provided.');
         }
         return numeric;
+    }
+
+    static resolveUnloadModelOnSwitch(configOverride = Globals?.config) {
+        const value = configOverride?.unload_model_on_switch;
+        if (value === undefined || value === null) {
+            return false;
+        }
+        if (typeof value !== 'boolean') {
+            throw LLMClient.#configurationError('unload_model_on_switch must be a boolean when provided.');
+        }
+        return value;
     }
 
     static #isRetryableNetworkError(error, errorStatus = undefined) {
@@ -1996,6 +2129,144 @@ class LLMClient {
             return await callback(reservation);
         } finally {
             LLMClient.#releasePromptQueueReservation(state);
+        }
+    }
+
+    static async withExclusiveModelLifecycle(callback) {
+        if (typeof callback !== 'function') {
+            throw new Error('withExclusiveModelLifecycle requires an async callback.');
+        }
+        const release = await LLMClient.#modelLifecycleGate.acquireExclusive();
+        try {
+            return await callback();
+        } finally {
+            release();
+        }
+    }
+
+    static resetModelSwitchTracking() {
+        LLMClient.#lastPromptModelTarget = null;
+    }
+
+    static #resolvePromptModelTarget(attemptRuntime, { required = false } = {}) {
+        if (!attemptRuntime || typeof attemptRuntime !== 'object') {
+            throw new Error('Prompt model target resolution requires attempt runtime data.');
+        }
+        if (attemptRuntime.backend !== 'openai_compatible') {
+            if (required) {
+                throw LLMClient.#configurationError(
+                    'unload_model_on_switch requires the openai_compatible backend.'
+                );
+            }
+            return null;
+        }
+
+        const endpoint = typeof attemptRuntime.resolvedEndpoint === 'string'
+            ? attemptRuntime.resolvedEndpoint.trim()
+            : '';
+        const model = typeof attemptRuntime.resolvedModel === 'string'
+            ? attemptRuntime.resolvedModel.trim()
+            : '';
+        if (!endpoint || !model) {
+            if (required) {
+                throw LLMClient.#configurationError(
+                    'unload_model_on_switch requires a configured endpoint and model.'
+                );
+            }
+            return null;
+        }
+        const routerBaseUrl = LlamaCppRouterClient.resolveRouterBaseUrl(endpoint);
+        return {
+            key: `${routerBaseUrl}\n${model}`,
+            endpoint,
+            model,
+            headers: {
+                ...(attemptRuntime.baseAxiosOptions?.headers || {})
+            },
+            timeoutMs: attemptRuntime.resolvedTimeout
+        };
+    }
+
+    static #recordPromptModelTarget(attemptRuntime) {
+        LLMClient.#lastPromptModelTarget = LLMClient.#resolvePromptModelTarget(attemptRuntime);
+    }
+
+    static async #unloadPreviousPromptModelOnSwitch({ attemptRuntime, metadataLabel, log } = {}) {
+        const currentTarget = LLMClient.#resolvePromptModelTarget(attemptRuntime, { required: true });
+        const previousTarget = LLMClient.#lastPromptModelTarget;
+        if (!previousTarget || previousTarget.key === currentTarget.key) {
+            LLMClient.#lastPromptModelTarget = currentTarget;
+            return;
+        }
+
+        const promptLabel = typeof metadataLabel === 'string' && metadataLabel.trim()
+            ? metadataLabel.trim()
+            : 'unknown';
+        const router = new LlamaCppRouterClient({
+            endpoint: previousTarget.endpoint,
+            model: previousTarget.model,
+            headers: previousTarget.headers,
+            timeoutMs: previousTarget.timeoutMs
+        });
+        let unloadState;
+        try {
+            unloadState = await router.unloadModelIfLoaded();
+        } catch (cause) {
+            const error = new Error(
+                `Failed to unload previous llama.cpp model "${previousTarget.model}" before prompt "${promptLabel}" switched to "${currentTarget.model}": ${cause?.message || String(cause)}`,
+                { cause }
+            );
+            error.isModelSwitchError = true;
+            throw error;
+        }
+
+        LLMClient.#lastPromptModelTarget = currentTarget;
+        if (typeof log === 'function') {
+            if (unloadState.unloadedByClient) {
+                log(
+                    `🧠 Unloaded previous llama.cpp model "${previousTarget.model}" before switching to "${currentTarget.model}".`
+                );
+            } else {
+                log(
+                    `🧠 Previous llama.cpp model "${previousTarget.model}" was already unloaded before switching to "${currentTarget.model}".`
+                );
+            }
+        }
+    }
+
+    static setComfyModelCleanupHandler(handler = null) {
+        if (handler !== null && typeof handler !== 'function') {
+            throw new Error('ComfyUI model cleanup handler must be a function or null.');
+        }
+        LLMClient.#comfyModelCleanupHandler = handler;
+    }
+
+    static async #unloadComfyModelsBeforePrompt({ aiConfig, metadataLabel } = {}) {
+        if (aiConfig?.unload_during_image_generation !== true) {
+            return;
+        }
+        const label = typeof metadataLabel === 'string' && metadataLabel.trim()
+            ? metadataLabel.trim()
+            : 'unknown';
+        if (typeof LLMClient.#comfyModelCleanupHandler !== 'function') {
+            const error = new Error(
+                `Cannot run LLM prompt "${label}": ComfyUI model cleanup is not configured while unload_during_image_generation is enabled.`
+            );
+            error.isPrePromptCleanupError = true;
+            throw error;
+        }
+        try {
+            await LLMClient.#comfyModelCleanupHandler({
+                aiConfig,
+                metadataLabel: label
+            });
+        } catch (cause) {
+            const error = new Error(
+                `Failed to unload ComfyUI models before LLM prompt "${label}": ${cause?.message || String(cause)}`,
+                { cause }
+            );
+            error.isPrePromptCleanupError = true;
+            throw error;
         }
     }
 
@@ -3234,6 +3505,10 @@ class LLMClient {
         LLMClient.#promptOutputCharacterStatsPath = null;
     }
 
+    static resetLiveTokenStreamCapabilitiesForTests() {
+        LLMClient.#failedLiveTokenStreamCapabilityKeys.clear();
+    }
+
     static #buildPromptOutputCharacterStatsHeader(metadataLabel) {
         const normalizedLabel = LLMClient.#normalizePromptLabel(metadataLabel) || 'unknown';
         const statsLabel = LLMClient.#resolvePromptOutputCharacterStatsLabel(normalizedLabel) || normalizedLabel;
@@ -3751,6 +4026,107 @@ class LLMClient {
             return { overrides: null, profiles: appliedProfiles };
         }
         return { overrides, profiles: appliedProfiles };
+    }
+
+    static #resolveEffectiveAiConfiguration(metadataLabel, globalConfig = Globals?.config) {
+        const source = globalConfig?.ai;
+        if (!source || typeof source !== 'object' || Array.isArray(source)) {
+            throw new Error('Globals.config.ai is not set; AI configuration unavailable.');
+        }
+
+        let aiConfig;
+        try {
+            aiConfig = JSON.parse(JSON.stringify(source));
+        } catch (error) {
+            throw new Error(`Failed to clone AI configuration: ${error.message}`);
+        }
+
+        const { overrides, profiles } = LLMClient.#resolveAiModelOverrides(metadataLabel, globalConfig);
+        let overrideCustomArgs;
+        let overrideHeaders;
+        if (overrides) {
+            for (const [key, value] of Object.entries(overrides)) {
+                if (key === 'custom_args') {
+                    overrideCustomArgs = value;
+                    continue;
+                }
+                if (key === 'headers') {
+                    overrideHeaders = value;
+                    continue;
+                }
+                aiConfig[key] = value;
+            }
+        }
+
+        return {
+            aiConfig,
+            overrideCustomArgs,
+            overrideHeaders,
+            profiles
+        };
+    }
+
+    static resolveEffectiveAiConfiguration(metadataLabel, globalConfig = Globals?.config) {
+        return LLMClient.#resolveEffectiveAiConfiguration(metadataLabel, globalConfig);
+    }
+
+    static async resolveOpenAICompatibleModelManagementTarget(metadataLabel = 'image_prompt_generation') {
+        const resolved = LLMClient.#resolveEffectiveAiConfiguration(metadataLabel, Globals?.config);
+        const aiConfig = resolved.aiConfig;
+        if (aiConfig.unload_during_image_generation !== true) {
+            throw new Error(
+                `AI model unload lifecycle is not enabled for prompt label "${metadataLabel}".`
+            );
+        }
+        const backend = LLMClient.resolveBackend(aiConfig);
+        if (backend !== 'openai_compatible') {
+            throw new Error(
+                'ai.unload_during_image_generation requires the openai_compatible backend and a llama.cpp router endpoint.'
+            );
+        }
+
+        const model = typeof aiConfig.model === 'string' ? aiConfig.model.trim() : '';
+        if (!model) {
+            throw new Error('ai.unload_during_image_generation requires a configured AI model.');
+        }
+        const endpoint = LLMClient.resolveChatEndpoint(aiConfig.endpoint);
+        const effectiveHeaders = LLMClient.#buildEffectiveHeaders({
+            baseHeaders: aiConfig.headers,
+            overrideHeaders: resolved.overrideHeaders
+        });
+        const oauthKey = LLMClient.#normalizeOAuthKey(aiConfig);
+        const oauthUrl = oauthKey ? LLMClient.#normalizeOAuthUrl(aiConfig) : null;
+        const oauthClientId = oauthKey ? LLMClient.#normalizeOAuthClientId(aiConfig) : null;
+        if (oauthKey && !oauthUrl) {
+            throw new Error('ai.oauth-url is required when ai.oauth-key is configured.');
+        }
+        const oauthConfig = oauthKey
+            ? { refreshToken: oauthKey, tokenUrl: oauthUrl, clientId: oauthClientId }
+            : null;
+        const apiKey = oauthConfig
+            ? await LLMClient.#resolveOAuthAccessToken(oauthConfig, effectiveHeaders)
+            : aiConfig.apiKey;
+        if (typeof apiKey !== 'string' || !apiKey.trim()) {
+            throw new Error('AI API key is not configured for llama.cpp router model management.');
+        }
+
+        const headers = {
+            'Content-Type': 'application/json',
+            ...effectiveHeaders
+        };
+        for (const key of Object.keys(headers)) {
+            if (key.toLowerCase() === 'authorization') {
+                delete headers[key];
+            }
+        }
+        headers.Authorization = `Bearer ${apiKey.trim()}`;
+
+        return {
+            endpoint,
+            model,
+            headers,
+            timeoutMs: LLMClient.resolveTimeout(null, 1)
+        };
     }
 
     static baseTimeoutMilliseconds() {
@@ -4358,6 +4734,11 @@ class LLMClient {
         queueReservation = null,
         progressGroupId = null,
         progressGroupTargetLabel = null,
+        onStreamToken = null,
+        nonStreamTokenChunkSize = null,
+        liveTokenStreamFallbackChunkSize = null,
+        liveTokenStreamCapabilityKey = null,
+        onLiveTokenStreamFallback = null,
     } = {}) {
         const resolvedOutput = LLMClient.resolveOutput(output);
         const isSilent = resolvedOutput === 'silent';
@@ -4514,6 +4895,79 @@ class LLMClient {
             let basePayload = additionalPayload && typeof additionalPayload === 'object'
                 ? { ...additionalPayload }
                 : {};
+            if (onStreamToken !== null && onStreamToken !== undefined && typeof onStreamToken !== 'function') {
+                throw new TypeError('chatCompletion onStreamToken must be a function when provided.');
+            }
+            if (
+                onLiveTokenStreamFallback !== null
+                && onLiveTokenStreamFallback !== undefined
+                && typeof onLiveTokenStreamFallback !== 'function'
+            ) {
+                throw new TypeError(
+                    'chatCompletion onLiveTokenStreamFallback must be a function when provided.'
+                );
+            }
+            const configuredNonStreamTokenChunkSize = (() => {
+                if (nonStreamTokenChunkSize === null || nonStreamTokenChunkSize === undefined) {
+                    return null;
+                }
+                if (!Number.isInteger(nonStreamTokenChunkSize) || nonStreamTokenChunkSize <= 0) {
+                    throw new TypeError('chatCompletion nonStreamTokenChunkSize must be a positive integer when provided.');
+                }
+                if (typeof onStreamToken !== 'function') {
+                    throw new Error('chatCompletion nonStreamTokenChunkSize requires onStreamToken.');
+                }
+                return nonStreamTokenChunkSize;
+            })();
+            const resolvedLiveTokenStreamFallbackChunkSize = (() => {
+                if (
+                    liveTokenStreamFallbackChunkSize === null
+                    || liveTokenStreamFallbackChunkSize === undefined
+                ) {
+                    return null;
+                }
+                if (!Number.isInteger(liveTokenStreamFallbackChunkSize) || liveTokenStreamFallbackChunkSize <= 0) {
+                    throw new TypeError(
+                        'chatCompletion liveTokenStreamFallbackChunkSize must be a positive integer when provided.'
+                    );
+                }
+                if (configuredNonStreamTokenChunkSize !== null) {
+                    throw new Error(
+                        'chatCompletion cannot combine nonStreamTokenChunkSize with liveTokenStreamFallbackChunkSize.'
+                    );
+                }
+                if (typeof onStreamToken !== 'function') {
+                    throw new Error('chatCompletion liveTokenStreamFallbackChunkSize requires onStreamToken.');
+                }
+                return liveTokenStreamFallbackChunkSize;
+            })();
+            const resolvedLiveTokenStreamCapabilityKey = (() => {
+                if (resolvedLiveTokenStreamFallbackChunkSize === null) {
+                    if (liveTokenStreamCapabilityKey !== null && liveTokenStreamCapabilityKey !== undefined) {
+                        throw new Error(
+                            'chatCompletion liveTokenStreamCapabilityKey requires liveTokenStreamFallbackChunkSize.'
+                        );
+                    }
+                    return null;
+                }
+                if (
+                    typeof liveTokenStreamCapabilityKey !== 'string'
+                    || !liveTokenStreamCapabilityKey.trim()
+                ) {
+                    throw new Error(
+                        'chatCompletion liveTokenStreamCapabilityKey must be a non-empty string when streaming fallback is enabled.'
+                    );
+                }
+                return liveTokenStreamCapabilityKey.trim();
+            })();
+            if (
+                typeof onLiveTokenStreamFallback === 'function'
+                && resolvedLiveTokenStreamFallbackChunkSize === null
+            ) {
+                throw new Error(
+                    'chatCompletion onLiveTokenStreamFallback requires liveTokenStreamFallbackChunkSize.'
+                );
+            }
             if (headers !== undefined && headers !== null && !LLMClient.#isPlainObject(headers)) {
                 throw new Error('chatCompletion headers must be an object when provided.');
             }
@@ -4533,6 +4987,9 @@ class LLMClient {
             const resolvedForcedOutput = (forceOutput !== null && forceOutput !== undefined)
                 ? forceOutput
                 : LLMClient.#resolveForcedOutputFromFixture(metadataLabel);
+            if (typeof onStreamToken === 'function' && resolvedForcedOutput !== null && resolvedForcedOutput !== undefined) {
+                throw new Error('chatCompletion onStreamToken cannot be used with forced output.');
+            }
 
             const explicitRetryAttempts = Number.isInteger(retryAttempts) && retryAttempts >= 0
                 ? retryAttempts
@@ -4546,7 +5003,24 @@ class LLMClient {
                     : 0;
             }
 
+            let livePrefillOverride = undefined;
+            let liveDisableTools = false;
+            let liveTokenRecords = [];
+            let liveLogicalMaxTokens = null;
+            let useLiveTokenStreamFallback = resolvedLiveTokenStreamCapabilityKey !== null
+                && LLMClient.#failedLiveTokenStreamCapabilityKeys.has(resolvedLiveTokenStreamCapabilityKey);
+            let liveStreamReceivedTextToken = false;
+            if (useLiveTokenStreamFallback) {
+                log(
+                    `Using token-chunked non-stream live processing because streaming already failed for `
+                    + `${resolvedLiveTokenStreamCapabilityKey}.`
+                );
+            }
+
             const resolveAttemptRuntime = async ({ attemptNumber = 0 } = {}) => {
+                const effectiveNonStreamTokenChunkSize = useLiveTokenStreamFallback
+                    ? resolvedLiveTokenStreamFallbackChunkSize
+                    : configuredNonStreamTokenChunkSize;
                 const aiConfig = LLMClient.#cloneAiConfig();
                 if (multimodal) {
                     const multimodalConfig = Globals?.config?.ai_multimodal;
@@ -4598,9 +5072,16 @@ class LLMClient {
                     ...effectiveCustomArgs,
                     ...basePayload
                 };
+                if (liveDisableTools) {
+                    delete payload.tools;
+                    delete payload.functions;
+                    delete payload.parallel_tool_calls;
+                    payload.tool_choice = 'none';
+                    payload.function_call = 'none';
+                }
                 const resolvedPrefill = LLMClient.#resolveAssistantPrefill({
-                    prefill,
-                    assistantResponseSeed,
+                    prefill: livePrefillOverride !== undefined ? livePrefillOverride : prefill,
+                    assistantResponseSeed: livePrefillOverride !== undefined ? undefined : assistantResponseSeed,
                     configured: aiConfig.prefill
                 });
                 if (resolvedPrefill && isCliBridgeBackend) {
@@ -4608,7 +5089,11 @@ class LLMClient {
                         'Assistant response prefill is only supported by the openai_compatible backend.'
                     );
                 }
-                if (resolvedPrefill && LLMClient.#payloadHasToolDefinitions(payload)) {
+                if (
+                    resolvedPrefill
+                    && LLMClient.#payloadHasToolDefinitions(payload)
+                    && typeof onStreamToken !== 'function'
+                ) {
                     throw LLMClient.#assistantPrefillError(
                         'Assistant response prefill cannot be used with tool-call request payloads.'
                     );
@@ -4670,9 +5155,25 @@ class LLMClient {
                     stream,
                     payload.stream !== undefined ? payload.stream : aiConfig.stream
                 );
-                payload.stream = isCliBridgeBackend
+                const explicitlyConfiguredNonStreamTokens = configuredNonStreamTokenChunkSize !== null;
+                payload.stream = isCliBridgeBackend || effectiveNonStreamTokenChunkSize !== null
                     ? false
                     : resolvedStream !== false;
+                if (effectiveNonStreamTokenChunkSize !== null && isCliBridgeBackend) {
+                    throw new Error(
+                        'chatCompletion nonStreamTokenChunkSize is only supported by the openai_compatible backend.'
+                    );
+                }
+                if (explicitlyConfiguredNonStreamTokens && resolvedStream !== false) {
+                    throw new Error('chatCompletion nonStreamTokenChunkSize requires stream to be false.');
+                }
+                if (
+                    typeof onStreamToken === 'function'
+                    && !payload.stream
+                    && effectiveNonStreamTokenChunkSize === null
+                ) {
+                    throw new Error('chatCompletion onStreamToken requires OpenAI-compatible streaming.');
+                }
 
                 if (maxTokens !== undefined) {
                     if (!Number.isFinite(maxTokens) || maxTokens <= 0) {
@@ -4681,6 +5182,26 @@ class LLMClient {
                     payload.max_tokens = maxTokens;
                 } else if (payload.max_tokens === undefined && Number.isFinite(aiConfig.maxTokens) && aiConfig.maxTokens > 0) {
                     payload.max_tokens = aiConfig.maxTokens;
+                }
+                if (effectiveNonStreamTokenChunkSize !== null) {
+                    if (
+                        payload.max_tokens !== undefined
+                        && (!Number.isInteger(payload.max_tokens) || payload.max_tokens <= 0)
+                    ) {
+                        throw new Error(
+                            'Token-chunked chat completion requires max_tokens to be a positive integer when provided.'
+                        );
+                    }
+                    if (liveLogicalMaxTokens === null && Number.isInteger(payload.max_tokens)) {
+                        liveLogicalMaxTokens = payload.max_tokens;
+                    }
+                    const remainingTokens = Number.isInteger(liveLogicalMaxTokens)
+                        ? liveLogicalMaxTokens - liveTokenRecords.length
+                        : effectiveNonStreamTokenChunkSize;
+                    if (remainingTokens <= 0) {
+                        throw new Error('Token-chunked chat completion exhausted its logical max_tokens budget.');
+                    }
+                    payload.max_tokens = Math.min(effectiveNonStreamTokenChunkSize, remainingTokens);
                 }
 
                 const resolvedTemperature = LLMClient.resolveTemperature(
@@ -4826,6 +5347,7 @@ class LLMClient {
                         streamContinueTimeoutMs,
                         oauthConfig,
                         configuredRequestHeaders,
+                        effectiveNonStreamTokenChunkSize,
                         baseAxiosOptions: null
                     };
                 }
@@ -4879,6 +5401,7 @@ class LLMClient {
                     streamContinueTimeoutMs,
                     oauthConfig,
                     configuredRequestHeaders,
+                    effectiveNonStreamTokenChunkSize,
                     baseAxiosOptions
                 };
             };
@@ -4921,6 +5444,7 @@ class LLMClient {
             })();
             while (attempt <= retryAttempts) {
                 responseContent = '';
+                liveStreamReceivedTextToken = false;
                 streamTrackerId = null;
                 startTimer = null;
                 let responseToolCalls = [];
@@ -4930,6 +5454,7 @@ class LLMClient {
                 let attemptSemaphorePermit = null;
                 let attemptAllModelsSemaphore = null;
                 let attemptAllModelsSemaphorePermit = null;
+                let attemptModelLifecycleRelease = null;
                 let attemptRuntime = null;
                 let payload = null;
                 let requestMessages = messages;
@@ -4943,6 +5468,7 @@ class LLMClient {
                 let waitAfterNetworkErrorSeconds = 0;
                 let streamStartTimeoutMs = 40000;
                 let streamContinueTimeoutMs = 10000;
+                let activeNonStreamTokenChunkSize = null;
                 const controller = new AbortController();
                 let response = null;
                 try {
@@ -5009,6 +5535,7 @@ class LLMClient {
                         waitAfterNetworkErrorSeconds = attemptRuntime.resolvedWaitAfterNetworkError;
                         streamStartTimeoutMs = attemptRuntime.streamStartTimeoutMs;
                         streamContinueTimeoutMs = attemptRuntime.streamContinueTimeoutMs;
+                        activeNonStreamTokenChunkSize = attemptRuntime.effectiveNonStreamTokenChunkSize;
 
                         if (typeof captureRequestPayload === 'function') {
                             try {
@@ -5045,6 +5572,23 @@ class LLMClient {
                                     background: Boolean(runInBackground)
                                 });
                             }
+                        }
+                        const unloadModelOnSwitch = LLMClient.resolveUnloadModelOnSwitch();
+                        attemptModelLifecycleRelease = unloadModelOnSwitch
+                            ? await LLMClient.#modelLifecycleGate.acquireExclusive()
+                            : await LLMClient.#modelLifecycleGate.acquireShared();
+                        await LLMClient.#unloadComfyModelsBeforePrompt({
+                            aiConfig: attemptRuntime.aiConfig,
+                            metadataLabel
+                        });
+                        if (unloadModelOnSwitch) {
+                            await LLMClient.#unloadPreviousPromptModelOnSwitch({
+                                attemptRuntime,
+                                metadataLabel,
+                                log
+                            });
+                        } else {
+                            LLMClient.#recordPromptModelTarget(attemptRuntime);
                         }
 
                         const shouldTrackPromptProgress = !isSilent
@@ -5133,11 +5677,16 @@ class LLMClient {
                     const handleStream = (streamId) => new Promise((resolve, reject) => {
                         let buffer = '';
                         let assembled = '';
+                        const streamPrefill = resolvedPrefill || '';
+                        if (typeof onStreamToken === 'function') {
+                            liveTokenRecords = liveTokenRecords.filter(record => record.end <= streamPrefill.length);
+                        }
                         const streamToolCallMap = new Map();
                         let streamFinishReason = null;
                         let streamUsage = null;
                         let timer = null;
                         let settled = false;
+                        let streamCompletionNotified = false;
 
                         const rejectWithPartial = (err) => {
                             const error = err instanceof Error ? err : new Error(String(err));
@@ -5221,7 +5770,48 @@ class LLMClient {
                             }
                         };
 
-                        const handleData = (chunk) => {
+                        const processLiveTokenDecision = async ({ tokenRecord, responseComplete = false }) => {
+                            let decision = null;
+                            try {
+                                decision = await onStreamToken({
+                                    responseText: `${streamPrefill}${assembled}`,
+                                    generatedText: assembled,
+                                    prefill: streamPrefill,
+                                    token: tokenRecord,
+                                    tokenRecords: liveTokenRecords,
+                                    responseComplete
+                                });
+                            } catch (error) {
+                                error.isLiveStreamTokenError = true;
+                                throw error;
+                            }
+                            if (!decision) {
+                                return;
+                            }
+                            const currentResponseText = `${streamPrefill}${assembled}`;
+                            if (
+                                !Number.isInteger(decision.rewindOffset)
+                                || decision.rewindOffset < 0
+                                || decision.rewindOffset >= currentResponseText.length
+                                || !decision.alternative
+                                || typeof decision.alternative.token !== 'string'
+                                || !decision.alternative.token
+                            ) {
+                                const error = new Error('Live stream token handler returned an invalid branch correction.');
+                                error.isLiveStreamTokenError = true;
+                                throw error;
+                            }
+                            const correctionError = new Error('Live stream branch correction requested.');
+                            correctionError.isLiveStreamBranchCorrection = true;
+                            correctionError.liveStreamDecision = decision;
+                            correctionError.liveStreamResponseText = currentResponseText;
+                            throw correctionError;
+                        };
+
+                        const processData = async (chunk) => {
+                            if (settled) {
+                                return;
+                            }
                             buffer += chunk.toString('utf8');
                             const lines = buffer.split('\n');
                             buffer = lines.pop() || '';
@@ -5233,34 +5823,138 @@ class LLMClient {
                                 if (payloadStr === '[DONE]') {
                                     continue;
                                 }
+                                let parsed = null;
                                 try {
-                                    const parsed = JSON.parse(payloadStr);
-                                    const firstChoice = parsed?.choices?.[0] || null;
-                                    const deltaPayload = firstChoice?.delta || firstChoice?.message || null;
-                                    const delta = LLMClient.#extractTextContent(deltaPayload?.content);
-                                    if (parsed?.usage && typeof parsed.usage === 'object') {
-                                        streamUsage = { ...parsed.usage };
-                                    }
-                                    if (firstChoice && typeof firstChoice.finish_reason === 'string') {
-                                        streamFinishReason = firstChoice.finish_reason;
-                                    }
-                                    if (Array.isArray(deltaPayload?.tool_calls)) {
-                                        LLMClient.#appendStreamToolCalls(streamToolCallMap, deltaPayload.tool_calls);
-                                    }
-                                    if (delta) {
-                                        resetTimer(streamContinueTimeoutMs);
-                                        assembled += delta;
-                                        responseContent = assembled;
-                                        const deltaCharacters = LLMClient.#countTextCharacters(delta);
-                                        LLMClient.#trackStreamCharacters(streamId, deltaCharacters, streamContinueTimeoutMs, delta);
-                                    }
+                                    parsed = JSON.parse(payloadStr);
                                 } catch (parseError) {
                                     // ignore malformed chunks, but log for visibility
                                     warn('Failed to parse stream chunk:', parseError?.message || parseError);
+                                    continue;
+                                }
+
+                                const firstChoice = parsed?.choices?.[0] || null;
+                                const deltaPayload = firstChoice?.delta || firstChoice?.message || null;
+                                const delta = LLMClient.#extractTextContent(deltaPayload?.content);
+                                if (parsed?.usage && typeof parsed.usage === 'object') {
+                                    streamUsage = { ...parsed.usage };
+                                }
+                                if (firstChoice && typeof firstChoice.finish_reason === 'string') {
+                                    streamFinishReason = firstChoice.finish_reason;
+                                }
+                                if (Array.isArray(deltaPayload?.tool_calls)) {
+                                    LLMClient.#appendStreamToolCalls(streamToolCallMap, deltaPayload.tool_calls);
+                                }
+                                if (!delta) {
+                                    const responseComplete = !streamCompletionNotified
+                                        && typeof onStreamToken === 'function'
+                                        && typeof firstChoice?.finish_reason === 'string'
+                                        && firstChoice.finish_reason !== 'length'
+                                        && streamToolCallMap.size === 0;
+                                    const lastTokenRecord = liveTokenRecords[liveTokenRecords.length - 1] || null;
+                                    if (responseComplete && lastTokenRecord) {
+                                        await processLiveTokenDecision({
+                                            tokenRecord: lastTokenRecord,
+                                            responseComplete: true
+                                        });
+                                        streamCompletionNotified = true;
+                                    }
+                                    continue;
+                                }
+
+                                resetTimer(streamContinueTimeoutMs);
+                                if (typeof onStreamToken !== 'function') {
+                                    assembled += delta;
+                                    responseContent = assembled;
+                                    const deltaCharacters = LLMClient.#countTextCharacters(delta);
+                                    LLMClient.#trackStreamCharacters(streamId, deltaCharacters, streamContinueTimeoutMs, delta);
+                                    continue;
+                                }
+
+                                const logprobTokens = firstChoice?.logprobs?.content;
+                                if (!Array.isArray(logprobTokens) || !logprobTokens.length) {
+                                    // Some llama.cpp builds omit logprobs for ordinary content tokens such as
+                                    // pieces of XML opening tags. Preserve those bytes in the response, but do
+                                    // not expose them to live deslop because they have no alternatives to use
+                                    // for a branch correction. Structured tool calls are accumulated separately
+                                    // from delta.tool_calls above.
+                                    assembled += delta;
+                                    responseContent = assembled;
+                                    const deltaCharacters = LLMClient.#countTextCharacters(delta);
+                                    LLMClient.#trackStreamCharacters(
+                                        streamId,
+                                        deltaCharacters,
+                                        streamContinueTimeoutMs,
+                                        delta
+                                    );
+                                    continue;
+                                }
+                                const tokenDelta = logprobTokens.map(entry => entry?.token || '').join('');
+                                if (tokenDelta !== delta) {
+                                    const error = new Error(
+                                        `Live stream token metadata did not align with the text delta (${JSON.stringify(tokenDelta)} !== ${JSON.stringify(delta)}).`
+                                    );
+                                    error.isLiveStreamTokenError = true;
+                                    error.isLiveStreamCompatibilityError = true;
+                                    throw error;
+                                }
+
+                                for (let tokenIndex = 0; tokenIndex < logprobTokens.length; tokenIndex += 1) {
+                                    const tokenEntry = logprobTokens[tokenIndex];
+                                    if (!tokenEntry || typeof tokenEntry.token !== 'string' || !tokenEntry.token) {
+                                        const error = new Error('Live stream token metadata included an invalid token.');
+                                        error.isLiveStreamTokenError = true;
+                                        error.isLiveStreamCompatibilityError = true;
+                                        throw error;
+                                    }
+                                    const tokenStart = streamPrefill.length + assembled.length;
+                                    assembled += tokenEntry.token;
+                                    responseContent = assembled;
+                                    const tokenRecord = {
+                                        id: tokenEntry.id ?? null,
+                                        token: tokenEntry.token,
+                                        bytes: Array.isArray(tokenEntry.bytes) ? [...tokenEntry.bytes] : null,
+                                        logprob: Number.isFinite(tokenEntry.logprob) ? tokenEntry.logprob : null,
+                                        top_logprobs: Array.isArray(tokenEntry.top_logprobs)
+                                            ? tokenEntry.top_logprobs.map(entry => ({ ...entry }))
+                                            : [],
+                                        start: tokenStart,
+                                        end: tokenStart + tokenEntry.token.length
+                                    };
+                                    liveTokenRecords.push(tokenRecord);
+                                    liveStreamReceivedTextToken = true;
+                                    const responseComplete = tokenIndex === logprobTokens.length - 1
+                                        && typeof firstChoice?.finish_reason === 'string'
+                                        && firstChoice.finish_reason !== 'length'
+                                        && streamToolCallMap.size === 0;
+                                    await processLiveTokenDecision({ tokenRecord, responseComplete });
+                                    if (responseComplete) {
+                                        streamCompletionNotified = true;
+                                    }
+
+                                    const tokenCharacters = LLMClient.#countTextCharacters(tokenEntry.token);
+                                    LLMClient.#trackStreamCharacters(
+                                        streamId,
+                                        tokenCharacters,
+                                        streamContinueTimeoutMs,
+                                        tokenEntry.token
+                                    );
                                 }
                             }
                         };
-                        const handleEnd = () => finishStream();
+                        let processing = Promise.resolve();
+                        const handleData = (chunk) => {
+                            processing = processing
+                                .then(() => processData(chunk))
+                                .catch((error) => {
+                                    if (error?.isLiveStreamBranchCorrection && typeof response.data?.destroy === 'function') {
+                                        response.data.destroy();
+                                    }
+                                    failStream(error);
+                                });
+                        };
+                        const handleEnd = () => {
+                            processing.then(finishStream, failStream);
+                        };
                         const handleError = error => failStream(error);
 
                         response.data.on('data', handleData);
@@ -5294,9 +5988,122 @@ class LLMClient {
                             ? { ...response.data.usage }
                             : null;
                         responseFinishReason = firstChoice?.finish_reason || null;
+
+                        if (activeNonStreamTokenChunkSize !== null && responseContent) {
+                            const chunkPrefill = resolvedPrefill || '';
+                            const generatedContent = chunkPrefill && responseContent.startsWith(chunkPrefill)
+                                ? responseContent.slice(chunkPrefill.length)
+                                : responseContent;
+                            const logprobTokens = firstChoice?.logprobs?.content;
+                            if (!Array.isArray(logprobTokens) || !logprobTokens.length) {
+                                const error = new Error(
+                                    'Token-chunked live processing requires logprobs.content metadata for every response.'
+                                );
+                                error.isLiveStreamTokenError = true;
+                                throw error;
+                            }
+                            const terminalTokenIndex = logprobTokens.length - 1;
+                            const terminalTokenEntry = logprobTokens[terminalTokenIndex];
+                            const hasTerminalControlToken = responseFinishReason === 'stop'
+                                && responseToolCalls.length === 0
+                                && terminalTokenEntry
+                                && terminalTokenEntry.token === ''
+                                && Array.isArray(terminalTokenEntry.bytes)
+                                && terminalTokenEntry.bytes.length === 0;
+                            for (let tokenIndex = 0; tokenIndex < logprobTokens.length; tokenIndex += 1) {
+                                const tokenEntry = logprobTokens[tokenIndex];
+                                const isTerminalControlToken = hasTerminalControlToken
+                                    && tokenIndex === terminalTokenIndex;
+                                if (
+                                    !tokenEntry
+                                    || typeof tokenEntry.token !== 'string'
+                                    || (!tokenEntry.token && !isTerminalControlToken)
+                                ) {
+                                    const error = new Error('Token-chunked live metadata included an invalid token.');
+                                    error.isLiveStreamTokenError = true;
+                                    throw error;
+                                }
+                            }
+                            const contentLogprobTokens = hasTerminalControlToken
+                                ? logprobTokens.slice(0, terminalTokenIndex)
+                                : logprobTokens;
+                            const tokenContent = contentLogprobTokens.map(entry => entry.token).join('');
+                            if (tokenContent !== generatedContent) {
+                                const error = new Error(
+                                    'Token-chunked live metadata did not align with the generated response '
+                                    + `(${JSON.stringify(tokenContent)} !== ${JSON.stringify(generatedContent)}).`
+                                );
+                                error.isLiveStreamTokenError = true;
+                                throw error;
+                            }
+
+                            liveTokenRecords = liveTokenRecords.filter(record => record.end <= chunkPrefill.length);
+                            let assembledChunk = '';
+                            for (let tokenIndex = 0; tokenIndex < contentLogprobTokens.length; tokenIndex += 1) {
+                                const tokenEntry = contentLogprobTokens[tokenIndex];
+                                const tokenStart = chunkPrefill.length + assembledChunk.length;
+                                assembledChunk += tokenEntry.token;
+                                const tokenRecord = {
+                                    id: tokenEntry.id ?? null,
+                                    token: tokenEntry.token,
+                                    bytes: Array.isArray(tokenEntry.bytes) ? [...tokenEntry.bytes] : null,
+                                    logprob: Number.isFinite(tokenEntry.logprob) ? tokenEntry.logprob : null,
+                                    top_logprobs: Array.isArray(tokenEntry.top_logprobs)
+                                        ? tokenEntry.top_logprobs.map(entry => ({ ...entry }))
+                                        : [],
+                                    start: tokenStart,
+                                    end: tokenStart + tokenEntry.token.length
+                                };
+                                liveTokenRecords.push(tokenRecord);
+
+                                let decision = null;
+                                try {
+                                    decision = await onStreamToken({
+                                        responseText: `${chunkPrefill}${assembledChunk}`,
+                                        generatedText: assembledChunk,
+                                        prefill: chunkPrefill,
+                                        token: tokenRecord,
+                                        tokenRecords: liveTokenRecords,
+                                        responseComplete: tokenIndex === contentLogprobTokens.length - 1
+                                            && responseFinishReason !== 'length'
+                                            && responseToolCalls.length === 0
+                                    });
+                                } catch (error) {
+                                    error.isLiveStreamTokenError = true;
+                                    throw error;
+                                }
+                                if (decision) {
+                                    const currentResponseText = `${chunkPrefill}${assembledChunk}`;
+                                    if (
+                                        !Number.isInteger(decision.rewindOffset)
+                                        || decision.rewindOffset < 0
+                                        || decision.rewindOffset >= currentResponseText.length
+                                        || !decision.alternative
+                                        || typeof decision.alternative.token !== 'string'
+                                        || !decision.alternative.token
+                                    ) {
+                                        const error = new Error(
+                                            'Token-chunked live handler returned an invalid branch correction.'
+                                        );
+                                        error.isLiveStreamTokenError = true;
+                                        throw error;
+                                    }
+                                    const correctionError = new Error('Token-chunked live branch correction requested.');
+                                    correctionError.isLiveStreamBranchCorrection = true;
+                                    correctionError.liveStreamDecision = decision;
+                                    correctionError.liveStreamResponseText = currentResponseText;
+                                    throw correctionError;
+                                }
+                            }
+                            responseContent = `${chunkPrefill}${assembledChunk}`;
+                        }
                     }
 
-                    if (resolvedPrefill && responseToolCalls.length > 0) {
+                    if (
+                        resolvedPrefill
+                        && responseToolCalls.length > 0
+                        && typeof onStreamToken !== 'function'
+                    ) {
                         throw LLMClient.#assistantPrefillError(
                             'Assistant response prefill cannot be applied to a tool-call response.'
                         );
@@ -5305,6 +6112,24 @@ class LLMClient {
                         resolvedPrefill,
                         responseContent
                     );
+
+                    if (
+                        activeNonStreamTokenChunkSize !== null
+                        && responseFinishReason === 'length'
+                        && responseToolCalls.length === 0
+                    ) {
+                        const remainingTokens = Number.isInteger(liveLogicalMaxTokens)
+                            ? liveLogicalMaxTokens - liveTokenRecords.length
+                            : activeNonStreamTokenChunkSize;
+                        if (remainingTokens > 0) {
+                            livePrefillOverride = responseContent;
+                            log(
+                                `Token-chunked live completion accepted ${liveTokenRecords.length} tokens; `
+                                + 'continuing from assistant prefill.'
+                            );
+                            continue;
+                        }
+                    }
 
                     if (LLMClient.#isCodexBridgeBackend(resolvedBackend) && responseUsage) {
                         await LLMClient.#reportCodexUsage({
@@ -5495,7 +6320,108 @@ class LLMClient {
                     if (!responseContent && typeof error?.partialResponse === 'string') {
                         responseContent = error.partialResponse;
                     }
+                    if (error?.isLiveStreamBranchCorrection) {
+                        const decision = error.liveStreamDecision;
+                        const branchResponse = error.liveStreamResponseText;
+                        const nextPrefill = `${branchResponse.slice(0, decision.rewindOffset)}${decision.alternative.token}`;
+                        if (nextPrefill === branchResponse) {
+                            throw new Error('Live stream branch correction did not change the response prefix.');
+                        }
+                        liveTokenRecords = liveTokenRecords.filter(record => record.end <= decision.rewindOffset);
+                        liveTokenRecords.push({
+                            id: decision.alternative.id ?? null,
+                            token: decision.alternative.token,
+                            bytes: Array.isArray(decision.alternative.bytes)
+                                ? [...decision.alternative.bytes]
+                                : null,
+                            logprob: Number.isFinite(decision.alternative.logprob)
+                                ? decision.alternative.logprob
+                                : null,
+                            top_logprobs: Array.isArray(decision.alternative.top_logprobs)
+                                ? decision.alternative.top_logprobs.map(entry => ({ ...entry }))
+                                : [],
+                            start: decision.rewindOffset,
+                            end: decision.rewindOffset + decision.alternative.token.length
+                        });
+                        livePrefillOverride = nextPrefill;
+                        liveDisableTools = decision.disableTools === true || liveDisableTools;
+                        log(
+                            `Live stream correction rewound to response offset ${decision.rewindOffset} `
+                            + `and selected token ${JSON.stringify(decision.alternative.token)}.`
+                        );
+                        continue;
+                    }
+                    const errorStatus = Number(error?.status ?? error?.response?.status);
                     const abortIntent = LLMClient.#controllerAbortIntents.get(controller);
+                    const streamProbeFailedBeforeText = payload?.stream === true
+                        && !liveStreamReceivedTextToken
+                        && abortIntent !== 'cancel'
+                        && abortIntent !== 'retry'
+                        && !error?.isLiveStreamTokenError
+                        && !error?.isAssistantPrefillError
+                        && !error?.isConfigurationError
+                        && !error?.isPrePromptCleanupError
+                        && !error?.isModelSwitchError;
+                    if (
+                        resolvedLiveTokenStreamFallbackChunkSize !== null
+                        && resolvedLiveTokenStreamCapabilityKey !== null
+                        && !useLiveTokenStreamFallback
+                        && payload?.stream === true
+                        && (error?.isLiveStreamCompatibilityError || streamProbeFailedBeforeText)
+                    ) {
+                        LLMClient.#failedLiveTokenStreamCapabilityKeys.add(
+                            resolvedLiveTokenStreamCapabilityKey
+                        );
+                        useLiveTokenStreamFallback = true;
+                        liveLogicalMaxTokens = null;
+                        if (streamTrackerId) {
+                            LLMClient.#trackStreamEnd(streamTrackerId);
+                            streamTrackerId = null;
+                        }
+                        if (startTimer) {
+                            clearTimeout(startTimer);
+                            startTimer = null;
+                        }
+                        const statusNote = Number.isFinite(errorStatus) ? ` (HTTP ${errorStatus})` : '';
+                        const fallbackMessage =
+                            `Live token streaming failed for ${resolvedLiveTokenStreamCapabilityKey}${statusNote}: `
+                            + `${error?.message || String(error)} `
+                            + `Falling back to ${resolvedLiveTokenStreamFallbackChunkSize}-token non-stream batches `
+                            + 'until the game server or llama.cpp process restarts.';
+                        warn(fallbackMessage);
+                        if (typeof onLiveTokenStreamFallback === 'function') {
+                            const rawResponseBody = error?.response?.data;
+                            let responseBody = null;
+                            if (rawResponseBody !== undefined && rawResponseBody !== null) {
+                                try {
+                                    responseBody = typeof rawResponseBody === 'string'
+                                        ? rawResponseBody
+                                        : JSON.stringify(rawResponseBody, null, 2);
+                                } catch (_) {
+                                    responseBody = String(rawResponseBody);
+                                }
+                            }
+                            await onLiveTokenStreamFallback(Object.freeze({
+                                timestamp: new Date().toISOString(),
+                                metadataLabel: typeof metadataLabel === 'string' ? metadataLabel : '',
+                                capabilityKey: resolvedLiveTokenStreamCapabilityKey,
+                                failureType: error?.isLiveStreamCompatibilityError
+                                    ? 'stream_compatibility_error'
+                                    : 'pre_text_stream_failure',
+                                httpStatus: Number.isFinite(errorStatus) ? errorStatus : null,
+                                errorName: typeof error?.name === 'string' ? error.name : null,
+                                errorCode: error?.code !== undefined && error?.code !== null
+                                    ? String(error.code)
+                                    : null,
+                                errorMessage: error?.message || String(error),
+                                responseBody,
+                                stack: typeof error?.stack === 'string' ? error.stack : null,
+                                fallbackChunkSize: resolvedLiveTokenStreamFallbackChunkSize,
+                                message: fallbackMessage
+                            }));
+                        }
+                        continue;
+                    }
                     if (abortIntent === 'cancel' || abortIntent === 'retry') {
                         LLMClient.#controllerAbortIntents.delete(controller);
                         if (streamTrackerId) {
@@ -5512,7 +6438,13 @@ class LLMClient {
                         warn(`Prompt '${metadataLabel || 'unknown'}' canceled by user.`);
                         return '';
                     }
-                    if (error?.isAssistantPrefillError || error?.isConfigurationError) {
+                    if (
+                        error?.isAssistantPrefillError
+                        || error?.isConfigurationError
+                        || error?.isPrePromptCleanupError
+                        || error?.isModelSwitchError
+                        || error?.isLiveStreamTokenError
+                    ) {
                         throw error;
                     }
                     errorLog(`Error occurred during chat completion (attempt ${attempt + 1}): `, error.message);
@@ -5526,7 +6458,6 @@ class LLMClient {
                         startTimer = null;
                     }
 
-                    const errorStatus = Number(error?.status ?? error?.response?.status);
                     if (errorStatus === 429) {
                         log('Rate limit exceeded. Waiting before retrying...');
                         if (waitAfterRateLimitErrorSeconds > 0) {
@@ -5598,6 +6529,10 @@ class LLMClient {
                     if (startTimer) {
                         clearTimeout(startTimer);
                         startTimer = null;
+                    }
+                    if (attemptModelLifecycleRelease) {
+                        attemptModelLifecycleRelease();
+                        attemptModelLifecycleRelease = null;
                     }
                     if (attemptSemaphore) {
                         if (attemptAllModelsSemaphore) {

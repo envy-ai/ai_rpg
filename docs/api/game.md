@@ -9,7 +9,8 @@ This page covers game lifecycle, save/load, mod state, active calendar, per-game
 Start a game from the active world setting.
 
 Request:
-- Body supports: `playerName`, `playerDescription`, `playerClass`, `playerRace`, `playerLevel`, `startTime`, `startingLocation`, `startingCurrency`, `attributes`, `skills`, `clientId`, `requestId`
+- Body supports: `playerName`, `playerDescription`, `playerClass`, `playerRace`, `playerLevel`, `startMonth`, `startDay`, `startTime`, `startingLocation`, `startingCurrency`, `attributes`, `skills`, `clientId`, `requestId`
+  - `startMonth` is a one-based month position and `startDay` is a one-based day within that month. Both default to `1` for omitted/legacy requests.
   - `startTime` must be an integer hour from `0` through `23`. Omitted values fall back to the active setting/default flow, then to `9`.
   - `attributes` and `skills` are optional starting player value maps. Available skill definitions come from the active setting's configured skill list, not from the request body.
 - `numSkills` and `existingSkills` are rejected with 400; configure available skills in Game Settings.
@@ -47,6 +48,7 @@ Behavior:
   - When the target exceeds available drafts, the remainder is generated through faction prompts.
   - Each faction receives relation entries for every other active faction; missing or invalid relation entries normalize to neutral.
 - Calendar setup uses the active setting's `calendarDefinition` when present. Otherwise the server runs the `calendar_generation` prompt and falls back to the built-in Gregorian-style calendar if generation fails.
+- The selected month/day is validated against that resolved calendar before the previous game's runtime state is cleared. Invalid month positions or days return `400` without destroying the loaded game. The valid date becomes canonical `worldTime.dayIndex`, and the selected hour becomes `worldTime.timeMinutes`.
 - The generated calendar prompt requires Gregorian output for reasonably Earth-like settings and asks for seasons, seasonal time-of-day lighting descriptions, and holiday descriptions.
 - The selected start hour is applied through the minute-based world-time path.
 - Startup ability-selection state is resolved before the opening scene.
@@ -60,7 +62,7 @@ Save a New Game form configuration to disk.
 
 Request:
 - Body: `{ saveName?: string, settings: NewGameFormSettings }`
-  - `settings` supports: `playerName`, `playerDescription`, `playerClass`, `playerRace`, `playerLevel`, `startTime`, `startingLocation`, `startingCurrency`, `attributes`, `skills`
+  - `settings` supports: `playerName`, `playerDescription`, `playerClass`, `playerRace`, `playerLevel`, `startMonth`, `startDay`, `startTime`, `startingLocation`, `startingCurrency`, `attributes`, `skills`
 
 Response:
 - 200: `{ success: true, saveName, saveDir, metadata, message }`
@@ -101,7 +103,7 @@ Behavior:
 - Metadata includes totals for players, things, locations, exits, regions, factions, mystery boxes, mystery threads, generated images, and skills.
 - Metadata includes `enabledMods`, the startup-frozen active enabled mod directory names.
 - Metadata includes `npcAliasesGenerated`, normalized to `true` only when runtime metadata explicitly has `true`.
-- Metadata includes current setting identifiers, current location identifiers, summary style, prompt counters, independent housekeeping/quest-check interval counters, plot analysis, offscreen NPC activity state, save-file version, and ID counters.
+- Metadata includes current setting identifiers, current location identifiers, summary style, prompt counters, independent housekeeping/quest-check interval counters, `lastHousekeepingTurnId` for the successful-run chat-history boundary, plot analysis, offscreen NPC activity state, save-file version, and ID counters.
 - `gameConfigOverride.yaml` persists the active per-game YAML override exactly as normalized by `Globals.setGameConfigOverrideYaml`.
 - Manual saves use `saves/`. Autosaves use `autosaves/` through the shared save helper and may omit a duplicate final chat entry when it matches the last autosave.
 
@@ -133,9 +135,10 @@ Request:
   - `modMismatchChoice: 'keep-current'` bypasses a detected mod-enable mismatch for this load.
 
 Response:
-- 200: `{ success: true, saveName, source, metadata, loadedData, message }`
+- 200: `{ success: true, saveName, source, metadata, loadedData, runtimeCancellation, message }`
   - `loadedData`: `{ currentPlayer, totalPlayers, totalThings, totalLocations, totalLocationExits, chatHistoryLength, totalGeneratedImages, currentSetting, worldTime }`
   - `currentPlayer` uses the serialized client NPC/player profile shape.
+  - `runtimeCancellation` reports the runtime generation advance, repeated text-prompt cancellation/drain passes, cancelled player/quest waits, and queued/active image cancellation counts.
 - 409: `{ success: false, code: 'MOD_ENABLEMENT_MISMATCH', error, modMismatch }`
   - `modMismatch`: `{ hasMismatch, activeEnabledMods, savedEnabledMods, missingFromActive, extraActive }`
 - 400/404/500 with `{ success: false, error }`
@@ -145,7 +148,8 @@ Behavior:
 - Saves with `metadata.enabledMods` are compared against the startup-frozen active enabled mod list before hydration. Saves without that metadata skip the mismatch check.
 - `missingFromActive` lists saved mods that are not active in the running server. `extraActive` lists running active mods not recorded in the save.
 - The save's `gameConfigOverride.yaml` is applied through the same merged-config reload path used by `/reload_config` before hydration. Need-bar prompt-sentence validation runs in strict mode for load.
-- Load clears transient job queues and image-generation queues before hydrating serialized state.
+- Every load is a cancellation boundary. Before reading/hydrating world state, it advances the runtime generation, invalidates the active turn token, repeatedly cancels text prompts while `/api/chat` routes drain, rejects pending player-input and quest-confirmation waits, clears movement locks, aborts queued and running image jobs, rejects queued image-prompt batches, and waits for prompt/image drains. Runtime-mutating API requests receive `409` while this barrier and hydration are active.
+- ComfyUI loads delete this server's known queued prompt ids and call ComfyUI's `/interrupt` endpoint for active rendering. OpenAI- and NanoGPT-backed image HTTP requests receive an abort signal. A cancellation or drain failure aborts the load with an explicit error rather than hydrating alongside stale work.
 - Hydration includes compatibility migrations for hour-based world-time/status-duration data, pre-`1.1` need-bar scale values, and pre-`1.2` compact domain-object IDs such as `char_n`, `thing_n`, and `loc_n`.
 - The in-memory save metadata version is normalized to the current save version after hydration so the next save persists upgraded data.
 - Missing saved `calendarDefinition` data is filled from the loaded setting's `calendarDefinition` when available, otherwise through `calendar_generation` with Gregorian fallback.
@@ -157,6 +161,21 @@ Behavior:
 - Chat backlog summaries run when `summaryConfig.summarize_on_load` is not `false`.
 - Short-description backfill planning runs after hydration. When `clientId` is present and missing short descriptions exist, `/api/short-descriptions/pending` can report the plan for that client.
 - Pending player level-up ability draft state is resolved without generating option text; option generation runs from `/api/player/ability-selection` when requested.
+
+## POST /api/turn/cancel-and-rollback
+
+Emergency turn abort used by the Adventure screen's `Stop & Undo` button.
+
+Request:
+- Body (optional): `{ clientId?: string }`
+
+Behavior:
+- Runs the same mandatory runtime cancellation barrier as every other load.
+- Selects the newest autosave by `metadata.timestamp` only after active turn work has stopped, then hydrates that autosave.
+- Returns `404` when no autosave exists, `408` when a turn/prompt drain times out, `409` for a concurrent load or mod mismatch, and `500` for cancellation/hydration failures. Error responses include `stack` for the client error popup.
+
+Response:
+- 200: `{ success: true, saveName, source: 'autosaves', metadata, loadedData, runtimeCancellation, message }`
 
 ## GET /api/mods/manager
 
@@ -201,7 +220,7 @@ Behavior:
 - `saveName` is rejected with `400` (`INVALID_SAVE_NAME`) when it contains `/`, `\`, or `..`; save names never escape the save root directory.
 - The save must contain `metadata.enabledMods`; saves without it cannot be applied automatically.
 - The route writes `tmp/pending-load.json` before restart handling. The pending-load client script consumes that intent on startup and posts `/api/load`.
-- `server.allowSelfRestart: true` allows the route to spawn a replacement server process. Otherwise the response sets `manualRestartRequired: true`.
+- `server.allowSelfRestart: true` allows the route to spawn a replacement server process. When local llama.cpp process management is active, the current saved process-group PID is terminated before the replacement AI RPG process is spawned, so its startup script can safely reclaim the configured port. Otherwise the response sets `manualRestartRequired: true`.
 
 ## GET /api/pending-load
 

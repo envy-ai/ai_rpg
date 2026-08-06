@@ -22,6 +22,8 @@ body {
 }
 
 :root {
+  --character-portrait-aspect-ratio: 1 / 1;
+  --player-portrait-aspect-ratio: var(--character-portrait-aspect-ratio);
   --airpg-modal-backdrop: rgba(15, 23, 42, 0.75);
   --airpg-modal-surface: linear-gradient(
     145deg,
@@ -214,6 +216,58 @@ p:not(:last-child) {
   to {
     transform: rotate(360deg);
   }
+}
+
+.entity-image-render-host {
+  position: relative;
+  isolation: isolate;
+}
+
+.entity-image-render-state {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: inherit;
+  background: rgba(15, 23, 42, 0.97);
+  pointer-events: none;
+}
+
+.entity-image-render-state--seasonal {
+  background: rgba(15, 23, 42, 0.28);
+  backdrop-filter: blur(1px);
+}
+
+.entity-image-render-state__spinner {
+  width: clamp(18px, 24%, 44px);
+  aspect-ratio: 1;
+  box-sizing: border-box;
+  border: clamp(2px, 0.35vw, 5px) solid rgba(255, 255, 255, 0.3);
+  border-top-color: #ffffff;
+  border-radius: 50%;
+  animation: spin 0.85s linear infinite;
+  filter: drop-shadow(0 2px 5px rgba(0, 0, 0, 0.8));
+}
+
+.entity-image-render-state__progress {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  height: 4px;
+  overflow: hidden;
+  background: rgba(2, 6, 23, 0.82);
+  box-shadow: 0 -1px 4px rgba(0, 0, 0, 0.5);
+}
+
+.entity-image-render-state__progress-fill {
+  width: 0;
+  height: 100%;
+  background: linear-gradient(90deg, #38bdf8, #67e8f9);
+  box-shadow: 0 0 8px rgba(103, 232, 249, 0.85);
+  transition: width 140ms linear;
 }
 
 .overlay-content {
@@ -4217,8 +4271,10 @@ button.thing-action-icon {
     min-height: unset;
   }
   .entity-icon {
-    width: unset;
-    height: unset;
+    width: 100%;
+    height: auto;
+    min-height: 0;
+    aspect-ratio: var(--character-portrait-aspect-ratio);
   }
 
   max-width: calc(50% - 8px);
@@ -5947,7 +6003,7 @@ body.dark .thing-toggle-hint {
 
 .party-portrait {
   width: 100%;
-  aspect-ratio: 1 / 1;
+  aspect-ratio: var(--character-portrait-aspect-ratio);
   border-radius: 12px;
   overflow: visible;
   position: relative;
@@ -6220,7 +6276,7 @@ body.dark .thing-toggle-hint {
   overflow: hidden;
   position: relative;
   width: 100%;
-  aspect-ratio: 1 / 1;
+  aspect-ratio: var(--player-portrait-aspect-ratio);
   background: rgba(15, 23, 42, 0.6);
   display: flex;
   align-items: center;
@@ -7792,6 +7848,62 @@ body.dark .thing-toggle-hint {
   }
 }
 
+.send-controls {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+}
+
+.abort-turn-button {
+  position: absolute;
+  top: 10px;
+  right: 52px;
+  z-index: 300;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(254, 202, 202, 0.62);
+  border-radius: 8px;
+  background: rgba(127, 29, 29, 0.82);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.32);
+  cursor: pointer;
+  transition:
+    background 0.18s ease,
+    border-color 0.18s ease,
+    box-shadow 0.18s ease,
+    transform 0.18s ease;
+
+  &:hover:not(:disabled),
+  &:focus-visible {
+    background: rgba(185, 28, 28, 0.94);
+    border-color: rgba(255, 255, 255, 0.46);
+    box-shadow:
+      0 10px 28px rgba(0, 0, 0, 0.4),
+      0 0 0 1px rgba(254, 202, 202, 0.18);
+    outline: none;
+  }
+
+  &:active:not(:disabled) {
+    transform: translateY(1px);
+  }
+
+  &:disabled {
+    background: rgba(127, 29, 29, 0.58);
+    cursor: progress;
+    opacity: 0.78;
+  }
+}
+
+.abort-turn-icon {
+  display: block;
+  font-size: 20px;
+  line-height: 1;
+  pointer-events: none;
+}
+
 .send-button {
   padding: 12px 24px;
   background: $primary-blue;
@@ -7952,6 +8064,10 @@ body.dark .thing-toggle-hint {
 
   .send-button {
     align-self: stretch;
+  }
+
+  .send-controls {
+    align-items: stretch;
   }
 
   .message {
@@ -12062,7 +12178,7 @@ body.modal-open {
 .npc-view-image {
   flex: 0 0 180px;
   width: 180px;
-  aspect-ratio: 1 / 1;
+  aspect-ratio: var(--character-portrait-aspect-ratio);
   border-radius: 16px;
   overflow: hidden;
   border: 1px solid rgba(148, 163, 184, 0.3);

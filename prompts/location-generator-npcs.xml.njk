@@ -1,3 +1,6 @@
+{% set normalizedLocationName = location.name | default('', true) | trim | lower %}
+{% set isExterior = normalizedLocationName.endsWith('exterior') %}
+
 <context>
 Here is a list of character needs that are tracked in game:
 {% include "_includes/need-bar-definitions.njk" %}
@@ -55,7 +58,8 @@ Format your response as follows:
 
 <response><!-- you must wrap everything in the response tag; do not omit it -->
     <brainstorming>
-    <!-- Think about what NPCs you'll generate, with special consideration to making things varied and interesting. For hostiles, make a brief lost of hostile toes encountered recently and think about how to change things up. If half of the recent encounters have been centipedes, it's time to come up with something else. -->
+    <!-- Think about what NPCs you'll generate, with special consideration to making things varied and interesting. For hostiles, make a brief lost of hostile toes encountered recently and think about how to change things up. If half of the recent encounters have been centipedes, it's time to come up with something else.{% if isExterior %}
+    IMPORTANT: THIS IS THE EXTERIOR OF A BUILDING, NOT THE INTERIOR. Do NOT put people who you would expect to find INSIDE the building here unless there's an exceptional reason for them to be here. Shopkeepers, building residents, business employees, and so on should not be generated here; instead, consider generating passersby and other people who might be *outside* the building.{% endif %} -->
     </brainstorming>
     <npcs>
         <npc>

@@ -70,6 +70,84 @@ test.describe('modal prompt-progress bar', () => {
         await pushPromptProgress(page, []);
     });
 
+    test('truncates model names after ten characters in the prompt table and viewer', async ({ page }) => {
+        const longModelName = 'abcdefghij-extra';
+        await page.evaluate(() => window.AIRPG_CHAT.setPromptProgressDockState('table', { persist: false }));
+        await pushPromptProgress(page, [{
+            id: 'long-model-prompt',
+            label: 'long-model-test',
+            model: longModelName,
+            promptText: 'Long model prompt.',
+            previewText: 'Long model response.',
+            receivedCount: 24,
+            progressFraction: 0.4
+        }, {
+            id: 'ten-character-model-prompt',
+            label: 'ten-character-test',
+            model: '1234567890',
+            promptText: 'Boundary prompt.',
+            previewText: 'Boundary response.',
+            receivedCount: 18,
+            progressFraction: 0.3
+        }]);
+
+        const rows = page.locator('.prompt-progress-table tbody tr');
+        await expect(rows).toHaveCount(2);
+        await expect(rows.nth(0).locator('td').nth(3)).toHaveText('abcdefghij...');
+        await expect(rows.nth(0).locator('td').nth(3)).toHaveAttribute('title', longModelName);
+        await expect(rows.nth(1).locator('td').nth(3)).toHaveText('1234567890');
+        await expect(rows.nth(1).locator('td').nth(3)).not.toHaveAttribute('title');
+
+        await page.evaluate(() => window.AIRPG_CHAT.openPromptProgressViewer('long-model-prompt'));
+        const viewerSubtitle = page.locator('.prompt-progress-viewer__subtitle');
+        await expect(viewerSubtitle).toContainText('abcdefghij...');
+        await expect(viewerSubtitle).not.toContainText('abcdefghij-extra');
+        await expect(viewerSubtitle).toHaveAttribute('title', `Model: ${longModelName}`);
+
+        await page.screenshot({ path: 'tmp/prompt-progress-model-name-truncation.png', fullPage: true });
+        await pushPromptProgress(page, []);
+    });
+
+    test('retains the final streamed token when completion is immediately cleared', async ({ page }) => {
+        const promptId = 'final-token-prompt';
+        await pushPromptProgress(page, [{
+            id: promptId,
+            label: 'final-token-test',
+            model: 'test-model',
+            promptText: 'Finish the response.',
+            previewText: 'The response is almost',
+            receivedCount: 22,
+            progressFraction: 0.9
+        }]);
+        await page.evaluate((id) => window.AIRPG_CHAT.openPromptProgressViewer(id), promptId);
+
+        const viewer = page.locator('.prompt-progress-viewer');
+        const response = viewer.locator('.prompt-progress-viewer__response-inline');
+        await expect(response).toHaveText('The response is almost');
+
+        await page.evaluate((id) => {
+            const chat = window.AIRPG_CHAT;
+            chat.promptProgressLastRenderTs = Date.now();
+            chat.handlePromptProgress({
+                done: false,
+                entries: [{
+                    id,
+                    label: 'final-token-test',
+                    model: 'test-model',
+                    promptText: 'Finish the response.',
+                    previewText: 'The response is almost complete.',
+                    receivedCount: 32,
+                    progressFraction: 1,
+                    isComplete: true
+                }]
+            });
+            chat.handlePromptProgress({ done: true, entries: [] });
+        }, promptId);
+
+        await expect(response).toHaveText('The response is almost complete.');
+        await expect(viewer.locator('.prompt-progress-viewer__subtitle')).toContainText('Saved prompt snapshot');
+    });
+
     test('tinybrain keeps one row and turns its waiting bar blue between stages', async ({ page }) => {
         const stablePromptId = 'tinybrain-stable-progress';
         const progressGroupId = 'tinybrain-stable-group';

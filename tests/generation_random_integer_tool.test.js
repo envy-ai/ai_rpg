@@ -208,3 +208,32 @@ test('generation prompt completions are wired to the random integer tool loop', 
     'container item generation should use generation tool loop',
   );
 });
+
+test('location thing generation retries strict response validation and does not swallow exhausted failures', () => {
+  const serverSource = fs.readFileSync(
+    path.join(__dirname, '..', 'server.js'),
+    'utf8',
+  );
+  const generationStart = serverSource.indexOf('async function generateLocationThingsForLocation');
+  const generationEnd = serverSource.indexOf('\nfunction renderSkillsPrompt', generationStart);
+  const locationGenerationStart = serverSource.indexOf('async function generateLocationFromPrompt');
+  const locationGenerationEnd = serverSource.indexOf('\nfunction renderRegionEntrancePrompt', locationGenerationStart);
+
+  assert.notStrictEqual(generationStart, -1);
+  assert.notStrictEqual(generationEnd, -1);
+  assert.notStrictEqual(locationGenerationStart, -1);
+  assert.notStrictEqual(locationGenerationEnd, -1);
+
+  const generationSource = serverSource.slice(generationStart, generationEnd);
+  const locationGenerationSource = serverSource.slice(locationGenerationStart, locationGenerationEnd);
+  assert.match(serverSource, /const LOCATION_THINGS_GENERATION_MAX_ATTEMPTS = 3;/);
+  assert.match(generationSource, /const parsedItems = await withRetry\(async \(\) => \{/);
+  assert.match(generationSource, /}, LOCATION_THINGS_GENERATION_MAX_ATTEMPTS\);/);
+  assert.match(generationSource, /strictXml:\s*true/);
+  assert.match(generationSource, /response contained no item or scenery entries/);
+  assert.doesNotMatch(
+    locationGenerationSource,
+    /Failed to generate location things:[\s\S]{0,160}return \[\]/,
+    'location expansion must propagate exhausted thing-generation failures',
+  );
+});

@@ -115,6 +115,12 @@ Loaded on the chat page:
   and NPC portraits, using a `3px` black stroke for readability. The player portrait adds `.chat-player-level-badge`, while the unspent-points
   warning triangle is anchored from the shared chat-health-bar geometry instead of the portrait's
   top-left corner so it sits lower-left, just above the bar.
+- Portrait containers reserve their configured render aspect ratio through
+  `--character-portrait-aspect-ratio`. NPC cards, party cards, and the character-view modal use
+  that shared variable; `.chat-player-portrait` uses the separately injected
+  `--player-portrait-aspect-ratio` because the player host has distinct overlay/layout behavior.
+  Both variables are precomputed from the effective character image width/height before placeholders
+  render, preventing empty portraits from starting square and resizing after image load.
 - Portrait condition indicators share the level-stack slot just below the bare `L.<level>` text.
   Dead NPC/party cards position a skull icon plus optional corpse countdown there, while alive
   actors with status effects that drain `Health` render a red blood icon from

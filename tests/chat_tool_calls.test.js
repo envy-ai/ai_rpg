@@ -1554,7 +1554,7 @@ test('moreInfo omits bulky region and location scaffolding while keeping region 
             stubDescription: 'Large generated hidden-room seed.'
         },
         generationHints: {
-            hasWeather: 'outside'
+            hasWeather: 'sheltered'
         },
         randomEvents: ['A gramophone skips.'],
         characterConcepts: ['A lounge singer with a secret.'],

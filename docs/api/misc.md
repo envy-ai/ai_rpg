@@ -52,6 +52,8 @@ Response:
 ## POST /api/prompts/cancel-all
 Cancel all tracked in-flight LLM prompts and pending player-input requests.
 
+This endpoint remains a text-prompt control. Whole-turn cancellation, image queue interruption, and autosave restoration use `POST /api/turn/cancel-and-rollback`; ordinary `POST /api/load` uses that same full runtime cancellation barrier automatically.
+
 Request (optional):
 - Body: `{ waitForDrain?: boolean, timeoutMs?: number, clientId?: string }`
   - `waitForDrain` defaults to `true`.

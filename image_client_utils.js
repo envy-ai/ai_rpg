@@ -52,7 +52,33 @@ function extractB64ImageData(data, label) {
   };
 }
 
+function createAbortError(reason = 'Operation cancelled.') {
+  const message = typeof reason === 'string' && reason.trim()
+    ? reason.trim()
+    : (reason?.message || 'Operation cancelled.');
+  const error = new Error(message);
+  error.name = 'AbortError';
+  error.code = 'ABORT_ERR';
+  return error;
+}
+
+function isAbortError(error) {
+  return error?.name === 'AbortError'
+    || error?.name === 'CanceledError'
+    || error?.code === 'ABORT_ERR'
+    || error?.code === 'ERR_CANCELED';
+}
+
+function throwIfAborted(signal, fallbackReason = 'Operation cancelled.') {
+  if (signal?.aborted) {
+    throw createAbortError(signal.reason || fallbackReason);
+  }
+}
+
 function imageRequestError(error, label) {
+  if (isAbortError(error)) {
+    return createAbortError(error?.message || `${label} image request cancelled.`);
+  }
   const message = error?.response?.data?.error?.message || error.message || String(error);
   return new Error(`${label} image request failed: ${message}`);
 }
@@ -63,5 +89,8 @@ module.exports = {
   initImageEngineConfig,
   validateImageSaveInputs,
   extractB64ImageData,
+  createAbortError,
+  isAbortError,
+  throwIfAborted,
   imageRequestError
 };

@@ -150,6 +150,19 @@ Reference for the systems that reduce repeated phrasing, configured slop words, 
 - After each successful parse, the server re-checks visible prose for remaining slop words, regex names, and n-grams. Remaining detections are included in the next attempt. At the attempt limit, the server logs a warning and allows the response with remaining slop.
 - With `returnDiagnostics: true`, the result includes `{ text, slopWords, slopRegexes, slopNgrams, ran }`.
 
+## Live player-action correction
+
+- `ai.live_deslop: true` runs the same history-aware word, regex, configured n-gram, 3-token recent-history overlap, and 6-token extended assistant-history overlap checks at completed word boundaries. It first tries streamed prose-token logprobs with tools. Content without logprobs is preserved verbatim but opaque to live inspection; rejected streaming or invalid/misaligned supplied metadata falls back to 500-token non-stream logprob batches until the game server or llama.cpp restarts.
+- The server snapshots merged definitions, active setting custom entries, and compiled regexes once per generation. Each boundary reuses that snapshot; ordinary completed-response checks continue loading current definitions normally.
+- llama.cpp/OpenAI-compatible token probability records map a detected prose span back to the sampled token at its first word. The controller tries untried alternatives by descending probability. If that token has no viable branch, it rewinds to the first token of the previous word and repeats, stopping at the opening prose tag.
+- Corrected branches and full batches resume through assistant prefill. No token ban or logit bias is sent. The exact tool schema and selection policy remain present on every streaming or non-stream continuation so the tool-bearing prompt prefix stays cacheable. Streamed content without logprobs remains in the response but is excluded from live-token inspection; structured tool calls are retained independently through `delta.tool_calls`.
+- Live checks cover `<prose>` plus travel `<originProse>`, `<betweenProse>`, and `<destinationProse>` fields in normal and TinyBrain player actions. They also cover TinyBrain first- and second-draft checkpoints as plain prose; planning/analysis checkpoints, questions, and generic prompt modes are excluded.
+- XML tag names and attributes are excluded from live word/regex checks. `<hidden>` contents are excluded as in the completed-response pass, incomplete streamed tags are ignored, and every tag is a hard boundary for configured and repeated n-grams. The same segmentation is applied while indexing XML-bearing history.
+- Word-by-word rewind search stops at the preceding XML boundary (or the start of a plain draft) so correction cannot overwrite structural markup or earlier checkpoint messages.
+- The final parsed prose still passes through `applySlopRemoval(...)`, both as verification and to cover prose introduced by later scheduled-event rewrites.
+- Live correction details are added to `slopRemoval.liveCorrections`; the existing broom attachment continues using the unioned word, regex, and n-gram diagnostics.
+- See [LiveDeslop.md](classes/LiveDeslop.md) and the `ai.live_deslop` section in [config.md](config.md).
+
 ### Where Slop Removal Runs
 
 - Main `/api/chat` player-action and creative-mode action prose after action XML parsing, scheduled-event interruption rewrites, and rejected-action handling.

@@ -710,6 +710,44 @@ class Globals {
     }
   }
 
+  static getCalendarDayIndex({
+    monthNumber,
+    dayOfMonth,
+    calendarDefinition = null
+  } = {}) {
+    let calendar = null;
+    if (calendarDefinition === null || calendarDefinition === undefined) {
+      Globals.ensureWorldTimeInitialized();
+      calendar = Globals.calendarDefinition;
+    } else {
+      calendar = Globals.#normalizeCalendarDefinition(calendarDefinition);
+    }
+    const parsedMonthNumber = Number(monthNumber);
+    if (!Number.isInteger(parsedMonthNumber) || parsedMonthNumber < 1) {
+      throw new Error('monthNumber must be a positive integer.');
+    }
+    if (parsedMonthNumber > calendar.months.length) {
+      throw new Error(`monthNumber must be between 1 and ${calendar.months.length}.`);
+    }
+
+    const parsedDayOfMonth = Number(dayOfMonth);
+    if (!Number.isInteger(parsedDayOfMonth) || parsedDayOfMonth < 1) {
+      throw new Error('dayOfMonth must be a positive integer.');
+    }
+    const selectedMonth = calendar.months[parsedMonthNumber - 1];
+    if (parsedDayOfMonth > selectedMonth.lengthDays) {
+      throw new Error(
+        `dayOfMonth must be between 1 and ${selectedMonth.lengthDays} for ${selectedMonth.name}.`
+      );
+    }
+
+    return calendar.months
+      .slice(0, parsedMonthNumber - 1)
+      .reduce((total, month) => total + month.lengthDays, 0)
+      + parsedDayOfMonth
+      - 1;
+  }
+
   static getCalendarDate(worldTime = Globals.worldTime, { skipEnsure = false } = {}) {
     if (!skipEnsure) {
       Globals.ensureWorldTimeInitialized();

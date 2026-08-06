@@ -83,6 +83,9 @@ function loadGenerateLocationImageHarness() {
             context.imageJobs.set(jobId, job);
             return job;
         },
+        enqueueImageJob: jobId => {
+            context.jobQueue.push(jobId);
+        },
         processJobQueue: () => {},
         getJobSnapshot: jobId => {
             const job = context.imageJobs.get(jobId);

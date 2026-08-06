@@ -183,3 +183,28 @@ test('thing XML parser reads requiresCheckToOpen for containers', async () => {
         Globals.config = previousConfig;
     }
 });
+
+test('thing XML parser strict mode rejects malformed generated XML', async () => {
+    const parseThingsXml = loadParseThingsXml();
+    const previousConfig = Globals.config;
+
+    Globals.config = { ...(previousConfig || {}), strictXMLParsing: false };
+    try {
+        await assert.rejects(
+            parseThingsXml(`
+<things>
+  <scenery>
+    <name>Great Hearthstone Obelisk</name>
+    <description>A monumental hearthstone.</description>
+    <shortDescription>Monumental market hearthstone</shortDescription>
+    <itemOrScenery>scenery</itemOrScenery>
+    <type>monument</type>
+    <isSalvageable>false</isSalvable>
+  </scenery>
+</things>`, { strictXml: true }),
+            /Failed to parse XML content strictly/
+        );
+    } finally {
+        Globals.config = previousConfig;
+    }
+});

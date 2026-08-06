@@ -5,7 +5,7 @@ const vm = require('vm');
 
 function loadGetFilteredSlopRegexes() {
     const source = fs.readFileSync(require.resolve('../api.js'), 'utf8');
-    const start = source.indexOf('        const getFilteredSlopRegexes = async (prose) => {');
+    const start = source.indexOf('        const getFilteredSlopRegexes = async (prose, { session = null, historySegments = null } = {}) => {');
     const end = source.indexOf('\n        const containsNormalizedNgram = (tokens, ngramTokens) => {', start);
     if (start < 0 || end < 0) {
         throw new Error('Unable to locate getFilteredSlopRegexes in api.js');
@@ -47,6 +47,9 @@ function loadGetFilteredSlopRegexes() {
         },
         getSlopHistorySegments() {
             return ['History contains Zero Regex and Positive Regex.'];
+        },
+        resolveSlopHistorySegments(historySegments) {
+            return historySegments || ['History contains Zero Regex and Positive Regex.'];
         },
         Error
     };

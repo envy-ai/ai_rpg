@@ -262,6 +262,46 @@
                             <span class="help-text">Select the default AI model. Kimi uses the separate optional alias above or its saved CLI default.</span>
                         </div>
 
+                        <div class="form-group full-width">
+                            <label for="ai-unload-during-image-generation">Unload During Image Generation:</label>
+                            <div class="checkbox-wrapper">
+                                <input type="hidden"
+                                       name="ai.unload_during_image_generation::boolean"
+                                       value="false">
+                                <input type="checkbox"
+                                       id="ai-unload-during-image-generation"
+                                       name="ai.unload_during_image_generation::boolean"
+                                       value="true"
+                                       {% if config.ai.unload_during_image_generation === true %}checked{% endif %}>
+                            </div>
+                            <span class="help-text">For a llama.cpp router plus ComfyUI: finish queued image-prompt writing, unload the LLM while all queued images render, ask ComfyUI to free its models, then reload the LLM. Other text prompts wait until reload completes.</span>
+                        </div>
+
+                        <div class="form-group full-width">
+                            <label for="ai-terminate-during-image-generation">Terminate During Image Generation:</label>
+                            <div class="checkbox-wrapper">
+                                <input type="hidden"
+                                       name="ai.terminate_during_image_generation::boolean"
+                                       value="false">
+                                <input type="checkbox"
+                                       id="ai-terminate-during-image-generation"
+                                       name="ai.terminate_during_image_generation::boolean"
+                                       value="true"
+                                       {% if config.ai.terminate_during_image_generation === true %}checked{% endif %}>
+                            </div>
+                            <span class="help-text">Start a local llama.cpp server from the script below, terminate its saved process while ComfyUI renders, clear ComfyUI VRAM, then restart the script. This cannot be combined with router unloading.</span>
+                        </div>
+
+                        <div class="form-group full-width">
+                            <label for="ai-local-startup-script-path">Local llama.cpp Startup Script:</label>
+                            <input type="text"
+                                   id="ai-local-startup-script-path"
+                                   name="ai.local_startup_script_path::string"
+                                   value="{{ config.ai.local_startup_script_path or '' }}"
+                                   placeholder="/absolute/path/to/start-llama.sh">
+                            <span class="help-text">Required when termination mode is enabled. Relative paths resolve from the AI RPG project directory, and the file must be executable.</span>
+                        </div>
+
                         <div class="form-group"
                              data-ai-backend-section="codex_cli_bridge"
                              {% if aiBackend != 'codex_cli_bridge' %}hidden{% endif %}>
@@ -905,6 +945,36 @@
                             <label for="housekeeping-interval">Housekeeping Interval:</label>
                             <input type="number" id="housekeeping-interval" name="housekeeping.interval::int" value="{{ config.housekeeping.interval | default(1) }}" min="1" step="1">
                             <span class="help-text">Eligible top-level event checks between automatic housekeeping prompts</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Tonal Scale Evaluation -->
+                <div class="config-section" id="tonal-scale-evaluation-settings">
+                    <h2>🎚️ Tonal Scale Evaluation</h2>
+                    <div class="form-grid">
+                        <div class="form-group">
+                            <label for="tonal-scale-evaluation-enabled">Enabled:</label>
+                            <div class="checkbox-wrapper">
+                                <input type="hidden" name="tonal_scale_evaluation.enabled::boolean" value="false">
+                                <input type="checkbox"
+                                       id="tonal-scale-evaluation-enabled"
+                                       name="tonal_scale_evaluation.enabled::boolean"
+                                       value="true"
+                                       {% if config.tonal_scale_evaluation.enabled is not defined or config.tonal_scale_evaluation.enabled %}checked{% endif %}>
+                            </div>
+                            <span class="help-text">Run automatic tonal-scale checks after completed player-action turns</span>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="tonal-scale-evaluation-interval">Interval:</label>
+                            <input type="number"
+                                   id="tonal-scale-evaluation-interval"
+                                   name="tonal_scale_evaluation.interval::int"
+                                   value="{{ config.tonal_scale_evaluation.interval | default(5) }}"
+                                   min="1"
+                                   step="1">
+                            <span class="help-text">Completed player-action turns between automatic tonal-scale checks</span>
                         </div>
                     </div>
                 </div>

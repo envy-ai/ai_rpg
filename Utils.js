@@ -640,6 +640,37 @@ class Utils {
     return Utils.#normalizeKgramTokens(text, options);
   }
 
+  static normalizeKgramTokenSpans(text, options = {}) {
+    if (typeof text !== 'string') {
+      throw new TypeError('Utils.normalizeKgramTokenSpans requires a string argument.');
+    }
+    if (options === null || typeof options !== 'object' || Array.isArray(options)) {
+      throw new TypeError('Utils.normalizeKgramTokenSpans options must be an object.');
+    }
+
+    const excludeNpcNames = options.excludeNpcNames !== false;
+    const npcNameStopwords = excludeNpcNames ? Utils.#getNpcNameStopwords() : null;
+    const spans = [];
+    const tokenPattern = /[a-z0-9']+/gi;
+    let match = null;
+    while ((match = tokenPattern.exec(text)) !== null) {
+      const token = match[0].toLowerCase();
+      if (
+        !/[a-z0-9]/i.test(token)
+        || COMMON_WORDS.has(token)
+        || (npcNameStopwords && npcNameStopwords.has(token))
+      ) {
+        continue;
+      }
+      spans.push({
+        token,
+        start: match.index,
+        end: match.index + match[0].length
+      });
+    }
+    return spans;
+  }
+
   static #buildKgramSet(tokens, k) {
     const kgrams = new Set();
     for (let i = 0; i <= tokens.length - k; i += 1) {

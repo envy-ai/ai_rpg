@@ -44,9 +44,9 @@ test('location image prompt template omits weather for sheltered locations', () 
     );
 });
 
-test('location image prompt template labels outside-visible weather', () => {
+test('location image prompt template labels sheltered weather as outside', () => {
     assert.equal(
-        renderLocationImagePromptTemplate({ hasLocalWeather: true, weatherScope: 'outside' }),
+        renderLocationImagePromptTemplate({ hasLocalWeather: true, weatherScope: 'sheltered' }),
         'wide establishing shot of a winding creek path\n\nTime: noon\nWeather outside: clear'
     );
 });

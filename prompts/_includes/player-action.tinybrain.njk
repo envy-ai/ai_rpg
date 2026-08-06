@@ -175,6 +175,19 @@ Information gathering and tool calling: If necessary, call any tools that might 
 Make any necessary tool calls here to gather additional information before proceeding with the story continuation.
 
 {% llm_dummy_action %}
+{% if isExterior %}
+The current location is an EXTERIOR of a building, structure, or similar (or they are MOVING to the exterior of a building). Is anything supposed to happen when the INTERIOR of that building is reached? If so, list in markdown format what things will be deferred until they enter the building, as opposed to happening this turn. Use no more than 8 words per item, and no more than 5 items. If nothing is deferred, respond with N/A.
+
+Defer the following things the player is in the INTERIOR (not this turn!):
+{% llm_dummy_action %}
+
+Here is the information about the location the player is arriving at this turn.
+{% set travelTargetLocation = getLocationInfo(travelTargetLocationName, travelTargetLocationId) %}
+Destination name: {{ travelTargetLocation.name }}
+Destination description: {{ travelTargetLocation.description }}
+{% else %}
+Is the player moving to a different location this turn? If so, call the moreInfo tool to get its description and any relevant information about it. If not, simply respond with N/A (with no additional text). 
+{% llm_dummy_action %}{% endif %}
 
 Do any of the NPCs you picked have any extremely pressing needs? If so, who are they and what are those needs? They should act on these. If a character's needs information implies that a need is to the point where it's all-consuming, don't ignore that for the sake of the scene, even if it would be inappropriate or would interrupt the flow of the story, and don't have them be subtle about it! Extreme/desperate needs even override overall story tone (note that they're specifically enabled by the player, so assume that they're wanted). Also, it's best for characters to prioritize needs *before* they reach that point, when they can be dealt with at more opportune times, so keep them in the front of your mind and don't defer them. 
 
@@ -217,7 +230,9 @@ Draft Response: Generate a preliminary but full draft that continues the story b
 {% else %}
 Draft Response: Generate a preliminary but full draft that continues the story based on the current context{#, strictly adhering to this degree of success/failure: "{{ success_or_failure }}" regardless of how hard the action is#}. This is just a first attempt. Use no more than {{ config.prose_length }}. If a character is attacking another character, call the resolveAttack tool during your draft and then strictly adhere to the results in your writing, taking care to describe the attack according to the degree of damage and whether the defender is defeated. You may call this only during your first draft. If the attack is a miss, it's not necessary to describe the attack in detail, but you should still acknowledge that the attack occurred. Whenever a character makes a meaningful non-attack action that isn't trivially easy, call the resolveSkillCheck or resolveOpposedSkillCheck tool (depending on whether the action is opposed by another character) during your draft and strictly adhere to the results in your writing. You must call the tool for every attack or check you write about in this draft, not just the ones specifically called for in the playerAction block. It's okay to interrupt your draft to call tools, as you will be given a chance to refine it later and you can fix any formatting issues that result from doing so. Examples of skill checks include: climbing a wall, searching for hidden exits, moving a large rock, etc. Examples of opposed skill checks include: arm wrestling, being stealthy or noticing someone being stealthy, haggling with a merchant, etc. The user may signal their intent to use a particular skill or ability by including it in [square brackets] in their playerAction text; if they don't, use your best judgement. You may also override it with something else if it makes no sense. Do not reference the same object, detail, or plot element in consecutive turns unless something about it has changed. If a detail was established in a previous turn, do not have characters reflect on it again unless new information emerges or a character is actively interacting with it. Characters must not repeat the same metaphor type, observation pattern, or speech tic multiple times in a scene. Variety in how characters express themselves is essential. Do NOT append "What do you do?" or any other text addressing the player directly.
 {% endif %}
-
+{% if isExterior %}
+IMPORTANT: This is an arrival at an EXTERIOR of a building, not the interior. Describe the exterior of the building and any relevant details about the surrounding area. If the player is moving to the interior of the building, do not describe that yet. Instead, defer any interior description until they actually enter the building. Instead, this is a time to talk about what the building and surrounding area look like from the outside, who might be outside the building, what might be going on outside the building, and so on.
+{% endif %}
 Write your draft response now.
 
 {% llm_dummy_action %}
@@ -263,11 +278,7 @@ Reason out loud about the second draft, identifying any inconsistencies, missing
 
 {% llm_dummy_action %}
 
-Is the player traveling to a new location, region, or scene in this turn, even one that doesn't exist yet? Answer yes or no.
-
-{% llmparse('yes_no') as response %} {# this llmparse function should normalize the yes/no answer from the LLM and store it in the response variable as true or false #}
-
-{% if response %}
+{% if travel %}
 Write your final, refined prose inside the moveTurnResult tags below, using what you determined above, using no more than {{ config.prose_length }}. Adhere to any skill-check, opposed skill-check, and attack outcomes you received tool results for in your first draft. Don't call them again.
 
 {% include "_includes/travel-prose.njk" %}

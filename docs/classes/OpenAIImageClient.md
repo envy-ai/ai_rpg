@@ -16,11 +16,12 @@ Server configuration validation also requires the shared image-generation settin
 
 ## Instance API
 - `generateRequestId()`: UUID for request tracking.
-- `generateImage({ prompt, negativePrompt, width, height })`:
+- `generateImage({ prompt, negativePrompt, width, height, signal })`:
   - Defaults `negativePrompt` to an empty string and `width`/`height` to `1024`.
   - Builds an OpenAI `size` string as `${width}x${height}`.
   - Appends `negativePrompt` to the main prompt as a `Negative prompt:` paragraph when a negative prompt is provided.
   - Sends `POST { model, prompt, size, n: 1 }` to the configured endpoint with a bearer token.
+  - Passes the optional abort signal to Axios and throws `AbortError` when a game load cancels the image job.
   - Expects `response.data.data[0].b64_json`, decodes it into a `Buffer`, and returns `{ requestId, imageBuffer, mimeType }`.
   - Uses `response.data.data[0].mime_type` when present and otherwise reports `image/png`.
   - Wraps transport, API, and missing-payload failures as `OpenAI image request failed: ...`.

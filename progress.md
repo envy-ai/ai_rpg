@@ -1,3 +1,59 @@
+Original prompt: Can you create a button that stops ALL PROMPTS (basically ends processing of the turn immediately wherever it is) and then reverts to the latest autosave?
+
+- Fixed exterior travel unstubbing after the Community Kitchen move failure: `location-generator-stub.njk` now derives `displayName` from the guarded `stubName` string instead of dereferencing `normalizedLocationName.name`, and regression coverage checks both exterior and missing-name rendering.
+- The three focused exterior/destination tests and new test syntax check pass. Restarted from the newest autosave with managed llama.cpp PID 3450520; game/model health return 200, and the required read-only browser smoke rendered cleanly with no error artifact at `tmp/location-stub-move-fix/shot-0.png`.
+- Follow-up UI: replaced the wide `Stop & Undo` button beside Send with a 34px stop-sign icon button immediately left of the chat bubble visibility eye control; cancellation state now preserves the icon and updates accessible status text instead of resizing the control.
+- Compiled `public/css/main.css`, passed the focused prompt-dock UI test and `chat.js` syntax check, then visually verified the aligned upper-right controls with no browser error artifact at `tmp/stop-undo-corner-control/shot-0.png`.
+- Tracing the existing global prompt-cancellation endpoint, pre-turn autosave lifecycle, live save loader, and client prompt controls before designing an atomic cancel-and-rollback operation.
+- Added an atomic game-load cancellation barrier: runtime-generation invalidation, active chat-turn drain, repeated LLM cancellation/drain, pending player/quest wait rejection, move-lock clearing, and broad transient promise/queue cleanup all finish before hydration.
+- Added abortable OpenAI/NanoGPT/ComfyUI image requests, ComfyUI queue deletion plus active sampler interruption, image-job/batch cancellation, and stale image-prompt runtime guards.
+- Added `POST /api/turn/cancel-and-rollback` and a red `Stop & Undo` chat control that restores the latest autosave selected after cancellation completes.
+- Added focused cancellation/ComfyUI/UI tests and updated game-load, serialization, chat UI, prompt-control, and image-client docs.
+- Restarted port 7777 from the newest autosave with the updated cancellation barrier; startup advanced the runtime generation before hydration and managed llama.cpp PID 3435586 is healthy. A non-mutating browser smoke test visually confirmed the red `Stop & Undo` control, with no console/page-error artifact (`tmp/cancel-rollback-ui/shot-0.png`).
+
+Original prompt: I've added a config option called "live_deslop". If it's true, use this process with the normal slop checking algorithm (including the n-gram checking, which is hopefully fast enough to keep up?).
+
+Follow-up: If the first flagged word has no viable branch, step backward one word at a time—even before the beginning of the matched phrase—until a viable next token is found.
+
+Follow-up: Exclude XML tags from live checks and treat them as n-gram boundaries.
+
+Follow-up: Prefer `stream + logprobs + tools`, fall back to the existing 500-token non-stream method after one failed streaming attempt, and retry streaming only after the game server or managed llama.cpp process restarts. Tool-call deltas do not need logprobs.
+
+Follow-up: Persist the stream-failure message in the associated prompt log.
+
+- Tracing TinyBrain and ordinary prose generation, streamed token metadata, every existing post-generation slop-removal call site, and the cost/semantics of incremental word/regex/n-gram checks.
+- Intended behavior: retain an uncommitted token tail; on a detected match, rewind to the first overlapping token, choose the highest-probability safe alternative recorded for that position, and resume from verified prefill without a persistent token ban.
+- Implemented `LiveDeslopController` for structured player-action prose, including source-offset mapping for normal/travel prose tags, completed-word-boundary inspection, word/regex/ngram match location, highest-probability branch selection, and one-word-at-a-time backward widening when the slop-start token is exhausted.
+- Added ordered async token interception to `LLMClient` using streamed `logprobs.content`, retained sampled token records, transport restart through assistant prefill, and tool preservation across both continuations and textual branch corrections.
+- Added one-definition-load-per-generation slop analysis sessions; a local definition-loader benchmark dropped the avoidable YAML/mod scan cost from roughly 30 ms per boundary (three loads) to one startup snapshot.
+- Wired live deslop into final ordinary and TinyBrain player-action XML generation, retained the normal final slop pass, merged live diagnostics, added startup validation/default config, and documented the behavior.
+- Indexed repeated-ngram benchmarks on deliberately repetitive synthetic histories ranged from about 0.65 ms at 20 words to 25.9 ms at 170 words per token boundary; the existing full-history scanner ranged from about 202 ms to 3.0 seconds on the same inputs.
+- Final validation passed: syntax checks for all five changed JavaScript modules and the six targeted LiveDeslop, regex, streaming, prefill, and tool-call test files (6/6).
+- Restarted with `config.yaml.qwen35B-A3B`; the game and managed llama.cpp health checks pass, ComfyUI was not started, and the required non-mutating browser smoke test rendered the initial UI without console or page errors.
+- XML-aware live extraction now removes tag markup, excludes hidden-note contents, ignores incomplete streamed tags, splits both current prose and indexed history into hard n-gram segments, and prevents word-by-word rewind from crossing structural markup. Ten focused live-deslop cases and the broader seven-suite regression set pass.
+- Restarted cleanly after resolving a stale llama.cpp port-owner race; the game returns HTTP 200, managed llama.cpp PID 3264276 reports healthy, and a fresh non-mutating browser smoke test rendered normally with no console/page errors. ComfyUI was not started.
+- Live-deslop requests now try streaming first with tools and token logprobs. Pure streamed tool-call deltas are accepted without logprobs, while every visible text delta still requires aligned token metadata. The last visible token is rechecked when a later empty finish chunk marks the response complete.
+- A compatibility or pre-text streaming failure is remembered by chat endpoint plus managed llama PID. The failed logical request immediately retries through the existing 500-token non-stream path; later calls skip streaming for that identity. A game-server restart clears the in-memory latch, and a changed managed PID creates a fresh identity.
+- Probed the custom llama.cpp wire format with a logged, non-gameplay request containing tools, assistant prefill, streaming, and top-20 logprobs. It returned aligned text-token probabilities, pure metadata/finish chunks without logprobs, and completed successfully.
+- Focused JavaScript syntax checks and five live-deslop, prefill, base-context-tool, image-progress-UI, and chat-tool test files pass. The adaptive regression verifies request modes `[stream, fallback, remembered fallback, stream after PID change]` and retained tools.
+- The browser smoke test initially exposed an unrelated undefined portrait-dimension template interpolation (`Unexpected token ';'`). The server now passes validated primitive width/height locals; the restarted live UI renders correctly with no browser error artifact.
+- Restarted port 7777 with `config.yaml.qwen35B-A3B` and the latest Community Kitchen Exterior save. The game and managed llama.cpp health endpoints pass under managed PID 3306319. Startup connected to the user-managed ComfyUI instance and cleared its VRAM immediately before the startup script; it did not launch ComfyUI.
+- Adaptive fallback now emits a structured diagnostic callback containing the exact warning, classification, capability key, HTTP status/body, error details/backtrace, and fallback batch size. TinyBrain appends it immediately to the current logical prompt log before retrying; ordinary player-action logs include any collected diagnostics when written.
+- Added a strict TinyBrain `appendLogSection(...)` completion hook so transport diagnostics cannot silently disappear or drift into another staged prompt's file. Focused live-deslop and relevant TinyBrain logging tests pass; the standalone TinyBrain file retains only its documented unrelated real-template checkpoint-count failure (`0 !== 8`).
+- Saved the latest completed game state as `2026-08-05T20-43-10-800Z_Monster_Girl_Life_2026-06b-Baato-Ember_Hollow_Village_Square-char_2-msgk0imo`, then restarted port 7777 from that save with `config.yaml.qwen35B-A3B`. Managed llama.cpp PID 3310675 and both health endpoints are ready; startup cleared the existing user-managed ComfyUI instance's VRAM before the script and did not launch ComfyUI.
+- The required non-mutating browser client produced `tmp/live-stream-failure-log-smoke/shot-0.png`; visual inspection confirms the restored Ember Hollow Village Square UI renders correctly, and no console/page-error artifact was created.
+- Fixed the first post-restart player-action rejection: the fallback diagnostic callback had been placed on the shared TinyBrain request options, so non-live planning checkpoints correctly rejected it for lacking `liveTokenStreamFallbackChunkSize`. The callback is now attached only after a draft/final stage is selected for live deslop; non-TinyBrain live requests attach it together with their fallback configuration.
+- Syntax checks and the focused live-deslop, TinyBrain logging, prefill, base-context-tool, and chat-tool suites pass. Restarted from current-state save `2026-08-05T20-49-49-687Z_Monster_Girl_Life_2026-06b-Baato-Ember_Hollow_Village_Square-char_2-msgk92ev`; game and managed llama.cpp PID 3312712 are healthy. The required browser smoke rendered correctly with no error artifact at `tmp/live-stream-log-callback-scope-fix/shot-0.png`.
+
+Original prompt: At {#MARKER#} in player-action.tinybrain.njk, add the target location's name and description. Add an njk function like moreInfo.
+
+- Added a prompt-only `getLocationInfo(name, id?)` Nunjucks global with exact-ID disambiguation, exact/substring name lookup, and explicit missing/ambiguous/description errors. Stub description metadata is supported.
+- Wired resolved player-action travel destination id/name into the TinyBrain prompt context and rendered its canonical name and description in the exterior-travel branch at `{#MARKER#}`.
+- Preserved the user-edited LLM-facing labels `Destination name` and `Destination description` and removed the temporary marker comment.
+- Validation passed: syntax checks for all altered JavaScript files plus `tests/nunjucks_filters.eval.test.js`, `tests/base_context_is_exterior.test.js`, and `tests/player_action_tinybrain_target_location.test.js` (3/3 files).
+- Restarted port 7777 with `config.yaml.qwen35B-A3B` and the latest save `2026-08-05T22-43-40-385Z_Monster_Girl_Life_2026-06b-Baato-Ember_Hollow_Village_Square-char_2-msgobh0h`; host-visible game and managed llama.cpp PID 3387963 health checks return 200.
+- The required non-mutating browser client produced `tmp/tinybrain-destination-info-smoke/shot-0.png`; visual inspection confirms the restored Ember Hollow Village Square UI renders correctly, with no console/page-error artifact.
+
 Original prompt: NPC ability and skill generation are being really wonky and returning gibberish, and those two prompts are contiunuations of previous prompts, so I'm converting them into base_context prompts instead.
 
 Original prompt: When prompt_uses_caching is true, include every omission-controlled base-context piece before recentStoryHistory.
@@ -240,6 +296,23 @@ Original prompt: Surface an error to the client if the summary fails.
 - Added server scheduling, client handler, and browser alert regression tests.
 - Updated `docs/api/chat.md`, `docs/ui/modals_overlays.md`, and `docs/README.md`.
 - Validation: `node --check api.js`, `node --check public/js/chat.js`, and the two focused Node tests all pass. `npm run test:e2e:headless` passes with 34 tests passed and 4 fixture-gated tests skipped.
+
+Follow-up: Fix live-deslop completion failure on llama.cpp's trailing empty stop token.
+
+- Token-chunked non-stream processing now accepts exactly one final `token: ""`, `bytes: []` control record on a normal text `finish_reason: "stop"` response.
+- The control record is excluded from response text and retained token history; the final visible token still receives `responseComplete: true` so trailing prose is checked.
+- Empty token records in any other position remain explicit metadata errors.
+- Validation passed: `node --check` for implementation and test files; focused live-deslop, assistant-prefill, and base-context tool-schema tests; game and llama health checks; and a non-mutating browser smoke capture with no console/page errors.
+- Restarted the game with `config.yaml.qwen35B-A3B` and the requested save. Managed llama.cpp is healthy under PID 3285074; ComfyUI was not launched.
+
+Follow-up: Prefer `stream + logprobs + tools` for live deslop, with remembered fallback.
+
+- Live-deslop requests now probe streamed text-token logprobs while retaining the exact tool schema and assistant-prefill corrections.
+- Pure streamed tool-call deltas are accepted without logprobs because tool calls are outside prose inspection.
+- If the stream is rejected, lacks aligned text-token metadata, or fails before its first text token, the same logical completion switches to the existing 500-token non-stream path.
+- Failed streaming capability is latched by endpoint plus managed llama.cpp PID. It is retried after either a game-server restart (fresh in-memory state) or managed llama.cpp restart (new PID key).
+- The final streamed visible token receives `responseComplete: true`, including providers that send `finish_reason` in a later empty SSE chunk.
+- Browser smoke testing exposed an undefined `characterPortraitDimensions` object in the rendered Play template, which produced `window.AIRPG_CONFIG.characterPortraitDimensions = ;` and stopped client hydration. The route now passes validated primitive width/height locals and the template constructs the client object explicitly.
 - The first focused browser alert test run deadlocked because the test awaited `page.evaluate()` while the native alert was open; the test was corrected to accept the dialog before awaiting the dispatch evaluation.
 - A second focused run encountered an unrelated directory-listing server on Playwright's default port 4173; the isolated-port config in `tmp/playwright.summary-error.config.js` avoided that listener. The final focused Chromium test passed and verified the alert heading, summary error text, and server stack location.
 
@@ -688,6 +761,18 @@ Original prompt: Keep one prompt-text viewer persistent throughout a tinybrain r
   - Required reusable browser smoke client passed without reported browser errors; inspected `tmp/tinybrain-persistent-viewer-smoke/shot-0.png` and confirmed the idle Play UI remained intact.
 - Test servers were stopped; ports 4173 and 4175 are clear.
 - TODO: none.
+Original prompt: The recently added comfyui image spinner and progress bar doesn't appear to be working with item/scenery images. Also, precompute what size the character portraits will be based on their configured resolution and style the empty ones to that size. Note that the player portrait is a special case and needs to be handled separately.
+
+- Auditing item/scenery image-host matching and the character/player portrait rendering paths before implementation.
+- Root cause found: thing render jobs publish stored `item`/`scenery` entity types while every item/scenery DOM image host is keyed as `thing`.
+- Implemented client-side canonical image entity keys, preserving the server/API type detail while matching item/scenery jobs to thing hosts.
+- Added server-precomputed effective character dimensions with `character_settings.image` -> `default_settings.image` fallback, configured portrait aspect-ratio CSS variables, a shared NPC/party/modal portrait rule, and a separate player-sidebar portrait rule.
+- Added source and Playwright regression coverage for item/scenery progress overlays and pre-sized empty portraits.
+- Rebuilt `public/css/main.css` from `public/css/main.scss`.
+- Validation passed: JavaScript/test syntax checks, 11 focused image-related Node suites, the 2-case focused Chromium spec, the required reusable browser-game smoke client, and the full Chromium suite (42 passed, 4 fixture-gated skips).
+- Visually inspected `tmp/image-render-progress-overlays.png`, `tmp/character-portrait-placeholder-sizing.png`, and `tmp/image-progress-portrait-smoke/shot-0.png`; item/scenery spinners and bars are visible, seasonal location translucency remains intact, and empty NPC/party/player portraits reserve the configured ratio.
+- Updated `docs/api/images.md`, `docs/config.md`, `docs/ui/chat_interface.md`, `docs/ui/assets_styles.md`, and `docs/README.md`.
+- TODO: none.
 
 Original prompt: Make the same tools available across all non-generic base-context prompts. For prompts that previously had no tools, prepend "Do not make tool calls." immediately after the base context.
 
@@ -881,4 +966,159 @@ Original prompt: Make every TinyBrain prompt, including event checks and future 
 - Updated `docs/classes/LLMClient.md`, `docs/classes/TinyBrainPromptRunner.md`, `docs/classes/Events.md`, `docs/server_llm_notes.md`, `docs/config.md`, `docs/ui/modals_overlays.md`, `docs/ui/chat_interface.md`, and `docs/README.md`.
 - Restarted the live server with `config.yaml.qwen35B-A3B`; exactly one process owns port 7777 and `/api/hello` responds normally.
 - The required reusable browser smoke passed with no browser-error artifact. Inspected `tmp/tinybrain-universal-progress-smoke/shot-0.png`; the Play UI renders normally.
+- TODO: none.
+
+Original prompt: For the housekeeping prompt, send the history of every turn since its last run (including the current turn), grouped with player-action text, prose, and event text; if it has never run, use the configured housekeeping interval worth of context.
+
+- Audited the existing prompt timing and chat-history layout. Player action/prose is stored before event checks, while finalized event summaries are available only after event outcomes, so the housekeeping LLM request must run after event processing to include the complete current turn.
+- Added turn-history grouping and a persisted `lastHousekeepingTurnId` successful-run boundary. First-run context uses the latest configured interval worth of player turns; later runs use every turn after the boundary through the current one.
+- The prompt now receives ordered `<housekeepingTurnHistory>` records containing `<playerAction>`, `<prose>`, and `<eventText>`, with an explicit instruction to examine every record rather than only the final turn.
+- Current-turn context is supplemented with canonical checked prose and formatted finalized event/status results before normal event-summary chat entries are recorded. Hidden-note variants do not duplicate the current prose.
+- Automatic housekeeping is scheduled before event checks for interval accounting but invoked only after event results are finalized. Recursive/suppressed and split-movement single-pass semantics remain intact.
+- Added focused history-selection, prompt-rendering, event-ordering, and source-wiring tests; updated Events, chat API, save/load, config, slash-command, and documentation-index notes.
+- Validation passed: JavaScript syntax checks, 12 focused unit/source suites, direct Nunjucks history rendering, and the full Chromium suite (36 passed, 4 fixture-gated scenarios skipped).
+- The required reusable browser smoke client completed against the live game without a browser-error artifact. Inspected `tmp/housekeeping-history-smoke/shot-0.png`; the Play UI renders normally.
+- The actively used live server was not restarted, so it still needs a later restart to load this backend change.
+- TODO: none.
+
+Original prompt: Restart the server. Then add an enable/disable and interval config for the tonal scale check, with an interval of 5 by default.
+
+- Restarted the live server first with the same `config.yaml.kimi` override. Port 7777 is healthy, and the preceding housekeeping-history backend change is loaded.
+- Audit result: runtime enable gating, strict boolean/integer validation, persisted cadence, `enabled: true`, and `interval: 5` already exist. The missing surface is the System Configuration form, which currently exposes neither tonal-scale setting.
+- Added a Tonal Scale Evaluation section to System Configuration with an enabled checkbox and integer interval field. The checkbox submits an explicit false value when cleared; the interval defaults to 5 and requires at least 1.
+- Added source-level and Chromium coverage for defaults plus enabled/disabled form submissions, and documented the controls in `docs/config.md` and `docs/README.md`.
+- Inspected `tmp/tonal-scale-config-controls/shot-0.png`; the live configuration page visibly shows the enabled control checked and interval 5.
+- Validation passed: focused tonal-scale unit tests, JavaScript syntax checks, the focused config-page browser test, and the full Chromium suite (37 passed, 4 fixture-gated scenarios skipped).
+- The restarted live server remains running on port 7777 and `/api/hello` responds normally.
+- TODO: none.
+
+Original prompt: Add an AI model setting `unload_during_image_generation`, default false. When enabled, batch any additional image-prompt generation immediately, unload the active llama.cpp router model before Comfy renders, and reload it after all renders finish, asking ComfyUI to unload its models first when possible.
+
+- Began by auditing the documented image prompt batching/render-job lifecycle, ComfyUI client surface, AI model configuration, and llama.cpp router integration before changing concurrency behavior.
+- Added the default-false `ai.unload_during_image_generation` setting, prompt-specific override resolution, strict backend/engine validation, and a System Configuration checkbox.
+- Added a fair exclusive LLM lifecycle gate: active requests drain before unload and new text requests wait until the image lifecycle releases the gate.
+- Added llama.cpp router `/models`, `/models/unload`, and `/models/load` integration with status polling; ComfyUI `/free` cleanup requests both model unload and memory release.
+- Image-prompt requests flush without the normal debounce when enabled. Rendering waits until prompt generation is quiescent, drains every queued render with normal configured concurrency, frees ComfyUI, and reloads the exact effective image-prompt model. Prompt requests arriving while rendering wait for the reload and begin the next cycle.
+- Focused router, lifecycle ordering/failure, LLM gate, prompt batching, Comfy cleanup, config, image race, and Chromium form tests pass. The broader image and LLM suites also pass apart from two unrelated local-fixture issues: `config.yaml.qwen35B-A3B` lacks the `Connection: close` header its source test expects, and the fake Cline child process is polluted by the host npm startup warning.
+- Added `LlamaCppRouterClient` and `ImageGenerationModelLifecycle` class docs and updated ComfyUIClient, LLMClient, images API, server LLM, config, and documentation-index notes.
+- The required reusable browser client passed outside the restricted Chromium sandbox. Inspected `tmp/ai-unload-image-config-final/shot-0.png`; the new checkbox is visible, unchecked by default, and uses the standard checkbox layout. No browser-error artifact was produced.
+- Full `npm run test:e2e:headless` passed: 38 tests passed and 4 fixture-gated scenarios skipped.
+- The existing live port-7777 process was not restarted for this task, so a later restart is required to activate the new backend lifecycle there.
+- TODO: none.
+
+Original prompt: In the running prompts interface, if the model name is more than 10 characters long, truncate it and add a `...` symbol to the end.
+
+- Audited the prompt-progress UI. Model names are displayed in the full tracker table and in each modeless prompt viewer subtitle; the compact one-line dock does not display a model name.
+- The display-only formatter will preserve the underlying full model identifier, leave names of exactly 10 characters unchanged, and render longer names as their first 10 characters plus `...`.
+- Added one Unicode-safe display formatter and applied it to the full tracker table and prompt viewer subtitle. Truncated values retain their full model identifier in hover text.
+- JavaScript syntax checks and the prompt-progress source suite pass. The focused Chromium suite passes 5/5, including long-name and exact-10-character boundary assertions.
+- Inspected `tmp/prompt-progress-model-name-truncation.png`; both the table and open viewer visibly show `abcdefghij...`, while the 10-character `1234567890` value remains intact.
+- The required reusable browser client passed outside the restricted Chromium sandbox with no error artifact. Inspected `tmp/prompt-model-truncation-smoke/shot-0.png`; the live Play UI renders normally.
+- Updated `docs/ui/chat_interface.md`, `docs/ui/modals_overlays.md`, and `docs/README.md`.
+- Full `npm run test:e2e:headless` passed on the clean rerun: 39 tests passed and 4 fixture-gated scenarios skipped. The first attempt immediately after the focused suite hit a transient Playwright web-server startup failure; port 4173 was clear, and the unchanged rerun completed successfully.
+- TODO: none.
+
+Original prompt: If `unload_during_image_generation` is enabled, tell ComfyUI to unload its models before any LLM prompt is run.
+
+- Audited the shared LLM transport and ComfyUI initialization paths. Every real transport attempt acquires the model-lifecycle shared gate immediately before the request, which is the safe point to free ComfyUI without racing an active image-render lifecycle.
+- The current Qwen override has image rendering disabled while the unload mode is enabled, so the implementation must initialize a control-only ComfyUI client for `/free` even when render jobs themselves are disabled.
+- Pre-prompt ComfyUI cleanup will be strict: if the enabled mode cannot unload ComfyUI, the LLM request must not start and the existing prompt error path will surface the failure.
+- Added an `LLMClient` pre-transport Comfy cleanup handler. Each real request attempt evaluates its effective AI profile after overrides, acquires shared model-lifecycle access, and runs the handler before starting prompt progress or contacting any text backend.
+- Cleanup failure is tagged and propagated immediately, so the text transport never starts and the direct Comfy error remains visible instead of degrading into an empty model response.
+- Server startup now initializes and connectivity-checks ComfyUI for cleanup-only use whenever the mode is enabled in the base AI config or any model override, even if `imagegen.enabled` is false. Missing cleanup-only Comfy server settings fail configuration validation.
+- Focused syntax and LLM/image-lifecycle/config tests pass.
+- Updated LLMClient, ComfyUIClient, server flow, config, images API, and documentation-index notes.
+- Exact Qwen override startup passed on temporary port 4174: configuration validation succeeded, ComfyUI was reachable, and startup reported both cleanup-only initialization and pre-prompt cleanup readiness while image rendering remained disabled.
+- The focused suites pass directly: 5 LLM lifecycle cases, 6 unload/config/Comfy cases, and 5 image lifecycle cases. Fifteen broader LLM/image files pass; the sole failure remains the unrelated existing `config.yaml.qwen35B-A3B` fixture assertion for a missing `Connection: close` header.
+- The required reusable browser client passed with no browser-error artifact. Inspected `tmp/comfy-pre-prompt-cleanup-smoke/shot-0.png`; the live Play UI renders normally.
+- Full `npm run test:e2e:headless` passed: 39 tests passed and 4 fixture-gated scenarios skipped.
+- Restarted the live port-7777 game with `config.yaml.qwen35B-A3B`. The health endpoint responds normally, and startup confirms ComfyUI is initialized for cleanup-only use with strict pre-prompt model cleanup ready.
+- TODO: none.
+
+Original prompt: An image prompt was generated after entering a new location, but no image rendered. Diagnose and apply the router reliability fix.
+
+- Live job inspection showed five image jobs failed at 0% before reaching ComfyUI. Both render-lifecycle starts aborted because llama.cpp router `GET /models` returned `socket hang up`; the ComfyUI queue remained empty and the router was healthy again afterward.
+- Restored `ai.headers.Connection: close` in `config.yaml.qwen35B-A3B`, satisfying the existing streamed-transport regression and preventing stale pooled connections from being reused for router management.
+- Added two bounded retries after the initial read-only `GET /models` attempt. Network errors, HTTP 408/429, and HTTP 5xx responses retry after 250 ms; non-transient client errors, malformed responses, and model action POST failures remain immediate explicit failures.
+- Added focused transient-recovery and non-transient rejection coverage. Syntax checks and ten router/LLM/image lifecycle regression files pass, including the previously failing Qwen connection-close assertion.
+- Updated `LlamaCppRouterClient`, configuration, and documentation-index notes.
+- Restarted the live port-7777 server with `config.yaml.qwen35B-A3B`. Health checks pass, image generation and ComfyUI initialize successfully, and the llama.cpp router reports the configured Gemma model loaded when queried with `Connection: close`.
+- The five previously failed jobs were runtime-only and were not retried automatically; their images must be requested again.
+- TODO: none.
+
+Original prompt: Tiny-brain event chunks returning three or more events should be accepted rather than failing the event-check turn.
+
+- Audited `Events.parseTinyBrainEventXmlChunk(...)`, staged chunk assembly, and the downstream monolithic event parser. The assembly and application paths already preserve arbitrary event counts; only an explicit parser guard rejected chunks larger than two.
+- Removed the two-event hard rejection. The staged prompt still asks for 1-2 events per checkpoint for pacing, but every well-formed chunk with at least one event is accepted and all returned event elements are preserved.
+- Added regression coverage proving a three-event chunk is retained intact while empty and malformed chunks still fail explicitly.
+- Syntax checks and five focused tiny-brain event, XML event, sequencing, destination-resolution, and travel-time suites pass together. The standalone player-action tiny-brain template suite still has an unrelated existing checkpoint-count failure (`0 !== 8`) outside the event parser path.
+- Updated `Events`, server LLM flow, and documentation-index notes.
+- Restarted the live port-7777 server with `config.yaml.qwen35B-A3B`; configuration and ComfyUI initialization pass and `/api/hello` is healthy.
+- The prior failed movement turn was not replayed, so its player location remains unchanged until a new movement action succeeds.
+- TODO: none.
+Original prompt: Fix location thing generation so malformed XML does not silently leave locations without items or scenery.
+
+- Diagnosed Hearthside Market generation: six objects were returned, but an invalid generated `moduleSlots` value caused the whole parse to fail; `parseThingsXml` converted that failure to `[]`, and location expansion treated it as success.
+- `parseThingsXml` now propagates parse/registered-field errors and can opt into strict XML parsing; malformed registered array/object JSON reports the field and expected JSON shape.
+- Location thing generation now strictly parses and validates each response before creating anything, retries the complete prompt up to three times, and propagates exhausted failures through location expansion instead of accepting `[]`. Explicit zero/zero generation hints remain valid.
+- Added focused coverage for the Hearthside Market `moduleSlots` shape, malformed closing tags, retry wiring, and exhausted-failure propagation. Targeted syntax checks and parser/retry tests pass.
+- Updated `docs/classes/Thing.md`, `docs/server_llm_notes.md`, `docs/slashcommands/ImportItemCommand.md`, and `docs/README.md`.
+- Verification passed: syntax checks; focused registered-field, strict XML, retry-wiring, alteration, import, module-schema, and container-prompt tests; browser suite with 39 passed and 4 fixture-gated skips. The required browser smoke client produced `tmp/location-things-retry-smoke/shot-0.png`; it was visually inspected and produced no console-error artifact.
+- Created safety save `2026-08-03T00-10-31-689Z_Monster_Girl_Life_2026-06b-Baato-The_Mossy_Hearth-char_2-msch3m2x`, restarted port 7777 with `config.yaml.qwen35B-A3B` plus that startup save, and verified Baato was restored at `loc_10` on the healthy updated server.
+- The already-expanded Hearthside Market batch was not retroactively regenerated; the validation/retry behavior applies when location things are generated after this restart.
+- TODO: none.
+
+Original prompt: Determine whether a malformed final TinyBrain response reruns the whole staged prompt; ensure only the final step is retried.
+
+- Verified that the final response already runs through `TinyBrainPromptRunner.#runCompletionStep(...)` with `isFinal: true` and the integration-specific final parser.
+- A final parse failure retains the accumulated checkpoint/tool transcript, removes only the malformed terminal assistant response, and retries the unchanged final prompt segment under `ai.retryAttempts`; completed checkpoints are not rerun.
+- Added explicit regression coverage that deliberately fails both an ordinary checkpoint and the final response, then confirms each retry preserves its prompt exactly once and reports the correct final-step parse-failure metadata.
+- The focused regression and JavaScript syntax check pass. The entire standalone test file still contains its existing unrelated real-template checkpoint-count failure (`0 !== 8`).
+- No runtime code or documented behavior changed, so the live server did not require a restart.
+- TODO: none.
+
+Original prompt: On the New Game screen, allow the user to select a starting month and day.
+
+- Added required Starting Month and Starting Day selectors beside the existing starting level/time controls. Stored setting calendars provide named months and exact day counts; settings whose calendars will be generated show honest ordinal `Month N` labels and a 31-day provisional selector.
+- Month values are submitted and saved as one-based calendar positions, so custom month names do not leak into the API contract. Changing to a shorter known month leaves the day unselected instead of silently coercing it.
+- Added `Globals.getCalendarDayIndex(...)` to strictly convert one-based month/day values into canonical year-one `dayIndex`.
+- New-game setup now resolves and validates the selected date against the actual stored/generated calendar before destructive runtime reset, then combines that day index with the selected starting hour. Invalid dates return `400` while preserving the loaded game.
+- Saved New Game form profiles now persist `startMonth` and `startDay`, defaulting older profiles to month 1/day 1.
+- Syntax checks, focused calendar unit tests, and the focused Chromium New Game suite pass. The required browser smoke client passed without console errors; `tmp/new-game-start-date-focus/shot-0.png` was visually inspected and shows the date controls aligned cleanly in the existing grid.
+- Updated New Game UI, game API, Globals, setting-studio status, and documentation-index notes.
+- Broader focused calendar/settings/reset tests pass. Full Chromium regression passed with 39 tests and 4 fixture-gated skips.
+- Created fresh safety save `2026-08-03T01-40-54-910Z_Monster_Girl_Life_2026-06b-Baato-The_Mossy_Hearth-char_2-msckbuny`, then restarted port 7777 with `config.yaml.qwen35B-A3B` and that save. Health checks pass with Baato restored at The Mossy Hearth.
+- The live focused New Game suite passes 2/2 outside the restricted Chromium sandbox. Visually inspected `tmp/new-game-start-date-live/shot-0.png`; it shows the active calendar's January selector, day selector, and existing hour control aligned correctly, with no console-error artifact.
+- TODO: none.
+
+Original prompt: If `unload_model_on_switch` is true, unload the previous model through the router API before a prompt runs with a different model.
+
+- Added the root `unload_model_on_switch` configuration setting with a strict boolean validator and a default of `false`.
+- Real LLM transports now track their effective router/model target after endpoint and model overrides. The first prompt establishes the baseline; a later prompt targeting a different endpoint or model unloads the previous target through its llama.cpp router before the replacement request is sent.
+- Enabled mode uses the exclusive model-lifecycle gate for the complete text transport, so an active stream cannot be unloaded by a concurrent prompt and prompt ordering remains deterministic. Same-model prompts do not issue router commands.
+- Router unload failures are propagated immediately and prevent the replacement model request from starting. Forced test outputs do not affect live model tracking.
+- Startup validates that enabled configurations use the `openai_compatible` backend. Updated the configuration, LLM client, router client, server-flow, and documentation-index notes.
+- JavaScript syntax checks and the focused model-switch suite pass 4/4. Six combined model-switch, lifecycle-gate, priority, router, image-lifecycle, and image-unload/config suites pass together.
+- Exact startup validation passed with `config.yaml.qwen35B-A3B` on the temporary verification port.
+- Created fresh safety save `2026-08-03T02-55-22-916Z_Monster_Girl_Life_2026-06b-Baato-Valley_Entrance-char_2-mscmzm78`, then restarted port 7777 with `config.yaml.qwen35B-A3B` and that save. `/api/hello` is healthy and Baato's Valley Entrance game was restored.
+- TODO: none.
+Original prompt: When an image is actively rendering, replace its placeholder icon with a spinner (if it's a seasonal location image, just put the spinner on top of the image). Then, at the bottom of the image placeholder, put a thin progress bar that shows the current progress of the current image.
+
+- Tracing ComfyUI WebSocket progress, shared image-job state, ordinary placeholders, and seasonal location image overlays.
+- Confirmed progress semantics: display ComfyUI's exact `value/max` for the currently executing sampler node; a multi-sampler workflow may reset when the next sampler begins.
+- Implemented the first integration pass: ComfyUI WebSocket progress parsing, server `renderProgress` realtime fields, image-manager active render caching, and spinner/progress overlays with seasonal-location image preservation.
+- The server now ends active-render state as soon as ComfyUI sampling completes, before output download/save, and clears it on timeout, failure, and stale-runtime exits.
+- Added focused ComfyUI progress unit coverage and a Playwright UI regression covering an opaque ordinary placeholder overlay, a translucent seasonal-location overlay, exact bar widths, and cleanup on completion.
+- Validation passed: altered JavaScript syntax checks, 11 focused image/config/lifecycle tests, the focused Playwright spec, visual inspection of `tmp/image-render-progress-overlays.png`, and the develop-web-game smoke client against the live game.
+- Updated `docs/api/images.md`, `docs/classes/ComfyUIClient.md`, `docs/ui/chat_interface.md`, and `docs/README.md`.
+Original prompt: Enable live deslop for TinyBrain drafts and use roughly 500-token chunks without losing llama.cpp prefix-cache performance.
+
+- Live deslop now checks TinyBrain's first- and second-draft checkpoints in plain-prose mode as well as final structured XML prose; planning and analysis checkpoints remain excluded.
+- Checked stages use OpenAI-compatible non-stream responses capped at 500 new tokens with `logprobs`/`top_logprobs`. A full batch continues from assistant prefill up to the original logical token budget.
+- Tools and `tool_choice` remain unchanged across length continuations and rewind corrections, preserving the stable tool-bearing context prefix that llama.cpp can cache.
+- Plain drafts exclude XML markup and `<hidden>` contents, treat every XML tag as an n-gram/rewind boundary, delay unfinished words, and explicitly inspect an alphanumeric final word when the response completes.
+- Added focused coverage for draft-stage selection, plain extraction, final-word correction, multi-batch continuation, logprob alignment, assistant prefill, and tool preservation. The focused live-deslop, prefill, streaming, and chat-tool suites pass; the standalone TinyBrain suite retains its documented unrelated real-template checkpoint-count failure (`0 !== 8`).
+- Updated live-deslop, LLM client, TinyBrain runner, configuration, slop/repetition, server-flow, and documentation-index notes.
+- Restarted port 7777 with `config.yaml.qwen35B-A3B` and the latest Baato save. Startup cleared ComfyUI VRAM immediately before launching managed llama.cpp PID 3273273; both health endpoints pass and ComfyUI remained user-managed.
+- The required browser client passed with no console/page error artifact. Visually inspected `tmp/live-deslop-draft-chunks-loaded-smoke/shot-0.png`; the restored Ember Hollow campaign renders normally.
 - TODO: none.

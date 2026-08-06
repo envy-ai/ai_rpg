@@ -162,6 +162,16 @@ function makeLocation(overrides = {}) {
         baseLevel: overrides.baseLevel ?? 1,
         visited: overrides.visited ?? false,
         lastVisitedTime: overrides.lastVisitedTime ?? null,
+        generationHints: {
+            numItems: null,
+            numScenery: null,
+            numNpcs: null,
+            numHostiles: null,
+            hasWeather: null,
+            ...(overrides.generationHints || {})
+        },
+        imageVariants: { ...(overrides.imageVariants || {}) },
+        imageVariantClearCount: 0,
         exits: overrides.exits || {},
         getAvailableDirections() {
             return Object.keys(this.exits);
@@ -173,6 +183,11 @@ function makeLocation(overrides = {}) {
             this.statusEffects = Array.from(value);
             return this.statusEffects;
         },
+        clearImageVariants() {
+            this.imageVariants = {};
+            this.imageVariantClearCount += 1;
+            return [];
+        },
         toJSON() {
             return {
                 id: this.id,
@@ -182,6 +197,8 @@ function makeLocation(overrides = {}) {
                 baseLevel: this.baseLevel,
                 visited: this.visited,
                 lastVisitedTime: this.lastVisitedTime,
+                generationHints: this.generationHints,
+                imageVariants: this.imageVariants,
                 exits: this.exits,
                 statusEffects: this.statusEffects || []
             };
@@ -346,6 +363,7 @@ function makeRuntime({
         getFactions: () => new Map(factions.map(entry => [entry.id, entry])),
         getRegionsMap: () => new Map(regionList.map(entry => [entry.id, entry])),
         getPendingRegionStubs: () => new Map(),
+        clearLocationImageVariants: targetLocation => targetLocation.clearImageVariants(),
         getModExtensionRegistry: () => modExtensionRegistry
     });
 }
@@ -387,6 +405,7 @@ test('updateObjectFields tool schema exists', () => {
     assert.ok(tool.parameters.properties.objectType.enum.includes('quest'));
     assert.equal(tool.parameters.properties.object.type, 'string');
     assert.equal(tool.parameters.properties.fields.type, 'object');
+    assert.match(tool.description, /For locations, hasWeather accepts "yes", "no", "sheltered", or null/);
 });
 
 test('updateCharacterFields applies allowed scalar and map fields directly to an NPC', async () => {
@@ -594,6 +613,77 @@ test('updateObjectFields applies allowed thing, location, region, and faction fi
         assert.equal(result.toolInvocations[0].metadata.objectType, objectType);
         assert.deepEqual(result.toolInvocations[0].metadata.updatedFields, Object.keys(fields));
     }
+});
+
+test('updateObjectFields updates location hasWeather canonically and clears image variants', async () => {
+    const location = makeLocation({
+        generationHints: {
+            numItems: 3,
+            hasWeather: 'no'
+        },
+        imageVariants: {
+            'clear-day': { imageId: 'variant-1' }
+        }
+    });
+    const runtime = makeRuntime({
+        locations: [location],
+        firstResponse: toolResponse({
+            objectType: 'location',
+            object: location.id,
+            fields: {
+                hasWeather: 'outside'
+            }
+        }, 'updateObjectFields')
+    });
+
+    const result = await runtime.runChatCompletionWithToolLoop({
+        requestOptions: { messages: [{ role: 'user', content: '@Show the weather outside this sheltered location.' }] },
+        metadataLabel: 'test_update_object_fields_location_has_weather'
+    });
+
+    assert.equal(location.generationHints.hasWeather, 'sheltered');
+    assert.equal(location.generationHints.numItems, 3);
+    assert.deepEqual(location.imageVariants, {});
+    assert.equal(location.imageVariantClearCount, 1);
+    assert.equal(result.toolInvocations[0].metadata.status, 'success');
+    assert.deepEqual(result.toolInvocations[0].metadata.updatedFields, ['hasWeather']);
+});
+
+test('updateObjectFields rejects invalid location hasWeather without mutation', async () => {
+    const location = makeLocation({
+        generationHints: {
+            numItems: 2,
+            hasWeather: 'yes'
+        },
+        imageVariants: {
+            'rain-day': { imageId: 'variant-2' }
+        }
+    });
+    const runtime = makeRuntime({
+        locations: [location],
+        firstResponse: toolResponse({
+            objectType: 'location',
+            object: location.id,
+            fields: {
+                hasWeather: 'sometimes'
+            }
+        }, 'updateObjectFields')
+    });
+
+    const result = await runtime.runChatCompletionWithToolLoop({
+        requestOptions: { messages: [{ role: 'user', content: '@Set uncertain location weather.' }] },
+        metadataLabel: 'test_update_object_fields_location_has_weather_invalid'
+    });
+
+    assert.equal(result.toolInvocations[0].metadata.error, true);
+    assert.equal(result.toolInvocations[0].metadata.code, 'invalid_arguments');
+    assert.match(result.toolInvocations[0].metadata.message, /hasWeather must be "yes", "no", "sheltered"/);
+    assert.equal(location.generationHints.hasWeather, 'yes');
+    assert.equal(location.generationHints.numItems, 2);
+    assert.deepEqual(location.imageVariants, {
+        'rain-day': { imageId: 'variant-2' }
+    });
+    assert.equal(location.imageVariantClearCount, 0);
 });
 
 test('updateObjectFields applies registered first-class Thing fields', async () => {

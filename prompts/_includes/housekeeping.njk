@@ -1,11 +1,19 @@
 <task>Your task is to look at the context above and make sure that things are being tracked, both for yourself and for the user. Follow the instructions below, thinking out loud with each step. Note that it's okay if any or all of these lists are empty, as too many of these can become overwhelming, clutter the tracking system, and lose their impact.</task>
 
-{% if housekeepingActionText or housekeepingEventText %}
-<latestEventContext>
-{% if housekeepingActionText %}<playerAction>{{ housekeepingActionText }}</playerAction>{% endif %}
-{% if housekeepingEventText %}<eventText>{{ housekeepingEventText }}</eventText>{% endif %}
-</latestEventContext>
-{% endif %}
+<housekeepingContextInstructions>
+Specifically examine every turn in housekeepingTurnHistory, ordered from oldest to newest. Use each turn's playerAction, all prose, and all eventText together when deciding what should be added, updated, or removed. Do not focus only on the final turn.
+{% if housekeepingHistoryMode == 'initial-interval' %}Housekeeping has no prior successful-run boundary, so this context contains up to the most recent {{ housekeepingInterval }} player turns, matching the configured housekeeping interval.{% else %}This context contains every player turn recorded after the last successful housekeeping run, including the current turn.{% endif %}
+</housekeepingContextInstructions>
+
+<housekeepingTurnHistory>
+{% for turn in housekeepingTurnHistory %}
+  <turn>
+    {% if turn.playerAction %}<playerAction>{{ turn.playerAction }}</playerAction>{% endif %}
+    {% for proseText in turn.prose %}<prose>{{ proseText }}</prose>{% endfor %}
+    {% for eventText in turn.eventText %}<eventText>{{ eventText }}</eventText>{% endfor %}
+  </turn>
+{% endfor %}
+</housekeepingTurnHistory>
 
 {% if housekeepingInstructions %}Follow these instructions when determining what to track and how to update trackers, and then output the housekeeping XML as specified below:
 {{ housekeepingInstructions }}

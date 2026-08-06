@@ -91,7 +91,7 @@ function initializeEventsForHousekeepingTest({
         getCurrentPlayer: () => player,
         getConfig: () => Globals.config
     });
-    Events.setHousekeepingPromptRunner(async (payload) => {
+    const housekeepingRunner = async (payload) => {
         housekeepingCalls.push({
             textToCheck: payload.textToCheck,
             actionText: payload.actionText,
@@ -99,7 +99,11 @@ function initializeEventsForHousekeepingTest({
             structured: payload.eventResult?.structured || null
         });
         return { status: 'ok' };
-    });
+    };
+    housekeepingRunner.start = () => {
+        throw new Error('Housekeeping must not start before current event outcomes are finalized.');
+    };
+    Events.setHousekeepingPromptRunner(housekeepingRunner);
 }
 
 test('XML event checks run silent housekeeping after applying event outcomes', async () => {

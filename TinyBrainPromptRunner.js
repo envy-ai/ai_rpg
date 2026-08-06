@@ -544,7 +544,19 @@ class TinyBrainPromptRunner {
                 attempt,
                 isFinal,
                 logFilePath: currentLogPath,
-                queueReservation
+                queueReservation,
+                appendLogSection: ({ title, content } = {}) => {
+                    if (typeof title !== 'string' || !title.trim()) {
+                        throw new Error('Tiny-brain appended log sections require a non-empty title.');
+                    }
+                    if (content === undefined || content === null || !String(content).trim()) {
+                        throw new Error('Tiny-brain appended log sections require non-empty content.');
+                    }
+                    this.#appendLog({
+                        logFilePath: currentLogPath,
+                        sections: [{ title: title.trim(), content: String(content) }]
+                    });
+                }
             });
             const aiResponse = completion?.aiResponse;
             if (typeof aiResponse !== 'string') {

@@ -64,7 +64,10 @@ Region exits: [comma-separated list of connected regions]{%- endset %}
 {% set defaultStartingLocation = defaults.startingLocation | default('') %}
 {% set defaultPlayerLevel = defaults.playerLevel | default(1) %}
 {% set defaultStartingCurrency = defaults.startingCurrency | default(0) %}
+{% set defaultStartMonth = defaults.startMonth | default(1) %}
+{% set defaultStartDay = defaults.startDay | default(1) %}
 {% set defaultStartTime = defaults.startTime | default(9) %}
+    {% set calendarMonths = defaults.calendarMonths or [] %}
     {% set availableClasses = defaults.availableClasses or [] %}
     {% set availableRaces = defaults.availableRaces or [] %}
     {% set defaultPlayerClass = defaults.playerClass | default('') %}
@@ -122,6 +125,30 @@ Region exits: [comma-separated list of connected regions]{%- endset %}
                             <label for="playerLevel">Starting Level</label>
                             <input type="number" id="playerLevel" name="playerLevel" value="{{ defaultPlayerLevel }}" data-default-value="{{ defaultPlayerLevel }}">
                             <div class="help-text">Controls attribute and skill point pools.</div>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="startMonth">Starting Month</label>
+                            <select id="startMonth" name="startMonth" data-default-value="{{ defaultStartMonth }}" required>
+                                {% for month in calendarMonths %}
+                                    <option value="{{ loop.index }}" data-length-days="{{ month.lengthDays if month.lengthDays else '' }}" {% if loop.index == defaultStartMonth %}selected{% endif %}>{{ month.name }}</option>
+                                {% endfor %}
+                            </select>
+                            <div class="help-text">
+                                {% if defaults.calendarUsesSettingDefinition %}
+                                    Uses the active world's calendar.
+                                {% else %}
+                                    Calendar names will be generated when the game starts.
+                                {% endif %}
+                            </div>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="startDay">Starting Day</label>
+                            <select id="startDay" name="startDay" data-default-value="{{ defaultStartDay }}" required>
+                                <option value="{{ defaultStartDay }}" selected>{{ defaultStartDay }}</option>
+                            </select>
+                            <div class="help-text">Day within the selected starting month.</div>
                         </div>
 
                         <div class="form-group">

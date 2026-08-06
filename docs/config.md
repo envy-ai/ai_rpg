@@ -69,6 +69,66 @@ stagger_concurrent_prompts: 4
 - `max_concurrent_requests_all_models` is optional. When set to a positive integer, `LLMClient` enforces that cap across all real text-generation requests regardless of backend, model, API key, OAuth identity, or CLI bridge session key. Each request still also honors the existing per-model/API-key semaphore from `ai.max_concurrent_requests`.
 - `stagger_concurrent_prompts` is the number of seconds between staggered prompt launches. It defaults to `4` when omitted or blank. Event checks launch immediately, need-bar event checks launch after one interval, and quest checks launch after two intervals. Values must be non-negative finite numbers.
 
+## Pause AI Model During Image Generation
+
+Two mutually exclusive AI settings coordinate GPU ownership with ComfyUI. Router mode uses `unload_during_image_generation`; locally managed process mode uses `terminate_during_image_generation`. Both modes flush image-prompt writing immediately, wait for active text requests, hold the exclusive model-lifecycle gate during the complete render batch, and require `ai.backend: openai_compatible` plus `imagegen.engine: comfyui`.
+
+### Router unload mode
+
+`ai.unload_during_image_generation` controls coordinated GPU ownership between a llama.cpp text model and ComfyUI:
+
+```yaml
+ai:
+  unload_during_image_generation: false
+```
+
+The setting defaults to `false` and must be a boolean. It is an AI model setting, so a matching `ai_model_overrides` profile can enable or disable it for specific prompt labels; the same effective profile supplies the model, endpoint, headers, and credentials used for router management.
+
+For router servers that can leave streamed HTTP connections open, configure `ai.headers.Connection: close`. The header is reused for both chat and router-management requests, preventing a stale pooled connection from causing a later `/models` status read to fail with `socket hang up`.
+
+Before every real LLM transport attempt whose effective setting is `true`, the server calls ComfyUI `/free` with both model-unload and memory-release flags. This happens after the request acquires the shared model-lifecycle gate and before any request reaches the text backend. A cleanup failure prevents the prompt from starting and surfaces as an explicit prompt error. When image rendering itself is disabled but any AI profile enables this mode, the server still initializes and connectivity-checks a ComfyUI client solely for pre-prompt cleanup.
+
+When enabled:
+
+1. Image-prompt writing requests flush immediately and finish before rendering begins.
+2. Active text requests finish, while new text requests wait behind an exclusive lifecycle gate.
+3. The server verifies the configured model through llama.cpp router `GET /models`, then calls `POST /models/unload` and waits for `unloaded`. Transient status-read failures receive two bounded retries; non-transient failures still surface immediately.
+4. Every queued ComfyUI render runs using normal `imagegen.maxConcurrentJobs` concurrency.
+5. After the render queue is empty, the server asks ComfyUI `/free` to unload models and free memory, calls llama.cpp `POST /models/load`, waits for `loaded`, and releases queued text requests.
+
+The enabled setting requires `ai.backend: openai_compatible` and `imagegen.engine: comfyui`; incompatible configurations fail validation. The llama.cpp endpoint must be a router-mode server that exposes `/models`, `/models/unload`, and `/models/load`. ComfyUI cleanup is optional and logs a warning on failure, but llama.cpp reload is still attempted. Image-prompt requests received during rendering wait until the current model has reloaded, then begin the next cycle.
+
+The System Configuration page exposes this setting as **Unload During Image Generation** in the AI section.
+
+### Managed local-process termination mode
+
+`ai.terminate_during_image_generation` owns a local llama.cpp process started by `ai.local_startup_script_path`:
+
+```yaml
+ai:
+  unload_during_image_generation: false
+  terminate_during_image_generation: true
+  local_startup_script_path: /absolute/path/to/start-llama.sh
+```
+
+`terminate_during_image_generation` defaults to `false` and must be a boolean. When it is true, `local_startup_script_path` is required, must resolve to an executable regular file, and may be absolute or relative to the AI RPG project directory. The termination and router-unload settings cannot both be true. As with router mode, the effective `image_prompt_generation` profile determines whether the mode is enabled and can supply the startup-script path.
+
+This mode does not use llama.cpp router endpoints or model unload/load requests. It only stops the saved local process group before rendering and starts the configured script afterward. The separate root-level `unload_model_on_switch` feature is independent and should remain `false` for a fixed-model startup script unless prompt-to-prompt router switching is explicitly wanted.
+
+On AI RPG startup, the server initializes the ComfyUI client, strictly calls ComfyUI `/free` with both model-unload and memory-release flags, and immediately executes the startup script. Node retains the resulting PID in memory. The script should use `exec` for its final llama.cpp command; the managed child is also placed in its own process group so wrapper descendants receive the termination signal. Startup waits for the llama.cpp `/health` endpoint to return HTTP 200 before server initialization continues. A cleanup, spawn, early-exit, or readiness failure aborts startup explicitly.
+
+For each image-render batch:
+
+1. Image-prompt writing becomes quiescent and active text requests finish.
+2. The server sends `SIGTERM` to the saved llama.cpp process group and waits for exit. A process that ignores the termination timeout receives `SIGKILL`; failure remains fatal and rendering does not start.
+3. The queued ComfyUI render batch drains normally.
+4. Even if rendering failed, the server strictly calls ComfyUI `/free` and then immediately runs the startup script again.
+5. The server waits for `/health`, then releases queued text prompts. If rendering and restart both fail, both errors are preserved in an `AggregateError`.
+
+The managed llama.cpp process is also terminated during normal AI RPG shutdown. A guarded self-restart stops it before spawning the replacement AI RPG process, preventing the replacement startup script from colliding with the old llama.cpp port. Configuration-page changes require the documented server restart to replace the process owner.
+
+The System Configuration page exposes **Terminate During Image Generation** and **Local llama.cpp Startup Script** in the AI section.
+
 ## Mod enablement
 
 You can enable or disable discovered mods from the merged YAML config:
@@ -187,6 +247,8 @@ tonal_scale_evaluation:
 
 `interval` defaults to `5` and must be an integer greater than or equal to `1` when provided. The cadence counts completed player-action turns after `Player.finalizeTurn()` runs. The prompt renders `prompts/_includes/tonal-scale-evaluation.njk` through the shared base-context wrapper with `promptType: "tonal-scale-evaluation"`, logs through `LLMClient.logPrompt()` as `tonal_scale_evaluation`, extracts only the text inside `<tonalScaleEvaluation>`, and stores it in save metadata. Normal base-context prompts inject the latest stored result before `<currentConditions>` inside a `<tonalScaleEvaluation>` block with a turns-ago staleness warning; the block is omitted when rendering the tonal evaluation prompt itself. `/tonal_scale_evaluation` runs the same prompt immediately and stores a visible `tonal-scale-evaluation` chat entry that is excluded from every LLM-facing prompt-history path.
 
+The System Configuration page exposes both settings in its **Tonal Scale Evaluation** section. The checkbox writes `tonal_scale_evaluation.enabled`; the numeric interval field writes `tonal_scale_evaluation.interval`, defaults to `5`, and enforces a minimum of `1` in the browser before server-side validation.
+
 ## Mystery Box Cleanup
 
 `mystery_box_cleanup.interval` controls how often eligible player-action turns schedule the non-blocking mystery cleanup prompt.
@@ -216,16 +278,16 @@ The automatic housekeeping and quest-completion prompts have independent turn in
 
 ```yaml
 housekeeping:
-  interval: 1
+  interval: 4
 
 quest_checks:
   enabled: true
-  interval: 1
+  interval: 5
 ```
 
-Both intervals default to `1` and must be integers greater than or equal to `1`. An interval of `N` runs the prompt on every Nth eligible check. Housekeeping counts top-level automatic event-check passes; recursive and explicitly suppressed passes do not advance its counter. Split movement counts once after its origin and destination results are merged. The manual `/housekeeping` command bypasses the automatic interval. Quest checks count only when they are enabled and the player has at least one active, unpaused quest; calls with no eligible quests do not advance their counter. A true XML `anyQuestObjectivesCompleted` event signal runs the quest check during the same turn when it has not already run and resets the counter after a successful check.
+Both intervals must be integers greater than or equal to `1`. The runtime fallback is `1` when a key is absent; the shipped `config.default.yaml` sets housekeeping to `4` and quest checks to `5`. An interval of `N` runs the prompt on every Nth eligible check. Housekeeping counts top-level automatic event-check passes; recursive and explicitly suppressed passes do not advance its counter. Split movement counts once after its origin and destination results are merged. Each successful housekeeping prompt advances a persisted player-turn history boundary; the next prompt receives every player turn after that boundary, while the first-ever prompt receives only the latest `housekeeping.interval` turns. The manual `/housekeeping` command bypasses the automatic interval but uses and advances the same successful-run history boundary. Quest checks count only when they are enabled and the player has at least one active, unpaused quest; calls with no eligible quests do not advance their counter. A true XML `anyQuestObjectivesCompleted` event signal runs the quest check during the same turn when it has not already run and resets the counter after a successful check.
 
-The two counters are persisted in save metadata and restored on load, so their cadence continues across restarts. A new game resets both counters. The `/config` page exposes both interval fields.
+The two counters and `lastHousekeepingTurnId` boundary are persisted in save metadata and restored on load, so cadence and housekeeping context continue across restarts. A new game resets both counters and begins without a housekeeping boundary. The `/config` page exposes both interval fields.
 
 ## Per-prompt reasoning effort
 
@@ -665,6 +727,30 @@ Every current or future prompt implemented through `TinyBrainPromptRunner` autom
 
 See [TinyBrainPromptRunner.md](classes/TinyBrainPromptRunner.md) for tag syntax, parsers, retries, and transcript behavior.
 
+## Live deslop
+
+`config.ai.live_deslop` corrects player-action prose from bounded token batches before accepting a branch:
+
+```yaml
+slop_buster: true
+repetition_buster: true
+ai:
+  live_deslop: false
+```
+
+- It defaults to `false` and must be a boolean when present.
+- Enabling it requires `slop_buster: true`, `repetition_buster: true`, and an OpenAI-compatible `player_action` backend. These requirements are validated at startup. The live stages explicitly use non-stream requests regardless of the general `ai.stream` value.
+- It applies to ordinary/TinyBrain final structured prose, including `<prose>`, `<originProse>`, `<betweenProse>`, and `<destinationProse>`. It also applies in plain-prose mode to TinyBrain's first- and second-draft checkpoints. Planning and analysis checkpoints are not inspected; the one-shot TinyBrain attack branch has no separate draft checkpoints, so only its final structured prose is checked.
+- Checked player-action stages request the top 20 token log probabilities and first try streaming while retaining tools. Content deltas without logprobs are preserved verbatim but excluded from live-token inspection, keeping XML tag fragments intact; structured tool calls are accumulated independently from `delta.tool_calls`. If streaming is rejected, supplies invalid or misaligned prose-token metadata, or fails before its first inspectable prose token, the request immediately retries with batches of at most 500 new tokens. That failure is remembered for the current llama.cpp process; a game-server restart clears the latch and a managed llama.cpp restart changes its PID key so streaming is tried once again. A non-stream batch ending with `finish_reason: length` continues from the accepted assistant prefix up to the normal logical token limit. Every completed word boundary is checked with the same history-aware slopword thresholds, regex rules, configured n-grams, 3-token recent-history overlaps, and 6-token extended assistant-history overlaps used by the normal slop-removal pass. Definitions and active custom slop entries are snapshotted once per generation so they are not reparsed for every token.
+- XML markup is not analyzed as prose. Tag names/attributes and `<hidden>` contents are excluded, partial streamed tags are ignored, and tags split configured/repeated n-gram segments so phrases cannot match across XML structure. Rewind search likewise stops at the preceding tag boundary.
+- When a word, regex, or n-gram fires, generation stops before that branch is accepted. The client rewinds to the sampled token at the beginning of the match and continues with the highest-probability untried alternative from that token's returned candidates. If none is viable, it moves backward one word at a time—even before the beginning of the matched phrase—until it finds a viable branch. It never rewinds into the XML tags around the prose.
+- No `logit_bias` or persistent token ban is sent. Tried branches are remembered only inside the current response so an exhausted branch is not selected repeatedly.
+- A corrected continuation uses assistant prefill while retaining the exact original tool definitions and `tool_choice`. llama.cpp supports tools plus prefill in this non-stream mode, which keeps the early tool-bearing prompt prefix cacheable across continuations and rewinds.
+- The ordinary completed-response slop pass still verifies the final parsed prose and handles text introduced by later transformations. Live correction diagnostics are included in the normal `slopRemoval` response/attachment data.
+- If token metadata is missing or does not line up with the generated portion of a batch, or if no returned alternative remains viable after rewinding to the preceding XML boundary/draft start, the request fails explicitly instead of silently accepting the slop branch.
+
+See [LiveDeslop.md](classes/LiveDeslop.md) for the token/word rewind behavior.
+
 ## AI retry wait after errors
 
 `config.ai.waitAfterError` controls how many seconds to wait between automatic retry attempts after retryable non-rate-limit HTTP failures (`5xx`).
@@ -689,6 +775,22 @@ ai:
 - Per-call `LLMClient.chatCompletion({ waitAfterError })` still takes precedence over config values when explicitly provided.
 - Per-call `LLMClient.chatCompletion({ waitAfterRateLimitError })` takes highest precedence for rate-limit retries.
 - Per-call `LLMClient.chatCompletion({ waitAfterNetworkError })` takes highest precedence for network-error retries.
+
+## Unload Model On Switch
+
+`unload_model_on_switch` is a root-level boolean and defaults to `false`:
+
+```yaml
+unload_model_on_switch: false
+```
+
+When enabled, every real text transport uses exclusive access to the shared model-lifecycle gate. The first prompt establishes the current effective endpoint/model without unloading anything. If a later prompt resolves to a different llama.cpp router endpoint or model—including through `ai_model_overrides`—the server checks the previous model through `GET /models`, sends `POST /models/unload` for that previous model when it is loaded, waits for its `unloaded` status, and only then starts the replacement prompt.
+
+This feature is independent of both image-generation handoff settings. Enabling `terminate_during_image_generation` neither requires nor enables `unload_model_on_switch`.
+
+Holding lifecycle exclusivity across the transport prevents a switch from unloading a model that still has an active streamed request. Same-model prompts do not send router management requests, although enabled mode serializes them for deterministic switch ordering. Forced-output fixtures do not affect model tracking because they do not perform a real transport.
+
+Enabled mode requires the effective prompt backend to be `openai_compatible`. Router authentication, custom headers, timeout, and endpoint are retained from the previous prompt's effective target. An unload/status failure is propagated immediately and the replacement prompt is not sent.
 
 ## Character creation point pools
 
@@ -921,9 +1023,9 @@ imagegen:
 - `max_items` is the maximum number of compatible requests in one batch. Reaching the cap flushes the queue immediately.
 - Validation fails if `prompt_generation_attempts` is not a positive integer, `enabled` is not boolean, `delay_ms` is not a non-negative integer, or `max_items` is not a positive integer.
 
-## Image generation thing size overrides
+## Image generation size overrides and portrait layout
 
-`imagegen.default_settings.image` remains the baseline size for generated item and scenery images. You can optionally override those dimensions per thing type with `imagegen.item_settings.image` and `imagegen.scenery_settings.image`.
+`imagegen.default_settings.image` remains the baseline size for generated character, item, and scenery images. You can optionally override those dimensions with `imagegen.character_settings.image`, `imagegen.item_settings.image`, and `imagegen.scenery_settings.image`.
 
 ```yaml
 imagegen:
@@ -931,6 +1033,10 @@ imagegen:
     image:
       width: 1024
       height: 1024
+  character_settings:
+    image:
+      width: null
+      height: null
   item_settings:
     image:
       width: null
@@ -941,9 +1047,10 @@ imagegen:
       height: null
 ```
 
+- `character_settings.image.width` / `height` are optional. `null` or omission falls back to `default_settings.image`. The Play page precomputes the effective aspect ratio and reserves it for empty NPC/party/modal portraits; the player sidebar uses a separate player portrait layout hook with the same effective dimensions.
 - `item_settings.image.width` / `height` are optional. `null` or omission falls back to `default_settings.image`.
 - `scenery_settings.image.width` / `height` are optional. `null` or omission falls back to `default_settings.image`.
-- When provided, override values must be between `64` and `4096`.
+- When provided, character/item/scenery override values must be between `64` and `4096`.
 - If neither the per-type override nor `default_settings.image` provides a usable width/height, startup validation fails instead of silently hardcoding a fallback size.
 
 ## Location weather/lighting image variants

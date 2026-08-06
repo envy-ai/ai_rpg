@@ -1,3 +1,10 @@
+{% set normalizedLocationName = stubName | default('', true) | trim | lower %}
+{% set isExterior = normalizedLocationName.endsWith('exterior') %}
+{% set displayName = stubName | default('', true) | trim %}
+{% if (displayName | lower).endsWith(' exterior') %}
+  {% set displayName = displayName.slice(0, -9) | trim %}
+{% endif %}
+
 {% if originLocationName or originDescription -%}
 <originLocation>
   {% if originLocationName -%}<name>{{ originLocationName }}</name>{% endif %}
@@ -53,7 +60,9 @@ When generating character concepts for this location, follow these additional us
 {{ setting.characterGenInstructions }}
 </userNotes>
 {% endif -%}
-
+{% if isExterior %}
+IMPORTANT: THIS IS THE EXTERIOR OF A BUILDING, NOT THE INTERIOR! Do NOT rename it to be the interior or otherwise treat it as if it were the interior. The interior is a separate region or location that is connected to this location. Do NOT put people who you would expect to find INSIDE the building here unless there's an exceptional reason for them to be here. Shopkeepers, building residents, business employees, and so on should not be generated here; instead, consider generating passersby and other people who might be *outside* the building.
+{% endif %}
 OUTPUT FORMAT:
 Return ONLY the following fields, in this format:
 
@@ -72,11 +81,13 @@ Return ONLY the following fields, in this format:
     <event><!-- 1-2 sentence description of an event --></event>
   </randomStoryEvents>#}
   <characterConcepts>
+    {% if isExterior %}<!-- Character concepts for people who might be found outside of {{ displayName }}. -->{% endif %}
     <!-- If the location is not abandoned, generate 10 interesting character concepts appropriate for this location (if it's abandoned, just leave this section empty). These are not full NPCs, just brief concepts that could be used to create NPCs later. Format them one per line, as follows: -->
     - <!-- 1-2 sentence description of a character concept -->
     - <!-- 1-2 sentence description of a character concept -->
   </characterConcepts>
   <enemyConcepts>
+    {% if isExterior %}<!-- Character concepts for enemies who might be found outside of {{ displayName }}. -->{% endif %}
     <!-- Generate 10 interesting enemy concepts appropriate for this location. These are not full NPCs, just brief concepts that could be used to create hostile NPCs or creatures later. Format them one per line, as follows: -->
     - <!-- 1-2 sentence description of an enemy concept -->
     - <!-- 1-2 sentence description of an enemy concept -->

@@ -70,7 +70,7 @@
 - `aliases`: array of alternate names used during pending-region stub reuse.
 - `relativeLevel`, `numNpcs`, `numHostiles`: numeric generation hints.
 - `controllingFaction`: faction name from generated XML; server instantiation resolves it to an id.
-- `hasWeather`: `yes`, `no`, `outside`, or `null`; boolean/boolean-like inputs normalize to `yes`/`no`.
+- `hasWeather`: `yes`, `no`, `sheltered`, or `null`; boolean/boolean-like inputs normalize to `yes`/`no`, while legacy `outside` values normalize to canonical `sheltered` when generated XML or saved blueprints are loaded.
 
 During `server.js` region instantiation, blueprints become `Location` stubs with stub metadata such as `stubDescription`, `stubShortDescription`, suggested exits, level/NPC/hostile hints, controlling faction id, and weather exposure. Pending region-entry expansion can seed preserved location stubs into a region, match them by normalized name/alias, keep preserved stubs even when a blueprint omits them, and avoid deleting those preserved stubs during rollback.
 

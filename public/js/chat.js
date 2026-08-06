@@ -432,6 +432,7 @@ class AIRPGChat {
         this.chatLog = document.getElementById('chatLog');
         this.messageInput = document.getElementById('messageInput');
         this.sendButton = document.getElementById('sendButton');
+        this.abortTurnButton = document.getElementById('abortTurnButton');
         this.prefixHelpLink = document.getElementById('prefixHelpLink');
         this.prefixHelpModal = document.getElementById('prefixHelpModal');
         this.prefixHelpCloseButton = document.getElementById('prefixHelpCloseBtn');
@@ -520,6 +521,7 @@ class AIRPGChat {
         this.latestPlayerActionEntryKey = null;
         this.pendingRedoStorageKey = 'airpg:pendingRedoPlayerAction';
         this.pendingRedoInProgress = false;
+        this.turnRollbackInProgress = false;
         this.shortDescriptionPrompted = false;
         this.pendingSlashUploadRequest = null;
         this.slashUploadSubmitting = false;
@@ -4195,6 +4197,61 @@ class AIRPGChat {
         return data;
     }
 
+    async cancelAllPromptsAndLoadLatestAutosave({ triggerButton = this.abortTurnButton } = {}) {
+        if (this.turnRollbackInProgress) {
+            return false;
+        }
+        this.turnRollbackInProgress = true;
+        const originalButtonAriaLabel = triggerButton?.getAttribute('aria-label');
+        const originalButtonTitle = triggerButton?.getAttribute('title');
+        if (triggerButton) {
+            triggerButton.disabled = true;
+            triggerButton.setAttribute('aria-busy', 'true');
+            triggerButton.setAttribute('aria-label', 'Stopping prompts and restoring the latest autosave');
+            triggerButton.setAttribute('title', 'Stopping prompts and restoring the latest autosave…');
+        }
+
+        try {
+            const response = await fetch('/api/turn/cancel-and-rollback', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    clientId: this.clientId || window.AIRPG_CLIENT_ID || null
+                })
+            });
+            const data = await response.json().catch(() => ({}));
+            if (!response.ok || !data?.success) {
+                const error = new Error(data?.error || `HTTP ${response.status}`);
+                error.serverStack = typeof data?.stack === 'string' ? data.stack : '';
+                throw error;
+            }
+            window.location.reload();
+            return true;
+        } catch (error) {
+            this.turnRollbackInProgress = false;
+            if (triggerButton) {
+                triggerButton.disabled = false;
+                triggerButton.removeAttribute('aria-busy');
+                if (originalButtonAriaLabel === null) {
+                    triggerButton.removeAttribute('aria-label');
+                } else {
+                    triggerButton.setAttribute('aria-label', originalButtonAriaLabel);
+                }
+                if (originalButtonTitle === null) {
+                    triggerButton.removeAttribute('title');
+                } else {
+                    triggerButton.setAttribute('title', originalButtonTitle);
+                }
+            }
+            const stack = typeof error?.serverStack === 'string' && error.serverStack.trim()
+                ? error.serverStack.trim()
+                : (typeof error?.stack === 'string' ? error.stack : (error?.message || String(error)));
+            console.error('Failed to stop the turn and restore the latest autosave:', stack);
+            alert(`Failed to stop the turn and restore the latest autosave:\n\n${stack}`);
+            return false;
+        }
+    }
+
     async fetchLatestAutosaveName() {
         const response = await fetch('/api/saves?type=autosaves', { cache: 'no-store' });
         const data = await response.json().catch(() => ({}));
@@ -5578,7 +5635,9 @@ class AIRPGChat {
             : [];
         const receivedLabel = this.formatPromptProgressReceived(entry);
         const statusLabel = viewerState.isLive ? 'Streaming response' : 'Saved prompt snapshot';
-        const metaParts = [statusLabel, entry.model || null, receivedLabel !== '-' ? receivedLabel : null].filter(Boolean);
+        const fullModelName = typeof entry.model === 'string' ? entry.model : '';
+        const displayedModelName = this.formatPromptProgressModelName(fullModelName);
+        const metaParts = [statusLabel, displayedModelName || null, receivedLabel !== '-' ? receivedLabel : null].filter(Boolean);
 
         if (viewer.dataset.promptId !== (entry.id || viewerState.promptId || '') && copyButton) {
             if (copyButton._feedbackTimer) {
@@ -5595,6 +5654,9 @@ class AIRPGChat {
         }
         if (subtitle) {
             subtitle.textContent = metaParts.length ? metaParts.join(' • ') : 'Streaming response';
+            subtitle.title = fullModelName && displayedModelName !== fullModelName
+                ? `Model: ${fullModelName}`
+                : '';
         }
         if (copyButton) {
             copyButton.disabled = !promptText;
@@ -5682,6 +5744,16 @@ class AIRPGChat {
             return '-';
         }
         return count.toLocaleString();
+    }
+
+    formatPromptProgressModelName(modelName) {
+        if (typeof modelName !== 'string') {
+            return '';
+        }
+        const characters = Array.from(modelName);
+        return characters.length > 10
+            ? `${characters.slice(0, 10).join('')}...`
+            : modelName;
     }
 
     formatPromptProgressPercent(entry) {
@@ -5972,7 +6044,12 @@ class AIRPGChat {
         progressCell.appendChild(progressLabel);
 
         const modelCell = document.createElement('td');
-        modelCell.textContent = entry.model || '-';
+        const fullModelName = typeof entry.model === 'string' ? entry.model : '';
+        const displayedModelName = this.formatPromptProgressModelName(fullModelName);
+        modelCell.textContent = displayedModelName || '-';
+        if (fullModelName && displayedModelName !== fullModelName) {
+            modelCell.title = fullModelName;
+        }
 
         const receivedCell = document.createElement('td');
         receivedCell.textContent = this.formatPromptProgressReceived(entry);
@@ -6306,7 +6383,8 @@ class AIRPGChat {
             return;
         }
         if (entries.length) {
-            this.schedulePromptProgressRender(entries);
+            const hasCompletedEntry = entries.some(entry => entry?.isComplete === true);
+            this.schedulePromptProgressRender(entries, { force: hasCompletedEntry });
         }
     }
 
@@ -6600,6 +6678,13 @@ class AIRPGChat {
 
     bindEvents() {
         this.sendButton.addEventListener('click', () => this.sendMessage());
+        if (this.abortTurnButton) {
+            this.abortTurnButton.addEventListener('click', () => {
+                void this.cancelAllPromptsAndLoadLatestAutosave({
+                    triggerButton: this.abortTurnButton
+                });
+            });
+        }
 
         document.addEventListener('click', (event) => {
             const trigger = event.target?.closest?.('.event-summary-new-exit-pill[data-new-exit-summary-payload]');
@@ -10140,7 +10225,9 @@ class AIRPGChat {
             if (data.error) {
                 const errorMessage = data.error;
                 this.hideLoading(requestId);
-                if (!pendingAbilitySelection) {
+                if (this.turnRollbackInProgress) {
+                    skipHistoryRefresh = true;
+                } else if (!pendingAbilitySelection) {
                     this.addMessage('system', `Error: ${errorMessage}`, true);
                     this.showChatErrorPopup(errorMessage);
                 }
@@ -10158,11 +10245,17 @@ class AIRPGChat {
             }
         } catch (error) {
             this.hideLoading(requestId);
-            const errorMessage = `Connection error: ${error.message}`;
-            this.addMessage('system', errorMessage, true);
-            this.showChatErrorPopup(errorMessage);
-            context.httpResolved = true;
-            finalizeMode = 'immediate';
+            if (this.turnRollbackInProgress) {
+                context.httpResolved = true;
+                finalizeMode = 'immediate';
+                skipHistoryRefresh = true;
+            } else {
+                const errorMessage = `Connection error: ${error.message}`;
+                this.addMessage('system', errorMessage, true);
+                this.showChatErrorPopup(errorMessage);
+                context.httpResolved = true;
+                finalizeMode = 'immediate';
+            }
         }
 
         if (shouldRefreshLocation) {

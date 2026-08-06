@@ -53,7 +53,7 @@ The command raises clear errors when:
 - `level` is omitted and the current location has no finite `baseLevel`.
 
 ## Notes
-- `parseThingsXml(...)` returns an empty array for malformed XML or files without importable entries; `/import_item` treats that result as an import failure for the file.
+- `parseThingsXml(...)` throws for malformed XML or invalid registered-field data and returns an empty array only when a parseable file has no importable entries; `/import_item` reports either result as an import failure for the file.
 - Repeated `causeStatusEffectOnTarget` or `causeStatusEffectOnEquipper` tags are tolerated because the parser reads the first direct matching child tag.
 - Successful imports mutate live runtime state. The command does not call `interaction.performGameSave(...)`; imported things persist when the game state is saved through the normal save path.
 

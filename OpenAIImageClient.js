@@ -7,6 +7,7 @@ const {
   initImageEngineConfig,
   validateImageSaveInputs,
   extractB64ImageData,
+  throwIfAborted,
   imageRequestError
 } = require('./image_client_utils.js');
 
@@ -28,8 +29,9 @@ class OpenAIImageClient {
     return crypto.randomUUID();
   }
 
-  async generateImage({ prompt, negativePrompt = '', width = 1024, height = 1024 }) {
+  async generateImage({ prompt, negativePrompt = '', width = 1024, height = 1024, signal = null }) {
     const requestId = this.generateRequestId();
+    throwIfAborted(signal, 'OpenAI image request cancelled.');
 
     const size = `${width}x${height}`;
     const combinedPrompt = negativePrompt
@@ -47,6 +49,7 @@ class OpenAIImageClient {
         },
         {
           timeout: this.timeout,
+          signal: signal || undefined,
           headers: {
             'Content-Type': 'application/json',
             Authorization: `Bearer ${this.apiKey}`
@@ -54,6 +57,7 @@ class OpenAIImageClient {
         }
       );
 
+      throwIfAborted(signal, 'OpenAI image request cancelled.');
       const data = response.data;
       const { imageBuffer, mimeType } = extractB64ImageData(data, 'OpenAI');
       return {

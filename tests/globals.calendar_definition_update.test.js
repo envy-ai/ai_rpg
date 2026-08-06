@@ -105,3 +105,35 @@ test('setCalendarDefinition rejects invalid calendars without mutating the activ
         Globals.calendarDefinition = previousCalendarDefinition;
     }
 });
+
+test('getCalendarDayIndex resolves and validates a one-based month and day', () => {
+    const calendarDefinition = buildCalendar();
+
+    assert.equal(Globals.getCalendarDayIndex({
+        monthNumber: 1,
+        dayOfMonth: 1,
+        calendarDefinition
+    }), 0);
+    assert.equal(Globals.getCalendarDayIndex({
+        monthNumber: 2,
+        dayOfMonth: 2,
+        calendarDefinition
+    }), 3);
+
+    assert.throws(
+        () => Globals.getCalendarDayIndex({
+            monthNumber: 3,
+            dayOfMonth: 1,
+            calendarDefinition
+        }),
+        /monthNumber must be between 1 and 2/
+    );
+    assert.throws(
+        () => Globals.getCalendarDayIndex({
+            monthNumber: 1,
+            dayOfMonth: 3,
+            calendarDefinition
+        }),
+        /dayOfMonth must be between 1 and 2 for Ash/
+    );
+});

@@ -123,3 +123,26 @@ test('settings API exposes calendar generation and new game prefers saved profil
   assert.ok(aiGenerationIndex !== -1, 'calendar resolver should still support AI generation');
   assert.ok(storedCalendarIndex < aiGenerationIndex, 'saved setting calendars should be preferred before AI generation');
 });
+
+test('new game applies the selected calendar date before destructive reset and persists it in form profiles', () => {
+  const apiSource = fs.readFileSync(path.join(baseDir, 'api.js'), 'utf8');
+  const routeStart = apiSource.indexOf("app.post('/api/new-game'");
+  const routeEnd = apiSource.indexOf("app.post('/api/new-game/settings/save'", routeStart);
+  assert.ok(routeStart !== -1 && routeEnd > routeStart, 'new-game route should be present');
+  const routeSource = apiSource.slice(routeStart, routeEnd);
+
+  const dateValidationIndex = routeSource.indexOf('Globals.getCalendarDayIndex({');
+  const destructiveResetIndex = routeSource.indexOf('resetNewGameRuntimeState({');
+  assert.ok(dateValidationIndex !== -1, 'new-game route should resolve the selected calendar date');
+  assert.ok(destructiveResetIndex !== -1, 'new-game route should reset old runtime state');
+  assert.ok(
+    dateValidationIndex < destructiveResetIndex,
+    'selected calendar date should be validated before old runtime state is cleared'
+  );
+  assert.match(
+    routeSource,
+    /Globals\.elapsedTime\s*=\s*\(startingDayIndex \* cycleLengthMinutes\) \+ \(resolvedStartTime \* 60\)/
+  );
+  assert.match(apiSource, /startMonth:\s*hasStartMonth \? parsedStartMonth : 1/);
+  assert.match(apiSource, /startDay:\s*hasStartDay \? parsedStartDay : 1/);
+});

@@ -117,6 +117,14 @@ const Tracker = require('./Tracker.js');
 const ComfyUIClient = require('./ComfyUIClient.js');
 const NanoGPTImageClient = require('./NanoGPTImageClient.js');
 const OpenAIImageClient = require('./OpenAIImageClient.js');
+const {
+    createAbortError,
+    isAbortError,
+    throwIfAborted
+} = require('./image_client_utils.js');
+const ImageGenerationModelLifecycle = require('./ImageGenerationModelLifecycle.js');
+const LlamaCppRouterClient = require('./LlamaCppRouterClient.js');
+const LocalLlamaServerProcess = require('./LocalLlamaServerProcess.js');
 const Events = require('./Events.js');
 const RealtimeHub = require('./RealtimeHub.js');
 const QuestConfirmationManager = require('./QuestConfirmationManager.js');
@@ -832,15 +840,70 @@ const PORT = config.server.port;
 
 // Initialize ComfyUI client if image generation is enabled
 let comfyUIClient = null;
+let localLlamaServerProcess = null;
 const generatedImages = new Map(); // Store image metadata by ID
 
 // Image generation job queue and tracking
 const imageJobs = new Map(); // Store job status by ID
 const jobQueue = []; // Queue of pending jobs
 const activeImageJobs = new Set(); // Track currently processing job IDs
+const activeImageJobPromises = new Set();
 const maxConcurrentImageJobs = config.imagegen?.maxConcurrentJobs || 1; // Allow up to 3 concurrent jobs
 let isProcessingJob = false; // Legacy flag for backward compatibility
 let runtimeGenerationId = 0;
+let imageJobEnqueueVersion = 0;
+let imageRenderBatchTimer = null;
+let imageModelLifecycleCyclePromise = null;
+
+function isComfyModelCleanupModeConfigured(configuration = config) {
+    const aiProfiles = [
+        configuration?.ai,
+        ...Object.values(
+            configuration?.ai_model_overrides
+            && typeof configuration.ai_model_overrides === 'object'
+            && !Array.isArray(configuration.ai_model_overrides)
+                ? configuration.ai_model_overrides
+                : {}
+        )
+    ];
+    return aiProfiles.some(profile => (
+        profile
+        && typeof profile === 'object'
+        && !Array.isArray(profile)
+        && (
+            profile.unload_during_image_generation === true
+            || profile.terminate_during_image_generation === true
+        )
+    ));
+}
+
+async function clearComfyVramBeforeLocalLlamaStartup() {
+    if (!comfyUIClient || typeof comfyUIClient.unloadModels !== 'function') {
+        throw new Error('ComfyUI client is unavailable before managed llama.cpp startup.');
+    }
+    await comfyUIClient.unloadModels();
+    console.log('🎨 Cleared ComfyUI models and VRAM immediately before managed llama.cpp startup.');
+}
+
+function configureComfyModelCleanupBeforePrompts() {
+    LLMClient.setComfyModelCleanupHandler(async ({ metadataLabel }) => {
+        if (!comfyUIClient || typeof comfyUIClient.unloadModels !== 'function') {
+            throw new Error('ComfyUI client is unavailable for pre-prompt model cleanup.');
+        }
+        await comfyUIClient.unloadModels();
+        console.log(`🎨 Unloaded ComfyUI models before LLM prompt "${metadataLabel}".`);
+    });
+}
+
+const imageGenerationModelLifecycle = new ImageGenerationModelLifecycle({
+    resolveRouterTarget: () => (
+        LLMClient.resolveOpenAICompatibleModelManagementTarget('image_prompt_generation')
+    ),
+    withExclusiveModelLifecycle: callback => LLMClient.withExclusiveModelLifecycle(callback),
+    getComfyClient: () => comfyUIClient,
+    getLocalServerProcess: () => localLlamaServerProcess,
+    logger: console
+});
 
 // Job status constants
 const JOB_STATUS = {
@@ -848,7 +911,8 @@ const JOB_STATUS = {
     PROCESSING: 'processing',
     COMPLETED: 'completed',
     FAILED: 'failed',
-    TIMEOUT: 'timeout'
+    TIMEOUT: 'timeout',
+    CANCELED: 'canceled'
 };
 
 const KNOWN_IMAGE_EXTENSIONS = ['.png', '.jpg', '.jpeg', '.webp', '.gif'];
@@ -1039,6 +1103,32 @@ function resolveMegapixels(value) {
     return getDefaultMegapixels();
 }
 
+function resolveCharacterImageDimensions(configuration = config) {
+    const characterImageSettings = configuration?.imagegen?.character_settings?.image || {};
+    const defaultImageSettings = configuration?.imagegen?.default_settings?.image || {};
+    const resolveDimension = (overrideValue, fallbackValue, label) => {
+        const hasOverride = overrideValue !== undefined && overrideValue !== null && overrideValue !== '';
+        if (hasOverride) {
+            const numericOverride = Number(overrideValue);
+            if (!Number.isFinite(numericOverride) || numericOverride <= 0) {
+                throw new Error(`Image generation: configured character ${label} must be a positive number.`);
+            }
+            return numericOverride;
+        }
+
+        const numericFallback = Number(fallbackValue);
+        if (!Number.isFinite(numericFallback) || numericFallback <= 0) {
+            throw new Error(`Image generation: missing configured ${label} for character images.`);
+        }
+        return numericFallback;
+    };
+
+    return {
+        width: resolveDimension(characterImageSettings.width, defaultImageSettings.width, 'width'),
+        height: resolveDimension(characterImageSettings.height, defaultImageSettings.height, 'height')
+    };
+}
+
 function resolveThingImageDimensions(thing) {
     if (!thing || typeof thing !== 'object') {
         throw new Error('Thing object is required to resolve image dimensions.');
@@ -1082,6 +1172,9 @@ function getJobSnapshot(jobId) {
         jobId: job.id,
         status: job.status,
         progress: job.progress,
+        renderProgress: job.renderProgress,
+        renderNodeId: job.renderNodeId,
+        isRendering: job.isRendering === true,
         message: job.message,
         createdAt: job.createdAt,
         startedAt: job.startedAt,
@@ -1402,11 +1495,11 @@ function normalizeLocationWeatherExposure(value, fieldName = 'location hasWeathe
         if (['false', '0', 'no'].includes(lowered)) {
             return 'no';
         }
-        if (lowered === 'outside') {
-            return 'outside';
+        if (lowered === 'sheltered' || lowered === 'outside') {
+            return 'sheltered';
         }
     }
-    throw new Error(`${fieldName} must be "yes", "no", "outside", true, false, or null.`);
+    throw new Error(`${fieldName} must be "yes", "no", "sheltered", true, false, or null (legacy "outside" is also accepted).`);
 }
 
 function resolveLocationWeatherVariantConditions(location, { sourceImageId = null } = {}) {
@@ -1472,7 +1565,8 @@ function resolveLocationWeatherVariantConditions(location, { sourceImageId = nul
         weatherDescription,
         hasLocalWeather,
         weatherScope,
-        hasWeatherOutside: weatherScope === 'outside',
+        hasWeatherSheltered: weatherScope === 'sheltered',
+        hasWeatherOutside: weatherScope === 'sheltered',
         segment: worldTimeContext.segment || null,
         timeLabel: worldTimeContext.timeLabel || null,
         dateLabel: worldTimeContext.dateLabel || null,
@@ -1784,6 +1878,9 @@ function createImageJob(jobId, payload = {}) {
         status: JOB_STATUS.QUEUED,
         payload: normalizedPayload,
         progress: 0,
+        renderProgress: 0,
+        renderNodeId: null,
+        isRendering: false,
         message: 'Job queued for processing',
         createdAt: new Date().toISOString(),
         startedAt: null,
@@ -1813,6 +1910,9 @@ function sanitizeJobForRealtime(job, extra = {}) {
         jobId: job.id,
         status: job.status,
         progress: job.progress,
+        renderProgress: job.renderProgress,
+        renderNodeId: job.renderNodeId,
+        isRendering: job.isRendering === true,
         message: job.message,
         createdAt: job.createdAt,
         startedAt: job.startedAt,
@@ -1882,6 +1982,40 @@ function emitJobUpdate(job, extra = {}, options = {}) {
     }
 }
 
+function updateComfyRenderProgress(job, progressEvent = {}) {
+    if (!job || job.status !== JOB_STATUS.PROCESSING) {
+        return;
+    }
+    const value = Number(progressEvent.value);
+    const max = Number(progressEvent.max);
+    const fraction = Number(progressEvent.fraction);
+    if (
+        !Number.isFinite(value)
+        || !Number.isFinite(max)
+        || !Number.isFinite(fraction)
+        || max <= 0
+        || value < 0
+        || value > max
+        || fraction < 0
+        || fraction > 1
+    ) {
+        throw new Error(`Invalid ComfyUI render progress: value=${progressEvent.value}, max=${progressEvent.max}.`);
+    }
+
+    const renderProgress = Math.round(fraction * 1000) / 10;
+    job.isRendering = true;
+    job.renderProgress = renderProgress;
+    job.renderNodeId = progressEvent.nodeId === null || progressEvent.nodeId === undefined
+        ? null
+        : String(progressEvent.nodeId);
+    job.message = `Rendering image... ${renderProgress}%`;
+    emitJobUpdate(job, {
+        phase: 'rendering',
+        renderProgress,
+        renderNodeId: job.renderNodeId
+    });
+}
+
 function addJobSubscriber(jobOrId, clientId, { emitSnapshot = false } = {}) {
     if (!clientId) {
         return null;
@@ -1915,6 +2049,10 @@ async function withRetry(operation, maxRetries = 3, delay = 1000) {
         } catch (error) {
             lastError = error;
 
+            if (isAbortError(error)) {
+                throw error;
+            }
+
             // Don't retry certain types of errors
             if (error.code === 'ENOTFOUND' || error.response?.status === 404 || error.response?.status === 401) {
                 throw error;
@@ -1929,36 +2067,357 @@ async function withRetry(operation, maxRetries = 3, delay = 1000) {
     throw lastError;
 }
 
-// Process the job queue - supports concurrent processing
-async function processJobQueue() {
-    // Check if we can process more jobs
-    if (jobQueue.length === 0 || !comfyUIClient) {
-        return;
+function resolveImageGenerationModelLifecycleMode(configuration = config) {
+    const aiConfig = LLMClient.resolveEffectiveAiConfiguration(
+        'image_prompt_generation',
+        configuration
+    ).aiConfig;
+    const unload = aiConfig.unload_during_image_generation ?? false;
+    const terminate = aiConfig.terminate_during_image_generation ?? false;
+    if (typeof unload !== 'boolean') {
+        throw new Error('ai.unload_during_image_generation must be a boolean.');
+    }
+    if (typeof terminate !== 'boolean') {
+        throw new Error('ai.terminate_during_image_generation must be a boolean.');
+    }
+    if (unload && terminate) {
+        throw new Error(
+            'ai.unload_during_image_generation and ai.terminate_during_image_generation cannot both be true.'
+        );
+    }
+    if (!unload && !terminate) {
+        return 'none';
+    }
+    if (LLMClient.resolveBackend(aiConfig) !== 'openai_compatible') {
+        throw new Error(
+            `ai.${terminate ? 'terminate' : 'unload'}_during_image_generation requires the openai_compatible backend.`
+        );
+    }
+    if (String(configuration?.imagegen?.engine || 'comfyui').trim().toLowerCase() !== 'comfyui') {
+        throw new Error(
+            `ai.${terminate ? 'terminate' : 'unload'}_during_image_generation requires imagegen.engine to be comfyui.`
+        );
+    }
+    if (terminate) {
+        const scriptPath = typeof aiConfig.local_startup_script_path === 'string'
+            ? aiConfig.local_startup_script_path.trim()
+            : '';
+        if (!scriptPath) {
+            throw new Error(
+                'ai.local_startup_script_path is required when ai.terminate_during_image_generation is true.'
+            );
+        }
+        return 'terminate';
+    }
+    return 'unload';
+}
+
+function shouldCoordinateAiModelDuringImageGeneration() {
+    return resolveImageGenerationModelLifecycleMode() !== 'none';
+}
+
+function resolveLocalLlamaStartupScriptPath(configuration = config) {
+    const aiConfig = LLMClient.resolveEffectiveAiConfiguration(
+        'image_prompt_generation',
+        configuration
+    ).aiConfig;
+    const configuredPath = typeof aiConfig.local_startup_script_path === 'string'
+        ? aiConfig.local_startup_script_path.trim()
+        : '';
+    if (!configuredPath) {
+        throw new Error(
+            'ai.local_startup_script_path is required when ai.terminate_during_image_generation is true.'
+        );
+    }
+    return path.isAbsolute(configuredPath)
+        ? path.normalize(configuredPath)
+        : path.resolve(__dirname, configuredPath);
+}
+
+async function waitForManagedLlamaServerReady({ child, pid }) {
+    const aiConfig = LLMClient.resolveEffectiveAiConfiguration(
+        'image_prompt_generation',
+        config
+    ).aiConfig;
+    const chatEndpoint = LLMClient.resolveChatEndpoint(aiConfig.endpoint);
+    const baseUrl = LlamaCppRouterClient.resolveRouterBaseUrl(chatEndpoint);
+    const healthUrl = `${baseUrl}/health`;
+    const deadline = Date.now() + baseTimeoutMilliseconds;
+    let lastFailure = 'no response received';
+
+    while (Date.now() < deadline) {
+        if (child.exitCode !== null || child.signalCode !== null) {
+            throw new Error(`Managed llama.cpp server PID ${pid} exited while waiting for ${healthUrl}.`);
+        }
+        try {
+            const response = await axios.get(healthUrl, {
+                timeout: 2000,
+                validateStatus: () => true
+            });
+            if (response.status === 200) {
+                console.log(`✅ Managed llama.cpp server PID ${pid} is ready at ${healthUrl}`);
+                return;
+            }
+            lastFailure = `HTTP ${response.status}`;
+        } catch (error) {
+            lastFailure = error?.message || String(error);
+        }
+        await new Promise(resolve => setTimeout(resolve, 500));
     }
 
-    // Process jobs up to the concurrency limit
-    while (jobQueue.length > 0 && activeImageJobs.size < maxConcurrentImageJobs) {
-        const jobId = jobQueue.shift();
-        const job = imageJobs.get(jobId);
+    throw new Error(
+        `Timed out waiting for managed llama.cpp server PID ${pid} at ${healthUrl}: ${lastFailure}`
+    );
+}
 
-        if (!job || job.status !== JOB_STATUS.QUEUED) {
-            continue;
-        }
+async function initializeManagedLocalLlamaServer() {
+    if (resolveImageGenerationModelLifecycleMode() !== 'terminate') {
+        return null;
+    }
+    if (localLlamaServerProcess) {
+        throw new Error('Managed local llama.cpp server process is already initialized.');
+    }
 
-        // Mark job as active
-        activeImageJobs.add(jobId);
-        isProcessingJob = activeImageJobs.size > 0;
+    localLlamaServerProcess = new LocalLlamaServerProcess({
+        startupScriptPath: resolveLocalLlamaStartupScriptPath(),
+        beforeStart: clearComfyVramBeforeLocalLlamaStartup,
+        waitUntilReady: waitForManagedLlamaServerReady,
+        logger: console
+    });
+    await localLlamaServerProcess.start();
+    return localLlamaServerProcess;
+}
 
-        processSingleJob(job).finally(() => {
-            // Remove from active set when done
+function enqueueImageJob(jobId) {
+    if (typeof jobId !== 'string' || !jobId.trim()) {
+        throw new Error('enqueueImageJob requires a non-empty job id.');
+    }
+    const job = imageJobs.get(jobId);
+    if (!job || job.status !== JOB_STATUS.QUEUED) {
+        throw new Error(`Cannot enqueue unknown or non-queued image job "${jobId}".`);
+    }
+    jobQueue.push(jobId);
+    imageJobEnqueueVersion += 1;
+    setTimeout(() => processJobQueue(), 0);
+    return job;
+}
+
+function startImageJob(job) {
+    const jobId = job.id;
+    job.abortController = new AbortController();
+    activeImageJobs.add(jobId);
+    isProcessingJob = true;
+
+    const trackedPromise = Promise.resolve()
+        .then(() => processSingleJob(job))
+        .catch(error => {
+            console.error(`Unexpected image job processor failure for ${jobId}:`, error);
+            if (job.status === JOB_STATUS.QUEUED || job.status === JOB_STATUS.PROCESSING) {
+                job.status = JOB_STATUS.FAILED;
+                job.error = error?.message || String(error);
+                job.message = `Generation failed: ${job.error}`;
+                job.completedAt = new Date().toISOString();
+                emitJobUpdate(job, { phase: 'failed' });
+                cleanupFinishedImageJobTracking(job);
+            }
+        })
+        .finally(() => {
             activeImageJobs.delete(jobId);
+            activeImageJobPromises.delete(trackedPromise);
             isProcessingJob = activeImageJobs.size > 0;
-
-            // Check if more jobs can be processed
-            if (jobQueue.length > 0) {
+            if (shouldCoordinateAiModelDuringImageGeneration()) {
+                scheduleImageRenderBatchIfReady();
+            } else if (jobQueue.length > 0) {
                 setTimeout(() => processJobQueue(), 100);
             }
         });
+
+    activeImageJobPromises.add(trackedPromise);
+    return trackedPromise;
+}
+
+function launchAvailableImageJobs() {
+    while (jobQueue.length > 0 && activeImageJobs.size < maxConcurrentImageJobs) {
+        const jobId = jobQueue.shift();
+        const job = imageJobs.get(jobId);
+        if (!job || job.status !== JOB_STATUS.QUEUED) {
+            continue;
+        }
+        startImageJob(job);
+    }
+}
+
+async function drainImageJobQueue() {
+    while (true) {
+        launchAvailableImageJobs();
+        if (activeImageJobPromises.size > 0) {
+            await Promise.race(Array.from(activeImageJobPromises));
+            continue;
+        }
+
+        const observedVersion = imageJobEnqueueVersion;
+        await new Promise(resolve => setImmediate(resolve));
+        if (
+            jobQueue.length === 0
+            && activeImageJobPromises.size === 0
+            && imageJobEnqueueVersion === observedVersion
+        ) {
+            return;
+        }
+    }
+}
+
+function failQueuedImageJobsForLifecycle(error) {
+    const message = error?.message || String(error);
+    const pendingJobIds = jobQueue.splice(0);
+    for (const jobId of pendingJobIds) {
+        const job = imageJobs.get(jobId);
+        if (!job || job.status !== JOB_STATUS.QUEUED) {
+            continue;
+        }
+        job.status = JOB_STATUS.FAILED;
+        job.error = `Image model lifecycle failed: ${message}`;
+        job.message = `Generation failed: ${job.error}`;
+        job.completedAt = new Date().toISOString();
+        emitJobUpdate(job, { phase: 'failed' });
+        cleanupFinishedImageJobTracking(job);
+    }
+}
+
+function imagePromptGenerationWorkIsPending() {
+    return activeImagePromptGenerationCount > 0
+        || imagePromptBatchQueue.length > 0
+        || imagePromptBatchTimer !== null;
+}
+
+function scheduleImageRenderBatchIfReady() {
+    if (!shouldCoordinateAiModelDuringImageGeneration()) {
+        return false;
+    }
+    if (
+        imageRenderBatchTimer
+        || imageModelLifecycleCyclePromise
+        || imagePromptGenerationWorkIsPending()
+        || activeImageJobs.size > 0
+        || jobQueue.length === 0
+        || !comfyUIClient
+    ) {
+        return false;
+    }
+
+    imageRenderBatchTimer = setTimeout(() => {
+        imageRenderBatchTimer = null;
+        if (
+            imageModelLifecycleCyclePromise
+            || imagePromptGenerationWorkIsPending()
+            || activeImageJobs.size > 0
+            || jobQueue.length === 0
+            || !comfyUIClient
+        ) {
+            return;
+        }
+
+        let cycleSucceeded = false;
+        const lifecycleMode = resolveImageGenerationModelLifecycleMode();
+        imageModelLifecycleCyclePromise = imageGenerationModelLifecycle.run({
+            mode: lifecycleMode,
+            renderBatch: drainImageJobQueue
+        })
+            .then(() => {
+                cycleSucceeded = true;
+            })
+            .catch(error => {
+                console.error('Image model lifecycle failed:', error);
+                LLMClient.writeLogFile({
+                    prefix: 'imageModelLifecycle',
+                    metadataLabel: 'image_prompt_generation',
+                    error,
+                    onFailureMessage: 'Failed to write image model lifecycle error log'
+                });
+                failQueuedImageJobsForLifecycle(error);
+            })
+            .finally(() => {
+                imageModelLifecycleCyclePromise = null;
+                if (imagePromptBatchQueue.length > 0) {
+                    setTimeout(() => flushImagePromptBatchQueue(), 0);
+                } else if (cycleSucceeded && jobQueue.length > 0) {
+                    scheduleImageRenderBatchIfReady();
+                }
+            });
+    }, 0);
+    return true;
+}
+
+// Process the job queue - supports concurrent processing and optional LLM model handoff.
+async function processJobQueue() {
+    if (jobQueue.length === 0 || !comfyUIClient) {
+        return;
+    }
+    if (shouldCoordinateAiModelDuringImageGeneration()) {
+        scheduleImageRenderBatchIfReady();
+        return;
+    }
+    launchAvailableImageJobs();
+}
+
+function cleanupFinishedImageJobTracking(currentJob) {
+    if (currentJob?._skipRuntimeCleanup === true) {
+        return;
+    }
+    if (currentJob?.payload?.isLocationScene && currentJob.payload.locationId && currentJob.status !== JOB_STATUS.PROCESSING) {
+        pendingLocationImages.delete(currentJob.payload.locationId);
+    }
+
+    if (!currentJob || currentJob.status === JOB_STATUS.PROCESSING) {
+        return;
+    }
+    const payload = currentJob.payload || {};
+
+    if (payload.isPlayerPortrait && payload.playerId) {
+        clearEntityJob('player', payload.playerId, currentJob.id);
+        const player = players.get(payload.playerId);
+        if (player && currentJob.status !== JOB_STATUS.COMPLETED) {
+            delete player.pendingImageJobId;
+        }
+    }
+
+    if (payload.isThingImage && payload.thingId) {
+        clearEntityJob('thing', payload.thingId, currentJob.id);
+        const thing = things.get(payload.thingId);
+        if (thing && currentJob.status !== JOB_STATUS.COMPLETED) {
+            delete thing.pendingImageJobId;
+        }
+    }
+
+    if (payload.isLocationExitImage && payload.locationExitId) {
+        clearEntityJob('location-exit', payload.locationExitId, currentJob.id);
+        if (currentJob.status !== JOB_STATUS.COMPLETED) {
+            for (const location of gameLocations.values()) {
+                const exits = location.exits;
+                for (const exit of exits.values()) {
+                    if (exit.id === payload.locationExitId) {
+                        delete exit.pendingImageJobId;
+                        break;
+                    }
+                }
+            }
+        }
+    }
+
+    if (payload.isLocationScene && payload.locationId && currentJob.status !== JOB_STATUS.COMPLETED) {
+        const location = gameLocations.get(payload.locationId);
+        if (location) {
+            delete location.pendingImageJobId;
+        }
+    }
+
+    if (payload.isLocationWeatherVariant && payload.locationId && payload.variantKey) {
+        clearEntityJob('location-variant', `${payload.locationId}:${payload.variantKey}`, currentJob.id);
+        const location = gameLocations.get(payload.locationId);
+        const existingVariant = location?.getImageVariant?.(payload.variantKey) || null;
+        if (location && currentJob.status !== JOB_STATUS.COMPLETED && existingVariant?.jobId === currentJob.id) {
+            location.removeImageVariant(payload.variantKey);
+        }
     }
 }
 
@@ -1979,6 +2438,9 @@ async function processSingleJob(job) {
         job.status = JOB_STATUS.PROCESSING;
         job.startedAt = new Date().toISOString();
         job.progress = 10;
+        job.renderProgress = 0;
+        job.renderNodeId = null;
+        job.isRendering = false;
         job.message = 'Starting image generation...';
         emitJobUpdate(job, { phase: 'processing' });
 
@@ -1986,6 +2448,7 @@ async function processSingleJob(job) {
         const timeoutId = setTimeout(() => {
             if (job.status === JOB_STATUS.PROCESSING) {
                 job.status = JOB_STATUS.TIMEOUT;
+                job.isRendering = false;
                 job.error = 'Job timed out after 2 minutes';
                 job.completedAt = new Date().toISOString();
                 emitJobUpdate(job, { phase: 'timeout' });
@@ -1997,10 +2460,16 @@ async function processSingleJob(job) {
 
             clearTimeout(timeoutId);
 
+            if (job.status === JOB_STATUS.CANCELED) {
+                discardStaleImageJobMetadata(result);
+                return;
+            }
+
             if (isImageJobRuntimeStale(job)) {
                 discardStaleImageJobMetadata(result);
                 job._skipRuntimeCleanup = true;
                 job.status = JOB_STATUS.FAILED;
+                job.isRendering = false;
                 job.error = 'Image job ignored after game reset.';
                 job.message = 'Image generation completed after a new game started and was ignored.';
                 job.completedAt = new Date().toISOString();
@@ -2008,9 +2477,11 @@ async function processSingleJob(job) {
                 return;
             }
 
-            if (job.status !== JOB_STATUS.TIMEOUT) {
+            if (job.status === JOB_STATUS.PROCESSING) {
                 job.status = JOB_STATUS.COMPLETED;
                 job.progress = 100;
+                job.renderProgress = 100;
+                job.isRendering = false;
                 job.result = result;
                 job.message = 'Image generation completed successfully';
                 job.completedAt = new Date().toISOString();
@@ -2082,7 +2553,7 @@ async function processSingleJob(job) {
         } catch (error) {
             clearTimeout(timeoutId);
 
-            if (job.status !== JOB_STATUS.TIMEOUT) {
+            if (job.status === JOB_STATUS.PROCESSING) {
                 console.error('❌ Image generation job failed:', {
                     jobId: job.id,
                     entityType: job.payload?.entityType,
@@ -2091,6 +2562,7 @@ async function processSingleJob(job) {
                     stack: error?.stack
                 });
                 job.status = JOB_STATUS.FAILED;
+                job.isRendering = false;
                 job.error = error.message;
                 job.message = `Generation failed: ${error.message}`;
                 job.completedAt = new Date().toISOString();
@@ -2110,70 +2582,15 @@ async function processSingleJob(job) {
         }
 
     } finally {
-        const currentJob = job;
-        if (currentJob?._skipRuntimeCleanup === true) {
-            return;
-        }
-        if (currentJob?.payload?.isLocationScene && currentJob.payload.locationId && currentJob.status !== JOB_STATUS.PROCESSING) {
-            pendingLocationImages.delete(currentJob.payload.locationId);
-        }
-
-        if (currentJob && currentJob.status !== JOB_STATUS.PROCESSING) {
-            const payload = currentJob.payload || {};
-
-            if (payload.isPlayerPortrait && payload.playerId) {
-                clearEntityJob('player', payload.playerId, currentJob.id);
-                const player = players.get(payload.playerId);
-                if (player && currentJob.status !== JOB_STATUS.COMPLETED) {
-                    delete player.pendingImageJobId;
-                }
-            }
-
-            if (payload.isThingImage && payload.thingId) {
-                clearEntityJob('thing', payload.thingId, currentJob.id);
-                const thing = things.get(payload.thingId);
-                if (thing && currentJob.status !== JOB_STATUS.COMPLETED) {
-                    delete thing.pendingImageJobId;
-                }
-            }
-
-            if (payload.isLocationExitImage && payload.locationExitId) {
-                clearEntityJob('location-exit', payload.locationExitId, currentJob.id);
-                if (currentJob.status !== JOB_STATUS.COMPLETED) {
-                    for (const location of gameLocations.values()) {
-                        const exits = location.exits;
-                        for (const exit of exits.values()) {
-                            if (exit.id === payload.locationExitId) {
-                                delete exit.pendingImageJobId;
-                                break;
-                            }
-                        }
-                    }
-                }
-            }
-
-            if (payload.isLocationScene && payload.locationId && currentJob.status !== JOB_STATUS.COMPLETED) {
-                const location = gameLocations.get(payload.locationId);
-                if (location) {
-                    delete location.pendingImageJobId;
-                }
-            }
-
-            if (payload.isLocationWeatherVariant && payload.locationId && payload.variantKey) {
-                clearEntityJob('location-variant', `${payload.locationId}:${payload.variantKey}`, currentJob.id);
-                const location = gameLocations.get(payload.locationId);
-                const existingVariant = location?.getImageVariant?.(payload.variantKey) || null;
-                if (location && currentJob.status !== JOB_STATUS.COMPLETED && existingVariant?.jobId === currentJob.id) {
-                    location.removeImageVariant(payload.variantKey);
-                }
-            }
-        }
+        cleanupFinishedImageJobTracking(job);
     }
 }
 
 // Process a single image generation job
 async function processImageGeneration(job) {
     const { prompt, width, height, steps, seed, negative_prompt, megapixels } = job.payload;
+    const signal = job.abortController?.signal || null;
+    throwIfAborted(signal, `Image job ${job.id} cancelled.`);
 
     // Generate unique image ID
     const imageId = generateImageId();
@@ -2226,7 +2643,8 @@ async function processImageGeneration(job) {
                 negativePrompt: templateVars.negative_prompt,
                 width: templateVars.image.width,
                 height: templateVars.image.height,
-                seed: templateVars.image.seed
+                seed: templateVars.image.seed,
+                signal
             });
         });
 
@@ -2272,7 +2690,8 @@ async function processImageGeneration(job) {
                     filename: `${job.payload.sourceImageId || imageId}${path.extname(sourceImagePath) || '.png'}`,
                     subfolder: 'airpg-location-variants',
                     type: 'input',
-                    overwrite: true
+                    overwrite: true,
+                    signal
                 });
             });
             templateVars.image.sourceFilename = uploadedSourceImage.imageReference;
@@ -2328,9 +2747,15 @@ async function processImageGeneration(job) {
 
         job.progress = 30;
         job.message = 'Submitting to ComfyUI...';
+        job.renderProgress = 0;
+        job.renderNodeId = null;
+        job.isRendering = true;
+        emitJobUpdate(job, { phase: 'rendering', renderProgress: 0, renderNodeId: null });
 
+        comfyQueueId = comfyUIClient.generatePromptId();
+        job.comfyPromptId = comfyQueueId;
         const queueResult = await withRetry(async () => {
-            return await comfyUIClient.queuePrompt(workflow);
+            return await comfyUIClient.queuePrompt(workflow, comfyQueueId, { signal });
         });
 
         if (!queueResult.success) {
@@ -2338,17 +2763,35 @@ async function processImageGeneration(job) {
         }
 
         comfyQueueId = queueResult.promptId;
+        job.comfyPromptId = comfyQueueId;
 
         job.progress = 50;
         job.message = 'Waiting for generation to complete...';
 
         const completionResult = await withRetry(async () => {
-            return await comfyUIClient.waitForCompletion(queueResult.promptId);
+            return await comfyUIClient.waitForCompletion(
+                queueResult.promptId,
+                300000,
+                2000,
+                {
+                    clientId: queueResult.clientId,
+                    onProgress: progressEvent => updateComfyRenderProgress(job, progressEvent),
+                    signal
+                }
+            );
         });
 
         if (!completionResult.success) {
             throw new Error(`Generation failed: ${completionResult.error}`);
         }
+
+        job.renderProgress = 100;
+        job.isRendering = false;
+        emitJobUpdate(job, {
+            phase: 'rendering-complete',
+            renderProgress: 100,
+            renderNodeId: job.renderNodeId
+        });
 
         job.progress = 80;
         job.message = 'Downloading and saving images...';
@@ -2359,7 +2802,8 @@ async function processImageGeneration(job) {
                     return await comfyUIClient.getImage(
                         imageInfo.filename,
                         imageInfo.subfolder,
-                        imageInfo.type
+                        imageInfo.type,
+                        { signal }
                     );
                 });
 
@@ -2528,6 +2972,7 @@ async function validateConfiguration() {
 
         validateOptionalImageSizeOverrides('item', config.imagegen.item_settings?.image);
         validateOptionalImageSizeOverrides('scenery', config.imagegen.scenery_settings?.image);
+        validateOptionalImageSizeOverrides('character', config.imagegen.character_settings?.image);
         validateOptionalImageSizeOverrides('location variant', config.imagegen.location_variant_settings?.image);
 
         if (
@@ -2577,6 +3022,21 @@ async function validateConfiguration() {
         }
     }
 
+    if (isComfyModelCleanupModeConfigured(config) && !config?.imagegen?.enabled) {
+        const cleanupEngine = String(config?.imagegen?.engine || 'comfyui').trim().toLowerCase();
+        if (cleanupEngine !== 'comfyui') {
+            validationErrors.push(
+                'AI pre-prompt model cleanup requires imagegen.engine to be comfyui when image generation is disabled'
+            );
+        }
+        if (!config?.imagegen?.server?.host) {
+            validationErrors.push('AI pre-prompt model cleanup requires imagegen.server.host');
+        }
+        if (!config?.imagegen?.server?.port) {
+            validationErrors.push('AI pre-prompt model cleanup requires imagegen.server.port');
+        }
+    }
+
     if (config.npc_generation !== undefined) {
         const npcGeneration = config.npc_generation;
         if (!npcGeneration || typeof npcGeneration !== 'object' || Array.isArray(npcGeneration)) {
@@ -2598,8 +3058,114 @@ async function validateConfiguration() {
     if (config.ai?.tinybrain !== undefined && typeof config.ai.tinybrain !== 'boolean') {
         validationErrors.push('ai.tinybrain must be a boolean when provided');
     }
+    if (config.ai?.live_deslop !== undefined && typeof config.ai.live_deslop !== 'boolean') {
+        validationErrors.push('ai.live_deslop must be a boolean when provided');
+    }
+    if (config.ai?.live_deslop === true) {
+        if (config.slop_buster !== true) {
+            validationErrors.push('ai.live_deslop requires slop_buster to be true');
+        }
+        if (config.repetition_buster !== true) {
+            validationErrors.push('ai.live_deslop requires repetition_buster to be true');
+        }
+        try {
+            const liveDeslopAiConfig = LLMClient.resolveEffectiveAiConfiguration(
+                'player_action',
+                config
+            ).aiConfig;
+            if (LLMClient.resolveBackend(liveDeslopAiConfig) !== 'openai_compatible') {
+                validationErrors.push('ai.live_deslop requires the openai_compatible backend for player_action');
+            }
+        } catch (error) {
+            validationErrors.push(`ai.live_deslop configuration is invalid: ${error.message}`);
+        }
+    }
+    if (config.ai_model_overrides && typeof config.ai_model_overrides === 'object') {
+        for (const [profileName, profile] of Object.entries(config.ai_model_overrides)) {
+            if (
+                profile
+                && typeof profile === 'object'
+                && !Array.isArray(profile)
+                && profile.unload_during_image_generation !== undefined
+                && typeof profile.unload_during_image_generation !== 'boolean'
+            ) {
+                validationErrors.push(
+                    `ai_model_overrides.${profileName}.unload_during_image_generation must be a boolean when provided`
+                );
+            }
+            if (
+                profile
+                && typeof profile === 'object'
+                && !Array.isArray(profile)
+                && profile.terminate_during_image_generation !== undefined
+                && typeof profile.terminate_during_image_generation !== 'boolean'
+            ) {
+                validationErrors.push(
+                    `ai_model_overrides.${profileName}.terminate_during_image_generation must be a boolean when provided`
+                );
+            }
+            if (
+                profile
+                && typeof profile === 'object'
+                && !Array.isArray(profile)
+                && profile.local_startup_script_path !== undefined
+                && profile.local_startup_script_path !== null
+                && typeof profile.local_startup_script_path !== 'string'
+            ) {
+                validationErrors.push(
+                    `ai_model_overrides.${profileName}.local_startup_script_path must be a string when provided`
+                );
+            }
+        }
+    }
+    try {
+        const imagePromptAiConfig = LLMClient.resolveEffectiveAiConfiguration(
+            'image_prompt_generation',
+            config
+        ).aiConfig;
+        const lifecycleMode = resolveImageGenerationModelLifecycleMode(config);
+        if (lifecycleMode !== 'none') {
+            if (LLMClient.resolveBackend(imagePromptAiConfig) !== 'openai_compatible') {
+                validationErrors.push(
+                    `ai.${lifecycleMode}_during_image_generation requires the openai_compatible backend for image_prompt_generation`
+                );
+            }
+            if (String(config?.imagegen?.engine || 'comfyui').trim().toLowerCase() !== 'comfyui') {
+                validationErrors.push(
+                    `ai.${lifecycleMode}_during_image_generation requires imagegen.engine to be comfyui`
+                );
+            }
+        }
+        if (lifecycleMode === 'terminate') {
+            const startupScriptPath = resolveLocalLlamaStartupScriptPath(config);
+            try {
+                const startupScriptStats = fs.statSync(startupScriptPath);
+                if (!startupScriptStats.isFile()) {
+                    validationErrors.push(
+                        `ai.local_startup_script_path must reference a file: ${startupScriptPath}`
+                    );
+                } else {
+                    fs.accessSync(startupScriptPath, fs.constants.X_OK);
+                }
+            } catch (error) {
+                validationErrors.push(
+                    `ai.local_startup_script_path is not an executable file: ${startupScriptPath} (${error.message})`
+                );
+            }
+        }
+    } catch (error) {
+        validationErrors.push(error.message);
+    }
     try {
         LLMClient.resolveMaxConcurrentAllModels(config);
+    } catch (error) {
+        validationErrors.push(error.message);
+    }
+    try {
+        const unloadModelOnSwitch = LLMClient.resolveUnloadModelOnSwitch(config);
+        if (unloadModelOnSwitch && LLMClient.resolveBackend(config.ai) !== 'openai_compatible') {
+            validationErrors.push('unload_model_on_switch requires ai.backend to be openai_compatible');
+        }
     } catch (error) {
         validationErrors.push(error.message);
     }
@@ -2858,7 +3424,9 @@ async function validateConfiguration() {
 
 // Async function to initialize ComfyUI with connectivity test
 async function initializeImageEngine() {
-    if (!config.imagegen || !config.imagegen.enabled) {
+    const imageGenerationEnabled = config?.imagegen?.enabled === true;
+    const promptCleanupEnabled = isComfyModelCleanupModeConfigured(config);
+    if (!imageGenerationEnabled && !promptCleanupEnabled) {
         console.log('🎨 Image generation disabled in configuration');
         return;
     }
@@ -2877,6 +3445,9 @@ async function initializeImageEngine() {
 
             if (testResponse.status === 200) {
                 console.log('✅ ComfyUI server is accessible');
+                if (!imageGenerationEnabled) {
+                    console.log('🎨 ComfyUI initialized for pre-prompt model cleanup only.');
+                }
             } else {
                 throw new Error(`ComfyUI returned status ${testResponse.status}`);
             }
@@ -2979,7 +3550,14 @@ function buildNewGameDefaults(settingSnapshot = null) {
         playerName: '',
         playerDescription: '',
         startingLocation: '',
+        startMonth: 1,
+        startDay: 1,
         startTime: 9,
+        calendarMonths: Array.from({ length: 12 }, (_entry, index) => ({
+            name: `Month ${index + 1}`,
+            lengthDays: null
+        })),
+        calendarUsesSettingDefinition: false,
         playerLevel: 1,
         pointPoolFormulas: resolvePointPoolFormulas(config),
         existingSkills: [],
@@ -3007,6 +3585,15 @@ function buildNewGameDefaults(settingSnapshot = null) {
     defaults.startingLocation = typeof settingSnapshot.defaultStartingLocation === 'string'
         ? settingSnapshot.defaultStartingLocation.trim()
         : '';
+
+    if (settingSnapshot.calendarDefinition !== null && settingSnapshot.calendarDefinition !== undefined) {
+        const calendarDefinition = Globals.normalizeCalendarDefinition(settingSnapshot.calendarDefinition);
+        defaults.calendarMonths = calendarDefinition.months.map(month => ({
+            name: month.name,
+            lengthDays: month.lengthDays
+        }));
+        defaults.calendarUsesSettingDefinition = true;
+    }
 
     const parsedPlayerLevel = Number(settingSnapshot.playerStartingLevel);
     defaults.playerLevel = Number.isFinite(parsedPlayerLevel)
@@ -3926,8 +4513,32 @@ function stripAsterisksForSlopRegexText(text) {
     return text.replace(/\*/g, '');
 }
 
-async function loadSlopRegexDefinitions({ defaultPpmOverride = null } = {}) {
-    const { defaultPpm, regexes } = await loadSlopwordConfig({ defaultPpmOverride });
+function stripAsterisksWithRawIndexes(text) {
+    if (typeof text !== 'string') {
+        return { text: '', rawIndexes: [0] };
+    }
+    let stripped = '';
+    const rawIndexes = [];
+    for (let index = 0; index < text.length; index += 1) {
+        if (text[index] === '*') {
+            continue;
+        }
+        rawIndexes.push(index);
+        stripped += text[index];
+    }
+    rawIndexes.push(text.length);
+    return { text: stripped, rawIndexes };
+}
+
+async function loadSlopRegexDefinitions({ defaultPpmOverride = null, slopwordConfig = null } = {}) {
+    const resolvedConfig = slopwordConfig || await loadSlopwordConfig({ defaultPpmOverride });
+    const defaultPpm = defaultPpmOverride === null || defaultPpmOverride === undefined
+        ? resolvedConfig.defaultPpm
+        : Number(defaultPpmOverride);
+    if (!Number.isFinite(defaultPpm) || defaultPpm < 0) {
+        throw new Error('Slopwords default override ppm is invalid.');
+    }
+    const { regexes } = resolvedConfig;
     const definitions = [];
     const seenNames = new Set();
 
@@ -3990,7 +4601,8 @@ async function findSlopRegexesInText(text, {
     defaultPpmOverride = null,
     includeZeroPpm = true,
     includePositivePpm = true,
-    names = null
+    names = null,
+    session = null
 } = {}) {
     const regexText = stripAsterisksForSlopRegexText(text);
     if (!regexText.trim()) {
@@ -3998,7 +4610,7 @@ async function findSlopRegexesInText(text, {
     }
 
     const definitions = filterSlopRegexDefinitions(
-        await loadSlopRegexDefinitions({ defaultPpmOverride }),
+        session?.regexDefinitions || await loadSlopRegexDefinitions({ defaultPpmOverride }),
         { includeZeroPpm, includePositivePpm, names }
     );
     const flagged = [];
@@ -4010,10 +4622,53 @@ async function findSlopRegexesInText(text, {
     return flagged;
 }
 
+async function findSlopRegexMatchDetails(text, {
+    defaultPpmOverride = null,
+    includeZeroPpm = true,
+    includePositivePpm = true,
+    names = null,
+    session = null
+} = {}) {
+    const normalized = stripAsterisksWithRawIndexes(text);
+    if (!normalized.text.trim()) {
+        throw new Error('Slop regex matching requires a non-empty string.');
+    }
+
+    const definitions = filterSlopRegexDefinitions(
+        session?.regexDefinitions || await loadSlopRegexDefinitions({ defaultPpmOverride }),
+        { includeZeroPpm, includePositivePpm, names }
+    );
+    const matches = [];
+    for (const definition of definitions) {
+        definition.regex.lastIndex = 0;
+        let match = null;
+        while ((match = definition.regex.exec(normalized.text)) !== null) {
+            const strippedStart = match.index;
+            const strippedEnd = match.index + match[0].length;
+            const rawStart = normalized.rawIndexes[strippedStart] ?? text.length;
+            const rawEnd = match[0].length > 0
+                ? (normalized.rawIndexes[strippedEnd - 1] ?? (text.length - 1)) + 1
+                : rawStart;
+            matches.push({
+                name: definition.name,
+                index: rawStart,
+                length: rawEnd - rawStart,
+                text: text.slice(rawStart, rawEnd)
+            });
+            if (match[0] === '') {
+                definition.regex.lastIndex += 1;
+            }
+        }
+        definition.regex.lastIndex = 0;
+    }
+    return matches;
+}
+
 async function analyzeSlopRegexesForText(text, {
     defaultPpmOverride = null,
     includeZeroPpm = true,
-    includePositivePpm = true
+    includePositivePpm = true,
+    session = null
 } = {}) {
     const regexText = stripAsterisksForSlopRegexText(text);
     const tokens = tokenizeSlopText(regexText);
@@ -4022,7 +4677,7 @@ async function analyzeSlopRegexesForText(text, {
     }
 
     const definitions = filterSlopRegexDefinitions(
-        await loadSlopRegexDefinitions({ defaultPpmOverride }),
+        session?.regexDefinitions || await loadSlopRegexDefinitions({ defaultPpmOverride }),
         { includeZeroPpm, includePositivePpm }
     );
     const totalWords = tokens.length;
@@ -4037,14 +4692,21 @@ async function analyzeSlopRegexesForText(text, {
     return flagged;
 }
 
-async function analyzeSlopwordsForText(text, { defaultPpmOverride = null } = {}) {
+async function analyzeSlopwordsForText(text, { defaultPpmOverride = null, session = null } = {}) {
     const tokens = tokenizeSlopText(text);
     if (!tokens.length) {
         throw new Error('Slopword analysis requires a non-empty string.');
     }
 
-    const { defaultPpm, slopwords } = await loadSlopwordConfig({ defaultPpmOverride });
-    const { customWords } = collectActiveSettingCustomSlopEntries();
+    const loadedConfig = session?.slopwordConfig || await loadSlopwordConfig({ defaultPpmOverride });
+    const defaultPpm = defaultPpmOverride === null || defaultPpmOverride === undefined
+        ? loadedConfig.defaultPpm
+        : Number(defaultPpmOverride);
+    if (!Number.isFinite(defaultPpm) || defaultPpm < 0) {
+        throw new Error('Slopwords default override ppm is invalid.');
+    }
+    const { slopwords } = loadedConfig;
+    const { customWords } = session?.customEntries || collectActiveSettingCustomSlopEntries();
     const wordCounts = new Map();
     for (const token of tokens) {
         wordCounts.set(token, (wordCounts.get(token) || 0) + 1);
@@ -4117,14 +4779,14 @@ function normalizeConfiguredNgramEntry(rawNgram) {
     };
 }
 
-async function analyzeConfiguredNgramsForText(text) {
+async function analyzeConfiguredNgramsForText(text, { session = null } = {}) {
     const tokens = Utils.normalizeKgramTokens(text);
     if (!tokens.length) {
         throw new Error('Configured ngram analysis requires a non-empty string.');
     }
 
-    const { ngramDefault, ngrams } = await loadSlopwordConfig();
-    const { customNgrams } = collectActiveSettingCustomSlopEntries();
+    const { ngramDefault, ngrams } = session?.slopwordConfig || await loadSlopwordConfig();
+    const { customNgrams } = session?.customEntries || collectActiveSettingCustomSlopEntries();
     const normalizedEntryMap = new Map();
     for (const [rawNgram, rawLimit] of Object.entries(ngrams)) {
         const { normalizedTokens, normalizedNgram } = normalizeConfiguredNgramEntry(rawNgram);
@@ -4202,11 +4864,27 @@ async function analyzeChatSlopwords({ defaultPpmOverride = null } = {}) {
     return analyzeSlopwordsForText(combinedText, { defaultPpmOverride });
 }
 
+async function createSlopAnalysisSession() {
+    const slopwordConfig = await loadSlopwordConfig();
+    const customEntries = collectActiveSettingCustomSlopEntries();
+    const regexDefinitions = await loadSlopRegexDefinitions({ slopwordConfig });
+    return Object.freeze({
+        slopwordConfig: Object.freeze({ ...slopwordConfig }),
+        customEntries: Object.freeze({
+            customWords: Object.freeze([...customEntries.customWords]),
+            customNgrams: Object.freeze([...customEntries.customNgrams])
+        }),
+        regexDefinitions: Object.freeze([...regexDefinitions])
+    });
+}
+
 Globals.analyzeChatSlopwords = analyzeChatSlopwords;
 Globals.analyzeSlopwordsForText = analyzeSlopwordsForText;
 Globals.analyzeConfiguredNgramsForText = analyzeConfiguredNgramsForText;
 Globals.analyzeSlopRegexesForText = analyzeSlopRegexesForText;
 Globals.findSlopRegexesInText = findSlopRegexesInText;
+Globals.findSlopRegexMatchDetails = findSlopRegexMatchDetails;
+Globals.createSlopAnalysisSession = createSlopAnalysisSession;
 
 function shouldGenerateNpcImage(npc) {
     if (!npc) {
@@ -5748,6 +6426,7 @@ function resolveRegionWeatherForPrompt({ region, location, worldTimeContext }) {
 
 function buildBasePromptContext({
     locationOverride = null,
+    isExterior = false,
     omitInventoryItems = null,
     omitAbilities = null,
     omitCraftHistory = null,
@@ -5778,6 +6457,11 @@ function buildBasePromptContext({
         omitInventoryItems,
         baseContextConfig?.omit_inventory_items,
         'base_context.omit_inventory_items'
+    );
+    const resolvedIsExterior = resolveBooleanOption(
+        isExterior,
+        null,
+        'buildBasePromptContext.isExterior'
     );
     const shouldOmitAbilities = resolveBooleanOption(
         omitAbilities,
@@ -6022,10 +6706,11 @@ function buildBasePromptContext({
             });
         }
     }
-
-
+    const currentLocationName = location
+        ? (locationDetails?.name || location?.name || 'Unknown Location')
+        : null;
     const currentLocationContext = location ? {
-        name: locationDetails?.name || location?.name || 'Unknown Location',
+        name: currentLocationName,
         description: locationDetails?.description || location?.description || 'No description available.',
         statusEffects: normalizeStatusEffects(location || locationDetails),
         exits: exitSummaries,
@@ -7636,7 +8321,8 @@ function buildBasePromptContext({
         ...worldTimeContext,
         hasLocalWeather,
         weatherScope,
-        hasWeatherOutside: weatherScope === 'outside',
+        hasWeatherSheltered: weatherScope === 'sheltered',
+        hasWeatherOutside: weatherScope === 'sheltered',
         weatherName: regionalWeather?.name || 'Unspecified weather',
         weatherDescription: regionalWeather?.description || 'Weather conditions are not currently available.',
         lightLevelDescription: worldTimeContext.lightLevelDescription || worldTimeContext.lighting || 'Ambient conditions are unknown.'
@@ -7716,6 +8402,7 @@ function buildBasePromptContext({
         trackers: buildTrackersForPrompt(),
         currentRegion: currentRegionContext,
         currentLocation: currentLocationContext,
+        isExterior: resolvedIsExterior,
         currentPlayer: currentPlayerContext,
         currentVehicle,
         worldTime: worldTimeContextWithConditions,
@@ -12938,7 +13625,7 @@ function listenWithPortRetry(serverInstance, {
     });
 }
 
-function requestServerRestart({ reason = 'manual', saveName = null, saveType = null } = {}) {
+async function requestServerRestart({ reason = 'manual', saveName = null, saveType = null } = {}) {
     if (config?.server?.allowSelfRestart !== true) {
         return {
             started: false,
@@ -12956,6 +13643,19 @@ function requestServerRestart({ reason = 'manual', saveName = null, saveType = n
         };
     }
 
+    selfRestartRequested = true;
+    if (localLlamaServerProcess) {
+        try {
+            await localLlamaServerProcess.stop();
+        } catch (error) {
+            selfRestartRequested = false;
+            throw new Error(
+                `Cannot restart AI RPG because the managed llama.cpp server could not be terminated: ${error.message}`,
+                { cause: error }
+            );
+        }
+    }
+
     const child = spawn(process.execPath, process.argv.slice(1), {
         cwd: process.cwd(),
         detached: true,
@@ -12968,7 +13668,6 @@ function requestServerRestart({ reason = 'manual', saveName = null, saveType = n
     });
     child.unref();
 
-    selfRestartRequested = true;
     selfRestartChildProcessId = child.pid || null;
 
     const shutdownTimer = setTimeout(() => {
@@ -13028,7 +13727,11 @@ const deterministicTemplateEnv = new nunjucks.Environment(
 
 // Import and add common template filters to server-side environments
 const diceModule = require('./nunjucks_dice.js');
-const { addEvalFilter, addRandomWordGlobal } = require('./nunjucks_filters.js');
+const {
+    addEvalFilter,
+    addLocationInfoGlobal,
+    addRandomWordGlobal
+} = require('./nunjucks_filters.js');
 const e = require('express');
 
 // Add common template filters to server-side environments
@@ -13061,6 +13764,9 @@ addDiceFilters(viewsEnv);
 addDiceFilters(promptEnv);
 addDiceFilters(imagePromptEnv);
 addDiceFilters(deterministicTemplateEnv);
+addLocationInfoGlobal(promptEnv, {
+    getLocations: () => Location.getAll()
+});
 
 const rarityDefinitions = Thing.getAllRarityDefinitions();
 [viewsEnv, promptEnv, imagePromptEnv, deterministicTemplateEnv].forEach(env => {
@@ -22515,9 +23221,17 @@ function renderLocationThingsPrompt(context = {}) {
     }
 }
 
-async function parseThingsXml(xmlContent, { isInventory = false, promptEnv = null, parseXMLTemplate = null, prepareBasePromptContext = null } = {}) {
+async function parseThingsXml(xmlContent, {
+    isInventory = false,
+    promptEnv = null,
+    parseXMLTemplate = null,
+    prepareBasePromptContext = null,
+    strictXml = false
+} = {}) {
     try {
-        const doc = Utils.parseXmlDocument(xmlContent, 'text/xml');
+        const doc = strictXml
+            ? Utils.parseXmlDocumentStrict(xmlContent, 'text/xml')
+            : Utils.parseXmlDocument(xmlContent, 'text/xml');
 
         const parserError = doc.getElementsByTagName('parsererror')[0];
         if (parserError) {
@@ -22598,14 +23312,28 @@ async function parseThingsXml(xmlContent, { isInventory = false, promptEnv = nul
                     throw new Error(`Thing "${itemName}" registered XML field <${field.xmlPrompt.tagName}> must be true or false.`);
                 }
                 case 'array': {
-                    const parsed = JSON.parse(trimmed);
+                    let parsed;
+                    try {
+                        parsed = JSON.parse(trimmed);
+                    } catch (error) {
+                        throw new Error(
+                            `Thing "${itemName}" registered XML field <${field.xmlPrompt.tagName}> must be a valid JSON array: ${error.message}`
+                        );
+                    }
                     if (!Array.isArray(parsed)) {
                         throw new Error(`Thing "${itemName}" registered XML field <${field.xmlPrompt.tagName}> must be a JSON array.`);
                     }
                     return parsed;
                 }
                 case 'object': {
-                    const parsed = JSON.parse(trimmed);
+                    let parsed;
+                    try {
+                        parsed = JSON.parse(trimmed);
+                    } catch (error) {
+                        throw new Error(
+                            `Thing "${itemName}" registered XML field <${field.xmlPrompt.tagName}> must be a valid JSON object: ${error.message}`
+                        );
+                    }
                     if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
                         throw new Error(`Thing "${itemName}" registered XML field <${field.xmlPrompt.tagName}> must be a JSON object.`);
                     }
@@ -22944,7 +23672,7 @@ async function parseThingsXml(xmlContent, { isInventory = false, promptEnv = nul
     } catch (error) {
         console.warn('Failed to parse things XML:', error.message);
         console.trace();
-        return [];
+        throw error;
     }
 }
 
@@ -23051,6 +23779,8 @@ async function parseThingSeparateResponse(xmlContent, options = {}) {
     return parsedItems;
 }
 
+const LOCATION_THINGS_GENERATION_MAX_ATTEMPTS = 3;
+
 async function generateLocationThingsForLocation({ location } = {}) {
     if (!location || typeof location.id !== 'string') {
         return [];
@@ -23093,6 +23823,10 @@ async function generateLocationThingsForLocation({ location } = {}) {
     const defaultSceneryFallback = Math.max(0, Math.min(5, Math.round(itemCount / 2)));
     const rawSceneryCount = hints.numScenery;
     const sceneryCount = normalizeCount(rawSceneryCount, defaultSceneryFallback);
+
+    if (itemCount === 0 && sceneryCount === 0) {
+        return [];
+    }
 
     const rarityCounters = {
         items: new Map(),
@@ -23160,35 +23894,47 @@ async function generateLocationThingsForLocation({ location } = {}) {
         { role: 'user', content: parsedTemplate.generationPrompt }
     ];
 
-    const aiResponse = await runGenerationPromptCompletion({
-        requestOptions: {
-            messages,
-            temperature: parsedTemplate.temperature,
+    let validationAttempt = 0;
+    const parsedItems = await withRetry(async () => {
+        validationAttempt += 1;
+        const aiResponse = await runGenerationPromptCompletion({
+            requestOptions: {
+                messages,
+                temperature: parsedTemplate.temperature,
+                metadataLabel: 'location_things_generation'
+            },
             metadataLabel: 'location_things_generation'
-        },
-        metadataLabel: 'location_things_generation'
-    });
+        });
 
-    if (!aiResponse || !aiResponse.trim()) {
-        return [];
-    }
+        LLMClient.logPrompt({
+            prefix: 'location_things_generation',
+            metadataLabel: 'location_things_generation',
+            systemPrompt: parsedTemplate.systemPrompt || '',
+            generationPrompt: parsedTemplate.generationPrompt || '',
+            response: aiResponse || ''
+        });
 
-    LLMClient.logPrompt({
-        prefix: 'location_things_generation',
-        metadataLabel: 'location_things_generation',
-        systemPrompt: parsedTemplate.systemPrompt || '',
-        generationPrompt: parsedTemplate.generationPrompt || '',
-        response: aiResponse || ''
-    });
-
-    const parsedItems = await parseThingsXml(aiResponse, {
-        promptEnv,
-        parseXMLTemplate,
-        prepareBasePromptContext
-    });
-    if (!parsedItems.length) {
-        return [];
-    }
+        try {
+            if (!aiResponse || !aiResponse.trim()) {
+                throw new Error('Location things generation returned an empty AI response.');
+            }
+            const generatedItems = await parseThingsXml(aiResponse, {
+                promptEnv,
+                parseXMLTemplate,
+                prepareBasePromptContext,
+                strictXml: true
+            });
+            if (!generatedItems.length) {
+                throw new Error('Location things generation response contained no item or scenery entries.');
+            }
+            return generatedItems;
+        } catch (error) {
+            console.warn(
+                `Location things generation response attempt ${validationAttempt} failed validation: ${error.message}`
+            );
+            throw error;
+        }
+    }, LOCATION_THINGS_GENERATION_MAX_ATTEMPTS);
 
     const createdThings = [];
     for (const itemData of parsedItems) {
@@ -26946,10 +27692,7 @@ async function generatePlayerImage(player, options = {}) {
             const job = createImageJob(jobId, payload);
             setEntityJob('player', player.id, jobId);
             player.pendingImageJobId = jobId;
-            jobQueue.push(jobId);
-
-            // Start processing if not already running
-            setTimeout(() => processJobQueue(), 0);
+            enqueueImageJob(jobId);
 
             console.log(`🎨 Queued portrait generation for player ${player.name}, tracking with job ID: ${jobId}`);
 
@@ -27099,6 +27842,7 @@ function renderLocationFinalImagePrompt(location, promptText) {
 const imagePromptBatchQueue = [];
 let imagePromptBatchTimer = null;
 let imagePromptBatchCounter = 0;
+let activeImagePromptGenerationCount = 0;
 
 function getImagePromptBatchConfig() {
     const rawConfig = config?.imagegen?.prompt_batching && typeof config.imagegen.prompt_batching === 'object'
@@ -27302,6 +28046,12 @@ function logImagePromptGenerationRequest(request, finalPrompt) {
 }
 
 function finalizeImagePromptGenerationRequest(request, responseText) {
+    if (!Number.isInteger(request?.runtimeGenerationId)) {
+        throw new Error('Image prompt generation request is missing its runtime generation id.');
+    }
+    if (request.runtimeGenerationId !== runtimeGenerationId) {
+        throw createAbortError('Image prompt generation cancelled because the game runtime changed.');
+    }
     const normalizedPrompt = assertValidFinalImagePromptText(responseText);
     const finalPrompt = applyImagePromptPrefix(normalizedPrompt, request.prefixType);
     logImagePromptGenerationRequest(request, finalPrompt);
@@ -27404,6 +28154,26 @@ async function processImagePromptBatchGroup(requests) {
     }
 }
 
+async function runTrackedImagePromptGeneration(executor) {
+    if (typeof executor !== 'function') {
+        throw new Error('Tracked image prompt generation requires an executor function.');
+    }
+    activeImagePromptGenerationCount += 1;
+    try {
+        return await executor();
+    } finally {
+        activeImagePromptGenerationCount -= 1;
+        if (
+            shouldCoordinateAiModelDuringImageGeneration()
+            && imagePromptBatchQueue.length > 0
+            && !imageModelLifecycleCyclePromise
+        ) {
+            setTimeout(() => flushImagePromptBatchQueue(), 0);
+        }
+        scheduleImageRenderBatchIfReady();
+    }
+}
+
 function flushImagePromptBatchQueue() {
     if (imagePromptBatchTimer) {
         clearTimeout(imagePromptBatchTimer);
@@ -27426,7 +28196,7 @@ function flushImagePromptBatchQueue() {
     }
 
     for (const group of groups) {
-        processImagePromptBatchGroup(group.requests).catch(error => {
+        runTrackedImagePromptGeneration(() => processImagePromptBatchGroup(group.requests)).catch(error => {
             for (const request of group.requests) {
                 request.reject(error);
             }
@@ -27440,11 +28210,15 @@ function scheduleImagePromptBatchFlush() {
         clearTimeout(imagePromptBatchTimer);
         imagePromptBatchTimer = null;
     }
+    if (shouldCoordinateAiModelDuringImageGeneration() && imageModelLifecycleCyclePromise) {
+        return;
+    }
     if (imagePromptBatchQueue.length >= batchConfig.maxItems) {
         setTimeout(flushImagePromptBatchQueue, 0);
         return;
     }
-    imagePromptBatchTimer = setTimeout(flushImagePromptBatchQueue, batchConfig.delayMs);
+    const delayMs = shouldCoordinateAiModelDuringImageGeneration() ? 0 : batchConfig.delayMs;
+    imagePromptBatchTimer = setTimeout(flushImagePromptBatchQueue, delayMs);
 }
 
 function enqueueImagePromptGenerationRequest(prompts, options = {}) {
@@ -27456,6 +28230,7 @@ function enqueueImagePromptGenerationRequest(prompts, options = {}) {
             prefixType: options.prefixType || null,
             requestStart: Date.now(),
             batchKey: buildImagePromptBatchKey(prompts),
+            runtimeGenerationId,
             resolve,
             reject
         };
@@ -27471,12 +28246,15 @@ async function generateImagePromptFromTemplate(prompts, options = {}) {
         prompts,
         prefixType,
         requestStart: Date.now(),
-        batchKey: buildImagePromptBatchKey(prompts)
+        batchKey: buildImagePromptBatchKey(prompts),
+        runtimeGenerationId
     };
     const batchConfig = getImagePromptBatchConfig();
     try {
         if (!batchConfig.enabled || batchConfig.maxItems <= 1) {
-            return await executeSingleImagePromptGenerationRequest(request);
+            return await runTrackedImagePromptGeneration(
+                () => executeSingleImagePromptGenerationRequest(request)
+            );
         }
         return await enqueueImagePromptGenerationRequest(prompts, { prefixType });
     } catch (error) {
@@ -27485,6 +28263,85 @@ async function generateImagePromptFromTemplate(prompts, options = {}) {
         console.error('Error generating image prompt with LLM:', message);
         throw error;
     }
+}
+
+function cancelQueuedImagePromptGenerationRequests(reason = 'Image prompt generation cancelled.') {
+    if (imagePromptBatchTimer) {
+        clearTimeout(imagePromptBatchTimer);
+        imagePromptBatchTimer = null;
+    }
+    const pendingRequests = imagePromptBatchQueue.splice(0);
+    const cancellationError = createAbortError(reason);
+    for (const request of pendingRequests) {
+        request.reject(cancellationError);
+    }
+    return pendingRequests.length;
+}
+
+async function cancelAllImageJobs(reason = 'Image generation cancelled.') {
+    const normalizedReason = typeof reason === 'string' && reason.trim()
+        ? reason.trim()
+        : 'Image generation cancelled.';
+    if (imageRenderBatchTimer) {
+        clearTimeout(imageRenderBatchTimer);
+        imageRenderBatchTimer = null;
+    }
+
+    const queuedPromptRequestCount = cancelQueuedImagePromptGenerationRequests(normalizedReason);
+    const jobsToCancel = Array.from(imageJobs.values()).filter(job => (
+        job?.status === JOB_STATUS.QUEUED || job?.status === JOB_STATUS.PROCESSING
+    ));
+    const activeJobCount = jobsToCancel.filter(job => job.status === JOB_STATUS.PROCESSING).length;
+    const queuedJobCount = jobsToCancel.length - activeJobCount;
+    const comfyPromptIds = Array.from(new Set(jobsToCancel
+        .map(job => (typeof job?.comfyPromptId === 'string' ? job.comfyPromptId.trim() : ''))
+        .filter(Boolean)));
+
+    jobQueue.length = 0;
+    imageJobEnqueueVersion += 1;
+    for (const job of jobsToCancel) {
+        job.status = JOB_STATUS.CANCELED;
+        job.isRendering = false;
+        job.error = normalizedReason;
+        job.message = normalizedReason;
+        job.completedAt = new Date().toISOString();
+        if (job.abortController && !job.abortController.signal.aborted) {
+            job.abortController.abort(createAbortError(normalizedReason));
+        }
+        emitJobUpdate(job, { phase: 'canceled' });
+        cleanupFinishedImageJobTracking(job);
+    }
+
+    const engine = String(config?.imagegen?.engine || 'comfyui').trim().toLowerCase();
+    let remoteCancellation = null;
+    if (engine === 'comfyui' && activeJobCount > 0) {
+        if (!comfyUIClient || typeof comfyUIClient.cancelPrompts !== 'function') {
+            throw new Error('Cannot cancel active ComfyUI image work because cancelPrompts() is unavailable.');
+        }
+        remoteCancellation = await comfyUIClient.cancelPrompts(comfyPromptIds);
+    }
+
+    if (activeImageJobPromises.size > 0) {
+        await Promise.allSettled(Array.from(activeImageJobPromises));
+    }
+    if (imageModelLifecycleCyclePromise) {
+        await imageModelLifecycleCyclePromise;
+    }
+
+    activeImageJobs.clear();
+    entityImageJobs.clear();
+    pendingLocationImages.clear();
+    imageJobs.clear();
+    isProcessingJob = false;
+
+    return {
+        canceledCount: jobsToCancel.length,
+        queuedJobCount,
+        activeJobCount,
+        queuedPromptRequestCount,
+        comfyPromptIds,
+        remoteCancellation
+    };
 }
 
 async function generateEditableEntityImagePrompt(entity, entityType) {
@@ -27687,14 +28544,12 @@ async function generateLocationImage(location, options = {}) {
 
             // Create and queue the job
             const job = createImageJob(jobId, payload);
-            jobQueue.push(jobId);
+            enqueueImageJob(jobId);
 
             // Set imageId to the job ID temporarily - it will be updated to the final imageId when generation completes
             location.pendingImageJobId = jobId;
             pendingLocationImages.set(location.id, jobId);
 
-            // Start processing if not already running
-            setTimeout(() => processJobQueue(), 0);
             console.log(`🏞️ Queued scene generation for location ${location.id}, tracking with job ID: ${jobId}`);
 
             return {
@@ -27910,9 +28765,8 @@ async function generateLocationWeatherVariant(location, options = {}) {
         });
 
         const job = createImageJob(jobId, payload);
-        jobQueue.push(jobId);
+        enqueueImageJob(jobId);
         setEntityJob('location-variant', `${location.id}:${conditions.variantKey}`, jobId);
-        setTimeout(() => processJobQueue(), 0);
 
         return {
             success: true,
@@ -28027,10 +28881,7 @@ async function generateLocationExitImage(locationExit, options = {}) {
 
         // Create and queue the job
         const job = createImageJob(jobId, payload);
-        jobQueue.push(jobId);
-
-        // Start processing if not already running
-        setTimeout(() => processJobQueue(), 0);
+        enqueueImageJob(jobId);
 
         setEntityJob('location-exit', locationExit.id, jobId);
         locationExit.pendingImageJobId = jobId;
@@ -28173,10 +29024,7 @@ async function generateThingImage(thing, options = {}) {
 
         // Create and queue the job
         const job = createImageJob(jobId, payload);
-        jobQueue.push(jobId);
-
-        // Start processing if not already running
-        setTimeout(() => processJobQueue(), 0);
+        enqueueImageJob(jobId);
 
         setEntityJob('thing', thing.id, jobId);
         thing.pendingImageJobId = jobId;
@@ -28655,13 +29503,8 @@ async function generateLocationFromPrompt(options = {}) {
         console.log(`💾 Added location ${location.id} to game world (total: ${gameLocations.size})`);
 
         const thingsPromise = (async () => {
-            try {
-                Globals.updateSpinnerText({ message: `Generating items and scenery for location ${location.name || location.id}...` });
-                return await generateLocationThingsForLocation({ location });
-            } catch (thingError) {
-                console.warn('Failed to generate location things:', thingError.message);
-                return [];
-            }
+            Globals.updateSpinnerText({ message: `Generating items and scenery for location ${location.name || location.id}...` });
+            return generateLocationThingsForLocation({ location });
         })();
 
         const npcsPromise = (async () => {
@@ -31452,6 +32295,7 @@ app.get('/', (req, res) => {
     const modStyles = (typeof apiScope !== 'undefined' && apiScope.modLoader && typeof apiScope.modLoader.getModClientStyles === 'function')
         ? apiScope.modLoader.getModClientStyles()
         : [];
+    const characterPortraitDimensions = resolveCharacterImageDimensions(config);
 
     res.render('index.njk', {
         title: 'AI RPG Chat Interface',
@@ -31467,6 +32311,8 @@ app.get('/', (req, res) => {
         needBarDefinitions: Player.getNeedBarDefinitionsForContext(),
         checkMovePlausibility: Globals.config.check_move_plausibility || 'never',
         baseWeaponDamage: Globals.config.baseWeaponDamage,
+        characterPortraitWidth: characterPortraitDimensions.width,
+        characterPortraitHeight: characterPortraitDimensions.height,
         clientMessageHistory,
         saveMetadata: typeof Globals.getSaveMetadata === 'function'
             ? Globals.getSaveMetadata()
@@ -32026,6 +32872,7 @@ const apiScope = {
     modExtensionRegistry,
     viewsEnv,
     createImageJob,
+    enqueueImageJob,
     generateInventoryForCharacter,
     restoreCharacterHealthToMaximum,
     generateLocationFromPrompt,
@@ -32087,6 +32934,7 @@ const apiScope = {
     generateNpcFromEvent,
     generateImageId,
     processJobQueue,
+    cancelAllImageJobs,
     runPlausibilityCheck,
     parsePlausibilityOutcome,
     prepareBasePromptContext,
@@ -32126,6 +32974,7 @@ const apiScope = {
     vehicleDebugEnabled: cliVehicleDebug,
     resolveSystemPromptPrefix,
     requestServerRestart,
+    getLocalLlamaServerProcess: () => localLlamaServerProcess,
 
 };
 
@@ -32240,6 +33089,15 @@ async function startServer() {
         console.error('❌ Failed to initialize image engine:', error.message);
         throw error;
     }
+    configureComfyModelCleanupBeforePrompts();
+
+    // Step 2.25: Start the locally managed llama.cpp process after ComfyUI VRAM is clear.
+    try {
+        await initializeManagedLocalLlamaServer();
+    } catch (error) {
+        console.error('❌ Failed to initialize managed local llama.cpp server:', error.message);
+        throw error;
+    }
 
     // Step 2.5: Initialize Lorebook Manager
     try {
@@ -32333,6 +33191,8 @@ async function startServer() {
                 } else {
                     console.log('🎨 Image generation disabled (engine unavailable)');
                 }
+            } else if (isComfyModelCleanupModeConfigured(config) && comfyUIClient) {
+                console.log('🎨 Image generation disabled; ComfyUI pre-prompt model cleanup is ready.');
             } else {
                 console.log(`🎨 Image generation disabled in configuration`);
             }
@@ -32348,6 +33208,28 @@ async function startServer() {
 // not bind a port or leave a listening handle open (which otherwise hangs test
 // processes and causes EADDRINUSE when a dev server is already running).
 if (require.main === module) {
+    let managedLlamaTerminationRequested = false;
+    const terminateManagedLlamaImmediately = () => {
+        if (managedLlamaTerminationRequested || !localLlamaServerProcess) {
+            return;
+        }
+        managedLlamaTerminationRequested = true;
+        try {
+            localLlamaServerProcess.terminateImmediately();
+        } catch (error) {
+            console.error('Failed to terminate managed llama.cpp server during shutdown:', error.message);
+        }
+    };
+    process.once('SIGINT', () => {
+        terminateManagedLlamaImmediately();
+        process.exit(0);
+    });
+    process.once('SIGTERM', () => {
+        terminateManagedLlamaImmediately();
+        process.exit(0);
+    });
+    process.once('exit', terminateManagedLlamaImmediately);
+
     startServer().catch(error => {
         console.error('❌ Failed to start server:', error.message);
         process.exit(1);

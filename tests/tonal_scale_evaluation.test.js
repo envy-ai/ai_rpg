@@ -15,6 +15,7 @@ const defaultConfig = yaml.load(defaultConfigSource);
 const serverSource = fs.readFileSync(path.join(rootDir, 'server.js'), 'utf8');
 const apiSource = fs.readFileSync(path.join(rootDir, 'api.js'), 'utf8');
 const baseContextSource = fs.readFileSync(path.join(rootDir, 'prompts', 'base-context.xml.njk'), 'utf8');
+const configViewSource = fs.readFileSync(path.join(rootDir, 'views', 'config.njk'), 'utf8');
 
 function buildRenderContext(overrides = {}) {
     return buildBaseRenderContext({
@@ -39,6 +40,25 @@ test('default config enables tonal scale evaluation every five turns and server 
     assert.match(serverSource, /tonal_scale_evaluation must be an object when provided/);
     assert.match(serverSource, /tonal_scale_evaluation\.enabled must be a boolean when provided/);
     assert.match(serverSource, /tonal_scale_evaluation\.interval must be an integer greater than or equal to 1 when provided/);
+});
+
+test('system configuration page exposes tonal scale evaluation enable and interval controls', () => {
+    assert.match(
+        configViewSource,
+        /name="tonal_scale_evaluation\.enabled::boolean" value="false"/
+    );
+    assert.match(
+        configViewSource,
+        /id="tonal-scale-evaluation-enabled"[\s\S]*?name="tonal_scale_evaluation\.enabled::boolean"[\s\S]*?value="true"/
+    );
+    assert.match(
+        configViewSource,
+        /config\.tonal_scale_evaluation\.enabled is not defined or config\.tonal_scale_evaluation\.enabled/
+    );
+    assert.match(
+        configViewSource,
+        /id="tonal-scale-evaluation-interval"[\s\S]*?name="tonal_scale_evaluation\.interval::int"[\s\S]*?default\(5\)[\s\S]*?min="1"/
+    );
 });
 
 test('base context includes stored tonal scale evaluation before current conditions and omits it from its own prompt', () => {

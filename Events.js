@@ -3051,44 +3051,18 @@ class Events {
                 : null);
     }
 
-    static _startHousekeepingForEventChecks({
+    static _scheduleHousekeepingForEventChecks({
         depth = 0,
         suppressHousekeeping = false,
-        textToCheck = "",
-        actionText = "",
-        stream = null,
-        location = null,
-        entryCollector = null,
     } = {}) {
         if (depth > 0 || suppressHousekeeping) {
-            return null;
+            return false;
         }
         const runner = this._getHousekeepingPromptRunner();
         if (!runner) {
-            return null;
+            return false;
         }
-        if (!this.shouldRunAutomaticHousekeepingThisTurn()) {
-            return { __housekeepingIntervalSkipped: true };
-        }
-        const starter = typeof runner?.start === "function"
-            ? runner.start.bind(runner)
-            : null;
-        if (!starter) {
-            return null;
-        }
-        return Promise.resolve()
-            .then(() => starter({
-                textToCheck,
-                actionText,
-                stream,
-                locationOverride: location || null,
-                eventResult: null,
-                entryCollector,
-            }))
-            .catch((error) => ({
-                __housekeepingStartError: true,
-                error,
-            }));
+        return this.shouldRunAutomaticHousekeepingThisTurn();
     }
 
     static async _runHousekeepingAfterEventChecks({
@@ -3100,34 +3074,14 @@ class Events {
         location = null,
         eventResult = null,
         entryCollector = null,
-        pendingHousekeepingPrompt = null,
+        housekeepingScheduled = false,
     } = {}) {
-        if (depth > 0 || suppressHousekeeping) {
-            return null;
-        }
-        if (pendingHousekeepingPrompt?.__housekeepingIntervalSkipped === true) {
+        if (depth > 0 || suppressHousekeeping || !housekeepingScheduled) {
             return null;
         }
         const runner = this._getHousekeepingPromptRunner();
         if (!runner) {
             return null;
-        }
-        if (pendingHousekeepingPrompt) {
-            const pending = await pendingHousekeepingPrompt;
-            if (pending?.__housekeepingStartError) {
-                throw pending.error;
-            }
-            if (typeof runner.finish !== "function") {
-                throw new Error("Deferred housekeeping prompt requires runner.finish.");
-            }
-            return runner.finish(pending, {
-                textToCheck,
-                actionText,
-                stream,
-                locationOverride: location || null,
-                eventResult,
-                entryCollector,
-            });
         }
         return runner({
             textToCheck,
@@ -3488,7 +3442,7 @@ class Events {
         suppressHousekeeping,
         initialTimeProgress,
         entryCollector,
-        pendingHousekeepingPrompt,
+        housekeepingScheduled,
     }) {
         const normalizedIgnoredEventKeys =
             this._normalizeIgnoredEventKeys(ignoredEventKeys);
@@ -3850,7 +3804,7 @@ class Events {
             location: destinationLocation || location || null,
             eventResult,
             entryCollector,
-            pendingHousekeepingPrompt,
+            housekeepingScheduled,
         });
 
         return eventResult;
@@ -3978,14 +3932,9 @@ class Events {
         const baseContext = await prepareBasePromptContext({
             locationOverride: location,
         });
-        const pendingHousekeepingPrompt = this._startHousekeepingForEventChecks({
+        const housekeepingScheduled = this._scheduleHousekeepingForEventChecks({
             depth,
             suppressHousekeeping: Boolean(suppressHousekeeping),
-            textToCheck,
-            actionText: normalizedActionText,
-            stream,
-            location,
-            entryCollector,
         });
 
         if (config?.event_checks?.use_xml !== false) {
@@ -4015,7 +3964,7 @@ class Events {
                 suppressHousekeeping: Boolean(suppressHousekeeping),
                 initialTimeProgress: normalizedInitialTimeProgress,
                 entryCollector,
-                pendingHousekeepingPrompt,
+                housekeepingScheduled,
             });
         }
 
@@ -4525,7 +4474,7 @@ class Events {
             location,
             eventResult,
             entryCollector,
-            pendingHousekeepingPrompt,
+            housekeepingScheduled,
         });
 
         return eventResult;
@@ -5308,11 +5257,6 @@ class Events {
         if (eventElements.length === 0) {
             throw new Error(
                 "Tiny-brain event chunk contained no event elements; output <done/> when no events remain.",
-            );
-        }
-        if (eventElements.length > 2) {
-            throw new Error(
-                `Tiny-brain event chunk contained ${eventElements.length} events; at most 2 are allowed per step.`,
             );
         }
         const innerXml = eventElements

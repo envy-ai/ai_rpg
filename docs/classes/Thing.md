@@ -74,6 +74,8 @@ Generated item descriptions remain descriptive prose. Mechanical details such as
 
 The shared item XML prompt includes count, item/scenery kind, type, slot, rarity, value, weight, relative level, boolean flags, container data, attribute bonuses, target/equipper cause effects, properties, short description, and registered Thing fields exposed to generator prompts. The XML parser returns the same fields for natural location generation, inventory generation, container-content generation, crafting/process/salvage/harvest output, item alteration, and thing separation.
 
+Thing XML parsing propagates malformed XML and invalid registered-field JSON instead of converting a failed batch into an empty list. Location item/scenery generation additionally uses strict XML parsing and retries the complete generation request up to three times before propagating the validation error. Parsing and validation finish before any object from that response is created, so a rejected attempt cannot partially persist a batch.
+
 `POST /api/things`, `PUT /api/things/:id`, crafting instantiation, event-created placeholder items, location/inventory generation, and container-content generation all construct or mutate `Thing` records through the same structural fields. API payloads also accept registered fields exposed to create/edit flows.
 
 The `thing-separate` route accepts item and scenery sources. If separated output contains one or more containers, the first returned container receives the rest of the returned item-type things. Scenery output remains at the source destination because container inventories only hold item Things. Stack separation and explicit split-stack flows opt out of automatic merging.
@@ -88,7 +90,7 @@ For fields with `clearThingSlotWhenPresent`, generation and API write paths clea
 The modules mod registers `moduleSlots`, `moduleType`, `installedModuleIds`, and `moduleInstalledOnItemId`. Base equippable items use normal `Thing.slot` plus `moduleSlots`; module items use `moduleType`; installed modules remain real Things in the same holder as their base item, with backlinks and UI filtering handled by the modules mod.
 
 ## Validation And Errors
-Invalid required constructor fields, invalid `thingType`, invalid count values, invalid extension field values, invalid non-array container contents, invalid non-string contained ids, malformed status-effect entries, and unresolved destructive container operations throw explicit errors. Registered extension fields may supply `validateValue(value, context)`, which runs after core type normalization and before constructor, hydration, or setter persistence. Several API routes catch these errors and return structured `{ success: false, error }` responses.
+Invalid required constructor fields, invalid `thingType`, invalid count values, invalid extension field values, invalid registered-field JSON, malformed Thing XML, invalid non-array container contents, invalid non-string contained ids, malformed status-effect entries, and unresolved destructive container operations throw explicit errors. Registered extension fields may supply `validateValue(value, context)`, which runs after core type normalization and before constructor, hydration, or setter persistence. Several API routes catch these errors and return structured `{ success: false, error }` responses.
 
 Level values are rounded to positive integers in the model. `relativeLevel` is rounded into the model-supported relative range. Stack `count` must be an integer `0` or greater and defaults to `1` when absent.
 

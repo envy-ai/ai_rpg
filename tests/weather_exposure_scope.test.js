@@ -40,19 +40,30 @@ function renderCurrentConditions(worldTime) {
     });
 }
 
-test('Location generationHints.hasWeather normalizes yes/no/outside and legacy booleans', () => {
+test('Location generationHints.hasWeather normalizes yes/no/sheltered and legacy outside/booleans', () => {
     const region = createRegion();
 
-    const outside = new Location({
-        id: `location_weather_scope_outside_${Date.now()}_${Math.random()}`,
+    const sheltered = new Location({
+        id: `location_weather_scope_sheltered_${Date.now()}_${Math.random()}`,
         name: 'Windowed Gallery',
         description: 'A gallery with broad windows.',
+        regionId: region.id,
+        generationHints: {
+            hasWeather: 'sheltered'
+        }
+    });
+    assert.equal(sheltered.generationHints.hasWeather, 'sheltered');
+
+    const legacyOutside = new Location({
+        id: `location_weather_scope_legacy_outside_${Date.now()}_${Math.random()}`,
+        name: 'Legacy Windowed Gallery',
+        description: 'A gallery using the legacy weather-exposure value.',
         regionId: region.id,
         generationHints: {
             hasWeather: 'outside'
         }
     });
-    assert.equal(outside.generationHints.hasWeather, 'outside');
+    assert.equal(legacyOutside.generationHints.hasWeather, 'sheltered');
 
     const legacyTrue = new Location({
         id: `location_weather_scope_true_${Date.now()}_${Math.random()}`,
@@ -86,11 +97,11 @@ test('Location generationHints.hasWeather normalizes yes/no/outside and legacy b
                 hasWeather: 'maybe'
             }
         }),
-        /hasWeather must be "yes", "no", "outside", true, false, or null/
+        /hasWeather must be "yes", "no", "sheltered".*legacy "outside"/
     );
 });
 
-test('Region XML location hasWeather accepts outside and legacy booleans', () => {
+test('Region XML location hasWeather accepts sheltered, legacy outside, and legacy booleans', () => {
     const region = Region.fromXMLSnippet(`
 <region>
   <regionName>Weather Scope XML Region</regionName>
@@ -103,6 +114,12 @@ test('Region XML location hasWeather accepts outside and legacy booleans', () =>
       <name>Windowed Gallery</name>
       <description>Interior view of the storm.</description>
       <shortDescription>Windows show the weather outside.</shortDescription>
+      <hasWeather>sheltered</hasWeather>
+    </location>
+    <location>
+      <name>Legacy Windowed Gallery</name>
+      <description>Interior view of the storm using the legacy value.</description>
+      <shortDescription>Legacy windows show the weather outside.</shortDescription>
       <hasWeather>outside</hasWeather>
     </location>
     <location>
@@ -120,9 +137,10 @@ test('Region XML location hasWeather accepts outside and legacy booleans', () =>
   </locations>
 </region>`);
 
-    assert.equal(region.locationBlueprints[0].hasWeather, 'outside');
-    assert.equal(region.locationBlueprints[1].hasWeather, 'yes');
-    assert.equal(region.locationBlueprints[2].hasWeather, 'no');
+    assert.equal(region.locationBlueprints[0].hasWeather, 'sheltered');
+    assert.equal(region.locationBlueprints[1].hasWeather, 'sheltered');
+    assert.equal(region.locationBlueprints[2].hasWeather, 'yes');
+    assert.equal(region.locationBlueprints[3].hasWeather, 'no');
 
     assert.throws(
         () => Region.fromXMLSnippet(`
@@ -141,11 +159,11 @@ test('Region XML location hasWeather accepts outside and legacy booleans', () =>
     </location>
   </locations>
 </region>`),
-        /hasWeather must be "yes", "no", "outside", true, false, or null/
+        /hasWeather must be "yes", "no", "sheltered".*legacy "outside"/
     );
 });
 
-test('base context renders weatherOutside for outside-visible weather', () => {
+test('base context renders weatherOutside for sheltered weather', () => {
     const rendered = renderCurrentConditions({
         dateLabel: '1 Spring',
         timeLabel: '11:30 PM',
@@ -154,7 +172,7 @@ test('base context renders weatherOutside for outside-visible weather', () => {
         lighting: 'Moonlit night',
         lightLevelDescription: 'Moonlit night',
         hasLocalWeather: true,
-        weatherScope: 'outside',
+        weatherScope: 'sheltered',
         weatherName: 'Rain',
         weatherDescription: 'Rain streaks the window.'
     });

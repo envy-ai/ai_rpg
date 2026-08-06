@@ -53,7 +53,7 @@ function parseTemplate(rendered) {
     };
 }
 
-test('tiny-brain runner keeps tool results and retries only the failed checkpoint', async () => {
+test('tiny-brain runner keeps tool results and retries only the failed checkpoint or final step', async () => {
     const environment = createEnvironment([
         'Decide travel. ',
         "{% llmparse('travel_with_reason', 'expected parser argument') as travel %}",
@@ -91,10 +91,21 @@ test('tiny-brain runner keeps tool results and retries only the failed checkpoin
             logCalls.push(options);
             return options.filePath || logFilePath;
         },
-        async complete({ messages, checkpoint, attempt, isFinal, logFilePath: activeLogFile }) {
+        async complete({
+            messages,
+            checkpoint,
+            attempt,
+            isFinal,
+            logFilePath: activeLogFile,
+            appendLogSection
+        }) {
             assert.equal(activeLogFile, logFilePath);
             completionCalls.push({ messages, checkpoint, attempt, isFinal });
             if (completionCalls.length === 1) {
+                appendLogSection({
+                    title: 'checkpoint 1 live token stream fallback',
+                    content: 'Live token streaming failed: test diagnostic.'
+                });
                 const aiResponse = '<travel>yes</travel>';
                 return {
                     aiResponse,
@@ -139,8 +150,30 @@ test('tiny-brain runner keeps tool results and retries only the failed checkpoin
                     toolInvocations: []
                 };
             }
+            if (completionCalls.length === 4) {
+                assert.equal(isFinal, true);
+                assert.equal(attempt, 0);
+                assert.match(messages[messages.length - 1].content, /Write final XML now\./);
+                const aiResponse = 'Malformed final response.';
+                return {
+                    aiResponse,
+                    conversationMessages: [...messages, { role: 'assistant', content: aiResponse }],
+                    toolInvocations: []
+                };
+            }
+            assert.equal(completionCalls.length, 5);
             assert.equal(isFinal, true);
+            assert.equal(attempt, 1);
             assert.match(messages[messages.length - 1].content, /Write final XML now\./);
+            assert.ok(!messages.some(message => (
+                message.role === 'assistant'
+                && message.content === 'Malformed final response.'
+            )));
+            const finalPrompt = completionCalls[3].messages.at(-1).content;
+            assert.equal(
+                messages.filter(message => message.role === 'user' && message.content === finalPrompt).length,
+                1
+            );
             const aiResponse = '<turnResult><prose>Done.</prose><timePassed><reasoning>Talk.</reasoning><duration>1 minute</duration></timePassed></turnResult>';
             return {
                 aiResponse,
@@ -157,14 +190,21 @@ test('tiny-brain runner keeps tool results and retries only the failed checkpoin
         programTemplateName: 'program.njk'
     });
 
-    assert.equal(completionCalls.length, 4);
+    assert.equal(completionCalls.length, 5);
     assert.match(completionCalls[1].messages.at(-1).content, /Travel branch YES/);
     assert.equal(result.toolInvocations.length, 1);
     assert.equal(result.logFilePath, logFilePath);
     assert.ok(logCalls.every(call => !call.filePath || call.filePath === logFilePath));
     const responseLogCalls = logCalls.filter(call => call.markResponseBoundaries);
-    assert.equal(responseLogCalls.length, 4);
+    assert.equal(responseLogCalls.length, 5);
     assert.ok(responseLogCalls.every(call => /LLM response/i.test(call.responseLabel)));
+    const transportDiagnosticLog = logCalls.find(call => (
+        call.sections?.[0]?.title === 'checkpoint 1 live token stream fallback'
+    ));
+    assert.equal(
+        transportDiagnosticLog?.sections?.[0]?.content,
+        'Live token streaming failed: test diagnostic.'
+    );
     const initialCheckpointPromptLog = logCalls.find(call => (
         call.sections?.[0]?.title === 'Tiny-brain checkpoint 2 prompt'
     ));
@@ -175,11 +215,25 @@ test('tiny-brain runner keeps tool results and retries only the failed checkpoin
         retryCheckpointPromptLog?.sections?.[0]?.content,
         initialCheckpointPromptLog?.sections?.[0]?.content
     );
-    assert.equal(parseFailures.length, 1);
+    const initialFinalPromptLog = logCalls.find(call => (
+        call.sections?.[0]?.title === 'Tiny-brain final response prompt'
+    ));
+    const retryFinalPromptLog = logCalls.find(call => (
+        call.sections?.[0]?.title === 'Tiny-brain final response prompt retry 1'
+    ));
+    assert.equal(
+        retryFinalPromptLog?.sections?.[0]?.content,
+        initialFinalPromptLog?.sections?.[0]?.content
+    );
+    assert.equal(parseFailures.length, 2);
     assert.equal(parseFailures[0].response, '   ');
     assert.equal(parseFailures[0].checkpoint.index, 1);
     assert.equal(parseFailures[0].attempt, 0);
     assert.equal(parseFailures[0].isFinal, false);
+    assert.equal(parseFailures[1].response, 'Malformed final response.');
+    assert.equal(parseFailures[1].checkpoint.kind, 'final');
+    assert.equal(parseFailures[1].attempt, 0);
+    assert.equal(parseFailures[1].isFinal, true);
 });
 
 test('tiny-brain accept_or_reject parser terminates the program on rejection', async () => {

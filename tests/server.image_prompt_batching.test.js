@@ -8,7 +8,9 @@ function loadImagePromptBatchHarness({
     promptBatching = { enabled: true, delay_ms: 2000, max_items: 10 },
     settingSnapshot = {},
     promptGenerationAttempts = undefined,
-    chatCompletion = null
+    chatCompletion = null,
+    unloadDuringImageGeneration = false,
+    terminateDuringImageGeneration = false
 } = {}) {
     const source = fs.readFileSync(require.resolve('../server.js'), 'utf8');
     const start = source.indexOf('function resolveBaseContextPreambleForImagePrompts() {');
@@ -32,6 +34,11 @@ function loadImagePromptBatchHarness({
         Promise,
         RegExp,
         config: {
+            ai: {
+                backend: 'openai_compatible',
+                unload_during_image_generation: unloadDuringImageGeneration,
+                terminate_during_image_generation: terminateDuringImageGeneration
+            },
             imagegen: {
                 engine: 'comfyui',
                 prompt_batching: promptBatching,
@@ -52,6 +59,8 @@ function loadImagePromptBatchHarness({
             .replace(/'/g, '&apos;'),
         Utils,
         LLMClient: {
+            resolveEffectiveAiConfiguration: (_label, fullConfig) => ({ aiConfig: fullConfig.ai }),
+            resolveBackend: aiConfig => aiConfig.backend,
             chatCompletion: async ({ messages }) => {
                 calls.push(messages);
                 if (typeof chatCompletion === 'function') {
@@ -76,6 +85,12 @@ function loadImagePromptBatchHarness({
             },
             logPrompt: entry => logs.push(entry)
         },
+        imageModelLifecycleCyclePromise: null,
+        runtimeGenerationId: 0,
+        shouldCoordinateAiModelDuringImageGeneration: () => (
+            unloadDuringImageGeneration || terminateDuringImageGeneration
+        ),
+        scheduleImageRenderBatchIfReady: () => false,
         setTimeout: (callback, delay) => {
             const id = nextTimerId++;
             timers.set(id, { callback, delay });
@@ -199,4 +214,38 @@ test('image prompt batch config defaults to two seconds and ten items', () => {
         delayMs: 2000,
         maxItems: 10
     });
+});
+
+test('model-unload image prompt requests flush immediately instead of waiting for the debounce', async () => {
+    const harness = loadImagePromptBatchHarness({
+        unloadDuringImageGeneration: true
+    });
+
+    const resultPromise = harness.generateImagePromptFromTemplate({
+        systemPrompt: 'item system',
+        generationPrompt: 'describe immediate item'
+    }, { prefixType: 'item' });
+
+    assert.equal(harness.timers.size, 1);
+    assert.equal(Array.from(harness.timers.values())[0].delay, 0);
+    harness.flushImagePromptBatchQueue();
+    const result = await resultPromise;
+    assert.equal(result.prompt, 'generated single prompt');
+});
+
+test('local-server-termination image prompt requests flush immediately instead of waiting for the debounce', async () => {
+    const harness = loadImagePromptBatchHarness({
+        terminateDuringImageGeneration: true
+    });
+
+    const resultPromise = harness.generateImagePromptFromTemplate({
+        systemPrompt: 'item system',
+        generationPrompt: 'describe immediate item'
+    }, { prefixType: 'item' });
+
+    assert.equal(harness.timers.size, 1);
+    assert.equal(Array.from(harness.timers.values())[0].delay, 0);
+    harness.flushImagePromptBatchQueue();
+    const result = await resultPromise;
+    assert.equal(result.prompt, 'generated single prompt');
 });

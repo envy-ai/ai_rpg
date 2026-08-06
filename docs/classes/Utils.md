@@ -17,6 +17,7 @@ Static utility helpers used across the server for set math, title casing, durati
 - `formatAbsoluteWorldMinutesAgo(value, { currentTotalMinutes })`: converts an absolute “minutes since game start” timestamp into natural `ago` text. Nullish timestamps return `null`; finite non-negative timestamps are required, and `currentTotalMinutes` cannot be earlier than the timestamp.
 - K-gram utilities:
   - `normalizeKgramTokens(text, { excludeNpcNames = true })`: lowercases and tokenizes text, removes common words, and by default removes tokenized NPC names and aliases from the current `Player` registry.
+  - `normalizeKgramTokenSpans(text, { excludeNpcNames = true })`: applies the same normalization while returning `{ token, start, end }` source spans. Live deslop uses these spans to rewind to the raw model token that began a normalized n-gram.
   - `pruneContainedKgrams(ngrams)`.
   - `hasKgramOverlap(a, b, { k, minMatches })`.
   - `findKgramOverlaps(a, b, { minK, maxK })`.

@@ -28,11 +28,11 @@ function normalizeWeatherExposure(value, fieldName) {
         if (['false', '0', 'no'].includes(lowered)) {
             return 'no';
         }
-        if (lowered === 'outside') {
-            return 'outside';
+        if (lowered === 'sheltered' || lowered === 'outside') {
+            return 'sheltered';
         }
     }
-    throw new Error(`${fieldName} must be "yes", "no", "outside", true, false, or null.`);
+    throw new Error(`${fieldName} must be "yes", "no", "sheltered", true, false, or null (legacy "outside" is also accepted).`);
 }
 
 function normalizeVehicleInfo(vehicleInfo = null, label) {

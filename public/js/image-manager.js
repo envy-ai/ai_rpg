@@ -6,10 +6,19 @@
       this.maxAttempts = options.maxAttempts || 120;
       this.realtimeEnabled = false;
       this.jobWaiters = new Map();
+      this.activeRenderJobs = new Map();
+    }
+
+    _normalizeEntityType(entityType) {
+      const normalizedType = String(entityType || '').trim().toLowerCase();
+      if (normalizedType === 'item' || normalizedType === 'scenery') {
+        return 'thing';
+      }
+      return normalizedType;
     }
 
     _buildKey(entityType, entityId) {
-      return `${entityType || ''}:${entityId || ''}`;
+      return `${this._normalizeEntityType(entityType)}:${entityId || ''}`;
     }
 
     _buildImageUrl(imageId) {
@@ -36,7 +45,7 @@
         return Promise.resolve(null);
       }
 
-      const normalizedType = String(entityType).toLowerCase();
+      const normalizedType = this._normalizeEntityType(entityType);
       const key = this._buildKey(normalizedType, entityId);
 
       if (!force && existingImageId) {
@@ -315,6 +324,44 @@
       */
     }
 
+    _getRenderJobEntityKeys(detail = {}) {
+      const payload = detail.payload || {};
+      const entityType = this._normalizeEntityType(payload.entityType || detail.entityType || null) || null;
+      const entityId = payload.entityId || detail.entityId || null;
+      const keys = [];
+      if (entityType && entityId) {
+        keys.push(this._buildKey(String(entityType).toLowerCase(), String(entityId)));
+      }
+      if (payload.isLocationWeatherVariant && payload.entityId) {
+        const variantKey = this._buildKey('location-variant', String(payload.entityId));
+        if (!keys.includes(variantKey)) {
+          keys.push(variantKey);
+        }
+      }
+      return keys;
+    }
+
+    _rememberRenderJob(detail = {}) {
+      const keys = this._getRenderJobEntityKeys(detail);
+      const isActive = detail.job?.status === 'processing' && detail.job?.isRendering === true;
+      keys.forEach(key => {
+        if (isActive) {
+          this.activeRenderJobs.set(key, detail);
+        } else {
+          this.activeRenderJobs.delete(key);
+        }
+      });
+    }
+
+    getActiveRenderJob(entityType, entityId) {
+      if (!entityType || !entityId) {
+        return null;
+      }
+      return this.activeRenderJobs.get(
+        this._buildKey(String(entityType).toLowerCase(), String(entityId))
+      ) || null;
+    }
+
     handleRealtimeJobUpdate(update) {
       if (!update || !update.jobId) {
         return;
@@ -330,6 +377,9 @@
           id: update.jobId,
           status: update.status,
           progress: update.progress,
+          renderProgress: update.renderProgress,
+          renderNodeId: update.renderNodeId,
+          isRendering: update.isRendering === true,
           message: update.message,
           createdAt: update.createdAt,
           startedAt: update.startedAt,
@@ -339,6 +389,7 @@
         error: update.error || null
       };
 
+      this._rememberRenderJob(detail);
       this._dispatch('image:job-progress', detail);
 
       if (update.status === 'completed' && update.result) {

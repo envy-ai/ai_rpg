@@ -13,6 +13,7 @@ const MysteryBox = require('./MysteryBox.js');
 const MysteryThread = require('./MysteryThread.js');
 const Faction = require('./Faction.js');
 const Tracker = require('./Tracker.js');
+const { normalizeWeatherExposure } = require('./location_region_utils.js');
 
 const MORE_INFO_MAX_MATCHES = 50;
 const CACHED_CHECK_TOOL_CALL_NOTE = 'You already made this tool call. Do not re-run tool calls for the same checks that you made in earlier drafts.';
@@ -160,6 +161,7 @@ const UPDATE_OBJECT_FIELD_NAMES_BY_TYPE = Object.freeze({
         'visited',
         'lastVisitedTime',
         'hasGeneratedStubs',
+        'hasWeather',
         'generationHints',
         'randomEvents',
         'controllingFactionId',
@@ -1503,7 +1505,7 @@ const CHAT_TOOL_DEFINITIONS = Object.freeze([
         type: 'function',
         function: {
             name: 'updateObjectFields',
-            description: `Directly update allowed persisted fields on a specific object without running alter prompts. Identify by exact ID when possible; names and aliases are accepted where applicable, but ambiguous names return candidate JSON and must be retried by ID. Character updates are NPC-only. Allowed object types: ${UPDATE_OBJECT_TYPE_VALUES.join(', ')}.`,
+            description: `Directly update allowed persisted fields on a specific object without running alter prompts. Identify by exact ID when possible; names and aliases are accepted where applicable, but ambiguous names return candidate JSON and must be retried by ID. Character updates are NPC-only. For locations, hasWeather accepts "yes", "no", "sheltered", or null; legacy "outside" is accepted as "sheltered". Allowed object types: ${UPDATE_OBJECT_TYPE_VALUES.join(', ')}.`,
             parameters: {
                 type: 'object',
                 properties: {
@@ -2674,6 +2676,7 @@ const createChatToolRuntime = ({
     getFactions,
     getRegionsMap,
     getPendingRegionStubs,
+    clearLocationImageVariants = null,
     requestUserInput = null,
     getModExtensionRegistry = null
 } = {}) => {
@@ -2698,6 +2701,9 @@ const createChatToolRuntime = ({
     ensureFunction(getFactions, 'getFactions');
     ensureFunction(getRegionsMap, 'getRegionsMap');
     ensureFunction(getPendingRegionStubs, 'getPendingRegionStubs');
+    if (clearLocationImageVariants !== null && clearLocationImageVariants !== undefined) {
+        ensureFunction(clearLocationImageVariants, 'clearLocationImageVariants');
+    }
     if (getModExtensionRegistry !== null && getModExtensionRegistry !== undefined) {
         ensureFunction(getModExtensionRegistry, 'getModExtensionRegistry');
     }
@@ -6539,6 +6545,17 @@ const createChatToolRuntime = ({
             'rewardFactionReputation'
         ]);
 
+        if (objectType === 'location' && fieldName === 'hasWeather') {
+            try {
+                return normalizeWeatherExposure(rawValue, `${functionName} location hasWeather`);
+            } catch (error) {
+                throw new ToolVisibleError(
+                    error?.message || `${functionName} location hasWeather is invalid.`,
+                    { code: 'invalid_arguments' }
+                );
+            }
+        }
+
         if (requiredStringFields.has(fieldName)) {
             return normalizeCharacterFieldString(rawValue, {
                 functionName,
@@ -6649,6 +6666,23 @@ const createChatToolRuntime = ({
                     const metadata = isPlainObject(target.record.metadata) ? { ...target.record.metadata } : {};
                     metadata.value = value;
                     target.record.metadata = metadata;
+                } else if (objectType === 'location' && fieldName === 'hasWeather') {
+                    const previousGenerationHints = target.record.generationHints;
+                    if (!isPlainObject(previousGenerationHints)) {
+                        throw new Error('Location generationHints are unavailable.');
+                    }
+                    const previousHasWeather = previousGenerationHints.hasWeather ?? null;
+                    if (value !== previousHasWeather && typeof clearLocationImageVariants !== 'function') {
+                        throw new Error('Location image-variant invalidation is unavailable.');
+                    }
+                    target.record.generationHints = {
+                        ...previousGenerationHints,
+                        hasWeather: value
+                    };
+                    const updatedHasWeather = target.record.generationHints?.hasWeather ?? null;
+                    if (updatedHasWeather !== previousHasWeather) {
+                        clearLocationImageVariants(target.record);
+                    }
                 } else if (fieldName === 'averageLevel' && typeof target.record.setAverageLevel === 'function') {
                     target.record.setAverageLevel(value);
                 } else if (fieldName === 'statusEffects' && typeof target.record.setStatusEffects === 'function') {

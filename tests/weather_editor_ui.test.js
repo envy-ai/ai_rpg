@@ -17,8 +17,11 @@ test('location menus expose a region weather editor action and modal', () => {
 
 test('location edit modal exposes the hasWeather selector', () => {
     assert.match(viewSource, /id="locationEditHasWeather"/);
-    assert.match(viewSource, /value="outside">Weather visible outside/);
+    assert.match(viewSource, /value="sheltered">Weather visible outside \(sheltered\)/);
+    assert.match(viewSource, /value="no">No visible local weather/);
     assert.match(viewSource, /payload\.hasWeather/);
+    assert.match(viewSource, /lowered === 'sheltered' \|\| lowered === 'outside'/);
+    assert.match(viewSource, /\['yes', 'no', 'sheltered'\]/);
 });
 
 test('weather editor has dedicated styling hooks', () => {
