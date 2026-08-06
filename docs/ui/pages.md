@@ -67,7 +67,7 @@ This page maps server-rendered routes to templates, shared page chrome, injected
 - The app header nav label is `System`; the page title is `System Configuration`.
 - The page has `Server Configuration` and `Game Configuration` tabs.
 - The AI section has a backend selector. `openai_compatible` displays endpoint/API-key inputs. `codex_cli_bridge` displays command, home, model/session settings, sandbox, reasoning effort, profile, skip-git-check, prompt preamble, and session-id validation for `resume_id`. `cline_cli_bridge` displays command, provider, cwd, thinking, compaction, timeout, config/data directories, and prompt preamble. `kimi_cli_bridge` displays the authenticated Kimi command, isolated cwd, optional Kimi model alias, optional per-process thinking effort, and prompt preamble; no API-key field is required. Shared AI controls include model swap options and the global `ai.sysprompt_append` textarea for model-specific system instructions.
-- Image Generation includes prompt batching controls for enablement, delay, and maximum compatible prompts per batch.
+- Image Generation includes LLM prompt-writing batching controls for enablement, delay, and maximum compatible prompts, plus **Batch Render Prompts** for same-resolution ComfyUI list workflows.
 - Gameplay Tuning includes Debug Tool Calls, Show Hidden Notes in Story Tools, and the compatibility prompt-check toggle for attack/skill checks.
 - The `Game Configuration` tab exposes a fixed-width YAML textarea for the loaded game's runtime config override. It saves through `PUT /api/game-config-override`, reloads merged config on change, persists to the save as `gameConfigOverride.yaml`, and is disabled until a game is loaded.
 

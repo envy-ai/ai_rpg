@@ -1,0 +1,35 @@
+<task>Resolve the due scheduled event against current game state.</task>
+Event ID: {{ scheduledEvent.id }}
+Event: {{ scheduledEvent.event }}
+Scheduled location: {{ scheduledEvent.locationName }}
+Player present: {{ scheduledEventPlayerPresent }}
+Current world time: {{ scheduledEventCurrentWorldTime.dateLabel }} {{ scheduledEventCurrentWorldTime.timeLabel }}
+
+Does this event still make sense now? Answer yes or no, followed by one brief reason.
+
+{% llmparse('yes_no') as scheduledEventApplies %}
+{% if scheduledEventApplies %}
+List the exact state changes needed for the event and which tools implement them. Do not call tools yet. If no state change is needed, say N/A.
+
+{% llm_dummy_action %}
+
+Make each required state-changing tool call exactly once now. Then summarize the completed tool outcomes. Do not repeat a call on later stages.
+
+{% llm_dummy_action %}
+
+Write a concise hidden summary of what actually happened, adhering to tool outcomes.
+
+{% llm_dummy_action %}
+
+{% if scheduledEventPlayerPresent %}Draft Response: Write only what the player perceives of the resolved event. Do not expose hidden state or tool details.
+
+{% llm_dummy_action %}
+
+{% set tinyBrainAuditFocus = 'Visible prose must match completed tool outcomes and player knowledge; hidden state and implementation details must remain out of player-facing prose.' %}
+{% include "_includes/tinybrain-prose-audit.njk" %}
+{% endif %}
+
+Return XML only: <scheduledEventResult><summary>the approved concise summary</summary>{% if scheduledEventPlayerPresent %}<proseForPlayer>polished player-facing prose</proseForPlayer>{% endif %}</scheduledEventResult>
+{% else %}
+Return exactly <scheduledEventResult/> with no other text.
+{% endif %}

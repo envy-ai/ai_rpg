@@ -41,6 +41,7 @@ test('character portrait placeholders reserve the configured render aspect ratio
     assert.match(serverSource, /characterPortraitHeight: characterPortraitDimensions\.height/);
     assert.match(viewSource, /--character-portrait-aspect-ratio: \{\{ characterPortraitWidth \}\} \/ \{\{ characterPortraitHeight \}\}/);
     assert.match(viewSource, /--player-portrait-aspect-ratio: \{\{ characterPortraitWidth \}\} \/ \{\{ characterPortraitHeight \}\}/);
+    assert.match(scssSource, /\.entity-card--npc\s*\{\s*flex: 0 1 calc\(50% - 8px\)/);
     assert.match(scssSource, /\.entity-card--npc\s*\{[\s\S]*aspect-ratio: var\(--character-portrait-aspect-ratio\)/);
     assert.match(scssSource, /\.party-portrait\s*\{[\s\S]*aspect-ratio: var\(--character-portrait-aspect-ratio\)/);
     assert.match(scssSource, /\.npc-view-image\s*\{[\s\S]*aspect-ratio: var\(--character-portrait-aspect-ratio\)/);

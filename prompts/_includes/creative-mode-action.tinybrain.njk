@@ -1,0 +1,28 @@
+<task>Narrate the requested creative-mode action in 3-5 sentences. The action is authoritative and must not be rejected or subjected to a plausibility check.</task>
+<action>{{ actionText }}</action>
+
+Present characters:
+- {{ characterName }}
+{% for npc in npcs %}- {{ npc.name }}
+{% endfor %}{% for member in party %}{% if member not in npcs %}- {{ member.name }}
+{% endif %}{% endfor %}
+
+Plan the concrete action, at most three meaningful character reactions, and whether this action truly changes location or scene. Return XML only:
+<narrativeScope><travel>yes or no</travel><before>origin facts</before><during>travel facts or empty</during><after>destination facts or empty</after></narrativeScope>
+
+{% llmparse('narrative_scope') as creativeScope %}
+
+Draft Response: Write the complete prose, treating the requested action as having happened. Respect character knowledge and current state. Output prose only.
+
+{% llm_dummy_action %}
+
+{% set tinyBrainAuditFocus = 'Do not reject or weaken the authoritative creative action; avoid unsupported consequences, omniscience, repetition, and crowd-like reaction lists.' %}
+{% include "_includes/tinybrain-prose-audit.njk" %}
+
+Return XML only.
+{% if creativeScope.travel %}
+Use the exact movement schema below:
+{% include "_includes/travel-prose.njk" %}
+{% else %}
+Use <turnResult><prose>polished prose</prose></turnResult>.
+{% endif %}

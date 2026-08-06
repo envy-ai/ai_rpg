@@ -23,6 +23,7 @@
 
 The helper:
 - Renders `base-context.xml.njk` with `promptType: 'game-intro'`.
+- Uses the `game_intro` TinyBrain family when enabled: plan, draft, audit, optional revision, and strict `<gameIntro><introProse>...</introProse></gameIntro>` final parsing occur in one staged conversation. Exhausted parsing errors propagate without a one-shot rerun.
 - Calls `LLMClient.chatCompletion()` with `metadataLabel: 'game_intro'` and `validateXML: false`.
 - Logs the prompt and response through `LLMClient.logPrompt()` using `prefix: 'game_intro'`.
 - Parses the LLM response as XML and requires a non-empty `<introProse>` element.

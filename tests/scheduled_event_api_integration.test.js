@@ -16,6 +16,8 @@ test('api wires scheduled event scheduling and due-event resolution hooks', () =
     assert.match(apiSource, /function getAllChatToolDefinitions/);
     assert.match(apiSource, /modExtensionRegistry\.getChatToolDefinitions\(\)/);
     assert.match(apiSource, /const scheduledEventTools = getAllChatToolDefinitions\(\{\s*modExtensionRegistry\s*\}\)/);
+    assert.match(apiSource, /const isToolCheckpoint = !stage\.isFinal\s*&& stage\.checkpoint\?\.index === 2/);
+    assert.match(apiSource, /isToolCheckpoint \? scheduledEventTools : \[\]/);
     assert.doesNotMatch(apiSource, /scheduledEventTools[\s\S]{0,240}\.filter\(toolDefinition => toolDefinition\?\.\function\?\.name !== 'requestUserInput'\)/);
     assert.match(apiSource, /promptLabel:\s*'scheduled_event_resolution'/);
     assert.match(apiSource, /LLMClient\.logPrompt\(\{\s*prefix:\s*'scheduled_event_resolution'/);

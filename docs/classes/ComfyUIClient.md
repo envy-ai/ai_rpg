@@ -49,6 +49,8 @@ The returned `imageReference` is passed into ComfyUI workflow templates as `imag
 
 For ComfyUI jobs, `server.js` renders a workflow template from `imagegen/`, submits it through `queuePrompt()`, waits through `waitForCompletion()`, downloads each returned image through `getImage()`, and saves files through `saveImage()` under `public/generated-images/`. While waiting, it forwards the active ComfyUI sampler node's `value / max` through realtime image-job updates. A multi-sampler workflow can therefore reset the displayed percentage when execution advances to another sampler; the value describes the current node, not aggregate workflow completion.
 
+When `imagegen.batch_prompts` is enabled, the server groups ordinary jobs by effective workflow and exact resolution, renders each group once with an `images` template array, and fans the shared Comfy progress/prompt id back out to each game job. It strictly requires one returned image per prompt and maps results in list order. Each mapped result still receives its own generated image id, metadata record, entity attachment, and completion event. Location weather variants remain single img2img submissions.
+
 The same job processor handles:
 
 - Player and NPC portraits.
@@ -74,6 +76,8 @@ When `terminate_during_image_generation` owns a local llama.cpp process, the ser
 
 Non-edit workflow templates commonly consume `image.prompt`, `image.width`, `image.height`, and `image.seed` from the server-rendered image job context. They also receive the full runtime `config` object, so workflows can read values such as `config.imagegen.lora` directly. For example, `imagegen/test_krea_2_simplified.json.njk` renders image values into its positive prompt, latent dimensions, and sampler seed.
 
+List-capable templates selected while `imagegen.batch_prompts` is true consume `images`, an ordered array of those same per-job objects. `test_krea_2_simplified_lovely_batch.json.njk` builds prompt and seed lists with Impact Pack's `ImpactMakeAnyList`. ComfyUI's list execution maps the entire prompt list through `CLIPTextEncode`, then maps the resulting conditioning/seed lists through `KSampler`, then maps the latent list through `VAEUtils_VAEDecodeTiled`, image scaling, and saving. The server only combines jobs with matching width and height, so one shared `EmptyLatentImage` supplies a consistent latent shape.
+
 The bundled Krea 2 templates use VAE Utils nodes for VAE loading and tiled decoding: `VAEUtils_CustomVAELoader` and `VAEUtils_VAEDecodeTiled`. They load `Wan2.1_VAE_upscale2x_imageonly_real_v1.safetensors`, so the ComfyUI environment needs both the VAE Utils custom nodes and that VAE file available. Those templates also pass the decoded image through `ImageScaleBy` with `upscale_method: "area"` and `scale_by: 0.5` before saving, which halves the final decoded image dimensions. Their rendered prompt is stored in ComfyUI's vanilla `PrimitiveStringMultiline` (`Input Text`) node, consumed by the CLIP encoder, and printed/displayed through Crystools `Show any [Crystools]` nodes with the `Final Prompt` prefix. The old custom `Text Multiline` and `Text to Console` nodes are not required by bundled workflow templates. `imagegen/test_krea_2_simplified_anibg3.json.njk` chains two `LoraLoaderModelOnly` nodes before the sampler; the second loader currently duplicates `krea2/k2-anibg2.safetensors` so it can be swapped to another LoRA in the workflow template.
 
 `imagegen/test_krea_2_any_lora.json.njk` loads its first Krea 2 LoRA from `config.imagegen.lora`, then chains an additional model-only LoRA loader for `krea2/realism_engine_krea2_v2.safetensors` before passing the model into the sampler. Those LoRA files must exist in ComfyUI's LoRA search path when run.
@@ -96,5 +100,6 @@ The bundled Qwen workflows use `SaveImageWithMetaData` with plain output formats
 - `tests/location.image_variants.test.js` covers location variant persistence and cache behavior.
 - `tests/server.image_prompt_preamble.test.js` covers ComfyUI prompt-prefix behavior and base-context preamble exclusion.
 - `tests/server.image_prompt_batching.test.js` covers LLM-authored image-prompt batching and retry failure behavior.
+- `tests/server.image_render_batching.test.js` covers final-render enablement, workflow/resolution grouping, weather-variant exclusion, qwen-combo-router selection, and strict output-count/configuration guards.
 - `tests/server.location_image_generation_race.test.js` covers location prompt-generation deduplication before image jobs are queued.
 - `tests/server.thing_image_dimensions.test.js` covers item/scenery image dimension resolution.

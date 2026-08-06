@@ -1,6 +1,21 @@
 const Utils = require('./Utils.js');
 
-const PROSE_TAG_PATTERN = /<(prose|originProse|betweenProse|destinationProse)(?:\s[^>]*)?>/gi;
+const DEFAULT_PROSE_TAGS = Object.freeze(['prose', 'originProse', 'betweenProse', 'destinationProse']);
+const LIVE_DESLOP_PROSE_PROFILES = Object.freeze({
+    player_action: DEFAULT_PROSE_TAGS,
+    event_checks: DEFAULT_PROSE_TAGS,
+    quest_reward_prose: Object.freeze(['prose']),
+    game_intro: Object.freeze(['introProse']),
+    random_event: DEFAULT_PROSE_TAGS,
+    creative_mode_action: DEFAULT_PROSE_TAGS,
+    npc_action: Object.freeze(['prose']),
+    craft_player_action: Object.freeze(['description', 'otherEffectDescription']),
+    location_modify_player_action: Object.freeze(['description', 'otherEffectDescription']),
+    player_action_open_container: Object.freeze(['prose']),
+    while_you_were_away: Object.freeze(['proseForPlayer']),
+    scheduled_event_resolution: Object.freeze(['proseForPlayer']),
+    scheduled_event_interruption_rewrite: DEFAULT_PROSE_TAGS
+});
 const PROSE_BOUNDARY_SEPARATOR = '\n\n';
 
 function escapeRegExp(value) {
@@ -89,15 +104,41 @@ function sanitizeLiveSlopText(text) {
         .join(PROSE_BOUNDARY_SEPARATOR);
 }
 
-function extractLiveProse(rawResponse) {
+function normalizeProseTags(proseTags = DEFAULT_PROSE_TAGS) {
+    if (!Array.isArray(proseTags) || !proseTags.length) {
+        throw new TypeError('Live deslop prose tags must be a non-empty array.');
+    }
+    const normalized = proseTags.map(tagName => {
+        if (typeof tagName !== 'string' || !/^[a-z_][\w:.-]*$/i.test(tagName.trim())) {
+            throw new Error(`Invalid live deslop prose tag: ${tagName}`);
+        }
+        return tagName.trim();
+    });
+    if (new Set(normalized.map(tagName => tagName.toLowerCase())).size !== normalized.length) {
+        throw new Error('Live deslop prose tags cannot contain duplicates.');
+    }
+    return normalized;
+}
+
+function resolveLiveDeslopProseTags(profileName) {
+    if (typeof profileName !== 'string' || !Object.hasOwn(LIVE_DESLOP_PROSE_PROFILES, profileName)) {
+        throw new Error(`Unknown live deslop prose profile: ${profileName}`);
+    }
+    return [...LIVE_DESLOP_PROSE_PROFILES[profileName]];
+}
+
+function extractLiveProse(rawResponse, { proseTags = DEFAULT_PROSE_TAGS } = {}) {
     if (typeof rawResponse !== 'string') {
         throw new TypeError('extractLiveProse requires a string response.');
     }
 
     const segments = [];
-    PROSE_TAG_PATTERN.lastIndex = 0;
+    const tagPattern = new RegExp(
+        `<(${normalizeProseTags(proseTags).map(escapeRegExp).join('|')})(?:\\s[^>]*)?>`,
+        'gi'
+    );
     let openingMatch = null;
-    while ((openingMatch = PROSE_TAG_PATTERN.exec(rawResponse)) !== null) {
+    while ((openingMatch = tagPattern.exec(rawResponse)) !== null) {
         const tagName = openingMatch[1];
         const rawStart = openingMatch.index + openingMatch[0].length;
         const closingPattern = new RegExp(`<\\/\\s*${escapeRegExp(tagName)}\\s*>`, 'ig');
@@ -114,7 +155,7 @@ function extractLiveProse(rawResponse) {
         if (!closingMatch) {
             break;
         }
-        PROSE_TAG_PATTERN.lastIndex = closingMatch.index + closingMatch[0].length;
+        tagPattern.lastIndex = closingMatch.index + closingMatch[0].length;
     }
 
     let prose = '';
@@ -173,8 +214,8 @@ function extractLiveProse(rawResponse) {
     };
 }
 
-function extractStableLiveProse(rawResponse) {
-    const extraction = extractLiveProse(rawResponse);
+function extractStableLiveProse(rawResponse, { proseTags = DEFAULT_PROSE_TAGS } = {}) {
+    const extraction = extractLiveProse(rawResponse, { proseTags });
     const lastSegment = extraction.segments.at(-1) || null;
     if (!lastSegment || lastSegment.closed) {
         return extraction;
@@ -192,7 +233,7 @@ function extractStableLiveProse(rawResponse) {
         return extraction;
     }
     const stableRawResponse = rawResponse.slice(0, lastFragment.rawStart + trailingPartialWord.index);
-    return extractLiveProse(stableRawResponse);
+    return extractLiveProse(stableRawResponse, { proseTags });
 }
 
 function extractLivePlainProse(rawResponse) {
@@ -585,6 +626,7 @@ class LiveDeslopController {
         responseText,
         tokenRecords,
         proseMode = 'structured',
+        proseTags = DEFAULT_PROSE_TAGS,
         responseComplete = false,
         preserveTools = false
     } = {}) {
@@ -598,11 +640,16 @@ class LiveDeslopController {
             throw new Error(`Unsupported live deslop prose mode: ${proseMode}`);
         }
 
+        const normalizedProseTags = proseMode === 'structured'
+            ? normalizeProseTags(proseTags)
+            : DEFAULT_PROSE_TAGS;
         const extractStable = proseMode === 'plain'
             ? extractStableLivePlainProse
-            : extractStableLiveProse;
+            : response => extractStableLiveProse(response, { proseTags: normalizedProseTags });
         const extraction = responseComplete
-            ? (proseMode === 'plain' ? extractLivePlainProse(responseText) : extractLiveProse(responseText))
+            ? (proseMode === 'plain'
+                ? extractLivePlainProse(responseText)
+                : extractLiveProse(responseText, { proseTags: normalizedProseTags }))
             : extractStable(responseText);
         if (!extraction.prose.trim() || extraction.prose === this.lastAnalyzedProse) {
             return null;
@@ -718,6 +765,8 @@ class LiveDeslopController {
 }
 
 module.exports = {
+    DEFAULT_PROSE_TAGS,
+    LIVE_DESLOP_PROSE_PROFILES,
     LiveDeslopController,
     LiveRepeatedNgramDetector,
     extractLiveProse,
@@ -725,6 +774,7 @@ module.exports = {
     extractStableLiveProse,
     extractStableLivePlainProse,
     locateDetectedSlop,
+    resolveLiveDeslopProseTags,
     resolveTinyBrainLiveDeslopProseMode,
     sanitizeLiveSlopText
 };

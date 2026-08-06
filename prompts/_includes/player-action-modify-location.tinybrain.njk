@@ -1,0 +1,30 @@
+{% include "_includes/last-seen-npcs.njk" %}
+<task>Write concise visible prose for an already-resolved attempt to modify the current location.</task>
+
+Actor: {{ characterName or character.name or 'The character' }}
+Location: {% if modifiedLocation and modifiedLocation.name %}{{ modifiedLocation.name }}{% else %}current location{% endif %}
+Goal: {{ modificationNotes | default('not specified', true) }}
+Degree: {{ success_or_failure }}
+Actual alteration: {{ alteration | default('none', true) }}
+Consumed materials: {% if consumedItems and consumedItems.length %}{% for item in consumedItems %}{{ item.name }}{% if not loop.last %}, {% endif %}{% endfor %}{% else %}none{% endif %}
+Received portable items: {% if receivedItems and receivedItems.length %}{% for item in receivedItems %}{{ item.name }}{% if not loop.last %}, {% endif %}{% endfor %}{% else %}none{% endif %}
+Additional effect: {{ otherEffect | default('none', true) }}
+Authoritative elapsed duration: {{ authoritativeTimePassedMinutes }} minutes
+
+List the exact persistent change, portable-item transfers, additional effect, and the mechanically selected duration of exactly {{ authoritativeTimePassedMinutes }} minutes. Do not add any other change.
+
+{% llm_dummy_action %}
+
+Draft Response: Describe the attempt and visible result concisely, strictly following the supplied alteration and degree. Output prose only.
+
+{% llm_dummy_action %}
+
+{% set tinyBrainAuditFocus = 'The persistent alteration, received items, consumed materials, success degree, and additional effect must remain exact; do not invent another location change.' %}
+{% include "_includes/tinybrain-prose-audit.njk" %}
+
+Return XML only:
+<result>
+  <description>polished modification prose</description>
+  <otherEffectDescription>{% if otherEffect %}one paragraph describing only the supplied effect{% else %}N/A{% endif %}</otherEffectDescription>
+  <timePassed><reasoning>brief timing breakdown consistent with the authoritative duration</reasoning><duration>{{ authoritativeTimePassedMinutes }} minutes</duration></timePassed>
+</result>

@@ -1,0 +1,26 @@
+<task>Narrate this random event in 1-4 sentences, optionally followed by one NPC-reaction paragraph.</task>
+<eventText>{{ eventText }}</eventText>
+
+Writing style notes:
+{{ setting.writingStyleNotes }}
+{{ config.prose_instructions }}
+
+Plan the event itself, which present characters can perceive it, and whether it actually changes location or scene. Do not turn mere discussion of travel into movement. Return XML only:
+<narrativeScope><travel>yes or no</travel><before>event and origin facts</before><during>travel facts or empty</during><after>destination facts or empty</after></narrativeScope>
+
+{% llmparse('narrative_scope') as randomEventScope %}
+
+Draft Response: Narrate the event itself rather than only reactions. Keep reactions in character and avoid making everyone check in. Output prose only.
+
+{% llm_dummy_action %}
+
+{% set tinyBrainAuditFocus = 'The seed event must visibly happen, reactions must respect character knowledge, and any travel split must preserve origin/destination continuity.' %}
+{% include "_includes/tinybrain-prose-audit.njk" %}
+
+Return XML only.
+{% if randomEventScope.travel %}
+Use the exact movement schema below and place prose in the appropriate originProse, betweenProse, and destinationProse fields:
+{% include "_includes/travel-prose.njk" %}
+{% else %}
+Use exactly <turnResult><prose>polished prose</prose></turnResult>.
+{% endif %}

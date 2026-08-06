@@ -4260,6 +4260,7 @@ button.thing-action-icon {
 }
 
 .entity-card--npc {
+  flex: 0 1 calc(50% - 8px);
   background: radial-gradient(
     circle at top,
     rgba(236, 72, 153, 0.18) 0%,

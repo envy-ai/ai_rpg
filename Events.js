@@ -14,10 +14,15 @@ const Tracker = require("./Tracker.js");
 const { CHAT_TOOL_DEFINITIONS, createChatToolRuntime } = require("./chat_tool_calls.js");
 const { resolveQuestDispositionRewardDelta } = require("./quest_disposition_reward_delta.js");
 const {
-    TinyBrainPromptRunner,
     requireNonWhitespaceResponse,
     parseResponseOrNa,
 } = require("./TinyBrainPromptRunner.js");
+const {
+    configureTinyBrainPromptContext,
+    isTinyBrainPromptEnabled,
+    runTinyBrainPromptProgram,
+} = require("./TinyBrainPromptFamilies.js");
+const { parseQuestRewardResult } = require("./TinyBrainPromptParsers.js");
 
 const BASE_TIMEOUT_MS = 120000;
 const DEFAULT_STATUS_DURATION = 3;
@@ -3446,10 +3451,10 @@ class Events {
     }) {
         const normalizedIgnoredEventKeys =
             this._normalizeIgnoredEventKeys(ignoredEventKeys);
-        const useTinyBrainEventChecks = Globals.config?.ai?.tinybrain === true;
-        const tinyBrainRenderState = useTinyBrainEventChecks
-            ? TinyBrainPromptRunner.createRenderState()
-            : null;
+        const useTinyBrainEventChecks = isTinyBrainPromptEnabled(
+            Globals.config?.ai,
+            "event_checks",
+        );
         const templateContext = {
             ...baseContext,
             promptType: "events-xml",
@@ -3464,10 +3469,9 @@ class Events {
                     : "",
             omitGameHistory: true,
         };
-        if (useTinyBrainEventChecks) {
-            templateContext.useTinyBrainEventsPrompt = true;
-            templateContext.__tinyBrainState = tinyBrainRenderState;
-        }
+        const tinyBrain = useTinyBrainEventChecks
+            ? configureTinyBrainPromptContext(templateContext, "event_checks")
+            : null;
         const rendered = promptEnv.render("base-context.xml.njk", templateContext);
 
         const parsedTemplate = parseXMLTemplate(rendered);
@@ -3481,7 +3485,7 @@ class Events {
             ? this._runTinyBrainEventXmlPrompt({
                 initialRenderedTemplate: rendered,
                 templateContext,
-                renderState: tinyBrainRenderState,
+                tinyBrain,
                 promptEnv,
                 parseXMLTemplate,
             })
@@ -4991,6 +4995,10 @@ class Events {
             }
 
             let rewardProse = "";
+            const useTinyBrainQuestReward = isTinyBrainPromptEnabled(
+                Globals.config?.ai,
+                "quest_reward_prose",
+            );
             const fallbackList = [
                 "Received item summary (shorten these item names to a reasonable size):",
                 ...rewardLines.map((line) => `* ${line}`),
@@ -5003,11 +5011,21 @@ class Events {
                     });
                     context._questRewardPromptContext = rewardPromptContext;
                 }
-                const renderedRewardPrompt = promptEnv.render("base-context.xml.njk", {
+                const rewardTemplateContext = {
                     ...rewardPromptContext,
                     promptType: "quest-reward-prose",
                     questRewards: rewardLines,
-                });
+                };
+                const tinyBrain = useTinyBrainQuestReward
+                    ? configureTinyBrainPromptContext(
+                        rewardTemplateContext,
+                        "quest_reward_prose",
+                    )
+                    : null;
+                const renderedRewardPrompt = promptEnv.render(
+                    "base-context.xml.njk",
+                    rewardTemplateContext,
+                );
                 const parsedRewardTemplate = parseXMLTemplate(renderedRewardPrompt);
                 if (
                     !parsedRewardTemplate?.systemPrompt ||
@@ -5017,26 +5035,97 @@ class Events {
                         "Quest reward prose template did not produce prompts.",
                     );
                 }
-                const rewardMessages = [
-                    { role: "system", content: parsedRewardTemplate.systemPrompt },
-                    { role: "user", content: parsedRewardTemplate.generationPrompt },
-                ];
-                const rewardResponse = await LLMClient.chatCompletion({
-                    messages: rewardMessages,
-                    metadataLabel: "quest_reward_prose",
-                    validateXML: false,
-                });
-                LLMClient.logPrompt({
-                    prefix: "quest_reward_prose",
-                    metadataLabel: "quest_reward_prose",
-                    systemPrompt: parsedRewardTemplate.systemPrompt,
-                    generationPrompt: parsedRewardTemplate.generationPrompt,
-                    response: rewardResponse,
-                });
-                if (typeof rewardResponse === "string" && rewardResponse.trim()) {
-                    rewardProse = rewardResponse.trim();
+                if (useTinyBrainQuestReward) {
+                    const configuredRetries = Number(Globals.config?.ai?.retryAttempts);
+                    const retryAttempts = Number.isInteger(configuredRetries) && configuredRetries >= 0
+                        ? configuredRetries
+                        : 1;
+                    let result;
+                    if (Globals.config?.ai?.live_deslop === true) {
+                        if (typeof Globals.runTinyBrainNarrativePrompt !== "function") {
+                            throw new Error(
+                                "Shared live-deslop tiny-brain runner is unavailable for quest reward prose.",
+                            );
+                        }
+                        const tinyBrainRun = await Globals.runTinyBrainNarrativePrompt({
+                            family: "quest_reward_prose",
+                            initialRenderedTemplate: renderedRewardPrompt,
+                            templateContext: rewardTemplateContext,
+                            tinyBrain,
+                            metadataLabel: "quest_reward_prose",
+                            finalParser: response => parseQuestRewardResult(
+                                response,
+                                rewardLines,
+                            ),
+                            requestOptions: {
+                                metadataLabel: "quest_reward_prose",
+                                validateXML: false,
+                            },
+                        });
+                        result = tinyBrainRun.result;
+                    } else {
+                        result = await runTinyBrainPromptProgram({
+                            initialRenderedTemplate: renderedRewardPrompt,
+                            templateContext: rewardTemplateContext,
+                            tinyBrain,
+                            runnerOptions: {
+                                promptEnv,
+                                parseXMLTemplate,
+                                retryAttempts,
+                                metadataLabel: "quest_reward_prose",
+                                logPrefix: "quest_reward_prose_tinybrain",
+                                finalParser: response => parseQuestRewardResult(
+                                    response,
+                                    rewardLines,
+                                ),
+                                complete: async ({ messages, queueReservation }) => {
+                                    const response = await LLMClient.chatCompletion({
+                                        messages,
+                                        queueReservation,
+                                        metadataLabel: "quest_reward_prose",
+                                        validateXML: false,
+                                    });
+                                    return {
+                                        aiResponse: response,
+                                        conversationMessages: [
+                                            ...messages.map(message => ({ ...message })),
+                                            { role: "assistant", content: response },
+                                        ],
+                                        toolInvocations: [],
+                                    };
+                                },
+                            },
+                        });
+                    }
+                    rewardProse = parseQuestRewardResult(
+                        result.aiResponse,
+                        rewardLines,
+                    ).value.prose;
+                } else {
+                    const rewardMessages = [
+                        { role: "system", content: parsedRewardTemplate.systemPrompt },
+                        { role: "user", content: parsedRewardTemplate.generationPrompt },
+                    ];
+                    const rewardResponse = await LLMClient.chatCompletion({
+                        messages: rewardMessages,
+                        metadataLabel: "quest_reward_prose",
+                        validateXML: false,
+                    });
+                    LLMClient.logPrompt({
+                        prefix: "quest_reward_prose",
+                        metadataLabel: "quest_reward_prose",
+                        systemPrompt: parsedRewardTemplate.systemPrompt,
+                        generationPrompt: parsedRewardTemplate.generationPrompt,
+                        response: rewardResponse,
+                    });
+                    if (typeof rewardResponse === "string" && rewardResponse.trim()) {
+                        rewardProse = rewardResponse.trim();
+                    }
                 }
             } catch (error) {
+                if (useTinyBrainQuestReward) {
+                    throw error;
+                }
                 console.warn("Failed to generate quest reward prose:", error.message);
                 console.debug(error);
             }
@@ -5268,7 +5357,7 @@ class Events {
     static async _runTinyBrainEventXmlPrompt({
         initialRenderedTemplate,
         templateContext,
-        renderState,
+        tinyBrain,
         promptEnv,
         parseXMLTemplate,
     }) {
@@ -5277,21 +5366,25 @@ class Events {
             Number.isInteger(configuredRetries) && configuredRetries >= 0
                 ? configuredRetries
                 : 1;
-        const runner = new TinyBrainPromptRunner({
-            promptEnv,
-            parseXMLTemplate,
-            retryAttempts,
-            metadataLabel: "event_checks",
-            logPrefix: "events_tinybrain",
-            parsers: {
-                event_xml_chunk: (response) =>
-                    this.parseTinyBrainEventXmlChunk(response),
-            },
-            finalParser: (response) => {
-                const parsed = this.parseTinyBrainEventXmlChunk(response);
-                return parsed && parsed.terminate ? { value: null } : parsed;
-            },
-            complete: async ({ messages, queueReservation }) => {
+        const result = await runTinyBrainPromptProgram({
+            initialRenderedTemplate,
+            templateContext,
+            tinyBrain,
+            runnerOptions: {
+                promptEnv,
+                parseXMLTemplate,
+                retryAttempts,
+                metadataLabel: "event_checks",
+                logPrefix: "events_tinybrain",
+                parsers: {
+                    event_xml_chunk: (response) =>
+                        this.parseTinyBrainEventXmlChunk(response),
+                },
+                finalParser: (response) => {
+                    const parsed = this.parseTinyBrainEventXmlChunk(response);
+                    return parsed && parsed.terminate ? { value: null } : parsed;
+                },
+                complete: async ({ messages, queueReservation }) => {
                 const response = await LLMClient.chatCompletion({
                     messages,
                     queueReservation,
@@ -5315,18 +5408,12 @@ class Events {
                     ],
                     toolInvocations: [],
                 };
+                },
             },
         });
 
-        const result = await runner.run({
-            initialRenderedTemplate,
-            templateContext,
-            renderState,
-            programTemplateName: "_includes/events-xml.tinybrain.njk",
-        });
-
         const chunks = [];
-        const completed = renderState.completedCheckpoints || {};
+        const completed = tinyBrain.renderState.completedCheckpoints || {};
         for (const key of Object.keys(completed).sort(
             (a, b) => Number(a) - Number(b),
         )) {

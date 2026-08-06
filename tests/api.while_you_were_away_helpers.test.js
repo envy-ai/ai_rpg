@@ -353,6 +353,7 @@ function loadWhileYouWereAwayHelpers({
         },
         appendEventSummariesToChat,
         applySlopRemoval,
+        isTinyBrainPromptEnabled: () => false,
         recordSlopRemovalEntry: recordSlopRemovalEntry || defaultRecordSlopRemovalEntry,
         requireLocationId: (value, label) => {
             if (typeof value !== 'string' || !value.trim()) {

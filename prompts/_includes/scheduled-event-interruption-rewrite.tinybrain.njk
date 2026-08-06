@@ -1,0 +1,21 @@
+<task>Rewrite only player-facing prose so the original action is interrupted {{ interruptionDuration }} into it by the supplied scheduled event. Preserve the XML root and every non-prose field exactly.</task>
+
+Original player-action XML:
+{{ originalXml }}
+
+Scheduled event results:
+{% for scheduledEvent in scheduledEvents %}- {{ scheduledEvent.id }}: {{ scheduledEvent.summary }} / {{ scheduledEvent.proseForPlayer }}
+{% endfor %}
+
+Identify the exact prose cut point and list every non-prose field that must remain byte-for-byte equivalent in meaning. Do not rewrite yet.
+
+{% llm_dummy_action %}
+
+Draft Response: Write only the revised player-facing prose, stopping the original action at {{ interruptionDuration }} and incorporating the scheduled event naturally. Do not change hidden notes, time, destination, vehicle, or other state.
+
+{% llm_dummy_action %}
+
+{% set tinyBrainAuditFocus = 'The interruption must occur at the specified elapsed time; the original root, hidden notes, timePassed, travel destinations, and vehicle data must be unchanged; only player-facing prose may differ.' %}
+{% include "_includes/tinybrain-prose-audit.njk" %}
+
+Return the full revised player-action XML only. Preserve the original XML root and every non-prose field; replace only player-facing prose fields with the polished interrupted version.

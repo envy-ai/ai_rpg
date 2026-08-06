@@ -1,0 +1,22 @@
+<task>Narrate the following NPC action. The mechanical resolution supplied below is authoritative.</task>
+<actor>{{ characterName }}</actor>
+<action>{{ actionText }}</action>
+{% if isAttack %}<attackOutcome>{{ attackSummary | default(attackContext, true) }}</attackOutcome>{% else %}<degree>{{ success_or_failure }}</degree>{% endif %}
+
+First list the authoritative outcome facts, who can perceive them, and one clear stopping point that gives the player a chance to act. Do not make the player act or decide anything.
+
+{% llm_dummy_action %}
+
+If context needed to narrate the action is missing, make only information-gathering tool calls now. Otherwise answer exactly N/A. Never reroll or replace the supplied resolution.
+
+{% llm_dummy_action %}
+
+Draft Response: Write concise visible prose that exactly follows the supplied outcome. Do not move the player, decide their response, or narrate an attack retaliation not already resolved. Output prose only.
+
+{% llm_dummy_action %}
+
+{% set tinyBrainAuditFocus = 'The NPC action must follow its resolved degree/attack outcome, preserve player agency, avoid travel output, and stop before any unresolved response or retaliation.' %}
+{% include "_includes/tinybrain-prose-audit.njk" %}
+
+Return XML only:
+<turnResult><prose>polished NPC-action prose</prose></turnResult>

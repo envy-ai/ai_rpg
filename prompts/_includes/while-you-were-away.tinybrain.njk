@@ -1,0 +1,29 @@
+{% set listedNpcs = whileYouWereAwayNpcs or [] %}
+<task>Resolve what changed while the player was away, then write return prose from the player's perspective.</task>
+
+{% for npc in listedNpcs %}For {{ npc.name }} (last seen {{ npc.lastSeenTimeAgo }} at {{ npc.lastSeenLocationName | default(npc.last_seen_location, true) }}), return exactly one complete <characterUpdate> XML block. Use their exact name, current need-bar values, optional travel destination, and a concise hidden update. Do not include another character.
+
+{% llmparse('while_away_character_update', npc.name) %}
+{% endfor %}
+
+Identify only exact-location arrivals not already listed and not in the party. Return one <characterUpdates> XML block; leave it empty when there are none. Do not place merely nearby characters here.
+
+{% llmparse('exact_xml_root', 'characterUpdates') %}
+
+Identify only existing items/scenery that moved with the player or party from the previous location. Return one <itemSceneryMoves> XML block containing exact <itemName> values; leave it empty when none moved.
+
+{% llmparse('exact_xml_root', 'itemSceneryMoves') %}
+
+Plan what the player can directly see, learn, or experience on return. Do not expose the hidden character updates as omniscient narration.
+
+{% llm_dummy_action %}
+
+Draft Response: Write a few return-scene paragraphs from the player's perspective. Always provide prose, even when no character update exists. Output prose only.
+
+{% llm_dummy_action %}
+
+{% set tinyBrainAuditFocus = 'Player-facing prose must not expose hidden/offscreen knowledge; exact-location arrivals must not include nearby or party characters; structured changes must not contradict the staged update blocks.' %}
+{% include "_includes/tinybrain-prose-audit.njk" %}
+
+Reproduce the previously approved characterUpdate, arrival, and itemSceneryMoves blocks without changing them, and add the polished prose. Return XML only:
+<response><proseForPlayer>polished return prose</proseForPlayer><characterUpdates>all approved character updates and arrivals</characterUpdates><itemSceneryMoves>all approved item/scenery names</itemSceneryMoves></response>

@@ -3837,6 +3837,7 @@ button.thing-action-icon:hover, button.thing-action-icon:focus-visible {
 }
 
 .entity-card--npc {
+  flex: 0 1 calc(50% - 8px);
   background: radial-gradient(circle at top, rgba(236, 72, 153, 0.18) 0%, rgba(88, 28, 135, 0.68) 100%);
   border-color: rgba(236, 72, 153, 0.45);
 }

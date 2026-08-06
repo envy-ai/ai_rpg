@@ -844,7 +844,7 @@ This evaluation is current as of {{ tonalScaleEvaluationTurnsAgo | default(0, tr
 {% include "_includes/randomwords.njk" %}
 
 [[[AI_RPG_INTERNAL_BASE_CONTEXT_END_V1]]]
-{% if useTinyBrainPrompt %}{{ __tinyBrainState.programStartMarker }}{% include "_includes/player-action.tinybrain.njk" %}{% elif useTinyBrainEventsPrompt %}{{ __tinyBrainState.programStartMarker }}{% include "_includes/events-xml.tinybrain.njk" %}{% else %}{% include "_includes/" + promptType + ".njk" %}{% endif %}
+{% if tinyBrainProgramTemplate %}{{ __tinyBrainState.programStartMarker }}{% include tinyBrainProgramTemplate %}{% else %}{% include "_includes/" + promptType + ".njk" %}{% endif %}
 ]]></generationPrompt>
 
 </template>

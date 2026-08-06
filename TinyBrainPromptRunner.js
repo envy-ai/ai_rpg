@@ -1,5 +1,13 @@
 const { randomUUID } = require('crypto');
 const LLMClient = require('./LLMClient.js');
+const {
+    parseAllowedCharacterSelection,
+    parseExactXmlRoot,
+    parseNarrativeScope,
+    parseOutcomeAcknowledgement,
+    parseRevisionDecision,
+    parseWhileAwayCharacterUpdate
+} = require('./TinyBrainPromptParsers.js');
 
 const MARKER_PREFIX = '[[TINYBRAIN_CHECKPOINT:';
 
@@ -252,8 +260,14 @@ class TinyBrainPromptRunner {
         this.retryAttempts = retryAttempts;
         this.parsers = {
             accept_or_reject: parseAcceptOrReject,
+            allowed_character_selection: parseAllowedCharacterSelection,
+            exact_xml_root: parseExactXmlRoot,
+            narrative_scope: parseNarrativeScope,
+            outcome_acknowledgement: parseOutcomeAcknowledgement,
             player_is_traveling: parsePlayerIsTraveling,
             response_or_na: parseResponseOrNa,
+            revision_decision: parseRevisionDecision,
+            while_away_character_update: parseWhileAwayCharacterUpdate,
             yes_no: parseYesNo,
             ...parsers
         };
@@ -282,7 +296,7 @@ class TinyBrainPromptRunner {
             throw new Error('TinyBrainPromptRunner requires its initial render state.');
         }
         const progressGroupId = renderState.runId.trim();
-        return await LLMClient.withPromptQueueReservation(async (queueReservation) => (
+        const runWithReservation = async () => LLMClient.withPromptQueueReservation(async (queueReservation) => (
             LLMClient.withPromptProgressGroup({
                 progressGroupId,
                 progressGroupTargetLabel: this.progressGroupTargetLabel
@@ -306,6 +320,13 @@ class TinyBrainPromptRunner {
                 }
             })
         ));
+        if (LLMClient.isTinyBrainXmlRepetitionFixEnabled()) {
+            return await LLMClient.withTinyBrainXmlRepetitionFix({
+                metadataLabel: this.metadataLabel,
+                maxContinuations: this.retryAttempts
+            }, runWithReservation);
+        }
+        return await runWithReservation();
     }
 
     async #runProgram({
@@ -538,26 +559,43 @@ class TinyBrainPromptRunner {
                 isFinal
             });
 
-            const completion = await this.complete({
-                messages: workingMessages.map(cloneMessage),
-                checkpoint: { ...checkpoint },
-                attempt,
-                isFinal,
-                logFilePath: currentLogPath,
-                queueReservation,
-                appendLogSection: ({ title, content } = {}) => {
-                    if (typeof title !== 'string' || !title.trim()) {
-                        throw new Error('Tiny-brain appended log sections require a non-empty title.');
-                    }
-                    if (content === undefined || content === null || !String(content).trim()) {
-                        throw new Error('Tiny-brain appended log sections require non-empty content.');
-                    }
-                    this.#appendLog({
-                        logFilePath: currentLogPath,
-                        sections: [{ title: title.trim(), content: String(content) }]
-                    });
+            const appendLogSection = ({ title, content } = {}) => {
+                if (typeof title !== 'string' || !title.trim()) {
+                    throw new Error('Tiny-brain appended log sections require a non-empty title.');
                 }
-            });
+                if (content === undefined || content === null || !String(content).trim()) {
+                    throw new Error('Tiny-brain appended log sections require non-empty content.');
+                }
+                this.#appendLog({
+                    logFilePath: currentLogPath,
+                    sections: [{ title: title.trim(), content: String(content) }]
+                });
+            };
+            const completion = await LLMClient.withTinyBrainXmlRepetitionLogger(
+                correction => appendLogSection({
+                    title: `${isFinal ? 'final response' : `checkpoint ${checkpoint.index + 1}`} XML repetition continuation ${correction.continuationAttempt}`,
+                    content: [
+                        `Pattern: ${correction.pattern}`,
+                        `Removed response offsets: ${correction.truncateOffset}-${correction.duplicateEndOffset}`,
+                        `Recovery attempt: ${correction.continuationAttempt}/${correction.maxContinuations}`,
+                        '',
+                        '=== ACCEPTED ASSISTANT PREFIX ===',
+                        correction.acceptedPrefix,
+                        '',
+                        '=== CONTINUATION USER PROMPT ===',
+                        correction.continuationPrompt
+                    ].join('\n')
+                }),
+                () => this.complete({
+                    messages: workingMessages.map(cloneMessage),
+                    checkpoint: { ...checkpoint },
+                    attempt,
+                    isFinal,
+                    logFilePath: currentLogPath,
+                    queueReservation,
+                    appendLogSection
+                })
+            );
             const aiResponse = completion?.aiResponse;
             if (typeof aiResponse !== 'string') {
                 throw new Error('Tiny-brain completion callback must return aiResponse as a string.');
@@ -671,29 +709,48 @@ class TinyBrainPromptRunner {
             `attempt ${attempt + 1}`,
             'LLM response'
         ].join(' ');
-        const result = this.logPrompt({
+        this.#tryAppendLog({
+            operation: 'append the LLM response to',
             filePath: logFilePath,
-            append: true,
             response,
             responseLabel,
-            markResponseBoundaries: true,
-            output: 'silent'
+            markResponseBoundaries: true
         });
-        if (result !== logFilePath) {
-            throw new Error('Failed to append the tiny-brain LLM response to its prompt log.');
-        }
     }
 
     #appendLog({ logFilePath, sections }) {
-        const result = this.logPrompt({
+        this.#tryAppendLog({
+            operation: 'append a section to',
             filePath: logFilePath,
-            append: true,
-            sections,
-            output: 'silent'
+            sections
         });
-        if (result !== logFilePath) {
-            throw new Error('Failed to append to the tiny-brain prompt log.');
+    }
+
+    #tryAppendLog({ operation, filePath, ...content }) {
+        let result;
+        try {
+            result = this.logPrompt({
+                ...content,
+                filePath,
+                append: true,
+                output: 'silent',
+                warnOnFailure: false
+            });
+        } catch (error) {
+            this.#warnAboutLogAppendFailure(operation, filePath, error);
+            return;
         }
+        if (result !== filePath) {
+            this.#warnAboutLogAppendFailure(operation, filePath);
+        }
+    }
+
+    #warnAboutLogAppendFailure(operation, filePath, error = null) {
+        const detail = error?.message ? `: ${error.message}` : '';
+        console.warn(
+            `Warning: failed to ${operation} the tiny-brain prompt log at ${filePath}${detail}. `
+            + 'The running turn will continue without that log entry.'
+        );
     }
 }
 

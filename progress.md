@@ -1,5 +1,7 @@
 Original prompt: Can you create a button that stops ALL PROMPTS (basically ends processing of the turn immediately wherever it is) and then reverts to the latest autosave?
 
+- Prompt scheduling follow-up: failed attempts now retain their per-model and all-model semaphore position for immediate retries when no higher-priority foreground prompt is waiting; background retries yield to foreground work, then run before already queued background peers. This applies to automatic failures, adaptive stream fallback, and user-requested prompt retry.
+- Retry-order validation passed for same-model, global all-model, background/foreground, configured network-wait, prompt-progress, and lifecycle-gate behavior. Restarted the live server from the newest Community Kitchen Exterior autosave with Qwen 27B; game/model health return 200.
 - Fixed exterior travel unstubbing after the Community Kitchen move failure: `location-generator-stub.njk` now derives `displayName` from the guarded `stubName` string instead of dereferencing `normalizedLocationName.name`, and regression coverage checks both exterior and missing-name rendering.
 - The three focused exterior/destination tests and new test syntax check pass. Restarted from the newest autosave with managed llama.cpp PID 3450520; game/model health return 200, and the required read-only browser smoke rendered cleanly with no error artifact at `tmp/location-stub-move-fix/shot-0.png`.
 - Follow-up UI: replaced the wide `Stop & Undo` button beside Send with a 34px stop-sign icon button immediately left of the chat bubble visibility eye control; cancellation state now preserves the icon and updates accessible status text instead of resizing the control.
@@ -761,6 +763,67 @@ Original prompt: Keep one prompt-text viewer persistent throughout a tinybrain r
   - Required reusable browser smoke client passed without reported browser errors; inspected `tmp/tinybrain-persistent-viewer-smoke/shot-0.png` and confirmed the idle Play UI remained intact.
 - Test servers were stopped; ports 4173 and 4175 are clear.
 - TODO: none.
+
+Original prompt: Do not load mmproj for qwen-combo-router models.
+
+- Added `scripts/start-qwen-combo-router.sh`, which passes llama.cpp's supported `--no-mmproj` flag to the shared Prism router launcher without deleting the installed projector files.
+- Pointed `config.yaml.qwen-combo-router` at the text-only wrapper and documented why this is required for slot persistence.
+- Live verification showed router directory discovery still emitted an explicit child `--mmproj` after `--no-mmproj`; added `config/llama-qwen-combo-text-only.ini` to override both configured Qwen projectors with empty paths while preserving the files on disk.
+- Restarted with the latest save and verified both Qwen router entries advertise only `text` input modality. The loaded 27B worker receives an empty `--mmproj` value and does not initialize multimodal support.
+- Live slot 0 verification now succeeds: the router saved an empty 1,184-byte cache, restored it, and the client immediately deleted it. No cache file remained.
+- Focused wrapper/preset and affected configuration tests pass (21 assertions), and the required browser smoke passed; inspected `tmp/qwen-text-only-smoke/shot-2.png` and confirmed the Play screen remains intact.
+- TODO: none.
+
+Original prompt: When using llama.cpp locally in router mode, save slot 0 before switching models, unload the old model, load the new model, restore that model's saved slot cache when present, immediately delete the restored cache file, and restart afterward.
+
+- Traced the existing `unload_model_on_switch` transaction and the configured local router startup script.
+- Confirmed the router starts llama.cpp with `--slot-save-path /dev/shm`; slot save/restore accepts a safe relative filename, so the game can verify and delete `/dev/shm/<filename>` after a successful restore.
+- Added model-specific slot-cache filenames and strict llama.cpp slot 0 save/restore response validation. Successful restores immediately delete their consumed files; deletion failure remains explicit.
+- Local game-owned router switches now save the old slot, unload the old model, load the replacement, restore its cache when present, and only then send the prompt. Save and restore failures warn to the console and continue, while model unload/load failures remain fatal.
+- Added the absolute `ai.router_slot_cache_directory` setting with a `/dev/shm` default and enabled it explicitly in the qwen-combo-router configuration.
+- Focused router-client and LLM switch tests cover ordered save/unload/load/restore, first-use cache absence, restored-file deletion, nonfatal save/restore warnings, and strict post-restore deletion errors.
+- Restarted with `config.yaml.qwen-combo-router` and the latest save after an unrelated active ComfyUI MiniMax H3 render released VRAM. The router preloaded the configured 27B model and the game became ready on port 7777.
+- The live router accepted the slot request path but returned HTTP 501 (`This feature is not supported by multimodal`) for the Qwen model loaded with mmproj. This exercises the intended nonfatal warning path; actual cache retention for these configured models depends on llama.cpp adding multimodal slot persistence or running them without multimodal projection.
+- Required reusable browser smoke passed against the restarted server; inspected `tmp/local-router-cache-smoke/shot-2.png` and confirmed the loaded Play screen is intact with no prompts running.
+- TODO: none.
+
+Original prompt: Create a ComfyUI workflow that accepts multiple prompts and performs list-based prompt encoding, rendering, and VAE decoding; enable it through `imagegen.batch_prompts` and the qwen-combo-router configuration. Batch render jobs by resolution.
+
+- Inspecting the configured Krea 2 workflow, installed ComfyUI list nodes, image-job queue lifecycle, qwen-combo-router configuration, and example batch workflows.
+- Confirmed the list workflow will retain the configured Krea 2 UNet, CLIP, VAE, and both LoRAs. Render batches will be keyed by effective workflow plus exact width and height.
+- Added the list-capable Krea 2 lovely workflow using Impact Pack list outputs so ComfyUI executes all prompt encodes, then all samplers, then all VAE decodes/scales/saves.
+- Added strict Comfy render batching, per-job result attachment, shared prompt cancellation/progress, exact output-count validation, configuration/UI support, and qwen-combo-router workflow selection.
+- Focused workflow, resolution-grouping, lifecycle, prompt-batching, weather-variant, progress, and dimension tests pass. Documentation now distinguishes LLM prompt-writing batches from final Comfy render batches.
+- The merged qwen-combo-router config resolves the new workflow with 1600×1600 default, 1200×1600 character, 1920×1080 location, and 1600×1200 scenery batches.
+- Live ComfyUI object metadata confirms Impact Pack list output, core integer primitives, VAE Utils decoding, and metadata saving are installed with the expected list-mapping contract. The Comfy queue was empty and no render was submitted, so validation did not load a model or consume VRAM.
+- Temporary startup validation passed with the new workflow and batch flag. The required Play/browser and System Configuration smoke checks completed without console/page errors; inspected `tmp/comfy-batch-browser-smoke/shot-0.png` and `tmp/comfy-batch-config-control.png`. The temporary port-4173 server was stopped.
+- TODO: none.
+
+Original prompt: In configurations such as `config.yaml.qwen-combo`, terminate the currently managed local model and start the replacement when a prompt switches to a model with a different `local_startup_script_path`; reuse the process when the startup path is unchanged.
+
+- Confirmed the combo configuration uses `/home/bart/prism-llama-bonsai-27b/start-qwen-35b-a3b.sh` for its base 35B model and `/home/bart/prism-llama-bonsai-27b/start-qwen.sh` for its prose 27B override; both files exist and are executable.
+- Added managed startup-script identity tracking and switching. Identical normalized paths retain the current PID; different paths wait for the old detached process group to exit, clear ComfyUI VRAM, start the replacement, and wait for readiness before prompt transport.
+- Managed-local prompt transports now hold exclusive model-lifecycle access through script selection and transport, preventing another prompt from replacing a model that is still in use. Missing handlers, dead managed processes, stop failures, cleanup failures, replacement startup failures, and readiness failures propagate explicitly without sending the prompt.
+- Server startup validates every effective managed-local startup script referenced by base AI configuration or active prompt override labels, rather than discovering a non-executable replacement only after stopping the current model.
+- The active startup identity remains on `LocalLlamaServerProcess`, so image rendering restarts the model selected by the most recent prompt instead of reverting to the initial script.
+- JavaScript syntax checks and focused local-process, managed-switch, lifecycle-gate, router-switch, image-lifecycle, image-batching, and configuration tests pass.
+- Updated `docs/classes/LocalLlamaServerProcess.md`, `docs/classes/LLMClient.md`, `docs/config.md`, `docs/server_llm_notes.md`, and `docs/README.md`.
+- Live port 7777 was verified outside the sandbox; the older `config.yaml.qwen27B` game and managed llama processes were stopped cleanly, then the server was started with `config.yaml.qwen-combo` and no explicit game load.
+- Combo startup passed configuration validation, strictly cleared ComfyUI, launched the base 35B-A3B script as managed PID 3475602, and reached healthy llama.cpp and game endpoints.
+- The required reusable browser client completed without a console/page-error artifact. Visual inspection of `tmp/qwen-combo-local-switch-smoke/shot-0.png` confirms the fresh default-game Play UI renders normally.
+- TODO: none.
+Original prompt: Diagnose the stuck player-action prompt, fix it, and restart the server with `config.yaml.qwen-combo`.
+
+- Traced the live TinyBrain transcript to `alterLocation` for Herbal Alchemy Shop Interior. The tool started its nested `alter_location` completion, but that request never reached override resolution or transport while llama.cpp was idle.
+- Root cause: the outer 27B TinyBrain run retained the only process-wide prompt permit (`max_concurrent_requests_all_models: 1`) across tool execution, while the nested 35B alteration prompt waited for that same permit. The parent waited for the tool and the tool waited for the parent, leaving grouped progress active with no tracked transport for Stop & Undo to abort.
+- Added an explicit queue-reservation yield operation. It releases the outer per-model and all-model permits around nested prompt work, then reacquires the exact original reservation at the front of both queue lanes even when the nested callback fails.
+- The chat-tool loop applies yielding only to tools known to launch LLM work: `alterLocation`, `alterNpc`, `alterThing`, `createNpc`, `createQuest`, `createThing`, and `rerunSceneSummary`. Ordinary synchronous tools continue to retain the TinyBrain reservation uninterrupted.
+- Added regression coverage for a staged outer prompt calling a different-model nested prompt under a global cap of one, callback-failure reacquisition, and `alterLocation` tool-loop integration.
+- Focused JavaScript syntax checks and four related queue, tool-loop, managed-model, and lifecycle suites pass. The standalone real-template TinyBrain file retains its documented unrelated checkpoint-count fixture failure (`0 !== 8`).
+- Updated `docs/classes/LLMClient.md`, `docs/classes/TinyBrainPromptRunner.md`, `docs/api/chat.md`, `docs/server_llm_notes.md`, and `docs/README.md`.
+- Stopped the wedged server and its orphaned 27B managed process, then restarted port 7777 with `config.yaml.qwen-combo`. Startup launched the configured base 35B-A3B model as managed PID 3515450 and loaded pre-turn autosave `2026-08-06T03-59-29-641Z_Monster_Girl_Life_2026-06b-Baato-Herbal_Alchemy_Shop_Exterior-char_2-msgzlmcp`.
+- Both `/api/hello` and llama.cpp `/health` pass. The required browser smoke produced no console/page-error artifact; visual inspection of `tmp/tinybrain-nested-prompt-yield-smoke/shot-0.png` confirms Baato is restored at Herbal Alchemy Shop Exterior and the UI reports no prompts running.
+- TODO: none.
 Original prompt: The recently added comfyui image spinner and progress bar doesn't appear to be working with item/scenery images. Also, precompute what size the character portraits will be based on their configured resolution and style the empty ones to that size. Note that the player portrait is a special case and needs to be handled separately.
 
 - Auditing item/scenery image-host matching and the character/player portrait rendering paths before implementation.
@@ -1121,4 +1184,40 @@ Original prompt: Enable live deslop for TinyBrain drafts and use roughly 500-tok
 - Updated live-deslop, LLM client, TinyBrain runner, configuration, slop/repetition, server-flow, and documentation-index notes.
 - Restarted port 7777 with `config.yaml.qwen35B-A3B` and the latest Baato save. Startup cleared ComfyUI VRAM immediately before launching managed llama.cpp PID 3273273; both health endpoints pass and ComfyUI remained user-managed.
 - The required browser client passed with no console/page error artifact. Visually inspected `tmp/live-deslop-draft-chunks-loaded-smoke/shot-0.png`; the restored Ember Hollow campaign renders normally.
+- TODO: none.
+
+Original prompt: Empty character image sizes are slightly different from ones where the image is populated.
+
+- Diagnosed the responsive mismatch against a loaded save: in a 300px-wide location NPC collection, a populated image's intrinsic width made its card use the intended 142px half-row maximum while the same card with an empty placeholder shrank to 127px. The 250px desktop sidebar masked the issue because both states hit the existing 120px minimum.
+- Updated `.entity-card--npc` to use `calc(50% - 8px)` as its flex basis while retaining the existing minimum and maximum. Card width now comes from available container space rather than child image content.
+- Strengthened the image-progress browser regression to wait for populated fixture images to decode and compare empty/populated NPC cards, portrait hosts, and image layers, plus party, player, and character-modal portrait surfaces.
+- Recompiled `public/css/main.css` from `public/css/main.scss` and updated the portrait layout docs/index.
+- Focused Playwright regression passes 2/2. Loaded-save probes confirm exact parity at desktop (120px cards, 98×130.656px hosts) and mobile (142px cards, 120×160px hosts), with player portrait sizing unchanged.
+- The required reusable browser smoke client passed without a browser-error artifact; `tmp/character-portrait-sizing-smoke/shot-0.png` was visually inspected and the loaded Play layout remains intact.
+- Full `npm run test:e2e:headless` passed: 42 tests passed and 4 fixture-gated scenarios skipped.
+- The temporary loaded-save verification server on port 4174 was stopped after testing.
+- TODO: none.
+
+Original prompt: I just added a `router_preload_model` configuration option. If set, that's the model that should be loaded first by the router. If not, just load the main one.
+
+- Added startup router preload resolution with `ai.model` fallback, strict type/backend validation, idempotent router loading, and initial model-switch target registration.
+- Moved default-player creation into the asynchronous startup sequence so its inventory prompt cannot run before router preloading completes.
+- Added focused router client and startup/model-switch regression coverage. Syntax checks pass for all changed JavaScript, and the six combined preload, router, switch, lifecycle, image-lifecycle, and configuration test files pass.
+- Created safety save `2026-08-06T13-40-04-678Z_Monster_Girl_Life_2026-06b-Baato-Shop_Floor-char_2-mshkc98m`, restarted the router through `start-router.sh`, and restarted the game from that save with `config.yaml.qwen-combo-router`.
+- Live startup called `/models/load`, waited for the configured 27B preload, then loaded the save and opened port 7777. Router state confirms that model is loaded and the main 35B model is unloaded; both router parent and child use `--cache-ram 24576`.
+- The required browser client completed without a console/page-error artifact. Visually inspected `tmp/router-preload-model-smoke/shot-0.png`; the restored Shop Floor game UI renders correctly.
+- TODO: none.
+
+Original prompt: Make it so that the game automatically starts the script at local_startup_script_path even when unload_during_image_generation is false
+
+- Diagnosed the failed qwen-combo startup: `initializeManagedLocalLlamaServer()` returned early unless the effective image profile enabled `terminate_during_image_generation`, so a configured startup script did not run before router preloading attempted to contact the offline endpoint.
+- A nonblank root `ai.local_startup_script_path` now activates game-owned local llama.cpp startup independently of both image-handoff flags. Termination mode still uses the effective image-prompt script and remains the only mode that switches scripts per prompt or stops/restarts the process around renders.
+- Startup remains ordered before router preloading and all startup prompts. Path-driven startup waits for the root OpenAI-compatible endpoint's `/health`, retains process-group ownership, and is terminated by existing shutdown/self-restart handling.
+- Executable-file validation now applies whenever the root startup path is nonblank, and path-driven startup explicitly requires the `openai_compatible` backend.
+- ComfyUI cleanup remains strict when an image-handoff mode is enabled. With both handoff flags false, local-process startup no longer requires or contacts ComfyUI.
+- Updated focused lifecycle/config regression coverage, configuration help/default comments, local process/LLM/server documentation, and the documentation index.
+- Syntax checks pass, and the six focused configuration, local-process, router-preload, prompt-switch, lifecycle-gate, and image-lifecycle test files pass together.
+- Live qwen-combo startup confirmed the required ordering: ComfyUI cleanup completed, the game launched `start-router.sh`, `/health` became ready under the saved PID, and only then did router preloading begin. The configured 27B model reached `loaded` and the game opened port 7777.
+- Both game and router health endpoints respond normally. The required browser smoke client completed without a console/page-error artifact; `tmp/local-startup-script-smoke/shot-0.png` was visually inspected and the Play UI renders correctly.
+- Left the qwen-combo game and its game-owned llama.cpp router running.
 - TODO: none.

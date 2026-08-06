@@ -20,6 +20,15 @@ const CACHED_CHECK_TOOL_CALL_NOTE = 'You already made this tool call. Do not re-
 const TRACKER_TYPE_VALUES = Object.freeze(Tracker.validTypes);
 const RELATIONSHIP_LABEL_MAX_WORDS = 6;
 const RELATIONSHIP_LABEL_MAX_WORDS_TEXT = 'six';
+const CHAT_TOOLS_THAT_MAY_LAUNCH_PROMPTS = new Set([
+    'alterLocation',
+    'alterNpc',
+    'alterThing',
+    'createNpc',
+    'createQuest',
+    'createThing',
+    'rerunSceneSummary'
+]);
 const UPDATE_MYSTERY_BOX_FIELD_NAMES = Object.freeze([
     'name',
     'keys',
@@ -11455,16 +11464,35 @@ const createChatToolRuntime = ({
 
                 let toolResult = null;
                 try {
-                    toolResult = toolCallsExhausted
-                        ? buildToolCallAttemptsExhaustedResult(toolCall.functionName, maxRounds)
-                        : await executeChatToolCall(toolCall, {
-                            resultCache,
-                            defaultActorName,
-                            includeAllHistoryEntryTypes,
-                            requestUserInputHandler,
-                            forcedSkillCheckRoll,
-                            promptStream: streamEmitter
-                        });
+                    const executeTool = () => executeChatToolCall(toolCall, {
+                        resultCache,
+                        defaultActorName,
+                        includeAllHistoryEntryTypes,
+                        requestUserInputHandler,
+                        forcedSkillCheckRoll,
+                        promptStream: streamEmitter
+                    });
+                    if (toolCallsExhausted) {
+                        toolResult = buildToolCallAttemptsExhaustedResult(
+                            toolCall.functionName,
+                            maxRounds
+                        );
+                    } else if (
+                        requestOptions.queueReservation
+                        && CHAT_TOOLS_THAT_MAY_LAUNCH_PROMPTS.has(toolCall.functionName)
+                    ) {
+                        if (typeof LLMClient.withPromptQueueReservationYield !== 'function') {
+                            throw new Error(
+                                `Tool "${toolCall.functionName}" requires prompt queue reservation yielding, but LLMClient does not provide it.`
+                            );
+                        }
+                        toolResult = await LLMClient.withPromptQueueReservationYield(
+                            requestOptions.queueReservation,
+                            executeTool
+                        );
+                    } else {
+                        toolResult = await executeTool();
+                    }
                     if (!toolResult || typeof toolResult.content !== 'string' || !toolResult.content.trim()) {
                         throw new Error(`Tool "${toolCall.functionName}" returned empty content.`);
                     }

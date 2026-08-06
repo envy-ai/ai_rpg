@@ -28,7 +28,7 @@ If rendering and local restart both fail, the lifecycle raises an `AggregateErro
 
 ## Server Integration
 
-`server.js` waits for image-prompt generation to become idle before starting this lifecycle. The render callback drains queued jobs using `imagegen.maxConcurrentJobs`. Prompt-writing requests that arrive while the text server is paused remain queued until it is available again, then start the next image lifecycle.
+`server.js` waits for image-prompt generation to become idle before starting this lifecycle. The render callback drains queued jobs using `imagegen.maxConcurrentJobs` on the normal path. With ComfyUI `imagegen.batch_prompts`, it instead drains one prompt-list submission at a time, grouping jobs by effective workflow and exact resolution. Prompt-writing requests that arrive while the text server is paused remain queued until it is available again, then start the next image lifecycle.
 
 ## Related Coverage
 

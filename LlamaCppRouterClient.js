@@ -1,4 +1,7 @@
 const axios = require('axios');
+const fs = require('fs');
+const path = require('path');
+const { createHash } = require('crypto');
 
 class LlamaCppRouterClient {
     constructor({
@@ -9,7 +12,10 @@ class LlamaCppRouterClient {
         pollIntervalMs = 250,
         statusRetryAttempts = 2,
         statusRetryDelayMs = 250,
+        slotId = 0,
+        slotCacheDirectory = '/dev/shm',
         httpClient = axios,
+        fileSystem = fs,
         sleep = null,
         logger = console
     } = {}) {
@@ -34,8 +40,25 @@ class LlamaCppRouterClient {
         if (!Number.isFinite(statusRetryDelayMs) || statusRetryDelayMs < 0) {
             throw new Error('llama.cpp router statusRetryDelayMs must be a non-negative number.');
         }
+        if (!Number.isInteger(slotId) || slotId < 0) {
+            throw new Error('llama.cpp router slotId must be a non-negative integer.');
+        }
+        if (
+            typeof slotCacheDirectory !== 'string'
+            || !slotCacheDirectory.trim()
+            || !path.isAbsolute(slotCacheDirectory.trim())
+        ) {
+            throw new Error('llama.cpp router slotCacheDirectory must be an absolute path.');
+        }
         if (!httpClient || typeof httpClient.get !== 'function' || typeof httpClient.post !== 'function') {
             throw new Error('llama.cpp router HTTP client must expose get() and post().');
+        }
+        if (
+            !fileSystem?.promises
+            || typeof fileSystem.promises.access !== 'function'
+            || typeof fileSystem.promises.unlink !== 'function'
+        ) {
+            throw new Error('llama.cpp router fileSystem must expose promises.access() and promises.unlink().');
         }
         if (!logger || typeof logger.warn !== 'function') {
             throw new Error('llama.cpp router logger must expose warn().');
@@ -48,7 +71,10 @@ class LlamaCppRouterClient {
         this.pollIntervalMs = pollIntervalMs;
         this.statusRetryAttempts = statusRetryAttempts;
         this.statusRetryDelayMs = statusRetryDelayMs;
+        this.slotId = slotId;
+        this.slotCacheDirectory = path.normalize(slotCacheDirectory.trim());
         this.httpClient = httpClient;
+        this.fileSystem = fileSystem;
         this.logger = logger;
         this.sleep = typeof sleep === 'function'
             ? sleep
@@ -71,6 +97,20 @@ class LlamaCppRouterClient {
             .replace(/\/+$/g, '');
 
         return parsed.toString().replace(/\/$/, '');
+    }
+
+    static buildSlotCacheFilename(model) {
+        if (typeof model !== 'string' || !model.trim()) {
+            throw new Error('llama.cpp slot-cache model is required.');
+        }
+        const normalizedModel = model.trim();
+        const safeModel = normalizedModel
+            .normalize('NFKD')
+            .replace(/[^A-Za-z0-9._-]+/g, '_')
+            .replace(/^[_\.\-]+|[_\.\-]+$/g, '')
+            .slice(0, 180) || 'model';
+        const digest = createHash('sha256').update(normalizedModel).digest('hex').slice(0, 12);
+        return `${safeModel}-${digest}-cache.bin`;
     }
 
     requestOptions() {
@@ -164,6 +204,121 @@ class LlamaCppRouterClient {
         }
     }
 
+    getSlotCacheFilename() {
+        return LlamaCppRouterClient.buildSlotCacheFilename(this.model);
+    }
+
+    getSlotCachePath(filename = this.getSlotCacheFilename()) {
+        if (
+            typeof filename !== 'string'
+            || !filename.trim()
+            || filename.trim() !== filename
+            || path.basename(filename) !== filename
+        ) {
+            throw new Error('llama.cpp slot-cache filename must be a safe relative filename.');
+        }
+        return path.join(this.slotCacheDirectory, filename);
+    }
+
+    async slotCacheFileExists(filename = this.getSlotCacheFilename()) {
+        const cachePath = this.getSlotCachePath(filename);
+        try {
+            await this.fileSystem.promises.access(cachePath);
+            return true;
+        } catch (error) {
+            if (error?.code === 'ENOENT') {
+                return false;
+            }
+            throw new Error(
+                `Failed to inspect llama.cpp slot cache for model "${this.model}" at ${cachePath}: ${error?.message || String(error)}`,
+                { cause: error }
+            );
+        }
+    }
+
+    async postSlotAction(action, filename = this.getSlotCacheFilename()) {
+        if (action !== 'save' && action !== 'restore') {
+            throw new Error(`Unsupported llama.cpp slot-cache action "${action}".`);
+        }
+        this.getSlotCachePath(filename);
+        const normalizedFilename = filename;
+        let response;
+        try {
+            response = await this.httpClient.post(
+                `${this.baseUrl}/slots/${this.slotId}?action=${action}`,
+                {
+                    model: this.model,
+                    filename: normalizedFilename
+                },
+                this.requestOptions()
+            );
+        } catch (error) {
+            throw new Error(
+                `Failed to ${action} llama.cpp slot ${this.slotId} cache for model "${this.model}": ${this.describeHttpError(error)}`,
+                { cause: error }
+            );
+        }
+        const result = response?.data;
+        if (!result || typeof result !== 'object' || Array.isArray(result)) {
+            throw new Error(
+                `llama.cpp router returned an invalid slot ${action} response for model "${this.model}".`
+            );
+        }
+        if (Number(result.id_slot) !== this.slotId || result.filename !== normalizedFilename) {
+            throw new Error(
+                `llama.cpp router slot ${action} response did not match slot ${this.slotId} and file "${normalizedFilename}".`
+            );
+        }
+        return result;
+    }
+
+    async saveSlotCache(filename = this.getSlotCacheFilename()) {
+        const result = await this.postSlotAction('save', filename);
+        const cachePath = this.getSlotCachePath(filename);
+        if (!await this.slotCacheFileExists(filename)) {
+            throw new Error(
+                `llama.cpp router reported a saved slot cache for model "${this.model}", but ${cachePath} does not exist.`
+            );
+        }
+        return {
+            filename,
+            cachePath,
+            result
+        };
+    }
+
+    async restoreSlotCacheIfPresent(filename = this.getSlotCacheFilename()) {
+        const cachePath = this.getSlotCachePath(filename);
+        if (!await this.slotCacheFileExists(filename)) {
+            return {
+                restored: false,
+                filename,
+                cachePath
+            };
+        }
+
+        const result = await this.postSlotAction('restore', filename);
+        try {
+            await this.fileSystem.promises.unlink(cachePath);
+        } catch (error) {
+            if (error?.code !== 'ENOENT') {
+                const deleteError = new Error(
+                    `Restored llama.cpp slot cache for model "${this.model}" but failed to delete ${cachePath}: ${error?.message || String(error)}`,
+                    { cause: error }
+                );
+                deleteError.slotCacheDeleteFailed = true;
+                throw deleteError;
+            }
+        }
+        return {
+            restored: true,
+            deleted: true,
+            filename,
+            cachePath,
+            result
+        };
+    }
+
     async waitForStatus(expectedStatus) {
         const expected = String(expectedStatus || '').trim().toLowerCase();
         if (!expected) {
@@ -212,6 +367,36 @@ class LlamaCppRouterClient {
     async loadModel() {
         await this.postModelAction('load');
         await this.waitForStatus('loaded');
+    }
+
+    async loadModelIfNeeded() {
+        const initialStatus = await this.getModelStatus();
+        if (initialStatus.value === 'loaded' || initialStatus.value === 'sleeping') {
+            return {
+                loadedByClient: false,
+                initialStatus: initialStatus.value
+            };
+        }
+        if (initialStatus.value === 'loading') {
+            await this.waitForStatus('loaded');
+            return {
+                loadedByClient: false,
+                initialStatus: initialStatus.value
+            };
+        }
+        if (initialStatus.value === 'unloading') {
+            await this.waitForStatus('unloaded');
+        } else if (initialStatus.value !== 'unloaded') {
+            throw new Error(
+                `llama.cpp router model "${this.model}" cannot be loaded from unexpected status "${initialStatus.value}".`
+            );
+        }
+
+        await this.loadModel();
+        return {
+            loadedByClient: true,
+            initialStatus: initialStatus.value
+        };
     }
 }
 

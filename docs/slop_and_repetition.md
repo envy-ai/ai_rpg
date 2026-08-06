@@ -150,13 +150,14 @@ Reference for the systems that reduce repeated phrasing, configured slop words, 
 - After each successful parse, the server re-checks visible prose for remaining slop words, regex names, and n-grams. Remaining detections are included in the next attempt. At the attempt limit, the server logs a warning and allows the response with remaining slop.
 - With `returnDiagnostics: true`, the result includes `{ text, slopWords, slopRegexes, slopNgrams, ran }`.
 
-## Live player-action correction
+## Live prose correction
 
 - `ai.live_deslop: true` runs the same history-aware word, regex, configured n-gram, 3-token recent-history overlap, and 6-token extended assistant-history overlap checks at completed word boundaries. It first tries streamed prose-token logprobs with tools. Content without logprobs is preserved verbatim but opaque to live inspection; rejected streaming or invalid/misaligned supplied metadata falls back to 500-token non-stream logprob batches until the game server or llama.cpp restarts.
+- `ai.xml_repetition_fix: true` is a separate TinyBrain-only guard for exact completed XML loops. It detects explicit balanced elements over 50 characters repeated as an immediate `AA` suffix or direct-sibling `ABAB`, aborts and truncates the duplicate, then resumes after an exact `continue` prompt. It does not run for one-shot prompts or when the setting is false. See [TinyBrainXmlRepetition.md](classes/TinyBrainXmlRepetition.md).
 - The server snapshots merged definitions, active setting custom entries, and compiled regexes once per generation. Each boundary reuses that snapshot; ordinary completed-response checks continue loading current definitions normally.
 - llama.cpp/OpenAI-compatible token probability records map a detected prose span back to the sampled token at its first word. The controller tries untried alternatives by descending probability. If that token has no viable branch, it rewinds to the first token of the previous word and repeats, stopping at the opening prose tag.
 - Corrected branches and full batches resume through assistant prefill. No token ban or logit bias is sent. The exact tool schema and selection policy remain present on every streaming or non-stream continuation so the tool-bearing prompt prefix stays cacheable. Streamed content without logprobs remains in the response but is excluded from live-token inspection; structured tool calls are retained independently through `delta.tool_calls`.
-- Live checks cover `<prose>` plus travel `<originProse>`, `<betweenProse>`, and `<destinationProse>` fields in normal and TinyBrain player actions. They also cover TinyBrain first- and second-draft checkpoints as plain prose; planning/analysis checkpoints, questions, and generic prompt modes are excluded.
+- Live checks cover normal player/creative `<prose>` and travel fields plus family-profiled TinyBrain finals for quest rewards, intros, random/creative/NPC actions, crafting/location narration, checked containers, while-away prose, scheduled events, and interruption rewrites. TinyBrain first- and second-draft checkpoints are checked as plain prose; planning, state, summary, timing, tool, analysis, question, and generic-prompt content is excluded.
 - XML tag names and attributes are excluded from live word/regex checks. `<hidden>` contents are excluded as in the completed-response pass, incomplete streamed tags are ignored, and every tag is a hard boundary for configured and repeated n-grams. The same segmentation is applied while indexing XML-bearing history.
 - Word-by-word rewind search stops at the preceding XML boundary (or the start of a plain draft) so correction cannot overwrite structural markup or earlier checkpoint messages.
 - The final parsed prose still passes through `applySlopRemoval(...)`, both as verification and to cover prose introduced by later scheduled-event rewrites.
@@ -170,6 +171,7 @@ Reference for the systems that reduce repeated phrasing, configured slop words, 
 - NPC turn planned action text shown in chat.
 - NPC turn final narrative prose.
 - Quest reward prose in `Events.js`.
+- TinyBrain final prose profiles for game intros, random/creative/NPC actions, craft/location results, checked containers, while-away return prose, scheduled-event player prose, and scheduled-event interruption rewrites. Planning, state, tool-result, summary, timing, and hidden fields are excluded from live filtering.
 - Crafting, processing, salvage, and harvest narrative prose.
 - Location modification narrative prose.
 - Checked container open-attempt prose.

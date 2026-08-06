@@ -6,6 +6,9 @@ const axios = require('axios');
 const yaml = require('js-yaml');
 const Globals = require('../Globals.js');
 const LLMClient = require('../LLMClient.js');
+const LlamaCppRouterClient = require('../LlamaCppRouterClient.js');
+
+const SLOT_CACHE_TEST_DIRECTORY = path.join(__dirname, '..', 'tmp', 'llama-slot-cache-tests');
 
 function deferred() {
     let resolve;
@@ -32,8 +35,8 @@ function responseFor(payload) {
     };
 }
 
-function buildConfig({ enabled = true } = {}) {
-    return {
+function buildConfig({ enabled = true, local = false } = {}) {
+    const config = {
         unload_model_on_switch: enabled,
         ai: {
             backend: 'openai_compatible',
@@ -52,6 +55,25 @@ function buildConfig({ enabled = true } = {}) {
             }
         }
     };
+    if (local) {
+        config.ai.local_startup_script_path = '/fake/start-router.sh';
+        config.ai.router_slot_cache_directory = SLOT_CACHE_TEST_DIRECTORY;
+    }
+    return config;
+}
+
+function slotCachePath(model) {
+    return path.join(
+        SLOT_CACHE_TEST_DIRECTORY,
+        LlamaCppRouterClient.buildSlotCacheFilename(model)
+    );
+}
+
+function removeSlotCacheIfPresent(model) {
+    const cachePath = slotCachePath(model);
+    if (fs.existsSync(cachePath)) {
+        fs.unlinkSync(cachePath);
+    }
 }
 
 async function runPrompt(metadataLabel, text = metadataLabel) {
@@ -69,11 +91,172 @@ test('unload_model_on_switch defaults off and rejects non-boolean values', () =>
         'utf8'
     ));
     assert.equal(defaultConfig.unload_model_on_switch, false);
+    assert.equal(defaultConfig.ai.router_slot_cache_directory, '/dev/shm');
     assert.equal(LLMClient.resolveUnloadModelOnSwitch({}), false);
+    assert.equal(LLMClient.resolveRouterSlotCacheDirectory({}), '/dev/shm');
     assert.throws(
         () => LLMClient.resolveUnloadModelOnSwitch({ unload_model_on_switch: 'yes' }),
         /unload_model_on_switch must be a boolean/
     );
+    assert.throws(
+        () => LLMClient.resolveRouterSlotCacheDirectory({ router_slot_cache_directory: 'relative' }),
+        /must be a nonblank absolute path/
+    );
+});
+
+test('managed local router switches save, unload, load, restore, and delete in order', { concurrency: false }, async () => {
+    const originalConfig = Globals.config;
+    const originalGet = axios.get;
+    const originalPost = axios.post;
+    const events = [];
+    const statuses = new Map([
+        ['base-model', 'unloaded'],
+        ['alternate-model', 'unloaded']
+    ]);
+    fs.mkdirSync(SLOT_CACHE_TEST_DIRECTORY, { recursive: true });
+    removeSlotCacheIfPresent('base-model');
+    removeSlotCacheIfPresent('alternate-model');
+
+    Globals.config = buildConfig({ local: true });
+    LLMClient.resetModelSwitchTracking();
+    axios.get = async () => ({
+        data: {
+            data: Array.from(statuses, ([id, value]) => ({ id, status: { value } }))
+        }
+    });
+    axios.post = async (url, payload) => {
+        if (url.includes('/slots/0?action=save')) {
+            events.push(`save:${payload.model}`);
+            fs.writeFileSync(slotCachePath(payload.model), `cache:${payload.model}`);
+            return { data: { id_slot: 0, filename: payload.filename, n_saved: 1 } };
+        }
+        if (url.endsWith('/models/unload')) {
+            events.push(`unload:${payload.model}`);
+            statuses.set(payload.model, 'unloaded');
+            return { data: { success: true } };
+        }
+        if (url.endsWith('/models/load')) {
+            events.push(`load:${payload.model}`);
+            statuses.set(payload.model, 'loaded');
+            return { data: { success: true } };
+        }
+        if (url.includes('/slots/0?action=restore')) {
+            events.push(`restore:${payload.model}`);
+            return { data: { id_slot: 0, filename: payload.filename, n_restored: 1 } };
+        }
+        events.push(`prompt:${payload.model}`);
+        statuses.set(payload.model, 'loaded');
+        return responseFor(payload);
+    };
+
+    try {
+        await runPrompt('base_prompt');
+        await runPrompt('alternate_prompt');
+        assert.equal(fs.existsSync(slotCachePath('base-model')), true);
+
+        await runPrompt('base_prompt');
+
+        assert.deepEqual(events, [
+            'prompt:base-model',
+            'save:base-model',
+            'unload:base-model',
+            'load:alternate-model',
+            'prompt:alternate-model',
+            'save:alternate-model',
+            'unload:alternate-model',
+            'load:base-model',
+            'restore:base-model',
+            'prompt:base-model'
+        ]);
+        assert.equal(fs.existsSync(slotCachePath('base-model')), false);
+        assert.equal(fs.existsSync(slotCachePath('alternate-model')), true);
+    } finally {
+        removeSlotCacheIfPresent('base-model');
+        removeSlotCacheIfPresent('alternate-model');
+        LLMClient.resetModelSwitchTracking();
+        axios.get = originalGet;
+        axios.post = originalPost;
+        Globals.config = originalConfig;
+    }
+});
+
+test('managed local router cache save and restore failures warn without blocking the prompt', { concurrency: false }, async () => {
+    const originalConfig = Globals.config;
+    const originalGet = axios.get;
+    const originalPost = axios.post;
+    const originalWarn = console.warn;
+    const warnings = [];
+    const events = [];
+    const statuses = new Map([
+        ['base-model', 'unloaded'],
+        ['alternate-model', 'unloaded']
+    ]);
+    fs.mkdirSync(SLOT_CACHE_TEST_DIRECTORY, { recursive: true });
+    removeSlotCacheIfPresent('base-model');
+    removeSlotCacheIfPresent('alternate-model');
+    fs.writeFileSync(slotCachePath('alternate-model'), 'previous alternate cache');
+
+    Globals.config = buildConfig({ local: true });
+    LLMClient.resetModelSwitchTracking();
+    console.warn = message => warnings.push(message);
+    axios.get = async () => ({
+        data: {
+            data: Array.from(statuses, ([id, value]) => ({ id, status: { value } }))
+        }
+    });
+    axios.post = async (url, payload) => {
+        if (url.includes('/slots/0?action=save')) {
+            events.push(`save-failed:${payload.model}`);
+            const error = new Error('save rejected');
+            error.response = { status: 500, data: { error: 'save rejected' } };
+            throw error;
+        }
+        if (url.endsWith('/models/unload')) {
+            events.push(`unload:${payload.model}`);
+            statuses.set(payload.model, 'unloaded');
+            return { data: { success: true } };
+        }
+        if (url.endsWith('/models/load')) {
+            events.push(`load:${payload.model}`);
+            statuses.set(payload.model, 'loaded');
+            return { data: { success: true } };
+        }
+        if (url.includes('/slots/0?action=restore')) {
+            events.push(`restore-failed:${payload.model}`);
+            const error = new Error('restore rejected');
+            error.response = { status: 500, data: { error: 'restore rejected' } };
+            throw error;
+        }
+        events.push(`prompt:${payload.model}`);
+        statuses.set(payload.model, 'loaded');
+        return responseFor(payload);
+    };
+
+    try {
+        await runPrompt('base_prompt');
+        await runPrompt('alternate_prompt');
+
+        assert.deepEqual(events, [
+            'prompt:base-model',
+            'save-failed:base-model',
+            'unload:base-model',
+            'load:alternate-model',
+            'restore-failed:alternate-model',
+            'prompt:alternate-model'
+        ]);
+        assert.equal(warnings.length, 2);
+        assert.match(warnings[0], /Failed to save llama\.cpp context cache.*continuing model switch/);
+        assert.match(warnings[1], /Failed to restore llama\.cpp context cache.*continuing without it/);
+        assert.equal(fs.existsSync(slotCachePath('alternate-model')), true);
+    } finally {
+        removeSlotCacheIfPresent('base-model');
+        removeSlotCacheIfPresent('alternate-model');
+        console.warn = originalWarn;
+        LLMClient.resetModelSwitchTracking();
+        axios.get = originalGet;
+        axios.post = originalPost;
+        Globals.config = originalConfig;
+    }
 });
 
 test('a switched prompt unloads the previous effective model before transport', { concurrency: false }, async () => {

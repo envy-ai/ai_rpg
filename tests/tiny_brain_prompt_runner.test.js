@@ -278,6 +278,66 @@ test('tiny-brain accept_or_reject parser terminates the program on rejection', a
     assert.equal(result.recordProgressOutput, false);
 });
 
+test('tiny-brain runner warns and continues when prompt log appends fail', { concurrency: false }, async () => {
+    const environment = createEnvironment([
+        'Check the scene. {% llm_dummy_action %}',
+        'Write the final response.'
+    ].join(''));
+    const renderState = TinyBrainPromptRunner.createRenderState();
+    const templateContext = { __tinyBrainState: renderState };
+    const initialRenderedTemplate = environment.render('wrapper.xml.njk', templateContext);
+    const logFilePath = '/test/logs/nonfatal-append.log';
+    const warnings = [];
+    const originalWarn = console.warn;
+    let appendCount = 0;
+    let completionCount = 0;
+
+    console.warn = (...args) => warnings.push(args.join(' '));
+    try {
+        const runner = new TinyBrainPromptRunner({
+            promptEnv: environment,
+            parseXMLTemplate: parseTemplate,
+            retryAttempts: 0,
+            logPrompt(options) {
+                if (!options.append) {
+                    return logFilePath;
+                }
+                appendCount += 1;
+                if (appendCount === 1) {
+                    throw new Error('simulated append exception');
+                }
+                return null;
+            },
+            async complete({ messages, isFinal }) {
+                completionCount += 1;
+                const aiResponse = isFinal ? 'Finished response.' : 'Checkpoint response.';
+                return {
+                    aiResponse,
+                    conversationMessages: [...messages, { role: 'assistant', content: aiResponse }],
+                    toolInvocations: []
+                };
+            }
+        });
+
+        const result = await runner.run({
+            initialRenderedTemplate,
+            templateContext,
+            renderState,
+            programTemplateName: 'program.njk'
+        });
+
+        assert.equal(result.aiResponse, 'Finished response.');
+        assert.equal(completionCount, 2);
+        assert.equal(appendCount, 3);
+        assert.equal(warnings.length, 3);
+        assert.ok(warnings.every(warning => /running turn will continue/i.test(warning)));
+        assert.match(warnings[0], /simulated append exception/);
+        assert.ok(warnings.every(warning => warning.includes(logFilePath)));
+    } finally {
+        console.warn = originalWarn;
+    }
+});
+
 test('tiny-brain runner owns one reusable progress group and aggregate-average lifecycle', { concurrency: false }, async () => {
     const environment = createEnvironment('Write the final response.');
     const renderState = TinyBrainPromptRunner.createRenderState();

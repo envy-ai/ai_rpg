@@ -20,7 +20,10 @@ test('checked containers use a dedicated open-attempt modal and API route', () =
     assert.match(viewSource, /\/api\/things\/\$\{encodeURIComponent\(containerId\)\}\/container\/open-check/);
     assert.match(apiSource, /app\.post\('\/api\/things\/:id\/container\/open-check'/);
     assert.match(apiSource, /promptType: 'player-action-open-container'/);
-    assert.match(apiSource, /enabledChatToolNames/);
+    assert.match(apiSource, /const enabledChatTools = getChatToolDefinitions/);
+    assert.match(apiSource, /toolName === 'resolveSkillCheck'\s*\|\| toolName === 'resolveOpposedSkillCheck'/);
+    assert.match(apiSource, /const isCheckToolCheckpoint = !stage\.isFinal\s*&& stage\.checkpoint\?\.index === 1/);
+    assert.match(apiSource, /isCheckToolCheckpoint \? enabledChatTools : \[\]/);
     assert.match(apiSource, /toolName === 'resolveSkillCheck'/);
     assert.match(apiSource, /toolName === 'resolveOpposedSkillCheck'/);
     assert.match(apiSource, /permanentlyOpened/);

@@ -46,6 +46,10 @@ class LocalLlamaServerProcess {
         return this.pid;
     }
 
+    getStartupScriptPath() {
+        return this.startupScriptPath;
+    }
+
     isRunning() {
         return Boolean(
             this.child
@@ -210,6 +214,50 @@ class LocalLlamaServerProcess {
 
         this.logger.log(`🧠 Terminated managed llama.cpp server PID ${pid}.`);
         return { pid, code: exit.code, signal: exit.signal };
+    }
+
+    async switchStartupScriptPath(startupScriptPath) {
+        if (typeof startupScriptPath !== 'string' || !startupScriptPath.trim()) {
+            throw new Error('Managed llama.cpp startup-script switch requires a non-empty path.');
+        }
+
+        const nextStartupScriptPath = path.resolve(startupScriptPath.trim());
+        const previousStartupScriptPath = this.startupScriptPath;
+        if (nextStartupScriptPath === previousStartupScriptPath) {
+            if (!this.isRunning()) {
+                throw new Error(
+                    `Managed llama.cpp server for startup script "${previousStartupScriptPath}" is not running.`
+                );
+            }
+            return {
+                switched: false,
+                pid: this.pid,
+                startupScriptPath: previousStartupScriptPath
+            };
+        }
+
+        if (!this.isRunning()) {
+            throw new Error(
+                `Cannot switch managed llama.cpp startup scripts because "${previousStartupScriptPath}" is not running.`
+            );
+        }
+
+        await this.stop();
+        this.startupScriptPath = nextStartupScriptPath;
+        try {
+            const started = await this.start();
+            return {
+                switched: true,
+                previousStartupScriptPath,
+                startupScriptPath: nextStartupScriptPath,
+                pid: started.pid
+            };
+        } catch (cause) {
+            throw new Error(
+                `Managed llama.cpp stopped "${previousStartupScriptPath}" but failed to start "${nextStartupScriptPath}": ${cause?.message || String(cause)}`,
+                { cause }
+            );
+        }
     }
 
     terminateImmediately() {

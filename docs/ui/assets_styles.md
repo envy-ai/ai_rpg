@@ -120,7 +120,9 @@ Loaded on the chat page:
   that shared variable; `.chat-player-portrait` uses the separately injected
   `--player-portrait-aspect-ratio` because the player host has distinct overlay/layout behavior.
   Both variables are precomputed from the effective character image width/height before placeholders
-  render, preventing empty portraits from starting square and resizing after image load.
+  render, preventing empty portraits from starting square and resizing after image load. Responsive
+  `.entity-card--npc` sizing uses the available half-row width as its flex basis (while retaining the
+  shared minimum), so child image intrinsic size cannot make populated and empty NPC cards diverge.
 - Portrait condition indicators share the level-stack slot just below the bare `L.<level>` text.
   Dead NPC/party cards position a skull icon plus optional corpse countdown there, while alive
   actors with status effects that drain `Health` render a red blood icon from

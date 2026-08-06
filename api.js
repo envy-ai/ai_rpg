@@ -32,11 +32,27 @@ const {
     validateCriticalThresholdValues
 } = require('./utils/critical-threshold-formulas.js');
 const { createChatToolRuntime, getChatToolDefinitions } = require('./chat_tool_calls.js');
-const { TinyBrainPromptRunner } = require('./TinyBrainPromptRunner.js');
+const {
+    configureTinyBrainPromptContext,
+    isTinyBrainPromptEnabled,
+    runTinyBrainPromptProgram
+} = require('./TinyBrainPromptFamilies.js');
+const {
+    parseContainerOpenNarrativeResult,
+    parseCraftNarrativeResult,
+    parseGameIntroResult,
+    parseLocationModificationNarrativeResult,
+    parseScheduledEventInterruptionRewrite,
+    parseScheduledEventStagedResult,
+    parseTurnNarrativeResult,
+    parseWhileYouWereAwayResult,
+    parseWhileYouWereAwayStagedResult
+} = require('./TinyBrainPromptParsers.js');
 const {
     LiveDeslopController,
     LiveRepeatedNgramDetector,
     locateDetectedSlop,
+    resolveLiveDeslopProseTags,
     resolveTinyBrainLiveDeslopProseMode,
     sanitizeLiveSlopText
 } = require('./LiveDeslop.js');
@@ -94,6 +110,21 @@ const INFORMATION_GATHERING_CHAT_TOOL_NAMES = new Set([
     'resolveOpposedSkillCheck',
     'resolvePlausibilityCheck',
     'resolveOpposedPlausibilityCheck',
+    'locateNpcs',
+    'locateThings'
+]);
+
+const TINY_BRAIN_NPC_LOOKUP_TOOL_NAMES = new Set([
+    'moreInfo',
+    'getHistory',
+    'getFullScene',
+    'listMysteryBoxes',
+    'findMysteryBoxes',
+    'getMysteryBox',
+    'listMysteryThreads',
+    'getMysteryThread',
+    'listLocationEntities',
+    'getTravelTime',
     'locateNpcs',
     'locateThings'
 ]);
@@ -5061,9 +5092,12 @@ module.exports = function registerApiRoutes(scope) {
         };
 
         const LIVE_DESLOP_TOKEN_CHUNK_SIZE = 500;
-        const resolveLiveDeslopStreamCapabilityKey = () => {
+        const resolveLiveDeslopStreamCapabilityKey = metadataLabel => {
+            const promptLabel = typeof metadataLabel === 'string' && metadataLabel.trim()
+                ? metadataLabel.trim()
+                : 'player_action';
             const effectiveAiConfig = LLMClient.resolveEffectiveAiConfiguration(
-                'player_action',
+                promptLabel,
                 Globals.config
             ).aiConfig;
             const chatEndpoint = LLMClient.resolveChatEndpoint(effectiveAiConfig.endpoint);
@@ -5078,7 +5112,11 @@ module.exports = function registerApiRoutes(scope) {
                 : 'game-server-lifetime';
             return `${chatEndpoint}::${processIdentity}`;
         };
-        const configureLiveDeslopRequest = (requestOptions, controller, { proseMode = 'structured' } = {}) => {
+        const configureLiveDeslopRequest = (
+            requestOptions,
+            controller,
+            { proseMode = 'structured', proseTags = null } = {}
+        ) => {
             if (!requestOptions || typeof requestOptions !== 'object' || Array.isArray(requestOptions)) {
                 throw new TypeError('Live deslop requires request options.');
             }
@@ -5093,7 +5131,9 @@ module.exports = function registerApiRoutes(scope) {
                 stream: true,
                 nonStreamTokenChunkSize: null,
                 liveTokenStreamFallbackChunkSize: LIVE_DESLOP_TOKEN_CHUNK_SIZE,
-                liveTokenStreamCapabilityKey: resolveLiveDeslopStreamCapabilityKey(),
+                liveTokenStreamCapabilityKey: resolveLiveDeslopStreamCapabilityKey(
+                    requestOptions.metadataLabel
+                ),
                 additionalPayload: {
                     ...(requestOptions.additionalPayload || {}),
                     logprobs: true,
@@ -5102,9 +5142,56 @@ module.exports = function registerApiRoutes(scope) {
                 onStreamToken: tokenState => controller.inspect({
                     ...tokenState,
                     proseMode,
+                    ...(proseTags ? { proseTags } : {}),
                     preserveTools: true
                 })
             };
+        };
+        const configureRequestChatTools = (requestOptions, toolDefinitions = []) => {
+            if (!requestOptions || typeof requestOptions !== 'object' || Array.isArray(requestOptions)) {
+                throw new TypeError('Chat-tool stage configuration requires request options.');
+            }
+            if (!Array.isArray(toolDefinitions)) {
+                throw new TypeError('Chat-tool stage configuration requires an array of tool definitions.');
+            }
+            const configured = { ...requestOptions };
+            const additionalPayload = {
+                ...(requestOptions.additionalPayload || {})
+            };
+            delete additionalPayload.tools;
+            delete additionalPayload.tool_choice;
+            if (toolDefinitions.length) {
+                additionalPayload.tools = toolDefinitions;
+                additionalPayload.tool_choice = 'auto';
+            }
+            if (Object.keys(additionalPayload).length) {
+                configured.additionalPayload = additionalPayload;
+            } else {
+                delete configured.additionalPayload;
+            }
+            return configured;
+        };
+        const createLiveDeslopControllerForPrompt = async () => {
+            const createSlopSession = Globals.createSlopAnalysisSession;
+            if (typeof createSlopSession !== 'function') {
+                throw new Error('Live deslop analysis sessions are unavailable on this server.');
+            }
+            const liveSlopSession = await createSlopSession();
+            const liveRepeatedNgramDetector = new LiveRepeatedNgramDetector({
+                baseSegments: getRecentSlopHistorySegments(20),
+                supplementalSegments: getRecentAssistantProseHistorySegments(80)
+            });
+            const liveSlopHistorySegments = getSlopHistorySegments()
+                .map(segment => sanitizeLiveSlopText(segment))
+                .filter(segment => segment.trim());
+            return new LiveDeslopController({
+                detectSlop: (prose, { ngramSegments = null } = {}) => detectLiveSlop(prose, {
+                    session: liveSlopSession,
+                    repeatedNgramDetector: liveRepeatedNgramDetector,
+                    ngramSegments,
+                    historySegments: liveSlopHistorySegments
+                })
+            });
         };
         const formatLiveTokenStreamFallbackLogContent = (diagnostic) => {
             if (!diagnostic || typeof diagnostic !== 'object' || Array.isArray(diagnostic)) {
@@ -5138,6 +5225,96 @@ module.exports = function registerApiRoutes(scope) {
             }
             return lines.join('\n');
         };
+
+        const runTinyBrainNarrativePrompt = async ({
+            family,
+            initialRenderedTemplate,
+            templateContext,
+            tinyBrain,
+            metadataLabel,
+            logPrefix = `${metadataLabel}_tinybrain`,
+            finalParser,
+            parsers = {},
+            requestOptions = {},
+            completeStage = null
+        } = {}) => {
+            if (!isTinyBrainPromptEnabled(Globals.config?.ai, family)) {
+                throw new Error(`Tiny-brain prompt family "${family}" is not enabled.`);
+            }
+            const configuredRetries = Number(Globals.config?.ai?.retryAttempts);
+            const retryAttempts = Number.isInteger(configuredRetries) && configuredRetries >= 0
+                ? configuredRetries
+                : 1;
+            const shouldUseLiveDeslop = Globals.config?.ai?.live_deslop === true
+                && Globals.config?.slop_buster === true
+                && Globals.config?.repetition_buster === true;
+            const liveDeslopController = shouldUseLiveDeslop
+                ? await createLiveDeslopControllerForPrompt()
+                : null;
+            const proseTags = liveDeslopController
+                ? resolveLiveDeslopProseTags(family)
+                : null;
+
+            const result = await runTinyBrainPromptProgram({
+                initialRenderedTemplate,
+                templateContext,
+                tinyBrain,
+                runnerOptions: {
+                    promptEnv,
+                    parseXMLTemplate,
+                    retryAttempts,
+                    metadataLabel,
+                    logPrefix,
+                    parsers,
+                    finalParser,
+                    complete: async (stage) => {
+                        const stageRequestOptions = {
+                            ...requestOptions,
+                            messages: stage.messages,
+                            queueReservation: stage.queueReservation,
+                            metadataLabel,
+                            validateXML: false
+                        };
+                        delete stageRequestOptions.requiredRegex;
+                        const proseMode = liveDeslopController
+                            ? resolveTinyBrainLiveDeslopProseMode({
+                                messages: stage.messages,
+                                isFinal: stage.isFinal
+                            })
+                            : null;
+                        if (proseMode) {
+                            stageRequestOptions.onLiveTokenStreamFallback = async diagnostic => {
+                                stage.appendLogSection({
+                                    title: `${stage.isFinal ? 'final response' : `checkpoint ${stage.checkpoint.index + 1}`} live token stream fallback`,
+                                    content: formatLiveTokenStreamFallbackLogContent(diagnostic)
+                                });
+                            };
+                            liveDeslopController.beginGeneration();
+                        }
+                        const effectiveRequestOptions = proseMode
+                            ? configureLiveDeslopRequest(stageRequestOptions, liveDeslopController, {
+                                proseMode,
+                                proseTags
+                            })
+                            : stageRequestOptions;
+                        if (completeStage) {
+                            return completeStage({ ...stage, requestOptions: effectiveRequestOptions });
+                        }
+                        const response = await LLMClient.chatCompletion(effectiveRequestOptions);
+                        return {
+                            aiResponse: response,
+                            conversationMessages: [
+                                ...stage.messages.map(message => ({ ...message })),
+                                { role: 'assistant', content: response }
+                            ],
+                            toolInvocations: []
+                        };
+                    }
+                }
+            });
+            return { result, liveDeslopController };
+        };
+        Globals.runTinyBrainNarrativePrompt = runTinyBrainNarrativePrompt;
 
         const buildSlopContextText = () => {
             if (!Array.isArray(chatHistory)) {
@@ -8037,10 +8214,24 @@ module.exports = function registerApiRoutes(scope) {
                 candidateByNameKey.set(nameKey, candidate);
             }
 
-            const renderedTemplate = promptEnv.render('base-context.xml.njk', {
+            const whileAwayPromptContext = {
                 ...promptBaseContext,
                 promptType: 'while-you-were-away'
-            });
+            };
+            const useTinyBrainWhileAway = isTinyBrainPromptEnabled(
+                Globals.config?.ai,
+                'while_you_were_away'
+            );
+            const tinyBrain = useTinyBrainWhileAway
+                ? configureTinyBrainPromptContext(
+                    whileAwayPromptContext,
+                    'while_you_were_away'
+                )
+                : null;
+            const renderedTemplate = promptEnv.render(
+                'base-context.xml.njk',
+                whileAwayPromptContext
+            );
             const parsedTemplate = parseXMLTemplate(renderedTemplate);
             if (!parsedTemplate?.systemPrompt || !parsedTemplate?.generationPrompt) {
                 throw new Error('While-you-were-away prompt template is missing prompts.');
@@ -8059,16 +8250,49 @@ module.exports = function registerApiRoutes(scope) {
                 requestOptions.temperature = parsedTemplate.temperature;
             }
 
-            const rawResponse = await LLMClient.chatCompletion(requestOptions);
-            LLMClient.logPrompt({
-                prefix: 'while_you_were_away',
-                metadataLabel: 'while_you_were_away',
-                systemPrompt: parsedTemplate.systemPrompt || '',
-                generationPrompt: parsedTemplate.generationPrompt || '',
-                response: rawResponse || '',
-                model: requestOptions.model,
-                endpoint: requestOptions.endpoint
-            });
+            let rawResponse = '';
+            let whileAwayLiveDeslopInfo = null;
+            if (useTinyBrainWhileAway) {
+                const finalParser = response => {
+                    const completed = tinyBrain.renderState.completedCheckpoints || {};
+                    const characterUpdateXml = candidates.map((candidate, index) => {
+                        const value = completed[index]?.value;
+                        if (!value || typeof value.xml !== 'string') {
+                            throw new Error(`Missing staged while-you-were-away update for "${candidate.name}".`);
+                        }
+                        return value.xml;
+                    });
+                    const arrivalUpdatesXml = completed[candidates.length]?.value;
+                    const itemSceneryMovesXml = completed[candidates.length + 1]?.value;
+                    return parseWhileYouWereAwayStagedResult(response, {
+                        characterUpdateXml,
+                        arrivalUpdatesXml,
+                        itemSceneryMovesXml
+                    });
+                };
+                const tinyBrainRun = await runTinyBrainNarrativePrompt({
+                    family: 'while_you_were_away',
+                    initialRenderedTemplate: renderedTemplate,
+                    templateContext: whileAwayPromptContext,
+                    tinyBrain,
+                    metadataLabel: 'while_you_were_away',
+                    finalParser,
+                    requestOptions
+                });
+                rawResponse = tinyBrainRun.result.aiResponse;
+                whileAwayLiveDeslopInfo = tinyBrainRun.liveDeslopController?.getDiagnostics() || null;
+            } else {
+                rawResponse = await LLMClient.chatCompletion(requestOptions);
+                LLMClient.logPrompt({
+                    prefix: 'while_you_were_away',
+                    metadataLabel: 'while_you_were_away',
+                    systemPrompt: parsedTemplate.systemPrompt || '',
+                    generationPrompt: parsedTemplate.generationPrompt || '',
+                    response: rawResponse || '',
+                    model: requestOptions.model,
+                    endpoint: requestOptions.endpoint
+                });
+            }
 
             const parsedResponse = parseWhileYouWereAwayResponse(rawResponse, {
                 expectedNameKeys: new Set(candidateByNameKey.keys())
@@ -8210,6 +8434,24 @@ module.exports = function registerApiRoutes(scope) {
                         slopNgrams: slopResult.slopNgrams || []
                     };
                 }
+            }
+            if (whileAwayLiveDeslopInfo?.ran) {
+                slopRemovalInfo = {
+                    ...(slopRemovalInfo || {}),
+                    slopWords: Array.from(new Set([
+                        ...(slopRemovalInfo?.slopWords || []),
+                        ...(whileAwayLiveDeslopInfo.slopWords || [])
+                    ])),
+                    slopRegexes: Array.from(new Set([
+                        ...(slopRemovalInfo?.slopRegexes || []),
+                        ...(whileAwayLiveDeslopInfo.slopRegexes || [])
+                    ])),
+                    slopNgrams: Array.from(new Set([
+                        ...(slopRemovalInfo?.slopNgrams || []),
+                        ...(whileAwayLiveDeslopInfo.slopNgrams || [])
+                    ])),
+                    liveCorrections: [...(whileAwayLiveDeslopInfo.corrections || [])]
+                };
             }
 
             let storedVisibleEntry = null;
@@ -8364,7 +8606,7 @@ module.exports = function registerApiRoutes(scope) {
 
             const playerPresent = currentPlayer?.currentLocation === scheduledLocationId;
             const baseContext = await prepareBasePromptContext({ locationOverride: scheduledLocation });
-            const renderedTemplate = promptEnv.render('base-context.xml.njk', {
+            const scheduledEventPromptContext = {
                 ...baseContext,
                 promptType: 'scheduled-event-resolution',
                 scheduledEvent: typeof scheduledEvent.toJSON === 'function'
@@ -8372,7 +8614,21 @@ module.exports = function registerApiRoutes(scope) {
                     : scheduledEvent,
                 scheduledEventPlayerPresent: playerPresent,
                 scheduledEventCurrentWorldTime: Globals.getWorldTimeContext()
-            });
+            };
+            const useTinyBrainScheduledEvent = isTinyBrainPromptEnabled(
+                Globals.config?.ai,
+                'scheduled_event_resolution'
+            );
+            const tinyBrain = useTinyBrainScheduledEvent
+                ? configureTinyBrainPromptContext(
+                    scheduledEventPromptContext,
+                    'scheduled_event_resolution'
+                )
+                : null;
+            const renderedTemplate = promptEnv.render(
+                'base-context.xml.njk',
+                scheduledEventPromptContext
+            );
             const parsedTemplate = parseXMLTemplate(renderedTemplate);
             if (!parsedTemplate?.systemPrompt || !parsedTemplate?.generationPrompt) {
                 throw new Error('Scheduled event resolution prompt template is missing prompts.');
@@ -8398,9 +8654,19 @@ module.exports = function registerApiRoutes(scope) {
             const scheduledEventInputStream = stream || (clientId
                 ? { clientId, requestId }
                 : null);
-            const toolLoopResult = await runChatCompletionWithToolLoop({
-                requestOptions,
+            const scheduledEventToolResultCache = {
+                roundKey: [
+                    'scheduled_event_resolution',
+                    scheduledEventId,
+                    requestId || Date.now().toString(36),
+                    Math.random().toString(36).slice(2, 10)
+                ].join(':'),
+                entries: new Map()
+            };
+            const runScheduledEventToolLoop = stageRequestOptions => runChatCompletionWithToolLoop({
+                requestOptions: stageRequestOptions,
                 metadataLabel: 'scheduled_event_resolution',
+                toolResultCache: scheduledEventToolResultCache,
                 requestUserInput: scheduledEventInputStream
                     ? createRequestUserInputHandler({
                         stream: scheduledEventInputStream,
@@ -8408,16 +8674,68 @@ module.exports = function registerApiRoutes(scope) {
                     })
                     : null
             });
-            const rawResponse = toolLoopResult.aiResponse || '';
-            LLMClient.logPrompt({
-                prefix: 'scheduled_event_resolution',
-                metadataLabel: 'scheduled_event_resolution',
-                systemPrompt: parsedTemplate.systemPrompt || '',
-                generationPrompt: parsedTemplate.generationPrompt || '',
-                response: rawResponse || '',
-                model: requestOptions.model,
-                endpoint: requestOptions.endpoint
-            });
+            let rawResponse = '';
+            let scheduledEventLiveDeslopInfo = null;
+            if (useTinyBrainScheduledEvent) {
+                const tinyBrainRun = await runTinyBrainNarrativePrompt({
+                    family: 'scheduled_event_resolution',
+                    initialRenderedTemplate: renderedTemplate,
+                    templateContext: scheduledEventPromptContext,
+                    tinyBrain,
+                    metadataLabel: 'scheduled_event_resolution',
+                    finalParser: response => {
+                        const completed = tinyBrain.renderState.completedCheckpoints || {};
+                        const happened = completed[0]?.value === true;
+                        return parseScheduledEventStagedResult(response, {
+                            happened,
+                            expectedSummary: happened ? completed[3]?.value : '',
+                            playerPresent
+                        });
+                    },
+                    requestOptions,
+                    completeStage: async stage => {
+                        const isToolCheckpoint = !stage.isFinal
+                            && stage.checkpoint?.index === 2;
+                        const stageRequestOptions = configureRequestChatTools(
+                            stage.requestOptions,
+                            isToolCheckpoint ? scheduledEventTools : []
+                        );
+                        if (isToolCheckpoint) {
+                            const toolLoopResult = await runScheduledEventToolLoop(
+                                stageRequestOptions
+                            );
+                            return {
+                                aiResponse: toolLoopResult.aiResponse,
+                                conversationMessages: toolLoopResult.conversationMessages,
+                                toolInvocations: toolLoopResult.toolInvocations
+                            };
+                        }
+                        const response = await LLMClient.chatCompletion(stageRequestOptions);
+                        return {
+                            aiResponse: response,
+                            conversationMessages: [
+                                ...stage.messages.map(message => ({ ...message })),
+                                { role: 'assistant', content: response }
+                            ],
+                            toolInvocations: []
+                        };
+                    }
+                });
+                rawResponse = tinyBrainRun.result.aiResponse || '';
+                scheduledEventLiveDeslopInfo = tinyBrainRun.liveDeslopController?.getDiagnostics() || null;
+            } else {
+                const toolLoopResult = await runScheduledEventToolLoop(requestOptions);
+                rawResponse = toolLoopResult.aiResponse || '';
+                LLMClient.logPrompt({
+                    prefix: 'scheduled_event_resolution',
+                    metadataLabel: 'scheduled_event_resolution',
+                    systemPrompt: parsedTemplate.systemPrompt || '',
+                    generationPrompt: parsedTemplate.generationPrompt || '',
+                    response: rawResponse || '',
+                    model: requestOptions.model,
+                    endpoint: requestOptions.endpoint
+                });
+            }
 
             const parsedResult = parseScheduledEventResultXml(rawResponse);
             const resolvedAtWorldMinute = Globals.getTotalWorldMinutes();
@@ -8480,6 +8798,24 @@ module.exports = function registerApiRoutes(scope) {
                             slopNgrams: slopResult.slopNgrams || []
                         };
                     }
+                }
+                if (scheduledEventLiveDeslopInfo?.ran) {
+                    slopRemovalInfo = {
+                        ...(slopRemovalInfo || {}),
+                        slopWords: Array.from(new Set([
+                            ...(slopRemovalInfo?.slopWords || []),
+                            ...(scheduledEventLiveDeslopInfo.slopWords || [])
+                        ])),
+                        slopRegexes: Array.from(new Set([
+                            ...(slopRemovalInfo?.slopRegexes || []),
+                            ...(scheduledEventLiveDeslopInfo.slopRegexes || [])
+                        ])),
+                        slopNgrams: Array.from(new Set([
+                            ...(slopRemovalInfo?.slopNgrams || []),
+                            ...(scheduledEventLiveDeslopInfo.slopNgrams || [])
+                        ])),
+                        liveCorrections: [...(scheduledEventLiveDeslopInfo.corrections || [])]
+                    };
                 }
 
                 const visibleEntryPayload = {
@@ -8593,7 +8929,7 @@ module.exports = function registerApiRoutes(scope) {
                 throw new Error('Scheduled event interruption rewrite requires a non-negative integer interruption offset.');
             }
             const interruptionDuration = Utils.formatMinutesAsNaturalDuration(interruptionMinutes);
-            const renderedTemplate = promptEnv.render('_includes/scheduled-event-interruption-rewrite.njk', {
+            const interruptionPromptContext = {
                 originalXml,
                 interruptionMinutes,
                 interruptionDuration,
@@ -8602,7 +8938,21 @@ module.exports = function registerApiRoutes(scope) {
                     summary: result.summary || '',
                     proseForPlayer: result.playerProse || ''
                 }))
-            });
+            };
+            const useTinyBrainInterruptionRewrite = isTinyBrainPromptEnabled(
+                Globals.config?.ai,
+                'scheduled_event_interruption_rewrite'
+            );
+            const tinyBrain = useTinyBrainInterruptionRewrite
+                ? configureTinyBrainPromptContext(
+                    interruptionPromptContext,
+                    'scheduled_event_interruption_rewrite'
+                )
+                : null;
+            const renderedTemplate = promptEnv.render(
+                '_includes/scheduled-event-interruption-rewrite.njk',
+                interruptionPromptContext
+            );
             const parsedTemplate = parseXMLTemplate(renderedTemplate);
             if (!parsedTemplate?.systemPrompt || !parsedTemplate?.generationPrompt) {
                 throw new Error('Scheduled event interruption rewrite prompt template is missing prompts.');
@@ -8622,6 +8972,26 @@ module.exports = function registerApiRoutes(scope) {
             }
 
             let rawResponse = '';
+            if (useTinyBrainInterruptionRewrite) {
+                const tinyBrainRun = await runTinyBrainNarrativePrompt({
+                    family: 'scheduled_event_interruption_rewrite',
+                    initialRenderedTemplate: renderedTemplate,
+                    templateContext: interruptionPromptContext,
+                    tinyBrain,
+                    metadataLabel: 'player_action_interruption_rewrite',
+                    finalParser: response => parseScheduledEventInterruptionRewrite(
+                        response,
+                        originalXml
+                    ),
+                    requestOptions
+                });
+                rawResponse = tinyBrainRun.result.aiResponse;
+                const rewrittenXml = extractPlayerActionXmlPayload(rawResponse);
+                if (!rewrittenXml) {
+                    throw new Error('Scheduled event interruption rewrite response missing player action XML.');
+                }
+                return rewrittenXml;
+            }
             try {
                 rawResponse = await LLMClient.chatCompletion(requestOptions);
                 const rewrittenXml = extractPlayerActionXmlPayload(rawResponse);
@@ -10121,10 +10491,18 @@ module.exports = function registerApiRoutes(scope) {
             }
 
             const baseContext = await prepareBasePromptContext({ locationOverride });
-            const renderedTemplate = promptEnv.render('base-context.xml.njk', {
+            const templateContext = {
                 ...baseContext,
                 promptType: 'game-intro'
-            });
+            };
+            const useTinyBrainGameIntro = isTinyBrainPromptEnabled(
+                Globals.config?.ai,
+                'game_intro'
+            );
+            const tinyBrain = useTinyBrainGameIntro
+                ? configureTinyBrainPromptContext(templateContext, 'game_intro')
+                : null;
+            const renderedTemplate = promptEnv.render('base-context.xml.njk', templateContext);
             const parsedTemplate = parseXMLTemplate(renderedTemplate);
             if (!parsedTemplate?.systemPrompt || !parsedTemplate?.generationPrompt) {
                 throw new Error('Game intro template missing prompts.');
@@ -10143,16 +10521,32 @@ module.exports = function registerApiRoutes(scope) {
                 requestOptions.temperature = parsedTemplate.temperature;
             }
 
-            const rawResponse = await LLMClient.chatCompletion(requestOptions);
-            LLMClient.logPrompt({
-                prefix: 'game_intro',
-                metadataLabel: 'game_intro',
-                systemPrompt: parsedTemplate.systemPrompt || '',
-                generationPrompt: parsedTemplate.generationPrompt || '',
-                response: rawResponse || '',
-                model: requestOptions.model,
-                endpoint: requestOptions.endpoint
-            });
+            let rawResponse = '';
+            let liveDeslopInfo = null;
+            if (useTinyBrainGameIntro) {
+                const tinyBrainRun = await runTinyBrainNarrativePrompt({
+                    family: 'game_intro',
+                    initialRenderedTemplate: renderedTemplate,
+                    templateContext,
+                    tinyBrain,
+                    metadataLabel: 'game_intro',
+                    finalParser: parseGameIntroResult,
+                    requestOptions
+                });
+                rawResponse = tinyBrainRun.result.aiResponse;
+                liveDeslopInfo = tinyBrainRun.liveDeslopController?.getDiagnostics() || null;
+            } else {
+                rawResponse = await LLMClient.chatCompletion(requestOptions);
+                LLMClient.logPrompt({
+                    prefix: 'game_intro',
+                    metadataLabel: 'game_intro',
+                    systemPrompt: parsedTemplate.systemPrompt || '',
+                    generationPrompt: parsedTemplate.generationPrompt || '',
+                    response: rawResponse || '',
+                    model: requestOptions.model,
+                    endpoint: requestOptions.endpoint
+                });
+            }
 
             let introText = parseGameIntroResponse(rawResponse);
             let slopRemovalInfo = null;
@@ -10166,6 +10560,24 @@ module.exports = function registerApiRoutes(scope) {
                         slopNgrams: slopResult.slopNgrams || []
                     };
                 }
+            }
+            if (liveDeslopInfo?.ran) {
+                slopRemovalInfo = {
+                    ...(slopRemovalInfo || {}),
+                    slopWords: Array.from(new Set([
+                        ...(slopRemovalInfo?.slopWords || []),
+                        ...(liveDeslopInfo.slopWords || [])
+                    ])),
+                    slopRegexes: Array.from(new Set([
+                        ...(slopRemovalInfo?.slopRegexes || []),
+                        ...(liveDeslopInfo.slopRegexes || [])
+                    ])),
+                    slopNgrams: Array.from(new Set([
+                        ...(slopRemovalInfo?.slopNgrams || []),
+                        ...(liveDeslopInfo.slopNgrams || [])
+                    ])),
+                    liveCorrections: [...(liveDeslopInfo.corrections || [])]
+                };
             }
 
             const resolvedLocationId = requireLocationId(
@@ -18176,11 +18588,19 @@ module.exports = function registerApiRoutes(scope) {
                 const baseContext = await prepareBasePromptContext({ locationOverride });
                 let location = locationOverride || baseContext?.currentLocation || null;
                 const summaryLocation = location;
-                const renderedTemplate = promptEnv.render('base-context.xml.njk', {
+                const templateContext = {
                     ...baseContext,
                     promptType: 'random-event',
                     eventText: trimmedEventText
-                });
+                };
+                const useTinyBrainRandomEvent = isTinyBrainPromptEnabled(
+                    Globals.config?.ai,
+                    'random_event'
+                );
+                const tinyBrain = useTinyBrainRandomEvent
+                    ? configureTinyBrainPromptContext(templateContext, 'random_event')
+                    : null;
+                const renderedTemplate = promptEnv.render('base-context.xml.njk', templateContext);
 
                 const parsedTemplate = parseXMLTemplate(renderedTemplate);
                 if (!parsedTemplate?.systemPrompt || !parsedTemplate?.generationPrompt) {
@@ -18212,16 +18632,32 @@ module.exports = function registerApiRoutes(scope) {
                     requestOptions.requiredRegex = playerActionProseRegex;
                 }
 
-                const rawResponse = await LLMClient.chatCompletion(requestOptions);
-                const durationSeconds = (Date.now() - start) / 1000;
-                logRandomEventPrompt({
-                    rarity,
-                    eventText: trimmedEventText,
-                    systemPrompt: parsedTemplate.systemPrompt,
-                    generationPrompt: parsedTemplate.generationPrompt,
-                    responseText: rawResponse,
-                    durationSeconds
-                });
+                let rawResponse = '';
+                let liveDeslopInfo = null;
+                if (useTinyBrainRandomEvent) {
+                    const tinyBrainRun = await runTinyBrainNarrativePrompt({
+                        family: 'random_event',
+                        initialRenderedTemplate: renderedTemplate,
+                        templateContext,
+                        tinyBrain,
+                        metadataLabel: 'random_event',
+                        finalParser: response => parseTurnNarrativeResult(response, { allowTravel: true }),
+                        requestOptions
+                    });
+                    rawResponse = tinyBrainRun.result.aiResponse;
+                    liveDeslopInfo = tinyBrainRun.liveDeslopController?.getDiagnostics() || null;
+                } else {
+                    rawResponse = await LLMClient.chatCompletion(requestOptions);
+                    const durationSeconds = (Date.now() - start) / 1000;
+                    logRandomEventPrompt({
+                        rarity,
+                        eventText: trimmedEventText,
+                        systemPrompt: parsedTemplate.systemPrompt,
+                        generationPrompt: parsedTemplate.generationPrompt,
+                        responseText: rawResponse,
+                        durationSeconds
+                    });
+                }
 
                 const parsedResponse = parseRandomEventResponse(rawResponse);
                 let moveTurnResultPayload = null;
@@ -18251,6 +18687,24 @@ module.exports = function registerApiRoutes(scope) {
                             slopNgrams: slopResult.slopNgrams || []
                         };
                     }
+                }
+                if (liveDeslopInfo?.ran) {
+                    slopRemovalInfo = {
+                        ...(slopRemovalInfo || {}),
+                        slopWords: Array.from(new Set([
+                            ...(slopRemovalInfo?.slopWords || []),
+                            ...(liveDeslopInfo.slopWords || [])
+                        ])),
+                        slopRegexes: Array.from(new Set([
+                            ...(slopRemovalInfo?.slopRegexes || []),
+                            ...(liveDeslopInfo.slopRegexes || [])
+                        ])),
+                        slopNgrams: Array.from(new Set([
+                            ...(slopRemovalInfo?.slopNgrams || []),
+                            ...(liveDeslopInfo.slopNgrams || [])
+                        ])),
+                        liveCorrections: [...(liveDeslopInfo.corrections || [])]
+                    };
                 }
 
                 const randomEventLocationId = requireLocationId(location?.id, 'random event entry');
@@ -22572,6 +23026,9 @@ module.exports = function registerApiRoutes(scope) {
                 return { raw: '', debug: null };
             }
 
+            const useTinyBrainNpcAction = actor.isNPC === true
+                && isTinyBrainPromptEnabled(Globals.config?.ai, 'npc_action');
+
             try {
                 console.log('checking for additional lore')
                 const baseContext = await prepareBasePromptContext({ locationOverride });
@@ -22584,6 +23041,9 @@ module.exports = function registerApiRoutes(scope) {
                     itemContext,
                     abilityContext
                 };
+                const tinyBrain = useTinyBrainNpcAction
+                    ? configureTinyBrainPromptContext(promptVariables, 'npc_action')
+                    : null;
 
                 if (attackContext?.isAttack) {
                     const attackOutcome = attackContext.outcome || null;
@@ -22640,6 +23100,12 @@ module.exports = function registerApiRoutes(scope) {
                     additionalPayload.repetition_penalty = repetitionPenalty;
                 }
                 const enabledChatTools = filterEnabledChatTools({ modExtensionRegistry });
+                const tinyBrainNpcLookupTools = enabledChatTools.filter(toolDefinition => {
+                    const toolName = typeof toolDefinition?.function?.name === 'string'
+                        ? toolDefinition.function.name.trim()
+                        : '';
+                    return TINY_BRAIN_NPC_LOOKUP_TOOL_NAMES.has(toolName);
+                });
                 if (enabledChatTools.length > 0) {
                     additionalPayload.tools = enabledChatTools;
                     additionalPayload.tool_choice = 'auto';
@@ -22693,7 +23159,61 @@ module.exports = function registerApiRoutes(scope) {
                 });
 
                 let raw = '';
-                if (enabledChatTools.length > 0) {
+                let liveDeslopInfo = null;
+                if (useTinyBrainNpcAction) {
+                    const tinyBrainRun = await runTinyBrainNarrativePrompt({
+                        family: 'npc_action',
+                        initialRenderedTemplate: renderedPrompt,
+                        templateContext: promptVariables,
+                        tinyBrain,
+                        metadataLabel: aiMetricsLabel,
+                        finalParser: response => parseTurnNarrativeResult(response, { allowTravel: false }),
+                        requestOptions,
+                        completeStage: async stage => {
+                            const isLookupCheckpoint = !stage.isFinal
+                                && stage.checkpoint?.index === 1;
+                            const stageRequestOptions = configureRequestChatTools(
+                                stage.requestOptions,
+                                isLookupCheckpoint ? tinyBrainNpcLookupTools : []
+                            );
+                            if (isLookupCheckpoint && tinyBrainNpcLookupTools.length > 0) {
+                                const toolLoopResult = await runChatCompletionWithToolLoop({
+                                    requestOptions: stageRequestOptions,
+                                    streamEmitter: stream,
+                                    metadataLabel: aiMetricsLabel,
+                                    toolResultCache,
+                                    defaultToolActor: actor.name || null,
+                                    requestUserInput: createRequestUserInputHandler({
+                                        stream,
+                                        promptLabel: aiMetricsLabel
+                                    }),
+                                    onToolCallEvent: event => checkResultsRecorder.record(event),
+                                    onToolCallDebug: toolCallDebugRecorder
+                                        ? event => toolCallDebugRecorder.record(event)
+                                        : null,
+                                    promptLogFile: stage.logFilePath
+                                });
+                                return {
+                                    aiResponse: toolLoopResult.aiResponse,
+                                    conversationMessages: toolLoopResult.conversationMessages,
+                                    toolInvocations: toolLoopResult.toolInvocations
+                                };
+                            }
+                            const response = await LLMClient.chatCompletion(stageRequestOptions);
+                            return {
+                                aiResponse: response,
+                                conversationMessages: [
+                                    ...stage.messages.map(message => ({ ...message })),
+                                    { role: 'assistant', content: response }
+                                ],
+                                toolInvocations: []
+                            };
+                        }
+                    });
+                    raw = tinyBrainRun.result.aiResponse;
+                    toolInvocations = tinyBrainRun.result.toolInvocations;
+                    liveDeslopInfo = tinyBrainRun.liveDeslopController?.getDiagnostics() || null;
+                } else if (enabledChatTools.length > 0) {
                     const toolLoopResult = await runChatCompletionWithToolLoop({
                         requestOptions,
                         streamEmitter: stream,
@@ -22716,7 +23236,7 @@ module.exports = function registerApiRoutes(scope) {
                 } else {
                     raw = await LLMClient.chatCompletion(requestOptions);
                 }
-                if (promptLog) {
+                if (promptLog && !useTinyBrainNpcAction) {
                     LLMClient.logPrompt({
                         prefix: actor.isNPC ? 'npc_action' : 'player_action',
                         metadataLabel: aiMetricsLabel,
@@ -22728,7 +23248,7 @@ module.exports = function registerApiRoutes(scope) {
                     });
                 }
 
-                if (Globals.config.repetition_buster) {
+                if (Globals.config.repetition_buster || useTinyBrainNpcAction) {
                     const parsedProse = await parsePlayerActionProseFromXml(raw, { logJson: true });
                     raw = parsedProse.prose;
                 }
@@ -22746,6 +23266,9 @@ module.exports = function registerApiRoutes(scope) {
                 if (toolInvocations.length) {
                     debug.toolInvocations = toolInvocations;
                 }
+                if (liveDeslopInfo?.ran) {
+                    debug.liveDeslop = liveDeslopInfo;
+                }
 
                 return {
                     raw,
@@ -22754,6 +23277,9 @@ module.exports = function registerApiRoutes(scope) {
                     checkResultsRecorded: checkResultsRecorder.hasRecords()
                 };
             } catch (error) {
+                if (useTinyBrainNpcAction) {
+                    throw error;
+                }
                 console.warn(`Failed to run action narrative for ${actor.name}:`, error.message);
                 return { raw: '', debug: { error: error.message } };
             }
@@ -23931,6 +24457,7 @@ module.exports = function registerApiRoutes(scope) {
             let playerActionSlopBaseContextSnapshot = null;
             let useTinyBrainPlayerAction = false;
             let tinyBrainPromptState = null;
+            let tinyBrainPromptConfig = null;
             let tinyBrainRenderedPrompt = null;
             const renderPlayerActionPrompt = (forceRepetitionBuster = null) => {
                 if (!promptTemplateName || !promptVariablesSnapshot) {
@@ -25153,12 +25680,22 @@ module.exports = function registerApiRoutes(scope) {
                             promptVariables.success_or_failure = actionResolution?.label || 'success';
                         }
 
-                        useTinyBrainPlayerAction = promptType === 'player-action'
-                            && Globals.config?.ai?.tinybrain === true;
+                        const tinyBrainPlayerFamily = promptType === 'creative-mode-action'
+                            ? 'creative_mode_action'
+                            : 'player_action';
+                        useTinyBrainPlayerAction = (
+                            promptType === 'player-action'
+                            || promptType === 'creative-mode-action'
+                        ) && isTinyBrainPromptEnabled(
+                            Globals.config?.ai,
+                            tinyBrainPlayerFamily
+                        );
                         if (useTinyBrainPlayerAction) {
-                            tinyBrainPromptState = TinyBrainPromptRunner.createRenderState();
-                            promptVariables.useTinyBrainPrompt = true;
-                            promptVariables.__tinyBrainState = tinyBrainPromptState;
+                            tinyBrainPromptConfig = configureTinyBrainPromptContext(
+                                promptVariables,
+                                tinyBrainPlayerFamily
+                            );
+                            tinyBrainPromptState = tinyBrainPromptConfig.renderState;
                         }
 
                         const renderedPrompt = promptEnv.render(templateName, promptVariables);
@@ -25476,10 +26013,13 @@ module.exports = function registerApiRoutes(scope) {
                         ? 'generic_prompt'
                         : (promptType === 'generic-prompt-nocontext'
                             ? 'generic_prompt_nocontext'
-                            : 'player_action'));
+                            : (promptType === 'creative-mode-action'
+                                ? 'creative_mode_action'
+                                : 'player_action')));
                 const usesActionXmlResponse = promptType === 'player-action'
                     || promptType === 'creative-mode-action';
-                const shouldUseRepetitionBusterXml = usesActionXmlResponse && Boolean(Globals.config.repetition_buster);
+                const shouldUseRepetitionBusterXml = usesActionXmlResponse
+                    && (Boolean(Globals.config.repetition_buster) || useTinyBrainPlayerAction);
                 const shouldUseLiveDeslop = Globals.config?.ai?.live_deslop === true
                     && Globals.config?.slop_buster === true
                     && shouldUseRepetitionBusterXml
@@ -25487,26 +26027,7 @@ module.exports = function registerApiRoutes(scope) {
                     && !isGenericPromptAction;
                 let liveDeslopController = null;
                 if (shouldUseLiveDeslop) {
-                    const createSlopSession = Globals.createSlopAnalysisSession;
-                    if (typeof createSlopSession !== 'function') {
-                        throw new Error('Live deslop analysis sessions are unavailable on this server.');
-                    }
-                    const liveSlopSession = await createSlopSession();
-                    const liveRepeatedNgramDetector = new LiveRepeatedNgramDetector({
-                        baseSegments: getRecentSlopHistorySegments(20),
-                        supplementalSegments: getRecentAssistantProseHistorySegments(80)
-                    });
-                    const liveSlopHistorySegments = getSlopHistorySegments()
-                        .map(segment => sanitizeLiveSlopText(segment))
-                        .filter(segment => segment.trim());
-                    liveDeslopController = new LiveDeslopController({
-                        detectSlop: (prose, { ngramSegments = null } = {}) => detectLiveSlop(prose, {
-                            session: liveSlopSession,
-                            repeatedNgramDetector: liveRepeatedNgramDetector,
-                            ngramSegments,
-                            historySegments: liveSlopHistorySegments
-                        })
-                    });
+                    liveDeslopController = await createLiveDeslopControllerForPrompt();
                 }
                 const toolResultCache = {
                     roundKey: stream.requestId || `${promptMetadataLabel}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`,
@@ -25570,21 +26091,26 @@ module.exports = function registerApiRoutes(scope) {
                         throw new Error('Tiny-brain player-action prompt was not initialized during rendering.');
                     }
                     const tinyBrainRetryAttempts = Number(Globals.config?.ai?.retryAttempts);
-                    const tinyBrainRunner = new TinyBrainPromptRunner({
-                        promptEnv,
-                        parseXMLTemplate,
-                        retryAttempts: tinyBrainRetryAttempts,
-                        metadataLabel: promptMetadataLabel,
-                        finalParser: shouldUseRepetitionBusterXml
-                            ? async (response) => {
-                                await parsePlayerActionProseFromXml(response, {
-                                    logJson: false,
-                                    repairMalformed: false
-                                });
-                                return { value: true };
-                            }
-                            : null,
-                        complete: async ({
+                    const tinyBrainResult = await runTinyBrainPromptProgram({
+                        initialRenderedTemplate: tinyBrainRenderedPrompt,
+                        templateContext: promptVariablesSnapshot,
+                        tinyBrain: tinyBrainPromptConfig,
+                        runnerOptions: {
+                            promptEnv,
+                            parseXMLTemplate,
+                            retryAttempts: tinyBrainRetryAttempts,
+                            metadataLabel: promptMetadataLabel,
+                            logPrefix: `${promptMetadataLabel}_tinybrain`,
+                            finalParser: shouldUseRepetitionBusterXml
+                                ? async (response) => {
+                                    await parsePlayerActionProseFromXml(response, {
+                                        logJson: false,
+                                        repairMalformed: false
+                                    });
+                                    return { value: true };
+                                }
+                                : null,
+                            complete: async ({
                             messages,
                             checkpoint,
                             attempt,
@@ -25662,12 +26188,8 @@ module.exports = function registerApiRoutes(scope) {
                                 ],
                                 toolInvocations: []
                             };
+                            }
                         }
-                    });
-                    const tinyBrainResult = await tinyBrainRunner.run({
-                        initialRenderedTemplate: tinyBrainRenderedPrompt,
-                        templateContext: promptVariablesSnapshot,
-                        renderState: tinyBrainPromptState
                     });
                     aiResponse = tinyBrainResult.aiResponse;
                     toolInvocations = tinyBrainResult.toolInvocations;
@@ -39944,8 +40466,13 @@ module.exports = function registerApiRoutes(scope) {
                     playerOtherEffect = '';
                 } else {
                     let playerActionResponse = '';
+                    let craftingLiveDeslopInfo = null;
+                    const useTinyBrainCraftNarrative = isTinyBrainPromptEnabled(
+                        Globals.config?.ai,
+                        'craft_player_action'
+                    );
                     try {
-                        const playerActionRendered = promptEnv.render('base-context.xml.njk', {
+                        const craftNarrativeContext = {
                             ...baseContext,
                             promptType: 'player-action-craft',
                             characterName: actorName,
@@ -39962,15 +40489,26 @@ module.exports = function registerApiRoutes(scope) {
                             craftingNotes,
                             targetName: salvageTargetThing?.name,
                             mode: craftingMode,
-                            craftTargetType: effectiveCraftTargetType
-                        });
+                            craftTargetType: effectiveCraftTargetType,
+                            authoritativeTimePassedMinutes: appliedTimeTakenMinutes
+                        };
+                        const tinyBrain = useTinyBrainCraftNarrative
+                            ? configureTinyBrainPromptContext(
+                                craftNarrativeContext,
+                                'craft_player_action'
+                            )
+                            : null;
+                        const playerActionRendered = promptEnv.render(
+                            'base-context.xml.njk',
+                            craftNarrativeContext
+                        );
 
                         const playerActionTemplate = parseXMLTemplate(playerActionRendered);
                         if (!playerActionTemplate?.systemPrompt || !playerActionTemplate?.generationPrompt) {
                             throw new Error('Player action craft template missing prompts.');
                         }
 
-                        playerActionResponse = await LLMClient.chatCompletion({
+                        const craftNarrativeRequestOptions = {
                             messages: [
                                 { role: 'system', content: playerActionTemplate.systemPrompt },
                                 { role: 'user', content: playerActionTemplate.generationPrompt }
@@ -39983,14 +40521,33 @@ module.exports = function registerApiRoutes(scope) {
                                     ? payload.requestId.trim()
                                     : `craft_turn_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`
                             }
-                        });
-
-                        LLMClient.logPrompt({
-                            metadataLabel: 'craft_player_action',
-                            systemPrompt: playerActionTemplate.systemPrompt,
-                            generationPrompt: playerActionTemplate.generationPrompt,
-                            response: playerActionResponse
-                        });
+                        };
+                        if (useTinyBrainCraftNarrative) {
+                            const tinyBrainRun = await runTinyBrainNarrativePrompt({
+                                family: 'craft_player_action',
+                                initialRenderedTemplate: playerActionRendered,
+                                templateContext: craftNarrativeContext,
+                                tinyBrain,
+                                metadataLabel: 'craft_player_action',
+                                finalParser: response => parseCraftNarrativeResult(response, {
+                                    requireOtherEffect: Boolean(selectedResult.other),
+                                    expectedDurationMinutes: appliedTimeTakenMinutes
+                                }),
+                                requestOptions: craftNarrativeRequestOptions
+                            });
+                            playerActionResponse = tinyBrainRun.result.aiResponse;
+                            craftingLiveDeslopInfo = tinyBrainRun.liveDeslopController?.getDiagnostics() || null;
+                        } else {
+                            playerActionResponse = await LLMClient.chatCompletion(
+                                craftNarrativeRequestOptions
+                            );
+                            LLMClient.logPrompt({
+                                metadataLabel: 'craft_player_action',
+                                systemPrompt: playerActionTemplate.systemPrompt,
+                                generationPrompt: playerActionTemplate.generationPrompt,
+                                response: playerActionResponse
+                            });
+                        }
 
                         const narrative = parseCraftingNarrativeResponse(playerActionResponse);
                         if (narrative?.description) {
@@ -40000,6 +40557,9 @@ module.exports = function registerApiRoutes(scope) {
                             playerOtherEffect = narrative.otherEffectDescription;
                         }
                     } catch (actionError) {
+                        if (useTinyBrainCraftNarrative) {
+                            throw actionError;
+                        }
                         console.warn('Failed to generate crafting narrative:', actionError?.message || actionError);
                     }
 
@@ -40030,6 +40590,24 @@ module.exports = function registerApiRoutes(scope) {
                                 slopNgrams: slopResult.slopNgrams || []
                             };
                         }
+                    }
+                    if (craftingLiveDeslopInfo?.ran) {
+                        craftingSlopRemovalInfo = {
+                            ...(craftingSlopRemovalInfo || {}),
+                            slopWords: Array.from(new Set([
+                                ...(craftingSlopRemovalInfo?.slopWords || []),
+                                ...(craftingLiveDeslopInfo.slopWords || [])
+                            ])),
+                            slopRegexes: Array.from(new Set([
+                                ...(craftingSlopRemovalInfo?.slopRegexes || []),
+                                ...(craftingLiveDeslopInfo.slopRegexes || [])
+                            ])),
+                            slopNgrams: Array.from(new Set([
+                                ...(craftingSlopRemovalInfo?.slopNgrams || []),
+                                ...(craftingLiveDeslopInfo.slopNgrams || [])
+                            ])),
+                            liveCorrections: [...(craftingLiveDeslopInfo.corrections || [])]
+                        };
                     }
 
                     chatEntry = pushChatEntry({
@@ -40828,8 +41406,13 @@ module.exports = function registerApiRoutes(scope) {
                     playerOtherEffect = '';
                 } else {
                     let playerActionResponse = '';
+                    let locationModifyLiveDeslopInfo = null;
+                    const useTinyBrainLocationModifyNarrative = isTinyBrainPromptEnabled(
+                        Globals.config?.ai,
+                        'location_modify_player_action'
+                    );
                     try {
-                        const playerActionRendered = promptEnv.render('base-context.xml.njk', {
+                        const locationModifyNarrativeContext = {
                             ...baseContext,
                             promptType: 'player-action-modify-location',
                             characterName: actorName,
@@ -40839,15 +41422,26 @@ module.exports = function registerApiRoutes(scope) {
                             consumedItems: consumedNamesForPrompt.map(name => ({ name })),
                             receivedItems: receivedNamesForPrompt.map(name => ({ name })),
                             otherEffect: selectedResult.other || null,
-                            success_or_failure: actionOutcome.label || actionOutcome.degree || ''
-                        });
+                            success_or_failure: actionOutcome.label || actionOutcome.degree || '',
+                            authoritativeTimePassedMinutes: appliedTimeTakenMinutes
+                        };
+                        const tinyBrain = useTinyBrainLocationModifyNarrative
+                            ? configureTinyBrainPromptContext(
+                                locationModifyNarrativeContext,
+                                'location_modify_player_action'
+                            )
+                            : null;
+                        const playerActionRendered = promptEnv.render(
+                            'base-context.xml.njk',
+                            locationModifyNarrativeContext
+                        );
 
                         const playerActionTemplate = parseXMLTemplate(playerActionRendered);
                         if (!playerActionTemplate?.systemPrompt || !playerActionTemplate?.generationPrompt) {
                             throw new Error('Player action location modification template missing prompts.');
                         }
 
-                        playerActionResponse = await LLMClient.chatCompletion({
+                        const locationModifyRequestOptions = {
                             messages: [
                                 { role: 'system', content: playerActionTemplate.systemPrompt },
                                 { role: 'user', content: playerActionTemplate.generationPrompt }
@@ -40860,14 +41454,33 @@ module.exports = function registerApiRoutes(scope) {
                                     ? payload.requestId.trim()
                                     : `location_modify_turn_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`
                             }
-                        });
-
-                        LLMClient.logPrompt({
-                            metadataLabel: 'location_modify_player_action',
-                            systemPrompt: playerActionTemplate.systemPrompt,
-                            generationPrompt: playerActionTemplate.generationPrompt,
-                            response: playerActionResponse
-                        });
+                        };
+                        if (useTinyBrainLocationModifyNarrative) {
+                            const tinyBrainRun = await runTinyBrainNarrativePrompt({
+                                family: 'location_modify_player_action',
+                                initialRenderedTemplate: playerActionRendered,
+                                templateContext: locationModifyNarrativeContext,
+                                tinyBrain,
+                                metadataLabel: 'location_modify_player_action',
+                                finalParser: response => parseLocationModificationNarrativeResult(
+                                    response,
+                                    { expectedDurationMinutes: appliedTimeTakenMinutes }
+                                ),
+                                requestOptions: locationModifyRequestOptions
+                            });
+                            playerActionResponse = tinyBrainRun.result.aiResponse;
+                            locationModifyLiveDeslopInfo = tinyBrainRun.liveDeslopController?.getDiagnostics() || null;
+                        } else {
+                            playerActionResponse = await LLMClient.chatCompletion(
+                                locationModifyRequestOptions
+                            );
+                            LLMClient.logPrompt({
+                                metadataLabel: 'location_modify_player_action',
+                                systemPrompt: playerActionTemplate.systemPrompt,
+                                generationPrompt: playerActionTemplate.generationPrompt,
+                                response: playerActionResponse
+                            });
+                        }
 
                         const narrative = parseCraftingNarrativeResponse(playerActionResponse);
                         if (narrative?.description) {
@@ -40877,6 +41490,9 @@ module.exports = function registerApiRoutes(scope) {
                             playerOtherEffect = narrative.otherEffectDescription;
                         }
                     } catch (actionError) {
+                        if (useTinyBrainLocationModifyNarrative) {
+                            throw actionError;
+                        }
                         console.warn('Failed to generate location modification narrative:', actionError?.message || actionError);
                     }
 
@@ -40899,6 +41515,24 @@ module.exports = function registerApiRoutes(scope) {
                                 slopNgrams: slopResult.slopNgrams || []
                             };
                         }
+                    }
+                    if (locationModifyLiveDeslopInfo?.ran) {
+                        slopRemovalInfo = {
+                            ...(slopRemovalInfo || {}),
+                            slopWords: Array.from(new Set([
+                                ...(slopRemovalInfo?.slopWords || []),
+                                ...(locationModifyLiveDeslopInfo.slopWords || [])
+                            ])),
+                            slopRegexes: Array.from(new Set([
+                                ...(slopRemovalInfo?.slopRegexes || []),
+                                ...(locationModifyLiveDeslopInfo.slopRegexes || [])
+                            ])),
+                            slopNgrams: Array.from(new Set([
+                                ...(slopRemovalInfo?.slopNgrams || []),
+                                ...(locationModifyLiveDeslopInfo.slopNgrams || [])
+                            ])),
+                            liveCorrections: [...(locationModifyLiveDeslopInfo.corrections || [])]
+                        };
                     }
 
                     chatEntry = pushChatEntry({
@@ -43846,34 +44480,40 @@ module.exports = function registerApiRoutes(scope) {
                     ? resolveThingLocationById(currentPlayer.currentLocation)
                     : null;
                 const baseContext = await prepareBasePromptContext({ locationOverride: location || null });
-                const renderedTemplate = promptEnv.render('base-context.xml.njk', {
+                const containerPromptContext = {
                     ...baseContext,
                     promptType: 'player-action-open-container',
                     characterName: currentPlayer.name || 'The player',
                     container: typeof container.toJSON === 'function' ? container.toJSON() : container,
                     containerOpenAction: actionText
-                });
+                };
+                const useTinyBrainContainerOpen = isTinyBrainPromptEnabled(
+                    Globals.config?.ai,
+                    'player_action_open_container'
+                );
+                const tinyBrain = useTinyBrainContainerOpen
+                    ? configureTinyBrainPromptContext(
+                        containerPromptContext,
+                        'player_action_open_container'
+                    )
+                    : null;
+                const renderedTemplate = promptEnv.render(
+                    'base-context.xml.njk',
+                    containerPromptContext
+                );
                 const parsedTemplate = parseXMLTemplate(renderedTemplate);
                 if (!parsedTemplate?.systemPrompt || !parsedTemplate?.generationPrompt) {
                     throw new Error('Container open-check prompt template is missing prompts.');
                 }
 
-                const enabledChatTools = filterEnabledChatTools({ modExtensionRegistry });
-                const enabledChatToolNames = new Set(enabledChatTools
-                    .map(tool => typeof tool?.function?.name === 'string' ? tool.function.name.trim() : '')
-                    .filter(Boolean));
-                for (const toolDefinition of getChatToolDefinitions({ modExtensionRegistry })) {
-                    const toolName = typeof toolDefinition?.function?.name === 'string'
-                        ? toolDefinition.function.name.trim()
-                        : '';
-                    if (
-                        (toolName === 'resolveSkillCheck' || toolName === 'resolveOpposedSkillCheck')
-                        && !enabledChatToolNames.has(toolName)
-                    ) {
-                        enabledChatTools.push(toolDefinition);
-                        enabledChatToolNames.add(toolName);
-                    }
-                }
+                const enabledChatTools = getChatToolDefinitions({ modExtensionRegistry })
+                    .filter(toolDefinition => {
+                        const toolName = typeof toolDefinition?.function?.name === 'string'
+                            ? toolDefinition.function.name.trim()
+                            : '';
+                        return toolName === 'resolveSkillCheck'
+                            || toolName === 'resolveOpposedSkillCheck';
+                    });
                 const hasSkillCheckTool = enabledChatTools.some(tool => {
                     const name = typeof tool?.function?.name === 'string' ? tool.function.name.trim() : '';
                     return name === 'resolveSkillCheck' || name === 'resolveOpposedSkillCheck';
@@ -43909,19 +44549,20 @@ module.exports = function registerApiRoutes(scope) {
                     entryCollector: newChatEntries,
                     requestId
                 });
-                const toolLoopResult = await runChatCompletionWithToolLoop({
-                    requestOptions,
+                const containerToolResultCache = {
+                    roundKey: [
+                        'player_action_open_container',
+                        currentPlayer.id || currentPlayer.name || 'player',
+                        requestId || Date.now().toString(36),
+                        Math.random().toString(36).slice(2, 10)
+                    ].join(':'),
+                    entries: new Map()
+                };
+                const runContainerToolLoop = stageRequestOptions => runChatCompletionWithToolLoop({
+                    requestOptions: stageRequestOptions,
                     streamEmitter: stream,
                     metadataLabel: 'player_action_open_container',
-                    toolResultCache: {
-                        roundKey: [
-                            'player_action_open_container',
-                            currentPlayer.id || currentPlayer.name || 'player',
-                            requestId || Date.now().toString(36),
-                            Math.random().toString(36).slice(2, 10)
-                        ].join(':'),
-                        entries: new Map()
-                    },
+                    toolResultCache: containerToolResultCache,
                     defaultToolActor: currentPlayer.name || null,
                     requestUserInput: clientId
                         ? createRequestUserInputHandler({
@@ -43937,16 +44578,78 @@ module.exports = function registerApiRoutes(scope) {
                     onToolCallEvent: event => checkResultsRecorder.record(event)
                 });
 
-                const rawResponse = toolLoopResult.aiResponse || '';
-                LLMClient.logPrompt({
-                    prefix: 'player_action_open_container',
-                    metadataLabel: 'player_action_open_container',
-                    systemPrompt: parsedTemplate.systemPrompt || '',
-                    generationPrompt: parsedTemplate.generationPrompt || '',
-                    response: rawResponse,
-                    model: requestOptions.model,
-                    endpoint: requestOptions.endpoint
-                });
+                let rawResponse = '';
+                let containerToolInvocations = [];
+                let containerLiveDeslopInfo = null;
+                if (useTinyBrainContainerOpen) {
+                    const tinyBrainRun = await runTinyBrainNarrativePrompt({
+                        family: 'player_action_open_container',
+                        initialRenderedTemplate: renderedTemplate,
+                        templateContext: containerPromptContext,
+                        tinyBrain,
+                        metadataLabel: 'player_action_open_container',
+                        finalParser: parseContainerOpenNarrativeResult,
+                        requestOptions,
+                        completeStage: async stage => {
+                            const isCheckToolCheckpoint = !stage.isFinal
+                                && stage.checkpoint?.index === 1;
+                            const stageRequestOptions = configureRequestChatTools(
+                                stage.requestOptions,
+                                isCheckToolCheckpoint ? enabledChatTools : []
+                            );
+                            if (isCheckToolCheckpoint) {
+                                const toolLoopResult = await runContainerToolLoop(
+                                    stageRequestOptions
+                                );
+                                return {
+                                    aiResponse: toolLoopResult.aiResponse,
+                                    conversationMessages: toolLoopResult.conversationMessages,
+                                    toolInvocations: toolLoopResult.toolInvocations
+                                };
+                            }
+                            const response = await LLMClient.chatCompletion(stageRequestOptions);
+                            return {
+                                aiResponse: response,
+                                conversationMessages: [
+                                    ...stage.messages.map(message => ({ ...message })),
+                                    { role: 'assistant', content: response }
+                                ],
+                                toolInvocations: []
+                            };
+                        }
+                    });
+                    rawResponse = tinyBrainRun.result.aiResponse || '';
+                    containerToolInvocations = tinyBrainRun.result.toolInvocations || [];
+                    containerLiveDeslopInfo = tinyBrainRun.liveDeslopController?.getDiagnostics() || null;
+                } else {
+                    const toolLoopResult = await runContainerToolLoop(requestOptions);
+                    rawResponse = toolLoopResult.aiResponse || '';
+                    containerToolInvocations = toolLoopResult.toolInvocations || [];
+                    LLMClient.logPrompt({
+                        prefix: 'player_action_open_container',
+                        metadataLabel: 'player_action_open_container',
+                        systemPrompt: parsedTemplate.systemPrompt || '',
+                        generationPrompt: parsedTemplate.generationPrompt || '',
+                        response: rawResponse,
+                        model: requestOptions.model,
+                        endpoint: requestOptions.endpoint
+                    });
+                }
+
+                const containerCheckToolInvocations = containerToolInvocations.filter(invocation => (
+                    invocation?.name === 'resolveSkillCheck'
+                    || invocation?.name === 'resolveOpposedSkillCheck'
+                ));
+                if (containerCheckToolInvocations.length !== 1) {
+                    throw new Error(
+                        `Container open-check must execute exactly one check tool; executed ${containerCheckToolInvocations.length}.`
+                    );
+                }
+                if (useTinyBrainContainerOpen) {
+                    parseContainerOpenNarrativeResult(rawResponse, {
+                        expectedToolName: containerCheckToolInvocations[0].name
+                    });
+                }
 
                 if (!checkResultsRecorder.hasRecords()) {
                     throw new Error('Container open-check response did not call resolveSkillCheck or resolveOpposedSkillCheck.');
@@ -43971,6 +44674,24 @@ module.exports = function registerApiRoutes(scope) {
                             slopNgrams: slopResult.slopNgrams || []
                         };
                     }
+                }
+                if (containerLiveDeslopInfo?.ran) {
+                    slopRemovalInfo = {
+                        ...(slopRemovalInfo || {}),
+                        slopWords: Array.from(new Set([
+                            ...(slopRemovalInfo?.slopWords || []),
+                            ...(containerLiveDeslopInfo.slopWords || [])
+                        ])),
+                        slopRegexes: Array.from(new Set([
+                            ...(slopRemovalInfo?.slopRegexes || []),
+                            ...(containerLiveDeslopInfo.slopRegexes || [])
+                        ])),
+                        slopNgrams: Array.from(new Set([
+                            ...(slopRemovalInfo?.slopNgrams || []),
+                            ...(containerLiveDeslopInfo.slopNgrams || [])
+                        ])),
+                        liveCorrections: [...(containerLiveDeslopInfo.corrections || [])]
+                    };
                 }
                 const containerOpenTimeAdjustment = applyPlayerActionTimePassedMinutes(
                     parsedResult.timePassedMinutes,

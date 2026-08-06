@@ -289,7 +289,7 @@
                                        value="true"
                                        {% if config.ai.terminate_during_image_generation === true %}checked{% endif %}>
                             </div>
-                            <span class="help-text">Start a local llama.cpp server from the script below, terminate its saved process while ComfyUI renders, clear ComfyUI VRAM, then restart the script. This cannot be combined with router unloading.</span>
+                            <span class="help-text">Additionally terminate the game-managed local llama.cpp process while ComfyUI renders, clear ComfyUI VRAM, then restart the script. This cannot be combined with router unloading.</span>
                         </div>
 
                         <div class="form-group full-width">
@@ -299,7 +299,7 @@
                                    name="ai.local_startup_script_path::string"
                                    value="{{ config.ai.local_startup_script_path or '' }}"
                                    placeholder="/absolute/path/to/start-llama.sh">
-                            <span class="help-text">Required when termination mode is enabled. Relative paths resolve from the AI RPG project directory, and the file must be executable.</span>
+                            <span class="help-text">When nonblank, the game automatically starts and owns this script regardless of the image-unload setting. Relative paths resolve from the AI RPG project directory, and the file must be executable.</span>
                         </div>
 
                         <div class="form-group"
@@ -723,6 +723,15 @@
                             <label for="imagegen-max-concurrent-jobs">Max Concurrent Jobs:</label>
                             <input type="number" id="imagegen-max-concurrent-jobs" name="imagegen.maxConcurrentJobs::int" value="{{ config.imagegen.maxConcurrentJobs }}" min="1" step="1">
                             <span class="help-text">Parallel image jobs</span>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="imagegen-batch-prompts">Batch Render Prompts:</label>
+                            <div class="checkbox-wrapper">
+                                <input type="hidden" name="imagegen.batch_prompts::boolean" value="false">
+                                <input type="checkbox" id="imagegen-batch-prompts" name="imagegen.batch_prompts::boolean" value="true" {% if config.imagegen.batch_prompts %}checked{% endif %}>
+                            </div>
+                            <span class="help-text">Submit same-resolution ComfyUI renders as a list</span>
                         </div>
 
                         <div class="form-group">

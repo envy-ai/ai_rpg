@@ -234,3 +234,80 @@ test('alterLocation forwards resolved location and alteration through existing e
     assert.equal(result.toolInvocations[0].metadata.locationId, location.id);
     assert.equal(result.toolInvocations[0].metadata.newName, 'Restored Study Workshop');
 });
+
+test('alterLocation yields a retained prompt reservation while its nested prompt work runs', async () => {
+    const location = { id: 'loc-1', name: 'Study' };
+    const queueReservation = Object.freeze({ test: 'tinybrain-reservation' });
+    const yieldedReservations = [];
+    let completionCalls = 0;
+    const firstResponse = {
+        data: {
+            choices: [{
+                message: {
+                    content: '',
+                    tool_calls: [{
+                        id: 'call-alter-location-yield',
+                        type: 'function',
+                        function: {
+                            name: 'alterLocation',
+                            arguments: JSON.stringify({
+                                location: 'Study',
+                                alteration: 'Turn the Study into a clean workshop.'
+                            })
+                        }
+                    }]
+                }
+            }]
+        }
+    };
+    const LLMClient = {
+        async chatCompletion(options) {
+            completionCalls += 1;
+            const response = completionCalls === 1
+                ? firstResponse
+                : {
+                    data: {
+                        choices: [{
+                            message: { content: 'Alteration complete.', tool_calls: [] }
+                        }]
+                    }
+                };
+            options.onResponse?.(response);
+            return response.data.choices[0].message.content || '';
+        },
+        async withPromptQueueReservationYield(reservation, callback) {
+            yieldedReservations.push(reservation);
+            return await callback();
+        },
+        logPrompt() {},
+        formatMessagesForErrorLog(messages) {
+            return JSON.stringify(messages);
+        }
+    };
+    let alterationRan = false;
+    const runtime = makeBaseRuntime({
+        location,
+        LLMClient,
+        alterLocationByEvent: async (args) => {
+            alterationRan = true;
+            return {
+                locationId: location.id,
+                originalName: location.name,
+                newName: location.name,
+                changeDescription: args.alteration
+            };
+        }
+    });
+
+    const result = await runtime.runChatCompletionWithToolLoop({
+        requestOptions: {
+            messages: [{ role: 'user', content: '@Alter the Study.' }],
+            queueReservation
+        },
+        metadataLabel: 'test_alter_location_tool_yield'
+    });
+
+    assert.equal(alterationRan, true);
+    assert.deepEqual(yieldedReservations, [queueReservation]);
+    assert.equal(result.rounds, 2);
+});

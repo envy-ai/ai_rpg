@@ -15,6 +15,7 @@ const {
     extractStableLivePlainProse,
     extractStableLiveProse,
     locateDetectedSlop,
+    resolveLiveDeslopProseTags,
     resolveTinyBrainLiveDeslopProseMode
 } = require('../LiveDeslop.js');
 
@@ -220,6 +221,22 @@ test('tiny-brain live deslop selects both draft checkpoints and the final struct
         messages: messagesFor('Write the final XML.'),
         isFinal: true
     }), 'structured');
+});
+
+test('structured live deslop profiles isolate only the configured player-facing XML tags', () => {
+    assert.deepEqual(resolveLiveDeslopProseTags('craft_player_action'), [
+        'description',
+        'otherEffectDescription'
+    ]);
+    const response = '<result><description>Visible craft prose.</description>'
+        + '<hidden>Do not inspect this slop.</hidden>'
+        + '<otherEffectDescription>Visible effect.</otherEffectDescription></result>';
+    const extraction = extractLiveProse(response, {
+        proseTags: resolveLiveDeslopProseTags('craft_player_action')
+    });
+    assert.match(extraction.prose, /Visible craft prose/);
+    assert.match(extraction.prose, /Visible effect/);
+    assert.doesNotMatch(extraction.prose, /Do not inspect/);
 });
 
 test('player-action live stream fallback diagnostics are appended to the active prompt log', () => {

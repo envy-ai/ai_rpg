@@ -86,3 +86,53 @@ test('managed local llama server does not run the startup script when ComfyUI cl
     assert.equal(spawnCalled, false);
     assert.equal(processManager.getPid(), null);
 });
+
+test('managed local llama server switches different startup scripts and leaves the same script running', async () => {
+    const events = [];
+    const children = [createFakeChild(6101), createFakeChild(6102)];
+    let spawnIndex = 0;
+    const processManager = new LocalLlamaServerProcess({
+        startupScriptPath: '/tmp/start-base.sh',
+        beforeStart: async () => events.push('comfy-unload'),
+        spawnProcess: (scriptPath) => {
+            const child = children[spawnIndex++];
+            events.push(`spawn:${scriptPath}`);
+            setImmediate(() => child.emit('spawn'));
+            return child;
+        },
+        waitUntilReady: async ({ pid }) => events.push(`ready:${pid}`),
+        signalProcessGroup: (pid, signal) => {
+            events.push(`signal:${pid}:${signal}`);
+            const child = children.find(candidate => candidate.pid === pid);
+            child.signalCode = signal;
+            setImmediate(() => child.emit('exit', null, signal));
+        },
+        logger: { log: () => {}, error: () => {} }
+    });
+
+    await processManager.start();
+    const sameScript = await processManager.switchStartupScriptPath('/tmp/./start-base.sh');
+    const switched = await processManager.switchStartupScriptPath('/tmp/start-prose.sh');
+
+    assert.deepEqual(sameScript, {
+        switched: false,
+        pid: 6101,
+        startupScriptPath: '/tmp/start-base.sh'
+    });
+    assert.deepEqual(switched, {
+        switched: true,
+        previousStartupScriptPath: '/tmp/start-base.sh',
+        startupScriptPath: '/tmp/start-prose.sh',
+        pid: 6102
+    });
+    assert.equal(processManager.getStartupScriptPath(), '/tmp/start-prose.sh');
+    assert.deepEqual(events, [
+        'comfy-unload',
+        'spawn:/tmp/start-base.sh',
+        'ready:6101',
+        'signal:6101:SIGTERM',
+        'comfy-unload',
+        'spawn:/tmp/start-prose.sh',
+        'ready:6102'
+    ]);
+});

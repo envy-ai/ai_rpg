@@ -8,6 +8,7 @@ Return only the revised XML. Do not include explanations, markdown fences, or no
 ]]></systemPrompt>
 
 <generationPrompt><![CDATA[
+{% if tinyBrainProgramTemplate %}{{ __tinyBrainState.programStartMarker }}{% include tinyBrainProgramTemplate %}{% else %}
 The interruption happened {{ interruptionDuration }} into the player's action ({{ interruptionMinutes }} minute{% if interruptionMinutes != 1 %}s{% endif %}).
 
 Original player-action XML:
@@ -27,5 +28,6 @@ Task:
 - Keep the other XML fields from the original response, including any <hidden> and <timePassed> blocks.
 - Do not add new XML fields.
 - Return the full revised player-action XML.
+{% endif %}
 ]]></generationPrompt>
 </template>

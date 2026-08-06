@@ -31,7 +31,7 @@ test('tiny-brain player action delegates shared queue and progress lifecycle to 
     assert.notEqual(regularToolLoopBranch, -1, 'Unable to locate the end of the tiny-brain player-action branch.');
 
     const tinyBrainBranch = apiSource.slice(tinyBrainBranchStart, regularToolLoopBranch);
-    assert.match(tinyBrainBranch, /const tinyBrainRunner = new TinyBrainPromptRunner\(\{/);
+    assert.match(tinyBrainBranch, /configureTinyBrainPromptContext\(/);
     assert.match(
         tinyBrainBranch,
         /complete: async \(\{[\s\S]*?queueReservation[\s\S]*?\}\) => \{/
@@ -40,7 +40,7 @@ test('tiny-brain player action delegates shared queue and progress lifecycle to 
         tinyBrainBranch,
         /const stageRequestOptions = \{[\s\S]*?messages,[\s\S]*?queueReservation[\s\S]*?\};/
     );
-    assert.match(tinyBrainBranch, /const tinyBrainResult = await tinyBrainRunner\.run\(\{/);
+    assert.match(tinyBrainBranch, /const tinyBrainResult = await runTinyBrainPromptProgram\(\{/);
     assert.doesNotMatch(tinyBrainBranch, /clearPromptProgressGroup|recordPromptProgressGroupFailure/);
 });
 

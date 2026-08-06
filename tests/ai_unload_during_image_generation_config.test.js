@@ -96,9 +96,43 @@ test('server initializes the managed local llama process only after ComfyUI and 
     assert.match(source, /await initializeImageEngine\(\)[\s\S]*?await initializeManagedLocalLlamaServer\(\)/);
     assert.match(
         source,
-        /beforeStart: clearComfyVramBeforeLocalLlamaStartup[\s\S]*?waitUntilReady: waitForManagedLlamaServerReady/
+        /beforeStart: async \(\) => \{[\s\S]*?clearComfyVramBeforeLocalLlamaStartup[\s\S]*?waitUntilReady: readiness => waitForManagedLlamaServerReady/
     );
     assert.match(source, /await comfyUIClient\.unloadModels\(\)/);
+    assert.match(source, /configureManagedLocalModelStartupBeforePrompts\(\)/);
+    assert.match(source, /localLlamaServerProcess\.switchStartupScriptPath/);
+    assert.match(source, /resolveManagedLocalLlamaStartupScriptCandidates\(config\)/);
+});
+
+test('a configured local startup script activates managed process startup independently of image handoff flags', () => {
+    const source = fs.readFileSync(path.join(root, 'server.js'), 'utf8');
+    const resolverSource = source.slice(
+        source.indexOf('function resolveInitialManagedLocalLlamaAiConfig'),
+        source.indexOf('function resolveManagedLocalLlamaStartupScriptCandidates')
+    );
+    const initializerSource = source.slice(
+        source.indexOf('async function initializeManagedLocalLlamaServer'),
+        source.indexOf('function enqueueImageJob')
+    );
+
+    assert.match(
+        resolverSource,
+        /resolveImageGenerationModelLifecycleMode\(configuration\) === 'terminate'/
+    );
+    assert.match(resolverSource, /return configuredPath \? aiConfig : null/);
+    assert.doesNotMatch(
+        initializerSource,
+        /resolveImageGenerationModelLifecycleMode\(\) !== 'terminate'/
+    );
+    assert.match(initializerSource, /const aiConfig = resolveInitialManagedLocalLlamaAiConfig\(\)/);
+    assert.match(
+        initializerSource,
+        /startupScriptPath: resolveLocalLlamaStartupScriptPathFromAiConfig\(aiConfig\)/
+    );
+    assert.match(
+        initializerSource,
+        /if \(resolveImageGenerationModelLifecycleMode\(\) !== 'none'\)[\s\S]*?clearComfyVramBeforeLocalLlamaStartup/
+    );
 });
 
 test('ComfyUI unloadModels posts both unload and free-memory flags', { concurrency: false }, async () => {

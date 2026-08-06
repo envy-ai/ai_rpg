@@ -426,6 +426,154 @@ test('prompt queue reservation retains the all-model permit across staged calls'
     }
 });
 
+test('prompt queue reservation can yield permits for a nested different-model prompt', { concurrency: false }, async () => {
+    const originalAxiosPost = axios.post;
+    const originalConfig = Globals.config;
+    const modelOne = `reserved-yield-one-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    const modelTwo = `reserved-yield-two-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    const started = [];
+
+    Globals.config = {
+        max_concurrent_requests_all_models: 1,
+        ai: {
+            backend: 'openai_compatible',
+            endpoint: 'https://example.invalid/v1/chat/completions',
+            apiKey: 'test-key',
+            model: modelOne,
+            stream: false,
+            retryAttempts: 0,
+            max_concurrent_requests: 1
+        }
+    };
+
+    axios.post = async (_endpoint, payload) => {
+        const label = payload?.messages?.[0]?.content || '';
+        started.push(`${payload?.model || ''}:${label}`);
+        return {
+            status: 200,
+            statusText: 'OK',
+            headers: {},
+            config: {},
+            data: {
+                id: `response-${label.replace(/\s+/g, '-')}`,
+                object: 'chat.completion',
+                created: 1,
+                model: payload?.model || modelOne,
+                choices: [{
+                    index: 0,
+                    finish_reason: 'stop',
+                    message: { role: 'assistant', content: label }
+                }]
+            }
+        };
+    };
+
+    try {
+        await LLMClient.withPromptQueueReservation(async (queueReservation) => {
+            await LLMClient.chatCompletion({
+                messages: [{ role: 'user', content: 'reserved stage one' }],
+                model: modelOne,
+                metadataLabel: 'player_action',
+                queueReservation,
+                validateXML: false,
+                output: 'silent'
+            });
+
+            await LLMClient.withPromptQueueReservationYield(queueReservation, async () => {
+                await LLMClient.chatCompletion({
+                    messages: [{ role: 'user', content: 'nested tool prompt' }],
+                    model: modelTwo,
+                    metadataLabel: 'alter_location',
+                    validateXML: false,
+                    output: 'silent'
+                });
+            });
+
+            await LLMClient.chatCompletion({
+                messages: [{ role: 'user', content: 'reserved stage two' }],
+                model: modelOne,
+                metadataLabel: 'player_action',
+                queueReservation,
+                validateXML: false,
+                output: 'silent'
+            });
+        });
+
+        assert.deepEqual(started, [
+            `${modelOne}:reserved stage one`,
+            `${modelTwo}:nested tool prompt`,
+            `${modelOne}:reserved stage two`
+        ]);
+    } finally {
+        axios.post = originalAxiosPost;
+        Globals.config = originalConfig;
+    }
+});
+
+test('prompt queue reservation reacquires its permits when yielded work fails', { concurrency: false }, async () => {
+    const originalAxiosPost = axios.post;
+    const originalConfig = Globals.config;
+    const modelName = `reserved-yield-failure-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    const started = [];
+
+    Globals.config = {
+        max_concurrent_requests_all_models: 1,
+        ai: {
+            backend: 'openai_compatible',
+            endpoint: 'https://example.invalid/v1/chat/completions',
+            apiKey: 'test-key',
+            model: modelName,
+            stream: false,
+            retryAttempts: 0,
+            max_concurrent_requests: 1
+        }
+    };
+    axios.post = async (_endpoint, payload) => {
+        const label = payload?.messages?.[0]?.content || '';
+        started.push(label);
+        return {
+            status: 200,
+            data: {
+                model: modelName,
+                choices: [{
+                    finish_reason: 'stop',
+                    message: { role: 'assistant', content: label }
+                }]
+            }
+        };
+    };
+
+    try {
+        await LLMClient.withPromptQueueReservation(async (queueReservation) => {
+            await LLMClient.chatCompletion({
+                messages: [{ role: 'user', content: 'stage before failure' }],
+                metadataLabel: 'player_action',
+                queueReservation,
+                validateXML: false,
+                output: 'silent'
+            });
+            await assert.rejects(
+                () => LLMClient.withPromptQueueReservationYield(queueReservation, async () => {
+                    throw new Error('nested tool failed');
+                }),
+                /nested tool failed/
+            );
+            await LLMClient.chatCompletion({
+                messages: [{ role: 'user', content: 'stage after failure' }],
+                metadataLabel: 'player_action',
+                queueReservation,
+                validateXML: false,
+                output: 'silent'
+            });
+        });
+
+        assert.deepEqual(started, ['stage before failure', 'stage after failure']);
+    } finally {
+        axios.post = originalAxiosPost;
+        Globals.config = originalConfig;
+    }
+});
+
 test('prompt queue reservation releases permits when its callback fails', { concurrency: false }, async () => {
     const originalAxiosPost = axios.post;
     const originalConfig = Globals.config;
@@ -588,6 +736,310 @@ test('prompt queue reservation retains its permit across transport retries', { c
             'competing during retry'
         ]);
     } finally {
+        axios.post = originalAxiosPost;
+        Globals.config = originalConfig;
+    }
+});
+
+test('a failed foreground prompt retries before already queued prompts', { concurrency: false }, async () => {
+    const originalAxiosPost = axios.post;
+    const originalConfig = Globals.config;
+    const modelName = `retry-front-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    const firstFailure = createDeferred();
+    const retryCompletion = createDeferred();
+    const started = [];
+    let failedPromptAttempts = 0;
+
+    Globals.config = {
+        ai: {
+            backend: 'openai_compatible',
+            endpoint: 'https://example.invalid/v1/chat/completions',
+            apiKey: 'test-key',
+            model: modelName,
+            stream: false,
+            retryAttempts: 1,
+            waitAfterError: 0,
+            waitAfterNetworkError: 0,
+            max_concurrent_requests: 1
+        }
+    };
+
+    axios.post = async (_endpoint, payload) => {
+        const label = payload?.messages?.[0]?.content || '';
+        started.push(label);
+        if (label === 'failed prompt') {
+            failedPromptAttempts += 1;
+            if (failedPromptAttempts === 1) {
+                await firstFailure.promise;
+                const error = new Error('intentional first-attempt failure');
+                error.code = 'ECONNRESET';
+                throw error;
+            }
+            await retryCompletion.promise;
+        }
+        return {
+            status: 200,
+            statusText: 'OK',
+            headers: {},
+            config: {},
+            data: {
+                id: `response-${label.replace(/\s+/g, '-')}`,
+                object: 'chat.completion',
+                created: 1,
+                model: modelName,
+                choices: [{
+                    index: 0,
+                    finish_reason: 'stop',
+                    message: { role: 'assistant', content: label }
+                }]
+            }
+        };
+    };
+
+    try {
+        const failed = LLMClient.chatCompletion({
+            messages: [{ role: 'user', content: 'failed prompt' }],
+            metadataLabel: 'retry_front_failed',
+            validateXML: false,
+            output: 'silent'
+        });
+        await flushTurn();
+
+        const queuedOne = LLMClient.chatCompletion({
+            messages: [{ role: 'user', content: 'queued one' }],
+            metadataLabel: 'retry_front_queued_one',
+            validateXML: false,
+            output: 'silent'
+        });
+        const queuedTwo = LLMClient.chatCompletion({
+            messages: [{ role: 'user', content: 'queued two' }],
+            metadataLabel: 'retry_front_queued_two',
+            validateXML: false,
+            output: 'silent'
+        });
+        await flushTurn();
+        assert.deepEqual(started, ['failed prompt']);
+
+        firstFailure.resolve();
+        await flushTurn();
+        await flushTurn();
+        assert.deepEqual(started, ['failed prompt', 'failed prompt']);
+
+        retryCompletion.resolve();
+        await Promise.all([failed, queuedOne, queuedTwo]);
+        assert.deepEqual(started, [
+            'failed prompt',
+            'failed prompt',
+            'queued one',
+            'queued two'
+        ]);
+    } finally {
+        firstFailure.resolve();
+        retryCompletion.resolve();
+        axios.post = originalAxiosPost;
+        Globals.config = originalConfig;
+    }
+});
+
+test('a failed background prompt retries before background peers without bypassing foreground work', { concurrency: false }, async () => {
+    const originalAxiosPost = axios.post;
+    const originalConfig = Globals.config;
+    const modelName = `retry-front-background-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    const firstFailure = createDeferred();
+    const retryCompletion = createDeferred();
+    const started = [];
+    let failedPromptAttempts = 0;
+
+    Globals.config = {
+        ai: {
+            backend: 'openai_compatible',
+            endpoint: 'https://example.invalid/v1/chat/completions',
+            apiKey: 'test-key',
+            model: modelName,
+            stream: false,
+            retryAttempts: 1,
+            waitAfterError: 0,
+            waitAfterNetworkError: 0,
+            max_concurrent_requests: 1
+        }
+    };
+
+    axios.post = async (_endpoint, payload) => {
+        const label = payload?.messages?.[0]?.content || '';
+        started.push(label);
+        if (label === 'failed background') {
+            failedPromptAttempts += 1;
+            if (failedPromptAttempts === 1) {
+                await firstFailure.promise;
+                const error = new Error('intentional background failure');
+                error.code = 'ECONNRESET';
+                throw error;
+            }
+            await retryCompletion.promise;
+        }
+        return {
+            status: 200,
+            statusText: 'OK',
+            headers: {},
+            config: {},
+            data: {
+                id: `response-${label.replace(/\s+/g, '-')}`,
+                object: 'chat.completion',
+                created: 1,
+                model: modelName,
+                choices: [{
+                    index: 0,
+                    finish_reason: 'stop',
+                    message: { role: 'assistant', content: label }
+                }]
+            }
+        };
+    };
+
+    try {
+        const failed = LLMClient.chatCompletion({
+            messages: [{ role: 'user', content: 'failed background' }],
+            metadataLabel: 'retry_front_background_failed',
+            runInBackground: true,
+            validateXML: false,
+            output: 'silent'
+        });
+        await flushTurn();
+
+        const backgroundPeer = LLMClient.chatCompletion({
+            messages: [{ role: 'user', content: 'background peer' }],
+            metadataLabel: 'retry_front_background_peer',
+            runInBackground: true,
+            validateXML: false,
+            output: 'silent'
+        });
+        const foreground = LLMClient.chatCompletion({
+            messages: [{ role: 'user', content: 'foreground peer' }],
+            metadataLabel: 'retry_front_foreground_peer',
+            validateXML: false,
+            output: 'silent'
+        });
+        await flushTurn();
+        assert.deepEqual(started, ['failed background']);
+
+        firstFailure.resolve();
+        await flushTurn();
+        await flushTurn();
+        await flushTurn();
+        assert.deepEqual(started, [
+            'failed background',
+            'foreground peer',
+            'failed background'
+        ]);
+
+        retryCompletion.resolve();
+        await Promise.all([failed, backgroundPeer, foreground]);
+        assert.deepEqual(started, [
+            'failed background',
+            'foreground peer',
+            'failed background',
+            'background peer'
+        ]);
+    } finally {
+        firstFailure.resolve();
+        retryCompletion.resolve();
+        axios.post = originalAxiosPost;
+        Globals.config = originalConfig;
+    }
+});
+
+test('a failed prompt keeps retry priority at the all-model queue', { concurrency: false }, async () => {
+    const originalAxiosPost = axios.post;
+    const originalConfig = Globals.config;
+    const modelOne = `retry-front-global-one-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    const modelTwo = `retry-front-global-two-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    const firstFailure = createDeferred();
+    const retryCompletion = createDeferred();
+    const started = [];
+    let failedPromptAttempts = 0;
+
+    Globals.config = {
+        max_concurrent_requests_all_models: 1,
+        ai: {
+            backend: 'openai_compatible',
+            endpoint: 'https://example.invalid/v1/chat/completions',
+            apiKey: 'test-key',
+            model: modelOne,
+            stream: false,
+            retryAttempts: 1,
+            waitAfterError: 0,
+            waitAfterNetworkError: 0,
+            max_concurrent_requests: 1
+        }
+    };
+
+    axios.post = async (_endpoint, payload) => {
+        const label = payload?.messages?.[0]?.content || '';
+        started.push(label);
+        if (label === 'global failed prompt') {
+            failedPromptAttempts += 1;
+            if (failedPromptAttempts === 1) {
+                await firstFailure.promise;
+                const error = new Error('intentional all-model first-attempt failure');
+                error.code = 'ECONNRESET';
+                throw error;
+            }
+            await retryCompletion.promise;
+        }
+        return {
+            status: 200,
+            statusText: 'OK',
+            headers: {},
+            config: {},
+            data: {
+                id: `response-${label.replace(/\s+/g, '-')}`,
+                object: 'chat.completion',
+                created: 1,
+                model: payload?.model || modelOne,
+                choices: [{
+                    index: 0,
+                    finish_reason: 'stop',
+                    message: { role: 'assistant', content: label }
+                }]
+            }
+        };
+    };
+
+    try {
+        const failed = LLMClient.chatCompletion({
+            messages: [{ role: 'user', content: 'global failed prompt' }],
+            model: modelOne,
+            metadataLabel: 'retry_front_global_failed',
+            validateXML: false,
+            output: 'silent'
+        });
+        await flushTurn();
+
+        const queuedOtherModel = LLMClient.chatCompletion({
+            messages: [{ role: 'user', content: 'queued other model' }],
+            model: modelTwo,
+            metadataLabel: 'retry_front_global_queued',
+            validateXML: false,
+            output: 'silent'
+        });
+        await flushTurn();
+        assert.deepEqual(started, ['global failed prompt']);
+
+        firstFailure.resolve();
+        await flushTurn();
+        await flushTurn();
+        assert.deepEqual(started, ['global failed prompt', 'global failed prompt']);
+
+        retryCompletion.resolve();
+        await Promise.all([failed, queuedOtherModel]);
+        assert.deepEqual(started, [
+            'global failed prompt',
+            'global failed prompt',
+            'queued other model'
+        ]);
+    } finally {
+        firstFailure.resolve();
+        retryCompletion.resolve();
         axios.post = originalAxiosPost;
         Globals.config = originalConfig;
     }

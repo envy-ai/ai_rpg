@@ -1,0 +1,33 @@
+<task>Resolve one concrete attempt to open this checked container.</task>
+Character: {{ characterName | default('The player', true) }}
+Container: {{ container.name }} — {{ container.description }}
+Attempt: {{ containerOpenAction }}
+
+Choose exactly one check tool and explain the attribute/skill choice briefly. Use resolveSkillCheck unless another character is directly and actively opposing the attempt, in which case use resolveOpposedSkillCheck. Do not roll yet.
+
+{% llm_dummy_action %}
+
+Now make exactly one chosen check tool call. After its result returns, summarize that result in one sentence. Do not call another check tool and do not reroll.
+
+{% llm_dummy_action %}
+
+State whether the result opens the container now, whether it permanently removes the check requirement, and what may be shown. Do not reveal contents on failure.
+
+{% llm_dummy_action %}
+
+Draft Response: Write brief visible prose for the attempt and exact check outcome without numerical stats or contents on failure. Output prose only.
+
+{% llm_dummy_action %}
+
+{% set tinyBrainAuditFocus = 'Exactly one check result is authoritative; success/permanentlyOpened must agree with it; a failure must not reveal contents; no reroll or extra tool result may be substituted.' %}
+{% include "_includes/tinybrain-prose-audit.njk" %}
+
+Return XML only:
+<containerOpenResult>
+  <toolUsed>exact check tool name used</toolUsed>
+  <checkResult>concise exact result</checkResult>
+  <success>true or false</success>
+  <permanentlyOpened>true or false</permanentlyOpened>
+  <prose>polished visible prose</prose>
+  <timePassed><reasoning>brief timing breakdown</reasoning><duration>one exact duration rounded to the nearest minute</duration></timePassed>
+</containerOpenResult>

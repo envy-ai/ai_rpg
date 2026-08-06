@@ -15,6 +15,7 @@ const KimiBridgeClient = require('./KimiBridgeClient.js');
 const LlamaCppRouterClient = require('./LlamaCppRouterClient.js');
 const { getChatToolDefinitions } = require('./chat_tool_calls.js');
 const { formatMessageContent: formatBridgeMessageContent } = require('./bridge_client_utils.js');
+const { TinyBrainXmlRepetitionDetector } = require('./TinyBrainXmlRepetition.js');
 let sharpModule = null;
 
 const ERROR_LOG_IMAGE_CONTENT_FORMAT_OPTIONS = Object.freeze({
@@ -74,11 +75,15 @@ class Semaphore {
         return this.currentBackground < this.maxBackgroundConcurrent();
     }
 
+    hasQueuedForeground() {
+        return this.queue.some(entry => entry && entry.background === false);
+    }
+
     createPermit(background = false) {
         return { background: Boolean(background) };
     }
 
-    async acquire({ background = false } = {}) {
+    async acquire({ background = false, front = false } = {}) {
         const isBackground = Boolean(background);
         if (this.canAcquire(isBackground)) {
             this.current += 1;
@@ -88,10 +93,15 @@ class Semaphore {
             return this.createPermit(isBackground);
         }
         return new Promise(resolve => {
-            this.queue.push({
+            const entry = {
                 resolve,
                 background: isBackground
-            });
+            };
+            if (front) {
+                this.queue.unshift(entry);
+            } else {
+                this.queue.push(entry);
+            }
         });
     }
 
@@ -217,9 +227,11 @@ class LLMClient {
     static #allModelsSemaphoreLimit = null;
     static #modelLifecycleGate = new AsyncReadWriteGate();
     static #comfyModelCleanupHandler = null;
+    static #managedLocalModelStartupHandler = null;
     static #lastPromptModelTarget = null;
     static #promptQueueReservationStates = new WeakMap();
     static #promptProgressGroupContext = new AsyncLocalStorage();
+    static #tinyBrainXmlRepetitionContext = new AsyncLocalStorage();
     static #forcedOutputFixtureSource = null;
     static #forcedOutputFixtureData = null;
     static #forcedOutputLabelCounters = new Map();
@@ -1550,6 +1562,12 @@ class LLMClient {
             errors.push('AI live_deslop must be a boolean when provided.');
         }
         if (
+            config?.xml_repetition_fix !== undefined
+            && typeof config.xml_repetition_fix !== 'boolean'
+        ) {
+            errors.push('AI xml_repetition_fix must be a boolean when provided.');
+        }
+        if (
             config?.unload_during_image_generation !== undefined
             && typeof config.unload_during_image_generation !== 'boolean'
         ) {
@@ -1567,6 +1585,13 @@ class LLMClient {
             && typeof config.local_startup_script_path !== 'string'
         ) {
             errors.push('AI local_startup_script_path must be a string when provided.');
+        }
+        if (config?.router_slot_cache_directory !== undefined) {
+            try {
+                LLMClient.resolveRouterSlotCacheDirectory(config);
+            } catch (error) {
+                errors.push(error.message);
+            }
         }
         if (
             config?.terminate_during_image_generation === true
@@ -1633,6 +1658,71 @@ class LLMClient {
             throw LLMClient.#configurationError('unload_model_on_switch must be a boolean when provided.');
         }
         return value;
+    }
+
+    static resolveRouterSlotCacheDirectory(aiConfigOverride = Globals?.config?.ai) {
+        const value = aiConfigOverride?.router_slot_cache_directory;
+        if (value === undefined || value === null) {
+            return '/dev/shm';
+        }
+        if (typeof value !== 'string' || !value.trim() || !path.isAbsolute(value.trim())) {
+            throw LLMClient.#configurationError(
+                'AI router_slot_cache_directory must be a nonblank absolute path when provided.'
+            );
+        }
+        return path.normalize(value.trim());
+    }
+
+    static resolveRouterPreloadModel(configOverride = Globals?.config) {
+        const configuredValue = configOverride?.router_preload_model;
+        if (
+            configuredValue !== undefined
+            && configuredValue !== null
+            && typeof configuredValue !== 'string'
+        ) {
+            throw LLMClient.#configurationError(
+                'router_preload_model must be a string when provided.'
+            );
+        }
+
+        const configuredModel = typeof configuredValue === 'string'
+            ? configuredValue.trim()
+            : '';
+        const mainModel = typeof configOverride?.ai?.model === 'string'
+            ? configOverride.ai.model.trim()
+            : '';
+        const model = configuredModel || mainModel;
+        if (!model) {
+            throw LLMClient.#configurationError(
+                'Router model preloading requires router_preload_model or ai.model.'
+            );
+        }
+        return model;
+    }
+
+    static shouldPreloadRouterModel(configOverride = Globals?.config) {
+        const configuredValue = configOverride?.router_preload_model;
+        if (
+            configuredValue !== undefined
+            && configuredValue !== null
+            && typeof configuredValue !== 'string'
+        ) {
+            throw LLMClient.#configurationError(
+                'router_preload_model must be a string when provided.'
+            );
+        }
+        if (typeof configuredValue === 'string' && configuredValue.trim()) {
+            return true;
+        }
+        if (LLMClient.resolveUnloadModelOnSwitch(configOverride)) {
+            return true;
+        }
+
+        const imagePromptConfiguration = LLMClient.#resolveEffectiveAiConfiguration(
+            'image_prompt_generation',
+            configOverride
+        );
+        return imagePromptConfiguration.aiConfig?.unload_during_image_generation === true;
     }
 
     static #isRetryableNetworkError(error, errorStatus = undefined) {
@@ -2116,6 +2206,7 @@ class LLMClient {
         const state = {
             acquired: false,
             activeRequest: false,
+            yielded: false,
             released: false,
             semaphore: null,
             semaphoreKey: null,
@@ -2130,6 +2221,95 @@ class LLMClient {
         } finally {
             LLMClient.#releasePromptQueueReservation(state);
         }
+    }
+
+    static async withPromptQueueReservationYield(reservation, callback) {
+        if (typeof callback !== 'function') {
+            throw new Error('withPromptQueueReservationYield requires an async callback.');
+        }
+        if ((typeof reservation !== 'object' && typeof reservation !== 'function') || !reservation) {
+            throw new Error('withPromptQueueReservationYield requires a queue reservation.');
+        }
+        const state = LLMClient.#promptQueueReservationStates.get(reservation);
+        if (!state || state.released) {
+            throw new Error('Cannot yield an invalid or released prompt queue reservation.');
+        }
+        if (state.activeRequest) {
+            throw new Error('Cannot yield a prompt queue reservation while chatCompletion is active.');
+        }
+        if (state.yielded) {
+            throw new Error('Cannot yield a prompt queue reservation recursively.');
+        }
+        if (!state.acquired) {
+            return await callback();
+        }
+
+        const retained = {
+            semaphore: state.semaphore,
+            semaphoreKey: state.semaphoreKey,
+            allModelsSemaphore: state.allModelsSemaphore,
+            background: state.background
+        };
+        state.yielded = true;
+        if (state.allModelsSemaphore) {
+            state.allModelsSemaphore.release(state.allModelsSemaphorePermit);
+        }
+        state.semaphore.release(state.semaphorePermit);
+        state.acquired = false;
+        state.semaphorePermit = null;
+        state.allModelsSemaphorePermit = null;
+
+        let callbackResult;
+        let callbackError = null;
+        try {
+            callbackResult = await callback();
+        } catch (error) {
+            callbackError = error;
+        }
+
+        let reacquireError = null;
+        let semaphorePermit = null;
+        let allModelsSemaphorePermit = null;
+        try {
+            semaphorePermit = await retained.semaphore.acquire({
+                background: retained.background,
+                front: true
+            });
+            if (retained.allModelsSemaphore) {
+                allModelsSemaphorePermit = await retained.allModelsSemaphore.acquire({
+                    background: retained.background,
+                    front: true
+                });
+            }
+            state.acquired = true;
+            state.semaphore = retained.semaphore;
+            state.semaphoreKey = retained.semaphoreKey;
+            state.semaphorePermit = semaphorePermit;
+            state.allModelsSemaphore = retained.allModelsSemaphore;
+            state.allModelsSemaphorePermit = allModelsSemaphorePermit;
+            state.background = retained.background;
+        } catch (error) {
+            reacquireError = error;
+            if (semaphorePermit) {
+                retained.semaphore.release(semaphorePermit);
+            }
+        } finally {
+            state.yielded = false;
+        }
+
+        if (callbackError && reacquireError) {
+            throw new AggregateError(
+                [callbackError, reacquireError],
+                'Prompt queue reservation work failed and its permits could not be reacquired.'
+            );
+        }
+        if (reacquireError) {
+            throw reacquireError;
+        }
+        if (callbackError) {
+            throw callbackError;
+        }
+        return callbackResult;
     }
 
     static async withExclusiveModelLifecycle(callback) {
@@ -2176,6 +2356,9 @@ class LLMClient {
             return null;
         }
         const routerBaseUrl = LlamaCppRouterClient.resolveRouterBaseUrl(endpoint);
+        const startupScriptPath = typeof attemptRuntime.aiConfig?.local_startup_script_path === 'string'
+            ? attemptRuntime.aiConfig.local_startup_script_path.trim()
+            : '';
         return {
             key: `${routerBaseUrl}\n${model}`,
             endpoint,
@@ -2183,7 +2366,9 @@ class LLMClient {
             headers: {
                 ...(attemptRuntime.baseAxiosOptions?.headers || {})
             },
-            timeoutMs: attemptRuntime.resolvedTimeout
+            timeoutMs: attemptRuntime.resolvedTimeout,
+            isLocalRouter: Boolean(startupScriptPath),
+            slotCacheDirectory: LLMClient.resolveRouterSlotCacheDirectory(attemptRuntime.aiConfig)
         };
     }
 
@@ -2202,15 +2387,38 @@ class LLMClient {
         const promptLabel = typeof metadataLabel === 'string' && metadataLabel.trim()
             ? metadataLabel.trim()
             : 'unknown';
-        const router = new LlamaCppRouterClient({
+        const previousRouter = new LlamaCppRouterClient({
             endpoint: previousTarget.endpoint,
             model: previousTarget.model,
             headers: previousTarget.headers,
-            timeoutMs: previousTarget.timeoutMs
+            timeoutMs: previousTarget.timeoutMs,
+            slotCacheDirectory: previousTarget.slotCacheDirectory
         });
+        const switchesWithinManagedLocalRouter = previousTarget.isLocalRouter === true
+            && currentTarget.isLocalRouter === true
+            && LlamaCppRouterClient.resolveRouterBaseUrl(previousTarget.endpoint)
+                === LlamaCppRouterClient.resolveRouterBaseUrl(currentTarget.endpoint);
+        if (switchesWithinManagedLocalRouter) {
+            try {
+                const previousStatus = await previousRouter.getModelStatus();
+                if (previousStatus.value !== 'unloaded') {
+                    const saveState = await previousRouter.saveSlotCache();
+                    if (typeof log === 'function') {
+                        log(
+                            `🧠 Saved llama.cpp slot ${previousRouter.slotId} context for model "${previousTarget.model}" to ${saveState.cachePath}.`
+                        );
+                    }
+                }
+            } catch (error) {
+                console.warn(
+                    `⚠️ Failed to save llama.cpp context cache for model "${previousTarget.model}"; continuing model switch: ${error?.message || String(error)}`
+                );
+            }
+        }
+
         let unloadState;
         try {
-            unloadState = await router.unloadModelIfLoaded();
+            unloadState = await previousRouter.unloadModelIfLoaded();
         } catch (cause) {
             const error = new Error(
                 `Failed to unload previous llama.cpp model "${previousTarget.model}" before prompt "${promptLabel}" switched to "${currentTarget.model}": ${cause?.message || String(cause)}`,
@@ -2220,7 +2428,6 @@ class LLMClient {
             throw error;
         }
 
-        LLMClient.#lastPromptModelTarget = currentTarget;
         if (typeof log === 'function') {
             if (unloadState.unloadedByClient) {
                 log(
@@ -2232,6 +2439,53 @@ class LLMClient {
                 );
             }
         }
+
+        if (switchesWithinManagedLocalRouter) {
+            const currentRouter = new LlamaCppRouterClient({
+                endpoint: currentTarget.endpoint,
+                model: currentTarget.model,
+                headers: currentTarget.headers,
+                timeoutMs: currentTarget.timeoutMs,
+                slotCacheDirectory: currentTarget.slotCacheDirectory
+            });
+            let loadState;
+            try {
+                loadState = await currentRouter.loadModelIfNeeded();
+            } catch (cause) {
+                const error = new Error(
+                    `Failed to load replacement llama.cpp model "${currentTarget.model}" before prompt "${promptLabel}": ${cause?.message || String(cause)}`,
+                    { cause }
+                );
+                error.isModelSwitchError = true;
+                throw error;
+            }
+            if (typeof log === 'function') {
+                if (loadState.loadedByClient) {
+                    log(`🧠 Loaded replacement llama.cpp model "${currentTarget.model}".`);
+                } else {
+                    log(`🧠 Replacement llama.cpp model "${currentTarget.model}" was already active or loading.`);
+                }
+            }
+
+            try {
+                const restoreState = await currentRouter.restoreSlotCacheIfPresent();
+                if (restoreState.restored && typeof log === 'function') {
+                    log(
+                        `🧠 Restored llama.cpp slot ${currentRouter.slotId} context for model "${currentTarget.model}" and deleted ${restoreState.cachePath}.`
+                    );
+                }
+            } catch (cause) {
+                if (cause?.slotCacheDeleteFailed === true) {
+                    cause.isModelSwitchError = true;
+                    throw cause;
+                }
+                console.warn(
+                    `⚠️ Failed to restore llama.cpp context cache for model "${currentTarget.model}"; continuing without it: ${cause?.message || String(cause)}`
+                );
+            }
+        }
+
+        LLMClient.#lastPromptModelTarget = currentTarget;
     }
 
     static setComfyModelCleanupHandler(handler = null) {
@@ -2239,6 +2493,53 @@ class LLMClient {
             throw new Error('ComfyUI model cleanup handler must be a function or null.');
         }
         LLMClient.#comfyModelCleanupHandler = handler;
+    }
+
+    static setManagedLocalModelStartupHandler(handler = null) {
+        if (handler !== null && typeof handler !== 'function') {
+            throw new Error('Managed local model startup handler must be a function or null.');
+        }
+        LLMClient.#managedLocalModelStartupHandler = handler;
+    }
+
+    static async #ensureManagedLocalModelBeforePrompt({ aiConfig, metadataLabel } = {}) {
+        if (aiConfig?.terminate_during_image_generation !== true) {
+            return;
+        }
+        const label = typeof metadataLabel === 'string' && metadataLabel.trim()
+            ? metadataLabel.trim()
+            : 'unknown';
+        const startupScriptPath = typeof aiConfig.local_startup_script_path === 'string'
+            ? aiConfig.local_startup_script_path.trim()
+            : '';
+        if (!startupScriptPath) {
+            const error = new Error(
+                `Cannot run LLM prompt "${label}": local_startup_script_path is missing while terminate_during_image_generation is enabled.`
+            );
+            error.isModelSwitchError = true;
+            throw error;
+        }
+        if (typeof LLMClient.#managedLocalModelStartupHandler !== 'function') {
+            const error = new Error(
+                `Cannot run LLM prompt "${label}": managed local llama.cpp startup switching is not configured.`
+            );
+            error.isModelSwitchError = true;
+            throw error;
+        }
+        try {
+            await LLMClient.#managedLocalModelStartupHandler({
+                aiConfig,
+                metadataLabel: label,
+                startupScriptPath
+            });
+        } catch (cause) {
+            const error = new Error(
+                `Failed to prepare managed local llama.cpp for LLM prompt "${label}" with startup script "${startupScriptPath}": ${cause?.message || String(cause)}`,
+                { cause }
+            );
+            error.isModelSwitchError = true;
+            throw error;
+        }
     }
 
     static async #unloadComfyModelsBeforePrompt({ aiConfig, metadataLabel } = {}) {
@@ -2290,6 +2591,45 @@ class LLMClient {
         return await LLMClient.#promptProgressGroupContext.run(Object.freeze({
             progressGroupId: progressGroupId.trim(),
             progressGroupTargetLabel: normalizedTargetLabel
+        }), callback);
+    }
+
+    static isTinyBrainXmlRepetitionFixEnabled() {
+        return Globals?.config?.ai?.xml_repetition_fix === true;
+    }
+
+    static async withTinyBrainXmlRepetitionFix({ metadataLabel, maxContinuations } = {}, callback) {
+        if (typeof callback !== 'function') {
+            throw new Error('withTinyBrainXmlRepetitionFix requires an async callback.');
+        }
+        const normalizedMetadataLabel = LLMClient.#normalizePromptLabel(metadataLabel);
+        if (!normalizedMetadataLabel) {
+            throw new Error('withTinyBrainXmlRepetitionFix requires a prompt metadata label.');
+        }
+        if (!Number.isInteger(maxContinuations) || maxContinuations < 0) {
+            throw new RangeError('withTinyBrainXmlRepetitionFix requires non-negative integer maxContinuations.');
+        }
+        return await LLMClient.#tinyBrainXmlRepetitionContext.run(Object.freeze({
+            metadataLabel: normalizedMetadataLabel,
+            maxContinuations,
+            continuationPrompt: 'continue'
+        }), callback);
+    }
+
+    static async withTinyBrainXmlRepetitionLogger(onCorrection, callback) {
+        if (typeof callback !== 'function') {
+            throw new Error('withTinyBrainXmlRepetitionLogger requires an async callback.');
+        }
+        if (typeof onCorrection !== 'function') {
+            throw new Error('withTinyBrainXmlRepetitionLogger requires a correction logger.');
+        }
+        const currentContext = LLMClient.#tinyBrainXmlRepetitionContext.getStore() || null;
+        if (!currentContext) {
+            return await callback();
+        }
+        return await LLMClient.#tinyBrainXmlRepetitionContext.run(Object.freeze({
+            ...currentContext,
+            onCorrection
         }), callback);
     }
 
@@ -2873,7 +3213,8 @@ class LLMClient {
         filePath = null,
         append = false,
         responseLabel = 'RESPONSE',
-        markResponseBoundaries = false
+        markResponseBoundaries = false,
+        warnOnFailure = true
     } = {}) {
         const resolvedOutput = LLMClient.resolveOutput(output);
         const isSilent = resolvedOutput === 'silent';
@@ -3053,7 +3394,9 @@ class LLMClient {
             return resolvedFilePath;
         } catch (error) {
             const errorMessage = error?.message || String(error);
-            console.error(`Failed to write prompt log file: ${errorMessage}`);
+            if (warnOnFailure) {
+                console.warn(`Prompt logging warning: failed to write prompt log file: ${errorMessage}`);
+            }
             return null;
         }
     }
@@ -4089,10 +4432,36 @@ class LLMClient {
         if (!model) {
             throw new Error('ai.unload_during_image_generation requires a configured AI model.');
         }
+        return LLMClient.#buildOpenAICompatibleRouterTarget({
+            aiConfig,
+            model,
+            overrideHeaders: resolved.overrideHeaders
+        });
+    }
+
+    static async resolveRouterPreloadTarget(configOverride = Globals?.config) {
+        const aiConfig = configOverride?.ai;
+        if (!aiConfig || typeof aiConfig !== 'object' || Array.isArray(aiConfig)) {
+            throw new Error('Router model preloading requires ai configuration.');
+        }
+        if (LLMClient.resolveBackend(aiConfig) !== 'openai_compatible') {
+            throw new Error('Router model preloading requires the openai_compatible backend.');
+        }
+        return LLMClient.#buildOpenAICompatibleRouterTarget({
+            aiConfig,
+            model: LLMClient.resolveRouterPreloadModel(configOverride)
+        });
+    }
+
+    static async #buildOpenAICompatibleRouterTarget({
+        aiConfig,
+        model,
+        overrideHeaders = null
+    } = {}) {
         const endpoint = LLMClient.resolveChatEndpoint(aiConfig.endpoint);
         const effectiveHeaders = LLMClient.#buildEffectiveHeaders({
             baseHeaders: aiConfig.headers,
-            overrideHeaders: resolved.overrideHeaders
+            overrideHeaders
         });
         const oauthKey = LLMClient.#normalizeOAuthKey(aiConfig);
         const oauthUrl = oauthKey ? LLMClient.#normalizeOAuthUrl(aiConfig) : null;
@@ -4125,8 +4494,52 @@ class LLMClient {
             endpoint,
             model,
             headers,
-            timeoutMs: LLMClient.resolveTimeout(null, 1)
+            timeoutMs: LLMClient.resolveTimeout(null, 1),
+            isLocalRouter: typeof aiConfig.local_startup_script_path === 'string'
+                && Boolean(aiConfig.local_startup_script_path.trim()),
+            slotCacheDirectory: LLMClient.resolveRouterSlotCacheDirectory(aiConfig)
         };
+    }
+
+    static async preloadRouterModel({
+        configOverride = Globals?.config,
+        createRouterClient = options => new LlamaCppRouterClient(options),
+        logger = console
+    } = {}) {
+        if (!LLMClient.shouldPreloadRouterModel(configOverride)) {
+            return null;
+        }
+        if (typeof createRouterClient !== 'function') {
+            throw new Error('Router model preloading requires createRouterClient().');
+        }
+        if (!logger || typeof logger.log !== 'function') {
+            throw new Error('Router model preloading logger must expose log().');
+        }
+
+        const target = await LLMClient.resolveRouterPreloadTarget(configOverride);
+        return LLMClient.withExclusiveModelLifecycle(async () => {
+            const router = createRouterClient(target);
+            if (!router || typeof router.loadModelIfNeeded !== 'function') {
+                throw new Error('Router model preloading requires a client with loadModelIfNeeded().');
+            }
+            const loadState = await router.loadModelIfNeeded();
+            const routerBaseUrl = LlamaCppRouterClient.resolveRouterBaseUrl(target.endpoint);
+            LLMClient.#lastPromptModelTarget = {
+                key: `${routerBaseUrl}\n${target.model}`,
+                endpoint: target.endpoint,
+                model: target.model,
+                headers: { ...(target.headers || {}) },
+                timeoutMs: target.timeoutMs,
+                isLocalRouter: target.isLocalRouter,
+                slotCacheDirectory: target.slotCacheDirectory
+            };
+            if (loadState.loadedByClient) {
+                logger.log(`🧠 Preloaded llama.cpp router model "${target.model}".`);
+            } else {
+                logger.log(`🧠 llama.cpp router model "${target.model}" was already active or loading.`);
+            }
+            return { target, ...loadState };
+        });
     }
 
     static baseTimeoutMilliseconds() {
@@ -4825,6 +5238,12 @@ class LLMClient {
             });
         }
         const inheritedProgressGroup = LLMClient.#promptProgressGroupContext.getStore() || null;
+        const inheritedXmlRepetitionFix = LLMClient.#tinyBrainXmlRepetitionContext.getStore() || null;
+        const normalizedMetadataLabel = LLMClient.#normalizePromptLabel(metadataLabel);
+        const activeXmlRepetitionFix = inheritedXmlRepetitionFix
+            && inheritedXmlRepetitionFix.metadataLabel === normalizedMetadataLabel
+            ? inheritedXmlRepetitionFix
+            : null;
         if (
             inheritedProgressGroup
             && progressGroupId !== null
@@ -5010,6 +5429,28 @@ class LLMClient {
             let useLiveTokenStreamFallback = resolvedLiveTokenStreamCapabilityKey !== null
                 && LLMClient.#failedLiveTokenStreamCapabilityKeys.has(resolvedLiveTokenStreamCapabilityKey);
             let liveStreamReceivedTextToken = false;
+            const xmlRepetitionDetector = activeXmlRepetitionFix
+                ? new TinyBrainXmlRepetitionDetector()
+                : null;
+            let xmlContinuationPrefix = '';
+            let xmlContinuationMessages = null;
+            let xmlRepetitionContinuations = 0;
+            const inspectTinyBrainXmlRepetition = (currentResponseText) => {
+                if (!xmlRepetitionDetector) {
+                    return;
+                }
+                const detection = xmlRepetitionDetector.inspect(currentResponseText);
+                if (!detection) {
+                    return;
+                }
+                const correctionError = new Error(
+                    `TinyBrain XML repetition detected (${detection.pattern}).`
+                );
+                correctionError.isTinyBrainXmlRepetitionCorrection = true;
+                correctionError.xmlRepetitionDetection = detection;
+                correctionError.xmlRepetitionResponseText = currentResponseText;
+                throw correctionError;
+            };
             if (useLiveTokenStreamFallback) {
                 log(
                     `Using token-chunked non-stream live processing because streaming already failed for `
@@ -5098,8 +5539,9 @@ class LLMClient {
                         'Assistant response prefill cannot be used with tool-call request payloads.'
                     );
                 }
+                const effectiveMessages = xmlContinuationMessages || messages;
                 const systemAppendedMessages = LLMClient.#applySystemPromptAppend(
-                    messages,
+                    effectiveMessages,
                     aiConfig.sysprompt_append
                 );
                 const requestMessages = LLMClient.#appendAssistantPrefillMessage(
@@ -5159,6 +5601,14 @@ class LLMClient {
                 payload.stream = isCliBridgeBackend || effectiveNonStreamTokenChunkSize !== null
                     ? false
                     : resolvedStream !== false;
+                if (activeXmlRepetitionFix && isCliBridgeBackend) {
+                    throw LLMClient.#configurationError(
+                        'AI xml_repetition_fix requires the openai_compatible backend for TinyBrain prompts.'
+                    );
+                }
+                if (activeXmlRepetitionFix && effectiveNonStreamTokenChunkSize === null) {
+                    payload.stream = true;
+                }
                 if (effectiveNonStreamTokenChunkSize !== null && isCliBridgeBackend) {
                     throw new Error(
                         'chatCompletion nonStreamTokenChunkSize is only supported by the openai_compatible backend.'
@@ -5412,6 +5862,8 @@ class LLMClient {
             let startTimer = null;
             let lastTotalTokens = null;
             let finalResponseToolCalls = [];
+            let retainedRetryPermits = null;
+            let queueNextAttemptAtFront = false;
             const shouldLogStreamChunks = logStreamChunksToConsole === true;
             const hasForcedOutput = resolvedForcedOutput !== null && resolvedForcedOutput !== undefined;
             let oauthForcedRefreshRetries = 0;
@@ -5469,9 +5921,19 @@ class LLMClient {
                 let streamStartTimeoutMs = 40000;
                 let streamContinueTimeoutMs = 10000;
                 let activeNonStreamTokenChunkSize = null;
+                let retryAttemptAtFront = false;
+                const acquireAttemptAtFront = queueNextAttemptAtFront;
+                queueNextAttemptAtFront = false;
                 const controller = new AbortController();
                 let response = null;
                 try {
+                    if (retainedRetryPermits) {
+                        attemptSemaphore = retainedRetryPermits.semaphore;
+                        attemptSemaphorePermit = retainedRetryPermits.semaphorePermit;
+                        attemptAllModelsSemaphore = retainedRetryPermits.allModelsSemaphore;
+                        attemptAllModelsSemaphorePermit = retainedRetryPermits.allModelsSemaphorePermit;
+                        retainedRetryPermits = null;
+                    }
                     if (hasForcedOutput) {
                         resolvedPrefill = LLMClient.#resolveAssistantPrefill({
                             prefill,
@@ -5562,21 +6024,48 @@ class LLMClient {
                                 }
                             );
                         } else {
-                            attemptSemaphore = resolvedAttemptSemaphore;
-                            attemptSemaphorePermit = await attemptSemaphore.acquire({
-                                background: Boolean(runInBackground)
-                            });
-                            attemptAllModelsSemaphore = resolvedAttemptAllModelsSemaphore;
-                            if (attemptAllModelsSemaphore) {
+                            const isBackgroundAttempt = Boolean(runInBackground);
+                            const hasRetainedAttemptPermits = Boolean(attemptSemaphore);
+                            const retainedModelPermitChanged = hasRetainedAttemptPermits
+                                && attemptSemaphore !== resolvedAttemptSemaphore;
+                            if (retainedModelPermitChanged) {
+                                attemptSemaphore.release(attemptSemaphorePermit);
+                                attemptSemaphore = null;
+                                attemptSemaphorePermit = null;
+                            }
+                            if (!attemptSemaphore) {
+                                attemptSemaphore = resolvedAttemptSemaphore;
+                                attemptSemaphorePermit = await attemptSemaphore.acquire({
+                                    background: isBackgroundAttempt,
+                                    front: acquireAttemptAtFront || retainedModelPermitChanged
+                                });
+                            }
+
+                            const retainedAllModelsPermitChanged = hasRetainedAttemptPermits
+                                && attemptAllModelsSemaphore !== resolvedAttemptAllModelsSemaphore;
+                            if (retainedAllModelsPermitChanged && attemptAllModelsSemaphore) {
+                                attemptAllModelsSemaphore.release(attemptAllModelsSemaphorePermit);
+                                attemptAllModelsSemaphore = null;
+                                attemptAllModelsSemaphorePermit = null;
+                            }
+                            if (!attemptAllModelsSemaphore && resolvedAttemptAllModelsSemaphore) {
+                                attemptAllModelsSemaphore = resolvedAttemptAllModelsSemaphore;
                                 attemptAllModelsSemaphorePermit = await attemptAllModelsSemaphore.acquire({
-                                    background: Boolean(runInBackground)
+                                    background: isBackgroundAttempt,
+                                    front: acquireAttemptAtFront || retainedAllModelsPermitChanged
                                 });
                             }
                         }
                         const unloadModelOnSwitch = LLMClient.resolveUnloadModelOnSwitch();
-                        attemptModelLifecycleRelease = unloadModelOnSwitch
+                        const managesLocalModel = attemptRuntime.aiConfig
+                            ?.terminate_during_image_generation === true;
+                        attemptModelLifecycleRelease = unloadModelOnSwitch || managesLocalModel
                             ? await LLMClient.#modelLifecycleGate.acquireExclusive()
                             : await LLMClient.#modelLifecycleGate.acquireShared();
+                        await LLMClient.#ensureManagedLocalModelBeforePrompt({
+                            aiConfig: attemptRuntime.aiConfig,
+                            metadataLabel
+                        });
                         await LLMClient.#unloadComfyModelsBeforePrompt({
                             aiConfig: attemptRuntime.aiConfig,
                             metadataLabel
@@ -5679,7 +6168,8 @@ class LLMClient {
                         let assembled = '';
                         const streamPrefill = resolvedPrefill || '';
                         if (typeof onStreamToken === 'function') {
-                            liveTokenRecords = liveTokenRecords.filter(record => record.end <= streamPrefill.length);
+                            const logicalPrefillLength = xmlContinuationPrefix.length + streamPrefill.length;
+                            liveTokenRecords = liveTokenRecords.filter(record => record.end <= logicalPrefillLength);
                         }
                         const streamToolCallMap = new Map();
                         let streamFinishReason = null;
@@ -5774,9 +6264,9 @@ class LLMClient {
                             let decision = null;
                             try {
                                 decision = await onStreamToken({
-                                    responseText: `${streamPrefill}${assembled}`,
+                                    responseText: `${xmlContinuationPrefix}${streamPrefill}${assembled}`,
                                     generatedText: assembled,
-                                    prefill: streamPrefill,
+                                    prefill: `${xmlContinuationPrefix}${streamPrefill}`,
                                     token: tokenRecord,
                                     tokenRecords: liveTokenRecords,
                                     responseComplete
@@ -5788,7 +6278,7 @@ class LLMClient {
                             if (!decision) {
                                 return;
                             }
-                            const currentResponseText = `${streamPrefill}${assembled}`;
+                            const currentResponseText = `${xmlContinuationPrefix}${streamPrefill}${assembled}`;
                             if (
                                 !Number.isInteger(decision.rewindOffset)
                                 || decision.rewindOffset < 0
@@ -5865,6 +6355,7 @@ class LLMClient {
                                 if (typeof onStreamToken !== 'function') {
                                     assembled += delta;
                                     responseContent = assembled;
+                                    inspectTinyBrainXmlRepetition(`${xmlContinuationPrefix}${streamPrefill}${assembled}`);
                                     const deltaCharacters = LLMClient.#countTextCharacters(delta);
                                     LLMClient.#trackStreamCharacters(streamId, deltaCharacters, streamContinueTimeoutMs, delta);
                                     continue;
@@ -5879,6 +6370,7 @@ class LLMClient {
                                     // from delta.tool_calls above.
                                     assembled += delta;
                                     responseContent = assembled;
+                                    inspectTinyBrainXmlRepetition(`${xmlContinuationPrefix}${streamPrefill}${assembled}`);
                                     const deltaCharacters = LLMClient.#countTextCharacters(delta);
                                     LLMClient.#trackStreamCharacters(
                                         streamId,
@@ -5906,7 +6398,9 @@ class LLMClient {
                                         error.isLiveStreamCompatibilityError = true;
                                         throw error;
                                     }
-                                    const tokenStart = streamPrefill.length + assembled.length;
+                                    const tokenStart = xmlContinuationPrefix.length
+                                        + streamPrefill.length
+                                        + assembled.length;
                                     assembled += tokenEntry.token;
                                     responseContent = assembled;
                                     const tokenRecord = {
@@ -5922,6 +6416,7 @@ class LLMClient {
                                     };
                                     liveTokenRecords.push(tokenRecord);
                                     liveStreamReceivedTextToken = true;
+                                    inspectTinyBrainXmlRepetition(`${xmlContinuationPrefix}${streamPrefill}${assembled}`);
                                     const responseComplete = tokenIndex === logprobTokens.length - 1
                                         && typeof firstChoice?.finish_reason === 'string'
                                         && firstChoice.finish_reason !== 'length'
@@ -5946,7 +6441,13 @@ class LLMClient {
                             processing = processing
                                 .then(() => processData(chunk))
                                 .catch((error) => {
-                                    if (error?.isLiveStreamBranchCorrection && typeof response.data?.destroy === 'function') {
+                                    if (
+                                        (
+                                            error?.isLiveStreamBranchCorrection
+                                            || error?.isTinyBrainXmlRepetitionCorrection
+                                        )
+                                        && typeof response.data?.destroy === 'function'
+                                    ) {
                                         response.data.destroy();
                                     }
                                     failStream(error);
@@ -6037,11 +6538,15 @@ class LLMClient {
                                 throw error;
                             }
 
-                            liveTokenRecords = liveTokenRecords.filter(record => record.end <= chunkPrefill.length);
+                            const logicalChunkPrefillLength = xmlContinuationPrefix.length
+                                + chunkPrefill.length;
+                            liveTokenRecords = liveTokenRecords.filter(
+                                record => record.end <= logicalChunkPrefillLength
+                            );
                             let assembledChunk = '';
                             for (let tokenIndex = 0; tokenIndex < contentLogprobTokens.length; tokenIndex += 1) {
                                 const tokenEntry = contentLogprobTokens[tokenIndex];
-                                const tokenStart = chunkPrefill.length + assembledChunk.length;
+                                const tokenStart = logicalChunkPrefillLength + assembledChunk.length;
                                 assembledChunk += tokenEntry.token;
                                 const tokenRecord = {
                                     id: tokenEntry.id ?? null,
@@ -6055,13 +6560,16 @@ class LLMClient {
                                     end: tokenStart + tokenEntry.token.length
                                 };
                                 liveTokenRecords.push(tokenRecord);
+                                inspectTinyBrainXmlRepetition(
+                                    `${xmlContinuationPrefix}${chunkPrefill}${assembledChunk}`
+                                );
 
                                 let decision = null;
                                 try {
                                     decision = await onStreamToken({
-                                        responseText: `${chunkPrefill}${assembledChunk}`,
+                                        responseText: `${xmlContinuationPrefix}${chunkPrefill}${assembledChunk}`,
                                         generatedText: assembledChunk,
-                                        prefill: chunkPrefill,
+                                        prefill: `${xmlContinuationPrefix}${chunkPrefill}`,
                                         token: tokenRecord,
                                         tokenRecords: liveTokenRecords,
                                         responseComplete: tokenIndex === contentLogprobTokens.length - 1
@@ -6073,7 +6581,7 @@ class LLMClient {
                                     throw error;
                                 }
                                 if (decision) {
-                                    const currentResponseText = `${chunkPrefill}${assembledChunk}`;
+                                    const currentResponseText = `${xmlContinuationPrefix}${chunkPrefill}${assembledChunk}`;
                                     if (
                                         !Number.isInteger(decision.rewindOffset)
                                         || decision.rewindOffset < 0
@@ -6112,6 +6620,7 @@ class LLMClient {
                         resolvedPrefill,
                         responseContent
                     );
+                    responseContent = `${xmlContinuationPrefix}${responseContent}`;
 
                     if (
                         activeNonStreamTokenChunkSize !== null
@@ -6122,7 +6631,7 @@ class LLMClient {
                             ? liveLogicalMaxTokens - liveTokenRecords.length
                             : activeNonStreamTokenChunkSize;
                         if (remainingTokens > 0) {
-                            livePrefillOverride = responseContent;
+                            livePrefillOverride = responseContent.slice(xmlContinuationPrefix.length);
                             log(
                                 `Token-chunked live completion accepted ${liveTokenRecords.length} tokens; `
                                 + 'continuing from assistant prefill.'
@@ -6320,11 +6829,99 @@ class LLMClient {
                     if (!responseContent && typeof error?.partialResponse === 'string') {
                         responseContent = error.partialResponse;
                     }
+                    if (error?.isTinyBrainXmlRepetitionCorrection) {
+                        const detection = error.xmlRepetitionDetection;
+                        const branchResponse = error.xmlRepetitionResponseText;
+                        if (
+                            !activeXmlRepetitionFix
+                            || !detection
+                            || typeof branchResponse !== 'string'
+                            || !Number.isInteger(detection.truncateOffset)
+                            || detection.truncateOffset <= 0
+                            || detection.truncateOffset >= branchResponse.length
+                        ) {
+                            const invalidCorrectionError = new Error(
+                                'TinyBrain XML repetition recovery received an invalid correction boundary.'
+                            );
+                            invalidCorrectionError.isTinyBrainXmlRepetitionError = true;
+                            throw invalidCorrectionError;
+                        }
+                        if (xmlRepetitionContinuations >= activeXmlRepetitionFix.maxContinuations) {
+                            const exhaustedError = new Error(
+                                `TinyBrain XML repetition recovery exhausted its `
+                                + `${activeXmlRepetitionFix.maxContinuations} continuation attempt(s) `
+                                + `for prompt "${normalizedMetadataLabel}".`
+                            );
+                            exhaustedError.isTinyBrainXmlRepetitionError = true;
+                            throw exhaustedError;
+                        }
+
+                        const acceptedPrefix = branchResponse
+                            .slice(0, detection.truncateOffset)
+                            .trimEnd();
+                        if (!acceptedPrefix || acceptedPrefix.length >= branchResponse.length) {
+                            const emptyCorrectionError = new Error(
+                                'TinyBrain XML repetition recovery could not preserve a valid response prefix.'
+                            );
+                            emptyCorrectionError.isTinyBrainXmlRepetitionError = true;
+                            throw emptyCorrectionError;
+                        }
+
+                        xmlRepetitionContinuations += 1;
+                        xmlContinuationPrefix = acceptedPrefix;
+                        xmlContinuationMessages = [
+                            ...messages,
+                            { role: 'assistant', content: acceptedPrefix },
+                            { role: 'user', content: activeXmlRepetitionFix.continuationPrompt }
+                        ];
+                        xmlRepetitionDetector.reset();
+                        livePrefillOverride = '';
+                        liveTokenRecords = liveTokenRecords.filter(
+                            record => record.end <= acceptedPrefix.length
+                        );
+                        responseContent = acceptedPrefix;
+                        if (typeof activeXmlRepetitionFix.onCorrection === 'function') {
+                            try {
+                                await activeXmlRepetitionFix.onCorrection(Object.freeze({
+                                    metadataLabel: normalizedMetadataLabel,
+                                    pattern: detection.pattern,
+                                    continuationAttempt: xmlRepetitionContinuations,
+                                    maxContinuations: activeXmlRepetitionFix.maxContinuations,
+                                    acceptedPrefix,
+                                    continuationPrompt: activeXmlRepetitionFix.continuationPrompt,
+                                    truncateOffset: detection.truncateOffset,
+                                    duplicateEndOffset: detection.duplicateEndOffset
+                                }));
+                            } catch (loggingError) {
+                                warn(
+                                    `TinyBrain XML repetition prompt logging warning: `
+                                    + `${loggingError?.message || String(loggingError)}`
+                                );
+                            }
+                        }
+                        retryAttemptAtFront = true;
+                        warn(
+                            `TinyBrain XML repetition fix removed a duplicated ${detection.pattern} suffix `
+                            + `from prompt "${normalizedMetadataLabel}" and requested "continue" `
+                            + `(${xmlRepetitionContinuations}/${activeXmlRepetitionFix.maxContinuations}).`
+                        );
+                        continue;
+                    }
                     if (error?.isLiveStreamBranchCorrection) {
                         const decision = error.liveStreamDecision;
                         const branchResponse = error.liveStreamResponseText;
-                        const nextPrefill = `${branchResponse.slice(0, decision.rewindOffset)}${decision.alternative.token}`;
-                        if (nextPrefill === branchResponse) {
+                        const continuationOffset = xmlContinuationPrefix.length;
+                        if (decision.rewindOffset < continuationOffset) {
+                            const correctionBoundaryError = new Error(
+                                'Live stream branch correction cannot rewind into an accepted XML continuation prefix.'
+                            );
+                            correctionBoundaryError.isLiveStreamTokenError = true;
+                            throw correctionBoundaryError;
+                        }
+                        const currentContinuation = branchResponse.slice(continuationOffset);
+                        const nextPrefill = `${branchResponse.slice(continuationOffset, decision.rewindOffset)}`
+                            + decision.alternative.token;
+                        if (nextPrefill === currentContinuation) {
                             throw new Error('Live stream branch correction did not change the response prefix.');
                         }
                         liveTokenRecords = liveTokenRecords.filter(record => record.end <= decision.rewindOffset);
@@ -6420,6 +7017,7 @@ class LLMClient {
                                 message: fallbackMessage
                             }));
                         }
+                        retryAttemptAtFront = true;
                         continue;
                     }
                     if (abortIntent === 'cancel' || abortIntent === 'retry') {
@@ -6433,6 +7031,7 @@ class LLMClient {
                         }
                         if (abortIntent === 'retry') {
                             warn(`Prompt '${metadataLabel || 'unknown'}' retry requested by user.`);
+                            retryAttemptAtFront = true;
                             continue;
                         }
                         warn(`Prompt '${metadataLabel || 'unknown'}' canceled by user.`);
@@ -6444,6 +7043,7 @@ class LLMClient {
                         || error?.isPrePromptCleanupError
                         || error?.isModelSwitchError
                         || error?.isLiveStreamTokenError
+                        || error?.isTinyBrainXmlRepetitionError
                     ) {
                         throw error;
                     }
@@ -6519,7 +7119,11 @@ class LLMClient {
                         }
                     }
 
-                    if (!shouldForceOAuthRefresh && attempt === retryAttempts) {
+                    const willRetryAttempt = shouldForceOAuthRefresh || attempt < retryAttempts;
+                    if (willRetryAttempt) {
+                        retryAttemptAtFront = true;
+                    }
+                    if (!willRetryAttempt) {
                         errorLog('Max retry attempts reached. Failing the chat completion request.');
                         debugLog(error);
                         return '';
@@ -6535,10 +7139,30 @@ class LLMClient {
                         attemptModelLifecycleRelease = null;
                     }
                     if (attemptSemaphore) {
-                        if (attemptAllModelsSemaphore) {
-                            attemptAllModelsSemaphore.release(attemptAllModelsSemaphorePermit);
+                        const foregroundWaitingForBackgroundRetry = Boolean(runInBackground) && (
+                            attemptSemaphore.hasQueuedForeground()
+                            || Boolean(attemptAllModelsSemaphore?.hasQueuedForeground())
+                        );
+                        if (retryAttemptAtFront && !foregroundWaitingForBackgroundRetry) {
+                            retainedRetryPermits = {
+                                semaphore: attemptSemaphore,
+                                semaphorePermit: attemptSemaphorePermit,
+                                allModelsSemaphore: attemptAllModelsSemaphore,
+                                allModelsSemaphorePermit: attemptAllModelsSemaphorePermit
+                            };
+                            attemptSemaphore = null;
+                            attemptSemaphorePermit = null;
+                            attemptAllModelsSemaphore = null;
+                            attemptAllModelsSemaphorePermit = null;
+                        } else {
+                            if (attemptAllModelsSemaphore) {
+                                attemptAllModelsSemaphore.release(attemptAllModelsSemaphorePermit);
+                            }
+                            attemptSemaphore.release(attemptSemaphorePermit);
+                            if (retryAttemptAtFront) {
+                                queueNextAttemptAtFront = true;
+                            }
                         }
-                        attemptSemaphore.release(attemptSemaphorePermit);
                     }
                 }
 

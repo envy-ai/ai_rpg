@@ -100,34 +100,38 @@ The enabled setting requires `ai.backend: openai_compatible` and `imagegen.engin
 
 The System Configuration page exposes this setting as **Unload During Image Generation** in the AI section.
 
-### Managed local-process termination mode
+### Local process startup and managed termination mode
 
-`ai.terminate_during_image_generation` owns a local llama.cpp process started by `ai.local_startup_script_path`:
+`ai.local_startup_script_path` makes the game start and own a local llama.cpp process:
 
 ```yaml
 ai:
   unload_during_image_generation: false
-  terminate_during_image_generation: true
+  terminate_during_image_generation: false
   local_startup_script_path: /absolute/path/to/start-llama.sh
 ```
 
-`terminate_during_image_generation` defaults to `false` and must be a boolean. When it is true, `local_startup_script_path` is required, must resolve to an executable regular file, and may be absolute or relative to the AI RPG project directory. The termination and router-unload settings cannot both be true. As with router mode, the effective `image_prompt_generation` profile determines whether the mode is enabled and can supply the startup-script path.
+Any nonblank root `local_startup_script_path` activates automatic startup independently of both `unload_during_image_generation` and `terminate_during_image_generation`. The path must resolve to an executable regular file, may be absolute or relative to the AI RPG project directory, and requires `ai.backend: openai_compatible`. The game executes it before router preloading and before any startup path can launch an LLM prompt, waits for the root AI endpoint's `/health` response, retains its PID/process group, and terminates it during normal game shutdown or before a guarded self-restart. This allows a game-owned local llama.cpp router to use router unloading or to run without any image-generation handoff.
 
-This mode does not use llama.cpp router endpoints or model unload/load requests. It only stops the saved local process group before rendering and starts the configured script afterward. The separate root-level `unload_model_on_switch` feature is independent and should remain `false` for a fixed-model startup script unless prompt-to-prompt router switching is explicitly wanted.
+`terminate_during_image_generation` defaults to `false` and must be a boolean. When it is true, `local_startup_script_path` is required. The termination and router-unload settings cannot both be true. As with router mode, the effective `image_prompt_generation` profile determines whether termination handoff is enabled. In that mode, startup uses the effective image-prompt startup path, and validation also resolves every prompt label referenced by `ai_model_overrides` and rejects any effective managed-process script that is missing, not a regular file, or not executable.
 
-On AI RPG startup, the server initializes the ComfyUI client, strictly calls ComfyUI `/free` with both model-unload and memory-release flags, and immediately executes the startup script. Node retains the resulting PID in memory. The script should use `exec` for its final llama.cpp command; the managed child is also placed in its own process group so wrapper descendants receive the termination signal. Startup waits for the llama.cpp `/health` endpoint to return HTTP 200 before server initialization continues. A cleanup, spawn, early-exit, or readiness failure aborts startup explicitly.
+Termination handoff does not use llama.cpp router endpoints or model unload/load requests. It stops and starts only the saved local process group. The separate root-level `unload_model_on_switch` feature is independent and should remain `false` when local models are selected through startup scripts.
+
+When either image-handoff mode is enabled, the server initializes the ComfyUI client and strictly calls ComfyUI `/free` with both model-unload and memory-release flags immediately before starting the local process. When both handoff flags are false, automatic local-process startup does not require or contact ComfyUI. Node retains the resulting PID and normalized script path in memory. The script should use `exec` for its final llama.cpp command; the managed child is also placed in its own process group so wrapper descendants receive the termination signal. A required cleanup, spawn, early-exit, or readiness failure aborts startup explicitly.
+
+Before each real LLM transport whose effective AI profile enables managed termination, the request takes exclusive model-lifecycle access and compares its effective `local_startup_script_path` with the running process. If the normalized paths match, the process and PID are reused. If they differ, the old process group is terminated and awaited first; only then does the server run strict ComfyUI cleanup, start the replacement script, and wait for health before sending the prompt. This makes prompt-specific local-model overrides safe without repeatedly restarting consecutive prompts that use the same script. A switch failure is fatal for that prompt and the replacement transport is never sent.
 
 For each image-render batch:
 
 1. Image-prompt writing becomes quiescent and active text requests finish.
 2. The server sends `SIGTERM` to the saved llama.cpp process group and waits for exit. A process that ignores the termination timeout receives `SIGKILL`; failure remains fatal and rendering does not start.
 3. The queued ComfyUI render batch drains normally.
-4. Even if rendering failed, the server strictly calls ComfyUI `/free` and then immediately runs the startup script again.
+4. Even if rendering failed, the server strictly calls ComfyUI `/free` and then immediately runs whichever startup script was active when rendering began.
 5. The server waits for `/health`, then releases queued text prompts. If rendering and restart both fail, both errors are preserved in an `AggregateError`.
 
-The managed llama.cpp process is also terminated during normal AI RPG shutdown. A guarded self-restart stops it before spawning the replacement AI RPG process, preventing the replacement startup script from colliding with the old llama.cpp port. Configuration-page changes require the documented server restart to replace the process owner.
+Configuration-page changes require the documented server restart to replace the process owner.
 
-The System Configuration page exposes **Terminate During Image Generation** and **Local llama.cpp Startup Script** in the AI section.
+The System Configuration page exposes **Terminate During Image Generation** and **Local llama.cpp Startup Script** in the AI section. Leaving the path blank disables automatic local-process ownership.
 
 ## Mod enablement
 
@@ -706,14 +710,31 @@ ai:
 
 ## Tiny-brain staged prompts
 
-`config.ai.tinybrain` runs supported prompt programs as staged conversations intended for smaller local models. Player actions and XML event checks currently use it; new programs implemented through `TinyBrainPromptRunner` inherit the same lifecycle.
+`config.ai.tinybrain` runs supported prompt programs as staged conversations intended for smaller local models. `ai.tinybrain_prompts` can disable individual families without disabling the master switch.
 
 ```yaml
 ai:
   tinybrain: false
+  xml_repetition_fix: false
+  tinybrain_prompts:
+    player_action: true
+    event_checks: true
+    quest_reward_prose: true
+    game_intro: true
+    random_event: true
+    creative_mode_action: true
+    npc_action: true
+    craft_player_action: true
+    location_modify_player_action: true
+    player_action_open_container: true
+    while_you_were_away: true
+    scheduled_event_resolution: true
+    scheduled_event_interruption_rewrite: true
 ```
 
 - Must be a boolean when present and defaults to `false`.
+- `tinybrain_prompts` must be an object when present. Its keys are restricted to the documented family names and every value must be boolean. A missing family key defaults to enabled when the master switch is true.
+- With the master switch false, all families use their existing one-shot prompt. With it true, a family set to false intentionally stays one-shot. A selected staged family does not silently rerun its legacy prompt after parser failure.
 - When enabled, `prompts/_includes/player-action.tinybrain.njk` pauses at its `llm_dummy_action` and `llmparse(...)` checkpoints. Each response and any tool results remain in the conversation for later checkpoints.
 - The full staged run retains one acquired per-model queue permit and its optional `max_concurrent_requests_all_models` permit across checkpoints, retries, and tool-call rounds. This reserves its current queue slot until completion without consuming other configured free slots.
 - A checkpoint parse failure retries only that position, up to `ai.retryAttempts` retries after the initial response. The malformed terminal response is removed, while preceding tool calls and tool results are retained.
@@ -721,7 +742,13 @@ ai:
 - Attack and non-repetition-buster template branches currently contain no checkpoints, so those branches remain one completion even when the option is enabled.
 - `ai.cachebuster: true` is still honored for every staged request, but its changing final-user prefix works against provider prefix caching.
 
-The same flag also stages XML event checks. When `ai.tinybrain` is enabled, `Events.runEventChecks(...)` renders `prompts/_includes/events-xml.tinybrain.njk` instead of sending the monolithic `events-xml` prompt: after a plain-text analysis checkpoint, the model writes the turn's events as XML chunks of at most 2 events per checkpoint (up to five checkpoints plus a final chunk), answering `<done/>` when no events remain. The chunks are assembled into one `<events>` block and parsed by the same `Events._parseXmlEventCheckResponse(...)` pipeline used by the monolithic path, so event application, travel phase splitting, and logging are unchanged. The tag documentation shared by both templates lives in `prompts/_includes/events-xml-schema.njk`. Need-bar event checks remain a separate parallel prompt.
+`ai.xml_repetition_fix` is an independent TinyBrain-only safeguard for small models that repeat completed XML elements. It defaults to `false`, must be boolean, and has no effect unless both it and `ai.tinybrain` are exactly `true`. Every enabled TinyBrain family must resolve to the `openai_compatible` backend when the safeguard is enabled; startup validates the effective backend after prompt-specific model overrides.
+
+While a TinyBrain checkpoint or final response streams, the safeguard tracks balanced explicit XML elements, including elements with nested tags. Comments, CDATA, declarations, processing instructions, incomplete elements, and self-closing tags are not candidate blocks. Once a completed block is longer than 50 raw characters, it detects either an immediate exact second copy (`AA`, ignoring only whitespace between the copies) or an exact direct-sibling alternation (`ABAB`). Whitespace and all other bytes inside a block remain significant.
+
+On detection, the active transport is aborted, the repeated `A` or second `AB` suffix is removed, and the accepted prefix is appended to the request conversation as an `assistant` message followed by an exact `user` message of `continue`. Generation resumes from that conversation and the continuation is stitched onto the accepted prefix. A partial streamed tool call is discarded with the aborted response; tool calls and tool results completed during earlier TinyBrain rounds remain in the accumulated conversation. The maximum number of these continuation recoveries for one checkpoint/final completion is `ai.retryAttempts`; exhausting it raises an explicit error. This mechanism is independent of `ai.live_deslop` and can be enabled with or without it.
+
+The supported prose families use domain-specific planning/outcome checkpoints followed by a plain draft, strict revision decision, optional second draft, and schema-validated final XML. Quest rewards validate indexed coverage; craft/location prompts preserve already-applied mechanics and exact selected duration; checked containers share one tool cache and require exactly one check tool; while-away validates staged updates before mutation; scheduled events retain tool outcomes and approved hidden summaries; interruption rewrites preserve every non-prose field. XML event checks retain their chunked `<events>` assembly pipeline. Need-bar event checks remain separate.
 
 Every current or future prompt implemented through `TinyBrainPromptRunner` automatically reserves one queue position and one cumulative progress row for its complete staged run. The fixed expected-output label is derived as `<metadataLabel>_tinybrain` (`player_action_tinybrain`, `event_checks_tinybrain`, and so on). Successful completed runs record one aggregate output-character sample under that label, which becomes the next run's expected total. The bar uses the ordinary progress curve: 75% at that expected total and an asymptotic approach toward 100% beyond it.
 
@@ -739,9 +766,9 @@ ai:
 ```
 
 - It defaults to `false` and must be a boolean when present.
-- Enabling it requires `slop_buster: true`, `repetition_buster: true`, and an OpenAI-compatible `player_action` backend. These requirements are validated at startup. The live stages explicitly use non-stream requests regardless of the general `ai.stream` value.
-- It applies to ordinary/TinyBrain final structured prose, including `<prose>`, `<originProse>`, `<betweenProse>`, and `<destinationProse>`. It also applies in plain-prose mode to TinyBrain's first- and second-draft checkpoints. Planning and analysis checkpoints are not inspected; the one-shot TinyBrain attack branch has no separate draft checkpoints, so only its final structured prose is checked.
-- Checked player-action stages request the top 20 token log probabilities and first try streaming while retaining tools. Content deltas without logprobs are preserved verbatim but excluded from live-token inspection, keeping XML tag fragments intact; structured tool calls are accumulated independently from `delta.tool_calls`. If streaming is rejected, supplies invalid or misaligned prose-token metadata, or fails before its first inspectable prose token, the request immediately retries with batches of at most 500 new tokens. That failure is remembered for the current llama.cpp process; a game-server restart clears the latch and a managed llama.cpp restart changes its PID key so streaming is tried once again. A non-stream batch ending with `finish_reason: length` continues from the accepted assistant prefix up to the normal logical token limit. Every completed word boundary is checked with the same history-aware slopword thresholds, regex rules, configured n-grams, 3-token recent-history overlaps, and 6-token extended assistant-history overlaps used by the normal slop-removal pass. Definitions and active custom slop entries are snapshotted once per generation so they are not reparsed for every token.
+- Enabling it requires `slop_buster: true`, `repetition_buster: true`, and OpenAI-compatible effective backends for ordinary player/creative actions plus every enabled TinyBrain prose family. These requirements are validated at startup against each prompt family's model override.
+- It applies to ordinary player/creative final XML and to enabled TinyBrain families. TinyBrain first/second drafts use plain-prose inspection; finals use family-specific player-facing XML tag profiles. Planning, outcome, state, tool, timing, hidden-summary, and analysis checkpoints are not inspected.
+- Checked prose stages request the top 20 token log probabilities and first try streaming while retaining any tools allowed at that checkpoint. Content deltas without logprobs are preserved verbatim but excluded from live-token inspection, keeping XML tag fragments intact; structured tool calls are accumulated independently from `delta.tool_calls`. If streaming is rejected, supplies invalid or misaligned prose-token metadata, or fails before its first inspectable prose token, the request immediately retries with batches of at most 500 new tokens. That failure is remembered per effective family endpoint and current llama.cpp process; a game-server restart clears the latch and a managed llama.cpp restart changes the PID key. A non-stream batch ending with `finish_reason: length` continues from the accepted assistant prefix up to the normal logical token limit. Every completed word boundary uses the normal history-aware word, regex, configured n-gram, 3-token recent-history, and 6-token extended-history checks.
 - XML markup is not analyzed as prose. Tag names/attributes and `<hidden>` contents are excluded, partial streamed tags are ignored, and tags split configured/repeated n-gram segments so phrases cannot match across XML structure. Rewind search likewise stops at the preceding tag boundary.
 - When a word, regex, or n-gram fires, generation stops before that branch is accepted. The client rewinds to the sampled token at the beginning of the match and continues with the highest-probability untried alternative from that token's returned candidates. If none is viable, it moves backward one word at a time—even before the beginning of the matched phrase—until it finds a viable branch. It never rewinds into the XML tags around the prose.
 - No `logit_bias` or persistent token ban is sent. Tried branches are remembered only inside the current response so an exhausted branch is not selected repeatedly.
@@ -778,19 +805,32 @@ ai:
 
 ## Unload Model On Switch
 
-`unload_model_on_switch` is a root-level boolean and defaults to `false`:
+`unload_model_on_switch` is a root-level boolean and defaults to `false`. The related root-level `router_preload_model` selects the first model loaded during server startup:
 
 ```yaml
 unload_model_on_switch: false
+router_preload_model: null
+ai:
+  router_slot_cache_directory: /dev/shm
 ```
 
-When enabled, every real text transport uses exclusive access to the shared model-lifecycle gate. The first prompt establishes the current effective endpoint/model without unloading anything. If a later prompt resolves to a different llama.cpp router endpoint or model—including through `ai_model_overrides`—the server checks the previous model through `GET /models`, sends `POST /models/unload` for that previous model when it is loaded, waits for its `unloaded` status, and only then starts the replacement prompt.
+When `router_preload_model` is a nonblank string, the server treats the main AI endpoint as a llama.cpp router and loads that exact model before any startup path can launch an LLM prompt. When it is blank or omitted, router-backed configurations fall back to `ai.model`. Automatic startup preloading occurs when `unload_model_on_switch` is enabled or the effective `image_prompt_generation` profile uses `unload_during_image_generation`; a nonblank `router_preload_model` also enables it directly. Already-loaded models are left untouched, while unloaded models are loaded and polled until ready. Startup fails explicitly if router discovery, loading, or readiness fails.
+
+The successfully preloaded endpoint/model becomes the initial model-switch target. If it differs from the first prompt's effective model, the normal switch lifecycle unloads the preloaded model before sending that prompt. Router preloading requires `ai.backend: openai_compatible` and cannot be combined with managed local-process termination mode.
+
+When enabled, every real text transport uses exclusive access to the shared model-lifecycle gate. Without router startup preloading, the first prompt establishes the current effective endpoint/model without unloading anything. With preloading, that startup model is already the baseline. If a prompt resolves to a different llama.cpp router endpoint or model—including through `ai_model_overrides`—the server checks the previous model through `GET /models`, sends `POST /models/unload` for that previous model when it is loaded, waits for its `unloaded` status, and only then starts the replacement prompt.
+
+When both targets use the same game-owned local router (identified by a nonblank effective `ai.local_startup_script_path`), the switch additionally preserves slot 0. Before unloading, it sends `POST /slots/0?action=save` with the old model id and a stable model-specific filename. It then unloads the old model, explicitly loads and waits for the new model, and sends `POST /slots/0?action=restore` if that model's file exists. A successfully restored file is deleted immediately. `ai.router_slot_cache_directory` defaults to `/dev/shm`, must be an absolute path, and must exactly match llama.cpp's `--slot-save-path`. This local filesystem contract is why slot preservation is not attempted for remote or non-game-owned routers.
+
+Slot save and restore failures are logged with `console.warn` and do not cancel the switch or prompt. A failed restore retains the cache file for a later attempt. Model unload/load failures remain fatal, as does failure to delete a cache after the router has successfully restored it.
+
+llama.cpp may reject slot save/restore for a model loaded with multimodal projection data. The warning behavior keeps model switching operational, but context preservation requires a llama.cpp/model configuration that supports slot persistence. The qwen-combo-router configuration uses `scripts/start-qwen-combo-router.sh`, which passes the supported `--no-mmproj` option and `config/llama-qwen-combo-text-only.ini` to the shared router launcher. The model-specific preset replaces router directory discovery's explicit projector path with an empty value, so both Qwen workers stay text-only even though their mmproj files remain installed on disk.
 
 This feature is independent of both image-generation handoff settings. Enabling `terminate_during_image_generation` neither requires nor enables `unload_model_on_switch`.
 
 Holding lifecycle exclusivity across the transport prevents a switch from unloading a model that still has an active streamed request. Same-model prompts do not send router management requests, although enabled mode serializes them for deterministic switch ordering. Forced-output fixtures do not affect model tracking because they do not perform a real transport.
 
-Enabled mode requires the effective prompt backend to be `openai_compatible`. Router authentication, custom headers, timeout, and endpoint are retained from the previous prompt's effective target. An unload/status failure is propagated immediately and the replacement prompt is not sent.
+Enabled mode requires the effective prompt backend to be `openai_compatible`. Router authentication, custom headers, timeout, and endpoint are retained from each prompt's effective target. An unload/status or replacement-load failure is propagated immediately and the replacement prompt is not sent.
 
 ## Character creation point pools
 
@@ -1000,16 +1040,17 @@ healthRegenPercentPerMinute: 0.01736111111
 - Regeneration is applied when elapsed world-time effects are processed, and each actor persists `healthRegenAppliedAt` so reloads do not replay elapsed minutes from before the saved application point.
 - Current health is stored internally as a float; client health readouts round displayed values upward.
 
-## Image prompt generation retries and batching
+## Image prompt generation retries and render batching
 
 `imagegen.prompt_generation_attempts` controls how many times the server asks the LLM to write the final image prompt before giving up. If prompt generation keeps failing or returns leaked prompt/context XML instead of a final image prompt, the image request is skipped with `reason: "image-prompt-failed"` and no image-rendering job is queued.
 
-`imagegen.prompt_batching` controls batching for the same LLM prompt-writing step. It does not batch the final image-rendering jobs.
+`imagegen.prompt_batching` controls batching for the same LLM prompt-writing step. It is separate from `imagegen.batch_prompts`, which batches the final ComfyUI rendering jobs.
 
-ComfyUI workflow templates under `imagegen/` receive the full merged runtime config as `config`, in addition to the image job values under `image`. For example, a workflow can reference `{{ config.imagegen.lora }}` to select a configured LoRA filename.
+Ordinary ComfyUI workflow templates under `imagegen/` receive the full merged runtime config as `config`, in addition to the image job values under `image`. When render batching is enabled, the configured workflow instead receives the compatible jobs as `images`. For example, a workflow can reference `{{ config.imagegen.lora }}` to select a configured LoRA filename.
 
 ```yaml
 imagegen:
+  batch_prompts: false
   prompt_generation_attempts: 3
   prompt_batching:
     enabled: true
@@ -1022,6 +1063,17 @@ imagegen:
 - Compatibility is based on the rendered image-prompt system prompt. Requests with different system prompts are kept separate.
 - `max_items` is the maximum number of compatible requests in one batch. Reaching the cap flushes the queue immediately.
 - Validation fails if `prompt_generation_attempts` is not a positive integer, `enabled` is not boolean, `delay_ms` is not a non-negative integer, or `max_items` is not a positive integer.
+
+`imagegen.batch_prompts` is a strict boolean and is only supported by the ComfyUI engine. When it is `true`:
+
+- The server groups queued ordinary render jobs by effective `api_template`, exact width, and exact height. Different resolutions or workflow overrides are submitted separately even when they were queued together.
+- Every compatible group, including a one-item group, is rendered through the configured list-capable workflow with an `images` array. The configured workflow must therefore support list input even when only one prompt is present.
+- The bundled `test_krea_2_simplified_lovely_batch.json.njk` workflow uses Impact Pack's `ImpactMakeAnyList` to build prompt and seed lists. ComfyUI completes all mapped CLIP encodes before the mapped KSamplers, then completes all samplers before the mapped VAE decodes and saves.
+- The jobs in one list submission share a Comfy prompt id and cancellation signal. Returned image order maps to prompt order, and the server requires exactly one output image per input prompt rather than guessing when counts differ.
+- Location weather/lighting variants remain on their dedicated img2img workflow and are never merged into prompt-list batches.
+- The server runs one list submission at a time; `maxConcurrentJobs` continues to control the non-batched path.
+
+`config.yaml.qwen-combo-router` enables this mode and selects `test_krea_2_simplified_lovely_batch.json.njk`, which preserves the lovely workflow's Krea 2 diffusion model, CLIP, Wan x2 VAE, sampler settings, and two-LoRA chain.
 
 ## Image generation size overrides and portrait layout
 

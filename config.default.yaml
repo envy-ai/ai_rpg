@@ -16,6 +16,9 @@ max_concurrent_requests_all_models: null
 # When true, serialize real text transports and unload the prior llama.cpp router model before a prompt switches models.
 unload_model_on_switch: false
 
+# Optional llama.cpp router model to load during startup. Router-backed configurations fall back to ai.model when blank.
+router_preload_model: null
+
 # Seconds between staggered concurrent prompt launches such as event checks, need bars, and quest checks.
 stagger_concurrent_prompts: 4
 
@@ -101,11 +104,16 @@ ai:
   # unload it through a llama.cpp router while ComfyUI renders, then reload it.
   unload_during_image_generation: false
 
-  # Alternative to router unloading: start a local llama.cpp server with the
-  # configured script, terminate its saved process while ComfyUI renders, and
-  # restart it afterward. Cannot be enabled with unload_during_image_generation.
+  # A nonblank startup path makes the game start and own that local llama.cpp
+  # process during server startup, independently of either image-handoff flag.
+  # Termination mode additionally stops it while ComfyUI renders and restarts it
+  # afterward. Termination mode cannot be combined with router unloading.
   terminate_during_image_generation: false
   local_startup_script_path: null
+
+  # Local directory configured by llama.cpp --slot-save-path. During managed
+  # local router switches, slot 0 is cached here and restored when its model returns.
+  router_slot_cache_directory: /dev/shm
 
   # Codex bridge settings. These are used only when ai.backend is codex_cli_bridge.
   codex_bridge:
@@ -179,9 +187,26 @@ ai:
   waitAfterRateLimitError: 10
   # Prepends a random [cachebuster:<uuid>] line to the final user message when true.
   cachebuster: false
-  # Runs normal player-action prompts as a staged conversation for smaller local models.
+  # Runs supported prose/event prompts as staged conversations for smaller local models.
   tinybrain: false
-  # Rewinds token-chunked player-action prose when the normal slop detector fires.
+  # Backtracks repeated completed XML blocks during TinyBrain generations and asks the model to continue.
+  xml_repetition_fix: false
+  # Optional per-family switches. Omitted families default to enabled when tinybrain is true.
+  tinybrain_prompts:
+    player_action: true
+    event_checks: true
+    quest_reward_prose: true
+    game_intro: true
+    random_event: true
+    creative_mode_action: true
+    npc_action: true
+    craft_player_action: true
+    location_modify_player_action: true
+    player_action_open_container: true
+    while_you_were_away: true
+    scheduled_event_resolution: true
+    scheduled_event_interruption_rewrite: true
+  # Rewinds token-chunked player-facing prose when the normal slop detector fires.
   live_deslop: false
   max_concurrent_requests: 6
 
@@ -358,6 +383,10 @@ imagegen:
   # Maximum number of image generation jobs to run simultaneously
   # Increase for faster parallel processing if your image gen server supports it
   maxConcurrentJobs: 1
+
+  # Submit compatible ComfyUI render jobs through one list-based workflow.
+  # Jobs are grouped by API template and exact width/height; weather variants are excluded.
+  batch_prompts: false
 
   # Retry and batch only the LLM prompt-writing calls used before image rendering.
   prompt_generation_attempts: 3

@@ -10,6 +10,7 @@ const {
     TinyBrainPromptExtension,
     createTinyBrainRenderState
 } = require('../TinyBrainPromptRunner.js');
+const { configureTinyBrainPromptContext } = require('../TinyBrainPromptFamilies.js');
 const { buildBaseRenderContext } = require('./helpers/baseContextFixtures.js');
 
 const PROMPTS_DIR = path.join(__dirname, '..', 'prompts');
@@ -95,12 +96,10 @@ test('events tiny-brain template registers brainstorm plus five chunk checkpoint
     const env = createEventsPromptEnv();
     const ctx = buildEventsContext();
 
-    const state = createTinyBrainRenderState();
-    const full = env.render('base-context.xml.njk', {
-        ...ctx,
-        useTinyBrainEventsPrompt: true,
-        __tinyBrainState: state
-    });
+    const templateContext = { ...ctx };
+    const tinyBrain = configureTinyBrainPromptContext(templateContext, 'event_checks');
+    const state = tinyBrain.renderState;
+    const full = env.render('base-context.xml.njk', templateContext);
 
     assert.ok(full.includes(state.programStartMarker), 'program start marker missing');
     assert.equal(state.checkpoints.length, 6);
@@ -151,12 +150,10 @@ test('staged tiny-brain run assembles chunks that parse identically to the monol
 
     const env = createEventsPromptEnv();
     const ctx = buildEventsContext();
-    const state = createTinyBrainRenderState();
-    const rendered = env.render('base-context.xml.njk', {
-        ...ctx,
-        useTinyBrainEventsPrompt: true,
-        __tinyBrainState: state
-    });
+    const templateContext = { ...ctx };
+    const tinyBrain = configureTinyBrainPromptContext(templateContext, 'event_checks');
+    const state = tinyBrain.renderState;
+    const rendered = env.render('base-context.xml.njk', templateContext);
 
     const script = [
         'Analysis: Exis picks up the lantern; Mira receives 5 credits; Exis travels to the Observatory.',
@@ -181,8 +178,8 @@ test('staged tiny-brain run assembles chunks that parse identically to the monol
     try {
         const assembled = await Events._runTinyBrainEventXmlPrompt({
             initialRenderedTemplate: rendered,
-            templateContext: ctx,
-            renderState: state,
+            templateContext,
+            tinyBrain,
             promptEnv: env,
             parseXMLTemplate
         });

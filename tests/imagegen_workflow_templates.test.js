@@ -34,6 +34,18 @@ function renderImagegenWorkflow(templateName, imageOverrides = {}, configOverrid
     return JSON.parse(env.render(templateName, { image, config: templateConfig }));
 }
 
+function renderBatchedImagegenWorkflow(images) {
+    const env = new nunjucks.Environment(
+        new nunjucks.FileSystemLoader(['imagegen']),
+        { autoescape: false }
+    );
+    env.addFilter('json', value => JSON.stringify(String(value)).slice(1, -1));
+    return JSON.parse(env.render('test_krea_2_simplified_lovely_batch.json.njk', {
+        config: {},
+        images
+    }));
+}
+
 function findWorkflowNode(workflow, predicate) {
     return Object.entries(workflow)
         .map(([id, node]) => ({ id, node }))
@@ -198,6 +210,58 @@ test('krea2 any-lora workflow reads first LoRA name from config.imagegen.lora', 
     );
     assert.ok(configuredLora, 'expected the first LoRA loader to use config.imagegen.lora');
     assert.deepEqual(configuredLora.node.inputs.model, ['4', 0]);
+});
+
+test('Krea 2 batch workflow maps prompt lists through encoding, sampling, and VAE decoding', () => {
+    const workflow = renderBatchedImagegenWorkflow([
+        { prompt: 'first prompt', width: 1200, height: 1600, seed: 41 },
+        { prompt: 'second prompt', width: 1200, height: 1600, seed: 42 }
+    ]);
+
+    assert.equal(workflow['100'].class_type, 'ImpactMakeAnyList');
+    assert.deepEqual(workflow['100'].inputs, {
+        value1: ['1000', 0],
+        value2: ['1001', 0]
+    });
+    assert.equal(workflow['101'].class_type, 'ImpactMakeAnyList');
+    assert.deepEqual(workflow['101'].inputs, {
+        value1: ['2000', 0],
+        value2: ['2001', 0]
+    });
+    assert.equal(workflow['1000'].inputs.value, 'first prompt');
+    assert.equal(workflow['1001'].inputs.value, 'second prompt');
+    assert.equal(workflow['2000'].class_type, 'PrimitiveInt');
+    assert.equal(workflow['2000'].inputs.value, 41);
+    assert.equal(workflow['2001'].inputs.value, 42);
+
+    assert.deepEqual(workflow['1'].inputs.text, ['100', 0]);
+    assert.deepEqual(workflow['7'].inputs.conditioning, ['1', 0]);
+    assert.deepEqual(workflow['17'].inputs.seed, ['101', 0]);
+    assert.deepEqual(workflow['17'].inputs.positive, ['1', 0]);
+    assert.deepEqual(workflow['17'].inputs.negative, ['7', 0]);
+    assert.deepEqual(workflow['3'].inputs.samples, ['17', 0]);
+    assert.deepEqual(workflow['24'].inputs.image, ['3', 0]);
+    assert.deepEqual(workflow['23'].inputs.images, ['24', 0]);
+    assert.equal(workflow['2'].inputs.width, 1200);
+    assert.equal(workflow['2'].inputs.height, 1600);
+});
+
+test('Krea 2 batch workflow preserves the configured lovely model and LoRA chain', () => {
+    const workflow = renderBatchedImagegenWorkflow([
+        { prompt: 'one prompt', width: 1600, height: 1600, seed: 42 }
+    ]);
+
+    assert.equal(workflow['4'].inputs.unet_name, 'krea2_turbo_unfiltered_int8_convrot.safetensors');
+    assert.equal(workflow['5'].inputs.clip_name, 'qwen3vl_4b_instruct_heretic_7refusal_int8_convrot.safetensors');
+    assert.equal(workflow['5'].inputs.type, 'krea2');
+    assert.equal(workflow['6'].inputs.vae_name, 'Wan2.1_VAE_upscale2x_imageonly_real_v1.safetensors');
+    assert.equal(workflow['8'].inputs.lora_name, 'krea2/k2-pix12_000000200-lora.safetensors');
+    assert.equal(workflow['8'].inputs.strength_model, 1);
+    assert.deepEqual(workflow['8'].inputs.model, ['4', 0]);
+    assert.equal(workflow['9'].inputs.lora_name, 'krea2/realism_engine_krea2_v2.safetensors');
+    assert.equal(workflow['9'].inputs.strength_model, 0.8);
+    assert.deepEqual(workflow['9'].inputs.model, ['8', 0]);
+    assert.deepEqual(workflow['17'].inputs.model, ['9', 0]);
 });
 
 test('server passes config into imagegen workflow template variables', () => {

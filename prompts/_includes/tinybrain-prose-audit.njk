@@ -1,0 +1,15 @@
+Audit the preceding draft against continuity, concrete outcome fidelity, character knowledge, repetition, forbidden/meta language, unsupported additions, and the following domain focus:
+{{ tinyBrainAuditFocus }}
+
+Return XML only:
+<revisionDecision>
+  <revise>yes or no</revise>
+  <issues>Specific corrections required; omit or leave empty only when revise is no.</issues>
+</revisionDecision>
+
+{% llmparse('revision_decision') as tinyBrainRevisionDecision %}
+{% if tinyBrainRevisionDecision.revise %}
+Write a second draft that fixes every listed issue. Preserve all required facts. Output prose only, without analysis, labels, markdown, or XML.
+
+{% llm_dummy_action %}
+{% endif %}

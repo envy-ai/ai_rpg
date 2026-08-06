@@ -1,0 +1,41 @@
+{% include "_includes/last-seen-npcs.njk" %}
+<task>Write visible prose for the already-resolved {{ mode | default('craft', true) }} action. Mechanical facts below are authoritative.</task>
+
+Actor: {{ characterName or (character and character.name) or 'The character' }}
+Mode: {{ mode }}
+Target: {{ targetName | default(intendedItemName, true) }}
+Degree: {{ success_or_failure }}
+Produced: {% if producedItem %}{{ producedItem.name }}{% else %}none{% endif %}
+Recovered: {% if recoveredItems and recoveredItems.length %}{% for item in recoveredItems %}{{ item.name }}{% if not loop.last %}, {% endif %}{% endfor %}{% else %}none{% endif %}
+Consumed: {% if consumedItems and consumedItems.length %}{% for item in consumedItems %}{{ item.name }}{% if not loop.last %}, {% endif %}{% endfor %}{% else %}none{% endif %}
+Additional effect: {{ otherEffect | default('none', true) }}
+Authoritative elapsed duration: {{ authoritativeTimePassedMinutes }} minutes
+
+{% set tinyBrainProducedName = 'none' %}{% if producedItem %}{% set tinyBrainProducedName = producedItem.name %}{% endif %}
+{% set tinyBrainOtherEffect = otherEffect or 'none' %}
+Restate the authoritative outcome facts as XML, in the same order, without additions:
+<outcomeAcknowledgement>
+  <fact>degree={{ success_or_failure }}</fact>
+  <fact>produced={{ tinyBrainProducedName }}</fact>
+  <fact>otherEffect={{ tinyBrainOtherEffect }}</fact>
+</outcomeAcknowledgement>
+
+{% llmparse('outcome_acknowledgement', ['degree=' + success_or_failure, 'produced=' + tinyBrainProducedName, 'otherEffect=' + tinyBrainOtherEffect]) %}
+
+Plan the visible process, outcome, and any additional-effect paragraph. The elapsed duration has already been selected mechanically; use exactly {{ authoritativeTimePassedMinutes }} minutes. Never alter the supplied items or degree.
+
+{% llm_dummy_action %}
+
+Draft Response: Write 100-200 words about the process and result. Do not mention numerical stats or over-celebrate routine critical success. Output the main description prose only.
+
+{% llm_dummy_action %}
+
+{% set tinyBrainAuditFocus = 'All produced/recovered/consumed facts and the success degree must remain exact; no output item may be invented; the elapsed duration must be concrete wall-clock time.' %}
+{% include "_includes/tinybrain-prose-audit.njk" %}
+
+Return XML only:
+<result>
+  <description>polished main description</description>
+  {% if otherEffect %}<otherEffectDescription>one paragraph describing only the supplied additional effect</otherEffectDescription>{% endif %}
+  <timePassed><reasoning>brief timing breakdown consistent with the authoritative duration</reasoning><duration>{{ authoritativeTimePassedMinutes }} minutes</duration></timePassed>
+</result>

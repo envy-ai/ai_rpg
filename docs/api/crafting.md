@@ -88,6 +88,7 @@ Response:
 - Prose-mode result summaries include source context: harvest/salvage lines use `from <source>`, and craft/process lines use `using <inputs>`.
 - Prose-mode craft/process/salvage/harvest item-result summary rows are categorized as `inventory` for the `What changed` drawer.
 - Prose-mode result summaries include the elapsed-time row based on the applied `timeTakenMinutes`.
+- With `ai.tinybrain` and the relevant family enabled, craft/process/salvage/harvest and location-modification prose use staged outcome acknowledgement, planning, draft, audit, optional revision, and final XML. The mechanically selected `timeTakenMinutes` remains authoritative and the final XML must echo that exact duration; prompt retries never recreate, consume, or apply items again.
 - Additional `<other>` effects from the selected result can generate a separate visible player-action entry and run ordinary event checks in prose mode.
 - Quest checks run after the crafting mutation path. Quest reward/objective summaries are recorded when applicable.
 - After time advancement, the route applies time-based status/need processing, processes due vehicle arrivals and scheduled events, runs automatic hidden-NPC checks for the current player, records same-location NPC sightings, and includes updated `worldTime` in the response.
