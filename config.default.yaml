@@ -195,6 +195,7 @@ ai:
   tinybrain_prompts:
     player_action: true
     event_checks: true
+    need_bar_event_checks: true
     quest_reward_prose: true
     game_intro: true
     random_event: true
@@ -312,7 +313,7 @@ prompt_progress:
     mystery_box_cleanup: 5000
     mystery_box_update: 5000
     mystery_thread_check: 5000
-    need_bar_event_checks: 5000
+    need_bar_event_checks*: 5000
     npc_action*: 5000
     npc_memories*: 5000
     npc_plausibility*: 5000
@@ -342,7 +343,7 @@ prompt_progress:
     test_*: 5000
     thing_*: 5000
     tool_*: 5000
-    while_you_were_away: 5000
+    while_you_were_away*: 5000
     xml_fix: 5000
     housekeeping: 5000
 model_swap_options:

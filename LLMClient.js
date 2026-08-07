@@ -229,6 +229,7 @@ class LLMClient {
     static #comfyModelCleanupHandler = null;
     static #managedLocalModelStartupHandler = null;
     static #lastPromptModelTarget = null;
+    static #routerContextCachePaths = new Set();
     static #promptQueueReservationStates = new WeakMap();
     static #promptProgressGroupContext = new AsyncLocalStorage();
     static #tinyBrainXmlRepetitionContext = new AsyncLocalStorage();
@@ -448,6 +449,7 @@ class LLMClient {
             isGroupWaiting: false
         });
         LLMClient.#ensureProgressTicker();
+        LLMClient.#broadcastProgress(false, { force: true });
         return id;
     }
 
@@ -2326,6 +2328,158 @@ class LLMClient {
 
     static resetModelSwitchTracking() {
         LLMClient.#lastPromptModelTarget = null;
+        LLMClient.#routerContextCachePaths.clear();
+    }
+
+    static #trackRouterContextCacheTarget(target) {
+        if (!target || target.isLocalRouter !== true) {
+            return null;
+        }
+        const model = typeof target.model === 'string' ? target.model.trim() : '';
+        const slotCacheDirectory = typeof target.slotCacheDirectory === 'string'
+            ? target.slotCacheDirectory.trim()
+            : '';
+        if (!model || !slotCacheDirectory || !path.isAbsolute(slotCacheDirectory)) {
+            throw new Error('Local llama.cpp router context-cache tracking requires a model and absolute cache directory.');
+        }
+        const cachePath = path.join(
+            path.normalize(slotCacheDirectory),
+            LlamaCppRouterClient.buildSlotCacheFilename(model)
+        );
+        LLMClient.#routerContextCachePaths.add(cachePath);
+        return cachePath;
+    }
+
+    static resolveRouterContextCachePaths(configOverride = Globals?.config) {
+        const cachePaths = new Set(LLMClient.#routerContextCachePaths);
+        if (!configOverride || typeof configOverride !== 'object' || Array.isArray(configOverride)) {
+            return Array.from(cachePaths).sort();
+        }
+
+        const addConfiguration = (aiConfig, modelOverride = null) => {
+            if (!aiConfig || typeof aiConfig !== 'object' || Array.isArray(aiConfig)) {
+                return;
+            }
+            const startupScriptPath = typeof aiConfig.local_startup_script_path === 'string'
+                ? aiConfig.local_startup_script_path.trim()
+                : '';
+            const model = typeof modelOverride === 'string' && modelOverride.trim()
+                ? modelOverride.trim()
+                : (typeof aiConfig.model === 'string' ? aiConfig.model.trim() : '');
+            if (!startupScriptPath || !model) {
+                return;
+            }
+            const slotCacheDirectory = LLMClient.resolveRouterSlotCacheDirectory(aiConfig);
+            cachePaths.add(path.join(
+                slotCacheDirectory,
+                LlamaCppRouterClient.buildSlotCacheFilename(model)
+            ));
+        };
+
+        addConfiguration(configOverride.ai);
+        addConfiguration(configOverride.ai, configOverride.router_preload_model);
+
+        const promptLabels = new Set();
+        const overrideProfiles = configOverride.ai_model_overrides;
+        if (overrideProfiles && typeof overrideProfiles === 'object' && !Array.isArray(overrideProfiles)) {
+            for (const profile of Object.values(overrideProfiles)) {
+                if (!profile || typeof profile !== 'object' || Array.isArray(profile)) {
+                    continue;
+                }
+                for (const promptLabel of Array.isArray(profile.prompts) ? profile.prompts : []) {
+                    if (typeof promptLabel === 'string' && promptLabel.trim()) {
+                        promptLabels.add(promptLabel.trim());
+                    }
+                }
+            }
+        }
+        for (const promptLabel of promptLabels) {
+            addConfiguration(
+                LLMClient.resolveEffectiveAiConfiguration(promptLabel, configOverride).aiConfig
+            );
+        }
+
+        return Array.from(cachePaths).sort();
+    }
+
+    static async deleteRouterContextCacheFiles({
+        configOverride = Globals?.config,
+        fileSystem = fs,
+        logger = console
+    } = {}) {
+        if (!fileSystem?.promises || typeof fileSystem.promises.unlink !== 'function') {
+            throw new Error('Router context-cache cleanup requires fileSystem.promises.unlink().');
+        }
+        if (!logger || typeof logger.log !== 'function') {
+            throw new Error('Router context-cache cleanup requires logger.log().');
+        }
+
+        const deleted = [];
+        const failures = [];
+        for (const cachePath of LLMClient.resolveRouterContextCachePaths(configOverride)) {
+            try {
+                await fileSystem.promises.unlink(cachePath);
+                deleted.push(cachePath);
+                LLMClient.#routerContextCachePaths.delete(cachePath);
+                logger.log(`🧹 Deleted llama.cpp context cache ${cachePath}.`);
+            } catch (error) {
+                if (error?.code === 'ENOENT') {
+                    LLMClient.#routerContextCachePaths.delete(cachePath);
+                    continue;
+                }
+                failures.push(new Error(
+                    `Failed to delete llama.cpp context cache ${cachePath}: ${error?.message || String(error)}`,
+                    { cause: error }
+                ));
+            }
+        }
+        if (failures.length) {
+            throw new AggregateError(
+                failures,
+                `Failed to delete one or more llama.cpp context cache files: ${failures.map(error => error.message).join('; ')}`
+            );
+        }
+        return { deleted };
+    }
+
+    static deleteRouterContextCacheFilesSync({
+        configOverride = Globals?.config,
+        fileSystem = fs,
+        logger = console
+    } = {}) {
+        if (!fileSystem || typeof fileSystem.unlinkSync !== 'function') {
+            throw new Error('Synchronous router context-cache cleanup requires fileSystem.unlinkSync().');
+        }
+        if (!logger || typeof logger.log !== 'function') {
+            throw new Error('Synchronous router context-cache cleanup requires logger.log().');
+        }
+
+        const deleted = [];
+        const failures = [];
+        for (const cachePath of LLMClient.resolveRouterContextCachePaths(configOverride)) {
+            try {
+                fileSystem.unlinkSync(cachePath);
+                deleted.push(cachePath);
+                LLMClient.#routerContextCachePaths.delete(cachePath);
+                logger.log(`🧹 Deleted llama.cpp context cache ${cachePath}.`);
+            } catch (error) {
+                if (error?.code === 'ENOENT') {
+                    LLMClient.#routerContextCachePaths.delete(cachePath);
+                    continue;
+                }
+                failures.push(new Error(
+                    `Failed to delete llama.cpp context cache ${cachePath}: ${error?.message || String(error)}`,
+                    { cause: error }
+                ));
+            }
+        }
+        if (failures.length) {
+            throw new AggregateError(
+                failures,
+                `Failed to delete one or more llama.cpp context cache files: ${failures.map(error => error.message).join('; ')}`
+            );
+        }
+        return { deleted };
     }
 
     static #resolvePromptModelTarget(attemptRuntime, { required = false } = {}) {
@@ -2359,7 +2513,7 @@ class LLMClient {
         const startupScriptPath = typeof attemptRuntime.aiConfig?.local_startup_script_path === 'string'
             ? attemptRuntime.aiConfig.local_startup_script_path.trim()
             : '';
-        return {
+        const target = {
             key: `${routerBaseUrl}\n${model}`,
             endpoint,
             model,
@@ -2370,6 +2524,8 @@ class LLMClient {
             isLocalRouter: Boolean(startupScriptPath),
             slotCacheDirectory: LLMClient.resolveRouterSlotCacheDirectory(attemptRuntime.aiConfig)
         };
+        LLMClient.#trackRouterContextCacheTarget(target);
+        return target;
     }
 
     static #recordPromptModelTarget(attemptRuntime) {
@@ -2448,30 +2604,23 @@ class LLMClient {
                 timeoutMs: currentTarget.timeoutMs,
                 slotCacheDirectory: currentTarget.slotCacheDirectory
             });
-            let loadState;
             try {
-                loadState = await currentRouter.loadModelIfNeeded();
-            } catch (cause) {
-                const error = new Error(
-                    `Failed to load replacement llama.cpp model "${currentTarget.model}" before prompt "${promptLabel}": ${cause?.message || String(cause)}`,
-                    { cause }
-                );
-                error.isModelSwitchError = true;
-                throw error;
-            }
-            if (typeof log === 'function') {
-                if (loadState.loadedByClient) {
-                    log(`🧠 Loaded replacement llama.cpp model "${currentTarget.model}".`);
-                } else {
-                    log(`🧠 Replacement llama.cpp model "${currentTarget.model}" was already active or loading.`);
+                const cacheExists = await currentRouter.slotCacheFileExists();
+                if (cacheExists && typeof log === 'function') {
+                    log(
+                        `🧠 Submitted llama.cpp slot ${currentRouter.slotId} restore for model "${currentTarget.model}"; `
+                        + 'the router will load and wait for the model before restoring.'
+                    );
                 }
-            }
-
-            try {
                 const restoreState = await currentRouter.restoreSlotCacheIfPresent();
                 if (restoreState.restored && typeof log === 'function') {
                     log(
                         `🧠 Restored llama.cpp slot ${currentRouter.slotId} context for model "${currentTarget.model}" and deleted ${restoreState.cachePath}.`
+                    );
+                } else if (!cacheExists && typeof log === 'function') {
+                    log(
+                        `🧠 No saved slot cache exists for replacement model "${currentTarget.model}"; `
+                        + 'the queued prompt will let the llama.cpp router load and wait for it.'
                     );
                 }
             } catch (cause) {
@@ -2899,13 +3048,17 @@ class LLMClient {
 
     static applyBaseContextToolPolicy(messages = [], {
         metadataLabel = '',
-        additionalPayload = {}
+        additionalPayload = {},
+        preserveCallerToolDefinitions = false
     } = {}) {
         if (!Array.isArray(messages)) {
             throw new Error('Base-context tool policy requires a messages array.');
         }
         if (!additionalPayload || typeof additionalPayload !== 'object' || Array.isArray(additionalPayload)) {
             throw new Error('Base-context tool policy requires additionalPayload to be an object.');
+        }
+        if (typeof preserveCallerToolDefinitions !== 'boolean') {
+            throw new Error('Base-context tool policy preserveCallerToolDefinitions must be a boolean.');
         }
 
         let markerCount = 0;
@@ -2981,6 +3134,17 @@ class LLMClient {
                 isBaseContextPrompt: true,
                 sharedToolsApplied: false,
                 noToolCallsInstructionAdded: false
+            };
+        }
+
+        if (preserveCallerToolDefinitions) {
+            return {
+                messages: normalizedMessages,
+                additionalPayload,
+                isBaseContextPrompt: true,
+                sharedToolsApplied: false,
+                callerToolDefinitionsPreserved: true,
+                noToolCallsInstructionAdded
             };
         }
 
@@ -3509,7 +3673,9 @@ class LLMClient {
             return match.target;
         }
 
-        throw new Error(`Missing prompt_progress.character_targets character target for prompt label "${normalizedLabel}".`);
+        throw LLMClient.#configurationError(
+            `Missing prompt_progress.character_targets character target for prompt label "${normalizedLabel}".`
+        );
     }
 
     static #resolvePromptProgressTargetForRun(label, characterStats) {
@@ -4517,6 +4683,7 @@ class LLMClient {
         }
 
         const target = await LLMClient.resolveRouterPreloadTarget(configOverride);
+        LLMClient.#trackRouterContextCacheTarget(target);
         return LLMClient.withExclusiveModelLifecycle(async () => {
             const router = createRouterClient(target);
             if (!router || typeof router.loadModelIfNeeded !== 'function') {
@@ -5152,6 +5319,7 @@ class LLMClient {
         liveTokenStreamFallbackChunkSize = null,
         liveTokenStreamCapabilityKey = null,
         onLiveTokenStreamFallback = null,
+        preserveBaseContextToolDefinitions = false,
     } = {}) {
         const resolvedOutput = LLMClient.resolveOutput(output);
         const isSilent = resolvedOutput === 'silent';
@@ -5234,6 +5402,7 @@ class LLMClient {
                 assistantResponseSeed,
                 progressGroupId,
                 progressGroupTargetLabel,
+                preserveBaseContextToolDefinitions,
                 forceOutput: forceOutput !== null && forceOutput !== undefined ? '[provided]' : null
             });
         }
@@ -5390,6 +5559,9 @@ class LLMClient {
             if (headers !== undefined && headers !== null && !LLMClient.#isPlainObject(headers)) {
                 throw new Error('chatCompletion headers must be an object when provided.');
             }
+            if (typeof preserveBaseContextToolDefinitions !== 'boolean') {
+                throw new TypeError('chatCompletion preserveBaseContextToolDefinitions must be a boolean.');
+            }
             const resolvedSeed = Number.isFinite(seed) ? Math.trunc(seed) : LLMClient.#generateSeed();
             if (!Array.isArray(messages) || messages.length === 0) {
                 throw new Error('LLMClient.chatCompletion requires at least one message.');
@@ -5397,7 +5569,8 @@ class LLMClient {
 
             const baseContextToolPolicy = LLMClient.applyBaseContextToolPolicy(messages, {
                 metadataLabel,
-                additionalPayload: basePayload
+                additionalPayload: basePayload,
+                preserveCallerToolDefinitions: preserveBaseContextToolDefinitions
             });
             messages = baseContextToolPolicy.messages;
             basePayload = baseContextToolPolicy.additionalPayload;
@@ -6056,6 +6229,24 @@ class LLMClient {
                                 });
                             }
                         }
+                        const shouldTrackPromptProgress = !isSilent
+                            && (payload.stream || LLMClient.#isCliBridgeBackend(resolvedBackend));
+                        streamTrackerId = shouldTrackPromptProgress
+                            ? LLMClient.#trackStreamStart(metadataLabel, {
+                                startTimeoutMs: streamStartTimeoutMs,
+                                continueTimeoutMs: streamContinueTimeoutMs,
+                                isBackground: Boolean(runInBackground),
+                                model: resolvedModel,
+                                promptText: LLMClient.formatMessagesForPromptProgress(payload.messages),
+                                progressGroupId: resolvedProgressGroupId,
+                                progressGroupTargetLabel: resolvedProgressGroupTargetLabel,
+                                receivedUnit: 'characters'
+                            })
+                            : null;
+                        if (streamTrackerId) {
+                            LLMClient.#abortControllers.set(streamTrackerId, controller);
+                        }
+
                         const unloadModelOnSwitch = LLMClient.resolveUnloadModelOnSwitch();
                         const managesLocalModel = attemptRuntime.aiConfig
                             ?.terminate_during_image_generation === true;
@@ -6078,24 +6269,6 @@ class LLMClient {
                             });
                         } else {
                             LLMClient.#recordPromptModelTarget(attemptRuntime);
-                        }
-
-                        const shouldTrackPromptProgress = !isSilent
-                            && (payload.stream || LLMClient.#isCliBridgeBackend(resolvedBackend));
-                        streamTrackerId = shouldTrackPromptProgress
-                            ? LLMClient.#trackStreamStart(metadataLabel, {
-                                startTimeoutMs: streamStartTimeoutMs,
-                                continueTimeoutMs: streamContinueTimeoutMs,
-                                isBackground: Boolean(runInBackground),
-                                model: resolvedModel,
-                                promptText: LLMClient.formatMessagesForPromptProgress(payload.messages),
-                                progressGroupId: resolvedProgressGroupId,
-                                progressGroupTargetLabel: resolvedProgressGroupTargetLabel,
-                                receivedUnit: 'characters'
-                            })
-                            : null;
-                        if (streamTrackerId) {
-                            LLMClient.#abortControllers.set(streamTrackerId, controller);
                         }
 
                         const cliBridgeClient = LLMClient.#resolveCliBridgeClient(resolvedBackend);
@@ -7045,6 +7218,10 @@ class LLMClient {
                         || error?.isLiveStreamTokenError
                         || error?.isTinyBrainXmlRepetitionError
                     ) {
+                        if (streamTrackerId) {
+                            LLMClient.#trackStreamEnd(streamTrackerId);
+                            streamTrackerId = null;
+                        }
                         throw error;
                     }
                     errorLog(`Error occurred during chat completion (attempt ${attempt + 1}): `, error.message);

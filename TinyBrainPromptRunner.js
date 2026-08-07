@@ -3,13 +3,25 @@ const LLMClient = require('./LLMClient.js');
 const {
     parseAllowedCharacterSelection,
     parseExactXmlRoot,
+    parseNeedBarCharactersResult,
     parseNarrativeScope,
     parseOutcomeAcknowledgement,
+    parsePlayerActionDestination,
+    parsePlayerActionDuration,
+    parsePlayerActionAccompanyingCharacters,
+    parsePlayerActionHiddenNotes,
+    parsePlayerActionMovement,
+    parsePlayerActionProseScope,
+    parsePlayerActionRequiredProse,
+    parsePlayerActionTimeReasoning,
+    parsePlayerActionVehicleDecision,
     parseRevisionDecision,
+    parseWhileAwayArrivalUpdates,
     parseWhileAwayCharacterUpdate
 } = require('./TinyBrainPromptParsers.js');
 
 const MARKER_PREFIX = '[[TINYBRAIN_CHECKPOINT:';
+const RESULT_MARKER_PREFIX = '[[TINYBRAIN_RESULT:';
 
 function requireNonWhitespaceResponse(response, label = 'Tiny-brain checkpoint') {
     if (typeof response !== 'string' || !response.trim()) {
@@ -110,6 +122,39 @@ function cloneMessage(message) {
     return JSON.parse(JSON.stringify(message));
 }
 
+function cloneToolInvocation(invocation) {
+    if (!invocation || typeof invocation !== 'object' || Array.isArray(invocation)) {
+        throw new Error('Tiny-brain continuation state contains an invalid tool invocation.');
+    }
+    return JSON.parse(JSON.stringify(invocation));
+}
+
+function createTinyBrainContinuationState() {
+    return {
+        conversationMessages: [],
+        toolInvocations: [],
+        logFilePath: null
+    };
+}
+
+function validateTinyBrainContinuationState(continuationState) {
+    if (!continuationState || typeof continuationState !== 'object' || Array.isArray(continuationState)) {
+        throw new Error('Tiny-brain continuation state must be an object.');
+    }
+    if (!Array.isArray(continuationState.conversationMessages)) {
+        throw new Error('Tiny-brain continuation state conversationMessages must be an array.');
+    }
+    if (!Array.isArray(continuationState.toolInvocations)) {
+        throw new Error('Tiny-brain continuation state toolInvocations must be an array.');
+    }
+    if (
+        continuationState.logFilePath !== null
+        && (typeof continuationState.logFilePath !== 'string' || !continuationState.logFilePath.trim())
+    ) {
+        throw new Error('Tiny-brain continuation state logFilePath must be null or a non-empty string.');
+    }
+}
+
 function createTinyBrainRenderState() {
     const runId = randomUUID();
     return {
@@ -117,13 +162,14 @@ function createTinyBrainRenderState() {
         programStartMarker: `[[TINYBRAIN_PROGRAM_START:${runId}]]`,
         nextCheckpointIndex: 0,
         checkpoints: [],
+        resultMarkers: [],
         completedCheckpoints: Object.create(null)
     };
 }
 
 class TinyBrainPromptExtension {
     constructor() {
-        this.tags = ['llm_dummy_action', 'llmparse'];
+        this.tags = ['llm_dummy_action', 'llmparse', 'llmresult'];
     }
 
     parse(parser, nodes) {
@@ -131,6 +177,12 @@ class TinyBrainPromptExtension {
         if (token.value === 'llm_dummy_action') {
             parser.advanceAfterBlockEnd(token.value);
             return new nodes.CallExtension(this, 'renderDummyCheckpoint');
+        }
+
+        if (token.value === 'llmresult') {
+            const args = parser.parseSignature(null, false);
+            parser.advanceAfterBlockEnd(token.value);
+            return new nodes.CallExtension(this, 'renderResultMarker', args);
         }
 
         const args = parser.parseSignature(null, false);
@@ -175,6 +227,30 @@ class TinyBrainPromptExtension {
         });
     }
 
+    renderResultMarker(context, builderName, ...extraArgs) {
+        if (extraArgs.length) {
+            throw new Error('llmresult accepts exactly one result-builder name.');
+        }
+        if (typeof builderName !== 'string' || !builderName.trim()) {
+            throw new Error('llmresult requires a non-empty result-builder name.');
+        }
+        const state = typeof context?.lookup === 'function'
+            ? context.lookup('__tinyBrainState')
+            : context?.ctx?.__tinyBrainState;
+        if (!state || typeof state !== 'object' || typeof state.runId !== 'string') {
+            throw new Error('Tiny-brain result tags require a __tinyBrainState render context.');
+        }
+        if (!Array.isArray(state.resultMarkers)) {
+            throw new Error('Tiny-brain prompt result-marker state is malformed.');
+        }
+        const marker = {
+            index: state.resultMarkers.length,
+            builderName: builderName.trim()
+        };
+        state.resultMarkers.push(marker);
+        return `${RESULT_MARKER_PREFIX}${state.runId}:${marker.index}]]`;
+    }
+
     #renderCheckpoint(context, checkpoint) {
         const state = typeof context?.lookup === 'function'
             ? context.lookup('__tinyBrainState')
@@ -210,6 +286,7 @@ class TinyBrainPromptRunner {
         complete,
         retryAttempts,
         parsers = {},
+        resultBuilders = {},
         finalParser = null,
         onParseFailure = null,
         logPrompt = LLMClient.logPrompt.bind(LLMClient),
@@ -231,6 +308,14 @@ class TinyBrainPromptRunner {
         }
         if (!parsers || typeof parsers !== 'object' || Array.isArray(parsers)) {
             throw new Error('TinyBrainPromptRunner parsers must be an object.');
+        }
+        if (!resultBuilders || typeof resultBuilders !== 'object' || Array.isArray(resultBuilders)) {
+            throw new Error('TinyBrainPromptRunner resultBuilders must be an object.');
+        }
+        for (const [name, builder] of Object.entries(resultBuilders)) {
+            if (!name.trim() || typeof builder !== 'function') {
+                throw new Error('TinyBrainPromptRunner resultBuilders must map non-empty names to functions.');
+            }
         }
         if (finalParser !== null && typeof finalParser !== 'function') {
             throw new Error('TinyBrainPromptRunner finalParser must be a function when provided.');
@@ -262,15 +347,27 @@ class TinyBrainPromptRunner {
             accept_or_reject: parseAcceptOrReject,
             allowed_character_selection: parseAllowedCharacterSelection,
             exact_xml_root: parseExactXmlRoot,
+            need_bar_characters: parseNeedBarCharactersResult,
             narrative_scope: parseNarrativeScope,
             outcome_acknowledgement: parseOutcomeAcknowledgement,
+            player_action_destination: parsePlayerActionDestination,
+            player_action_duration: parsePlayerActionDuration,
+            player_action_accompanying_characters: parsePlayerActionAccompanyingCharacters,
+            player_action_hidden_notes: parsePlayerActionHiddenNotes,
+            player_action_movement: parsePlayerActionMovement,
+            player_action_prose_scope: parsePlayerActionProseScope,
+            player_action_required_prose: parsePlayerActionRequiredProse,
+            player_action_time_reasoning: parsePlayerActionTimeReasoning,
+            player_action_vehicle_decision: parsePlayerActionVehicleDecision,
             player_is_traveling: parsePlayerIsTraveling,
             response_or_na: parseResponseOrNa,
             revision_decision: parseRevisionDecision,
+            while_away_arrival_updates: parseWhileAwayArrivalUpdates,
             while_away_character_update: parseWhileAwayCharacterUpdate,
             yes_no: parseYesNo,
             ...parsers
         };
+        this.resultBuilders = { ...resultBuilders };
         this.finalParser = finalParser;
         this.onParseFailure = onParseFailure;
         this.logPrompt = logPrompt;
@@ -290,10 +387,14 @@ class TinyBrainPromptRunner {
         initialRenderedTemplate,
         templateContext,
         renderState,
-        programTemplateName = '_includes/player-action.tinybrain.njk'
+        programTemplateName = '_includes/player-action.tinybrain.njk',
+        continuationState = null
     } = {}) {
         if (!renderState || typeof renderState !== 'object' || typeof renderState.runId !== 'string' || !renderState.runId.trim()) {
             throw new Error('TinyBrainPromptRunner requires its initial render state.');
+        }
+        if (continuationState !== null) {
+            validateTinyBrainContinuationState(continuationState);
         }
         const progressGroupId = renderState.runId.trim();
         const runWithReservation = async () => LLMClient.withPromptQueueReservation(async (queueReservation) => (
@@ -309,8 +410,14 @@ class TinyBrainPromptRunner {
                         renderState,
                         programTemplateName,
                         queueReservation,
-                        progressGroupId
+                        progressGroupId,
+                        continuationState
                     });
+                    if (continuationState) {
+                        continuationState.conversationMessages = result.conversationMessages.map(cloneMessage);
+                        continuationState.toolInvocations = result.toolInvocations.map(cloneToolInvocation);
+                        continuationState.logFilePath = result.logFilePath;
+                    }
                     recordOutputCharacters = result.recordProgressOutput !== false;
                     return result;
                 } finally {
@@ -335,7 +442,8 @@ class TinyBrainPromptRunner {
         renderState,
         programTemplateName,
         queueReservation,
-        progressGroupId
+        progressGroupId,
+        continuationState
     }) {
         if (typeof initialRenderedTemplate !== 'string' || !initialRenderedTemplate.trim()) {
             throw new Error('TinyBrainPromptRunner requires the initially rendered prompt template.');
@@ -368,11 +476,26 @@ class TinyBrainPromptRunner {
             programStartIndex + renderState.programStartMarker.length
         );
         let checkpoints = renderState.checkpoints.map(checkpoint => ({ ...checkpoint }));
+        let resultMarkers = Array.isArray(renderState.resultMarkers)
+            ? renderState.resultMarkers.map(marker => ({ ...marker }))
+            : [];
         let completedCount = 0;
         const completedCheckpointDefinitions = [];
-        let messages = [{ role: 'system', content: systemPrompt }];
-        let logFilePath = null;
-        const allToolInvocations = [];
+        let messages = continuationState?.conversationMessages?.length
+            ? continuationState.conversationMessages.map(cloneMessage)
+            : [{ role: 'system', content: systemPrompt }];
+        if (
+            messages[0]?.role !== 'system'
+            || typeof messages[0]?.content !== 'string'
+            || !messages[0].content.trim()
+        ) {
+            throw new Error('Tiny-brain continuation transcript must begin with a non-empty system message.');
+        }
+        if (messages[0].content.trim() !== systemPrompt) {
+            throw new Error('Tiny-brain continuation system prompt changed between sequential runs.');
+        }
+        let logFilePath = continuationState?.logFilePath || null;
+        const allToolInvocations = continuationState?.toolInvocations?.map(cloneToolInvocation) || [];
 
         while (true) {
             const split = this.#splitProgram({
@@ -394,7 +517,8 @@ class TinyBrainPromptRunner {
                     systemPrompt,
                     isFinal: false,
                     queueReservation,
-                    progressGroupId
+                    progressGroupId,
+                    priorToolInvocations: allToolInvocations
                 });
                 messages = stepResult.messages;
                 logFilePath = stepResult.logFilePath;
@@ -423,11 +547,25 @@ class TinyBrainPromptRunner {
                 });
                 renderedProgram = rerendered.renderedProgram;
                 checkpoints = rerendered.checkpoints;
+                resultMarkers = rerendered.resultMarkers;
                 this.#validateCompletedCheckpoints(checkpoints, completedCheckpointDefinitions);
                 continue;
             }
 
             const finalPromptSegment = split.segments[split.segments.length - 1];
+            if (resultMarkers.length) {
+                return await this.#buildTerminalResult({
+                    finalPromptSegment,
+                    resultMarkers,
+                    checkpoints,
+                    renderState,
+                    templateContext,
+                    messages,
+                    allToolInvocations,
+                    logFilePath,
+                    systemPrompt
+                });
+            }
             const finalResult = await this.#runCompletionStep({
                 messages,
                 promptSegment: finalPromptSegment,
@@ -445,7 +583,8 @@ class TinyBrainPromptRunner {
                 systemPrompt,
                 isFinal: true,
                 queueReservation,
-                progressGroupId
+                progressGroupId,
+                priorToolInvocations: allToolInvocations
             });
             allToolInvocations.push(...finalResult.toolInvocations);
             return {
@@ -462,13 +601,92 @@ class TinyBrainPromptRunner {
     #renderProgram({ programTemplateName, templateContext, renderState }) {
         renderState.nextCheckpointIndex = 0;
         renderState.checkpoints = [];
+        renderState.resultMarkers = [];
         const renderedProgram = this.promptEnv.render(programTemplateName, {
             ...templateContext,
             __tinyBrainState: renderState
         });
         return {
             renderedProgram,
-            checkpoints: renderState.checkpoints.map(checkpoint => ({ ...checkpoint }))
+            checkpoints: renderState.checkpoints.map(checkpoint => ({ ...checkpoint })),
+            resultMarkers: renderState.resultMarkers.map(marker => ({ ...marker }))
+        };
+    }
+
+    async #buildTerminalResult({
+        finalPromptSegment,
+        resultMarkers,
+        checkpoints,
+        renderState,
+        templateContext,
+        messages,
+        allToolInvocations,
+        logFilePath,
+        systemPrompt
+    }) {
+        if (resultMarkers.length !== 1) {
+            throw new Error(`Tiny-brain prompt requires exactly one terminal result marker; found ${resultMarkers.length}.`);
+        }
+        const marker = resultMarkers[0];
+        const markerText = `${RESULT_MARKER_PREFIX}${renderState.runId}:${marker.index}]]`;
+        if (typeof finalPromptSegment !== 'string' || finalPromptSegment.trim() !== markerText) {
+            throw new Error('Tiny-brain terminal result marker must be the only content after the final checkpoint.');
+        }
+        const builder = this.resultBuilders[marker.builderName];
+        if (typeof builder !== 'function') {
+            throw new Error(`No tiny-brain result builder is registered for "${marker.builderName}".`);
+        }
+
+        const assignments = Object.create(null);
+        for (const checkpoint of checkpoints) {
+            if (!checkpoint.target) {
+                continue;
+            }
+            if (Object.hasOwn(assignments, checkpoint.target)) {
+                throw new Error(`Tiny-brain checkpoint target "${checkpoint.target}" is assigned more than once.`);
+            }
+            const completed = renderState.completedCheckpoints?.[checkpoint.index];
+            if (!completed || !Object.hasOwn(completed, 'value')) {
+                throw new Error(`Tiny-brain checkpoint target "${checkpoint.target}" has no completed value.`);
+            }
+            assignments[checkpoint.target] = completed.value;
+        }
+
+        const response = await builder({
+            assignments: Object.freeze({ ...assignments }),
+            checkpoints: Object.freeze(checkpoints.map(checkpoint => Object.freeze({ ...checkpoint }))),
+            templateContext: Object.freeze({ ...templateContext })
+        });
+        if (typeof response !== 'string' || !response.trim()) {
+            throw new Error(`Tiny-brain result builder "${marker.builderName}" must return a non-empty string.`);
+        }
+        const normalizedResponse = response.trim();
+        let activeLogFilePath = logFilePath;
+        const section = {
+            title: 'Tiny-brain assembled final response',
+            content: normalizedResponse
+        };
+        if (activeLogFilePath) {
+            this.#appendLog({ logFilePath: activeLogFilePath, sections: [section] });
+        } else {
+            activeLogFilePath = this.logPrompt({
+                prefix: this.logPrefix,
+                metadataLabel: this.metadataLabel,
+                systemPrompt,
+                sections: [section],
+                output: 'silent'
+            });
+            if (typeof activeLogFilePath !== 'string' || !activeLogFilePath.trim()) {
+                throw new Error('Failed to create the tiny-brain prompt log for an assembled result.');
+            }
+        }
+        return {
+            aiResponse: normalizedResponse,
+            conversationMessages: messages,
+            toolInvocations: allToolInvocations,
+            logFilePath: activeLogFilePath,
+            terminatedAtCheckpoint: null,
+            recordProgressOutput: true
         };
     }
 
@@ -514,16 +732,30 @@ class TinyBrainPromptRunner {
 
     #resolveCheckpointParser(checkpoint) {
         if (checkpoint.kind === 'dummy') {
-            return response => ({
-                value: requireNonWhitespaceResponse(response, `Tiny-brain checkpoint ${checkpoint.index + 1}`)
-            });
+            return (response, parseContext = {}) => {
+                if (typeof response === 'string' && !response.trim()) {
+                    const successfulToolInvocations = Array.isArray(parseContext.currentToolInvocations)
+                        ? parseContext.currentToolInvocations.filter(invocation => (
+                            invocation
+                            && typeof invocation === 'object'
+                            && invocation.metadata?.error !== true
+                        ))
+                        : [];
+                    if (successfulToolInvocations.length) {
+                        return { value: '' };
+                    }
+                }
+                return {
+                    value: requireNonWhitespaceResponse(response, `Tiny-brain checkpoint ${checkpoint.index + 1}`)
+                };
+            };
         }
         const parser = this.parsers[checkpoint.parserName]
             || (checkpoint.parserName.startsWith('mod_step_') ? parseModStep : null);
         if (typeof parser !== 'function') {
             throw new Error(`No tiny-brain parser is registered for "${checkpoint.parserName}".`);
         }
-        return (response) => parser(response, ...checkpoint.parserArgs);
+        return (response, parseContext) => parser(response, ...checkpoint.parserArgs, parseContext);
     }
 
     async #runCompletionStep({
@@ -535,7 +767,8 @@ class TinyBrainPromptRunner {
         systemPrompt,
         isFinal,
         queueReservation,
-        progressGroupId
+        progressGroupId,
+        priorToolInvocations = []
     }) {
         const trimmedPrompt = typeof promptSegment === 'string' ? promptSegment.trim() : '';
         if (!trimmedPrompt) {
@@ -619,12 +852,25 @@ class TinyBrainPromptRunner {
             });
 
             try {
-                const rawParsed = await parser(aiResponse);
+                const rawParsed = await parser(aiResponse, {
+                    checkpoint: { ...checkpoint },
+                    attempt,
+                    isFinal,
+                    currentToolInvocations: toolInvocations.map(invocation => ({ ...invocation })),
+                    toolInvocations: [
+                        ...(Array.isArray(priorToolInvocations) ? priorToolInvocations : []),
+                        ...toolInvocations
+                    ].map(invocation => ({ ...invocation }))
+                });
                 const parsed = rawParsed && typeof rawParsed === 'object' && !Array.isArray(rawParsed)
                     ? rawParsed
                     : { value: rawParsed };
+                const acceptedResponse = typeof parsed.normalizedResponse === 'string'
+                    && parsed.normalizedResponse.trim()
+                    ? parsed.normalizedResponse.trim()
+                    : aiResponse;
                 return {
-                    aiResponse,
+                    aiResponse: acceptedResponse,
                     parsed,
                     messages: conversationMessages,
                     toolInvocations,
@@ -768,6 +1014,7 @@ function checkpointsMatch(actual, expected) {
 module.exports = {
     TinyBrainPromptExtension,
     TinyBrainPromptRunner,
+    createTinyBrainContinuationState,
     createTinyBrainRenderState,
     parseAcceptOrReject,
     parsePlayerIsTraveling,

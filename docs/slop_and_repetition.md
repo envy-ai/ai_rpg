@@ -26,7 +26,7 @@ Reference for the systems that reduce repeated phrasing, configured slop words, 
 - Parsed travel prose combines visible origin, between, and destination prose for the chat entry.
 - Hidden notes are preserved in extracted prose but stripped from event-check segment text.
 - Travel prose segments remove leading indentation at paragraph starts before storage and processing.
-- Origin and destination event checks can run separately when player travel creates a meaningful origin/destination split. Active vehicle contexts process the combined prose at the onboard location while still preserving player-destination movement handling.
+- With one-shot event checks, origin and destination can run separately when player travel creates a meaningful split, while active vehicle contexts process combined prose onboard. With TinyBrain event checks, every nonempty movement prose section is explicit: origin and destination use the normal category stages, between permits only `thingMoveWithCharacter`, and a combined-prose tracker stage runs last even for active-vehicle movement.
 - Player-destination `<travelTime>` values are parsed as generated exit durations and normalized by the shared duration helpers. A generated origin exit receives that duration; generated return exits copy the same duration. Existing exits keep their stored travel time.
 - Vehicle travel metadata can start or retarget timed trips, update vehicle state, and request client location refreshes when vehicle movement or due arrivals affect visible state.
 
@@ -77,12 +77,12 @@ Reference for the systems that reduce repeated phrasing, configured slop words, 
 - `config.default.yaml` enables `slop_buster: true`.
 - The slop pipeline checks visible prose for configured slop words, configured regex names, configured n-grams, and repeated n-grams from prose history.
 - When anything is detected, `applySlopRemoval(...)` asks the slop-remover prompt to rewrite the prose while preserving meaning, paragraph breaks, and hidden-note blocks.
-- Detection ignores `<hidden>...</hidden>` text when deciding whether visible prose needs cleanup. The rewrite prompt asks the model to preserve hidden blocks exactly.
+- Detection ignores `<hidden>...</hidden>` text in both the current response and historical analysis when deciding whether visible prose needs cleanup. The rewrite prompt asks the model to preserve hidden blocks in the current response exactly.
 - Call sites that request and record diagnostics store them as `type: "slop-remover"` chat entries and render them in the chat UI with the broom insight.
 
 ### Slop History
 
-- Slop word, configured n-gram, and positive-ppm regex analysis checks combined slop history plus the current visible prose, then filters results to matches present in the current prose.
+- Slop word, configured n-gram, and positive-ppm regex analysis checks sanitized slop history plus the current visible prose, then filters results to matches present in the current prose. Historical XML markup and complete `<hidden>...</hidden>` contents are removed with the same XML-aware sanitation used by live deslop before any frequency count.
 - Slop history entry types are:
   - `player-action`
   - `npc-action`
@@ -90,7 +90,7 @@ Reference for the systems that reduce repeated phrasing, configured slop words, 
   - `random-event`
   - `while-you-were-away-player`
 - Assistant prose-like history for supplemental repeated n-gram detection includes assistant entries with a null type plus the slop history entry types.
-- The slop-remover context prompt uses the last 5 assistant prose-like entries and last 5 player entries, merged back into chronological order.
+- The slop-remover context prompt uses the last 5 assistant prose-like entries and last 5 player entries, merged back into chronological order. Those supporting entries are XML-sanitized and exclude `<hidden>` contents; only a hidden block in the current text being edited is retained for exact preservation.
 
 ### Slop Words
 
@@ -121,8 +121,8 @@ Reference for the systems that reduce repeated phrasing, configured slop words, 
 ### Repeated N-Grams
 
 - Entry point: `api.js` -> `collectSlopNgrams(...)`.
-- Base scan: `collectRepeatedNgrams(prose, { minK: 3, maxEntries: 20 })` over recent slop history.
-- Supplemental scan: `collectRepeatedNgrams(prose, { minK: 6, segments: getRecentAssistantProseHistorySegments(80) })`.
+- Base scan: `collectRepeatedNgrams(prose, { minK: 3, maxEntries: 20 })` over sanitized recent slop history.
+- Supplemental scan: `collectRepeatedNgrams(prose, { minK: 6, segments: getRecentAssistantProseHistorySegments(80) })` over sanitized assistant prose history.
 - Configured n-grams from `getFilteredConfiguredNgrams(...)` are merged with repetition-based n-grams.
 - `Utils.pruneContainedKgrams(...)` removes shorter n-grams contained inside longer matches.
 
@@ -157,7 +157,7 @@ Reference for the systems that reduce repeated phrasing, configured slop words, 
 - The server snapshots merged definitions, active setting custom entries, and compiled regexes once per generation. Each boundary reuses that snapshot; ordinary completed-response checks continue loading current definitions normally.
 - llama.cpp/OpenAI-compatible token probability records map a detected prose span back to the sampled token at its first word. The controller tries untried alternatives by descending probability. If that token has no viable branch, it rewinds to the first token of the previous word and repeats, stopping at the opening prose tag.
 - Corrected branches and full batches resume through assistant prefill. No token ban or logit bias is sent. The exact tool schema and selection policy remain present on every streaming or non-stream continuation so the tool-bearing prompt prefix stays cacheable. Streamed content without logprobs remains in the response but is excluded from live-token inspection; structured tool calls are retained independently through `delta.tool_calls`.
-- Live checks cover normal player/creative `<prose>` and travel fields plus family-profiled TinyBrain finals for quest rewards, intros, random/creative/NPC actions, crafting/location narration, checked containers, while-away prose, scheduled events, and interruption rewrites. TinyBrain first- and second-draft checkpoints are checked as plain prose; planning, state, summary, timing, tool, analysis, question, and generic-prompt content is excluded.
+- Live checks cover normal player/creative `<prose>` and travel fields plus family-profiled TinyBrain finals for quest rewards, intros, random/creative/NPC actions, crafting/location narration, checked containers, while-away prose, scheduled events, and interruption rewrites. TinyBrain first/second drafts and the non-XML player-action final-prose checkpoints are checked as plain prose. The locally assembled player-action result makes no LLM request and needs no live pass; planning, destination, hidden-note, state, summary, timing, tool, analysis, question, and generic-prompt content is excluded.
 - XML tag names and attributes are excluded from live word/regex checks. `<hidden>` contents are excluded as in the completed-response pass, incomplete streamed tags are ignored, and every tag is a hard boundary for configured and repeated n-grams. The same segmentation is applied while indexing XML-bearing history.
 - Word-by-word rewind search stops at the preceding XML boundary (or the start of a plain draft) so correction cannot overwrite structural markup or earlier checkpoint messages.
 - The final parsed prose still passes through `applySlopRemoval(...)`, both as verification and to cover prose introduced by later scheduled-event rewrites.

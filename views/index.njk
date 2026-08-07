@@ -8915,7 +8915,7 @@
             return result;
         }
 
-        async function teleportNpcToLocation(npc, destinationLocationId, { card = null, originLocationId = null, accountTravelTime = false, storyToolTeleport = false } = {}) {
+        async function teleportNpcToLocation(npc, destinationLocationId, { card = null, originLocationId = null, accountTravelTime = false, storyToolTeleport = false, accompanyingCharacters = [] } = {}) {
             if (!npc || !npc.id) {
                 throw new Error('Missing character information.');
             }
@@ -8932,6 +8932,7 @@
                     locationId: destinationLocationId,
                     accountTravelTime: accountTravelTime === true,
                     storyToolTeleport: storyToolTeleport === true,
+                    accompanyingCharacters,
                     clientId
                 })
             });
@@ -37519,6 +37520,7 @@
             return;
         } 
 
+        let accompanyingCharacters = [];
         if (window.AIRPG_CHAT && typeof window.AIRPG_CHAT.dispatchAutomatedMessage === 'function') {
             const promptBypassMove = shouldPromptBypassMove(exit);
             const travelMetadata = promptBypassMove
@@ -37542,11 +37544,14 @@
                 : null;
             try {
                 showMoveOverlay();
-                await window.AIRPG_CHAT.dispatchAutomatedMessage(promptBypassMove ? message : `# ${message}`, {
+                const travelNarrationResult = await window.AIRPG_CHAT.dispatchAutomatedMessage(promptBypassMove ? message : `# ${message}`, {
                     travel: true,
                     travelMetadata,
                     suppressTravelCompletionSound: true
                 });
+                accompanyingCharacters = Array.isArray(travelNarrationResult?.accompanyingCharacters)
+                    ? travelNarrationResult.accompanyingCharacters.slice()
+                    : [];
             } catch (error) {
                 console.error('Failed to dispatch move via chat:', error);
                 hideLocationOverlay();
@@ -37555,7 +37560,7 @@
             }
         }
 
-        const moveSucceeded = await performDirectMove(exit.destination, destinationName);
+        const moveSucceeded = await performDirectMove(exit.destination, destinationName, { accompanyingCharacters });
         if (moveSucceeded) {
             try {
                 window.AIRPG_CHAT?.playDeferredTravelCompletionSound?.({ waitForNext: true });
@@ -37565,7 +37570,7 @@
         }
     }
 
-            async function performDirectMove(destinationId, destinationName) {
+            async function performDirectMove(destinationId, destinationName, { accompanyingCharacters = [] } = {}) {
                 if (!destinationId) {
                     return false;
                 }
@@ -37594,6 +37599,7 @@
                         body: JSON.stringify({
                             destinationId,
                             expectedOriginLocationId,
+                            accompanyingCharacters,
                             clientId: window.AIRPG_CLIENT_ID || null
                         })
                     });
@@ -37648,7 +37654,7 @@
                             hideLocationOverlay();
                             const repaired = await requestLocationRegionFix(result.conflict);
                             if (repaired) {
-                                return performDirectMove(destinationId, destinationName);
+                                return performDirectMove(destinationId, destinationName, { accompanyingCharacters });
                             }
                             return false;
                         }
@@ -37983,6 +37989,7 @@
 
                     const actionText = (confirmation.actionText || '').trim();
                     const hasPromptText = actionText.length > 0;
+                    let accompanyingCharacters = [];
                     if (hasPromptText) {
                         const travelMetadata = buildMapFastTravelMetadata({
                             originLocationId: travelPreview?.origin?.id || lastRenderedLocation?.id || null,
@@ -37994,11 +38001,14 @@
                         if (!window.AIRPG_CHAT || typeof window.AIRPG_CHAT.dispatchAutomatedMessage !== 'function') {
                             throw new Error('AIRPG chat client not available; cannot dispatch fast travel action.');
                         }
-                        await window.AIRPG_CHAT.dispatchAutomatedMessage(actionText, {
+                        const travelNarrationResult = await window.AIRPG_CHAT.dispatchAutomatedMessage(actionText, {
                             travel: true,
                             travelMetadata,
                             suppressTravelCompletionSound: true
                         });
+                        accompanyingCharacters = Array.isArray(travelNarrationResult?.accompanyingCharacters)
+                            ? travelNarrationResult.accompanyingCharacters.slice()
+                            : [];
                     } else if (window.AIRPG_CHAT && typeof window.AIRPG_CHAT.dispatchAutomatedMessage === 'function') {
                         await window.AIRPG_CHAT.dispatchAutomatedMessage(`# ${playerName} moved to ${destinationName}.`, {
                             travel: true,
@@ -38010,7 +38020,8 @@
                     showMoveOverlay();
                     await teleportNpcToLocation(playerRecord, destinationId, {
                         originLocationId: lastRenderedLocation?.id || null,
-                        accountTravelTime: true
+                        accountTravelTime: true,
+                        accompanyingCharacters
                     });
 
                     const mapTab = document.querySelector('[data-tab="map"]');

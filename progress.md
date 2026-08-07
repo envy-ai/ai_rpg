@@ -1221,3 +1221,154 @@ Original prompt: Make it so that the game automatically starts the script at loc
 - Both game and router health endpoints respond normally. The required browser smoke client completed without a console/page-error artifact; `tmp/local-startup-script-smoke/shot-0.png` was visually inspected and the Play UI renders correctly.
 - Left the qwen-combo game and its game-owned llama.cpp router running.
 - TODO: none.
+Original prompt: At the end of player-action.tinybrain.njk, the llm has to produce XML for either travel or a normal turn. Rather than asking it to produce XML for those things, write control flow and parsing to ask it for the necessary information, and parse it out. In the case of the vehicle section, be sure to respect the existing control flow that asks about vehicle-related things if the player is on a vehicle. Write a plan document for this change now.
+
+- Wrote `docs/superpowers/plans/2026-08-06-player-action-tinybrain-non-xml-finalization.md`.
+- The plan replaces the scoped final LLM-authored result XML with strict non-XML checkpoints, vehicle-aware Nunjucks branches, and a no-LLM server-side result composer while preserving the canonical XML expected by downstream player-action processing.
+- Documented the normal/travel/vehicle decision matrix, parser formats, result-builder invariants, live-deslop/logging changes, tests, documentation work, and acceptance criteria.
+- No runtime code was changed or executed; the game and model server were not stopped or restarted.
+
+Implementation follow-up:
+
+- Added strict non-XML player-action parsers for movement, vehicle decisions, prose scope, destinations, durations, prose, hidden notes, and time reasoning.
+- Added the pure `PlayerActionTinyBrainResult.js` canonical result builder with CDATA-safe prose serialization, authoritative destination support, and the documented vehicle decision matrix.
+- Added focused parser and result-builder coverage. Syntax checks and `tests/tiny_brain_prompt_parsers.test.js` plus `tests/player_action_tinybrain_result.test.js` pass.
+- TODO: add the TinyBrain no-LLM terminal result hook, replace the template's final XML branch, wire the route/live-deslop integration, update docs, and run the broader regression/smoke checks.
+
+- Added `{% llmresult(...) %}` terminal composition to `TinyBrainPromptRunner`; it validates a sole terminal marker, builds named checkpoint assignments, performs no extra completion, preserves tool/progress state, and logs the locally assembled response.
+- Replaced the scoped player-action final XML instructions with parsed normal/travel control flow. Committed exit-button travel is authoritative; otherwise movement is classified explicitly. Vehicle questions are conditional on `currentVehicle` and distinguish unchanged onboard travel, inside movement, disembarkation, departure, stop, and redirect.
+- Wired `player_action_result` into `/api/chat`, added canonical destination/time context, direct move-result hidden-note parsing, and plain live-deslop selection for final prose checkpoints.
+- Added runner tests for ordinary travel, underway unchanged vehicle turns, vehicle redirect, and committed destinations. Focused TinyBrain family, parser, runner, live-deslop, target-location, result-builder, and player-action XML parser tests pass.
+- Documented the terminal result-builder contract, parser formats, prompt-family behavior, API integration, and live-deslop behavior in the class/API/server/slop docs and documentation index.
+- JavaScript syntax checks passed for the builder, runner, parsers, live-deslop integration, API route, and changed tests. Eleven focused TinyBrain, player-action, travel, vehicle, live-deslop, and scheduled-event test files pass together; the broader ten-file TinyBrain/API regression set also passes.
+- The required browser client completed outside the restricted Chromium sandbox without a console/page-error artifact. Visually inspected `tmp/player-action-tinybrain-smoke/shot-0.png`; the game shell renders normally.
+- The temporary smoke-test server on port 4178 was stopped after verification. No game or llama server was restarted.
+- TODO: none.
+
+Original prompt: If the player is moving, ask the LLM for the exact names of any accompanying characters. Have them move with the player.
+
+- Tracing the TinyBrain movement checkpoint/result builder, canonical move-result parser, player relocation paths, and existing party/location invariants.
+- Compatibility boundary: the exact-name selection will control physical location movement only. Existing event checks remain authoritative for party membership, so omission will not silently add or remove party members.
+- Candidate names will be restricted to living current party members and living NPCs physically present at the movement origin; unknown, ambiguous, and duplicate names will fail explicitly.
+- Added an alias-aware movement checkpoint that accepts one exact canonical name or alias per line (or `NONE`) and canonicalizes aliases before result assembly. Identifier collisions and duplicate selections fail explicitly.
+- The canonical move result now carries `<accompanyingCharacters>`, and `/api/chat` extracts it without mixing the names into prose/event text.
+- Added shared candidate collection and relocation logic. Selected party members retain membership and remain absent from destination NPC lists; selected non-party companions are removed from prior location lists and registered at the player's destination.
+- Wired relocation into prompt-driven movement and committed event-driven exit travel. Focused parser, builder, XML, real-template, target-location, and relocation tests pass; altered JavaScript syntax checks pass.
+- Forwarded prompt-selected canonical companion names through the client-deferred adjacent-move and map/Favorites fast-travel paths into `/api/player/move` and gameplay `/api/npcs/:id/teleport`. Story-tool player teleports remain outside this gameplay selection flow.
+- Tightened move-result XML parsing so `<accompanyingCharacters>` accepts only direct `<name>` children and rejects duplicates, empty names, and unexpected child fields.
+- Added and updated class, API, server-LLM, Player, Location, and chat-interface documentation, including `docs/classes/PlayerActionCompanions.md` and the documentation index.
+- Final JavaScript syntax checks passed for every altered JavaScript file and focused test file.
+- Sixteen focused TinyBrain, alias/parser/builder/XML, travel, vehicle, event-sequencing, direct-move, map-fast-travel, and repair-regression test files pass together.
+- The reusable browser client rendered the Adventure shell twice with no console/page-error artifact. Visually inspected `tmp/player-action-companion-smoke-adventure/shot-1.png`; layout and controls render normally. The separately inspected empty-world Map shell rendered its expected `Current location not found` state and emitted the corresponding expected 404 artifact.
+- Stopped the temporary smoke server on port 4178. Ports 4178 and 7777 are both closed; no persistent game server was left running and the llama server was not started.
+- TODO: none.
+
+Original prompt: Nothing happened after the player prose; shouldn't the game queue the prompt and let llama.cpp wait?
+
+- Diagnosed the reported live turn from the game/router logs. It did reach event checks, need-bar checks, NPC turn handling, random-event handling, and final turn processing, but only after a long 27B-to-35B switch, location generation, NPC-memory work, and queued image rendering made the interface appear idle.
+- Changed same-game-owned-router prompt-model swaps so they no longer issue `POST /models/load` and poll before continuing. After saving/unloading the old model, an existing replacement cache is restored immediately and the llama.cpp router autoloads/waits before restoring; without a cache, the replacement prompt is dispatched immediately and the router autoloads/waits for it.
+- Kept cache save/restore failures warning-only. Old-model unload failures, consumed-cache deletion failures, and eventual prompt failures still surface explicitly.
+- Prompt progress is now registered and broadcast before model-lifecycle waiting, so the client shows the queued prompt throughout a router load/restore delay. Early lifecycle failures clean up that progress entry instead of leaving it stranded.
+- Added model-switch regression coverage for exact save/unload/restore/prompt ordering, the absence of explicit load requests, warning-only cache failures, and visible progress during a deferred router restore.
+- JavaScript syntax checks pass. Seven combined router, model-switch, prompt-progress, local-process, lifecycle-gate, image-lifecycle, and image-handoff configuration suites pass.
+- Updated the LLM client, router client, configuration, server-flow, and documentation-index notes.
+- Allowed the previously delayed live turn to reach finalization, stopped the old game, removed its exact stale router PID, and restarted port 7777 from the same Shop Floor save with `config.yaml.qwen-combo-router`. Game and router health checks pass; the configured 27B preload is loaded and the 35B prompt model is initially unloaded as intended.
+- The required reusable browser client completed without a console/page-error artifact. Visually inspected `tmp/router-queued-model-switch-smoke/shot-1.png`; the restored Adventure UI renders normally and reports no prompts running.
+- TODO: none.
+
+Original prompt: In player-action, there's a bunch of numbered questions in the tinybrain prompt. Update it so that it asks them one at a time and uses the dummy parser.
+
+- Split the nine built-in editing/pruning audit questions in `player-action.tinybrain.njk` into nine sequential `llm_dummy_action` checkpoints.
+- Each prompt segment now asks exactly one question and repeats the succinct/N/A response contract. The awareness-validity question follows the awareness-inventory answer in the retained TinyBrain conversation.
+- Added a real-template regression that proves all nine questions occur exactly once, occupy distinct completion segments, and use dummy checkpoints.
+- The focused runner test and the seven-suite TinyBrain/player-action/live-deslop regression set pass.
+- Updated the TinyBrain runner, server LLM flow, and documentation-index notes.
+- The required reusable browser client completed without a console/page-error artifact. Visually inspected `tmp/player-action-single-audit-smoke/shot-1.png`; the Adventure UI renders normally. An unrelated live player-action was already running and was left untouched.
+- TODO: none.
+
+Original prompt: Pass the committed player-action movement type to the result builder.
+
+- Diagnosed the live `Unknown player-action movement value "undefined"` failure: committed Stairwell travel skipped the LLM movement checkpoint and set only a render-local Nunjucks variable, while terminal assembly receives only parser assignments plus the immutable template context.
+- `/api/chat` now computes `playerActionTravelMovementKind` alongside `playerActionTravelDestination`: `destination` off-vehicle and `disembark` on-vehicle. It passes both values into the TinyBrain template/result context.
+- The template uses the passed movement type for its downstream branch selection. `PlayerActionTinyBrainResult` consumes it for authoritative travel and fails explicitly when it is missing, conflicts with a parser assignment, lacks a destination, or disagrees with current vehicle state.
+- Added the missing full-run committed-travel regression: it skips `player_action_movement`, reaches local terminal assembly, and emits the authoritative Stairwell move XML. Added builder contract and API wiring coverage.
+- JavaScript syntax checks pass. Twelve combined TinyBrain, live-deslop, XML repetition, travel time/prose, vehicle, and move-event suites pass.
+- Updated player-action result, TinyBrain runner, chat API, server LLM, and documentation-index notes.
+- The required reusable browser client completed without a console/page-error artifact. Visually inspected `tmp/player-action-authoritative-movement-smoke/shot-1.png`; the post-error Adventure UI remains intact and reports no prompts running.
+- Created a fresh Loft safety save after the completed live turn, stopped the previous game/router processes, and restarted port 7777 with `config.yaml.qwen-combo-router` from that save so the changed `api.js` and result-builder module are active.
+- Final health checks pass: the game answers on port 7777 (PID 3854533) and the managed llama.cpp router reports healthy on port 5005 (PID 3854545).
+- TODO: none.
+
+Original prompt: Make a tinybrain prompt for need-bars that asks for the same stuff except separates the planning phase from the characters phase.
+
+- Added the allowlisted/configurable `need_bar_event_checks` TinyBrain family. It sends the shared need-bar context once, asks for plain-text planning without XML, retains that answer, then asks for only the `<characters>` block.
+- Refactored the one-shot and TinyBrain prompts to share need-bar context, planning guidance, and XML schema includes, keeping their requested facts aligned.
+- Added `parseNeedBarCharactersResult()` and registered it with the shared runner. It validates XML-only output, configured need-bar ids, unique characters/bars, required fields, direction/magnitude keywords, and the ten-word reason limit; an invalid final retries only the characters phase.
+- Routed both XML and legacy grouped event-check paths through TinyBrain when the family is enabled, retaining the original one-shot call and log behavior when disabled. TinyBrain uses one cumulative prompt log and progress group under `need_bar_event_checks`.
+- Updated default/local config and TinyBrain, Events, server-flow, and documentation-index notes.
+- JavaScript syntax and YAML parsing checks pass. Thirteen focused TinyBrain runner/parser/family/XML-repetition, need-bar/event, prompt-progress, transport, housekeeping, and reasoning suites pass.
+- The required reusable browser client completed without a console/page-error artifact. Visually inspected `tmp/need-bar-tinybrain-smoke/shot-0.png`; the Adventure UI renders normally and reports no prompts running.
+- Restarted the game with `config.yaml.qwen-combo-router` and no load-game argument, as requested. The replacement game (PID 3885208) and managed llama.cpp router (PID 3885220) pass health checks on ports 7777 and 5005; the new `need_bar_event_checks` TinyBrain family is active.
+- TODO: none.
+
+Original prompt: When the program terminates, delete any context cache files. Don't restart the server after this change.
+
+- Added exact local-router slot-cache ownership tracking for root, preload, prompt-override, and runtime-observed models. Async and synchronous cleanup remove only those model-derived paths, ignore absent files, attempt every deletion, and report all real failures together.
+- Wired cleanup into graceful `SIGINT`/`SIGTERM` shutdown, startup failure, self-restart before replacement spawn, and the synchronous process-exit fallback. Graceful paths stop the managed router before deleting its cache files.
+- Added focused cleanup and server-shutdown contract coverage, including unrelated-file preservation and aggregated failure behavior. Eight cleanup, router, preload, local-process, lifecycle-gate, and model-switch suites pass; both modified JavaScript files pass syntax checks.
+- Updated LLM client, llama.cpp router, configuration, server-flow, and documentation-index notes. Documented that uncatchable `SIGKILL` cannot run in-process cleanup.
+- The reusable browser smoke check completed and `tmp/router-cache-shutdown-smoke/shot-0.png` was visually inspected; the Adventure UI renders normally. Final host-side health checks still report HTTP 200 with the original game PID 3885208 and router PID 3885220.
+- As requested, the running game/router processes were not restarted, so the currently loaded server process will pick up this implementation only on its next ordinary launch.
+- TODO: none.
+
+Original prompt: Fix the need-bar errors and failed generation tool-call error, then restart without loading a save.
+
+- In progress: fix the missing TinyBrain need-bar progress target and its nested retry amplification, preserve generation prompts' restricted tool schemas, reject semantically wrong container contents before mutation, and coalesce concurrent generation for the same container.
+- Restart constraint: replace the current qwen-combo-router game/router only after verification and start the game without a save argument.
+- Implemented: `need_bar_event_checks*` now covers both direct and TinyBrain progress labels, and missing progress targets are classified as non-retryable configuration failures so they propagate before staged parse retries.
+- Implemented: generation prompts preserve their caller-provided random-integer-only schema through base-context boundary processing, so container generation no longer receives `createThing` or other world-mutation definitions.
+- Implemented: pending container generation requires a complete strict `<items>` response whose exact name/count multiset matches the pending seeds before object creation. Simultaneous API requests for one container now join a single in-flight promise.
+- Verification so far: YAML parsing and JavaScript syntax checks pass; eleven focused/adjacent need-bar, TinyBrain, progress, tool-loop, container, Thing, and streaming suites pass.
+- Documentation updated: LLM client, Thing/container behavior, server generation flow, configuration, and the documentation index.
+- Restarted with `node server.js --config-override ./config.yaml.qwen-combo-router --port 7777` and no save argument. Startup created the fresh default `Adventurer` (`locationId: null`) instead of hydrating saved state.
+- Final health: game HTTP 200 on port 7777 (PID 3923525); managed llama.cpp router HTTP 200 on port 5005 (PID 3923746). The preloaded text-only Qwen 27B preset uses `--no-mmproj-auto` plus an empty `--mmproj` and is currently sleeping after its idle timeout.
+- Browser smoke completed without a console/page-error artifact. Visually inspected `tmp/need-bar-generation-fix-smoke/shot-2.png`; the fresh Adventure shell renders normally and reports no prompts running.
+- TODO: none.
+
+Original prompt: Make it so the non-realtiume deslopper also removes <hidden>. No reason for that to be in there.
+
+- Added shared XML-aware sanitation to the completed-response deslop history path. Slop-word, positive-ppm regex, configured-ngram, and repeated-ngram analysis no longer count stored `<hidden>` contents.
+- Sanitized the slop-remover prompt's supporting player/assistant history while preserving `<hidden>` blocks in the current response being edited.
+- Added `tests/api.slop_hidden_history.test.js`; focused hidden-history, regex-filter, and live-deslop tests pass.
+- Per user instruction, do not restart the running game or llama server for this change.
+- Final validation: five focused slop/live/context test files pass. The read-only browser smoke rendered the current game normally at `tmp/nonrealtime-hidden-deslop-smoke/shot-2.png` with no console/page-error artifact, and the untouched game server still returns HTTP 200.
+- TODO: none; the running process has not loaded this code and will pick it up on the user's next restart.
+
+Original prompt: Save the TinyBrain section-aware event-check overhaul plan to docs and implement it.
+
+- Saved the approved design as `docs/tinybrain_event_checks_overhaul_plan.md`.
+- Implemented category-specific TinyBrain XML checkpoints for scene/location, items/inventory, characters/presence, combat/recovery, quests/progression, a final sweep, and tracker updates.
+- Implemented strict stage parsing for tag allowlists, required fields, downstream semantic parsing, singleton constraints, canonical tracker nesting, and exact duplicate XML; malformed responses retry only their current checkpoint and retry exhaustion fails explicitly.
+- Replaced the raw final model completion with `llmresult('event_xml_result')`, which locally assembles only accepted XML fragments.
+- Movement event processing now runs nonempty origin, between, and destination prose separately when TinyBrain event checks are enabled. Transit permits only `thingMoveWithCharacter`; authoritative player/vehicle movement and time remain outside event inference. A tracker-only pass runs last over combined prose with accepted section XML supplied as context.
+- Non-movement TinyBrain event checks use the same category pipeline once for the CURRENT section, with tracker updates last. Need bars remain a separate prompt.
+- Uncommented the LLM-facing `<trackerUpdates><trackerUpdate>...</trackerUpdate></trackerUpdates>` schema documentation.
+- Updated Events/XML schema/chat/server/slop documentation and the docs index.
+- Verification: `node --check Events.js` and `node --check api.js` pass. A 36-file focused regression run covering Events, XML parsing, tracker/need-bar checks, travel orchestration, player-action TinyBrain behavior, and the shared runner passes with no failures.
+- Runtime constraint: do not restart the currently running game/router during this implementation pass.
+- Browser smoke was not run because no game server was listening on port 7777 at verification time; the server was not started or restarted.
+- TODO: none. The new backend behavior will load on the next user-controlled server start.
+
+Original prompt: Make TinyBrain event checking ignore movement XML, or remove it from TinyBrain documentation, because player-action already detects movement. Leave non-TinyBrain event checking unchanged.
+
+- TinyBrain event extraction no longer renders the one-shot movement-boundary XML documentation. Its stage parser defensively discards stray `moveLocation`, `moveNewLocation`, and `arriveAtLocation` elements while preserving required-tag validation; the non-TinyBrain event path remains unchanged.
+- Validation passed: `node --check Events.js` plus the TinyBrain event, monolithic XML parser, event-check sequencing, and travel-prose destination test files (4/4).
+- The required read-only browser smoke rendered normally with no error artifact; visually inspected `tmp/tinybrain-event-movement-ignore-smoke/shot-0.png`.
+- The running server was not restarted and has not loaded this change yet.
+
+Original prompt: Keep the ten-word need-bar reason limit in the prompt, but do not enforce it in parsing.
+
+- Removed the TinyBrain need-bar parser's hard reason word-count rejection while retaining the prompt's `10 words or less` guidance.
+- Validation passed: parser syntax plus the focused TinyBrain parser, TinyBrain need-bar, and ordinary need-bar prompt suites (3/3).
+- The required read-only browser smoke rendered normally with no error artifact; visually inspected `tmp/need-bar-reason-soft-limit-smoke/shot-0.png`.
+- The running server was not restarted and has not loaded this change yet.

@@ -1,37 +1,36 @@
+{%- set tinyBrainEventSchema = true -%}
 {%- include "_includes/events-xml-schema.njk" %}
 {%- include "_includes/events-xml-context.njk" %}
 <task>
-You will extract events from the text in stages. Do not write any XML in this first step.
+Extract events from the {{ tinyBrainEventSectionLabel }} prose section through the category checkpoints below. This prose is already assigned to its correct movement phase; do not invent player movement, character travel, arrival markers, or travel time outside the explicitly allowed tags for a checkpoint.
 
-1. Go through the list of tags above and, for each tag, make an informal non-xml list of any events in the text that would qualify. If unsure if something is an event, include it. In some cases, events must be *inferred* from the text rather than explicitly stated. In those cases, note your inference with a sentence or two explaining it and the text that supports it. The ultimate purpose of event extraction is to keep the game state up to date with the prose.
-
-2. For any events that you listed more than once, determine which is the best fit. Err on the side of keeping events rather than omitting them entirely; just remove duplicates.
-
-3. In text format, list each tracker by name along with its current value and no more than 10 words about whether it needs to be updated based on the text. Countdown trackers already display remaining time; do not update them just because time passed. Update them only if the deadline changes or the countdown target is reached/resolved.
-
-Write this informal analysis now, in plain text (no XML).
+At every checkpoint:
+- Use only facts from this prose section plus the supplied game context.
+- Return exactly one `<events>...</events>` XML block containing all qualifying events for that category. When there are none, return exactly `<events><done/></events>`.
+- Use only the explicitly allowed top-level tags. Follow their full schema above exactly.
+- A tag is required only when the current checkpoint explicitly lists it under "Required top-level tags." In particular, do not emit `<inCombat>` or `<anyQuestObjectivesCompleted>` before that checkpoint.
+- Do not repeat an event accepted at an earlier checkpoint.
+- Output no commentary and no markdown fences.
 </task>
 
-{% llm_dummy_action %}
+{% if tinyBrainAcceptedEventXml %}
+The following event XML was already accepted from earlier prose sections in this same turn. Use it as context for this section. Do not repeat ordinary action events from it. Still emit every checkpoint-required state tag for the current section, even when an earlier section emitted the same state tag:
+<acceptedSectionEvents>
+{{ tinyBrainAcceptedEventXml }}
+</acceptedSectionEvents>
+{% endif %}
 
-Based on your analysis, write the FIRST 1 or 2 events (at most 2) in chronological order as one `<events>...</events>` XML block, using only the tag schema documented above. Annotate inferred events with <!-- XML comment --> notes explaining the inference. Output only the XML block, with no commentary and no markdown fences. If there are no events at all, output exactly <done/> instead.
+{% for stage in tinyBrainEventStages %}
+Check the {{ tinyBrainEventSectionLabel }} prose for {{ stage.label }} events.
 
-{% llmparse('event_xml_chunk') %}
+{{ stage.instructions }}
 
-Write the NEXT 1 or 2 events (at most 2) in chronological order as one `<events>...</events>` XML block, continuing from where your previous block ended. Output only the XML block, with no commentary and no markdown fences. If no events remain, output exactly <done/> instead.
+Allowed top-level tags for this checkpoint: {{ stage.allowedTagList }}{% if stage.allowRegisteredXmlEvents %}, plus any registered mod-event tags documented in the schema above{% endif %}.
+{% if stage.requiredTags and stage.requiredTags | length %}Required top-level tags for this checkpoint (include them even when their value is false): {{ stage.requiredTags | join(', ') }}.
+{% endif %}
 
-{% llmparse('event_xml_chunk') %}
+Return one `<events>...</events>` block with every qualifying event for this checkpoint. If there are none, return exactly `<events><done/></events>`. Output XML only.
 
-Write the NEXT 1 or 2 events (at most 2) in chronological order as one `<events>...</events>` XML block, continuing from where your previous block ended. Output only the XML block, with no commentary and no markdown fences. If no events remain, output exactly <done/> instead.
-
-{% llmparse('event_xml_chunk') %}
-
-Write the NEXT 1 or 2 events (at most 2) in chronological order as one `<events>...</events>` XML block, continuing from where your previous block ended. Output only the XML block, with no commentary and no markdown fences. If no events remain, output exactly <done/> instead.
-
-{% llmparse('event_xml_chunk') %}
-
-Write the NEXT 1 or 2 events (at most 2) in chronological order as one `<events>...</events>` XML block, continuing from where your previous block ended. Output only the XML block, with no commentary and no markdown fences. If no events remain, output exactly <done/> instead.
-
-{% llmparse('event_xml_chunk') %}
-
-Write the LAST 1 or 2 events (at most 2) in chronological order as one `<events>...</events>` XML block, continuing from where your previous block ended. Output only the XML block, with no commentary and no markdown fences. If no events remain, output exactly <done/> instead.
+{% llmparse('event_xml_stage', tinyBrainEventSectionKind, stage.id, stage.allowedTags, stage.requiredTags, stage.allowRegisteredXmlEvents) %}
+{% endfor %}
+{% llmresult('event_xml_result') %}

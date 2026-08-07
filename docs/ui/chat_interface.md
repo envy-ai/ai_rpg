@@ -170,6 +170,7 @@ The main UI is rendered by `views/index.njk` and powered by `public/js/chat.js` 
 ## Core client controller (public/js/chat.js)
 
 - `AIRPGChat` owns chat history, input handling, and the websocket lifecycle.
+- `submitChatMessage(...)` and `dispatchAutomatedMessage(...)` return the completed `/api/chat` payload. Direct adjacent travel and nonblank map/Favorites fast-travel prompts use that payload's canonical `accompanyingCharacters` list when calling the authoritative move or teleport endpoint; aliases have already been canonicalized by the server.
 - Maintains:
   - `chatHistory` (system + local), `serverHistory` (from `/api/chat/history`).
   - `pendingRequests` for in-flight requests and status UI.
@@ -223,7 +224,7 @@ Not exhaustive, but the core UI calls include:
 - `/api/player` and `/api/player/skills/:name/increase` (sidebar + skill adjust).
 - `/api/player/thing-list-view-preferences` (persist shared location/inventory/crafting panel view selections on the current player).
 - `/api/player/ability-selection` + `/api/player/ability-selection/submit` (player level-up ability draft flow).
-- `/api/player/move` (direct travel fallback path; sends `destinationId` plus `expectedOriginLocationId` for server-side origin verification; unexplored bypass exits may first run travel prose with exit metadata, but this endpoint remains the authoritative move/time application).
+- `/api/player/move` (direct travel fallback path; sends `destinationId` plus `expectedOriginLocationId` for server-side origin verification and forwards any prompt-selected `accompanyingCharacters`; unexplored bypass exits may first run travel prose with exit metadata, but this endpoint remains the authoritative move/time application).
 - `/api/images/location-variant/request` (on-demand current-location weather/lighting image variant; server resolves conditions and returns a cached image id or realtime image job).
 - `/api/images/upload` (upload PNG/JPEG/WebP/GIF files through `#entityImageUploadModal` and replace the image for a location, thing, NPC, or player).
 - `/api/player/update-stats` (player-view modal point allocation submit; unspent pools are server-derived from submitted level/attributes/skills, and the in-modal skill pool preview tracks formula deltas from provisional stat changes such as Intelligence bonus adjustments).

@@ -8,7 +8,7 @@ The XML element names use camelCase. Section headings use snake_case labels for 
 
 ## Top-Level Shape
 
-The response is a flat chronological list of event elements. Travel is the only context boundary: a player/party travel event separates origin-context events from destination-context events.
+The response is a flat chronological list of event elements.{% if tinyBrainEventSchema %} Player movement is handled before event extraction and must not be emitted here.{% else %} Travel is the only context boundary: a player/party travel event separates origin-context events from destination-context events.{% endif %}
 
 ```xml
 <events>
@@ -20,10 +20,14 @@ Rules:
 
 - Omit event tags when that event did not occur.
 - Repeat event tags for multiple instances.
+{% if tinyBrainEventSchema %}
+- Do not emit player or party movement or arrival markers. The prose has already been assigned to its correct movement phase.
+{% else %}
 - If no player/party travel occurred, all event elements remain direct children of `<events>` and belong to the active location.
 - The first `<moveLocation>` or `<moveNewLocation>` element is the travel boundary. Events before it happened at the origin; events after `<arriveAtLocation/>` happened after arrival at the destination. As such, it is important that events be listed in chronological order.
 - Omit any events that occur chronologically between the beginning and end of travel.
 - Do not emit more than one player/party travel event in a single `<events>` block.
+{% endif %}
 - `newExitDiscovered` is a normal event and does not create a context boundary.
 - Emit one element for each observed event. Downstream processing may aggregate compatible entries later.
 {% if modEventPromptSchemas and modEventPromptSchemas.length %}
@@ -44,6 +48,7 @@ The active mods also accept these event tags. Use them only when the prose expli
 {% endfor %}
 {% endif %}
 
+{% if not tinyBrainEventSchema %}
 ## Travel Boundary
 
 Travel boundary elements are direct children of `<events>`. Include at most one travel boundary element.
@@ -80,6 +85,7 @@ Empty marker for the chronological point where arrival completes after a `moveLo
 ```xml
 <arriveAtLocation/>
 ```
+{% endif %}
 
 ## Normal Event Elements
 
@@ -619,7 +625,7 @@ Use this to report how much elapsed in-world wall-clock time the concrete non-tr
   <duration>Exact duration rounded to the nearest minute, 1 minute minimum (typical for conversation and quick scenes). No time ranges, unknowns, or other nonspecific answers. Format with one of: "HH:MM", "[INTEGER] [minutes/hours]", or "[INTEGER] hours, [INTEGER] minutes".</duration>
 </timePassed>
 #}
-### `in_combat` (REQUIRED FIELD, 1x ONLY)
+### `in_combat`{% if not tinyBrainEventSchema %} (REQUIRED FIELD, 1x ONLY){% endif %}
 
 Use this to indicate whether the player should currently be considered in physical combat, even if the player did not personally attack during the text.
 
@@ -629,7 +635,7 @@ Use this to indicate whether the player should currently be considered in physic
 </inCombat>
 ```
 
-### `anyQuestObjectivesCompleted` (REQUIRED FIELD, 1x ONLY)
+### `anyQuestObjectivesCompleted`{% if not tinyBrainEventSchema %} (REQUIRED FIELD, 1x ONLY){% endif %}
 
 Use this to indicate if it's likely that any quest objectives were completed. This will trigger a full quest objective check, so it doesn't require any additional comment.
 
@@ -639,7 +645,6 @@ Use this to indicate if it's likely that any quest objectives were completed. Th
 </anyQuestObjectivesCompleted>
 ```
 
-{#
 ### `tracker_updates` (OPTIONAL FIELD, 0-1x)
 
 Use this to report any changes to the values of existing trackers, or to add new trackers for things that should be tracked but don't have them yet. Include only trackers that changed or that should be added or removed; omit unchanged trackers.
@@ -653,7 +658,7 @@ Use this to report any changes to the values of existing trackers, or to add new
     <reason>One sentence reason for the update</reason>
   </trackerUpdate>
   <!-- Repeat trackerUpdate for each updated, added, or removed tracker. If no trackers are updated, omit the trackerUpdates block or leave it empty. -->
-</trackerUpdates>#}
+</trackerUpdates>
 
 ## End XML schema
 

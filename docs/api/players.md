@@ -183,10 +183,11 @@ Notes:
 Move the current player through an exit from the current location.
 
 Request:
-- Body: `{ destinationId?: string, direction?: string, expectedOriginLocationId: string, clientId?: string }`
+- Body: `{ destinationId?: string, direction?: string, expectedOriginLocationId: string, accompanyingCharacters?: string[], clientId?: string }`
   - At least one of `destinationId` or `direction` is required.
   - When `destinationId` is present, the route finds the exit whose destination matches that id.
   - `expectedOriginLocationId` is required and must match the current server-side player location.
+  - `accompanyingCharacters` contains complete canonical names or aliases selected by the preceding travel-prose prompt. It defaults to an empty array.
 
 Response:
 - 200: `{ success: true, location: LocationResponse, player: NpcProfile, worldTime, timeProgress, message, direction }`
@@ -204,6 +205,7 @@ Notes:
 - Positive exit travel time advances world time unless the source location context represents a vehicle. The response includes `worldTime` and `timeProgress`; `timeProgress` is `null` when no time is advanced.
 - Gameplay arrival runs the while-you-were-away prompt only when the destination had a recorded pre-arrival visited state and passes the configured revisit threshold. First visits, missing pre-arrival snapshots, and too-soon revisits skip that prompt.
 - Direct moves persist a travel event-summary row and parent it to visible arrival prose, prior travel prose, or the travel user/comment entry so the client can render it in the turn-state drawer.
+- Companion selections are validated against living party members and living NPCs at the verified origin before mutation. Aliases are canonicalized. Selected non-party NPCs move into the destination location; selected party members retain membership and the normal off-location party representation.
 - After movement, the server runs location/region/exit integrity checks, queues relevant assets, records NPC sightings, and returns a full `LocationResponse`.
 
 ## PUT /api/player/attributes

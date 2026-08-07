@@ -1,4 +1,12 @@
 const Utils = require('./Utils.js');
+const {
+    PLAYER_ACTION_MOVEMENT,
+    PLAYER_ACTION_PROSE_SCOPE,
+    PLAYER_ACTION_VEHICLE_DECISION
+} = require('./PlayerActionTinyBrainResult.js');
+const {
+    normalizePlayerActionAccompanyingCharacterSelection
+} = require('./PlayerActionCompanions.js');
 
 function requireResponseText(response, label) {
     if (typeof response !== 'string' || !response.trim()) {
@@ -8,10 +16,13 @@ function requireResponseText(response, label) {
 }
 
 function parseStrictXml(response, label) {
-    const xml = requireResponseText(response, label);
-    if (!xml.startsWith('<') || !xml.endsWith('>')) {
-        throw new Error(`${label} must contain XML only.`);
-    }
+    const raw = requireResponseText(response, label);
+    const unfenced = raw
+        .replace(/^```(?:xml)?\s*/i, '')
+        .replace(/\s*```$/i, '')
+        .trim();
+    const extracted = Utils.extractFinalXmlBlockFromResponse(unfenced);
+    const xml = extracted || unfenced;
     let doc;
     try {
         doc = Utils.parseXmlDocumentStrict(xml, 'text/xml');
@@ -67,6 +78,234 @@ function parseBooleanText(text, fieldLabel) {
     throw new Error(`${fieldLabel} must be true/false or yes/no.`);
 }
 
+function normalizePlainResponse(response, label) {
+    return requireResponseText(response, label)
+        .replace(/^```(?:text)?\s*/i, '')
+        .replace(/\s*```$/i, '')
+        .trim();
+}
+
+function normalizeCompactChoiceResponse(response, label) {
+    let normalized = normalizePlainResponse(response, label)
+        .replace(/^[*_`~]+|[*_`~]+$/g, '')
+        .trim()
+        .replace(/^answer\s*:\s*/i, '')
+        .trim();
+    normalized = normalized.replace(/[.!]+$/g, '').trim();
+    normalized = normalized
+        .replace(/^[*_`~]+|[*_`~]+$/g, '')
+        .trim();
+    return normalized;
+}
+
+function rejectPlayerActionResultMarkup(response, label, { rejectHidden = false } = {}) {
+    const forbidden = rejectHidden
+        ? /<\/?(?:turnResult|moveTurnResult|hidden)\b/i
+        : /<\/?(?:turnResult|moveTurnResult)\b/i;
+    if (forbidden.test(response)) {
+        throw new Error(`${label} must not contain player-action result XML.`);
+    }
+}
+
+function parsePlayerActionMovement(response, onVehicle = false) {
+    const normalized = normalizeCompactChoiceResponse(response, 'player-action movement').toUpperCase();
+    const values = {
+        NONE: PLAYER_ACTION_MOVEMENT.NONE,
+        DESTINATION: PLAYER_ACTION_MOVEMENT.DESTINATION,
+        INSIDE_VEHICLE: PLAYER_ACTION_MOVEMENT.INSIDE_VEHICLE,
+        DISEMBARK: PLAYER_ACTION_MOVEMENT.DISEMBARK
+    };
+    if (!Object.hasOwn(values, normalized)) {
+        throw new Error('Player-action movement must be exactly one allowed movement keyword.');
+    }
+    const value = values[normalized];
+    if (onVehicle === true) {
+        if (value === PLAYER_ACTION_MOVEMENT.DESTINATION) {
+            throw new Error('Player movement from a vehicle must use DISEMBARK instead of DESTINATION.');
+        }
+    } else if (![PLAYER_ACTION_MOVEMENT.NONE, PLAYER_ACTION_MOVEMENT.DESTINATION].includes(value)) {
+        throw new Error(`Player movement ${normalized} requires a current vehicle.`);
+    }
+    return { value };
+}
+
+function parsePlayerActionVehicleDecision(
+    response,
+    movement,
+    isUnderway = false
+) {
+    if (!Object.values(PLAYER_ACTION_MOVEMENT).includes(movement)) {
+        throw new Error('Player-action vehicle decision requires a valid movement value.');
+    }
+    const normalized = normalizeCompactChoiceResponse(response, 'player-action vehicle decision').toUpperCase();
+    const values = {
+        UNCHANGED: PLAYER_ACTION_VEHICLE_DECISION.UNCHANGED,
+        DEPART: PLAYER_ACTION_VEHICLE_DECISION.DEPART,
+        STOP: PLAYER_ACTION_VEHICLE_DECISION.STOP,
+        REDIRECT: PLAYER_ACTION_VEHICLE_DECISION.REDIRECT,
+        STOP_FOR_EXIT: PLAYER_ACTION_VEHICLE_DECISION.STOP_FOR_EXIT
+    };
+    if (!Object.hasOwn(values, normalized)) {
+        throw new Error('Player-action vehicle decision must be exactly one allowed vehicle keyword.');
+    }
+    const value = values[normalized];
+    let allowed = [];
+    if (movement === PLAYER_ACTION_MOVEMENT.INSIDE_VEHICLE) {
+        allowed = [PLAYER_ACTION_VEHICLE_DECISION.UNCHANGED];
+    } else if (movement === PLAYER_ACTION_MOVEMENT.DISEMBARK) {
+        allowed = isUnderway === true
+            ? [PLAYER_ACTION_VEHICLE_DECISION.UNCHANGED, PLAYER_ACTION_VEHICLE_DECISION.STOP_FOR_EXIT]
+            : [PLAYER_ACTION_VEHICLE_DECISION.UNCHANGED];
+    } else if (movement === PLAYER_ACTION_MOVEMENT.NONE) {
+        allowed = isUnderway === true
+            ? [
+                PLAYER_ACTION_VEHICLE_DECISION.UNCHANGED,
+                PLAYER_ACTION_VEHICLE_DECISION.STOP,
+                PLAYER_ACTION_VEHICLE_DECISION.REDIRECT
+            ]
+            : [PLAYER_ACTION_VEHICLE_DECISION.UNCHANGED, PLAYER_ACTION_VEHICLE_DECISION.DEPART];
+    }
+    if (!allowed.includes(value)) {
+        throw new Error(`Vehicle decision ${normalized} is not valid for the current movement and vehicle state.`);
+    }
+    return { value };
+}
+
+function parsePlayerActionProseScope(response) {
+    const normalized = normalizeCompactChoiceResponse(response, 'player-action prose scope').toUpperCase();
+    const rawValues = normalized
+        .split(/\s*(?:,|;|\r?\n|\band\b)\s*/i)
+        .map(value => value.replace(/^[-*]\s*/, '').trim())
+        .filter(Boolean);
+    if (!rawValues.length) {
+        throw new Error('Player-action prose scope requires at least one scope.');
+    }
+    const values = {
+        ORIGIN: PLAYER_ACTION_PROSE_SCOPE.ORIGIN,
+        BETWEEN: PLAYER_ACTION_PROSE_SCOPE.BETWEEN,
+        DESTINATION: PLAYER_ACTION_PROSE_SCOPE.DESTINATION
+    };
+    const seen = new Set();
+    for (const rawValue of rawValues) {
+        if (!Object.hasOwn(values, rawValue)) {
+            throw new Error(`Unknown player-action prose scope "${rawValue}".`);
+        }
+        const value = values[rawValue];
+        seen.add(value);
+    }
+    const canonicalOrder = Object.values(PLAYER_ACTION_PROSE_SCOPE).filter(value => seen.has(value));
+    return { value: canonicalOrder };
+}
+
+function parsePlayerActionDestination(response) {
+    const normalized = normalizePlainResponse(response, 'player-action destination');
+    rejectPlayerActionResultMarkup(normalized, 'Player-action destination');
+    const fields = new Map();
+    const lines = normalized
+        .replace(/^answer\s*:\s*/i, '')
+        .split(/\r?\n/)
+        .map(line => line.replace(/^\s*[-*]\s*/, '').trim())
+        .filter(Boolean);
+    for (const line of lines) {
+        const match = line.match(/^(Location|Region):\s*(.+)$/i);
+        if (!match) {
+            throw new Error('Player-action destination must contain only Location and Region lines.');
+        }
+        const key = match[1].toLowerCase();
+        if (fields.has(key)) {
+            throw new Error(`Player-action destination contains duplicate ${match[1]} lines.`);
+        }
+        fields.set(key, match[2]);
+    }
+    if (fields.size !== 2 || !fields.has('location') || !fields.has('region')) {
+        throw new Error('Player-action destination must contain exactly Location and Region lines.');
+    }
+    const normalizeValue = (value) => {
+        const trimmed = value.trim();
+        return /^n\s*\/\s*a\.?$/i.test(trimmed) ? null : trimmed;
+    };
+    const location = normalizeValue(fields.get('location'));
+    const region = normalizeValue(fields.get('region'));
+    if (!location && !region) {
+        throw new Error('Player-action destination requires a location or region.');
+    }
+    return { value: { location, region } };
+}
+
+function parsePlayerActionDuration(response, minimumMinutes = 1) {
+    const normalized = normalizePlainResponse(response, 'player-action duration');
+    if (!Number.isInteger(minimumMinutes) || minimumMinutes < 0) {
+        throw new RangeError('Player-action duration minimum must be a non-negative integer.');
+    }
+    rejectPlayerActionResultMarkup(normalized, 'Player-action duration');
+    let minutes;
+    try {
+        minutes = Utils.parseDurationToMinutes(normalized, {
+            fieldName: 'player-action duration'
+        });
+    } catch (error) {
+        throw new Error(`Player-action duration is invalid: ${error.message}`);
+    }
+    if (!Number.isInteger(minutes) || minutes < minimumMinutes) {
+        throw new Error(`Player-action duration must resolve to an integer of at least ${minimumMinutes} minutes.`);
+    }
+    return { value: { text: normalized, minutes } };
+}
+
+function parsePlayerActionAccompanyingCharacters(response, allowedCharacters = []) {
+    const normalized = normalizeCompactChoiceResponse(response, 'player-action accompanying characters');
+    rejectPlayerActionResultMarkup(normalized, 'Player-action accompanying characters');
+    if (/^none$/i.test(normalized)) {
+        return { value: [] };
+    }
+    let identifiers = normalized
+        .split(/\r?\n/)
+        .map(value => value.replace(/^\s*[-*]\s*/, '').trim())
+        .filter(Boolean);
+    if (identifiers.some(value => !value)) {
+        throw new Error('Player-action accompanying characters must use one exact character name or alias per non-empty line.');
+    }
+    if (identifiers.length === 1 && identifiers[0].includes(',')) {
+        try {
+            return {
+                value: normalizePlayerActionAccompanyingCharacterSelection(
+                    identifiers,
+                    allowedCharacters
+                )
+            };
+        } catch (wholeIdentifierError) {
+            identifiers = identifiers[0].split(',').map(value => value.trim()).filter(Boolean);
+        }
+    }
+    return {
+        value: normalizePlayerActionAccompanyingCharacterSelection(
+            identifiers,
+            allowedCharacters
+        )
+    };
+}
+
+function parsePlayerActionRequiredProse(response) {
+    const normalized = normalizePlainResponse(response, 'player-action prose');
+    rejectPlayerActionResultMarkup(normalized, 'Player-action prose', { rejectHidden: true });
+    return { value: normalized };
+}
+
+function parsePlayerActionHiddenNotes(response) {
+    const normalized = normalizePlainResponse(response, 'player-action hidden notes');
+    if (/^n\s*\/\s*a\.?$/i.test(normalized)) {
+        return { value: null };
+    }
+    rejectPlayerActionResultMarkup(normalized, 'Player-action hidden notes', { rejectHidden: true });
+    return { value: normalized };
+}
+
+function parsePlayerActionTimeReasoning(response) {
+    const normalized = normalizePlainResponse(response, 'player-action time reasoning');
+    rejectPlayerActionResultMarkup(normalized, 'Player-action time reasoning', { rejectHidden: true });
+    return { value: normalized };
+}
+
 function parseExactXmlRoot(response, expectedRoot, { allowEmptyRoot = false } = {}) {
     const rootLabel = `<${expectedRoot}> response`;
     const parsed = parseStrictXml(response, rootLabel);
@@ -76,7 +315,114 @@ function parseExactXmlRoot(response, expectedRoot, { allowEmptyRoot = false } = 
     if (!allowEmptyRoot && !String(parsed.root.textContent || '').trim() && !directChildElements(parsed.root).length) {
         throw new Error(`${rootLabel} cannot be empty.`);
     }
-    return { value: parsed.xml };
+    return { value: parsed.xml, normalizedResponse: parsed.xml };
+}
+
+function parseNeedBarCharactersResult(response, allowedNeedBarIds = []) {
+    if (
+        !Array.isArray(allowedNeedBarIds)
+        || allowedNeedBarIds.some(id => typeof id !== 'string' || !id.trim())
+    ) {
+        throw new TypeError('Need-bar characters parser requires an array of non-empty need-bar ids.');
+    }
+
+    const { xml, root } = parseStrictXml(response, 'need-bar characters result');
+    if (normalizedTagName(root) !== 'characters') {
+        throw new Error('Need-bar characters result must use <characters> as its document root.');
+    }
+    rejectUnexpectedDirectChildren(root, ['character'], 'Need-bar characters result');
+
+    const allowedIds = new Map(
+        allowedNeedBarIds.map(id => [id.trim().toLowerCase(), id.trim()])
+    );
+    const seenCharacters = new Set();
+    for (const characterNode of directChildrenByTagName(root, 'character')) {
+        rejectUnexpectedDirectChildren(
+            characterNode,
+            ['name', 'affectedNeedBars'],
+            'Need-bar character'
+        );
+        const characterName = requireSingleDirectChild(
+            characterNode,
+            'name',
+            'Need-bar character'
+        ).text;
+        const characterKey = characterName.toLowerCase();
+        if (seenCharacters.has(characterKey)) {
+            throw new Error(`Need-bar characters result contains duplicate character "${characterName}".`);
+        }
+        seenCharacters.add(characterKey);
+
+        const affectedNeedBars = requireSingleDirectChild(
+            characterNode,
+            'affectedNeedBars',
+            'Need-bar character',
+            { allowEmpty: true }
+        ).node;
+        rejectUnexpectedDirectChildren(
+            affectedNeedBars,
+            ['needBar'],
+            `Need-bar character "${characterName}"`
+        );
+        const needBarNodes = directChildrenByTagName(affectedNeedBars, 'needBar');
+        if (!needBarNodes.length) {
+            throw new Error(
+                `Need-bar character "${characterName}" must contain at least one affected <needBar>.`
+            );
+        }
+
+        const seenNeedBars = new Set();
+        for (const needBarNode of needBarNodes) {
+            rejectUnexpectedDirectChildren(
+                needBarNode,
+                ['id', 'changeDirection', 'change', 'reason'],
+                `Need-bar entry for "${characterName}"`
+            );
+            const id = requireSingleDirectChild(
+                needBarNode,
+                'id',
+                `Need-bar entry for "${characterName}"`
+            ).text;
+            const idKey = id.toLowerCase();
+            if (seenNeedBars.has(idKey)) {
+                throw new Error(
+                    `Need-bar character "${characterName}" contains duplicate need bar "${id}".`
+                );
+            }
+            seenNeedBars.add(idKey);
+            if (allowedIds.size && !allowedIds.has(idKey)) {
+                throw new Error(`Need-bar characters result contains unknown need-bar id "${id}".`);
+            }
+
+            const direction = requireSingleDirectChild(
+                needBarNode,
+                'changeDirection',
+                `Need-bar entry for "${characterName}"`
+            ).text.toLowerCase();
+            if (!['increase', 'decrease'].includes(direction)) {
+                throw new Error('Need-bar <changeDirection> must be exactly increase or decrease.');
+            }
+
+            const magnitude = requireSingleDirectChild(
+                needBarNode,
+                'change',
+                `Need-bar entry for "${characterName}"`
+            ).text.toLowerCase();
+            if (!['small', 'medium', 'large', 'all', 'full', 'empty'].includes(magnitude)) {
+                throw new Error(
+                    'Need-bar <change> must be exactly small, medium, large, all, full, or empty.'
+                );
+            }
+
+            requireSingleDirectChild(
+                needBarNode,
+                'reason',
+                `Need-bar entry for "${characterName}"`
+            );
+        }
+    }
+
+    return { value: xml, normalizedResponse: xml };
 }
 
 function parseRevisionDecision(response) {
@@ -97,7 +443,10 @@ function parseRevisionDecision(response) {
     if (revise && !issueText) {
         throw new Error('Revision decision requires non-empty <issues> when revision is requested.');
     }
-    return { value: { revise, issues: issueText, xml } };
+    return {
+        value: { revise, issues: issueText, xml },
+        normalizedResponse: xml
+    };
 }
 
 function parseAllowedCharacterSelection(response, allowedNames, minimum = 0, maximum = 3) {
@@ -107,7 +456,7 @@ function parseAllowedCharacterSelection(response, allowedNames, minimum = 0, max
     if (!Number.isInteger(minimum) || !Number.isInteger(maximum) || minimum < 0 || maximum < minimum) {
         throw new RangeError('Allowed character selection requires valid integer bounds.');
     }
-    const { root } = parseStrictXml(response, 'character selection');
+    const { xml, root } = parseStrictXml(response, 'character selection');
     if (normalizedTagName(root) !== 'selectedcharacters') {
         throw new Error('Character selection must use <selectedCharacters> as its document root.');
     }
@@ -130,11 +479,11 @@ function parseAllowedCharacterSelection(response, allowedNames, minimum = 0, max
         seen.add(key);
         return canonical;
     });
-    return { value: resolved };
+    return { value: resolved, normalizedResponse: xml };
 }
 
 function parseNarrativeScope(response) {
-    const { root } = parseStrictXml(response, 'narrative scope');
+    const { xml, root } = parseStrictXml(response, 'narrative scope');
     if (normalizedTagName(root) !== 'narrativescope') {
         throw new Error('Narrative scope must use <narrativeScope> as its document root.');
     }
@@ -156,7 +505,8 @@ function parseNarrativeScope(response) {
             before: readOptional('before'),
             during: readOptional('during'),
             after: readOptional('after')
-        }
+        },
+        normalizedResponse: xml
     };
 }
 
@@ -164,7 +514,7 @@ function parseOutcomeAcknowledgement(response, expectedFacts = []) {
     if (!Array.isArray(expectedFacts) || expectedFacts.some(fact => typeof fact !== 'string' || !fact.trim())) {
         throw new TypeError('Outcome acknowledgement requires an array of non-empty expected facts.');
     }
-    const { root } = parseStrictXml(response, 'outcome acknowledgement');
+    const { xml, root } = parseStrictXml(response, 'outcome acknowledgement');
     if (normalizedTagName(root) !== 'outcomeacknowledgement') {
         throw new Error('Outcome acknowledgement must use <outcomeAcknowledgement> as its document root.');
     }
@@ -173,12 +523,15 @@ function parseOutcomeAcknowledgement(response, expectedFacts = []) {
     if (facts.length !== expectedFacts.length) {
         throw new Error(`Outcome acknowledgement requires exactly ${expectedFacts.length} facts.`);
     }
-    expectedFacts.forEach((expected, index) => {
-        if (facts[index] !== expected) {
-            throw new Error(`Outcome acknowledgement fact ${index + 1} must exactly match "${expected}".`);
+    const unmatchedFacts = [...facts];
+    expectedFacts.forEach((expected) => {
+        const index = unmatchedFacts.indexOf(expected);
+        if (index < 0) {
+            throw new Error(`Outcome acknowledgement must include exact fact "${expected}".`);
         }
+        unmatchedFacts.splice(index, 1);
     });
-    return { value: facts };
+    return { value: facts, normalizedResponse: xml };
 }
 
 function parseQuestRewardResult(response, expectedRewards) {
@@ -225,7 +578,8 @@ function parseQuestRewardResult(response, expectedRewards) {
             xml,
             prose: requireSingleDirectChild(root, 'prose', 'Quest reward result').text,
             coveredRewardIndexes: Array.from(seenIndexes).sort((left, right) => left - right)
-        }
+        },
+        normalizedResponse: xml
     };
 }
 
@@ -236,7 +590,7 @@ function parseGameIntroResult(response) {
     }
     rejectUnexpectedDirectChildren(root, ['introprose'], 'Game intro result');
     requireSingleDirectChild(root, 'introProse', 'Game intro result');
-    return { value: xml };
+    return { value: xml, normalizedResponse: xml };
 }
 
 function parseTurnNarrativeResult(response, { allowTravel = true } = {}) {
@@ -254,7 +608,7 @@ function parseTurnNarrativeResult(response, { allowTravel = true } = {}) {
             throw new Error('Move turn narrative result requires player-facing travel prose.');
         }
     }
-    return { value: xml };
+    return { value: xml, normalizedResponse: xml };
 }
 
 function parseCraftNarrativeResult(response, {
@@ -284,12 +638,21 @@ function parseCraftNarrativeResult(response, {
             'duration',
             'Craft narrative <timePassed>'
         ).text;
-        const expectedText = `${expectedDurationMinutes} minutes`;
-        if (durationText !== expectedText) {
-            throw new Error(`Craft narrative duration must exactly match "${expectedText}".`);
+        let parsedDurationMinutes;
+        try {
+            parsedDurationMinutes = Utils.parseDurationToMinutes(durationText, {
+                fieldName: 'craft narrative duration'
+            });
+        } catch (error) {
+            throw new Error(`Craft narrative duration is invalid: ${error.message}`);
+        }
+        if (parsedDurationMinutes !== expectedDurationMinutes) {
+            throw new Error(
+                `Craft narrative duration must resolve to exactly ${expectedDurationMinutes} minutes.`
+            );
         }
     }
-    return { value: xml };
+    return { value: xml, normalizedResponse: xml };
 }
 
 function parseLocationModificationNarrativeResult(response, { expectedDurationMinutes = null } = {}) {
@@ -302,7 +665,10 @@ function parseLocationModificationNarrativeResult(response, { expectedDurationMi
     return parsed;
 }
 
-function parseContainerOpenNarrativeResult(response, { expectedToolName = null } = {}) {
+function parseContainerOpenNarrativeResult(response, {
+    expectedToolName = null,
+    expectedSuccess = null
+} = {}) {
     const { xml, root } = parseStrictXml(response, 'container open result');
     if (normalizedTagName(root) !== 'containeropenresult') {
         throw new Error('Container open result must use <containerOpenResult> as its document root.');
@@ -319,15 +685,53 @@ function parseContainerOpenNarrativeResult(response, { expectedToolName = null }
     if (expectedToolName !== null && toolUsed !== expectedToolName) {
         throw new Error(`Container open result <toolUsed> must exactly match "${expectedToolName}".`);
     }
-    requireSingleDirectChild(root, 'checkResult', 'Container open result');
-    parseBooleanText(requireSingleDirectChild(root, 'success', 'Container open result').text, 'Container open result <success>');
-    parseBooleanText(
+    const checkResult = requireSingleDirectChild(root, 'checkResult', 'Container open result').text;
+    const success = parseBooleanText(
+        requireSingleDirectChild(root, 'success', 'Container open result').text,
+        'Container open result <success>'
+    );
+    if (expectedSuccess !== null && typeof expectedSuccess !== 'boolean') {
+        throw new TypeError('Container open expected success must be a boolean when provided.');
+    }
+    if (expectedSuccess !== null && success !== expectedSuccess) {
+        throw new Error(
+            `Container open result <success> must match the authoritative check result (${expectedSuccess}).`
+        );
+    }
+    const permanentlyOpened = parseBooleanText(
         requireSingleDirectChild(root, 'permanentlyOpened', 'Container open result').text,
         'Container open result <permanentlyOpened>'
     );
-    requireSingleDirectChild(root, 'prose', 'Container open result');
-    requireSingleDirectChild(root, 'timePassed', 'Container open result');
-    return { value: xml };
+    if (!success && permanentlyOpened) {
+        throw new Error('A failed container-open check cannot permanently open the container.');
+    }
+    const prose = requireSingleDirectChild(root, 'prose', 'Container open result').text;
+    const timePassedNode = requireSingleDirectChild(root, 'timePassed', 'Container open result').node;
+    const durationText = requireSingleDirectChild(
+        timePassedNode,
+        'duration',
+        'Container open result <timePassed>'
+    ).text;
+    let timePassedMinutes;
+    try {
+        timePassedMinutes = Utils.parseDurationToMinutes(durationText, {
+            fieldName: 'container open result duration'
+        });
+    } catch (error) {
+        throw new Error(`Container open result duration is invalid: ${error.message}`);
+    }
+    return {
+        value: xml,
+        normalizedResponse: xml,
+        semantic: {
+            toolUsed,
+            checkResult,
+            success,
+            permanentlyOpened,
+            prose,
+            timePassedMinutes
+        }
+    };
 }
 
 function parseWhileYouWereAwayResult(response) {
@@ -337,9 +741,157 @@ function parseWhileYouWereAwayResult(response) {
     }
     rejectUnexpectedDirectChildren(root, ['proseforplayer', 'characterupdates', 'itemscenerymoves'], 'While-you-were-away result');
     requireSingleDirectChild(root, 'proseForPlayer', 'While-you-were-away result');
-    requireSingleDirectChild(root, 'characterUpdates', 'While-you-were-away result', { allowEmpty: true });
-    requireSingleDirectChild(root, 'itemSceneryMoves', 'While-you-were-away result', { allowEmpty: true });
-    return { value: xml };
+    const characterUpdatesRoot = requireSingleDirectChild(
+        root,
+        'characterUpdates',
+        'While-you-were-away result',
+        { allowEmpty: true }
+    ).node;
+    validateWhileAwayCharacterUpdatesRoot(characterUpdatesRoot, {
+        label: 'While-you-were-away result <characterUpdates>'
+    });
+    const itemSceneryMovesRoot = requireSingleDirectChild(
+        root,
+        'itemSceneryMoves',
+        'While-you-were-away result',
+        { allowEmpty: true }
+    ).node;
+    validateWhileAwayItemSceneryMovesRoot(itemSceneryMovesRoot, {
+        label: 'While-you-were-away result <itemSceneryMoves>'
+    });
+    return { value: xml, normalizedResponse: xml };
+}
+
+function validateWhileAwayTravelDestination(node, {
+    label,
+    requireHere = false
+} = {}) {
+    if (!node) {
+        if (requireHere) {
+            throw new Error(`${label} requires <travelDestination>HERE</travelDestination>.`);
+        }
+        return;
+    }
+    rejectUnexpectedDirectChildren(node, ['location', 'region'], `${label} <travelDestination>`);
+    const children = directChildElements(node);
+    if (requireHere) {
+        if (children.length || String(node.textContent || '').trim().toUpperCase() !== 'HERE') {
+            throw new Error(`${label} requires <travelDestination>HERE</travelDestination>.`);
+        }
+        return;
+    }
+    if (!children.length) {
+        throw new Error(
+            `${label} <travelDestination> must use <location> and/or <region> child tags.`
+        );
+    }
+    if (directChildrenByTagName(node, 'location').length > 1 || directChildrenByTagName(node, 'region').length > 1) {
+        throw new Error(`${label} <travelDestination> may contain at most one <location> and one <region>.`);
+    }
+    const destinationParts = children.map(child => String(child.textContent || '').trim()).filter(Boolean);
+    if (!destinationParts.length) {
+        throw new Error(`${label} requires a non-empty destination location or region.`);
+    }
+}
+
+function validateWhileAwayNeedBarValue(value, label) {
+    const normalized = String(value || '').trim();
+    if (/^n\s*\/\s*a\.?$/i.test(normalized)) {
+        return;
+    }
+    const match = normalized.match(/^(\d+(?:\.\d+)?)\s*%?$/);
+    if (!match) {
+        throw new Error(`${label} must be a percentage from 0 to 100 or N/A.`);
+    }
+    const numeric = Number(match[1]);
+    if (!Number.isFinite(numeric) || numeric < 0 || numeric > 100) {
+        throw new Error(`${label} must be between 0 and 100 percent.`);
+    }
+}
+
+function validateWhileAwayCharacterUpdateElement(root, {
+    expectedName = null,
+    label = 'While-you-were-away character update',
+    requireHere = false
+} = {}) {
+    if (normalizedTagName(root) !== 'characterupdate') {
+        throw new Error(`${label} must use <characterUpdate> as its document root.`);
+    }
+    rejectUnexpectedDirectChildren(
+        root,
+        ['name', 'needbarchanges', 'traveldestination', 'update'],
+        label
+    );
+    const name = requireSingleDirectChild(root, 'name', label).text;
+    if (expectedName !== null && name !== expectedName) {
+        throw new Error(`${label} name must exactly match "${expectedName}".`);
+    }
+
+    const needBarChangesRoot = requireSingleDirectChild(
+        root,
+        'needBarChanges',
+        label,
+        { allowEmpty: true }
+    ).node;
+    rejectUnexpectedDirectChildren(needBarChangesRoot, ['needbareffect'], `${label} <needBarChanges>`);
+    const seenNeedBarIds = new Set();
+    for (const [index, effectNode] of directChildrenByTagName(needBarChangesRoot, 'needBarEffect').entries()) {
+        const effectLabel = `${label} needBarEffect #${index + 1}`;
+        rejectUnexpectedDirectChildren(effectNode, ['needbarid', 'value'], effectLabel);
+        const needBarId = requireSingleDirectChild(effectNode, 'needBarId', effectLabel).text;
+        const value = requireSingleDirectChild(effectNode, 'value', effectLabel).text;
+        validateWhileAwayNeedBarValue(value, `${effectLabel} <value>`);
+        const needBarKey = needBarId.toLowerCase();
+        if (seenNeedBarIds.has(needBarKey)) {
+            throw new Error(`${label} contains duplicate need bar "${needBarId}".`);
+        }
+        seenNeedBarIds.add(needBarKey);
+    }
+
+    const travelDestinationNodes = directChildrenByTagName(root, 'travelDestination');
+    if (travelDestinationNodes.length > 1) {
+        throw new Error(`${label} may contain at most one <travelDestination>.`);
+    }
+    validateWhileAwayTravelDestination(travelDestinationNodes[0] || null, { label, requireHere });
+    requireSingleDirectChild(root, 'update', label);
+    return name;
+}
+
+function validateWhileAwayCharacterUpdatesRoot(root, {
+    label = 'While-you-were-away character updates',
+    requireHere = false
+} = {}) {
+    rejectUnexpectedDirectChildren(root, ['characterupdate'], label);
+    const seenNames = new Set();
+    for (const [index, updateNode] of directChildrenByTagName(root, 'characterUpdate').entries()) {
+        const name = validateWhileAwayCharacterUpdateElement(updateNode, {
+            label: `${label} entry #${index + 1}`,
+            requireHere
+        });
+        const nameKey = name.toLowerCase();
+        if (seenNames.has(nameKey)) {
+            throw new Error(`${label} contains duplicate character "${name}".`);
+        }
+        seenNames.add(nameKey);
+    }
+}
+
+function validateWhileAwayItemSceneryMovesRoot(root, {
+    label = 'While-you-were-away item/scenery moves'
+} = {}) {
+    rejectUnexpectedDirectChildren(root, ['itemname'], label);
+    const seenNames = new Set();
+    for (const [index, itemNode] of directChildrenByTagName(root, 'itemName').entries()) {
+        const name = String(itemNode.textContent || '').trim();
+        if (!name) {
+            throw new Error(`${label} itemName #${index + 1} must not be empty.`);
+        }
+        const nameKey = name.toLowerCase();
+        if (seenNames.has(nameKey)) {
+            throw new Error(`${label} contains duplicate item/scenery name "${name}".`);
+        }
+        seenNames.add(nameKey);
+    }
 }
 
 function parseWhileAwayCharacterUpdate(response, expectedName) {
@@ -347,14 +899,27 @@ function parseWhileAwayCharacterUpdate(response, expectedName) {
         throw new TypeError('While-you-were-away character update requires an expected name.');
     }
     const { xml, root } = parseStrictXml(response, 'while-you-were-away character update');
-    if (normalizedTagName(root) !== 'characterupdate') {
-        throw new Error('While-you-were-away character update must use <characterUpdate> as its document root.');
+    const trimmedExpectedName = expectedName.trim();
+    const name = validateWhileAwayCharacterUpdateElement(root, {
+        expectedName: trimmedExpectedName,
+        label: 'While-you-were-away character update'
+    });
+    return {
+        value: { xml, name },
+        normalizedResponse: xml
+    };
+}
+
+function parseWhileAwayArrivalUpdates(response) {
+    const { xml, root } = parseStrictXml(response, 'while-you-were-away arrival updates');
+    if (normalizedTagName(root) !== 'characterupdates') {
+        throw new Error('While-you-were-away arrival updates must use <characterUpdates> as its document root.');
     }
-    const name = requireSingleDirectChild(root, 'name', 'While-you-were-away character update').text;
-    if (name !== expectedName.trim()) {
-        throw new Error(`While-you-were-away character update name must exactly match "${expectedName.trim()}".`);
-    }
-    return { value: { xml, name } };
+    validateWhileAwayCharacterUpdatesRoot(root, {
+        label: 'While-you-were-away arrival updates',
+        requireHere: true
+    });
+    return { value: xml, normalizedResponse: xml };
 }
 
 function canonicalizeXmlElement(node) {
@@ -417,9 +982,23 @@ function parseWhileYouWereAwayStagedResult(response, {
     if (finalUpdateNodes.length !== expectedUpdateNodes.length) {
         throw new Error('Final while-you-were-away response changed the staged character-update count.');
     }
+    const finalUpdatesByName = new Map(finalUpdateNodes.map(node => [
+        requireSingleDirectChild(node, 'name', 'Final staged while-you-were-away character update').text.toLowerCase(),
+        node
+    ]));
     expectedUpdateNodes.forEach((expectedNode, index) => {
-        if (JSON.stringify(canonicalizeXmlElement(expectedNode)) !== JSON.stringify(canonicalizeXmlElement(finalUpdateNodes[index]))) {
-            throw new Error(`Final while-you-were-away response changed staged character update ${index + 1}.`);
+        const expectedName = requireSingleDirectChild(
+            expectedNode,
+            'name',
+            `Staged while-you-were-away character update ${index + 1}`
+        ).text;
+        const finalNode = finalUpdatesByName.get(expectedName.toLowerCase());
+        if (
+            !finalNode
+            || JSON.stringify(canonicalizeXmlElement(expectedNode))
+                !== JSON.stringify(canonicalizeXmlElement(finalNode))
+        ) {
+            throw new Error(`Final while-you-were-away response changed staged character update "${expectedName}".`);
         }
     });
     const expectedMoveRoot = parseXmlRootForComparison(
@@ -427,10 +1006,16 @@ function parseWhileYouWereAwayStagedResult(response, {
         'itemSceneryMoves',
         'staged item/scenery moves'
     );
-    if (JSON.stringify(canonicalizeXmlElement(expectedMoveRoot)) !== JSON.stringify(canonicalizeXmlElement(finalMoveRoot))) {
+    const canonicalItemNames = root => directChildrenByTagName(root, 'itemName')
+        .map(node => String(node.textContent || '').replace(/\s+/g, ' ').trim().toLowerCase())
+        .sort();
+    if (JSON.stringify(canonicalItemNames(expectedMoveRoot)) !== JSON.stringify(canonicalItemNames(finalMoveRoot))) {
         throw new Error('Final while-you-were-away response changed the staged item/scenery moves.');
     }
-    return parsedFinal;
+    return {
+        ...parsedFinal,
+        normalizedResponse: parsedFinal.value
+    };
 }
 
 function parseScheduledEventNarrativeResult(response) {
@@ -441,13 +1026,13 @@ function parseScheduledEventNarrativeResult(response) {
     rejectUnexpectedDirectChildren(root, ['summary', 'proseforplayer'], 'Scheduled event result');
     const children = directChildElements(root);
     if (!children.length) {
-        return { value: xml };
+        return { value: xml, normalizedResponse: xml };
     }
     requireSingleDirectChild(root, 'summary', 'Scheduled event result');
     if (directChildrenByTagName(root, 'proseForPlayer').length > 1) {
         throw new Error('Scheduled event result may contain at most one <proseForPlayer>.');
     }
-    return { value: xml };
+    return { value: xml, normalizedResponse: xml };
 }
 
 function parseScheduledEventStagedResult(response, {
@@ -520,7 +1105,10 @@ function parseScheduledEventInterruptionRewrite(response, originalXml) {
         throw new Error('Scheduled-event interruption rewrite changed a non-prose XML field.');
     }
     parseTurnNarrativeResult(response, { allowTravel: true });
-    return { value: finalParsed.xml };
+    return {
+        value: finalParsed.xml,
+        normalizedResponse: finalParsed.xml
+    };
 }
 
 module.exports = {
@@ -530,14 +1118,25 @@ module.exports = {
     parseExactXmlRoot,
     parseGameIntroResult,
     parseLocationModificationNarrativeResult,
+    parseNeedBarCharactersResult,
     parseNarrativeScope,
     parseOutcomeAcknowledgement,
+    parsePlayerActionDestination,
+    parsePlayerActionDuration,
+    parsePlayerActionAccompanyingCharacters,
+    parsePlayerActionHiddenNotes,
+    parsePlayerActionMovement,
+    parsePlayerActionProseScope,
+    parsePlayerActionRequiredProse,
+    parsePlayerActionTimeReasoning,
+    parsePlayerActionVehicleDecision,
     parseQuestRewardResult,
     parseRevisionDecision,
     parseScheduledEventNarrativeResult,
     parseScheduledEventInterruptionRewrite,
     parseScheduledEventStagedResult,
     parseTurnNarrativeResult,
+    parseWhileAwayArrivalUpdates,
     parseWhileAwayCharacterUpdate,
     parseWhileYouWereAwayResult,
     parseWhileYouWereAwayStagedResult

@@ -3,6 +3,7 @@ const { TinyBrainPromptRunner } = require('./TinyBrainPromptRunner.js');
 const TINY_BRAIN_PROMPT_FAMILIES = Object.freeze({
     player_action: '_includes/player-action.tinybrain.njk',
     event_checks: '_includes/events-xml.tinybrain.njk',
+    need_bar_event_checks: '_includes/need-bars.tinybrain.njk',
     quest_reward_prose: '_includes/quest-reward-prose.tinybrain.njk',
     game_intro: '_includes/game-intro.tinybrain.njk',
     random_event: '_includes/random-event.tinybrain.njk',
@@ -19,6 +20,7 @@ const TINY_BRAIN_PROMPT_FAMILIES = Object.freeze({
 const TINY_BRAIN_PROMPT_METADATA_LABELS = Object.freeze({
     player_action: 'player_action',
     event_checks: 'event_checks',
+    need_bar_event_checks: 'need_bar_event_checks',
     quest_reward_prose: 'quest_reward_prose',
     game_intro: 'game_intro',
     random_event: 'random_event',
@@ -88,7 +90,8 @@ async function runTinyBrainPromptProgram({
     initialRenderedTemplate,
     templateContext,
     tinyBrain,
-    runnerOptions
+    runnerOptions,
+    continuationState = null
 } = {}) {
     if (!tinyBrain || typeof tinyBrain !== 'object') {
         throw new Error('runTinyBrainPromptProgram requires configured tiny-brain render state.');
@@ -102,7 +105,8 @@ async function runTinyBrainPromptProgram({
         initialRenderedTemplate,
         templateContext,
         renderState: tinyBrain.renderState,
-        programTemplateName: expectedTemplate
+        programTemplateName: expectedTemplate,
+        continuationState
     });
 }
 

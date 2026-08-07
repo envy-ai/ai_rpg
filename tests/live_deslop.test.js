@@ -218,6 +218,16 @@ test('tiny-brain live deslop selects both draft checkpoints and the final struct
         isFinal: false
     }), null);
     assert.equal(resolveTinyBrainLiveDeslopProseMode({
+        messages: messagesFor('Write only the final refined ORIGIN portion.'),
+        isFinal: false,
+        checkpoint: { parserName: 'player_action_required_prose' }
+    }), 'plain');
+    assert.equal(resolveTinyBrainLiveDeslopProseMode({
+        messages: messagesFor('State the exact elapsed duration only.'),
+        isFinal: false,
+        checkpoint: { parserName: 'player_action_duration' }
+    }), null);
+    assert.equal(resolveTinyBrainLiveDeslopProseMode({
         messages: messagesFor('Write the final XML.'),
         isFinal: true
     }), 'structured');

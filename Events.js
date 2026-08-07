@@ -14,6 +14,7 @@ const Tracker = require("./Tracker.js");
 const { CHAT_TOOL_DEFINITIONS, createChatToolRuntime } = require("./chat_tool_calls.js");
 const { resolveQuestDispositionRewardDelta } = require("./quest_disposition_reward_delta.js");
 const {
+    createTinyBrainContinuationState,
     requireNonWhitespaceResponse,
     parseResponseOrNa,
 } = require("./TinyBrainPromptRunner.js");
@@ -22,7 +23,10 @@ const {
     isTinyBrainPromptEnabled,
     runTinyBrainPromptProgram,
 } = require("./TinyBrainPromptFamilies.js");
-const { parseQuestRewardResult } = require("./TinyBrainPromptParsers.js");
+const {
+    parseNeedBarCharactersResult,
+    parseQuestRewardResult,
+} = require("./TinyBrainPromptParsers.js");
 
 const BASE_TIMEOUT_MS = 120000;
 const DEFAULT_STATUS_DURATION = 3;
@@ -37,6 +41,231 @@ const MYSTERY_BOX_UPDATE_TOOL_NAMES = new Set([
 const MYSTERY_BOX_UPDATE_CHAT_TOOLS = CHAT_TOOL_DEFINITIONS.filter((toolDefinition) =>
     MYSTERY_BOX_UPDATE_TOOL_NAMES.has(toolDefinition?.function?.name)
 );
+
+const TINY_BRAIN_EVENT_TAG_TO_KEY = Object.freeze({
+    newExitDiscovered: "new_exit_discovered",
+    alterLocation: "alter_location",
+    currency: "currency",
+    itemAppear: "item_appear",
+    sceneryAppear: "scenery_appear",
+    harvestableResourceAppear: "harvestable_resource_appear",
+    pickUpItem: "pick_up_item",
+    putItemInContainer: "put_item_in_container",
+    removeItemFromContainer: "remove_item_from_container",
+    revealHiddenNpc: "reveal_hidden_npc",
+    hideVisibleNpc: "hide_visible_npc",
+    dropItem: "drop_item",
+    transferItem: "transfer_item",
+    consumeItem: "consume_item",
+    alterItem: "alter_item",
+    harvestGather: "harvest_gather",
+    itemInflict: "item_inflict",
+    itemIngest: "item_ingest",
+    itemToNpc: "item_to_npc",
+    attackDamage: "attack_damage",
+    alterNpc: "alter_npc",
+    statusEffectChange: "status_effect_change",
+    npcArrival: "npc_arrival_departure",
+    npcDeparture: "npc_arrival_departure",
+    thingArrival: "thing_arrival_departure",
+    thingDeparture: "thing_arrival_departure",
+    thingMoveWithCharacter: "thing_move_with_character",
+    npcFirstAppearance: "npc_first_appearance",
+    mysteryBoxMention: "mystery_box_mention",
+    partyChange: "party_change",
+    tradeAvailability: "trade_availability",
+    environmentalStatusDamage: "environmental_status_damage",
+    healRecover: "heal_recover",
+    hostileToFriendly: "hostile_to_friendly",
+    deathIncapacitation: "death_incapacitation",
+    receivedQuest: "received_quest",
+    completedQuestObjective: "completed_quest_objective",
+    defeatedEnemy: "defeated_enemy",
+    experienceCheck: "experience_check",
+    factionReputationChange: "faction_reputation_change",
+    dispositionCheck: "disposition_check",
+    triggeredAbility: "triggered_abilities",
+    timePassed: "time_passed",
+    inCombat: "in_combat",
+    anyQuestObjectivesCompleted: "any_quest_objectives_completed",
+    trackerUpdates: "tracker_updates",
+});
+
+const TINY_BRAIN_IGNORED_MOVEMENT_EVENT_TAGS = new Set([
+    "moveLocation",
+    "moveNewLocation",
+    "arriveAtLocation",
+]);
+
+const TINY_BRAIN_EVENT_REQUIRED_FIELDS = Object.freeze({
+    newExitDiscovered: Object.freeze([
+        "destinationType",
+        "destination.regionName",
+        "destination.locationName",
+        "destinationHasNewExits",
+        "vehicleType",
+        "description",
+        "origin.regionName",
+        "origin.locationName",
+        "travelTime",
+    ]),
+    alterLocation: Object.freeze(["currentLocationName", "newLocationName", "changeDescription"]),
+    currency: Object.freeze(["amount"]),
+    itemAppear: Object.freeze(["fullItemName", "quantity", "description"]),
+    sceneryAppear: Object.freeze(["sceneryName", "description"]),
+    harvestableResourceAppear: Object.freeze(["resourceName", "description"]),
+    pickUpItem: Object.freeze(["actorName", "fullItemName", "quantity"]),
+    putItemInContainer: Object.freeze(["fullItemName", "quantity", "containerName"]),
+    removeItemFromContainer: Object.freeze(["fullItemName", "quantity", "containerName"]),
+    revealHiddenNpc: Object.freeze(["npcName", "description", "useOpposedCheck"]),
+    hideVisibleNpc: Object.freeze(["npcName", "description"]),
+    dropItem: Object.freeze(["actorName", "fullItemName", "quantity"]),
+    transferItem: Object.freeze(["giverName", "fullItemName", "quantity", "receiverName"]),
+    consumeItem: Object.freeze(["fullItemName", "quantity", "reason"]),
+    alterItem: Object.freeze(["originalItemName", "quantity", "newItemName", "changeDescription"]),
+    harvestGather: Object.freeze(["harvesterName", "fullItemName", "quantity"]),
+    itemInflict: Object.freeze(["fullItemName", "targetName", "statusEffect"]),
+    itemIngest: Object.freeze(["fullItemName", "consumerName"]),
+    itemToNpc: Object.freeze(["sourceThingName", "npcName", "description"]),
+    attackDamage: Object.freeze(["attackerName", "targetName"]),
+    alterNpc: Object.freeze(["npcName", "alterationCategory", "changeDescription"]),
+    statusEffectChange: Object.freeze(["entityName", "statusEffectName", "action"]),
+    npcArrival: Object.freeze(["npcName", "hideFromPlayer"]),
+    npcDeparture: Object.freeze([
+        "npcName",
+        "destinationRegion",
+        "destinationLocation",
+        "hideFromPlayer",
+    ]),
+    thingArrival: Object.freeze(["thingName"]),
+    thingDeparture: Object.freeze(["thingName", "destinationRegion", "destinationLocation"]),
+    thingMoveWithCharacter: Object.freeze(["thingName", "characterName"]),
+    npcFirstAppearance: Object.freeze(["npcName"]),
+    mysteryBoxMention: Object.freeze(["name", "context"]),
+    partyChange: Object.freeze(["npcName", "action"]),
+    tradeAvailability: Object.freeze(["npcName", "willingToTrade", "reason"]),
+    environmentalStatusDamage: Object.freeze(["actorName", "effect", "severity", "reason"]),
+    healRecover: Object.freeze(["characterName", "magnitude", "reason"]),
+    hostileToFriendly: Object.freeze([
+        "npcName",
+        "previousDisposition",
+        "newDisposition",
+        "reason",
+    ]),
+    deathIncapacitation: Object.freeze(["actorName", "outcome"]),
+    receivedQuest: Object.freeze(["summary"]),
+    defeatedEnemy: Object.freeze(["enemyName"]),
+    experienceCheck: Object.freeze(["amount", "reason"]),
+    factionReputationChange: Object.freeze(["factionName", "direction", "magnitude", "reason"]),
+    triggeredAbility: Object.freeze(["characterName", "abilityName"]),
+    inCombat: Object.freeze(["value"]),
+    anyQuestObjectivesCompleted: Object.freeze(["value"]),
+    trackerUpdate: Object.freeze(["trackerName", "type", "action", "newValue", "reason"]),
+});
+
+const TINY_BRAIN_EVENT_STAGE_DEFINITIONS = Object.freeze([
+    Object.freeze({
+        id: "scene",
+        label: "scene and location",
+        instructions:
+            "Extract lasting scene/location changes, newly discovered exits, first appearances of inanimate things, and arrivals or departures of existing inanimate things.",
+        tags: Object.freeze([
+            "newExitDiscovered",
+            "alterLocation",
+            "itemAppear",
+            "sceneryAppear",
+            "harvestableResourceAppear",
+            "thingArrival",
+            "thingDeparture",
+        ]),
+    }),
+    Object.freeze({
+        id: "items",
+        label: "items and inventory",
+        instructions:
+            "Extract currency changes and every relevant item acquisition, transfer, container interaction, consumption, alteration, harvest, ingestion, status infliction, or transformation into an animate entity.",
+        tags: Object.freeze([
+            "currency",
+            "pickUpItem",
+            "putItemInContainer",
+            "removeItemFromContainer",
+            "dropItem",
+            "transferItem",
+            "consumeItem",
+            "alterItem",
+            "harvestGather",
+            "itemInflict",
+            "itemIngest",
+            "itemToNpc",
+        ]),
+    }),
+    Object.freeze({
+        id: "characters",
+        label: "characters and presence",
+        instructions:
+            "Extract changes to characters, visibility, status effects, presence, party membership, trade availability, and first physical appearances.",
+        tags: Object.freeze([
+            "revealHiddenNpc",
+            "hideVisibleNpc",
+            "alterNpc",
+            "statusEffectChange",
+            "npcArrival",
+            "npcDeparture",
+            "npcFirstAppearance",
+            "partyChange",
+            "tradeAvailability",
+        ]),
+    }),
+    Object.freeze({
+        id: "combat",
+        label: "combat and recovery",
+        instructions:
+            "Extract attacks, environmental or status damage, healing, hostility changes, incapacitations, deaths, and defeated enemies.",
+        tags: Object.freeze([
+            "attackDamage",
+            "environmentalStatusDamage",
+            "healRecover",
+            "hostileToFriendly",
+            "deathIncapacitation",
+            "defeatedEnemy",
+        ]),
+    }),
+    Object.freeze({
+        id: "progression",
+        label: "quests and progression",
+        instructions:
+            "Extract quests, completed objectives, experience, reputation or disposition changes, and mystery-box mentions.",
+        tags: Object.freeze([
+            "receivedQuest",
+            "experienceCheck",
+            "factionReputationChange",
+            "mysteryBoxMention",
+        ]),
+    }),
+    Object.freeze({
+        id: "final",
+        label: "final state and missed events",
+        instructions:
+            "Report final combat and quest-objective flags, triggered abilities, and any supported non-tracker event missed by an earlier stage. Do not repeat an accepted event.",
+        requiredTags: Object.freeze([
+            "inCombat",
+            "anyQuestObjectivesCompleted",
+        ]),
+        tags: Object.freeze([
+            "triggeredAbility",
+            "inCombat",
+            "anyQuestObjectivesCompleted",
+        ]),
+    }),
+]);
+
+const TINY_BRAIN_EVENT_SECTION_KINDS = new Set([
+    "current",
+    "origin",
+    "between",
+    "destination",
+    "tracker",
+]);
 
 const EVENT_PROMPT_ORDER = [
     // Location stuff
@@ -2875,14 +3104,25 @@ class Events {
             return { responseText: "", entries: [] };
         }
 
-        const rendered = promptEnv.render("base-context.xml.njk", {
+        const useTinyBrainNeedBarChecks = isTinyBrainPromptEnabled(
+            Globals.config?.ai,
+            "need_bar_event_checks",
+        );
+        const templateContext = {
             ...baseContext,
             promptType: "need-bars",
             textToCheck,
             actionText,
             includePlayerActionBlock,
             omitGameHistory: true,
-        });
+        };
+        const tinyBrain = useTinyBrainNeedBarChecks
+            ? configureTinyBrainPromptContext(
+                templateContext,
+                "need_bar_event_checks",
+            )
+            : null;
+        const rendered = promptEnv.render("base-context.xml.njk", templateContext);
 
         const parsedTemplate = parseXMLTemplate(rendered);
         if (!parsedTemplate?.systemPrompt || !parsedTemplate?.generationPrompt) {
@@ -2891,36 +3131,106 @@ class Events {
 
         let requestPayloadForLog = null;
         let responsePayloadForLog = null;
-        const responseText = await LLMClient.chatCompletion({
-            messages: [
-                { role: "system", content: parsedTemplate.systemPrompt },
-                { role: "user", content: parsedTemplate.generationPrompt },
-            ],
-            metadataLabel: "need_bar_event_checks",
-            timeoutMs: this._baseTimeout,
-            temperature: 0,
-            validateXML: false,
-            requiredRegex: /<characters>[\s\S]*<\/characters>/i,
-            dumpReasoningToConsole: true,
-            stream: true,
-            // captureRequestPayload: (payload) => { requestPayloadForLog = payload; },
-            // captureResponsePayload: (payload) => { responsePayloadForLog = payload; }
-        });
+        const responseText = useTinyBrainNeedBarChecks
+            ? await this._runTinyBrainNeedBarEventChecks({
+                initialRenderedTemplate: rendered,
+                templateContext,
+                tinyBrain,
+                promptEnv,
+                parseXMLTemplate,
+            })
+            : await LLMClient.chatCompletion({
+                messages: [
+                    { role: "system", content: parsedTemplate.systemPrompt },
+                    { role: "user", content: parsedTemplate.generationPrompt },
+                ],
+                metadataLabel: "need_bar_event_checks",
+                timeoutMs: this._baseTimeout,
+                temperature: 0,
+                validateXML: false,
+                requiredRegex: /<characters>[\s\S]*<\/characters>/i,
+                dumpReasoningToConsole: true,
+                stream: true,
+                // captureRequestPayload: (payload) => { requestPayloadForLog = payload; },
+                // captureResponsePayload: (payload) => { responsePayloadForLog = payload; }
+            });
 
-        this.logEventCheck({
-            systemPrompt: parsedTemplate.systemPrompt,
-            generationPrompt: parsedTemplate.generationPrompt,
-            responseText,
-            metadataLabel: "need_bar_event_checks",
-            prefix: "need_bar_event_checks",
-            requestPayload: requestPayloadForLog,
-            responsePayload: responsePayloadForLog,
-        });
+        if (!useTinyBrainNeedBarChecks) {
+            this.logEventCheck({
+                systemPrompt: parsedTemplate.systemPrompt,
+                generationPrompt: parsedTemplate.generationPrompt,
+                responseText,
+                metadataLabel: "need_bar_event_checks",
+                prefix: "need_bar_event_checks",
+                requestPayload: requestPayloadForLog,
+                responsePayload: responsePayloadForLog,
+            });
+        }
 
         return {
             responseText,
             entries: this._parseNeedBarPromptResponse(responseText),
         };
+    }
+
+    static async _runTinyBrainNeedBarEventChecks({
+        initialRenderedTemplate,
+        templateContext,
+        tinyBrain,
+        promptEnv,
+        parseXMLTemplate,
+    }) {
+        const configuredRetries = Number(Globals.config?.ai?.retryAttempts);
+        const retryAttempts =
+            Number.isInteger(configuredRetries) && configuredRetries >= 0
+                ? configuredRetries
+                : 1;
+        const allowedNeedBarIds = Array.isArray(templateContext?.needBarDefinitions)
+            ? templateContext.needBarDefinitions
+                .map(definition => definition?.id)
+                .filter(id => typeof id === "string" && id.trim())
+            : [];
+        const result = await runTinyBrainPromptProgram({
+            initialRenderedTemplate,
+            templateContext,
+            tinyBrain,
+            runnerOptions: {
+                promptEnv,
+                parseXMLTemplate,
+                retryAttempts,
+                metadataLabel: "need_bar_event_checks",
+                logPrefix: "need_bar_event_checks_tinybrain",
+                finalParser: response => parseNeedBarCharactersResult(
+                    response,
+                    allowedNeedBarIds,
+                ),
+                complete: async ({ messages, queueReservation }) => {
+                    const response = await LLMClient.chatCompletion({
+                        messages,
+                        queueReservation,
+                        metadataLabel: "need_bar_event_checks",
+                        metadata: {
+                            eventPipeline: "need-bars-tinybrain",
+                            promptType: "need-bars",
+                        },
+                        timeoutMs: this._baseTimeout,
+                        temperature: 0,
+                        validateXML: false,
+                        dumpReasoningToConsole: true,
+                        stream: true,
+                    });
+                    return {
+                        aiResponse: response,
+                        conversationMessages: [
+                            ...messages.map(message => ({ ...message })),
+                            { role: "assistant", content: response },
+                        ],
+                        toolInvocations: [],
+                    };
+                },
+            },
+        });
+        return result.aiResponse;
     }
 
     static _trackItemsFromParsing(parsedEntries = {}) {
@@ -3445,6 +3755,11 @@ class Events {
         eventCheckIgnoreInstructions,
         suppressNeedBarEventChecks,
         suppressHousekeeping,
+        eventSectionKind,
+        eventMode,
+        suppressTrackerUpdates,
+        tinyBrainAcceptedEventXml,
+        tinyBrainEventSequence,
         initialTimeProgress,
         entryCollector,
         housekeepingScheduled,
@@ -3454,6 +3769,17 @@ class Events {
         const useTinyBrainEventChecks = isTinyBrainPromptEnabled(
             Globals.config?.ai,
             "event_checks",
+        );
+        const eventSequence = tinyBrainEventSequence
+            ? this._requireTinyBrainEventSequence(tinyBrainEventSequence)
+            : null;
+        if (eventSequence && !useTinyBrainEventChecks) {
+            throw new Error(
+                "A Tiny-brain event sequence cannot be used when TinyBrain event checks are disabled.",
+            );
+        }
+        const sequentialAcceptedEventXml = this._buildTinyBrainAcceptedEventXml(
+            eventSequence,
         );
         const templateContext = {
             ...baseContext,
@@ -3467,8 +3793,29 @@ class Events {
                 typeof eventCheckIgnoreInstructions === "string"
                     ? eventCheckIgnoreInstructions.trim()
                     : "",
+            tinyBrainEventSectionKind: this._normalizeTinyBrainEventSectionKind(
+                eventSectionKind,
+            ),
+            tinyBrainEventSectionLabel: this._normalizeTinyBrainEventSectionKind(
+                eventSectionKind,
+            ).toUpperCase(),
+            tinyBrainAcceptedEventXml:
+                typeof tinyBrainAcceptedEventXml === "string"
+                    ? tinyBrainAcceptedEventXml.trim() || sequentialAcceptedEventXml
+                    : sequentialAcceptedEventXml,
             omitGameHistory: true,
         };
+        if (useTinyBrainEventChecks) {
+            templateContext.tinyBrainEventStages = this._buildTinyBrainEventStages({
+                eventSectionKind,
+                eventMode,
+                ignoredEventKeys: normalizedIgnoredEventKeys,
+                suppressTimeAdvance,
+                suppressTrackerUpdates,
+                hasRegisteredModEvents: Array.isArray(baseContext?.modEventPromptSchemas)
+                    && baseContext.modEventPromptSchemas.length > 0,
+            });
+        }
         const tinyBrain = useTinyBrainEventChecks
             ? configureTinyBrainPromptContext(templateContext, "event_checks")
             : null;
@@ -3488,6 +3835,7 @@ class Events {
                 tinyBrain,
                 promptEnv,
                 parseXMLTemplate,
+                tinyBrainEventSequence: eventSequence,
             })
             : LLMClient.chatCompletion({
                 messages: [
@@ -3723,6 +4071,11 @@ class Events {
                             ignoredEventKeys: Array.from(normalizedIgnoredEventKeys),
                             eventCheckIgnoreInstructions,
                             suppressNeedBarEventChecks: Boolean(suppressNeedBarEventChecks),
+                            eventSectionKind,
+                            eventMode,
+                            suppressTrackerUpdates: Boolean(suppressTrackerUpdates),
+                            tinyBrainAcceptedEventXml,
+                            tinyBrainEventSequence: eventSequence,
                             _depth: depth + 1,
                             followupQueue: activeFollowupQueue,
                         });
@@ -3828,6 +4181,11 @@ class Events {
         eventCheckIgnoreInstructions = "",
         suppressNeedBarEventChecks = false,
         suppressHousekeeping = false,
+        eventSectionKind = "current",
+        eventMode = "events",
+        suppressTrackerUpdates = false,
+        tinyBrainAcceptedEventXml = "",
+        tinyBrainEventSequence = null,
         initialTimeProgress = null,
         entryCollector = null,
         _depth = 0,
@@ -3854,6 +4212,20 @@ class Events {
         const includePlayerActionBlock = normalizedActionText.length > 0;
         const normalizedIgnoredEventKeys =
             this._normalizeIgnoredEventKeys(ignoredEventKeys);
+        const normalizedEventSectionKind =
+            this._normalizeTinyBrainEventSectionKind(eventSectionKind);
+        const normalizedEventMode = typeof eventMode === "string"
+            ? eventMode.trim().toLowerCase()
+            : "";
+        if (normalizedEventMode !== "events" && normalizedEventMode !== "trackers") {
+            throw new Error(`Unknown event extraction mode "${eventMode}".`);
+        }
+        if (typeof tinyBrainAcceptedEventXml !== "string") {
+            throw new Error("runEventChecks tinyBrainAcceptedEventXml must be a string.");
+        }
+        if (tinyBrainEventSequence !== null) {
+            this._requireTinyBrainEventSequence(tinyBrainEventSequence);
+        }
         let normalizedInitialTimeProgress = null;
         if (initialTimeProgress !== null && initialTimeProgress !== undefined) {
             if (typeof initialTimeProgress !== "object" || Array.isArray(initialTimeProgress)) {
@@ -3966,6 +4338,11 @@ class Events {
                 eventCheckIgnoreInstructions,
                 suppressNeedBarEventChecks: Boolean(suppressNeedBarEventChecks),
                 suppressHousekeeping: Boolean(suppressHousekeeping),
+                eventSectionKind: normalizedEventSectionKind,
+                eventMode: normalizedEventMode,
+                suppressTrackerUpdates: Boolean(suppressTrackerUpdates),
+                tinyBrainAcceptedEventXml: tinyBrainAcceptedEventXml.trim(),
+                tinyBrainEventSequence,
                 initialTimeProgress: normalizedInitialTimeProgress,
                 entryCollector,
                 housekeepingScheduled,
@@ -5300,30 +5677,291 @@ class Events {
         return match[0].trim();
     }
 
-    static parseTinyBrainEventXmlChunk(response) {
+    static createTinyBrainEventSequence() {
+        return {
+            continuationState: createTinyBrainContinuationState(),
+            acceptedXmlFragments: [],
+        };
+    }
+
+    static _requireTinyBrainEventSequence(sequence) {
+        if (!sequence || typeof sequence !== "object" || Array.isArray(sequence)) {
+            throw new Error("Tiny-brain event sequence must be an object.");
+        }
+        if (
+            !sequence.continuationState
+            || typeof sequence.continuationState !== "object"
+            || Array.isArray(sequence.continuationState)
+        ) {
+            throw new Error("Tiny-brain event sequence is missing continuationState.");
+        }
+        if (!Array.isArray(sequence.acceptedXmlFragments)) {
+            throw new Error("Tiny-brain event sequence acceptedXmlFragments must be an array.");
+        }
+        if (sequence.acceptedXmlFragments.some((value) => typeof value !== "string" || !value.trim())) {
+            throw new Error("Tiny-brain event sequence acceptedXmlFragments must contain non-empty strings.");
+        }
+        return sequence;
+    }
+
+    static _buildTinyBrainAcceptedEventXml(sequence) {
+        if (!sequence) {
+            return "";
+        }
+        const validatedSequence = this._requireTinyBrainEventSequence(sequence);
+        if (!validatedSequence.acceptedXmlFragments.length) {
+            return "";
+        }
+        return `<events>\n${validatedSequence.acceptedXmlFragments.join("\n")}\n</events>`;
+    }
+
+    static _normalizeTinyBrainEventSectionKind(value) {
+        const normalized = typeof value === "string"
+            ? value.trim().toLowerCase()
+            : "";
+        const sectionKind = normalized || "current";
+        if (!TINY_BRAIN_EVENT_SECTION_KINDS.has(sectionKind)) {
+            throw new Error(
+                `Unknown tiny-brain event section kind "${value}".`,
+            );
+        }
+        return sectionKind;
+    }
+
+    static _buildTinyBrainEventStages({
+        eventSectionKind = "current",
+        eventMode = "events",
+        ignoredEventKeys = [],
+        suppressTimeAdvance = false,
+        suppressTrackerUpdates = false,
+        hasRegisteredModEvents = false,
+    } = {}) {
+        const sectionKind = this._normalizeTinyBrainEventSectionKind(
+            eventSectionKind,
+        );
+        const normalizedMode = typeof eventMode === "string"
+            ? eventMode.trim().toLowerCase()
+            : "";
+        if (normalizedMode !== "events" && normalizedMode !== "trackers") {
+            throw new Error(
+                `Unknown tiny-brain event extraction mode "${eventMode}".`,
+            );
+        }
+        const ignoredKeys = this._normalizeIgnoredEventKeys(ignoredEventKeys);
+        const tagIsAllowed = (tagName) => {
+            const eventKey = TINY_BRAIN_EVENT_TAG_TO_KEY[tagName];
+            if (!eventKey || ignoredKeys.has(eventKey)) {
+                return false;
+            }
+            if (tagName === "timePassed" && suppressTimeAdvance) {
+                return false;
+            }
+            return true;
+        };
+        const makeStage = ({
+            id,
+            label,
+            instructions,
+            tags,
+            requiredTags = [],
+            allowRegisteredXmlEvents = false,
+        }) => {
+            const allowedTags = Array.from(new Set(tags.filter(tagIsAllowed)));
+            const stageRequiredTags = Array.from(
+                new Set(requiredTags.filter((tagName) => allowedTags.includes(tagName))),
+            );
+            if (!allowedTags.length && !allowRegisteredXmlEvents) {
+                return null;
+            }
+            return {
+                id,
+                label,
+                instructions,
+                allowedTags,
+                requiredTags: stageRequiredTags,
+                allowedTagList: allowedTags.map((tag) => `<${tag}>`).join(", "),
+                allowRegisteredXmlEvents: Boolean(allowRegisteredXmlEvents),
+            };
+        };
+
+        if (normalizedMode === "trackers" || sectionKind === "tracker") {
+            const trackerStage = suppressTrackerUpdates
+                ? null
+                : makeStage({
+                    id: "trackers",
+                    label: "tracker updates",
+                    instructions:
+                        "Using the complete turn prose and current tracker context, report only trackers that must be added, updated, or removed. Countdown trackers already display elapsed time and should change only when their deadline changes or resolves.",
+                    tags: ["trackerUpdates"],
+                });
+            return trackerStage ? [trackerStage] : [];
+        }
+
+        if (sectionKind === "between") {
+            const transitStage = makeStage({
+                id: "transit",
+                label: "things carried during movement",
+                instructions:
+                    "Report only existing inanimate items or scenery that moved with a character during this transit prose. Player movement, character movement, travel time, and all other event categories are authoritative elsewhere.",
+                tags: ["thingMoveWithCharacter"],
+            });
+            const finalTransitStage = makeStage({
+                id: "final",
+                label: "final transit sweep",
+                instructions:
+                    "Check once more for a missed existing inanimate thing that moved with a character. Do not repeat an accepted event. No other event type is valid in transit prose.",
+                tags: ["thingMoveWithCharacter"],
+            });
+            return [transitStage, finalTransitStage].filter(Boolean);
+        }
+
+        const stages = [];
+        const allRegularTags = [];
+        for (const definition of TINY_BRAIN_EVENT_STAGE_DEFINITIONS) {
+            if (definition.id === "final") {
+                continue;
+            }
+            const stage = makeStage(definition);
+            if (!stage) {
+                continue;
+            }
+            stages.push(stage);
+            allRegularTags.push(...stage.allowedTags);
+        }
+
+        const finalDefinition = TINY_BRAIN_EVENT_STAGE_DEFINITIONS.find(
+            (definition) => definition.id === "final",
+        );
+        const finalTags = [
+            ...allRegularTags,
+            ...(finalDefinition?.tags || []),
+        ];
+        const finalStage = makeStage({
+            ...finalDefinition,
+            tags: finalTags,
+            allowRegisteredXmlEvents: Boolean(hasRegisteredModEvents),
+        });
+        if (finalStage) {
+            stages.push(finalStage);
+        }
+
+        if (!suppressTrackerUpdates) {
+            const trackerStage = makeStage({
+                id: "trackers",
+                label: "tracker updates",
+                instructions:
+                    "After all ordinary events are accepted, report only trackers that must be added, updated, or removed. Countdown trackers already display elapsed time and should change only when their deadline changes or resolves.",
+                tags: ["trackerUpdates"],
+            });
+            if (trackerStage) {
+                stages.push(trackerStage);
+            }
+        }
+
+        return stages;
+    }
+
+    static _normalizeTinyBrainXmlEventSignature(node) {
+        return node
+            .toString()
+            .replace(/>\s+</g, "><")
+            .replace(/\s+/g, " ")
+            .trim();
+    }
+
+    static _requireTinyBrainXmlEventFields(node, sectionKind, stageId) {
+        const requiredFields = TINY_BRAIN_EVENT_REQUIRED_FIELDS[node?.tagName] || [];
+        for (const fieldPath of requiredFields) {
+            const parts = fieldPath.split(".");
+            let currentNode = node;
+            for (const part of parts) {
+                currentNode = this._getXmlDirectChildNode(currentNode, part);
+                if (!currentNode) {
+                    break;
+                }
+            }
+            const value = typeof currentNode?.textContent === "string"
+                ? currentNode.textContent.trim()
+                : "";
+            if (!currentNode || !value) {
+                throw new Error(
+                    `Tiny-brain ${sectionKind}/${stageId} <${node?.tagName}> requires a non-empty <${fieldPath}> value.`,
+                );
+            }
+        }
+    }
+
+    static parseTinyBrainEventXmlStage(response, {
+        sectionKind = "current",
+        stageId = "events",
+        allowedTags = [],
+        requiredTags = [],
+        allowRegisteredXmlEvents = false,
+        acceptedSignatures = [],
+    } = {}) {
+        const normalizedSectionKind = this._normalizeTinyBrainEventSectionKind(
+            sectionKind,
+        );
+        const normalizedStageId = typeof stageId === "string" && stageId.trim()
+            ? stageId.trim()
+            : "events";
         const normalized = requireNonWhitespaceResponse(
             response,
-            "Tiny-brain event chunk",
+            `Tiny-brain ${normalizedSectionKind}/${normalizedStageId} event stage`,
         );
+        if (!Array.isArray(requiredTags)) {
+            throw new Error(
+                `Tiny-brain ${normalizedSectionKind}/${normalizedStageId} requiredTags must be an array.`,
+            );
+        }
+        const normalizedRequiredTags = Array.from(new Set(
+            requiredTags
+                .map((tagName) => typeof tagName === "string" ? tagName.trim() : "")
+                .filter(Boolean),
+        ));
         const hasDoneTag = /<done\b/i.test(normalized);
         const hasEventsTag = /<events\b/i.test(normalized);
         if (hasDoneTag && !hasEventsTag) {
+            if (normalizedRequiredTags.length) {
+                throw new Error(
+                    `Tiny-brain ${normalizedSectionKind}/${normalizedStageId} event stage must include required tags: ${normalizedRequiredTags.join(", ")}.`,
+                );
+            }
             return {
-                terminate: true,
                 response: normalized.trim(),
-                value: false,
+                value: { xml: "", signatures: [] },
             };
         }
         if (!hasEventsTag) {
             const naCheck = parseResponseOrNa(normalized);
             if (naCheck.value === false) {
+                if (normalizedRequiredTags.length) {
+                    throw new Error(
+                        `Tiny-brain ${normalizedSectionKind}/${normalizedStageId} event stage must include required tags: ${normalizedRequiredTags.join(", ")}.`,
+                    );
+                }
                 return {
-                    terminate: true,
                     response: normalized.trim(),
-                    value: false,
+                    value: { xml: "", signatures: [] },
                 };
             }
         }
+
+        if (!Array.isArray(allowedTags)) {
+            throw new Error(
+                `Tiny-brain ${normalizedSectionKind}/${normalizedStageId} allowedTags must be an array.`,
+            );
+        }
+        const allowedTagSet = new Set(
+            allowedTags
+                .map((tagName) => typeof tagName === "string" ? tagName.trim() : "")
+                .filter(Boolean),
+        );
+        const existingSignatures = new Set(
+            Array.isArray(acceptedSignatures)
+                ? acceptedSignatures.filter((value) => typeof value === "string" && value)
+                : [],
+        );
 
         const xml = this._extractEventsXmlBlock(normalized);
         let doc;
@@ -5331,27 +5969,219 @@ class Events {
             doc = Utils.parseXmlDocumentStrict(xml, "text/xml");
         } catch (error) {
             throw new Error(
-                `Failed to parse tiny-brain event chunk: ${error.message}`,
+                `Failed to parse tiny-brain ${normalizedSectionKind}/${normalizedStageId} event stage: ${error.message}`,
             );
         }
         const root = doc?.documentElement;
         if (!root || root.tagName !== "events") {
             throw new Error(
-                "Tiny-brain event chunk must have an <events> root element.",
+                `Tiny-brain ${normalizedSectionKind}/${normalizedStageId} event stage must have an <events> root element.`,
             );
         }
-        const eventElements = Array.from(root.childNodes || []).filter(
-            (node) => node && node.nodeType === 1,
+        const rawEventElements = this._getXmlElementChildren(root);
+        const eventElements = rawEventElements.filter(
+            (node) => !TINY_BRAIN_IGNORED_MOVEMENT_EVENT_TAGS.has(node?.tagName),
         );
         if (eventElements.length === 0) {
+            if (rawEventElements.length > 0) {
+                if (normalizedRequiredTags.length) {
+                    throw new Error(
+                        `Tiny-brain ${normalizedSectionKind}/${normalizedStageId} event stage must include required tags: ${normalizedRequiredTags.join(", ")}.`,
+                    );
+                }
+                return {
+                    response: normalized.trim(),
+                    value: { xml: "", signatures: [] },
+                };
+            }
             throw new Error(
-                "Tiny-brain event chunk contained no event elements; output <done/> when no events remain.",
+                `Tiny-brain ${normalizedSectionKind}/${normalizedStageId} event stage contained no event elements; output <events><done/></events> when there are none.`,
             );
         }
-        const innerXml = eventElements
-            .map((node) => node.toString())
-            .join("\n");
-        return { value: { xml: innerXml } };
+        const wrappedDoneElements = eventElements.filter(
+            (node) => node?.tagName === "done",
+        );
+        if (wrappedDoneElements.length) {
+            const wrappedDone = wrappedDoneElements[0];
+            const hasDoneAttributes = Number(wrappedDone?.attributes?.length || 0) > 0;
+            const hasDoneContent = typeof wrappedDone?.textContent === "string"
+                && wrappedDone.textContent.trim().length > 0;
+            const hasDoneChildren = this._getXmlElementChildren(wrappedDone).length > 0;
+            if (
+                wrappedDoneElements.length !== 1
+                || eventElements.length !== 1
+                || hasDoneAttributes
+                || hasDoneContent
+                || hasDoneChildren
+            ) {
+                throw new Error(
+                    `Tiny-brain ${normalizedSectionKind}/${normalizedStageId} event stage may use <done/> only as the sole empty child of <events>.`,
+                );
+            }
+            if (normalizedRequiredTags.length) {
+                throw new Error(
+                    `Tiny-brain ${normalizedSectionKind}/${normalizedStageId} event stage must include required tags: ${normalizedRequiredTags.join(", ")}.`,
+                );
+            }
+            return {
+                response: normalized.trim(),
+                value: { xml: "", signatures: [] },
+            };
+        }
+
+        const registry = Globals.modExtensionRegistry
+            || this._deps?.modExtensionRegistry
+            || null;
+        const rawEventLists = {};
+        const signatures = [];
+        const singletonTags = new Set([
+            "inCombat",
+            "anyQuestObjectivesCompleted",
+            "trackerUpdates",
+        ]);
+        const seenSingletonTags = new Set();
+        const seenTags = new Set();
+        for (const node of eventElements) {
+            const tagName = node?.tagName || "";
+            seenTags.add(tagName);
+            const registeredEvent = allowRegisteredXmlEvents
+                && registry
+                && typeof registry.getXmlEventByTagName === "function"
+                ? registry.getXmlEventByTagName(tagName)
+                : null;
+            if (!allowedTagSet.has(tagName) && !registeredEvent) {
+                const allowedDescription = [
+                    ...allowedTagSet,
+                    ...(allowRegisteredXmlEvents ? ["registered mod event tags"] : []),
+                ].join(", ");
+                throw new Error(
+                    `Tiny-brain ${normalizedSectionKind}/${normalizedStageId} event stage does not allow <${tagName}>; allowed: ${allowedDescription || "none"}.`,
+                );
+            }
+            if (singletonTags.has(tagName)) {
+                if (seenSingletonTags.has(tagName)) {
+                    throw new Error(
+                        `Tiny-brain ${normalizedSectionKind}/${normalizedStageId} event stage may contain <${tagName}> at most once.`,
+                    );
+                }
+                seenSingletonTags.add(tagName);
+            }
+
+            const signature = this._normalizeTinyBrainXmlEventSignature(node);
+            if (existingSignatures.has(signature) || signatures.includes(signature)) {
+                throw new Error(
+                    `Tiny-brain ${normalizedSectionKind}/${normalizedStageId} event stage repeated an already accepted <${tagName}> block.`,
+                );
+            }
+            signatures.push(signature);
+
+            if (tagName === "trackerUpdates") {
+                const trackerUpdateNodes = this._getXmlElementChildren(node);
+                if (!trackerUpdateNodes.length) {
+                    throw new Error(
+                        "<trackerUpdates> must contain at least one <trackerUpdate>; output <done/> when no trackers changed.",
+                    );
+                }
+                const trackerUpdateSignatures = new Set();
+                for (const trackerUpdateNode of trackerUpdateNodes) {
+                    if (trackerUpdateNode.tagName !== "trackerUpdate") {
+                        throw new Error(
+                            "<trackerUpdates> may only contain <trackerUpdate> entries.",
+                        );
+                    }
+                    this._requireTinyBrainXmlEventFields(
+                        trackerUpdateNode,
+                        normalizedSectionKind,
+                        normalizedStageId,
+                    );
+                    const trackerUpdateSignature =
+                        this._normalizeTinyBrainXmlEventSignature(trackerUpdateNode);
+                    if (trackerUpdateSignatures.has(trackerUpdateSignature)) {
+                        throw new Error(
+                            `Tiny-brain ${normalizedSectionKind}/${normalizedStageId} event stage repeated an identical <trackerUpdate> block.`,
+                        );
+                    }
+                    trackerUpdateSignatures.add(trackerUpdateSignature);
+                    this._appendXmlRawEvent(
+                        rawEventLists,
+                        "tracker_updates",
+                        this._formatXmlTrackerUpdateRawEntry(trackerUpdateNode),
+                    );
+                }
+                continue;
+            }
+
+            if (!registeredEvent) {
+                this._requireTinyBrainXmlEventFields(
+                    node,
+                    normalizedSectionKind,
+                    normalizedStageId,
+                );
+            }
+            const { key, raw } = this._mapXmlEventNodeToLegacyRaw(node);
+            const normalizedRaw = typeof raw === "string" ? raw.trim() : "";
+            if (!normalizedRaw || NO_EVENT_TOKENS.has(normalizedRaw.toLowerCase())) {
+                throw new Error(
+                    `Tiny-brain ${normalizedSectionKind}/${normalizedStageId} <${tagName}> did not contain a usable event value.`,
+                );
+            }
+            this._appendXmlRawEvent(rawEventLists, key, normalizedRaw);
+        }
+
+        const missingRequiredTags = normalizedRequiredTags.filter(
+            (tagName) => !seenTags.has(tagName),
+        );
+        if (missingRequiredTags.length) {
+            throw new Error(
+                `Tiny-brain ${normalizedSectionKind}/${normalizedStageId} event stage is missing required tags: ${missingRequiredTags.join(", ")}.`,
+            );
+        }
+
+        const structured = this._buildStructuredEventsFromRawLists(
+            rawEventLists,
+            { trackItems: false },
+        );
+        for (const [eventKey, rawEntries] of Object.entries(rawEventLists)) {
+            if (!Object.prototype.hasOwnProperty.call(structured.parsed, eventKey)) {
+                throw new Error(
+                    `Tiny-brain ${normalizedSectionKind}/${normalizedStageId} event <${eventKey}> failed semantic parsing.`,
+                );
+            }
+            if (
+                rawEntries.length > 0
+                && Array.isArray(structured.parsed[eventKey])
+                && structured.parsed[eventKey].length === 0
+            ) {
+                throw new Error(
+                    `Tiny-brain ${normalizedSectionKind}/${normalizedStageId} event <${eventKey}> produced no valid entries.`,
+                );
+            }
+        }
+
+        return {
+            value: {
+                xml: eventElements.map((node) => node.toString()).join("\n"),
+                signatures,
+            },
+        };
+    }
+
+    static parseTinyBrainEventXmlChunk(response) {
+        const allowedTags = Object.keys(TINY_BRAIN_EVENT_TAG_TO_KEY);
+        const parsed = this.parseTinyBrainEventXmlStage(response, {
+            sectionKind: "current",
+            stageId: "legacy_chunk",
+            allowedTags,
+            allowRegisteredXmlEvents: true,
+        });
+        if (!parsed.value.xml) {
+            return {
+                terminate: true,
+                response: parsed.response,
+                value: false,
+            };
+        }
+        return parsed;
     }
 
     static async _runTinyBrainEventXmlPrompt({
@@ -5360,16 +6190,21 @@ class Events {
         tinyBrain,
         promptEnv,
         parseXMLTemplate,
+        tinyBrainEventSequence = null,
     }) {
         const configuredRetries = Number(Globals.config?.ai?.retryAttempts);
         const retryAttempts =
             Number.isInteger(configuredRetries) && configuredRetries >= 0
                 ? configuredRetries
                 : 1;
+        const eventSequence = tinyBrainEventSequence
+            ? this._requireTinyBrainEventSequence(tinyBrainEventSequence)
+            : null;
         const result = await runTinyBrainPromptProgram({
             initialRenderedTemplate,
             templateContext,
             tinyBrain,
+            continuationState: eventSequence?.continuationState || null,
             runnerOptions: {
                 promptEnv,
                 parseXMLTemplate,
@@ -5377,12 +6212,44 @@ class Events {
                 metadataLabel: "event_checks",
                 logPrefix: "events_tinybrain",
                 parsers: {
-                    event_xml_chunk: (response) =>
-                        this.parseTinyBrainEventXmlChunk(response),
+                    event_xml_stage: (
+                        response,
+                        sectionKind,
+                        stageId,
+                        allowedTags,
+                        requiredTags,
+                        allowRegisteredXmlEvents,
+                    ) => {
+                        const acceptedSignatures = Object.values(
+                            tinyBrain.renderState.completedCheckpoints || {},
+                        ).flatMap((completed) =>
+                            Array.isArray(completed?.value?.signatures)
+                                ? completed.value.signatures
+                                : [],
+                        );
+                        return this.parseTinyBrainEventXmlStage(response, {
+                            sectionKind,
+                            stageId,
+                            allowedTags,
+                            requiredTags,
+                            allowRegisteredXmlEvents,
+                            acceptedSignatures,
+                        });
+                    },
                 },
-                finalParser: (response) => {
-                    const parsed = this.parseTinyBrainEventXmlChunk(response);
-                    return parsed && parsed.terminate ? { value: null } : parsed;
+                resultBuilders: {
+                    event_xml_result: () => {
+                        const fragments = Object.keys(
+                            tinyBrain.renderState.completedCheckpoints || {},
+                        )
+                            .sort((a, b) => Number(a) - Number(b))
+                            .map((key) =>
+                                tinyBrain.renderState.completedCheckpoints[key]?.value?.xml,
+                            )
+                            .filter((xml) => typeof xml === "string" && xml.trim())
+                            .map((xml) => xml.trim());
+                        return `<events>\n${fragments.join("\n")}\n</events>`;
+                    },
                 },
                 complete: async ({ messages, queueReservation }) => {
                 const response = await LLMClient.chatCompletion({
@@ -5411,36 +6278,20 @@ class Events {
                 },
             },
         });
-
-        const chunks = [];
-        const completed = tinyBrain.renderState.completedCheckpoints || {};
-        for (const key of Object.keys(completed).sort(
-            (a, b) => Number(a) - Number(b),
-        )) {
-            const value = completed[key]?.value;
-            if (value && typeof value.xml === "string" && value.xml.trim()) {
-                chunks.push(value.xml.trim());
+        if (eventSequence) {
+            const completedValues = Object.keys(
+                tinyBrain.renderState.completedCheckpoints || {},
+            )
+                .sort((a, b) => Number(a) - Number(b))
+                .map((key) => tinyBrain.renderState.completedCheckpoints[key]?.value)
+                .filter((value) => value && typeof value === "object");
+            for (const value of completedValues) {
+                if (typeof value.xml === "string" && value.xml.trim()) {
+                    eventSequence.acceptedXmlFragments.push(value.xml.trim());
+                }
             }
         }
-        if (
-            result &&
-            (result.terminatedAtCheckpoint === null ||
-                result.terminatedAtCheckpoint === undefined)
-        ) {
-            const finalChunk = this.parseTinyBrainEventXmlChunk(
-                result.aiResponse,
-            );
-            if (
-                finalChunk &&
-                !finalChunk.terminate &&
-                typeof finalChunk.value?.xml === "string" &&
-                finalChunk.value.xml.trim()
-            ) {
-                chunks.push(finalChunk.value.xml.trim());
-            }
-        }
-
-        return `<events>\n${chunks.join("\n")}\n</events>`;
+        return result.aiResponse;
     }
 
     static _extractHousekeepingXmlBlock(responseText) {

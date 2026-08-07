@@ -150,6 +150,11 @@ test('shared map fast travel asks for confirmation before gameplay travel side e
     /teleportNpcToLocation\(playerRecord,\s*destinationId,\s*\{[\s\S]*?accountTravelTime:\s*true/,
     'map fast travel should call the player teleport endpoint with travel-time accounting'
   );
+  assert.match(
+    helperSource,
+    /travelNarrationResult\?\.accompanyingCharacters[\s\S]*?teleportNpcToLocation\(playerRecord,[\s\S]*?accompanyingCharacters/,
+    'map fast travel should carry prompt-selected companions into the player teleport request'
+  );
 
   const previewIndex = helperSource.indexOf('fetchMapFastTravelPreview');
   const confirmationIndex = helperSource.indexOf('confirmMapFastTravel');

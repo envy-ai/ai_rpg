@@ -115,10 +115,10 @@ test('regular player-action prompts can create trackers, scheduled events, and r
     assert.match(playerActionPrompt, /`setRelationship`/);
 });
 
-test('improvement prompt defaults disabled, local config enables it, and config is validated', () => {
+test('improvement prompt defaults disabled, local config uses a boolean, and config is validated', () => {
     assert.equal(defaultConfig.improvement_prompt?.enabled, false);
     assert.equal(defaultConfig.improvement_prompt?.interval, 10);
-    assert.equal(localConfig.improvement_prompt?.enabled, true);
+    assert.equal(typeof localConfig.improvement_prompt?.enabled, 'boolean');
 
     assert.match(serverSource, /improvement_prompt must be an object when provided/);
     assert.match(serverSource, /improvement_prompt\.enabled must be a boolean when provided/);

@@ -10192,6 +10192,7 @@ class AIRPGChat {
         let shouldRefreshLocation = false;
         let finalizeMode = 'none';
         let skipHistoryRefresh = isNoLogGenericPromptEntry;
+        let responsePayload = null;
 
         try {
             await this.waitForWebSocketReady(1000);
@@ -10210,6 +10211,7 @@ class AIRPGChat {
             });
 
             const data = await response.json();
+            responsePayload = data;
             context.httpResolved = true;
             this.setTravelCompletionSoundSource(context, data?.completionSoundPath);
             const pendingAbilitySelection = data?.pendingAbilitySelection
@@ -10283,6 +10285,7 @@ class AIRPGChat {
                 console.debug('Story Tools refresh skipped after chat response:', refreshError);
             }
         }
+        return responsePayload;
     }
 
     async sendMessage({ allowEmptyAction = false } = {}) {
@@ -10330,7 +10333,7 @@ class AIRPGChat {
     }
 
     async dispatchAutomatedMessage(message, { travel = false, travelMetadata = null, suppressTravelCompletionSound = false, allowEmptyAction = false } = {}) {
-        await this.submitChatMessage(message, {
+        return this.submitChatMessage(message, {
             setButtonLoading: Boolean(travel),
             travel: Boolean(travel),
             travelMetadata: travelMetadata || null,

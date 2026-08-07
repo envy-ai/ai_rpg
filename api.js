@@ -49,6 +49,14 @@ const {
     parseWhileYouWereAwayStagedResult
 } = require('./TinyBrainPromptParsers.js');
 const {
+    PLAYER_ACTION_MOVEMENT,
+    buildPlayerActionTinyBrainResult
+} = require('./PlayerActionTinyBrainResult.js');
+const {
+    collectPlayerActionAccompanyingCharacters,
+    movePlayerActionAccompanyingCharacters
+} = require('./PlayerActionCompanions.js');
+const {
     LiveDeslopController,
     LiveRepeatedNgramDetector,
     locateDetectedSlop,
@@ -113,6 +121,20 @@ const INFORMATION_GATHERING_CHAT_TOOL_NAMES = new Set([
     'locateNpcs',
     'locateThings'
 ]);
+
+function sanitizeSlopHistorySegments(historySegments) {
+    if (!Array.isArray(historySegments)) {
+        throw new TypeError('Slop history sanitation requires an array of strings.');
+    }
+    return historySegments
+        .map((segment, index) => {
+            if (typeof segment !== 'string') {
+                throw new TypeError(`Slop history sanitation segment ${index} must be a string.`);
+            }
+            return sanitizeLiveSlopText(segment).trim();
+        })
+        .filter(Boolean);
+}
 
 const TINY_BRAIN_NPC_LOOKUP_TOOL_NAMES = new Set([
     'moreInfo',
@@ -4839,7 +4861,10 @@ module.exports = function registerApiRoutes(scope) {
             if (typeof analyzer !== 'function') {
                 throw new Error('Slopword analysis is unavailable on this server.');
             }
-            const combinedText = [...resolveSlopHistorySegments(historySegments), prose].join('\n\n');
+            const combinedText = [
+                ...sanitizeSlopHistorySegments(resolveSlopHistorySegments(historySegments)),
+                prose
+            ].join('\n\n');
             const flagged = await analyzer(combinedText, { session });
             if (!Array.isArray(flagged)) {
                 throw new Error('Slopword analysis returned an invalid result.');
@@ -4875,7 +4900,10 @@ module.exports = function registerApiRoutes(scope) {
                 throw new Error('Slop regex matching returned an invalid zero-ppm result.');
             }
 
-            const combinedText = [...resolveSlopHistorySegments(historySegments), prose].join('\n\n');
+            const combinedText = [
+                ...sanitizeSlopHistorySegments(resolveSlopHistorySegments(historySegments)),
+                prose
+            ].join('\n\n');
             const combinedPositivePpmMatches = await analyzer(combinedText, {
                 includeZeroPpm: false,
                 includePositivePpm: true,
@@ -4943,7 +4971,10 @@ module.exports = function registerApiRoutes(scope) {
                 throw new Error('Configured ngram analysis is unavailable on this server.');
             }
 
-            const combinedText = [...resolveSlopHistorySegments(historySegments), prose].join('\n\n');
+            const combinedText = [
+                ...sanitizeSlopHistorySegments(resolveSlopHistorySegments(historySegments)),
+                prose
+            ].join('\n\n');
             const flagged = await analyzer(combinedText, { session });
             if (!Array.isArray(flagged)) {
                 throw new Error('Configured ngram analysis returned an invalid result.');
@@ -4984,7 +5015,7 @@ module.exports = function registerApiRoutes(scope) {
         };
 
         const getRecentSlopHistorySegments = (limit = 20) => {
-            const segments = getSlopHistorySegments();
+            const segments = sanitizeSlopHistorySegments(getSlopHistorySegments());
             if (!segments.length) {
                 return [];
             }
@@ -5000,7 +5031,7 @@ module.exports = function registerApiRoutes(scope) {
             if (!Number.isFinite(numericLimit) || numericLimit <= 0) {
                 throw new RangeError('Assistant prose history limit must be a positive number.');
             }
-            const segments = getAssistantProseHistorySegments();
+            const segments = sanitizeSlopHistorySegments(getAssistantProseHistorySegments());
             if (!segments.length) {
                 return [];
             }
@@ -5181,9 +5212,7 @@ module.exports = function registerApiRoutes(scope) {
                 baseSegments: getRecentSlopHistorySegments(20),
                 supplementalSegments: getRecentAssistantProseHistorySegments(80)
             });
-            const liveSlopHistorySegments = getSlopHistorySegments()
-                .map(segment => sanitizeLiveSlopText(segment))
-                .filter(segment => segment.trim());
+            const liveSlopHistorySegments = sanitizeSlopHistorySegments(getSlopHistorySegments());
             return new LiveDeslopController({
                 detectSlop: (prose, { ngramSegments = null } = {}) => detectLiveSlop(prose, {
                     session: liveSlopSession,
@@ -5279,7 +5308,8 @@ module.exports = function registerApiRoutes(scope) {
                         const proseMode = liveDeslopController
                             ? resolveTinyBrainLiveDeslopProseMode({
                                 messages: stage.messages,
-                                isFinal: stage.isFinal
+                                isFinal: stage.isFinal,
+                                checkpoint: stage.checkpoint
                             })
                             : null;
                         if (proseMode) {
@@ -5327,7 +5357,10 @@ module.exports = function registerApiRoutes(scope) {
                 if (!entry || typeof entry !== 'object') {
                     continue;
                 }
-                const content = typeof entry.content === 'string' ? entry.content.trim() : '';
+                const rawContent = typeof entry.content === 'string' ? entry.content.trim() : '';
+                const content = rawContent
+                    ? sanitizeSlopHistorySegments([rawContent])[0] || ''
+                    : '';
                 if (!content) {
                     continue;
                 }
@@ -6314,8 +6347,47 @@ module.exports = function registerApiRoutes(scope) {
                 if (!segments.length) {
                     throw new Error('moveTurnResult requires at least one of originProse, betweenProse, or destinationProse.');
                 }
-                return {
-                    prose: segments.join('\n\n').trim(),
+                const directHiddenText = getDirectChildElementsByTagName(travelNode, 'hidden')
+                    .map(serializeXmlNodePreservingTags)
+                    .join('');
+                const accompanyingRoots = getDirectChildElementsByTagName(
+                    travelNode,
+                    'accompanyingcharacters'
+                );
+                if (accompanyingRoots.length > 1) {
+                    throw new Error('moveTurnResult may contain at most one <accompanyingCharacters> child.');
+                }
+                let accompanyingCharacters;
+                if (accompanyingRoots.length) {
+                    const unexpectedAccompanyingChildren = Array.from(accompanyingRoots[0].childNodes || [])
+                        .filter(child => child?.nodeType === 1)
+                        .filter(child => String(child.nodeName || '').toLowerCase() !== 'name');
+                    if (unexpectedAccompanyingChildren.length) {
+                        const unexpectedTag = unexpectedAccompanyingChildren[0].nodeName || 'unknown';
+                        throw new Error(
+                            `moveTurnResult <accompanyingCharacters> may contain only <name> children, not <${unexpectedTag}>.`
+                        );
+                    }
+                    const seenAccompanyingCharacters = new Set();
+                    accompanyingCharacters = getDirectChildElementsByTagName(accompanyingRoots[0], 'name')
+                        .map((node, index) => {
+                            const name = typeof node.textContent === 'string'
+                                ? node.textContent.trim()
+                                : '';
+                            if (!name) {
+                                throw new Error(`moveTurnResult accompanying character ${index + 1} requires a non-empty exact name.`);
+                            }
+                            const key = name.toLowerCase();
+                            if (seenAccompanyingCharacters.has(key)) {
+                                throw new Error(`moveTurnResult accompanying character "${name}" is duplicated.`);
+                            }
+                            seenAccompanyingCharacters.add(key);
+                            return name;
+                        });
+                }
+                const combinedProse = `${segments.join('\n\n').trim()}${directHiddenText}`.trim();
+                const parsedMoveResult = {
+                    prose: combinedProse,
                     travel: {
                         vehicle: vehicleName || null,
                         vehicleTravelTime: vehicleTravelTime || null,
@@ -6327,6 +6399,10 @@ module.exports = function registerApiRoutes(scope) {
                         destinationProse: destinationProse || null
                     }
                 };
+                if (accompanyingCharacters !== undefined) {
+                    parsedMoveResult.travel.accompanyingCharacters = accompanyingCharacters;
+                }
+                return parsedMoveResult;
             }
             throw new Error('Player action XML missing turnResult, moveTurnResult, or rejected.');
         }
@@ -8264,11 +8340,15 @@ module.exports = function registerApiRoutes(scope) {
                     });
                     const arrivalUpdatesXml = completed[candidates.length]?.value;
                     const itemSceneryMovesXml = completed[candidates.length + 1]?.value;
-                    return parseWhileYouWereAwayStagedResult(response, {
+                    const parsed = parseWhileYouWereAwayStagedResult(response, {
                         characterUpdateXml,
                         arrivalUpdatesXml,
                         itemSceneryMovesXml
                     });
+                    parseWhileYouWereAwayResponse(parsed.normalizedResponse, {
+                        expectedNameKeys: new Set(candidateByNameKey.keys())
+                    });
+                    return parsed;
                 };
                 const tinyBrainRun = await runTinyBrainNarrativePrompt({
                     family: 'while_you_were_away',
@@ -8686,11 +8766,13 @@ module.exports = function registerApiRoutes(scope) {
                     finalParser: response => {
                         const completed = tinyBrain.renderState.completedCheckpoints || {};
                         const happened = completed[0]?.value === true;
-                        return parseScheduledEventStagedResult(response, {
+                        const parsed = parseScheduledEventStagedResult(response, {
                             happened,
                             expectedSummary: happened ? completed[3]?.value : '',
                             playerPresent
                         });
+                        parseScheduledEventResultXml(parsed.normalizedResponse);
+                        return parsed;
                     },
                     requestOptions,
                     completeStage: async stage => {
@@ -10530,7 +10612,11 @@ module.exports = function registerApiRoutes(scope) {
                     templateContext,
                     tinyBrain,
                     metadataLabel: 'game_intro',
-                    finalParser: parseGameIntroResult,
+                    finalParser: response => {
+                        const parsed = parseGameIntroResult(response);
+                        parseGameIntroResponse(parsed.normalizedResponse);
+                        return parsed;
+                    },
                     requestOptions
                 });
                 rawResponse = tinyBrainRun.result.aiResponse;
@@ -17156,6 +17242,13 @@ module.exports = function registerApiRoutes(scope) {
                 .filter(Boolean)
                 .join('\n\n')
                 .trim();
+            const useTinyBrainSectionedEventChecks = isTinyBrainPromptEnabled(
+                Globals.config?.ai,
+                'event_checks'
+            );
+            const tinyBrainEventSequence = useTinyBrainSectionedEventChecks
+                ? Events.createTinyBrainEventSequence()
+                : null;
             const travelVehicleName = normalizemoveTurnResultVehicleField(moveTurnResultPayload.vehicle || '');
             const rawVehicleTravelTime = normalizemoveTurnResultVehicleTravelTimeField(
                 typeof moveTurnResultPayload.vehicleTravelTime === 'string'
@@ -17449,6 +17542,9 @@ module.exports = function registerApiRoutes(scope) {
                     locationOverride: location || null,
                     initialTimeProgress,
                     suppressHousekeeping: true,
+                    eventSectionKind: 'origin',
+                    suppressTrackerUpdates: useTinyBrainSectionedEventChecks,
+                    tinyBrainEventSequence,
                     entryCollector
                 });
             }
@@ -17528,10 +17624,23 @@ module.exports = function registerApiRoutes(scope) {
 	                            findRegionByLocationId,
 	                            backfillRegionExitTravelTimes
 	                        });
-	                        if (typeof Globals.recordPlayerArrivalVisitState === 'function') {
-	                            Globals.recordPlayerArrivalVisitState(destinationLocation);
-	                        }
+                        if (typeof Globals.recordPlayerArrivalVisitState === 'function') {
+                            Globals.recordPlayerArrivalVisitState(destinationLocation);
+                        }
                         currentPlayer.setLocation(destinationLocation);
+                        if (currentPlayer.currentLocation !== destinationLocation.id) {
+                            throw new Error(`Player did not reach travel destination "${destinationLocation.id}".`);
+                        }
+                        movePlayerActionAccompanyingCharacters({
+                            characterNames: Array.isArray(moveTurnResultPayload.accompanyingCharacters)
+                                ? moveTurnResultPayload.accompanyingCharacters
+                                : [],
+                            currentPlayer,
+                            originLocation: playerMoveOriginLocation,
+                            destinationLocation,
+                            players,
+                            gameLocations
+                        });
                         location = destinationLocation;
                         playerMoved = true;
                         const playerMoveTravelTimeMinutes = resolvemoveTurnResultPlayerMoveTimeMinutes({
@@ -17567,7 +17676,7 @@ module.exports = function registerApiRoutes(scope) {
 
             if (!shouldSplitEventChecks) {
                 let combinedEventResult = null;
-                if (combinedProse) {
+                if (combinedProse && !useTinyBrainSectionedEventChecks) {
                     combinedEventResult = await Events.runEventChecks({
                         textToCheck: combinedProse,
                         actionText: (includePlayerActionForEventChecks && userInput)
@@ -17585,6 +17694,89 @@ module.exports = function registerApiRoutes(scope) {
                         initialTimeProgress: playerMoveTimeAdjustment?.timeProgress || initialTimeProgress,
                         entryCollector
                     });
+                } else if (combinedProse) {
+                    const sectionResults = [];
+                    if (originProse) {
+                        sectionResults.push(await Events.runEventChecks({
+                            textToCheck: originProse,
+                            actionText: (includePlayerActionForEventChecks && userInput)
+                                ? userInput
+                                : null,
+                            stream,
+                            suppressMoveEvents: true,
+                            allowMoveTurnAppearances: true,
+                            suppressTimeAdvance: Boolean(suppressTimeAdvance),
+                            locationOverride: moveTurnResultEventLocation || location || null,
+                            initialTimeProgress,
+                            suppressHousekeeping: true,
+                            eventSectionKind: 'origin',
+                            suppressTrackerUpdates: true,
+                            tinyBrainEventSequence,
+                            entryCollector
+                        }));
+                    }
+                    if (betweenProse) {
+                        sectionResults.push(await Events.runEventChecks({
+                            textToCheck: betweenProse,
+                            stream,
+                            suppressMoveEvents: true,
+                            suppressTimeAdvance: true,
+                            locationOverride: location || moveTurnResultEventLocation || null,
+                            suppressNeedBarEventChecks: true,
+                            suppressHousekeeping: true,
+                            eventSectionKind: 'between',
+                            suppressTrackerUpdates: true,
+                            tinyBrainEventSequence,
+                            entryCollector
+                        }));
+                    }
+                    if (destinationProse) {
+                        sectionResults.push(await Events.runEventChecks({
+                            textToCheck: destinationProse,
+                            actionText: (!originProse && includePlayerActionForEventChecks && userInput)
+                                ? userInput
+                                : null,
+                            stream,
+                            suppressMoveEvents: true,
+                            allowMoveTurnAppearances: true,
+                            suppressTimeAdvance: Boolean(suppressTimeAdvance),
+                            locationOverride: location || moveTurnResultEventLocation || null,
+                            initialTimeProgress: playerMoveTimeAdjustment?.timeProgress || initialTimeProgress,
+                            suppressHousekeeping: true,
+                            eventSectionKind: 'destination',
+                            suppressTrackerUpdates: true,
+                            tinyBrainEventSequence,
+                            entryCollector
+                        }));
+                    }
+                    const acceptedSectionEventResult = mergeEventResults(sectionResults);
+                    sectionResults.push(await Events.runEventChecks({
+                        textToCheck: combinedProse,
+                        stream,
+                        suppressMoveEvents: true,
+                        suppressTimeAdvance: true,
+                        locationOverride: location || moveTurnResultEventLocation || null,
+                        suppressNeedBarEventChecks: true,
+                        suppressHousekeeping: true,
+                        eventSectionKind: 'tracker',
+                        eventMode: 'trackers',
+                        tinyBrainAcceptedEventXml: acceptedSectionEventResult?.raw || '',
+                        tinyBrainEventSequence,
+                        entryCollector
+                    }));
+                    combinedEventResult = mergeEventResults(sectionResults);
+                    if (Events.shouldRunAutomaticHousekeepingThisTurn()) {
+                        await runHousekeepingPrompt({
+                            textToCheck: combinedProse,
+                            actionText: (includePlayerActionForEventChecks && userInput)
+                                ? userInput
+                                : null,
+                            stream,
+                            locationOverride: location || moveTurnResultEventLocation || null,
+                            eventResult: combinedEventResult,
+                            entryCollector
+                        });
+                    }
                 }
                 if (playerMoveTimeAdjustment?.timeProgress
                     && (!combinedEventResult || !combinedEventResult.timeProgress)) {
@@ -17613,6 +17805,22 @@ module.exports = function registerApiRoutes(scope) {
                 || destinationLabelFallback;
 
             let destinationEventResult = null;
+            let betweenEventResult = null;
+            if (useTinyBrainSectionedEventChecks && betweenProse) {
+                betweenEventResult = await Events.runEventChecks({
+                    textToCheck: betweenProse,
+                    stream,
+                    suppressMoveEvents: true,
+                    suppressTimeAdvance: true,
+                    locationOverride: destinationLocation || location || null,
+                    suppressNeedBarEventChecks: true,
+                    suppressHousekeeping: true,
+                    eventSectionKind: 'between',
+                    suppressTrackerUpdates: true,
+                    tinyBrainEventSequence,
+                    entryCollector
+                });
+            }
             if (destinationProse) {
                 destinationEventResult = await Events.runEventChecks({
                     textToCheck: destinationProse,
@@ -17626,10 +17834,40 @@ module.exports = function registerApiRoutes(scope) {
                     locationOverride: destinationLocation || null,
                     initialTimeProgress: playerMoveTimeAdjustment?.timeProgress || initialTimeProgress,
                     suppressHousekeeping: true,
+                    eventSectionKind: 'destination',
+                    suppressTrackerUpdates: useTinyBrainSectionedEventChecks,
+                    tinyBrainEventSequence,
                     entryCollector
                 });
             }
-            let splitEventResult = mergeEventResults([originEventResult, destinationEventResult]);
+            let trackerEventResult = null;
+            if (useTinyBrainSectionedEventChecks && combinedProse) {
+                const acceptedSectionEventResult = mergeEventResults([
+                    originEventResult,
+                    betweenEventResult,
+                    destinationEventResult
+                ]);
+                trackerEventResult = await Events.runEventChecks({
+                    textToCheck: combinedProse,
+                    stream,
+                    suppressMoveEvents: true,
+                    suppressTimeAdvance: true,
+                    locationOverride: destinationLocation || location || null,
+                    suppressNeedBarEventChecks: true,
+                    suppressHousekeeping: true,
+                    eventSectionKind: 'tracker',
+                    eventMode: 'trackers',
+                    tinyBrainAcceptedEventXml: acceptedSectionEventResult?.raw || '',
+                    tinyBrainEventSequence,
+                    entryCollector
+                });
+            }
+            let splitEventResult = mergeEventResults([
+                originEventResult,
+                betweenEventResult,
+                destinationEventResult,
+                trackerEventResult
+            ]);
             if (playerMoveTimeAdjustment?.timeProgress
                 && (!splitEventResult || !splitEventResult.timeProgress)) {
                 if (!splitEventResult || typeof splitEventResult !== 'object') {
@@ -17653,6 +17891,7 @@ module.exports = function registerApiRoutes(scope) {
             return {
                 eventResult: splitEventResult,
                 originEventResult,
+                betweenEventResult,
                 destinationEventResult,
                 originEventLocationName,
                 destinationEventLocationName,
@@ -18641,7 +18880,14 @@ module.exports = function registerApiRoutes(scope) {
                         templateContext,
                         tinyBrain,
                         metadataLabel: 'random_event',
-                        finalParser: response => parseTurnNarrativeResult(response, { allowTravel: true }),
+                        finalParser: async response => {
+                            const parsed = parseTurnNarrativeResult(response, { allowTravel: true });
+                            await parsePlayerActionProseFromXml(parsed.normalizedResponse, {
+                                logJson: false,
+                                repairMalformed: false
+                            });
+                            return parsed;
+                        },
                         requestOptions
                     });
                     rawResponse = tinyBrainRun.result.aiResponse;
@@ -23167,7 +23413,14 @@ module.exports = function registerApiRoutes(scope) {
                         templateContext: promptVariables,
                         tinyBrain,
                         metadataLabel: aiMetricsLabel,
-                        finalParser: response => parseTurnNarrativeResult(response, { allowTravel: false }),
+                        finalParser: async response => {
+                            const parsed = parseTurnNarrativeResult(response, { allowTravel: false });
+                            await parsePlayerActionProseFromXml(parsed.normalizedResponse, {
+                                logJson: false,
+                                repairMalformed: false
+                            });
+                            return parsed;
+                        },
                         requestOptions,
                         completeStage: async stage => {
                             const isLookupCheckpoint = !stage.isFinal
@@ -25623,6 +25876,46 @@ module.exports = function registerApiRoutes(scope) {
                                 player: currentPlayer,
                                 location
                             });
+                            const playerActionTravelDestination = (() => {
+                                if (!promptTravelContext?.destinationLocation) {
+                                    return null;
+                                }
+                                const destinationLocation = promptTravelContext.destinationLocation;
+                                const destinationRegion = resolveRegionForLocationObject(destinationLocation);
+                                const destinationLocationName = typeof destinationLocation.name === 'string'
+                                    ? destinationLocation.name.trim()
+                                    : '';
+                                const destinationRegionName = typeof destinationRegion?.name === 'string'
+                                    ? destinationRegion.name.trim()
+                                    : '';
+                                if (!destinationLocationName && !destinationRegionName) {
+                                    throw new Error('Resolved player-action travel destination is missing a location and region name.');
+                                }
+                                const travelTimeMinutes = promptTravelContext.exit
+                                    ? resolveExitTravelTimeForTraversal({
+                                        exit: promptTravelContext.exit,
+                                        sourceLocation: promptTravelContext.originLocation
+                                    })
+                                    : resolveFastTravelTimeForTraversal({
+                                        sourceLocation: promptTravelContext.originLocation,
+                                        destinationLocation
+                                    });
+                                return {
+                                    location: destinationLocationName || null,
+                                    region: destinationRegionName || null,
+                                    travelTimeMinutes
+                                };
+                            })();
+                            const playerActionTravelMovementKind = playerActionTravelDestination
+                                ? (baseContext.currentVehicle
+                                    ? PLAYER_ACTION_MOVEMENT.DISEMBARK
+                                    : PLAYER_ACTION_MOVEMENT.DESTINATION)
+                                : null;
+                            const playerActionAccompanyingCharacters = collectPlayerActionAccompanyingCharacters({
+                                currentPlayer,
+                                location,
+                                players
+                            });
 
                             promptVariables = {
                                 ...baseContext,
@@ -25633,7 +25926,10 @@ module.exports = function registerApiRoutes(scope) {
                                 itemContext: itemContextXml,
                                 abilityContext: abilityContextXml,
                                 travelTargetLocationId: promptTravelContext?.destinationLocation?.id || null,
-                                travelTargetLocationName: promptTravelContext?.destinationLocation?.name || null
+                                travelTargetLocationName: promptTravelContext?.destinationLocation?.name || null,
+                                playerActionTravelDestination,
+                                playerActionTravelMovementKind,
+                                playerActionAccompanyingCharacters
                             };
                         } else if (isQuestionAction) {
                             promptVariables = {
@@ -26101,13 +26397,29 @@ module.exports = function registerApiRoutes(scope) {
                             retryAttempts: tinyBrainRetryAttempts,
                             metadataLabel: promptMetadataLabel,
                             logPrefix: `${promptMetadataLabel}_tinybrain`,
+                            resultBuilders: promptType === 'player-action'
+                                ? { player_action_result: buildPlayerActionTinyBrainResult }
+                                : {},
                             finalParser: shouldUseRepetitionBusterXml
                                 ? async (response) => {
-                                    await parsePlayerActionProseFromXml(response, {
+                                    let normalizedResponse = response;
+                                    let structuredParserResult = null;
+                                    if (promptType === 'creative-mode-action') {
+                                        structuredParserResult = parseTurnNarrativeResult(response, {
+                                            allowTravel: true
+                                        });
+                                        normalizedResponse = structuredParserResult.normalizedResponse;
+                                    }
+                                    await parsePlayerActionProseFromXml(normalizedResponse, {
                                         logJson: false,
                                         repairMalformed: false
                                     });
-                                    return { value: true };
+                                    return {
+                                        value: true,
+                                        ...(structuredParserResult
+                                            ? { normalizedResponse }
+                                            : {})
+                                    };
                                 }
                                 : null,
                             complete: async ({
@@ -26130,7 +26442,7 @@ module.exports = function registerApiRoutes(scope) {
                             };
                             delete stageRequestOptions.requiredRegex;
                             const liveDeslopProseMode = liveDeslopController
-                                ? resolveTinyBrainLiveDeslopProseMode({ messages, isFinal })
+                                ? resolveTinyBrainLiveDeslopProseMode({ messages, isFinal, checkpoint })
                                 : null;
                             if (liveDeslopProseMode) {
                                 stageRequestOptions.onLiveTokenStreamFallback = async diagnostic => {
@@ -26594,6 +26906,13 @@ module.exports = function registerApiRoutes(scope) {
                     const responseData = {
                         response: aiResponse
                     };
+                    if (
+                        currentActionIsTravel
+                        && !travelMetadataIsEventDriven
+                        && Array.isArray(moveTurnResultPayload?.accompanyingCharacters)
+                    ) {
+                        responseData.accompanyingCharacters = moveTurnResultPayload.accompanyingCharacters.slice();
+                    }
                     if (scheduledEventInterruptionInfo?.locationRefreshRequested) {
                         responseData.locationRefreshRequested = true;
                     }
@@ -27221,6 +27540,19 @@ module.exports = function registerApiRoutes(scope) {
                                                 Globals.recordPlayerArrivalVisitState(destinationLocation);
                                             }
                                             currentPlayer.setLocation(destinationLocation);
+                                            if (currentPlayer.currentLocation !== destinationLocation.id) {
+                                                throw new Error(`Player did not reach event-driven travel destination "${destinationLocation.id}".`);
+                                            }
+                                            movePlayerActionAccompanyingCharacters({
+                                                characterNames: Array.isArray(moveTurnResultPayload?.accompanyingCharacters)
+                                                    ? moveTurnResultPayload.accompanyingCharacters
+                                                    : [],
+                                                currentPlayer,
+                                                originLocation: travelContext.originLocation,
+                                                destinationLocation,
+                                                players,
+                                                gameLocations
+                                            });
                                         }
                                         traveledToLocationId = destinationLocation?.id || traveledToLocationId;
                                     }
@@ -32531,6 +32863,16 @@ module.exports = function registerApiRoutes(scope) {
                 const rawLocationId = typeof body.locationId === 'string' ? body.locationId.trim() : '';
                 const accountTravelTime = body.accountTravelTime === true;
                 const storyToolTeleport = body.storyToolTeleport === true;
+                const accompanyingCharacters = body.accompanyingCharacters === undefined
+                    ? []
+                    : body.accompanyingCharacters;
+                if (!Array.isArray(accompanyingCharacters)
+                    || accompanyingCharacters.some(name => typeof name !== 'string' || !name.trim())) {
+                    return res.status(400).json({
+                        success: false,
+                        error: 'accompanyingCharacters must be an array of non-empty exact names or aliases.'
+                    });
+                }
                 const clientId = typeof body.clientId === 'string' && body.clientId.trim()
                     ? body.clientId.trim()
                     : null;
@@ -32761,6 +33103,19 @@ module.exports = function registerApiRoutes(scope) {
                     Globals.recordPlayerArrivalVisitState(destinationLocation);
                 }
                 npc.setLocation(destinationLocation.id);
+                if (!isNpc) {
+                    if (npc.currentLocation !== destinationLocation.id) {
+                        throw new Error(`Player did not reach fast-travel destination "${destinationLocation.id}".`);
+                    }
+                    movePlayerActionAccompanyingCharacters({
+                        characterNames: accompanyingCharacters,
+                        currentPlayer: npc,
+                        originLocation,
+                        destinationLocation,
+                        players,
+                        gameLocations
+                    });
+                }
 
                 let fastTravelSummaryItem = null;
                 if (fastTravelTimeMinutes > 0) {
@@ -38886,6 +39241,16 @@ module.exports = function registerApiRoutes(scope) {
                 }
 
 	                const { destinationId, direction, expectedOriginLocationId } = req.body || {};
+	                const accompanyingCharacters = req.body?.accompanyingCharacters === undefined
+	                    ? []
+	                    : req.body.accompanyingCharacters;
+	                if (!Array.isArray(accompanyingCharacters)
+	                    || accompanyingCharacters.some(name => typeof name !== 'string' || !name.trim())) {
+	                    return res.status(400).json({
+	                        success: false,
+	                        error: 'accompanyingCharacters must be an array of non-empty exact names or aliases.'
+	                    });
+	                }
 	                const clientId = typeof req.body?.clientId === 'string' && req.body.clientId.trim()
 	                    ? req.body.clientId.trim()
 	                    : null;
@@ -39078,6 +39443,17 @@ module.exports = function registerApiRoutes(scope) {
                     Globals.recordPlayerArrivalVisitState(destinationLocation);
                 }
                 currentPlayer.setLocation(destinationLocation.id);
+                if (currentPlayer.currentLocation !== destinationLocation.id) {
+                    throw new Error(`Player did not reach direct-move destination "${destinationLocation.id}".`);
+                }
+                movePlayerActionAccompanyingCharacters({
+                    characterNames: accompanyingCharacters,
+                    currentPlayer,
+                    originLocation: currentLocation,
+                    destinationLocation,
+                    players,
+                    gameLocations
+                });
 
                 if (currentPlayer?.lastActionWasTravel) {
                     const travelEntry = findMostRecentTravelEntry();
@@ -44312,7 +44688,16 @@ module.exports = function registerApiRoutes(scope) {
             return pushChatEntry(entry, null, resolvedLocationId);
         }
 
+        const containerContentsGenerationPromises = new WeakMap();
+
         async function ensureContainerContentsGenerated(container, { location = null } = {}) {
+            if (!container || typeof container !== 'object') {
+                throw createContainerMoveError('Container contents generation requires a container.', 500);
+            }
+            const existingGeneration = containerContentsGenerationPromises.get(container);
+            if (existingGeneration) {
+                return await existingGeneration;
+            }
             const pendingContents = Array.isArray(container?.containerContents)
                 ? container.containerContents
                 : [];
@@ -44322,16 +44707,26 @@ module.exports = function registerApiRoutes(scope) {
             if (typeof generateContainerContentsForThing !== 'function') {
                 throw createContainerMoveError('Container contents generation helper is unavailable.', 500);
             }
-            const generated = await generateContainerContentsForThing({ container, location });
-            if (things instanceof Map) {
-                things.set(container.id, container);
-                for (const item of Array.isArray(generated) ? generated : []) {
-                    if (item?.id) {
-                        things.set(item.id, item);
+            const generationPromise = Promise.resolve().then(async () => {
+                const generated = await generateContainerContentsForThing({ container, location });
+                if (things instanceof Map) {
+                    things.set(container.id, container);
+                    for (const item of Array.isArray(generated) ? generated : []) {
+                        if (item?.id) {
+                            things.set(item.id, item);
+                        }
                     }
                 }
+                return Array.isArray(generated) ? generated : [];
+            });
+            containerContentsGenerationPromises.set(container, generationPromise);
+            try {
+                return await generationPromise;
+            } finally {
+                if (containerContentsGenerationPromises.get(container) === generationPromise) {
+                    containerContentsGenerationPromises.delete(container);
+                }
             }
-            return Array.isArray(generated) ? generated : [];
         }
 
         async function ensurePendingContainerContentsForThings(items = []) {
@@ -44588,7 +44983,37 @@ module.exports = function registerApiRoutes(scope) {
                         templateContext: containerPromptContext,
                         tinyBrain,
                         metadataLabel: 'player_action_open_container',
-                        finalParser: parseContainerOpenNarrativeResult,
+                        finalParser: (response, parseContext = {}) => {
+                            const checkToolInvocations = Array.isArray(parseContext.toolInvocations)
+                                ? parseContext.toolInvocations.filter(invocation => (
+                                    invocation?.name === 'resolveSkillCheck'
+                                    || invocation?.name === 'resolveOpposedSkillCheck'
+                                ))
+                                : [];
+                            if (checkToolInvocations.length !== 1) {
+                                throw new Error(
+                                    `Container open-check must execute exactly one check tool; executed ${checkToolInvocations.length}.`
+                                );
+                            }
+                            const invocation = checkToolInvocations[0];
+                            if (invocation.metadata?.error === true) {
+                                throw new Error('Container open-check tool execution failed.');
+                            }
+                            if (!checkResultsRecorder.hasRecords()) {
+                                throw new Error(
+                                    'Container open-check response did not call resolveSkillCheck or resolveOpposedSkillCheck.'
+                                );
+                            }
+                            const expectedSuccess = typeof invocation.metadata?.actionResolution?.success === 'boolean'
+                                ? invocation.metadata.actionResolution.success
+                                : null;
+                            const parsed = parseContainerOpenNarrativeResult(response, {
+                                expectedToolName: invocation.name,
+                                expectedSuccess
+                            });
+                            parseContainerOpenResultXml(parsed.normalizedResponse);
+                            return parsed;
+                        },
                         requestOptions,
                         completeStage: async stage => {
                             const isCheckToolCheckpoint = !stage.isFinal
@@ -52224,3 +52649,4 @@ module.exports.maybeBackfillRegionExitTravelTimesForArrival = maybeBackfillRegio
 module.exports.assertSafeSaveDirectoryName = assertSafeSaveDirectoryName;
 module.exports.snapshotPlayerActionBaseContextForSlop = snapshotPlayerActionBaseContextForSlop;
 module.exports.isExitButtonTravelToExterior = isExitButtonTravelToExterior;
+module.exports.sanitizeSlopHistorySegments = sanitizeSlopHistorySegments;

@@ -74,10 +74,59 @@ test('prompt progress character targets resolve exact and prefix labels without 
     assert.equal(LLMClient.resolvePromptProgressCharacterTarget('location_generation', config), 10000);
     assert.equal(LLMClient.resolvePromptProgressCharacterTarget('npc_generation_single', config), 10000);
     assert.equal(LLMClient.resolvePromptProgressCharacterTarget('player_action', config), 5000);
-    assert.throws(
-        () => LLMClient.resolvePromptProgressCharacterTarget('new_unconfigured_prompt', config),
-        /character target.*new_unconfigured_prompt/i
-    );
+    let missingTargetError = null;
+    try {
+        LLMClient.resolvePromptProgressCharacterTarget('new_unconfigured_prompt', config);
+    } catch (error) {
+        missingTargetError = error;
+    }
+    assert.match(missingTargetError?.message || '', /character target.*new_unconfigured_prompt/i);
+    assert.equal(missingTargetError.isConfigurationError, true);
+});
+
+test('missing prompt progress coverage aborts before transport without entering request retries', { concurrency: false }, async () => {
+    const originalAxiosPost = axios.post;
+    const originalBaseDir = Globals.baseDir;
+    const originalConfig = Globals.config;
+    const originalRealtimeHub = Globals.realtimeHub;
+    const baseDir = makeTempBaseDir('prompt-progress-missing-target');
+    let transportCalls = 0;
+    installPromptProgressConfig(baseDir);
+    Globals.realtimeHub = { emit() {} };
+    LLMClient.resetPromptOutputCharacterStatsForTests();
+    axios.post = async () => {
+        transportCalls += 1;
+        throw new Error('Transport must not be reached for an invalid prompt-progress configuration.');
+    };
+
+    try {
+        await assert.rejects(
+            LLMClient.withPromptProgressGroup({
+                progressGroupId: 'missing-target-test-run',
+                progressGroupTargetLabel: 'need_bar_event_checks_tinybrain'
+            }, () => LLMClient.chatCompletion({
+                messages: [{ role: 'user', content: 'This label is intentionally missing.' }],
+                metadataLabel: 'need_bar_event_checks',
+                retryAttempts: 6,
+                validateXML: false,
+                stream: true,
+                output: 'stdout'
+            })),
+            error => {
+                assert.equal(error?.isConfigurationError, true);
+                assert.match(error?.message || '', /need_bar_event_checks_tinybrain/);
+                return true;
+            }
+        );
+        assert.equal(transportCalls, 0);
+    } finally {
+        LLMClient.clearPromptProgressGroup('missing-target-test-run');
+        axios.post = originalAxiosPost;
+        Globals.realtimeHub = originalRealtimeHub;
+        LLMClient.resetPromptOutputCharacterStatsForTests();
+        Globals.baseDir = originalBaseDir;
+        Globals.config = originalConfig;
+    }
 });
 
 test('prompt progress message formatting preserves chronological conversation order', () => {
@@ -117,10 +166,14 @@ test('default config prompt progress targets cover known prompt families', () =>
     assert.equal(LLMClient.resolvePromptProgressCharacterTarget('npc_generation_single', config), 10000);
     assert.equal(LLMClient.resolvePromptProgressCharacterTarget('player_action_tool_loop_round', config), 5000);
     assert.equal(LLMClient.resolvePromptProgressCharacterTarget('event_checks_tinybrain', config), 5000);
+    assert.equal(LLMClient.resolvePromptProgressCharacterTarget('need_bar_event_checks', config), 5000);
+    assert.equal(LLMClient.resolvePromptProgressCharacterTarget('need_bar_event_checks_tinybrain', config), 5000);
     assert.equal(LLMClient.resolvePromptProgressCharacterTarget('generic_prompt_tool_call_error', config), 5000);
     assert.equal(LLMClient.resolvePromptProgressCharacterTarget('inventory_generation_Barkeep', config), 5000);
     assert.equal(LLMClient.resolvePromptProgressCharacterTarget('scheduled_event_resolution', config), 5000);
     assert.equal(LLMClient.resolvePromptProgressCharacterTarget('scene_illustration_prompt', config), 5000);
+    assert.equal(LLMClient.resolvePromptProgressCharacterTarget('while_you_were_away', config), 5000);
+    assert.equal(LLMClient.resolvePromptProgressCharacterTarget('while_you_were_away_tinybrain', config), 5000);
 });
 
 test('prompt output character stats persist globally and reject invalid stats files', () => {

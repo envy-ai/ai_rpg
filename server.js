@@ -3,6 +3,9 @@ const express = require('express');
 const axios = require('axios');
 const LLMClient = require('./LLMClient.js');
 const {
+    validateGeneratedContainerContentsAgainstSeeds
+} = require('./ContainerContentsGeneration.js');
+const {
     TINY_BRAIN_PROMPT_METADATA_LABELS,
     getTinyBrainPromptConfigurationErrors,
     isTinyBrainPromptEnabled
@@ -4488,6 +4491,7 @@ async function runGenerationPromptCompletion({
         requestOptions: {
             ...requestOptions,
             prefill: null,
+            preserveBaseContextToolDefinitions: true,
             additionalPayload: {
                 ...existingAdditionalPayload,
                 tools: getGenerationPromptToolDefinitions(),
@@ -14230,6 +14234,16 @@ async function requestServerRestart({ reason = 'manual', saveName = null, saveTy
         }
     }
 
+    try {
+        await LLMClient.deleteRouterContextCacheFiles({ configOverride: config });
+    } catch (error) {
+        selfRestartRequested = false;
+        throw new Error(
+            `Cannot restart AI RPG because llama.cpp context cache cleanup failed: ${error.message}`,
+            { cause: error }
+        );
+    }
+
     const child = spawn(process.execPath, process.argv.slice(1), {
         cwd: process.cwd(),
         detached: true,
@@ -15596,6 +15610,9 @@ async function generateContainerContentsForThing({
         requestOptions: {
             messages,
             metadataLabel: contentsMetadataLabel,
+            validateXML: true,
+            validateXMLStrict: true,
+            requiredRegex: /<items\b[\s\S]*<\/items>\s*$/i,
             captureRequestPayload: (payload) => { requestPayloadForLog = payload; }
         },
         metadataLabel: contentsMetadataLabel
@@ -15605,15 +15622,20 @@ async function generateContainerContentsForThing({
         throw new Error('Empty container contents generation response from AI.');
     }
 
-    const parsedItems = await parseThingsXml(responseText, {
+    const responseXmlContent = Utils.extractFinalXmlBlockFromResponse(responseText) || responseText;
+    const parsedItems = await parseThingsXml(responseXmlContent, {
         isInventory: true,
         promptEnv,
         parseXMLTemplate,
-        prepareBasePromptContext
+        prepareBasePromptContext,
+        strictXml: true
     });
     if (!Array.isArray(parsedItems) || !parsedItems.length) {
         throw new Error(`Container contents generation for "${container.name || container.id}" returned no items.`);
     }
+    validateGeneratedContainerContentsAgainstSeeds(parsedItems, pendingContents, {
+        containerName: container.name || container.id || 'container'
+    });
 
     const baseReference = Number.isFinite(resolvedLocation?.baseLevel)
         ? resolvedLocation.baseLevel
@@ -33787,6 +33809,7 @@ async function startServer() {
 // processes and causes EADDRINUSE when a dev server is already running).
 if (require.main === module) {
     let managedLlamaTerminationRequested = false;
+    let programTerminationRequested = false;
     const terminateManagedLlamaImmediately = () => {
         if (managedLlamaTerminationRequested || !localLlamaServerProcess) {
             return;
@@ -33798,19 +33821,55 @@ if (require.main === module) {
             console.error('Failed to terminate managed llama.cpp server during shutdown:', error.message);
         }
     };
+
+    const terminateProgram = async ({ exitCode = 0, reason = 'shutdown' } = {}) => {
+        if (programTerminationRequested) {
+            return;
+        }
+        programTerminationRequested = true;
+        let resolvedExitCode = exitCode;
+
+        if (localLlamaServerProcess?.isRunning()) {
+            try {
+                await localLlamaServerProcess.stop();
+            } catch (error) {
+                resolvedExitCode = 1;
+                console.error(
+                    `Failed to terminate managed llama.cpp server during ${reason}:`,
+                    error.message
+                );
+                terminateManagedLlamaImmediately();
+            }
+        }
+
+        try {
+            await LLMClient.deleteRouterContextCacheFiles({ configOverride: config });
+        } catch (error) {
+            resolvedExitCode = 1;
+            console.error(`Failed to delete llama.cpp context caches during ${reason}:`, error.message);
+        }
+
+        process.exit(resolvedExitCode);
+    };
+
     process.once('SIGINT', () => {
-        terminateManagedLlamaImmediately();
-        process.exit(0);
+        void terminateProgram({ reason: 'SIGINT shutdown' });
     });
     process.once('SIGTERM', () => {
-        terminateManagedLlamaImmediately();
-        process.exit(0);
+        void terminateProgram({ reason: 'SIGTERM shutdown' });
     });
-    process.once('exit', terminateManagedLlamaImmediately);
+    process.once('exit', () => {
+        terminateManagedLlamaImmediately();
+        try {
+            LLMClient.deleteRouterContextCacheFilesSync({ configOverride: config });
+        } catch (error) {
+            console.error('Failed to delete llama.cpp context caches during process exit:', error.message);
+        }
+    });
 
     startServer().catch(error => {
         console.error('❌ Failed to start server:', error.message);
-        process.exit(1);
+        void terminateProgram({ exitCode: 1, reason: 'startup failure' });
     });
 }
 function getExperiencePointValues() {

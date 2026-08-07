@@ -174,6 +174,11 @@ test('generation prompt completions are wired to the random integer tool loop', 
   );
   assert.match(
     serverSource,
+    /preserveBaseContextToolDefinitions:\s*true/,
+    'generation helper should keep its restricted random-only tool schema',
+  );
+  assert.match(
+    serverSource,
     /prefill:\s*null/,
     'generation helper should disable assistant prefill for tool-call requests',
   );

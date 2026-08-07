@@ -218,7 +218,7 @@ Notes:
 Teleport a character to another location.
 
 Request:
-- Body: `{ locationId: string, accountTravelTime?: boolean, storyToolTeleport?: boolean, clientId?: string }`
+- Body: `{ locationId: string, accountTravelTime?: boolean, storyToolTeleport?: boolean, accompanyingCharacters?: string[], clientId?: string }`
 
 Response:
 - 200: `{ success: true, npc: NpcProfile, destination: LocationResponse, previousLocation: LocationResponse, locationIds: string[], worldTime, timeProgress, removedFromParty, arrivalProcessingError, message }`
@@ -228,6 +228,7 @@ Notes:
 - `locationId` must reference an existing location. Requests to move the target to its effective origin location return 400.
 - When the target character is the player and `storyToolTeleport` is `true`, this route is a story-tool teleport: it sets the player's current location to the requested existing location, returns refreshed origin/destination payloads, and skips travel-time accounting, `while-you-were-away`, hidden-NPC arrival checks, NPC sighting updates, and event-summary creation.
 - Player teleports without `storyToolTeleport` keep the normal arrival-processing path. Region Map, World Map, and Favorites use that gameplay path after their preview, confirmation, and `/api/chat` fast-travel prompt.
+- For those gameplay player teleports, `accompanyingCharacters` carries the prompt-selected complete canonical names or aliases. The server validates and canonicalizes them against living party members and living NPCs at the origin, then relocates selected non-party NPCs while retaining selected party membership. Story-tool teleports do not apply this gameplay companion selection.
 - Normal player travel commits the location and elapsed travel time before running `while-you-were-away`, hidden-NPC arrival checks, and sighting updates. If that post-travel pipeline throws, the route still returns a successful teleport response with `arrivalProcessingError: { message, stack }`; the client refreshes the committed destination and opens the normal error popup with the backtrace.
 - When the target character is an NPC in the current player's party, the route removes them from the party before applying the teleport so the old party/location state cannot leave a stale client-side presence behind.
 - For NPC targets, and for non-story-tool player teleports, when `accountTravelTime` is `true`, the route resolves the shortest directed path between the origin and destination using the location graph's stored `travelTimeMinutes`, advances world time by that total, and returns the resulting `worldTime` / `timeProgress`. If no route exists, fast-travel time falls back to `0` minutes.

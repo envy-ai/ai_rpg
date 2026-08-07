@@ -49,3 +49,20 @@ test('checked container open-check autosaves after applying route mutations', ()
     assert.ok(autosaveWarning > autosaveCall, 'Expected container open-check autosave warning path.');
     assert.ok(response > autosaveWarning, 'Expected autosave before success response.');
 });
+
+test('tiny-brain checked-container semantics are validated before the final response is accepted', () => {
+    const source = fs.readFileSync(require.resolve('../api.js'), 'utf8');
+    const routeSource = extractContainerOpenCheckRoute(source);
+    const finalParserStart = routeSource.indexOf('finalParser: (response, parseContext = {}) => {');
+    const finalParserEnd = routeSource.indexOf('requestOptions,', finalParserStart);
+
+    assert.notEqual(finalParserStart, -1, 'Expected the TinyBrain checked-container final parser.');
+    assert.ok(finalParserEnd > finalParserStart, 'Expected the end of the TinyBrain checked-container final parser.');
+
+    const finalParserSource = routeSource.slice(finalParserStart, finalParserEnd);
+    assert.match(finalParserSource, /checkToolInvocations\.length !== 1/);
+    assert.match(finalParserSource, /invocation\.metadata\?\.error === true/);
+    assert.match(finalParserSource, /expectedSuccess/);
+    assert.match(finalParserSource, /parseContainerOpenNarrativeResult\(response/);
+    assert.match(finalParserSource, /parseContainerOpenResultXml\(parsed\.normalizedResponse\)/);
+});

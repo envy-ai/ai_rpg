@@ -69,53 +69,11 @@ Provide a response in prose, strictly adhering to the outcome of the attack. Use
 {% else %}{# actionText is empty #}
 <task>Continue the previous scene.</task>
 {% endif %}
+
 {% if isAttack %}
-{% if config.repetition_buster %}
-
-You will now perform a self-correction and brainstorming process, then write a final, polished story continuation.
-
-Follow these steps:
-
-1. Draft Response: Generate a preliminary {{ config.prose_length }} paragraph that continues the story based on the current context, strictly adhering to the attack outcome above (hit/miss, damage, defeat status). This is just a first attempt.
-
-2. Analysis and planning. Don't view these points of analysis as conflicting; understand that they're a balancing act, and sometimes you need to use the context of the story and the scene to decide which ones win out to maximize writing quality and depth. Do the following analysis on your draft response, in whatever format feels the most comfortable: 
-- **Repetitive patterns:** Identify specific words, phrases, concepts, or story beats from your **Draft Response** that are repetitive when compared to the recent story. Also, note any other repetitive patterns in the preceding text that should be avoided.
-- **Meaningless profundity:** Identify dialogue that's meaninglessly profound or just meant to sound "cool" or "deep" but doesn't mean anything or doesn't make sense. Things like "The earth remembers those who ask twice" are immersion-breaking because they're obvious fluff. You're intelligent enough to say truly profound things when the situation calls for it--I've seen you do it, and when you do, it's great. I'm not able to provide an example because true profundity derives from and ties into context, often as a realization that contradicts a character's (and perhaps the reader's) earlier belief. Plain language is better at achieving this than trying to sound all ancient and mysterious. Do this well but infrequently &gt; Don't do it at all &gt;&gt; Do it well, often &gt;&gt; do it poorly. It's not even desirable to do this all the time--the reader will find it exhausting because if every line stands out, none of them do. Be judicious and patient and understand that metaphors are detrimental to profundity.
-- **Overuse of metaphor in dialogue:** Even if the metaphor has meaning, cut way back. That's not how people talk. If metaphor was used in dialogue recently, don't do it. If it wasn't used recently, maybe also don't do it, unless it's really appropriate for the character and situation. It rapidly becomes inappropriate if it's been done already in the recent story history. If you really want to have a character speak in metaphor, have the other characters call them on it, make fun of them, or ask what the fuck they're talking about.
-- **Character Omniscience:** Identify any place where NPCs are aware of something they shouldn't be. Are they hearing whispered dialogue not intended for them? (Don't consider acoustics or other factors, just assume they don't hear it). Are they remembering something that they were absent for? Are they acting on knowledge they couldn't possibly have?
-- **Treknobabble:** Identify treknobabble or equivalent technobabble/magibabble. Propose clearer, more logical alternatives. Come up with something concrete that actually makes sense in-universe.
-- **Continuity and logic:** Identify any continuity errors, illogical actions, dialogue that doesn't fit character personality, or things that don't make sense given the characters' knowledge, personalities, and the situation.
-- **Forgotten party members:** If any party members or longstanding NPCs haven't acted or spoken in several turns, identify them here and develop a plan to work them into the conversation or action, if it makes sense given the situation. 
-- **Aggro:** Would any present NPC be likely to verbally object to, peacefully but physically interfere, or be physically hostile toward the player or party's actions? If so, identify them here and plan to have them act. Don't do this if the NPC wouldn't reasonably be aware of the action or wouldn't care about it. Some example reasons an NPC wouldn't be aware: successful stealth, invisibility/silence magic, npc is distracted by something else, party is hidden by cover, party is too far away to notice, etc. NPCs may also wait for a few turns and only act if the behavior continues. Use your judgement.
-- **Emotional thesis statements:** Identify moments where characters announce their emotional state or psychology directly ("That's what scares me," "It's terrifying," "That's the hard part," "I don't know how to feel about that"). Don't label a character's emotions or intent in prose ("He pulled her close, *not performing*," "'Stop that!' she said *angrily*", etc, my emphasis indicating the problem phrases). These declarative summaries flatten emotional texture. Plan alternatives: show the emotion through hesitation, deflection, physical tension, etc. Sometimes the most powerful version is letting the emotion remain implicit—if the reader can already feel it, the character doesn't need to name it. Trust the reader's emotional intelligence. They'll figure it out. Positive examples: **"We're done here," he said tersely.** or a normally tsundere character: **She hesitated for a moment, then relaxed and leaned into him.**
-- **Repeating observations:** Do not reference the same object, detail, or plot element in consecutive turns unless something about it has changed. If a detail was established in a previous turn, do not have characters reflect on it again unless new information emerges or a character is actively interacting with it.
-- **Repeating expressions:** Characters should not repeat the same metaphor type, observation pattern, or speech tic multiple times in a scene. Variety in how characters express themselves is essential.
-- **"Everybody checking in":** Identify any places where it feels like a bunch of characters are checking in in sequence. Pick 1, 2, or at most 3 (and only if having a third adds something meaningful) characters who would be most invested in what's going on to respond or act, and don't mention the rest. If three characters are talking, make sure it feels like a real conversation and not just a list of what everybody's doing this turn. Don't use throw-away statements just to make a character talk; if someone has relevant feelings, knowledge, or experience, their voice will be more interesting. If someone would make a throwaway statement, skip it, or perhaps have them change the subject, be humorous, or add a new element to the discussion, as appropriate. This rule is about ensuring conversation flows naturally, not about excluding characters who would reasonably be involved.
-- **Attack outcome adherence:** Check that the prose strictly adheres to the attack outcome provided (hit/miss, damage severity, defeat state), and do not invent retaliation.
-- **Remaining guidelines:** Check the text against the remaining guidelines.
-
-3. Write a second draft based on the above. 
-
-4. Analyze the second draft and make sure everything in it makes sense and is continuous with the story so far (the second draft should not reference things that were removed from the first draft, as important context will be missing, so make sure that context is present in the second draft itself!). Identify any issues to fix in the final prose. Don't add any additional things to the final prose beyond what was in the second draft.
-
-Write your final, refined prose inside the <turnResult><prose>...</prose></turnResult> tags below, using what you determined above.
-
-Use this format: 
-1. ...
-2. ...
-3. ...
-4. ...
-<turnResult>
-  <prose>story prose here</prose>
-  <hidden>any hidden notes here; omit if none. Must be inside turnResult tags.</hidden>
-</turnResult>
-{% endif %}
+{# Looks like vestigial logic. Audit for removal. #}
 {% else %}
-{#
-<actionStatus>
-{{ success_or_failure }}
-</actionStatus> 
-#}
+
 {% if currentVehicle.vehicleInfo.hasArrived -%}
 Vehicle update:
 The vehicle the player is onboard, "{{ currentVehicle.name }}" has arrived at "{{ currentVehicle.destination }}", and is no longer enroute. Your prose should reflect this.
@@ -201,18 +159,6 @@ List them in markdown format, with one sentence of explanation per NPC.
 
 {% llm_dummy_action %}
 
-Did the player's actionText specify that they are traveling (as opposed to just mentioning traveling in dialogue, which doesn't count as traveling)? 
-
-Answer now in the format <travel>yes</travel> or <travel>no</travel>. 
-
-{% llmparse('player_is_traveling') as travel %}
-
-{% if travel %}
-The player is traveling.
-{% else %}
-The player is *not* traveling.
-{% endif %}
-
 Is the player currently under the effects of any kind of mental compulsion? If so, they may need to make a check in order to act on their own desires instead of the compulsion, or to resist doing something they don't want to do. If this is the case, call the necessary skill/attribute check tool and list the results here, then adhere to those results in your writing.
 
 Do this now.
@@ -239,23 +185,55 @@ Write your draft response now.
 
 Editing, pruning, and workshopping:
 
-Answer the following questions succinctly based on your draft response above. If the answer to a particular question is not applicable, respond with 'N/A' (with no additional text).
+Answer this question succinctly based on your draft response above. If it is not applicable, respond with 'N/A' (with no additional text).
 
 1. Railroading. This is a collaborative storytelling effort. They player needs a chance to act. If the draft portrays a significant plot development or a major change in the story state without player input, there's a good chance it's railroading. If you're doing this, you may need to aggressively pare off some of the end and get it to a reasonable length, even if it's really good. While railroading correlates with length, length isn't the determining factor. Use your judgement to determine whether the draft is giving the player enough of a chance to respond and act. The ideal length will depend on the situation. On the other hand, trust the player. If they made a decision and succeeded, narrate through the decision that they committed to. Doing that isn't railroading. Are you railroading the player in your draft? If so, where? 
 
+{% llm_dummy_action %}
+
+Answer this question succinctly based on your draft response above. If it is not applicable, respond with 'N/A' (with no additional text).
+
 2. Did any character say anything superfluous that's not really of interest to the story or the scene's outcome? If so, who and what? 
+
+{% llm_dummy_action %}
+
+Answer this question succinctly based on your draft response above. If it is not applicable, respond with 'N/A' (with no additional text).
 
 3. List any instances where a character says basically the same thing that they already said in the recent story history (even if it's worded differently). This includes repeating the same information, repeating the same emotional state, repeating the same attitude or opinion about something, repeating the same observation, etc. 
 
+{% llm_dummy_action %}
+
+Answer this question succinctly based on your draft response above. If it is not applicable, respond with 'N/A' (with no additional text).
+
 4. Trust the reader. Remove anything that doesn't trust the reader to figure out things from existing context. List any instances where you are reasoning on behalf of the reader instead of letting the reader figure it out from context.
+
+{% llm_dummy_action %}
+
+Answer this question succinctly based on your draft response above. If it is not applicable, respond with 'N/A' (with no additional text).
 
 5. Is the plot (conversation, etc) going in two directions at once? If so, choose one and cut the other. If the player is actively involved in one, keep that one and cut the other. Conversations and plots can occasionally be interrupted for dramatic effect, if and only if it adds something to the scene as a whole. Don't interrupt if it's been done recently in the story history. Is the plot being split in a way that makes sense for the scene, or is it confusing the reader? 
 
+{% llm_dummy_action %}
+
+Answer this question succinctly based on your draft response above. If it is not applicable, respond with 'N/A' (with no additional text).
+
 6. Characters are NOT OMNIECNENT. List each character who stated that they're aware of something and 5-10 words about what they were aware of, or respond with 'N/A' (with no additional text) if no characters are indicating knowledge.
+
+{% llm_dummy_action %}
+
+Review your answer to the previous question and answer this question succinctly. If it is not applicable, respond with 'N/A' (with no additional text).
 
 7. Look at each one of your answers to the previous question and determine if their awareness is appropriate. If any character is indicating knowledge they shouldn't have, list them and what they know. Does it make sense for them to be aware of that? Are any characters indicating knowledge of things they shouldn't be aware of? Answer succinctly (who and what). Otherwise, just respond with 'N/A' (with no additional text).
 
+{% llm_dummy_action %}
+
+Answer this question succinctly based on your draft response above. If it is not applicable, respond with 'N/A' (with no additional text).
+
 8. Did you use any tropes you're not supposed to use? If so, list them here.
+
+{% llm_dummy_action %}
+
+Answer this question succinctly based on your draft response above. If it is not applicable, respond with 'N/A' (with no additional text).
 
 9. Did you create any "mystery boxes"? If so, list them and explain them here. In your second and final drafts, explanations for them in in <hidden>...</hidden> tags in the prose to keep track of them so they can be resolved. The reader can tell when you just make up mystery boxes without any real reasoning. Hidden tags do not count toward the length limit. In <hidden>...</hidden> notes, only track items/plot details/etc that are NEW or have CHANGED since the previous turn. Do not copy forward unchanged states (even if unchanged states have been copied forward in the past). If an item hasn't changed since last turn, omit it entirely from the hidden notes. The existing hidden note will still be visible in the context. List any mystery boxes here succinctly. Answer 'N/A' (with no additional text) if there are none.
 
@@ -272,7 +250,7 @@ Answer the following questions succinctly based on your draft response above. If
 Write a second draft that fixes the above issues, using no more than {{ config.prose_length }}. Adhere to any skill-check, opposed skill-check, and attack outcomes you received tool results for in your first draft. If you omitted any skill checks for the first draft, make them here and adjust your prose to account for them. Don't call any ones again that you already made in the first draft. Fix any formatting issues. Use <hidden>...</hidden> tags to make any notes to save to your context for later without revealing them to the reader. Hidden tags do not count toward the length limit. In <hidden>...</hidden> notes, only track items/plot details/etc that are NEW or have CHANGED since the previous turn. Do not include things that are already visible to you (the LLM) in the prompt context. Do not copy forward unchanged states (even if unchanged states have been copied forward in the past). If an item hasn't changed since last turn, omit it entirely from the hidden notes. The existing hidden note will still be visible in the context.
 
 {% llm_dummy_action %}
-Analyze the second draft and make sure everything in it makes sense and is continuous with the story so far (the second draft should not reference things that were removed from the first draft, as important context will be missing, so make sure that context is present in the second draft itself!). Identify any issues to fix in the final prose. Don't add any additional things to the final prose beyond what was in the second draft. Finally, consider whether the player is traveling (to a new scene, region, or location). If ANY of those, which parts of the prose happen before, during, or after travel? NOTE: When thinking about XML tags outside of your final response, use %lt; and %gt; instead of angle brackets to avoid confusing the XML parser. You should retain any Use <hidden>...</hidden> text inside the turnResult or moveTurnResult tags so they remain in your context for later.
+Analyze the second draft and make sure everything in it makes sense and is continuous with the story so far (the second draft should not reference things that were removed from the first draft, as important context will be missing, so make sure that context is present in the second draft itself!). Identify any issues to fix in the final prose. Don't add any additional things to the final prose beyond what was in the second draft. Keep track of any new or changed hidden notes so you can report them separately after writing the final prose.
 
 Reason out loud about the second draft, identifying any inconsistencies, missing context, or areas that need clarification before writing the final prose.
 
@@ -280,70 +258,151 @@ Are there any inconsistencies, missing context, or areas that need clarification
 
 {% llm_dummy_action %}
 
-{% if travel %}
-Write your final, refined prose inside the moveTurnResult tags below, using what you determined above, using no more than {{ config.prose_length }}. Adhere to any skill-check, opposed skill-check, and attack outcomes you received tool results for in your first draft. Don't call them again.
-
-{% if currentVehicle.vehicleInfo.isUnderway -%}
-  <!-- Note: The vehicle "{{ currentVehicle.name | trim }}" is currently enroute to "{{ currentVehicle.destination | trim }}" and will arrive in {{ currentVehicle.timeToDestination | trim }} (this time is canonical and supersedes anything in dialogue or elsewhere), and the player is on board. Reply with <turnResult> rather than <moveTurnResult> unless:
-  * The vehicle is making an unplanned stop or changing destinations, OR
-  * The player is exiting the vehicle, OR
-  * The player is moving around *inside* the vehicle
-  
-  In other words, if the vehicle the player is on is just moving toward its destination as normal and the player themselves is not moving, ignore all of the conditions and fields below and use <turnResult> instead. If the player is disembarking, you decide if it makes sense for the vehicle to stop. -->
-{% endif -%}
-<moveTurnResult>
-  <!-- The rationale for this section is so that events can be processed separately at the origin and destination locations. betweenProse may be necessary for the flow of the story, is not processed for events. -->
-  {% if currentVehicle -%}
-  <!-- If the player is moving inside the vehicle (or disembarking), OMIT the <vehicleInfo> block. If the player isn't moving inside the vehicle and the vehicle isn't stopping or changing destinations, you should be using <turnResult> instead. If a whole region vehicle is about to move inside one of its own locations, you probably shouldn't be pasing vehicleInfo-->
-  <vehicleInfo>
-    <name><!-- Exact name of the vehicle, for example: "Bob's Car", "The Starship Intrepid","The Shuttlecraft Hermes", etc. --></name>
-    <travelTime><!-- If you included the vehicleInfo tag, specify the travel time in the format: 
-  "1 day, 17 hours, 12 minutes" (omit any unit if zero), with a minimum of 0 minutes if the vehicle is stopping or 1 minute if it's still moving. Decimal unit quantities like "2.5 hours" are allowed. REQUIRED if just getting underway or changing detinations mid-journey. Example: "4 hours, 20 minutes" --></travelTime>
-    <vehicleDestination><!-- REQUIRED if just getting underway or changing detinations mid-journey. -->
-      <location><!-- The exact location of the vehicle's destination, if known. Omit this tag if the destination is a new region or if the specific location isn't known. Example: "City Hall Exterior"--></location>
-      <region><!-- The exact region of the vehicle's destination. Omit if the destination is in the current region. Example: "Johnstown"--></region>
-    </vehicleDestination>
-  </vehicleInfo>
-
-  {% endif -%}
-  <playerDestination>
-    {% if currentVehicle -%}
-    <!-- If the player is on a vehicle, the player's destination may be different from the vehicle's destination if the player is disembarking or transferring. If the player is disembarking at an unplanned time (for instance, jumping out of a moving vehicle, telling the cab driver to stop immediately, etc), come up with a reasonable place for them to arrive at. This can be a new place or an existing one. Omit this tag if the vehicle is moving and the player is not.
-    
-    Omit this tag entirely if the player is *not* either moving inside the vehicle or disembarking. -->
-    {% endif -%}
-    <location><!-- The exact location of the player's destination, if known. Omit this tag if the destination is a new region or if the specific location isn't known. Example: "City Hall Exterior" --></location>
-    <region><!-- The exact region of the player's destination. Omit if the destination is in the current region. Example: "Johnstown" --></region>
-    <travelTime><!-- Travel time with units (minutes and/or hours only), e.g. "1 hour", "30 minutes", "1 hour 30 minutes", "1.5 hours". Travel time should be realistic based on the distance and terrain, with a minimum of 1 minute for tiny adjacent spaces, at least 5 minutes for locations in small towns, at least 15 minutes in large cities, and 30 minutes or even multiple hours in wild terrain. --></travelTime>
-  </playerDestination>
-
-  <!-- Use ANY COMBINATION OF AT LEAST ONE OF THE BELOW (originProse, betweenProse, and/or destinationProse). If no prose applies to one or two sections, omit them.{% if currentVehicle and not currentVehicle.vehicleInfo.hasArrived %}
-  The player is currently inside of a vehicle. If the eta is more than a few minutes away, don't automatically have the player arrive at the destination. For instance, a sailing ship might launch from port and move over the open ocean, an airplane would take off and ascend to cruising altitude, a sci-fi spacecraft might spend time in hyperspace, and so on. Give the player time to do things while they're in transit, and describe the experience of being in transit.
-  {% elif currentVehicle and currentVehicle.vehicleInfo.hasArrived %}
-  The vehicle the player is inside has arrived at the destination. Describe the vehicle arriving at the destination.
-  {% endif -%}
-  -->
-  {# Developer note: for vehicle travel, the separation between originProse, vehicleProse, and destinationProse are actually ignored when processing events. The vehicle's departure and arrival are determined by the vehicle's hasDeparted and hasArrived status, not by the presence of prose in any particular section. This is not a bug.#}
-  <originProse><!-- The portion of the prose that contains characters, items, scenery, etc, at the origin location. {% if currentVehicle %}Omit if the vehicle has already departed.{% endif %} --></originProse>
-  <betweenProse>{% if currentVehicle %}<!-- The portion of the prose that occurs after the vehicle has departed from the origin but before it arrives at the destination. The vehicle need not arrive at its destination the same turn it departs. Let the player experience the journey, interact with other characters, and observe the surroundings, but also allow them to wait out the whole ride (or the remainder of it) in one turn if they want. If the vehicle does not arrive at its destination this turn, omit the destinationProse tag.-->{% else %}<!-- The portion of the prose that occurs between the origin and destination (generally describing vehicle rides, etc) -->{% endif %}</betweenProse>
-  <destinationProse>{% if currentVehicle %}<!-- The portion of the prose that contains characters, items, scenery, etc, at the destination location. Omit if the vehicle has not arrived yet. -->{% else %}<!-- The portion of the prose that contains characters, items, scenery, etc, at the destination location -->{% endif %}</destinationProse>
-</moveTurnResult>
-
+{% if playerActionTravelDestination %}
+The game has already committed this action to the authoritative destination shown below, so this is movement rather than a model decision:
+- Location: {{ playerActionTravelDestination.location | default('N/A', true) }}
+- Region: {{ playerActionTravelDestination.region | default('N/A', true) }}
+{% if playerActionTravelMovementKind == 'disembark' %}
+The player is leaving their current vehicle for that destination.
+{% elif playerActionTravelMovementKind == 'destination' %}
+The player is traveling to that destination.
 {% else %}
-Write your final, refined prose inside the turnResult tags below, using what you determined above, using no more than {{ config.prose_length }}. Adhere to any skill-check, opposed skill-check, and attack outcomes you received tool results for in your first draft. Don't call them again.
-
-Use this format: 
-<turnResult>
-  <prose>story prose here</prose>
-  <hidden>any hidden notes here; omit if none. Must be inside turnResult tags.</hidden>
-  <timePassed>
-    Required. Use reasoning and duration to report how much elapsed in-world wall-clock time the concrete non-travel actions in the text realistically consumed. Estimate elapsed wall-clock time, not reading time and not the sum of each participant's labor when characters work in parallel. Must be inside turnResult tags.
-    <reasoning>Brief breakdown of time-consuming actions</reasoning>
-    <duration>Exact duration rounded to the nearest minute, 1 minute minimum (typical for conversation and quick scenes). No time ranges, unknowns, or other nonspecific answers. Format with one of: "HH:MM", "[INTEGER] [minutes/hours]", or "[INTEGER] hours, [INTEGER] minutes".</duration>
-  </timePassed>
-</turnResult>
-
+The authoritative movement type is invalid and final result assembly must reject it.
 {% endif %}
+{% set movementKind = playerActionTravelMovementKind %}
+{% else %}
+Decide what concrete movement actually occurs in the second draft. Mentioning travel in dialogue does not count. Ordinary combat positioning, approaching scenery, sitting down, and similar movement within the current scene count as NONE.
+
+{% if currentVehicle %}
+The player is currently aboard the vehicle "{{ currentVehicle.name }}". Answer with exactly one keyword:
+- NONE: the player remains in the same place inside the vehicle.
+- INSIDE_VEHICLE: the player moves to a different location or distinct area inside the vehicle.
+- DISEMBARK: the player exits or transfers out of the vehicle.
+
+Do not answer DESTINATION while the player is aboard; leaving the vehicle is DISEMBARK.
+{% llmparse('player_action_movement', true) as movementKind %}
+{% else %}
+Answer with exactly one keyword:
+- NONE: the player does not travel to another location or region.
+- DESTINATION: the player travels to another location or region.
+{% llmparse('player_action_movement', false) as movementKind %}
+{% endif %}
+{% endif %}
+
+{% if currentVehicle %}
+Now decide what happens mechanically to the vehicle "{{ currentVehicle.name }}" itself.
+Canonical vehicle state:
+- Underway: {{ currentVehicle.vehicleInfo.isUnderway }}
+- Has arrived: {{ currentVehicle.vehicleInfo.hasArrived }}
+- Current destination: {{ currentVehicle.destination | default('N/A', true) }}
+- Time to destination: {{ currentVehicle.timeToDestination | default('N/A', true) }}
+
+{% if movementKind == 'inside_vehicle' %}
+Moving inside the vehicle does not change its route. Answer exactly: UNCHANGED
+{% elif movementKind == 'disembark' %}
+{% if currentVehicle.vehicleInfo.isUnderway %}
+Answer with exactly UNCHANGED if the vehicle continues on its route after the player exits, or STOP_FOR_EXIT if it has to stop specifically to let the player out. Do not redirect it.
+{% else %}
+The vehicle is not underway. Answer exactly: UNCHANGED
+{% endif %}
+{% elif currentVehicle.vehicleInfo.isUnderway %}
+Answer with exactly one keyword:
+- UNCHANGED: it simply continues its already-recorded route. Ordinary riding, waiting, or talking aboard is UNCHANGED even though the vehicle is moving.
+- STOP: it makes an unplanned stop without a new destination.
+- REDIRECT: it changes to a different destination.
+{% else %}
+Answer with exactly one keyword:
+- UNCHANGED: it remains stopped and does not begin a trip.
+- DEPART: it begins a new trip.
+{% endif %}
+{% llmparse('player_action_vehicle_decision', movementKind, currentVehicle.vehicleInfo.isUnderway) as vehicleDecision %}
+{% else %}
+{% set vehicleDecision = 'unchanged' %}
+{% endif %}
+
+{% set isMoveTurn = movementKind and (movementKind != 'none' or vehicleDecision != 'unchanged') %}
+{% if isMoveTurn %}
+{% if movementKind != 'none' %}
+{% if playerActionTravelDestination %}
+The player's destination and travel time are already authoritative and will be supplied by the game:
+- Location: {{ playerActionTravelDestination.location | default('N/A', true) }}
+- Region: {{ playerActionTravelDestination.region | default('N/A', true) }}
+- Travel time: {{ playerActionTravelDestination.travelTimeMinutes | default('system-determined', true) }} minutes
+{% else %}
+State the player's destination using exactly two lines. Use N/A for an unknown or inapplicable field, but at least one field must be known.
+Location: exact destination location, or N/A
+Region: exact destination region, or N/A
+{% llmparse('player_action_destination') as playerDestination %}
+
+State the realistic player travel time as one exact duration with units and no explanation. Use at least 1 minute. Examples: 1 minute, 30 minutes, 1 hour 30 minutes, 1.5 hours.
+{% llmparse('player_action_duration', 1) as playerTravelDuration %}
+{% endif %}
+
+Which eligible characters actually accompany the player through this movement to the player's destination? Include current party members who continue with the player and non-party characters who deliberately travel with them. Exclude anyone who remains behind, leaves separately, or only appears after arrival.
+{% if playerActionAccompanyingCharacters and playerActionAccompanyingCharacters.length %}
+Allowed exact character names and aliases:
+{% for character in playerActionAccompanyingCharacters %}
+- {{ character.name }}{% if character.aliases and character.aliases.length %} (accepted aliases: {{ character.aliases | join(', ') }}){% endif %}
+{% endfor %}
+Answer exactly NONE if no character accompanies the player. Otherwise, answer with one exact allowed name or alias per line, without bullets, commas, explanations, or XML.
+{% else %}
+There are no eligible accompanying characters. Answer exactly: NONE
+{% endif %}
+{% llmparse('player_action_accompanying_characters', playerActionAccompanyingCharacters | default([], true)) as accompanyingCharacters %}
+{% endif %}
+
+{% if vehicleDecision == 'depart' or vehicleDecision == 'redirect' %}
+State the vehicle's new destination using exactly two lines. Use N/A for an unknown or inapplicable field, but at least one field must be known.
+Location: exact destination location, or N/A
+Region: exact destination region, or N/A
+{% llmparse('player_action_destination') as vehicleDestination %}
+
+State the vehicle's complete new travel time as one exact duration with units and no explanation. Use at least 1 minute. Examples: 20 minutes, 4 hours 20 minutes, 2.5 hours.
+{% llmparse('player_action_duration', 1) as vehicleTravelDuration %}
+{% endif %}
+
+Decide which location scopes need final player-facing prose. Answer with a comma-separated combination of one or more exact keywords: ORIGIN, BETWEEN, DESTINATION.
+- ORIGIN is prose at the place being left.
+- BETWEEN is prose during transit. It is not processed for location events.
+- DESTINATION is prose after arrival.
+{% if currentVehicle and not currentVehicle.vehicleInfo.hasArrived %}
+The player is inside a vehicle that has not canonically arrived. Do not include DESTINATION merely because a draft casually assumes arrival; use the recorded destination and ETA above. Let long journeys remain in progress unless the player's action and elapsed time actually finish the trip.
+{% elif currentVehicle and currentVehicle.vehicleInfo.hasArrived %}
+The vehicle has canonically arrived, so prose describing that recorded arrival belongs at DESTINATION.
+{% endif %}
+Use only scopes containing actual prose, and include at least one.
+{% llmparse('player_action_prose_scope') as proseScopes %}
+
+{% if proseScopes and ('origin' in proseScopes) %}
+Write only the final refined ORIGIN portion of the story now. Do not label it, wrap it in XML, or include hidden notes. Across all requested portions, use no more than {{ config.prose_length }}. Preserve continuity with the second draft and every tool outcome; do not add anything absent from the second draft.
+{% llmparse('player_action_required_prose') as originProse %}
+{% endif %}
+{% if proseScopes and ('between' in proseScopes) %}
+Write only the final refined BETWEEN portion of the story now. Do not label it, wrap it in XML, or include hidden notes. Continue smoothly from any prior portion. Across all requested portions, use no more than {{ config.prose_length }}. Preserve every tool outcome and do not add anything absent from the second draft.
+{% llmparse('player_action_required_prose') as betweenProse %}
+{% endif %}
+{% if proseScopes and ('destination' in proseScopes) %}
+Write only the final refined DESTINATION portion of the story now. Do not label it, wrap it in XML, or include hidden notes. Continue smoothly from any prior portion. Across all requested portions, use no more than {{ config.prose_length }}. Preserve every tool outcome and do not add anything absent from the second draft.
+{% llmparse('player_action_required_prose') as destinationProse %}
+{% endif %}
+
+List only hidden notes that are NEW or CHANGED this turn, without XML tags. Do not copy forward unchanged notes or information already visible in the prompt. Answer exactly N/A if there are none.
+{% llmparse('player_action_hidden_notes') as hiddenNotes %}
+{% else %}
+Write the final refined story prose now, using no more than {{ config.prose_length }}. Do not label it, wrap it in XML, or include hidden notes. Use what you determined above, preserve continuity with the second draft, adhere to every skill-check, opposed skill-check, and attack outcome, and do not call tools again or add anything absent from the second draft.
+{% llmparse('player_action_required_prose') as normalProse %}
+
+List only hidden notes that are NEW or CHANGED this turn, without XML tags. Do not copy forward unchanged notes or information already visible in the prompt. Answer exactly N/A if there are none.
+{% llmparse('player_action_hidden_notes') as hiddenNotes %}
+
+Briefly state how much in-world wall-clock time the concrete non-travel actions in the final prose realistically consumed. Estimate elapsed wall-clock time, not reading time and not the sum of parallel work. Do not include a duration on this step.
+{% llmparse('player_action_time_reasoning') as timeReasoning %}
+
+State the exact elapsed duration only, rounded to the nearest minute, with a 1 minute minimum. Do not give a range, uncertainty, or explanation. Use one of: HH:MM, INTEGER minutes, INTEGER hours, or INTEGER hours, INTEGER minutes.
+{% llmparse('player_action_duration', 1) as timeDuration %}
+{% endif %}
+
+{% llmresult('player_action_result') %}
 {% else %}
 The character attempted the above action. Provide a {{ config.prose_length }} response, strictly adhering to the degree of success listed in actionStatus, regardless of how hard the action is. Under NO circumestances should you repeat any previous response. In interactions between the player and NPCs, adhere to the NPC's personality and their disposition toward the player. Pay attention to what it makes sense for NPCs to know based on their awareness and what they may have observed or been told. They are not clairvoyant. 
 {% endif %}

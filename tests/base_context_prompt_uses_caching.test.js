@@ -266,6 +266,42 @@ test('generic base-context prompts keep their existing tools and skip the shared
     assert.doesNotMatch(policy.messages[1].content, /Do not make tool calls\./);
 });
 
+test('base-context prompts can preserve an explicitly restricted caller tool schema', () => {
+    const promptEnv = createPromptEnv();
+    const generationPrompt = extractGenerationPrompt(promptEnv.render(
+        'base-context.xml.njk',
+        buildRenderContext({
+            promptUsesCaching: true,
+            omitGameHistory: false
+        })
+    ));
+    const restrictedTools = [{
+        type: 'function',
+        function: {
+            name: 'generateRandomInteger',
+            parameters: { type: 'object' }
+        }
+    }];
+    const policy = LLMClient.applyBaseContextToolPolicy([
+        { role: 'system', content: 'System.' },
+        { role: 'user', content: generationPrompt }
+    ], {
+        metadataLabel: 'thing_generator_contents_test',
+        additionalPayload: {
+            tools: restrictedTools,
+            tool_choice: 'auto'
+        },
+        preserveCallerToolDefinitions: true
+    });
+
+    assert.equal(policy.isBaseContextPrompt, true);
+    assert.equal(policy.sharedToolsApplied, false);
+    assert.equal(policy.callerToolDefinitionsPreserved, true);
+    assert.deepEqual(policy.additionalPayload.tools, restrictedTools);
+    assert.equal(policy.additionalPayload.tool_choice, 'auto');
+    assert.doesNotMatch(policy.messages.at(-1).content, /Do not make tool calls\./);
+});
+
 test('base-context shared schema preserves an explicit tool-choice disable', () => {
     const promptEnv = createPromptEnv();
     const generationPrompt = extractGenerationPrompt(promptEnv.render(

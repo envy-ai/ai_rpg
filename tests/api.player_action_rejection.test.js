@@ -136,14 +136,14 @@ test('player action XML parser requires turnResult prose child', async () => {
     );
 });
 
-test('player action XML parser chooses final travelProse after earlier draft prose XML', async () => {
+test('player action XML parser chooses final moveTurnResult after earlier draft prose XML', async () => {
     const context = loadPlayerActionXmlParser();
     const parsed = await context.parsePlayerActionProseFromXml([
         '<turnResult><prose>Draft prose that should not be used.</prose></turnResult>',
-        '<travelProse>',
+        '<moveTurnResult>',
         '<originProse>Origin beat.</originProse>',
         '<destinationProse>Destination beat.</destinationProse>',
-        '</travelProse>'
+        '</moveTurnResult>'
     ].join('\n'));
 
     assert.equal(parsed.prose, 'Origin beat.\n\nDestination beat.');
@@ -157,6 +157,58 @@ test('player action XML parser chooses final travelProse after earlier draft pro
         betweenProse: null,
         destinationProse: 'Destination beat.'
     });
+});
+
+test('player action XML parser preserves direct move-result hidden notes outside event prose', async () => {
+    const context = loadPlayerActionXmlParser();
+    const parsed = await context.parsePlayerActionProseFromXml(
+        '<moveTurnResult>'
+        + '<playerDestination><location>Market Gate</location><travelTime>5 minutes</travelTime></playerDestination>'
+        + '<originProse><![CDATA[You leave the inn.]]></originProse>'
+        + '<destinationProse><![CDATA[The market opens before you.]]></destinationProse>'
+        + '<hidden><![CDATA[The gate guard noticed you.]]></hidden>'
+        + '</moveTurnResult>'
+    );
+
+    assert.equal(
+        parsed.prose,
+        'You leave the inn.\n\nThe market opens before you.<hidden><![CDATA[The gate guard noticed you.]]></hidden>'
+    );
+    assert.equal(parsed.travel.originProse, 'You leave the inn.');
+    assert.equal(parsed.travel.destinationProse, 'The market opens before you.');
+    assert.ok(!parsed.travel.originProse.includes('gate guard'));
+    assert.ok(!parsed.travel.destinationProse.includes('gate guard'));
+});
+
+test('player action XML parser extracts exact accompanying character names', async () => {
+    const context = loadPlayerActionXmlParser();
+    const parsed = await context.parsePlayerActionProseFromXml(
+        '<moveTurnResult>'
+        + '<playerDestination><location>Market Gate</location><travelTime>5 minutes</travelTime></playerDestination>'
+        + '<accompanyingCharacters><name>Mira Vale</name><name>Tal Stone</name></accompanyingCharacters>'
+        + '<destinationProse>The market opens before you.</destinationProse>'
+        + '</moveTurnResult>'
+    );
+
+    assert.deepEqual(
+        JSON.parse(JSON.stringify(parsed.travel.accompanyingCharacters)),
+        ['Mira Vale', 'Tal Stone']
+    );
+});
+
+test('player action XML parser rejects unexpected accompanying character fields', async () => {
+    const context = loadPlayerActionXmlParser();
+
+    await assert.rejects(
+        context.parsePlayerActionProseFromXml(
+            '<moveTurnResult>'
+            + '<playerDestination><location>Market Gate</location><travelTime>5 minutes</travelTime></playerDestination>'
+            + '<accompanyingCharacters><character>Mira Vale</character></accompanyingCharacters>'
+            + '<destinationProse>The market opens before you.</destinationProse>'
+            + '</moveTurnResult>'
+        ),
+        /may contain only <name> children/i
+    );
 });
 
 test('context exclusion helper preserves metadata while excluding entry', () => {

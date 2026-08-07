@@ -1,0 +1,13 @@
+{% include "_includes/need-bars-context.njk" %}
+
+Planning phase: Analyze every character's need bars now.
+
+{% include "_includes/need-bars-guidance.njk" %}
+
+Write only the plain-text planning analysis. Do not write XML yet.
+
+{% llm_dummy_action %}
+
+Characters phase: Using your completed planning analysis, return the affected need bars in the exact schema below. Include only characters and need bars that changed. Output only one `<characters>...</characters>` XML block, with no planning text, commentary, or markdown fences.
+
+{% include "_includes/need-bars-characters-schema.njk" %}

@@ -23,7 +23,7 @@ function loadTravelProseTimeHelper({ shortestTravelTimeMinutes = null, findRegio
     vm.createContext(context);
     vm.runInContext(
         `${source.slice(start, end)}
-this.resolveTravelProsePlayerMoveTimeMinutes = resolveTravelProsePlayerMoveTimeMinutes;`,
+this.resolvemoveTurnResultPlayerMoveTimeMinutes = resolvemoveTurnResultPlayerMoveTimeMinutes;`,
         context
     );
     return context;
@@ -34,7 +34,7 @@ test('travel prose player movement uses stored graph travel time', () => {
     const origin = { id: 'origin', name: 'Origin' };
     const destination = { id: 'destination', name: 'Destination' };
 
-    const minutes = context.resolveTravelProsePlayerMoveTimeMinutes({
+    const minutes = context.resolvemoveTurnResultPlayerMoveTimeMinutes({
         originLocation: origin,
         destinationLocation: destination,
         promptTravelTimeMinutes: 10
@@ -49,7 +49,7 @@ test('travel prose player movement uses stored graph travel time', () => {
 test('travel prose player movement falls back to prompt travel time', () => {
     const context = loadTravelProseTimeHelper({ shortestTravelTimeMinutes: null });
 
-    const minutes = context.resolveTravelProsePlayerMoveTimeMinutes({
+    const minutes = context.resolvemoveTurnResultPlayerMoveTimeMinutes({
         originLocation: { id: 'origin', name: 'Origin' },
         destinationLocation: { id: 'destination', name: 'Destination' },
         promptTravelTimeMinutes: 10
@@ -61,7 +61,7 @@ test('travel prose player movement falls back to prompt travel time', () => {
 test('travel prose player movement suppresses explicit time advancement', () => {
     const context = loadTravelProseTimeHelper({ shortestTravelTimeMinutes: 25 });
 
-    const minutes = context.resolveTravelProsePlayerMoveTimeMinutes({
+    const minutes = context.resolvemoveTurnResultPlayerMoveTimeMinutes({
         originLocation: { id: 'origin', name: 'Origin' },
         destinationLocation: { id: 'destination', name: 'Destination' },
         promptTravelTimeMinutes: 10,
@@ -74,7 +74,7 @@ test('travel prose player movement suppresses explicit time advancement', () => 
 test('travel prose player movement suppresses vehicle-origin time advancement', () => {
     const context = loadTravelProseTimeHelper({ shortestTravelTimeMinutes: 25 });
 
-    const minutes = context.resolveTravelProsePlayerMoveTimeMinutes({
+    const minutes = context.resolvemoveTurnResultPlayerMoveTimeMinutes({
         originLocation: {
             id: 'vehicle',
             name: 'Vehicle Interior',

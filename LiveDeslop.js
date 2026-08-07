@@ -313,7 +313,10 @@ function extractStableLivePlainProse(rawResponse) {
     return extractLivePlainProse(stableRawResponse);
 }
 
-function resolveTinyBrainLiveDeslopProseMode({ messages, isFinal = false } = {}) {
+function resolveTinyBrainLiveDeslopProseMode({ messages, isFinal = false, checkpoint = null } = {}) {
+    if (checkpoint?.parserName === 'player_action_required_prose') {
+        return 'plain';
+    }
     if (isFinal) {
         return 'structured';
     }

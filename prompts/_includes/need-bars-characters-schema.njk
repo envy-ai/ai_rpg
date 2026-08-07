@@ -1,0 +1,16 @@
+<characters>
+  <!-- for each character that has an event affecting their need bars, include a block like this -->
+  <character>
+    <name><!-- exact name of the character --></name>
+    <affectedNeedBars>
+      <!-- for each affected need bar, include one needBar block and omit unaffected need bars -->
+      <needBar>
+        <id><!-- exact id of the need bar --></id>
+        <changeDirection><!-- "increase" or "decrease" --></changeDirection>
+        <change><!-- "small", "medium", "large", or "all"; "full" or "empty" is also allowed when appropriate --></change>
+        <reason><!-- 10 words or less, based on textToCheck --></reason>
+      </needBar>
+    </affectedNeedBars>
+  </character>
+  <!-- repeat for each character with affected need bars; use an empty characters block when no need bar changed -->
+</characters>

@@ -51,6 +51,9 @@ function loadGetFilteredSlopRegexes() {
         resolveSlopHistorySegments(historySegments) {
             return historySegments || ['History contains Zero Regex and Positive Regex.'];
         },
+        sanitizeSlopHistorySegments(historySegments) {
+            return historySegments;
+        },
         Error
     };
 

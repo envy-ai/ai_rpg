@@ -6,10 +6,13 @@
 
 `configureTinyBrainPromptContext(context, family)` creates the render state, adds the private program-start marker state, and assigns the allowlisted template. `runTinyBrainPromptProgram(...)` verifies that the family and template still match, constructs `TinyBrainPromptRunner`, and runs the full staged conversation under the runner's single queue reservation and progress group.
 
+Runner options may register local `resultBuilders` for an allowlisted call site. The `player_action` route alone registers `player_action_result`; its prompt terminates through `llmresult` after parsed non-XML fields, including an exact-name-or-alias accompanying-character selection for player movement, and the builder emits the canonical XML consumed by the existing route. Result-builder names are not globally discoverable and cannot be invoked by a family whose call site did not register them.
+
 Supported family keys are:
 
 - `player_action`
 - `event_checks`
+- `need_bar_event_checks`
 - `quest_reward_prose`
 - `game_intro`
 - `random_event`

@@ -2,6 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
+const { Readable } = require('node:stream');
 const axios = require('axios');
 const yaml = require('js-yaml');
 const Globals = require('../Globals.js');
@@ -35,7 +36,7 @@ function responseFor(payload) {
     };
 }
 
-function buildConfig({ enabled = true, local = false } = {}) {
+function buildConfig({ enabled = true, local = false, stream = false } = {}) {
     const config = {
         unload_model_on_switch: enabled,
         ai: {
@@ -43,7 +44,7 @@ function buildConfig({ enabled = true, local = false } = {}) {
             endpoint: 'http://router.example:8080/v1',
             apiKey: 'test-key',
             model: 'base-model',
-            stream: false,
+            stream,
             retryAttempts: 0,
             max_concurrent_requests: 2,
             supress_seed: true
@@ -55,6 +56,14 @@ function buildConfig({ enabled = true, local = false } = {}) {
             }
         }
     };
+    if (stream) {
+        config.prompt_progress = {
+            character_targets: {
+                base_prompt: 100,
+                alternate_prompt: 100
+            }
+        };
+    }
     if (local) {
         config.ai.local_startup_script_path = '/fake/start-router.sh';
         config.ai.router_slot_cache_directory = SLOT_CACHE_TEST_DIRECTORY;
@@ -85,6 +94,32 @@ async function runPrompt(metadataLabel, text = metadataLabel) {
     });
 }
 
+async function runVisiblePrompt(metadataLabel, text = metadataLabel) {
+    return LLMClient.chatCompletion({
+        messages: [{ role: 'user', content: text }],
+        metadataLabel,
+        validateXML: false,
+        output: 'stdout'
+    });
+}
+
+function streamResponseFor(payload, content = 'ok') {
+    const responseStream = new Readable({ read() {} });
+    process.nextTick(() => {
+        responseStream.push(`data: ${JSON.stringify({
+            model: payload.model,
+            choices: [{ delta: { content } }]
+        })}\n\n`);
+        responseStream.push('data: [DONE]\n\n');
+        responseStream.push(null);
+    });
+    return {
+        status: 200,
+        statusText: 'OK',
+        data: responseStream
+    };
+}
+
 test('unload_model_on_switch defaults off and rejects non-boolean values', () => {
     const defaultConfig = yaml.load(fs.readFileSync(
         path.join(__dirname, '..', 'config.default.yaml'),
@@ -104,7 +139,7 @@ test('unload_model_on_switch defaults off and rejects non-boolean values', () =>
     );
 });
 
-test('managed local router switches save, unload, load, restore, and delete in order', { concurrency: false }, async () => {
+test('managed local router switches save, unload, router-queued restore, and prompt in order', { concurrency: false }, async () => {
     const originalConfig = Globals.config;
     const originalGet = axios.get;
     const originalPost = axios.post;
@@ -135,13 +170,9 @@ test('managed local router switches save, unload, load, restore, and delete in o
             statuses.set(payload.model, 'unloaded');
             return { data: { success: true } };
         }
-        if (url.endsWith('/models/load')) {
-            events.push(`load:${payload.model}`);
-            statuses.set(payload.model, 'loaded');
-            return { data: { success: true } };
-        }
         if (url.includes('/slots/0?action=restore')) {
             events.push(`restore:${payload.model}`);
+            statuses.set(payload.model, 'loaded');
             return { data: { id_slot: 0, filename: payload.filename, n_restored: 1 } };
         }
         events.push(`prompt:${payload.model}`);
@@ -160,11 +191,9 @@ test('managed local router switches save, unload, load, restore, and delete in o
             'prompt:base-model',
             'save:base-model',
             'unload:base-model',
-            'load:alternate-model',
             'prompt:alternate-model',
             'save:alternate-model',
             'unload:alternate-model',
-            'load:base-model',
             'restore:base-model',
             'prompt:base-model'
         ]);
@@ -176,6 +205,95 @@ test('managed local router switches save, unload, load, restore, and delete in o
         LLMClient.resetModelSwitchTracking();
         axios.get = originalGet;
         axios.post = originalPost;
+        Globals.config = originalConfig;
+    }
+});
+
+test('visible prompt progress starts before a router-queued cache restore finishes', { concurrency: false }, async () => {
+    const originalConfig = Globals.config;
+    const originalBaseDir = Globals.baseDir;
+    const originalRealtimeHub = Globals.realtimeHub;
+    const originalGet = axios.get;
+    const originalPost = axios.post;
+    const restoreStarted = deferred();
+    const releaseRestore = deferred();
+    const emittedEvents = [];
+    const events = [];
+    const statuses = new Map([
+        ['base-model', 'unloaded'],
+        ['alternate-model', 'unloaded']
+    ]);
+    fs.mkdirSync(SLOT_CACHE_TEST_DIRECTORY, { recursive: true });
+    removeSlotCacheIfPresent('base-model');
+    removeSlotCacheIfPresent('alternate-model');
+
+    Globals.baseDir = fs.mkdtempSync(path.join(__dirname, '..', 'tmp', 'model-switch-progress-'));
+    Globals.config = buildConfig({ local: true, stream: true });
+    Globals.realtimeHub = {
+        emit(_room, type, payload) {
+            emittedEvents.push({ type, payload });
+        }
+    };
+    LLMClient.resetPromptOutputCharacterStatsForTests();
+    LLMClient.resetModelSwitchTracking();
+    axios.get = async () => ({
+        data: {
+            data: Array.from(statuses, ([id, value]) => ({ id, status: { value } }))
+        }
+    });
+    axios.post = async (url, payload) => {
+        if (url.includes('/slots/0?action=save')) {
+            events.push(`save:${payload.model}`);
+            fs.writeFileSync(slotCachePath(payload.model), `cache:${payload.model}`);
+            return { data: { id_slot: 0, filename: payload.filename, n_saved: 1 } };
+        }
+        if (url.endsWith('/models/unload')) {
+            events.push(`unload:${payload.model}`);
+            statuses.set(payload.model, 'unloaded');
+            return { data: { success: true } };
+        }
+        if (url.includes('/slots/0?action=restore')) {
+            events.push(`restore:${payload.model}`);
+            restoreStarted.resolve();
+            await releaseRestore.promise;
+            statuses.set(payload.model, 'loaded');
+            return { data: { id_slot: 0, filename: payload.filename, n_restored: 1 } };
+        }
+        events.push(`prompt:${payload.model}`);
+        statuses.set(payload.model, 'loaded');
+        return streamResponseFor(payload);
+    };
+
+    try {
+        await runVisiblePrompt('base_prompt');
+        await runVisiblePrompt('alternate_prompt');
+
+        const switchedPrompt = runVisiblePrompt('base_prompt');
+        await restoreStarted.promise;
+
+        assert.equal(events.at(-1), 'restore:base-model');
+        assert.ok(
+            emittedEvents
+                .filter(event => event.type === 'prompt_progress')
+                .flatMap(event => event.payload?.entries || [])
+                .some(entry => entry.label?.startsWith('base_prompt[') && entry.model === 'base-model'),
+            'expected visible base-model prompt progress while its cache restore was waiting'
+        );
+
+        releaseRestore.resolve();
+        assert.equal(await switchedPrompt, 'ok');
+        assert.deepEqual(events.slice(-2), ['restore:base-model', 'prompt:base-model']);
+        assert.equal(events.some(event => event.startsWith('load:')), false);
+    } finally {
+        releaseRestore.resolve();
+        removeSlotCacheIfPresent('base-model');
+        removeSlotCacheIfPresent('alternate-model');
+        LLMClient.resetPromptOutputCharacterStatsForTests();
+        LLMClient.resetModelSwitchTracking();
+        axios.get = originalGet;
+        axios.post = originalPost;
+        Globals.realtimeHub = originalRealtimeHub;
+        Globals.baseDir = originalBaseDir;
         Globals.config = originalConfig;
     }
 });
@@ -216,11 +334,6 @@ test('managed local router cache save and restore failures warn without blocking
             statuses.set(payload.model, 'unloaded');
             return { data: { success: true } };
         }
-        if (url.endsWith('/models/load')) {
-            events.push(`load:${payload.model}`);
-            statuses.set(payload.model, 'loaded');
-            return { data: { success: true } };
-        }
         if (url.includes('/slots/0?action=restore')) {
             events.push(`restore-failed:${payload.model}`);
             const error = new Error('restore rejected');
@@ -240,7 +353,6 @@ test('managed local router cache save and restore failures warn without blocking
             'prompt:base-model',
             'save-failed:base-model',
             'unload:base-model',
-            'load:alternate-model',
             'restore-failed:alternate-model',
             'prompt:alternate-model'
         ]);

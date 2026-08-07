@@ -8,6 +8,10 @@ const Globals = require('../Globals.js');
 const Player = require('../Player.js');
 const { addEvalFilter } = require('../nunjucks_filters.js');
 const {
+    TinyBrainPromptExtension,
+    createTinyBrainRenderState
+} = require('../TinyBrainPromptRunner.js');
+const {
     createTempDefsDir,
     withMergedTestConfig
 } = require('./helpers/needBarFixtures.js');
@@ -18,6 +22,7 @@ function createPromptEnv() {
         throwOnUndefined: true
     });
     addEvalFilter(env);
+    env.addExtension('TinyBrainPromptExtension', new TinyBrainPromptExtension());
     return env;
 }
 
@@ -117,4 +122,38 @@ test('while-you-were-away include still requests return prose when no NPCs are s
     assert.match(rendered, /Always write proseForPlayer/);
     assert.match(rendered, /<characterUpdates>/);
     assert.doesNotMatch(rendered, /<name>[^<]+<\/name>/);
+});
+
+test('while-you-were-away tiny-brain uses strict structured parsers and allows optional moves to be empty', () => {
+    const promptEnv = createPromptEnv();
+    const state = createTinyBrainRenderState();
+    promptEnv.render('_includes/while-you-were-away.tinybrain.njk', {
+        whileYouWereAwayNpcs: [],
+        __tinyBrainState: state
+    });
+
+    assert.equal(state.checkpoints[0].parserName, 'while_away_arrival_updates');
+    assert.deepEqual(state.checkpoints[0].parserArgs, []);
+    assert.equal(state.checkpoints[1].parserName, 'exact_xml_root');
+    assert.deepEqual(state.checkpoints[1].parserArgs, [
+        'itemSceneryMoves',
+        { allowEmptyRoot: true }
+    ]);
+});
+
+test('while-you-were-away tiny-brain requires the canonical character update schema', () => {
+    const promptEnv = createPromptEnv();
+    const rendered = promptEnv.render('_includes/while-you-were-away.tinybrain.njk', {
+        whileYouWereAwayNpcs: [{
+            name: 'Mira',
+            lastSeenTimeAgo: '2 hours ago',
+            lastSeenLocationName: 'Town Square'
+        }],
+        __tinyBrainState: createTinyBrainRenderState()
+    });
+
+    assert.match(rendered, /<needBarChanges>/);
+    assert.match(rendered, /<travelDestination><location>exact location if they left<\/location>/);
+    assert.match(rendered, /<update>Concise hidden summary/);
+    assert.match(rendered, /do not nest a second <characterUpdates> wrapper/);
 });

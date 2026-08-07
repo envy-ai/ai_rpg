@@ -122,29 +122,50 @@ test('quest objective event signal forces at most one quest check and resets its
     assert.match(source, /questResult = await Events\.resolveEventSignaledQuestCheck\(\{[\s\S]*?eventResult,[\s\S]*?existingQuestResult: questResult/);
 });
 
-test('split moveTurnResult runs one merged housekeeping pass after sub-checks', () => {
+test('split moveTurnResult runs origin, transit, destination, tracker, then one housekeeping pass', () => {
     const source = sourceBetween(
         'async function runmoveTurnResultEventChecks({',
         '\n        function recordSkillCheckEntry'
     );
     const originCallStart = source.indexOf('originEventResult = await Events.runEventChecks({');
-    const destinationCallStart = source.indexOf('destinationEventResult = await Events.runEventChecks({');
-    const mergeStart = source.indexOf('let splitEventResult = mergeEventResults([originEventResult, destinationEventResult]);');
+    const splitSectionStart = source.indexOf('            let destinationEventResult = null;');
+    const betweenCallStart = source.indexOf('betweenEventResult = await Events.runEventChecks({', splitSectionStart);
+    const destinationCallStart = source.indexOf('destinationEventResult = await Events.runEventChecks({', splitSectionStart);
+    const trackerCallStart = source.indexOf('trackerEventResult = await Events.runEventChecks({', splitSectionStart);
+    const mergeStart = source.indexOf('let splitEventResult = mergeEventResults([', splitSectionStart);
     const returnStart = source.indexOf('            return {', mergeStart);
 
     assert.notEqual(originCallStart, -1, 'Unable to locate split origin event-check call.');
+    assert.notEqual(betweenCallStart, -1, 'Unable to locate split transit event-check call.');
     assert.notEqual(destinationCallStart, -1, 'Unable to locate split destination event-check call.');
+    assert.notEqual(trackerCallStart, -1, 'Unable to locate split tracker event-check call.');
     assert.notEqual(mergeStart, -1, 'Unable to locate split event-result merge.');
     assert.notEqual(returnStart, -1, 'Unable to locate split movement return.');
-    assert.ok(originCallStart < destinationCallStart, 'origin event checks should run before destination event checks.');
-    assert.ok(destinationCallStart < mergeStart, 'destination event checks should finish before result merge.');
+    assert.ok(originCallStart < betweenCallStart, 'origin event checks should run before transit event checks.');
+    assert.ok(betweenCallStart < destinationCallStart, 'transit event checks should run before destination event checks.');
+    assert.ok(destinationCallStart < trackerCallStart, 'destination event checks should run before tracker checks.');
+    assert.ok(trackerCallStart < mergeStart, 'tracker checks should finish before result merge.');
 
     const originCall = source.slice(originCallStart, source.indexOf('                });', originCallStart));
+    const betweenCall = source.slice(betweenCallStart, source.indexOf('                });', betweenCallStart));
     const destinationCall = source.slice(destinationCallStart, source.indexOf('                });', destinationCallStart));
+    const trackerCall = source.slice(trackerCallStart, source.indexOf('                });', trackerCallStart));
     const postMerge = source.slice(mergeStart, returnStart);
 
     assert.match(originCall, /suppressHousekeeping:\s*true/);
+    assert.match(originCall, /eventSectionKind:\s*'origin'/);
+    assert.match(originCall, /tinyBrainEventSequence/);
+    assert.match(betweenCall, /eventSectionKind:\s*'between'/);
+    assert.match(betweenCall, /suppressNeedBarEventChecks:\s*true/);
+    assert.match(betweenCall, /tinyBrainEventSequence/);
     assert.match(destinationCall, /suppressHousekeeping:\s*true/);
+    assert.match(destinationCall, /eventSectionKind:\s*'destination'/);
+    assert.match(destinationCall, /tinyBrainEventSequence/);
+    assert.match(trackerCall, /eventSectionKind:\s*'tracker'/);
+    assert.match(trackerCall, /eventMode:\s*'trackers'/);
+    assert.match(trackerCall, /tinyBrainAcceptedEventXml:\s*acceptedSectionEventResult\?\.raw \|\| ''/);
+    assert.match(trackerCall, /tinyBrainEventSequence/);
+    assert.match(source, /const tinyBrainEventSequence = useTinyBrainSectionedEventChecks[\s\S]*?Events\.createTinyBrainEventSequence\(\)/);
     assert.match(postMerge, /combinedProse && Events\.shouldRunAutomaticHousekeepingThisTurn\(\)/);
     assert.match(postMerge, /await runHousekeepingPrompt\(\{/);
     assert.match(postMerge, /textToCheck:\s*combinedProse,/);

@@ -15,16 +15,16 @@ function sliceApiSource(startNeedle, endNeedle) {
     return source.slice(start, end);
 }
 
-test('travelProse timed vehicle trips leave prompt-authored event-check time advancement intact', () => {
+test('moveTurnResult timed vehicle trips leave prompt-authored event-check time advancement intact', () => {
     const source = sliceApiSource(
-        'async function runTravelProseEventChecks',
+        'async function runmoveTurnResultEventChecks',
         '\n        function recordSkillCheckEntry'
     );
 
     assert.match(
         source,
         /let vehicleStartedTimedTrip = false;/,
-        'runTravelProseEventChecks should track timed vehicle trip starts'
+        'runmoveTurnResultEventChecks should track timed vehicle trip starts'
     );
     assert.match(
         source,
@@ -43,9 +43,9 @@ test('travelProse timed vehicle trips leave prompt-authored event-check time adv
     );
 });
 
-test('travelProse vehicle state changes and due arrivals request a final client location refresh', () => {
+test('moveTurnResult vehicle state changes and due arrivals request a final client location refresh', () => {
     const travelSource = sliceApiSource(
-        'async function runTravelProseEventChecks',
+        'async function runmoveTurnResultEventChecks',
         '\n        function recordSkillCheckEntry'
     );
     const playerActionSource = sliceApiSource(
@@ -60,12 +60,12 @@ test('travelProse vehicle state changes and due arrivals request a final client 
     assert.match(
         travelSource,
         /vehicleStateChanged: false/,
-        'runTravelProseEventChecks should include vehicleStateChanged in empty results'
+        'runmoveTurnResultEventChecks should include vehicleStateChanged in empty results'
     );
     assert.match(
         travelSource,
         /vehicleStateChanged,\s+timeAdjustment: playerMoveTimeAdjustment,\s+location,/,
-        'runTravelProseEventChecks should return vehicleStateChanged with travel results'
+        'runmoveTurnResultEventChecks should return vehicleStateChanged with travel results'
     );
     assert.match(
         playerActionSource,
@@ -84,16 +84,16 @@ test('travelProse vehicle state changes and due arrivals request a final client 
     );
 });
 
-test('travelProse event checks on active vehicles process all prose at the onboard location', () => {
+test('moveTurnResult event checks on active vehicles process all prose at the onboard location', () => {
     const source = sliceApiSource(
-        'async function runTravelProseEventChecks',
+        'async function runmoveTurnResultEventChecks',
         '\n        function recordSkillCheckEntry'
     );
 
     assert.match(
         source,
-        /const travelProseEventLocationRepresentsVehicle = Boolean\(\s+resolveActiveVehicleLabelForLocation\(location\)\s+\);/,
-        'runTravelProseEventChecks should detect location and region vehicle contexts'
+        /const moveTurnResultEventLocationRepresentsVehicle = Boolean\(\s+resolveActiveVehicleLabelForLocation\(location\)\s+\);/,
+        'runmoveTurnResultEventChecks should detect location and region vehicle contexts'
     );
     assert.match(
         source,
@@ -102,7 +102,7 @@ test('travelProse event checks on active vehicles process all prose at the onboa
     );
     assert.match(
         source,
-        /const shouldSplitEventChecks = hasEffectivePlayerDestination && !travelProseEventLocationRepresentsVehicle;/,
+        /const shouldSplitEventChecks = hasEffectivePlayerDestination && !moveTurnResultEventLocationRepresentsVehicle;/,
         'active vehicle travel prose should not split event checks across origin/destination'
     );
     assert.match(
@@ -112,7 +112,7 @@ test('travelProse event checks on active vehicles process all prose at the onboa
     );
     assert.match(
         source,
-        /locationOverride: travelProseEventLocationRepresentsVehicle\s+\? travelProseEventLocation\s+: location \|\| null/,
+        /locationOverride: moveTurnResultEventLocationRepresentsVehicle\s+\? moveTurnResultEventLocation\s+: location \|\| null/,
         'combined active-vehicle event checks should run at the original onboard location'
     );
 });
