@@ -129,6 +129,10 @@ npm run test:e2e:playthrough-region-roundtrip
 The playthrough regression copies `tests/e2e/fixtures/playthrough_save_start` into `autosaves/`, copies forced outputs into `tmp/`, configures deterministic runtime values through `/api/slash-command`, and removes its runtime autosave and forced-output file during teardown.
 Both playthrough modes have a five-minute test timeout.
 
+## Follow-up API scenario harness
+
+Long model-backed mechanics cases use [followup_api_playtest.md](followup_api_playtest.md) for timeout-free API execution, strict logical-completion recording/replay, canonical fixtures, state assertions, and triage. That harness is complementary to Playwright: use it for authoritative mechanics and orchestration, then add/run a focused browser case only when the contract includes visible UI behavior or human visual review. Never translate a narrative-quality requirement into a browser regex or prose classifier.
+
 Vehicle-region regression:
 
 ```bash

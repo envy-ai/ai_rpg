@@ -1,0 +1,340 @@
+{
+  "version": 1,
+  "scenario": "fast-travel",
+  "case": "FAST-5-wywa",
+  "description": "A threshold-aged visited destination runs WYWA bookkeeping in both travel paths: same-request TinyBrain destination prose suppresses only the duplicate visible reunion row, while the browser-equivalent blank fast-travel path retains ordinary visible WYWA prose.",
+  "fixture": "fast-travel-visited-favorites",
+  "configProfile": "cross-region-mechanics",
+  "trackedPaths": [
+    "player.payload.player.locationId",
+    "players.payload.players",
+    "locations.payload.locations",
+    "calendar.payload.worldTime.timeMinutes",
+    "history.payload"
+  ],
+  "steps": [
+    {
+      "type": "loadFixture"
+    },
+    {
+      "type": "save",
+      "name": "baseline_save"
+    },
+    {
+      "type": "assert",
+      "assertions": [
+        {
+          "type": "httpStatus",
+          "equals": 200
+        },
+        {
+          "type": "responseOk",
+          "equals": true
+        },
+        {
+          "type": "equals",
+          "source": "responses.baseline_save",
+          "path": "payload.success",
+          "equals": true
+        }
+      ]
+    },
+    {
+      "type": "request",
+      "name": "age_for_tinybrain_move",
+      "method": "POST",
+      "route": "/api/slash-command",
+      "body": {
+        "command": "time",
+        "argsText": "+31 minutes"
+      }
+    },
+    {
+      "type": "snapshot",
+      "name": "before_tinybrain_move"
+    },
+    {
+      "type": "chat",
+      "name": "tinybrain_event_travel",
+      "text": "I leave March Start Marker now, follow the known route all the way to QA Fast Travel Grove, and arrive there.",
+      "travel": true,
+      "travelMetadata": {
+        "mode": "event",
+        "eventDriven": true,
+        "exit": {
+          "exitId": "$fixture.baselineToGroveExitId",
+          "originLocationId": "$fixture.baselineLocationId",
+          "direction": "qa_fast_travel_grove",
+          "destinationId": "$fixture.groveLocationId",
+          "destinationRegionId": "$fixture.regionId",
+          "destinationIsStub": false,
+          "destinationIsRegionEntryStub": false,
+          "isVehicle": false,
+          "vehicleType": null,
+          "destinationName": "QA Fast Travel Grove",
+          "regionName": "QA Frost March"
+        }
+      },
+      "interactive": {
+        "roll": null,
+        "questAccepted": false,
+        "confirmed": false
+      }
+    },
+    {
+      "type": "assert",
+      "assertions": [
+        {
+          "type": "httpStatus",
+          "equals": 200
+        },
+        {
+          "type": "responseOk",
+          "equals": true
+        },
+        {
+          "type": "equals",
+          "source": "responses.tinybrain_event_travel",
+          "path": "payload.authoritativeMovementType",
+          "equals": "destination"
+        },
+        {
+          "type": "equals",
+          "source": "after",
+          "path": "player.payload.player.locationId",
+          "equals": "$fixture.groveLocationId"
+        },
+        {
+          "type": "exactDelta",
+          "beforeSource": "snapshots.before_tinybrain_move",
+          "afterSource": "after",
+          "path": "calendar.payload.worldTime.timeMinutes",
+          "delta": 4
+        },
+        {
+          "type": "historyAddedTypeCount",
+          "entryType": "player-action",
+          "equals": 1,
+          "beforeSource": "snapshots.before_tinybrain_move",
+          "afterSource": "after"
+        },
+        {
+          "type": "historyAddedTypeCount",
+          "entryType": "while-you-were-away",
+          "equals": 1,
+          "beforeSource": "snapshots.before_tinybrain_move",
+          "afterSource": "after"
+        },
+        {
+          "type": "historyAddedTypeCount",
+          "entryType": "while-you-were-away-player",
+          "equals": 0,
+          "beforeSource": "snapshots.before_tinybrain_move",
+          "afterSource": "after"
+        },
+        {
+          "type": "noRealtimeErrors"
+        },
+        {
+          "type": "noUnexpectedErrorLogs"
+        }
+      ]
+    },
+    {
+      "type": "reload",
+      "name": "reload_for_blank_path"
+    },
+    {
+      "type": "assert",
+      "assertions": [
+        {
+          "type": "httpStatus",
+          "equals": 200
+        },
+        {
+          "type": "responseOk",
+          "equals": true
+        },
+        {
+          "type": "equals",
+          "source": "responses.reload_for_blank_path",
+          "path": "payload.success",
+          "equals": true
+        },
+        {
+          "type": "equals",
+          "source": "after",
+          "path": "player.payload.player.locationId",
+          "equals": "$fixture.baselineLocationId"
+        },
+        {
+          "type": "equals",
+          "source": "after",
+          "path": "calendar.payload.worldTime.timeMinutes",
+          "equals": 663
+        }
+      ]
+    },
+    {
+      "type": "request",
+      "name": "age_for_blank_fast_travel",
+      "method": "POST",
+      "route": "/api/slash-command",
+      "body": {
+        "command": "time",
+        "argsText": "+31 minutes"
+      }
+    },
+    {
+      "type": "snapshot",
+      "name": "before_blank_comment"
+    },
+    {
+      "type": "chat",
+      "name": "blank_comment",
+      "text": "# Baato moved to QA Fast Travel Grove.",
+      "travel": true,
+      "interactive": {
+        "roll": null,
+        "questAccepted": false,
+        "confirmed": false
+      }
+    },
+    {
+      "type": "assert",
+      "assertions": [
+        {
+          "type": "httpStatus",
+          "equals": 200
+        },
+        {
+          "type": "responseOk",
+          "equals": true
+        },
+        {
+          "type": "equals",
+          "source": "responses.blank_comment",
+          "path": "payload.commentLogged",
+          "equals": true
+        },
+        {
+          "type": "equals",
+          "source": "after",
+          "path": "player.payload.player.locationId",
+          "equals": "$fixture.baselineLocationId"
+        },
+        {
+          "type": "exactDelta",
+          "beforeSource": "snapshots.before_blank_comment",
+          "afterSource": "after",
+          "path": "calendar.payload.worldTime.timeMinutes",
+          "delta": 0
+        },
+        {
+          "type": "historyAddedTypeCount",
+          "entryType": "unknown",
+          "equals": 1,
+          "beforeSource": "snapshots.before_blank_comment",
+          "afterSource": "after"
+        },
+        {
+          "type": "historyAddedTypeCount",
+          "entryType": "player-action",
+          "equals": 0,
+          "beforeSource": "snapshots.before_blank_comment",
+          "afterSource": "after"
+        }
+      ]
+    },
+    {
+      "type": "snapshot",
+      "name": "before_blank_teleport"
+    },
+    {
+      "type": "request",
+      "name": "blank_path_teleport",
+      "method": "POST",
+      "route": "/api/npcs/$fixture.playerId/teleport",
+      "body": {
+        "locationId": "$fixture.groveLocationId",
+        "accountTravelTime": true,
+        "storyToolTeleport": false,
+        "accompanyingCharacters": []
+      },
+      "interactive": {
+        "roll": null,
+        "questAccepted": false,
+        "confirmed": false
+      }
+    },
+    {
+      "type": "assert",
+      "assertions": [
+        {
+          "type": "httpStatus",
+          "equals": 200
+        },
+        {
+          "type": "responseOk",
+          "equals": true
+        },
+        {
+          "type": "equals",
+          "source": "responses.blank_path_teleport",
+          "path": "payload.success",
+          "equals": true
+        },
+        {
+          "type": "equals",
+          "source": "responses.blank_path_teleport",
+          "path": "payload.arrivalProcessingError",
+          "equals": null
+        },
+        {
+          "type": "equals",
+          "source": "after",
+          "path": "player.payload.player.locationId",
+          "equals": "$fixture.groveLocationId"
+        },
+        {
+          "type": "exactDelta",
+          "beforeSource": "snapshots.before_blank_teleport",
+          "afterSource": "after",
+          "path": "calendar.payload.worldTime.timeMinutes",
+          "delta": 4
+        },
+        {
+          "type": "historyAddedTypeCount",
+          "entryType": "while-you-were-away",
+          "equals": 1,
+          "beforeSource": "snapshots.before_blank_teleport",
+          "afterSource": "after"
+        },
+        {
+          "type": "historyAddedTypeCount",
+          "entryType": "while-you-were-away-player",
+          "equals": 1,
+          "beforeSource": "snapshots.before_blank_teleport",
+          "afterSource": "after"
+        },
+        {
+          "type": "historyAddedTypeCount",
+          "entryType": "player-action",
+          "equals": 0,
+          "beforeSource": "snapshots.before_blank_comment",
+          "afterSource": "after"
+        },
+        {
+          "type": "noRealtimeErrors"
+        },
+        {
+          "type": "noUnexpectedErrorLogs"
+        }
+      ]
+    }
+  ],
+  "humanReview": [
+    "Confirm the event-driven TinyBrain movement contains coherent destination prose for QA Fast Travel Grove and does not add a second visible reunion narration.",
+    "Confirm the blank map/Favorites branch adds one ordinary visible return scene and does not fabricate a second trip or conflicting destination."
+  ]
+}

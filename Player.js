@@ -3304,10 +3304,55 @@ class Player {
         const destination = destinationResolved
             ? (resolveLocationNameById(destinationId) || '')
             : resolvePendingDestinationLabel(pendingDestination);
+        const allowedDestinations = normalizedVehicleInfo.destinations.map((routeEntry, index) => {
+            const pendingRegionRoute = VehicleInfo.parsePendingRegionRouteEntry(routeEntry);
+            if (pendingRegionRoute) {
+                return {
+                    kind: 'region',
+                    routeEntry: pendingRegionRoute.entry,
+                    locationId: null,
+                    locationName: null,
+                    regionId: null,
+                    regionName: pendingRegionRoute.regionName
+                };
+            }
 
-        const etaMinutes = Number(normalizedVehicleInfo.ETA);
+            const routeLocation = Location.get(routeEntry) || null;
+            if (!routeLocation) {
+                throw new Error(
+                    `Current vehicle route destination ${index + 1} references missing location id "${routeEntry}".`
+                );
+            }
+            const routeLocationName = typeof routeLocation.name === 'string'
+                ? routeLocation.name.trim()
+                : '';
+            if (!routeLocationName) {
+                throw new Error(`Current vehicle route destination "${routeEntry}" is missing a location name.`);
+            }
+            const routeRegion = routeLocation.region
+                || (typeof routeLocation.regionId === 'string' && routeLocation.regionId.trim()
+                    ? Region.get(routeLocation.regionId.trim())
+                    : null);
+            const routeRegionName = typeof routeRegion?.name === 'string'
+                ? routeRegion.name.trim()
+                : '';
+            return {
+                kind: 'location',
+                routeEntry,
+                locationId: routeEntry,
+                locationName: routeLocationName,
+                regionId: typeof routeRegion?.id === 'string' && routeRegion.id.trim()
+                    ? routeRegion.id.trim()
+                    : null,
+                regionName: routeRegionName || null
+            };
+        });
+
+        const etaMinutes = normalizedVehicleInfo.ETA;
         const elapsedMinutes = Number(Globals.elapsedTime);
-        const hasEtaMinutes = Number.isFinite(etaMinutes) && Number.isInteger(etaMinutes);
+        const hasEtaMinutes = typeof etaMinutes === 'number'
+            && Number.isFinite(etaMinutes)
+            && Number.isInteger(etaMinutes);
         const hasElapsedMinutes = Number.isFinite(elapsedMinutes) && Number.isInteger(elapsedMinutes);
         const rawTimeToDestination = hasEtaMinutes && hasElapsedMinutes
             ? etaMinutes - elapsedMinutes
@@ -3315,7 +3360,9 @@ class Player {
         const isUnderway = normalizedVehicleInfo.isUnderway;
         const hasArrived = normalizedVehicleInfo.hasArrived;
         const isArriving = normalizedVehicleInfo.isArriving;
-        const timeToDestination = Utils.formatMinutesAsDuration(rawTimeToDestination, { includeAgo: true });
+        const timeToDestination = rawTimeToDestination === null
+            ? null
+            : Utils.formatMinutesAsDuration(rawTimeToDestination, { includeAgo: true });
         const vehicleInfo = {
             ...activeVehicleInfo
         };
@@ -3329,6 +3376,7 @@ class Player {
         vehicleInfo.destinationResolved = destinationResolved;
 
         return {
+            vehicleKind: regionVehicleInfo ? 'region' : 'location',
             name: regionVehicleInfo
                 ? (typeof currentRegion?.name === 'string' ? currentRegion.name.trim() : '')
                 : (typeof currentLocation?.name === 'string' ? currentLocation.name.trim() : ''),
@@ -3337,6 +3385,7 @@ class Player {
                 : (typeof currentLocation?.description === 'string' ? currentLocation.description.trim() : ''),
             location: resolveVehicleLocationLabel(activeVehicleInfo) || '',
             vehicleInfo,
+            allowedDestinations,
             destination,
             destinationResolved,
             pendingDestination: pendingDestination ? { ...pendingDestination } : null,
@@ -5861,12 +5910,16 @@ class Player {
 
             let resolved = initialLookup.has(normalizedId) ? initialLookup.get(normalizedId) : undefined;
             let candidateValue = null;
+            let candidateInitialValue = null;
             if (resolved !== undefined && resolved !== null) {
                 if (typeof resolved === 'object') {
                     const { value, current, amount } = resolved;
                     const attempt = value ?? current ?? amount;
                     if (Number.isFinite(Number(attempt))) {
                         candidateValue = Number(attempt);
+                    }
+                    if (Number.isFinite(Number(resolved.initialValue))) {
+                        candidateInitialValue = Number(resolved.initialValue);
                     }
                 } else if (Number.isFinite(Number(resolved))) {
                     candidateValue = Number(resolved);
@@ -5884,7 +5937,9 @@ class Player {
             }
 
             Player.#applyNeedBarValue(barDefinition, candidateValue);
-            barDefinition.initialValue = Number.isFinite(candidateValue) ? candidateValue : barDefinition.initialValue;
+            barDefinition.initialValue = Number.isFinite(candidateInitialValue)
+                ? candidateInitialValue
+                : (Number.isFinite(candidateValue) ? candidateValue : barDefinition.initialValue);
 
             this.#needBars.set(normalizedId, barDefinition);
         }

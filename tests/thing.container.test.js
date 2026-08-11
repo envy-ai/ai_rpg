@@ -40,6 +40,57 @@ test.afterEach(() => {
   Globals.config = originalConfig;
 });
 
+test('combiner mechanics checksum ignores presentation identity but preserves authoritative mechanics', () => {
+  const tokenStack = new Thing({
+    id: 'thing-combiner-token',
+    name: 'QA Brass Token',
+    description: 'A square brass token used by quartermasters.',
+    shortDescription: 'A square brass token.',
+    thingType: 'item',
+    imageId: 'token.webp',
+    imagePrompt: 'A square brass token.',
+    rarity: 'common',
+    itemTypeDetail: 'currency',
+    metadata: { value: 1, weight: 0.01 },
+    count: 4,
+    enrichStatusEffects: false
+  });
+  const renamedTokenStack = new Thing({
+    id: 'thing-combiner-coin',
+    name: 'Quartermaster Scrip',
+    description: 'A stamped coin accepted at the same supply counter.',
+    shortDescription: 'A stamped supply coin.',
+    thingType: 'item',
+    imageId: 'scrip.webp',
+    imagePrompt: 'A stamped supply coin.',
+    rarity: 'common',
+    itemTypeDetail: 'currency',
+    metadata: { value: 1, weight: 0.01 },
+    count: 9,
+    enrichStatusEffects: false
+  });
+  const focusDraught = new Thing({
+    id: 'thing-combiner-draught',
+    name: 'QA Focus Draught',
+    description: 'A glass vial containing a focusing tonic.',
+    thingType: 'item',
+    rarity: 'common',
+    itemTypeDetail: 'consumable',
+    metadata: { value: 1, weight: 0.01 },
+    count: 1,
+    causeStatusEffect: {
+      name: 'QA Focused',
+      description: 'Heightened concentration.',
+      duration: 5,
+      applyToEquipper: true
+    },
+    enrichStatusEffects: false
+  });
+
+  assert.equal(tokenStack.combinerMechanicsChecksum, renamedTokenStack.combinerMechanicsChecksum);
+  assert.notEqual(tokenStack.combinerMechanicsChecksum, focusDraught.combinerMechanicsChecksum);
+});
+
 test('adding a matching item stack to player inventory merges into the existing stack', () => {
   ensurePlayerTestConfig();
 

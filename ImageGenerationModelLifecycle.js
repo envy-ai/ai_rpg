@@ -7,6 +7,7 @@ class ImageGenerationModelLifecycle {
         getComfyClient,
         getLocalServerProcess = () => null,
         createRouterClient = options => new LlamaCppRouterClient(options),
+        onComfyCacheMonitorFallback = async () => {},
         logger = console
     } = {}) {
         if (typeof resolveRouterTarget !== 'function') {
@@ -24,12 +25,16 @@ class ImageGenerationModelLifecycle {
         if (typeof createRouterClient !== 'function') {
             throw new Error('ImageGenerationModelLifecycle createRouterClient must be a function.');
         }
+        if (typeof onComfyCacheMonitorFallback !== 'function') {
+            throw new Error('ImageGenerationModelLifecycle onComfyCacheMonitorFallback must be a function.');
+        }
 
         this.resolveRouterTarget = resolveRouterTarget;
         this.withExclusiveModelLifecycle = withExclusiveModelLifecycle;
         this.getComfyClient = getComfyClient;
         this.getLocalServerProcess = getLocalServerProcess;
         this.createRouterClient = createRouterClient;
+        this.onComfyCacheMonitorFallback = onComfyCacheMonitorFallback;
         this.logger = logger;
     }
 
@@ -75,7 +80,9 @@ class ImageGenerationModelLifecycle {
 
         let restartError = null;
         try {
-            const started = await localServerProcess.start();
+            const started = await localServerProcess.start({
+                beforeStartOptions: { preserveComfySystemCache: true }
+            });
             this.logger.log(`🧠 Restarted local llama.cpp PID ${started.pid} after image rendering.`);
         } catch (error) {
             restartError = error;
@@ -134,11 +141,26 @@ class ImageGenerationModelLifecycle {
 
         try {
             const comfyClient = this.getComfyClient();
-            if (comfyClient && typeof comfyClient.unloadModels === 'function') {
-                await comfyClient.unloadModels();
-                this.logger.log('🎨 Asked ComfyUI to unload models and free memory before reloading the LLM.');
+            if (comfyClient && typeof comfyClient.releaseVram === 'function') {
+                const release = await comfyClient.releaseVram();
+                if (release?.fallbackUsed) {
+                    this.logger.warn(
+                        `ComfyUI Cache Monitor VRAM release failed; used full /free cleanup instead: ${release.cacheMonitorError}`
+                    );
+                    try {
+                        await this.onComfyCacheMonitorFallback({
+                            cacheMonitorError: release.cacheMonitorError
+                        });
+                    } catch (notificationError) {
+                        this.logger.warn(
+                            `Failed to broadcast the ComfyUI Cache Monitor fallback warning: ${notificationError?.message || String(notificationError)}`
+                        );
+                    }
+                } else {
+                    this.logger.log('🎨 Asked ComfyUI Cache Monitor to release VRAM while preserving its system-memory cache before reloading the LLM.');
+                }
             } else {
-                this.logger.warn('ComfyUI model cleanup is unavailable; continuing with llama.cpp reload.');
+                this.logger.warn('ComfyUI Cache Monitor VRAM release is unavailable; continuing with llama.cpp reload.');
             }
         } catch (error) {
             this.logger.warn(

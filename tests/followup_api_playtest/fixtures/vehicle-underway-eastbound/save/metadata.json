@@ -1,0 +1,114 @@
+{
+  "timestamp": "2026-08-09T01:59:52.656Z",
+  "playerName": "Baato",
+  "playerId": "char_2",
+  "playerLevel": 3,
+  "gameVersion": "1.0.0",
+  "chatHistoryLength": 343,
+  "totalPlayers": 32,
+  "totalThings": 262,
+  "totalLocations": 34,
+  "totalLocationExits": 65,
+  "totalRegions": 3,
+  "totalFactions": 7,
+  "totalMysteryBoxes": 0,
+  "totalMysteryThreads": 0,
+  "totalScheduledEvents": 0,
+  "totalTrackers": 3,
+  "totalGeneratedImages": 121,
+  "totalSkills": 26,
+  "currentSettingId": "setting_1782765587711_8ccb23b33de9",
+  "currentSettingName": "Monster Girl Life 2026-06b",
+  "enabledMods": [
+    "implants",
+    "modules",
+    "nsfw-boost",
+    "party-needs",
+    "scene-illustration"
+  ],
+  "idCounters": {
+    "char": 33,
+    "thing": 273,
+    "loc": 36,
+    "exit": 67,
+    "region": 1,
+    "faction": 7,
+    "tracker": 8,
+    "quest": 9,
+    "obj": 56,
+    "status": 173
+  },
+  "plotAnalysis": {
+    "raw": "Here is the analysis of the current plot threads and complications.\n\n<response>\n  <plotThreads>\n    <plotThread>\n      <description>Baato establishes himself as Tsubaki’s apprentice, learning herbal sorting and shop management.</description>\n      <isCurrentFocus>false</isCurrentFocus>\n    </plotThread>\n    <plotThread>\n      <description>Baato must deliver three letters to the Northern Ridge (Watch Post, Hermit's Cabin, Caravan Camp) for Sora, then return to her.</description>\n      <isCurrentFocus>true</isCurrentFocus>\n    </plotThread>\n    <plotThread>\n      <description>Mirei needs 50 bowls of broth by noon for the community kitchen.</description>\n      <isCurrentFocus>false</isCurrentFocus>\n    </plotThread>\n    <plotThread>\n      <description>Baato must sort the new shipment at the alchemy shop before it opens tomorrow morning.</description>\n      <isCurrentFocus>false</isCurrentFocus>\n    </plotThread>\n  </plotThreads>\n  <currentPlotComplications>\n    <complication>\n      <description>Baato accepts Sora’s delivery quest for the Northern Ridge.</description>\n    </complication>\n    <complication>\n      <description>Baato travels from the Village Square to the Ember Hollow Outskirts, joining Kuroha on the ridge path.</description>\n    </complication>\n    <complication>\n      <description>Baato boards the QA Clockwork Tram at the Outskirts, bringing Rika the Gazer along with him to the QA West Platform.</description>\n    </complication>\n  </currentPlotComplications>\n</response>",
+    "updatedAt": "2026-08-09T01:54:58.405Z",
+    "startedAt": "2026-08-09T01:53:13.295Z",
+    "completedAt": "2026-08-09T01:54:58.405Z",
+    "sourceRequestId": "followup-e3b876d3-c285-4b89-a4a9-abec6537e652",
+    "locationId": "loc_34",
+    "sequence": 1,
+    "plotThreads": [
+      {
+        "description": "Baato establishes himself as Tsubaki’s apprentice, learning herbal sorting and shop management.",
+        "isCurrentFocus": false
+      },
+      {
+        "description": "Baato must deliver three letters to the Northern Ridge (Watch Post, Hermit's Cabin, Caravan Camp) for Sora, then return to her.",
+        "isCurrentFocus": true
+      },
+      {
+        "description": "Mirei needs 50 bowls of broth by noon for the community kitchen.",
+        "isCurrentFocus": false
+      },
+      {
+        "description": "Baato must sort the new shipment at the alchemy shop before it opens tomorrow morning.",
+        "isCurrentFocus": false
+      }
+    ],
+    "currentPlotComplications": [
+      {
+        "description": "Baato accepts Sora’s delivery quest for the Northern Ridge."
+      },
+      {
+        "description": "Baato travels from the Village Square to the Ember Hollow Outskirts, joining Kuroha on the ridge path."
+      },
+      {
+        "description": "Baato boards the QA Clockwork Tram at the Outskirts, bringing Rika the Gazer along with him to the QA West Platform."
+      }
+    ]
+  },
+  "saveName": "2026-08-09T01-59-52-503Z_Monster_Girl_Life_2026-06b-Baato-QA_Clockwork_Tram-char_2-msl5ncfr",
+  "npcAliasesGenerated": true,
+  "saveFileSaveVersion": 1.2,
+  "summaryStyle": "scene",
+  "plotSummaryTurnCounter": 0,
+  "plotExpanderTurnCounter": 0,
+  "improvementPromptTurnCounter": 0,
+  "tonalScaleEvaluationTurnCounter": 51,
+  "plotAnalysisTurnCounter": 4,
+  "mysteryBoxCleanupTurnCounter": 58,
+  "housekeepingTurnCounter": 43,
+  "questCheckTurnCounter": 8,
+  "lastHousekeepingTurnId": "req-msk7nn5b-qr3ktwo11a",
+  "offscreenNpcActivityState": {
+    "dailyMentionedNpcNamesByWeek": {
+      "0": [
+        "rumi kagami",
+        "mirei hoshino",
+        "lina ashford",
+        "sora fujimiya",
+        "hana mizuki",
+        "mizuho",
+        "nuru",
+        "tsubaki morino",
+        "yuzu hoshizora"
+      ]
+    },
+    "turnsSinceDailyPrompt": 8,
+    "turnsSinceWeeklyPrompt": 48,
+    "lastDailyPromptWorldTime": null,
+    "lastWeeklyPromptWorldTime": null
+  },
+  "currentLocationId": "loc_35",
+  "currentLocationName": "QA Clockwork Tram",
+  "source": "saves"
+}

@@ -67,5 +67,7 @@ Items:
 Scenery:
 {% set sceneryRarities = rarityList and rarityList.scenery or {} %}{% if sceneryRarities %}{% for rarity, count in sceneryRarities | dictsort %}  {{ rarity }}: {{ count }}
 {% endfor %}{% else %}  (none){% endif %}
+
+<![CDATA[Return exactly {{ itemCount }} top-level <item> {% if itemCount == 1 %}entry{% else %}entries{% endif %} whose <itemOrScenery> is item and exactly {{ sceneryCount }} top-level <item> {% if sceneryCount == 1 %}entry{% else %}entries{% endif %} whose <itemOrScenery> is scenery. Each rarity count above is the number of top-level entries of that kind and rarity. An entry's inner <count> is only that entry's stack quantity; it does not replace or add top-level entries. After exactly {{ itemCount + sceneryCount }} total top-level entries, close </things> immediately and stop. Do not add any other entries or commentary.]]>
 </generationPrompt>
 </template>

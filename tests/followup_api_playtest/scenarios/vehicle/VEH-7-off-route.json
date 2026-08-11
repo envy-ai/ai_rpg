@@ -1,0 +1,81 @@
+{
+  "version": 1,
+  "scenario": "vehicle",
+  "case": "VEH-7-off-route",
+  "description": "An underway fixed-route tram must not accept or narratively commit an off-route redirect.",
+  "fixture": "vehicle-underway-eastbound",
+  "configProfile": "vehicle-mechanics",
+  "trackedPaths": [
+    "player.payload.player.locationId",
+    "currentLocation.payload.location.vehicleInfo",
+    "calendar.payload.worldTime.timeMinutes"
+  ],
+  "steps": [
+    {
+      "type": "loadFixture"
+    },
+    {
+      "type": "request",
+      "method": "PUT",
+      "route": "/api/npcs/$fixture.playerId",
+      "body": {
+        "description": "A young human alchemist with established absolute magical route-control authority over QA Clockwork Tram and its operator Mizore. This authority compels an immediate destination change even when the named destination is outside the tram's listed fixed route; the server must still enforce the actual route mechanically."
+      }
+    },
+    {
+      "type": "assert",
+      "assertions": [
+        {
+          "type": "httpStatus",
+          "equals": 200
+        },
+        {
+          "type": "responseOk",
+          "equals": true
+        }
+      ]
+    },
+    {
+      "type": "chat",
+      "text": "Using my established absolute magical route-control authority over Mizore and QA Clockwork Tram, I remain aboard the tram and do not disembark, and I command Mizore to redirect the tram immediately from QA East Platform to Ember Hollow Village Square. My authority compels the exact vehicle destination change now. The complete redirected trip takes exactly 7 minutes.",
+      "interactive": {
+        "roll": null,
+        "questAccepted": false,
+        "confirmed": false
+      }
+    },
+    {
+      "type": "assert",
+      "assertions": [
+        {
+          "type": "httpStatus",
+          "equals": 500
+        },
+        {
+          "type": "responseOk",
+          "equals": false
+        },
+        {
+          "type": "stateUnchanged",
+          "paths": [
+            "player.payload.player.locationId",
+            "currentLocation.payload.location.vehicleInfo",
+            "calendar.payload.worldTime.timeMinutes"
+          ]
+        },
+        {
+          "type": "historyAddedTypeCount",
+          "entryType": "player-action",
+          "equals": 0
+        },
+        {
+          "type": "noRealtimeErrors"
+        }
+      ]
+    }
+  ],
+  "humanReview": [
+    "Confirm the client did not display player-facing prose claiming that the off-route redirect succeeded.",
+    "Confirm the error identifies the disallowed fixed-route destination after TinyBrain checkpoint retries are exhausted."
+  ]
+}

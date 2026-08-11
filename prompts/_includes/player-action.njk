@@ -125,8 +125,8 @@ The vehicle the player is onboard, "{{ currentVehicle.name }}" has arrived at "{
 
 These characters are present and aware of the action. This is not necessary an exhaustive list, but it contains no false positives:
 - {{ characterName }}
-{% for npc in npcs %}- {{ npc.name }} ({{ npc.race }}/{{ npc.class }})
-{% endfor %}{% for member in party %}{% if member not in npcs %}- {{ member.name }} ({{ member.race }}/{{ member.class }})
+{% for npc in npcs %}{% if not npc.isDead %}- {{ npc.name }} ({{ npc.race }}/{{ npc.class }})
+{% endif %}{% endfor %}{% for member in party %}{% if member not in npcs and not member.isDead %}- {{ member.name }} ({{ member.race }}/{{ member.class }})
 {% endif %}{% endfor %}
 Pick ONE, TWO, or AT MOST THREE (Exception: If character specifically addresses *everyone* or specific people, choose appropriately) of the above characters to respond or act, unless the action involves moving to a new location or region. In this case, only pick characters who are IN THE PLAYER's PARTY to respond or act. If two or three characters speak with each other, be sure to properly break the dialogue into multiple paragraphs.
 
@@ -135,8 +135,8 @@ If it's been several turns since a party member last spoke or acted, priotirize 
 If moving to a new location or region, the above characters are present at the *origin* location as opposed to the destination location/region. In other words, these are the characters who are present at the *start* of the turn; if the player leaves, they won't be present at the destination unless they're in the party or they specifically move there in the prose.
 
 Character AI notes (these are things that might trigger a character to respond or act in a certain way):
-{% for npc in npcs %}{% if npc.aiNotes %}- {{ npc.name }}: {{ npc.aiNotes }}
-{% endif %}{% endfor %}{% for member in party %}{% if member.aiNotes %}- {{ member.name }}: {{ member.aiNotes }}
+{% for npc in npcs %}{% if npc.aiNotes and not npc.isDead %}- {{ npc.name }}: {{ npc.aiNotes }}
+{% endif %}{% endfor %}{% for member in party %}{% if member.aiNotes and not member.isDead %}- {{ member.name }}: {{ member.aiNotes }}
 {% endif %}{% endfor %}
 
 {{ config.prose_instructions }}

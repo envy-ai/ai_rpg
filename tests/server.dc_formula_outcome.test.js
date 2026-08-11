@@ -207,3 +207,33 @@ test('resolveActionOutcome uses configured inclusive normal critical roll thresh
     assert.equal(outcome.margin, 16);
     assert.equal(outcome.degree, 'major_success');
 });
+
+test('resolveActionOutcome rejects an opposed check against the acting character', () => {
+    const { resolveActionOutcome } = loadActionOutcomeHelpers({
+        config: makeConfig(),
+        locationLevel: 4,
+        dieRoll: 20
+    });
+    const player = {
+        ...makePlayer(),
+        id: 'char-self',
+        name: 'Rook'
+    };
+
+    assert.throws(() => resolveActionOutcome({
+        player,
+        plausibility: {
+            type: 'plausible',
+            skillCheck: {
+                skill: 'Stealth',
+                attribute: 'Dexterity',
+                difficulty: 'Opposed',
+                opposedCheck: {
+                    opponent: 'self',
+                    opponentSkill: 'Perception',
+                    opponentAttribute: 'Wisdom'
+                }
+            }
+        }
+    }), /actor and opponent resolve to the same character "Rook"/);
+});

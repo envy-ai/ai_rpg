@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "name": "full-live-verification",
+  "description": "Keeps image generation off while retaining normal Qwen gameplay checks for final live verification.",
+  "values": {
+    "imagegen.enabled": false,
+    "random_event_frequency.enabled": false,
+    "npc_turns.enabled": false,
+    "combat_npc_turns.enabled": false
+  }
+}

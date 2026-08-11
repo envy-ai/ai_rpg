@@ -214,7 +214,7 @@ test('generation prompt completions are wired to the random integer tool loop', 
   );
 });
 
-test('location thing generation retries strict response validation and does not swallow exhausted failures', () => {
+test('location thing generation retries strict responses with parser feedback and does not swallow exhausted failures', () => {
   const serverSource = fs.readFileSync(
     path.join(__dirname, '..', 'server.js'),
     'utf8',
@@ -231,11 +231,21 @@ test('location thing generation retries strict response validation and does not 
 
   const generationSource = serverSource.slice(generationStart, generationEnd);
   const locationGenerationSource = serverSource.slice(locationGenerationStart, locationGenerationEnd);
-  assert.match(serverSource, /const LOCATION_THINGS_GENERATION_MAX_ATTEMPTS = 3;/);
-  assert.match(generationSource, /const parsedItems = await withRetry\(async \(\) => \{/);
-  assert.match(generationSource, /}, LOCATION_THINGS_GENERATION_MAX_ATTEMPTS\);/);
+  assert.match(generationSource, /await runPromptWithParseRetries\(\{/);
+  assert.match(
+    generationSource,
+    /maxAttempts:\s*resolveConfiguredPromptMaxAttempts\(config\?\.ai,\s*\{\s*fallbackMaxAttempts:\s*3\s*\}\)/,
+  );
+  assert.match(generationSource, /messages:\s*completionMessages/);
+  assert.match(generationSource, /The preceding location item\/scenery XML failed structured validation:/);
+  assert.match(generationSource, /exactly one <things>\.\.\.<\/things> block/);
   assert.match(generationSource, /strictXml:\s*true/);
   assert.match(generationSource, /response contained no item or scenery entries/);
+  assert.doesNotMatch(
+    generationSource,
+    /const parsedItems = await withRetry/,
+    'parser retries must retain the rejected response and correction instead of starting a fresh conversation',
+  );
   assert.doesNotMatch(
     locationGenerationSource,
     /Failed to generate location things:[\s\S]{0,160}return \[\]/,

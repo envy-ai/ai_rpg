@@ -10,9 +10,13 @@ const {
     parseNeedBarCharactersResult,
     parseOutcomeAcknowledgement,
     parsePlayerActionDestination,
+    parsePlayerActionVehicleDestination,
+    parsePlayerActionDestinationChanges,
     parsePlayerActionDuration,
     parsePlayerActionAccompanyingCharacters,
+    parsePlayerActionCheckedActionActors,
     parsePlayerActionHiddenNotes,
+    parsePlayerActionMoreInfoOrNa,
     parsePlayerActionMovement,
     parsePlayerActionProseScope,
     parsePlayerActionRequiredProse,
@@ -24,6 +28,7 @@ const {
     parseScheduledEventStagedResult,
     parseWhileAwayArrivalUpdates,
     parseWhileAwayCharacterUpdate,
+    parseWhileYouWereAwayResult,
     parseWhileYouWereAwayStagedResult
 } = require('../TinyBrainPromptParsers.js');
 
@@ -66,6 +71,43 @@ test('need-bar characters parser enforces the staged XML contract', () => {
         () => parseNeedBarCharactersResult(xml.replace('<id>stamina</id>', '<id>hunger</id>'), ['stamina']),
         /unknown need-bar id/i
     );
+    assert.throws(
+        () => parseNeedBarCharactersResult(
+            xml.replace('</characters>', `${xml.slice('<characters>'.length, -'</characters>'.length)}</characters>`),
+            ['stamina']
+        ),
+        /duplicate character/i
+    );
+    const duplicateBarXml = xml.replace(
+        '</affectedNeedBars>',
+        '<needBar><id>STAMINA</id><changeDirection>decrease</changeDirection>'
+            + '<change>medium</change><reason>kept swinging</reason></needBar></affectedNeedBars>'
+    );
+    assert.throws(
+        () => parseNeedBarCharactersResult(duplicateBarXml, ['stamina']),
+        /duplicate need bar/i
+    );
+    assert.throws(
+        () => parseNeedBarCharactersResult(
+            xml.replace('<changeDirection>decrease</changeDirection>', '<changeDirection>lower</changeDirection>'),
+            ['stamina']
+        ),
+        /changeDirection.*increase or decrease/i
+    );
+    assert.throws(
+        () => parseNeedBarCharactersResult(
+            xml.replace('<change>small</change>', '<change>slightly</change>'),
+            ['stamina']
+        ),
+        /<change>.*small, medium, large/i
+    );
+    assert.throws(
+        () => parseNeedBarCharactersResult(
+            '<characters><commentary>Wanderer used stamina.</commentary></characters>',
+            ['stamina']
+        ),
+        /unexpected(?: direct child)? <commentary>/i
+    );
     const longReasonXml = xml.replace(
         'swung a weapon',
         'one two three four five six seven eight nine ten eleven twelve'
@@ -77,6 +119,33 @@ test('need-bar characters parser enforces the staged XML contract', () => {
     assert.equal(
         parseNeedBarCharactersResult(`Planning:\n\`\`\`xml\n${xml}\n\`\`\``, ['stamina']).value,
         xml
+    );
+
+    const fillAliasXml = xml
+        .replace('<changeDirection>decrease</changeDirection>', '<changeDirection>increase</changeDirection>')
+        .replace('<change>small</change>', '<change>fill</change>');
+    assert.equal(
+        parseNeedBarCharactersResult(fillAliasXml, ['stamina']).value,
+        fillAliasXml.replace('<change>fill</change>', '<change>full</change>')
+    );
+    const drainAliasXml = xml.replace('<change>small</change>', '<change>drain</change>');
+    assert.equal(
+        parseNeedBarCharactersResult(drainAliasXml, ['stamina']).value,
+        drainAliasXml.replace('<change>drain</change>', '<change>empty</change>')
+    );
+    assert.throws(
+        () => parseNeedBarCharactersResult(
+            xml.replace('<change>small</change>', '<change>full</change>'),
+            ['stamina']
+        ),
+        /requires <changeDirection>increase/i
+    );
+    assert.throws(
+        () => parseNeedBarCharactersResult(
+            fillAliasXml.replace('<changeDirection>increase</changeDirection>', '<changeDirection>decrease</changeDirection>'),
+            ['stamina']
+        ),
+        /requires <changeDirection>increase/i
     );
 });
 
@@ -129,6 +198,83 @@ test('player-action non-XML parsers enforce compact branch-safe answers', () => 
         () => parsePlayerActionDestination('Location: N/A\nRegion: N/A'),
         /requires a location or region/i
     );
+    const fixedRouteVehicle = {
+        name: 'QA Clockwork Tram',
+        vehicleInfo: {
+            destinations: ['loc_west', 'loc_east', 'pending-region:North Reach']
+        },
+        allowedDestinations: [
+            {
+                kind: 'location',
+                routeEntry: 'loc_west',
+                locationId: 'loc_west',
+                locationName: 'QA West Platform',
+                regionName: 'Ember Hollow'
+            },
+            {
+                kind: 'location',
+                routeEntry: 'loc_east',
+                locationId: 'loc_east',
+                locationName: 'QA East Platform',
+                regionName: 'Ember Hollow'
+            },
+            {
+                kind: 'region',
+                routeEntry: 'pending-region:North Reach',
+                locationId: null,
+                locationName: null,
+                regionName: 'North Reach'
+            }
+        ]
+    };
+    assert.deepEqual(
+        parsePlayerActionVehicleDestination(
+            'Location: qa east platform\nRegion: ember hollow',
+            fixedRouteVehicle
+        ).value,
+        { location: 'QA East Platform', region: 'Ember Hollow' }
+    );
+    assert.deepEqual(
+        parsePlayerActionVehicleDestination(
+            'Location: North Gate\nRegion: north reach',
+            fixedRouteVehicle
+        ).value,
+        { location: 'North Gate', region: 'North Reach' }
+    );
+    assert.throws(
+        () => parsePlayerActionVehicleDestination(
+            'Location: Ember Hollow Village Square\nRegion: Ember Hollow',
+            fixedRouteVehicle
+        ),
+        /not in its allowed route.*QA West Platform.*QA East Platform/is
+    );
+    const vehicleDestinationRetryState = {};
+    assert.throws(
+        () => parsePlayerActionVehicleDestination(
+            'Location: Ember Hollow Village Square\nRegion: Ember Hollow',
+            fixedRouteVehicle,
+            { retryState: vehicleDestinationRetryState }
+        ),
+        /not in its allowed route.*QA West Platform.*QA East Platform/is
+    );
+    assert.throws(
+        () => parsePlayerActionVehicleDestination(
+            'Location: QA West Platform\nRegion: Ember Hollow',
+            fixedRouteVehicle,
+            { retryState: vehicleDestinationRetryState }
+        ),
+        /may not replace the initially extracted destination.*Ember Hollow Village Square.*QA West Platform/is
+    );
+    assert.throws(
+        () => parsePlayerActionVehicleDestination(
+            'Location: QA East Platform\nRegion: Ember Hollow',
+            {
+                name: 'Broken Tram',
+                vehicleInfo: { destinations: ['loc_east'] }
+            }
+        ),
+        /must provide every canonical allowed destination/i
+    );
     assert.deepEqual(
         parsePlayerActionDuration('1 hour, 30 minutes', 1).value,
         { text: '1 hour, 30 minutes', minutes: 90 }
@@ -171,6 +317,22 @@ test('player-action non-XML parsers enforce compact branch-safe answers', () => 
         ['Mira Vale']
     );
 
+    assert.deepEqual(
+        parsePlayerActionCheckedActionActors('player\nWhisper', [
+            { name: 'Baato', aliases: ['player'] },
+            { name: 'QA Veiled Scout', aliases: ['Whisper'] }
+        ]).value,
+        ['Baato', 'QA Veiled Scout']
+    );
+    assert.deepEqual(
+        parsePlayerActionCheckedActionActors('NONE', [{ name: 'Baato', aliases: ['player'] }]).value,
+        []
+    );
+    assert.throws(
+        () => parsePlayerActionCheckedActionActors('Unknown', [{ name: 'Baato', aliases: ['player'] }]),
+        /allowed exact character name/i
+    );
+
     assert.equal(parsePlayerActionRequiredProse('A door opens.').value, 'A door opens.');
     assert.equal(parsePlayerActionHiddenNotes('N/A').value, null);
     assert.equal(parsePlayerActionHiddenNotes('The key is newly bent.').value, 'The key is newly bent.');
@@ -182,6 +344,73 @@ test('player-action non-XML parsers enforce compact branch-safe answers', () => 
     assert.throws(
         () => parsePlayerActionRequiredProse('Visible.<hidden>Secret.</hidden>'),
         /must not contain/i
+    );
+});
+
+test('player-action destination lookup requires N/A or a successful moreInfo call followed by READY', () => {
+    assert.equal(parsePlayerActionMoreInfoOrNa('N/A').value, false);
+    assert.equal(parsePlayerActionMoreInfoOrNa('**Answer: N/A.**').value, false);
+    assert.equal(
+        parsePlayerActionMoreInfoOrNa('READY', {
+            currentToolInvocations: [{
+                id: 'lookup-1',
+                name: 'moreInfo',
+                metadata: { totalMatches: 1 }
+            }]
+        }).value,
+        true
+    );
+
+    assert.throws(
+        () => parsePlayerActionMoreInfoOrNa('Baato walks into the square.'),
+        /must be exactly N\/A/i
+    );
+    assert.throws(
+        () => parsePlayerActionMoreInfoOrNa('READY'),
+        /without a successful moreInfo call/i
+    );
+    assert.throws(
+        () => parsePlayerActionMoreInfoOrNa('N/A', {
+            currentToolInvocations: [{ name: 'moreInfo', metadata: { totalMatches: 0 } }]
+        }),
+        /must answer READY/i
+    );
+    assert.throws(
+        () => parsePlayerActionMoreInfoOrNa('READY', {
+            currentToolInvocations: [{ name: 'moreInfo', metadata: { error: true } }]
+        }),
+        /execution failed/i
+    );
+    assert.throws(
+        () => parsePlayerActionMoreInfoOrNa('READY', {
+            currentToolInvocations: [{ name: 'getHistory', metadata: {} }]
+        }),
+        /may only call moreInfo/i
+    );
+});
+
+test('player-action destination changes parser accepts only NONE or Markdown bullets', () => {
+    assert.deepEqual(parsePlayerActionDestinationChanges('NONE').value, []);
+    assert.deepEqual(parsePlayerActionDestinationChanges('N/A').value, []);
+    assert.deepEqual(
+        parsePlayerActionDestinationChanges('- The fountain is under repair.\n- Mira opened a flower stall.').value,
+        ['The fountain is under repair.', 'Mira opened a flower stall.']
+    );
+    assert.throws(
+        () => parsePlayerActionDestinationChanges('Changes:\n- The fountain is under repair.'),
+        /Markdown bullet list/i
+    );
+    assert.throws(
+        () => parsePlayerActionDestinationChanges('1. The fountain is under repair.'),
+        /Markdown bullet list/i
+    );
+    assert.throws(
+        () => parsePlayerActionDestinationChanges('- Same change\n- same   change'),
+        /duplicate bullet/i
+    );
+    assert.throws(
+        () => parsePlayerActionDestinationChanges('- NONE'),
+        /cannot mix/i
     );
 });
 
@@ -339,6 +568,30 @@ test('while-away staged parser prevents final structured-state drift', () => {
             '<characterUpdates><characterUpdate><name>Rin</name><needBarChanges/><update>She arrived.</update></characterUpdate></characterUpdates>'
         ),
         /requires <travelDestination>HERE<\/travelDestination>/
+    );
+    const rinArrival = '<characterUpdate><name>Rin</name><needBarChanges/>'
+        + '<travelDestination>HERE</travelDestination><update>She arrived.</update></characterUpdate>';
+    const finalWithArrival = '<response><proseForPlayer>Rin is waiting here.</proseForPlayer><characterUpdates>'
+        + rinArrival
+        + '</characterUpdates><itemSceneryMoves/></response>';
+    assert.equal(parseWhileYouWereAwayResult(finalWithArrival).value, finalWithArrival);
+    assert.equal(parseWhileYouWereAwayStagedResult(finalWithArrival, {
+        characterUpdateXml: [],
+        arrivalUpdatesXml: `<characterUpdates>${rinArrival}</characterUpdates>`,
+        itemSceneryMovesXml: '<itemSceneryMoves/>'
+    }).value, finalWithArrival);
+    assert.throws(
+        () => parseWhileYouWereAwayResult(finalWithArrival.replace('>HERE<', '>nearby<')),
+        /location.*region.*HERE sentinel/i
+    );
+    assert.throws(
+        () => parseWhileYouWereAwayResult(
+            finalWithArrival.replace(
+                '>HERE<',
+                '>HERE<location>Town Square</location><'
+            )
+        ),
+        /must not mix text/i
     );
     const finalXml = '<response><proseForPlayer>The repaired latch shines.</proseForPlayer><characterUpdates>'
         + mira

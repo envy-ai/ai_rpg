@@ -1,0 +1,211 @@
+{
+  "version": 1,
+  "name": "fast-travel-visited-favorites",
+  "description": "Validated fast-travel fixture with Baato at March Start Marker, two visited and favorited ordinary destinations on distinct positive routes, living non-party QA Courier with alias Quickstep at the baseline, and Mina at the Grove for arrival-processing checks.",
+  "createdAt": "2026-08-11T10:42:38.420Z",
+  "source": {
+    "setupCommand": "Derived from cross-region-expanded-frost-march. Deterministic location-exit API calls created QA Fast Travel Grove and QA Fast Travel Tower with four- and nine-minute two-way routes. The documented @@ fixture command created QA Courier and updateCharacterFields set alias Quickstep. Story-tool setup visits expanded and marked both locations visited without time or arrival side effects, then the favorite API marked both and returned Baato to March Start Marker.",
+    "saveName": "2026-08-11T10-41-11-239Z_Monster_Girl_Life_2026-06b-Baato-March_Start_Marker-char_2-msoj5glj",
+    "saveType": "saves",
+    "settingName": "Monster Girl Life 2026-06b",
+    "playerName": "Baato"
+  },
+  "configProfile": "cross-region-mechanics",
+  "requiredMods": [
+    "implants",
+    "modules",
+    "nsfw-boost",
+    "party-needs",
+    "scene-illustration"
+  ],
+  "worldTime": {
+    "dayIndex": 0,
+    "timeMinutes": 663
+  },
+  "entities": {
+    "playerId": "char_2",
+    "regionId": "region_1786438821952_m5baxvz2",
+    "baselineLocationId": "loc_39",
+    "groveLocationId": "loc_43",
+    "towerLocationId": "loc_44",
+    "baselineToGroveExitId": "exit_81",
+    "groveToBaselineExitId": "exit_82",
+    "baselineToTowerExitId": "exit_83",
+    "towerToBaselineExitId": "exit_84",
+    "courierId": "char_37",
+    "courierName": "QA Courier",
+    "courierAlias": "Quickstep",
+    "groveNpcId": "char_38",
+    "groveNpcName": "Mina"
+  },
+  "invariants": [
+    {
+      "type": "equals",
+      "source": "after",
+      "path": "player.payload.player.locationId",
+      "equals": "loc_39"
+    },
+    {
+      "type": "equals",
+      "source": "after",
+      "path": "calendar.payload.worldTime.timeMinutes",
+      "equals": 663
+    },
+    {
+      "type": "entityField",
+      "source": "after",
+      "collection": "locations",
+      "id": "loc_43",
+      "path": "name",
+      "equals": "QA Fast Travel Grove"
+    },
+    {
+      "type": "entityField",
+      "source": "after",
+      "collection": "locations",
+      "id": "loc_43",
+      "path": "regionId",
+      "equals": "region_1786438821952_m5baxvz2"
+    },
+    {
+      "type": "entityField",
+      "source": "after",
+      "collection": "locations",
+      "id": "loc_43",
+      "path": "isStub",
+      "equals": false
+    },
+    {
+      "type": "entityField",
+      "source": "after",
+      "collection": "locations",
+      "id": "loc_43",
+      "path": "visited",
+      "equals": true
+    },
+    {
+      "type": "entityField",
+      "source": "after",
+      "collection": "locations",
+      "id": "loc_43",
+      "path": "favorite",
+      "equals": true
+    },
+    {
+      "type": "entityField",
+      "source": "after",
+      "collection": "locations",
+      "id": "loc_44",
+      "path": "name",
+      "equals": "QA Fast Travel Tower"
+    },
+    {
+      "type": "entityField",
+      "source": "after",
+      "collection": "locations",
+      "id": "loc_44",
+      "path": "regionId",
+      "equals": "region_1786438821952_m5baxvz2"
+    },
+    {
+      "type": "entityField",
+      "source": "after",
+      "collection": "locations",
+      "id": "loc_44",
+      "path": "isStub",
+      "equals": false
+    },
+    {
+      "type": "entityField",
+      "source": "after",
+      "collection": "locations",
+      "id": "loc_44",
+      "path": "visited",
+      "equals": true
+    },
+    {
+      "type": "entityField",
+      "source": "after",
+      "collection": "locations",
+      "id": "loc_44",
+      "path": "favorite",
+      "equals": true
+    },
+    {
+      "type": "equals",
+      "source": "after",
+      "path": "currentLocation.payload.location.exits.qa_fast_travel_grove.id",
+      "equals": "exit_81"
+    },
+    {
+      "type": "equals",
+      "source": "after",
+      "path": "currentLocation.payload.location.exits.qa_fast_travel_grove.destination",
+      "equals": "loc_43"
+    },
+    {
+      "type": "equals",
+      "source": "after",
+      "path": "currentLocation.payload.location.exits.qa_fast_travel_grove.travelTimeMinutes",
+      "equals": 4
+    },
+    {
+      "type": "equals",
+      "source": "after",
+      "path": "currentLocation.payload.location.exits.qa_fast_travel_tower.id",
+      "equals": "exit_83"
+    },
+    {
+      "type": "equals",
+      "source": "after",
+      "path": "currentLocation.payload.location.exits.qa_fast_travel_tower.destination",
+      "equals": "loc_44"
+    },
+    {
+      "type": "equals",
+      "source": "after",
+      "path": "currentLocation.payload.location.exits.qa_fast_travel_tower.travelTimeMinutes",
+      "equals": 9
+    },
+    {
+      "type": "entityField",
+      "source": "after",
+      "collection": "players",
+      "id": "char_37",
+      "path": "name",
+      "equals": "QA Courier"
+    },
+    {
+      "type": "entityField",
+      "source": "after",
+      "collection": "players",
+      "id": "char_37",
+      "path": "locationId",
+      "equals": "loc_39"
+    },
+    {
+      "type": "entityField",
+      "source": "after",
+      "collection": "players",
+      "id": "char_37",
+      "path": "aliases",
+      "equals": [
+        "Quickstep"
+      ]
+    },
+    {
+      "type": "entityField",
+      "source": "after",
+      "collection": "players",
+      "id": "char_37",
+      "path": "isInPlayerParty",
+      "equals": false
+    }
+  ],
+  "validation": {
+    "passed": true,
+    "checkedAt": "2026-08-11T10:41:13.451Z",
+    "evidence": "FAST fixture setup live-verify attempt 1 passed 33/33 assertions. QA Courier was created through @@ and updated to exact alias Quickstep; both expanded destinations are visited/favorited in QA Frost March; Baato returned to loc_39 at minute 663. Direct endpoint inspection additionally confirmed reverse exits exit_82 and exit_84 retain the matching four- and nine-minute paths back to the baseline."
+  },
+  "integrity": "sha256:a882b9918fce092d09d1bc677dc5718aa7264bac853369da88ca7853aaa64148"
+}

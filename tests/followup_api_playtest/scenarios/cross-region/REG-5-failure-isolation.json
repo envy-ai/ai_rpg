@@ -1,0 +1,130 @@
+{
+  "version": 1,
+  "scenario": "cross-region",
+  "case": "REG-5-failure-isolation",
+  "description": "Authoritative travel metadata that names a nonexistent destination must fail explicitly before any movement, time, exit, history, or region mutation.",
+  "fixture": "cross-region-ambiguous-destination",
+  "configProfile": "cross-region-mechanics",
+  "trackedPaths": [
+    "player.payload.player.locationId",
+    "currentLocation.payload.location.exits",
+    "locations.payload.locations",
+    "regions.payload.regions",
+    "calendar.payload.worldTime.timeMinutes"
+  ],
+  "steps": [
+    {
+      "type": "loadFixture"
+    },
+    {
+      "type": "snapshot",
+      "name": "before_invalid_travel"
+    },
+    {
+      "type": "chat",
+      "name": "invalid_travel",
+      "text": "I leave March Start Marker and travel to the selected destination now.",
+      "travel": true,
+      "travelMetadata": {
+        "mode": "fast-travel",
+        "eventDriven": false,
+        "exit": {
+          "exitId": null,
+          "originLocationId": "$fixture.entranceLocationId",
+          "direction": null,
+          "destinationId": "qa_missing_destination_id",
+          "destinationRegionId": "$fixture.expandedRegionId",
+          "destinationIsStub": false,
+          "destinationIsRegionEntryStub": false,
+          "isVehicle": false,
+          "vehicleType": null,
+          "destinationName": "QA Missing Destination",
+          "regionName": "QA Frost March"
+        }
+      },
+      "interactive": {
+        "roll": null,
+        "questAccepted": false,
+        "confirmed": false
+      }
+    },
+    {
+      "type": "assert",
+      "assertions": [
+        {
+          "type": "httpStatus",
+          "equals": 400
+        },
+        {
+          "type": "responseOk",
+          "equals": false
+        },
+        {
+          "type": "includes",
+          "source": "responses.invalid_travel",
+          "path": "payload.error",
+          "value": "not found in gameLocations"
+        },
+        {
+          "type": "stateUnchanged",
+          "beforeSource": "snapshots.before_invalid_travel",
+          "afterSource": "after",
+          "paths": [
+            "player.payload.player.locationId",
+            "currentLocation.payload.location.exits",
+            "locations.payload.locations",
+            "regions.payload.regions",
+            "calendar.payload.worldTime.timeMinutes"
+          ]
+        },
+        {
+          "type": "historyAddedTypeCount",
+          "entryType": "player-action",
+          "equals": 0,
+          "beforeSource": "snapshots.before_invalid_travel",
+          "afterSource": "after"
+        },
+        {
+          "type": "historyAddedTypeCount",
+          "entryType": "event-summary",
+          "equals": 0,
+          "beforeSource": "snapshots.before_invalid_travel",
+          "afterSource": "after"
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "after",
+          "path": "locations.payload.locations",
+          "where": {
+            "name": "QA Ambiguous Cairn",
+            "isStub": true
+          },
+          "equals": 2
+        },
+        {
+          "type": "entityField",
+          "source": "after",
+          "collection": "locations",
+          "id": "$fixture.originRegionAmbiguousLocationId",
+          "path": "regionId",
+          "equals": "$fixture.originRegionId"
+        },
+        {
+          "type": "entityField",
+          "source": "after",
+          "collection": "locations",
+          "id": "$fixture.expandedRegionAmbiguousLocationId",
+          "path": "regionId",
+          "equals": "$fixture.expandedRegionId"
+        },
+        {
+          "type": "noRealtimeErrors"
+        }
+      ]
+    }
+  ],
+  "humanReview": [
+    "Confirm no player-facing travel prose claims that QA Missing Destination was reached.",
+    "Confirm the returned error names the nonexistent authoritative destination instead of silently selecting, creating, or moving to any location."
+  ]
+}

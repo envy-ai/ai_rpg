@@ -16,6 +16,7 @@ const LlamaCppRouterClient = require('./LlamaCppRouterClient.js');
 const { getChatToolDefinitions } = require('./chat_tool_calls.js');
 const { formatMessageContent: formatBridgeMessageContent } = require('./bridge_client_utils.js');
 const { TinyBrainXmlRepetitionDetector } = require('./TinyBrainXmlRepetition.js');
+const LLMCompletionCassette = require('./LLMCompletionCassette.js');
 let sharpModule = null;
 
 const ERROR_LOG_IMAGE_CONTENT_FORMAT_OPTIONS = Object.freeze({
@@ -29,6 +30,7 @@ const PROMPT_PROGRESS_COMPLETION_HOLD_MS = 250;
 const OAUTH_REFRESH_THRESHOLD_SECONDS = 300;
 const PROMPT_OUTPUT_CHARACTER_STATS_FILENAME = 'prompt-output-character-stats.json';
 const PROMPT_OUTPUT_CHARACTER_STATS_VERSION = 1;
+const COMPLETION_CASSETTE_RESOLUTION = Symbol('completionCassetteResolution');
 const RECENT_STORY_MESSAGE_BOUNDARY_MARKER = '[[[AI_RPG_INTERNAL_MESSAGE_BOUNDARY_RECENT_STORY_HISTORY_V1]]]';
 const BASE_CONTEXT_SECTION_MESSAGE_BOUNDARY_MARKER = '[[[AI_RPG_INTERNAL_MESSAGE_BOUNDARY_BASE_CONTEXT_SECTION_V1]]]';
 const BASE_CONTEXT_END_MARKER = '[[[AI_RPG_INTERNAL_BASE_CONTEXT_END_V1]]]';
@@ -231,6 +233,7 @@ class LLMClient {
     static #lastPromptModelTarget = null;
     static #routerContextCachePaths = new Set();
     static #promptQueueReservationStates = new WeakMap();
+    static #completionCassetteSemaphore = new Semaphore(1);
     static #promptProgressGroupContext = new AsyncLocalStorage();
     static #tinyBrainXmlRepetitionContext = new AsyncLocalStorage();
     static #forcedOutputFixtureSource = null;
@@ -2134,6 +2137,16 @@ class LLMClient {
         }
     }
 
+    static async #retainPromptQueueReservationCompletionCassettePermit(state) {
+        if (!state) {
+            throw new Error('Prompt queue reservation state is required for cassette serialization.');
+        }
+        if (state.completionCassettePermit) {
+            return;
+        }
+        state.completionCassettePermit = await LLMClient.#completionCassetteSemaphore.acquire();
+    }
+
     static async #retainPromptQueueReservationPermits(state, {
         semaphore,
         semaphoreKey,
@@ -2190,14 +2203,17 @@ class LLMClient {
             throw new Error('Cannot release a prompt queue reservation while chatCompletion is still active.');
         }
         state.released = true;
-        if (!state.acquired) {
-            return;
+        if (state.acquired) {
+            if (state.allModelsSemaphore) {
+                state.allModelsSemaphore.release(state.allModelsSemaphorePermit);
+            }
+            state.semaphore.release(state.semaphorePermit);
+            state.acquired = false;
         }
-        if (state.allModelsSemaphore) {
-            state.allModelsSemaphore.release(state.allModelsSemaphorePermit);
+        if (state.completionCassettePermit) {
+            LLMClient.#completionCassetteSemaphore.release(state.completionCassettePermit);
+            state.completionCassettePermit = null;
         }
-        state.semaphore.release(state.semaphorePermit);
-        state.acquired = false;
     }
 
     static async withPromptQueueReservation(callback) {
@@ -2215,6 +2231,7 @@ class LLMClient {
             semaphorePermit: null,
             allModelsSemaphore: null,
             allModelsSemaphorePermit: null,
+            completionCassettePermit: null,
             background: false
         };
         LLMClient.#promptQueueReservationStates.set(reservation, state);
@@ -2242,7 +2259,7 @@ class LLMClient {
         if (state.yielded) {
             throw new Error('Cannot yield a prompt queue reservation recursively.');
         }
-        if (!state.acquired) {
+        if (!state.acquired && !state.completionCassettePermit) {
             return await callback();
         }
 
@@ -2250,13 +2267,20 @@ class LLMClient {
             semaphore: state.semaphore,
             semaphoreKey: state.semaphoreKey,
             allModelsSemaphore: state.allModelsSemaphore,
+            completionCassette: Boolean(state.completionCassettePermit),
             background: state.background
         };
         state.yielded = true;
         if (state.allModelsSemaphore) {
             state.allModelsSemaphore.release(state.allModelsSemaphorePermit);
         }
-        state.semaphore.release(state.semaphorePermit);
+        if (state.semaphore) {
+            state.semaphore.release(state.semaphorePermit);
+        }
+        if (state.completionCassettePermit) {
+            LLMClient.#completionCassetteSemaphore.release(state.completionCassettePermit);
+            state.completionCassettePermit = null;
+        }
         state.acquired = false;
         state.semaphorePermit = null;
         state.allModelsSemaphorePermit = null;
@@ -2272,28 +2296,41 @@ class LLMClient {
         let reacquireError = null;
         let semaphorePermit = null;
         let allModelsSemaphorePermit = null;
+        let completionCassettePermit = null;
         try {
-            semaphorePermit = await retained.semaphore.acquire({
-                background: retained.background,
-                front: true
-            });
+            if (retained.completionCassette) {
+                completionCassettePermit = await LLMClient.#completionCassetteSemaphore.acquire({ front: true });
+            }
+            if (retained.semaphore) {
+                semaphorePermit = await retained.semaphore.acquire({
+                    background: retained.background,
+                    front: true
+                });
+            }
             if (retained.allModelsSemaphore) {
                 allModelsSemaphorePermit = await retained.allModelsSemaphore.acquire({
                     background: retained.background,
                     front: true
                 });
             }
-            state.acquired = true;
+            state.acquired = Boolean(retained.semaphore);
             state.semaphore = retained.semaphore;
             state.semaphoreKey = retained.semaphoreKey;
             state.semaphorePermit = semaphorePermit;
             state.allModelsSemaphore = retained.allModelsSemaphore;
             state.allModelsSemaphorePermit = allModelsSemaphorePermit;
+            state.completionCassettePermit = completionCassettePermit;
             state.background = retained.background;
         } catch (error) {
             reacquireError = error;
+            if (allModelsSemaphorePermit && retained.allModelsSemaphore) {
+                retained.allModelsSemaphore.release(allModelsSemaphorePermit);
+            }
             if (semaphorePermit) {
                 retained.semaphore.release(semaphorePermit);
+            }
+            if (completionCassettePermit) {
+                LLMClient.#completionCassetteSemaphore.release(completionCassettePermit);
             }
         } finally {
             state.yielded = false;
@@ -4051,9 +4088,24 @@ class LLMClient {
     }
 
     static resetForcedOutputState() {
+        if (
+            LLMClient.#completionCassetteSemaphore.current > 0
+            || LLMClient.#completionCassetteSemaphore.queue.length > 0
+        ) {
+            throw new Error('Cannot reset forced-output state while completion cassette requests are active or queued.');
+        }
         LLMClient.#forcedOutputFixtureSource = null;
         LLMClient.#forcedOutputFixtureData = null;
         LLMClient.#forcedOutputLabelCounters = new Map();
+        LLMClient.#completionCassetteSemaphore = new Semaphore(1);
+        LLMCompletionCassette.resetRuntimeState();
+    }
+
+    static #getCompletionCassetteSerializationStatus() {
+        return {
+            active: LLMClient.#completionCassetteSemaphore.current > 0,
+            queued: LLMClient.#completionCassetteSemaphore.queue.length
+        };
     }
 
     static #resolveForcedOutputFixturePath() {
@@ -4088,6 +4140,12 @@ class LLMClient {
         }
         if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
             throw new Error(`Forced output fixture must be a JSON object: ${resolvedPath}`);
+        }
+        if (LLMCompletionCassette.isVersion2Document(parsed)) {
+            return LLMCompletionCassette.parseReplayDocument(parsed, {
+                sourcePath,
+                resolvedPath
+            });
         }
         const groupsSource = (() => {
             if (parsed.byMetadataLabel && typeof parsed.byMetadataLabel === 'object' && !Array.isArray(parsed.byMetadataLabel)) {
@@ -4147,10 +4205,22 @@ class LLMClient {
         return fixture;
     }
 
-    static #resolveForcedOutputFromFixture(metadataLabel = '') {
+    static #resolveForcedOutputFromFixture(metadataLabel = '', requestDescriptor = null) {
         const fixture = LLMClient.#getForcedOutputFixture();
         if (!fixture) {
             return null;
+        }
+
+        if (fixture.version === LLMCompletionCassette.version) {
+            if (!requestDescriptor) {
+                throw new Error('Version 2 completion cassette replay requires a request descriptor.');
+            }
+            const lease = LLMCompletionCassette.beginReplay(fixture, requestDescriptor);
+            return {
+                [COMPLETION_CASSETTE_RESOLUTION]: true,
+                output: lease.response,
+                lease
+            };
         }
 
         const rawLabel = typeof metadataLabel === 'string' ? metadataLabel.trim() : '';
@@ -4263,6 +4333,100 @@ class LLMClient {
             throw new Error(`Forced output entry "${resolvedLabel}" index ${index} must be a string or object.`);
         }
         return entry;
+    }
+
+    static getCompletionCassetteStatus() {
+        const serialization = LLMClient.#getCompletionCassetteSerializationStatus();
+        const replaySource = LLMClient.#resolveForcedOutputFixturePath();
+        let replay = { active: false, version: null };
+        if (replaySource) {
+            const fixture = LLMClient.#getForcedOutputFixture();
+            if (fixture?.version === LLMCompletionCassette.version) {
+                replay = LLMCompletionCassette.getReplayStatus(fixture);
+            } else if (fixture) {
+                let total = 0;
+                for (const entries of fixture.groups.values()) {
+                    total += entries.length;
+                }
+                replay = {
+                    active: true,
+                    version: 1,
+                    sourcePath: fixture.sourcePath,
+                    resolvedPath: fixture.resolvedPath,
+                    strict: fixture.strict === true,
+                    total,
+                    consumed: Array.from(LLMClient.#forcedOutputLabelCounters.values())
+                        .reduce((sum, count) => sum + count, 0),
+                    allConsumed: null
+                };
+            }
+        }
+        const recordingSource = LLMCompletionCassette.resolveRecordingSource(Globals?.config);
+        const recording = LLMCompletionCassette.getRecordingStatus({
+            sourcePath: recordingSource,
+            baseDir: Globals?.baseDir || process.cwd()
+        });
+        if (replay.active) {
+            replay.completionActive = replay.completionActive === true || serialization.active;
+            replay.completionQueued = serialization.queued;
+        }
+        if (recording.active) {
+            recording.completionActive = recording.completionActive === true || serialization.active;
+            recording.completionQueued = serialization.queued;
+        }
+        return { replay, recording, serialization };
+    }
+
+    static assertCompletionCassetteConsumed() {
+        const status = LLMClient.getCompletionCassetteStatus().replay;
+        if (!status.active) {
+            throw new Error('No completion cassette replay is active.');
+        }
+        if (status.version !== LLMCompletionCassette.version) {
+            throw new Error('Completion cassette consumption assertions require a version 2 replay.');
+        }
+        if (status.completionActive) {
+            throw new Error('Cannot assert completion cassette consumption while a completion is active.');
+        }
+        if (status.completionQueued > 0) {
+            throw new Error(
+                `Cannot assert completion cassette consumption while ${status.completionQueued} completion request`
+                + `${status.completionQueued === 1 ? ' is' : 's are'} queued.`
+            );
+        }
+        if (status.failureCount > 0) {
+            throw new Error(
+                `Completion cassette replay recorded ${status.failureCount} strict failure`
+                + `${status.failureCount === 1 ? '' : 's'}; last failure: `
+                + `${status.lastFailure?.message || 'unknown replay failure'}`
+            );
+        }
+        if (!status.allConsumed) {
+            throw new Error(
+                `Completion cassette has ${status.remaining} unused entr${status.remaining === 1 ? 'y' : 'ies'} `
+                + `(consumed=${status.consumed}, total=${status.total}).`
+            );
+        }
+        return status;
+    }
+
+    static completeCompletionCassetteRecording({ description = undefined } = {}) {
+        const sourcePath = LLMCompletionCassette.resolveRecordingSource(Globals?.config);
+        if (!sourcePath) {
+            throw new Error('No completion cassette recording destination is configured.');
+        }
+        const serialization = LLMClient.#getCompletionCassetteSerializationStatus();
+        if (serialization.active || serialization.queued > 0) {
+            throw new Error(
+                'Cannot complete a cassette while completion requests are active or queued '
+                + `(active=${serialization.active}, queued=${serialization.queued}).`
+            );
+        }
+        return LLMCompletionCassette.completeRecording({
+            sourcePath,
+            baseDir: Globals?.baseDir || process.cwd(),
+            description
+        });
     }
 
     static #isPlainObject(value) {
@@ -5468,7 +5632,24 @@ class LLMClient {
             }
             return normalizedLabel;
         })();
+        const completionCassetteSerializationEnabled = Boolean(
+            LLMCompletionCassette.resolveRecordingSource(Globals?.config)
+            || LLMClient.#resolveForcedOutputFixturePath()
+        );
         const promptQueueReservationState = LLMClient.#beginPromptQueueReservationRequest(queueReservation);
+        let completionCassetteSerializationPermit = null;
+        if (completionCassetteSerializationEnabled) {
+            if (promptQueueReservationState) {
+                await LLMClient.#retainPromptQueueReservationCompletionCassettePermit(
+                    promptQueueReservationState
+                );
+            } else {
+                completionCassetteSerializationPermit = await LLMClient.#completionCassetteSemaphore.acquire();
+            }
+        }
+        let completionCassetteReplayLease = null;
+        let completionCassetteRecordingLease = null;
+        let completionCassetteRequestDescriptor = null;
         let currentTime = Date.now();
         try {
             dumpReasoningToConsole = true;
@@ -5576,10 +5757,94 @@ class LLMClient {
             basePayload = baseContextToolPolicy.additionalPayload;
             messages = LLMClient.expandPromptMessageBoundaries(messages);
             messages = await LLMClient.#convertMessagesToWebp(messages);
-            const resolvedForcedOutput = (forceOutput !== null && forceOutput !== undefined)
-                ? forceOutput
-                : LLMClient.#resolveForcedOutputFromFixture(metadataLabel);
-            if (typeof onStreamToken === 'function' && resolvedForcedOutput !== null && resolvedForcedOutput !== undefined) {
+            const configuredAi = Globals?.config?.ai && typeof Globals.config.ai === 'object'
+                ? Globals.config.ai
+                : {};
+            const modelRoutingFingerprint = LLMCompletionCassette.fingerprintValue(
+                LLMCompletionCassette.sanitizeRoutingConfigForFingerprint({
+                    ai: {
+                        backend: configuredAi.backend ?? null,
+                        model: configuredAi.model ?? null,
+                        endpoint: configuredAi.endpoint ?? null
+                    },
+                    aiMultimodal: multimodal === true && Globals?.config?.ai_multimodal
+                        ? Globals.config.ai_multimodal
+                        : null,
+                    aiModelOverrides: Globals?.config?.ai_model_overrides ?? null
+                })
+            );
+            const normalizedRequiredRegexForCassette = (() => {
+                if (requiredRegex instanceof RegExp) {
+                    return requiredRegex.toString();
+                }
+                if (requiredRegex && typeof requiredRegex === 'object' && requiredRegex.pattern !== undefined) {
+                    return `/${String(requiredRegex.pattern)}/${requiredRegex.flags ? String(requiredRegex.flags) : ''}`;
+                }
+                return requiredRegex;
+            })();
+            completionCassetteRequestDescriptor = LLMCompletionCassette.createRequestDescriptor({
+                metadataLabel: normalizedMetadataLabel || metadataLabel,
+                messages,
+                additionalPayload: basePayload,
+                requestedModel: model,
+                configuredModel: configuredAi.model,
+                configuredBackend: configuredAi.backend,
+                modelRoutingFingerprint,
+                prefill: typeof prefill === 'string'
+                    ? prefill
+                    : (prefill === undefined && typeof configuredAi.prefill === 'string' ? configuredAi.prefill : null),
+                assistantResponseSeed,
+                systemPromptAppend: configuredAi.sysprompt_append,
+                maxTokens,
+                temperature,
+                topP,
+                frequencyPenalty,
+                presencePenalty,
+                multimodal,
+                validateXML,
+                validateXMLStrict,
+                requiredTags,
+                requiredRegex: normalizedRequiredRegexForCassette
+            });
+
+            const recordingSource = LLMCompletionCassette.resolveRecordingSource(Globals?.config);
+            const forcedFixtureSource = LLMClient.#resolveForcedOutputFixturePath();
+            if (recordingSource && (
+                (forceOutput !== null && forceOutput !== undefined)
+                || forcedFixtureSource
+            )) {
+                throw new Error(
+                    'Completion cassette recording cannot be combined with forceOutput or a forced-output fixture.'
+                );
+            }
+            if (recordingSource) {
+                completionCassetteRecordingLease = LLMCompletionCassette.beginRecording({
+                    sourcePath: recordingSource,
+                    baseDir: Globals?.baseDir || process.cwd()
+                });
+            }
+
+            let resolvedForcedOutput = null;
+            if (forceOutput !== null && forceOutput !== undefined) {
+                resolvedForcedOutput = forceOutput;
+            } else {
+                const fixtureResolution = LLMClient.#resolveForcedOutputFromFixture(
+                    metadataLabel,
+                    completionCassetteRequestDescriptor
+                );
+                if (fixtureResolution?.[COMPLETION_CASSETTE_RESOLUTION] === true) {
+                    resolvedForcedOutput = fixtureResolution.output;
+                    completionCassetteReplayLease = fixtureResolution.lease;
+                } else {
+                    resolvedForcedOutput = fixtureResolution;
+                }
+            }
+            if (
+                typeof onStreamToken === 'function'
+                && resolvedForcedOutput !== null
+                && resolvedForcedOutput !== undefined
+                && !completionCassetteReplayLease
+            ) {
                 throw new Error('chatCompletion onStreamToken cannot be used with forced output.');
             }
 
@@ -6035,6 +6300,7 @@ class LLMClient {
             let startTimer = null;
             let lastTotalTokens = null;
             let finalResponseToolCalls = [];
+            let finalNormalizedResponseData = null;
             let retainedRetryPermits = null;
             let queueNextAttemptAtFront = false;
             const shouldLogStreamChunks = logStreamChunksToConsole === true;
@@ -6834,6 +7100,7 @@ class LLMClient {
                         finishReason: responseFinishReason,
                         usage: responseUsage
                     });
+                    finalNormalizedResponseData = normalizedResponseData;
 
                     if (typeof captureResponsePayload === 'function') {
                         try {
@@ -7377,9 +7644,23 @@ class LLMClient {
                     toolCalls: finalResponseToolCalls
                 });
             }
+            if (completionCassetteRecordingLease) {
+                if (!finalNormalizedResponseData) {
+                    throw new Error('Completion cassette recording is missing the normalized final response.');
+                }
+                LLMCompletionCassette.recordCompletion(completionCassetteRecordingLease, {
+                    descriptor: completionCassetteRequestDescriptor,
+                    response: finalNormalizedResponseData
+                });
+            }
             return responseContent;
         } finally {
+            LLMCompletionCassette.endReplay(completionCassetteReplayLease);
+            LLMCompletionCassette.endRecording(completionCassetteRecordingLease);
             LLMClient.#endPromptQueueReservationRequest(promptQueueReservationState);
+            if (completionCassetteSerializationPermit) {
+                LLMClient.#completionCassetteSemaphore.release(completionCassetteSerializationPermit);
+            }
             // Non-reserved per-attempt resources are released inside the retry loop.
         }
     }

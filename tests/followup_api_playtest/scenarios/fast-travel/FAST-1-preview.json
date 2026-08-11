@@ -1,0 +1,165 @@
+{
+  "version": 1,
+  "scenario": "fast-travel",
+  "case": "FAST-1-preview",
+  "description": "Fast-travel preview returns exact directed shortest-path timing and endpoint metadata for two visited favorites without mutating player, world, location, character, or history state.",
+  "fixture": "fast-travel-visited-favorites",
+  "configProfile": "cross-region-mechanics",
+  "trackedPaths": [
+    "player.payload.player.locationId",
+    "players.payload.players",
+    "locations.payload.locations",
+    "calendar.payload.worldTime.timeMinutes",
+    "history.payload"
+  ],
+  "steps": [
+    {
+      "type": "loadFixture"
+    },
+    {
+      "type": "snapshot",
+      "name": "before_previews"
+    },
+    {
+      "type": "request",
+      "name": "preview_grove",
+      "method": "GET",
+      "route": "/api/player/fast-travel-preview?destinationId=$fixture.groveLocationId"
+    },
+    {
+      "type": "assert",
+      "assertions": [
+        {
+          "type": "httpStatus",
+          "equals": 200
+        },
+        {
+          "type": "responseOk",
+          "equals": true
+        },
+        {
+          "type": "equals",
+          "source": "responses.preview_grove",
+          "path": "payload.success",
+          "equals": true
+        },
+        {
+          "type": "equals",
+          "source": "responses.preview_grove",
+          "path": "payload.origin.id",
+          "equals": "$fixture.baselineLocationId"
+        },
+        {
+          "type": "equals",
+          "source": "responses.preview_grove",
+          "path": "payload.origin.name",
+          "equals": "March Start Marker"
+        },
+        {
+          "type": "equals",
+          "source": "responses.preview_grove",
+          "path": "payload.origin.regionName",
+          "equals": "QA Frost March"
+        },
+        {
+          "type": "equals",
+          "source": "responses.preview_grove",
+          "path": "payload.destination.id",
+          "equals": "$fixture.groveLocationId"
+        },
+        {
+          "type": "equals",
+          "source": "responses.preview_grove",
+          "path": "payload.destination.name",
+          "equals": "QA Fast Travel Grove"
+        },
+        {
+          "type": "equals",
+          "source": "responses.preview_grove",
+          "path": "payload.destination.regionName",
+          "equals": "QA Frost March"
+        },
+        {
+          "type": "equals",
+          "source": "responses.preview_grove",
+          "path": "payload.travelTimeMinutes",
+          "equals": 4
+        }
+      ]
+    },
+    {
+      "type": "request",
+      "name": "preview_tower",
+      "method": "GET",
+      "route": "/api/player/fast-travel-preview?destinationId=$fixture.towerLocationId"
+    },
+    {
+      "type": "assert",
+      "assertions": [
+        {
+          "type": "httpStatus",
+          "equals": 200
+        },
+        {
+          "type": "responseOk",
+          "equals": true
+        },
+        {
+          "type": "equals",
+          "source": "responses.preview_tower",
+          "path": "payload.success",
+          "equals": true
+        },
+        {
+          "type": "equals",
+          "source": "responses.preview_tower",
+          "path": "payload.origin.id",
+          "equals": "$fixture.baselineLocationId"
+        },
+        {
+          "type": "equals",
+          "source": "responses.preview_tower",
+          "path": "payload.destination.id",
+          "equals": "$fixture.towerLocationId"
+        },
+        {
+          "type": "equals",
+          "source": "responses.preview_tower",
+          "path": "payload.destination.name",
+          "equals": "QA Fast Travel Tower"
+        },
+        {
+          "type": "equals",
+          "source": "responses.preview_tower",
+          "path": "payload.destination.regionName",
+          "equals": "QA Frost March"
+        },
+        {
+          "type": "equals",
+          "source": "responses.preview_tower",
+          "path": "payload.travelTimeMinutes",
+          "equals": 9
+        },
+        {
+          "type": "stateUnchanged",
+          "beforeSource": "snapshots.before_previews",
+          "afterSource": "after",
+          "paths": [
+            "player.payload.player.locationId",
+            "players.payload.players",
+            "locations.payload.locations",
+            "calendar.payload.worldTime.timeMinutes",
+            "history.payload"
+          ]
+        },
+        {
+          "type": "noRealtimeErrors"
+        },
+        {
+          "type": "noUnexpectedErrorLogs"
+        }
+      ]
+    }
+  ],
+  "humanReview": []
+}

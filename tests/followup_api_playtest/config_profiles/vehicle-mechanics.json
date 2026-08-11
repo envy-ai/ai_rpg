@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "name": "vehicle-mechanics",
+  "description": "Runs player-action movement, vehicle state changes, and event extraction without unrelated quest or background prompts.",
+  "extends": "isolated-base",
+  "values": {
+    "event_checks.enabled": true,
+    "plausibility_checks.enabled": true
+  }
+}

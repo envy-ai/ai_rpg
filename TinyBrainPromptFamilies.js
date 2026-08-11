@@ -91,7 +91,8 @@ async function runTinyBrainPromptProgram({
     templateContext,
     tinyBrain,
     runnerOptions,
-    continuationState = null
+    continuationState = null,
+    refreshContinuationBaseContext = false
 } = {}) {
     if (!tinyBrain || typeof tinyBrain !== 'object') {
         throw new Error('runTinyBrainPromptProgram requires configured tiny-brain render state.');
@@ -106,7 +107,8 @@ async function runTinyBrainPromptProgram({
         templateContext,
         renderState: tinyBrain.renderState,
         programTemplateName: expectedTemplate,
-        continuationState
+        continuationState,
+        refreshContinuationBaseContext
     });
 }
 

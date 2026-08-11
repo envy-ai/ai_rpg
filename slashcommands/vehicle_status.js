@@ -136,10 +136,10 @@ function formatTerrainTypes(value) {
 }
 
 function formatAbsoluteMinute(value) {
-  const numeric = Number(value);
-  if (!Number.isFinite(numeric) || !Number.isInteger(numeric) || numeric < 0) {
+  if (typeof value !== 'number' || !Number.isFinite(value) || !Number.isInteger(value) || value < 0) {
     return '-';
   }
+  const numeric = value;
 
   let suffix = '';
   try {

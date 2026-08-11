@@ -1,0 +1,226 @@
+{
+  "version": 1,
+  "scenario": "fast-travel",
+  "case": "FAST-3-prompted-confirmation",
+  "description": "A nonblank map/Favorites confirmation generates destination prose against authoritative fast-travel metadata without moving, then the gameplay teleport commits the canonical destination and graph time exactly once.",
+  "fixture": "fast-travel-visited-favorites",
+  "configProfile": "cross-region-mechanics",
+  "trackedPaths": [
+    "player.payload.player.locationId",
+    "locations.payload.locations",
+    "calendar.payload.worldTime.timeMinutes",
+    "history.payload"
+  ],
+  "steps": [
+    {
+      "type": "loadFixture"
+    },
+    {
+      "type": "snapshot",
+      "name": "before_prompted_confirmation"
+    },
+    {
+      "type": "chat",
+      "name": "travel_prose",
+      "text": "I leave March Start Marker and travel alone to QA Fast Travel Tower now, following the known route all the way to the tower.",
+      "travel": true,
+      "travelMetadata": {
+        "mode": "fast-travel",
+        "eventDriven": false,
+        "exit": {
+          "exitId": null,
+          "originLocationId": "$fixture.baselineLocationId",
+          "direction": null,
+          "destinationId": "$fixture.towerLocationId",
+          "destinationRegionId": "$fixture.regionId",
+          "destinationIsStub": false,
+          "destinationIsRegionEntryStub": false,
+          "isVehicle": false,
+          "vehicleType": null,
+          "destinationName": "QA Fast Travel Tower",
+          "regionName": "QA Frost March"
+        }
+      },
+      "interactive": {
+        "roll": null,
+        "questAccepted": false,
+        "confirmed": false
+      }
+    },
+    {
+      "type": "assert",
+      "assertions": [
+        {
+          "type": "httpStatus",
+          "equals": 200
+        },
+        {
+          "type": "responseOk",
+          "equals": true
+        },
+        {
+          "type": "equals",
+          "source": "responses.travel_prose",
+          "path": "payload.authoritativeMovementType",
+          "equals": "destination"
+        },
+        {
+          "type": "count",
+          "source": "responses.travel_prose",
+          "path": "payload.accompanyingCharacters",
+          "equals": 0
+        },
+        {
+          "type": "exists",
+          "source": "responses.travel_prose",
+          "path": "payload.response"
+        },
+        {
+          "type": "equals",
+          "source": "after",
+          "path": "player.payload.player.locationId",
+          "equals": "$fixture.baselineLocationId"
+        },
+        {
+          "type": "exactDelta",
+          "beforeSource": "snapshots.before_prompted_confirmation",
+          "afterSource": "after",
+          "path": "calendar.payload.worldTime.timeMinutes",
+          "delta": 0
+        },
+        {
+          "type": "historyAddedTypeCount",
+          "entryType": "player-action",
+          "equals": 1,
+          "beforeSource": "snapshots.before_prompted_confirmation",
+          "afterSource": "after"
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "after",
+          "path": "locations.payload.locations",
+          "where": {
+            "id": "$fixture.towerLocationId",
+            "name": "QA Fast Travel Tower"
+          },
+          "equals": 1
+        }
+      ]
+    },
+    {
+      "type": "snapshot",
+      "name": "prose_complete"
+    },
+    {
+      "type": "request",
+      "name": "teleport_tower",
+      "method": "POST",
+      "route": "/api/npcs/$fixture.playerId/teleport",
+      "body": {
+        "locationId": "$fixture.towerLocationId",
+        "accountTravelTime": true,
+        "storyToolTeleport": false,
+        "accompanyingCharacters": "$response.travel_prose.payload.accompanyingCharacters"
+      },
+      "interactive": {
+        "roll": null,
+        "questAccepted": false,
+        "confirmed": false
+      }
+    },
+    {
+      "type": "assert",
+      "assertions": [
+        {
+          "type": "httpStatus",
+          "equals": 200
+        },
+        {
+          "type": "responseOk",
+          "equals": true
+        },
+        {
+          "type": "equals",
+          "source": "responses.teleport_tower",
+          "path": "payload.success",
+          "equals": true
+        },
+        {
+          "type": "equals",
+          "source": "responses.teleport_tower",
+          "path": "payload.npc.locationId",
+          "equals": "$fixture.towerLocationId"
+        },
+        {
+          "type": "equals",
+          "source": "responses.teleport_tower",
+          "path": "payload.destination.id",
+          "equals": "$fixture.towerLocationId"
+        },
+        {
+          "type": "equals",
+          "source": "responses.teleport_tower",
+          "path": "payload.previousLocation.id",
+          "equals": "$fixture.baselineLocationId"
+        },
+        {
+          "type": "equals",
+          "source": "responses.teleport_tower",
+          "path": "payload.arrivalProcessingError",
+          "equals": null
+        },
+        {
+          "type": "equals",
+          "source": "after",
+          "path": "player.payload.player.locationId",
+          "equals": "$fixture.towerLocationId"
+        },
+        {
+          "type": "exactDelta",
+          "beforeSource": "snapshots.prose_complete",
+          "afterSource": "after",
+          "path": "calendar.payload.worldTime.timeMinutes",
+          "delta": 9
+        },
+        {
+          "type": "historyAddedTypeCount",
+          "entryType": "event-summary",
+          "equals": 1,
+          "beforeSource": "snapshots.prose_complete",
+          "afterSource": "after"
+        },
+        {
+          "type": "historyAddedTypeCount",
+          "entryType": "player-action",
+          "equals": 1,
+          "beforeSource": "snapshots.before_prompted_confirmation",
+          "afterSource": "after"
+        },
+        {
+          "type": "historyAddedTypeCount",
+          "entryType": "while-you-were-away",
+          "equals": 0,
+          "beforeSource": "snapshots.prose_complete",
+          "afterSource": "after"
+        },
+        {
+          "type": "historyAddedTypeCount",
+          "entryType": "while-you-were-away-player",
+          "equals": 0,
+          "beforeSource": "snapshots.prose_complete",
+          "afterSource": "after"
+        },
+        {
+          "type": "noRealtimeErrors"
+        },
+        {
+          "type": "noUnexpectedErrorLogs"
+        }
+      ]
+    }
+  ],
+  "humanReview": [
+    "Confirm the player-action prose is one coherent trip from March Start Marker to QA Fast Travel Tower and does not claim arrival at the Grove or another destination.",
+    "Confirm the prose does not describe a second teleport or any movement after arrival; authoritative movement occurs only in the following teleport request."
+  ]
+}

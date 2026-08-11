@@ -1,0 +1,249 @@
+{
+  "version": 1,
+  "scenario": "cross-region",
+  "case": "REG-1-direct-region-entry",
+  "description": "Traversing a pending region-entry exit expands QA Frost March once, moves the player to its canonical generated entrance, preserves the pending child stub, and leaves unique live-region membership.",
+  "fixture": "cross-region-pending-frost-march",
+  "configProfile": "cross-region-mechanics",
+  "trackedPaths": [
+    "player.payload.player.locationId",
+    "locations.payload.locations",
+    "regions.payload.regions",
+    "calendar.payload.worldTime.timeMinutes"
+  ],
+  "steps": [
+    {
+      "type": "loadFixture"
+    },
+    {
+      "type": "snapshot",
+      "name": "pending_region"
+    },
+    {
+      "type": "request",
+      "name": "enter_region",
+      "method": "POST",
+      "route": "/api/player/move",
+      "body": {
+        "destinationId": "$fixture.regionEntryStubId",
+        "expectedOriginLocationId": "$fixture.originLocationId",
+        "accompanyingCharacters": []
+      },
+      "interactive": {
+        "roll": null,
+        "questAccepted": false,
+        "confirmed": false
+      }
+    },
+    {
+      "type": "assert",
+      "assertions": [
+        {
+          "type": "httpStatus",
+          "equals": 200
+        },
+        {
+          "type": "responseOk",
+          "equals": true
+        },
+        {
+          "type": "equals",
+          "source": "responses.enter_region",
+          "path": "payload.success",
+          "equals": true
+        },
+        {
+          "type": "equals",
+          "source": "after",
+          "path": "player.payload.player.locationId",
+          "equalsFrom": {
+            "source": "responses.enter_region",
+            "path": "payload.location.id"
+          }
+        },
+        {
+          "type": "equals",
+          "source": "responses.enter_region",
+          "path": "payload.location.regionId",
+          "equals": "$fixture.pendingRegionId"
+        },
+        {
+          "type": "equals",
+          "source": "responses.enter_region",
+          "path": "payload.location.isStub",
+          "equals": false
+        },
+        {
+          "type": "equals",
+          "source": "responses.enter_region",
+          "path": "payload.location.visited",
+          "equals": true
+        },
+        {
+          "type": "greaterThanOrEqual",
+          "source": "after",
+          "path": "calendar.payload.worldTime.timeMinutes",
+          "valueFrom": {
+            "source": "snapshots.pending_region",
+            "path": "calendar.payload.worldTime.timeMinutes"
+          }
+        },
+        {
+          "type": "entityField",
+          "source": "after",
+          "collection": "regions",
+          "id": "$fixture.pendingRegionId",
+          "path": "name",
+          "equals": "QA Frost March"
+        },
+        {
+          "type": "entityField",
+          "source": "after",
+          "collection": "locations",
+          "id": "$fixture.childLocationStubId",
+          "path": "regionId",
+          "equals": "$fixture.pendingRegionId"
+        },
+        {
+          "type": "entityField",
+          "source": "after",
+          "collection": "locations",
+          "id": "$fixture.childLocationStubId",
+          "path": "isStub",
+          "equals": true
+        },
+        {
+          "type": "historyAddedTypeCount",
+          "entryType": "event-summary",
+          "equals": 1,
+          "beforeSource": "snapshots.pending_region",
+          "afterSource": "after"
+        },
+        {
+          "type": "noRealtimeErrors"
+        },
+        {
+          "type": "noUnexpectedErrorLogs",
+          "allowedPrefixes": [
+            "ERROR_chatCompletionError_region_stub_locations_"
+          ]
+        }
+      ]
+    },
+    {
+      "type": "request",
+      "name": "region_map",
+      "method": "GET",
+      "route": "/api/map/region?regionId=$fixture.pendingRegionId"
+    },
+    {
+      "type": "request",
+      "name": "origin_after_expansion",
+      "method": "GET",
+      "route": "/api/locations/$fixture.originLocationId"
+    },
+    {
+      "type": "request",
+      "name": "child_after_expansion",
+      "method": "GET",
+      "route": "/api/stubs/$fixture.childLocationStubId"
+    },
+    {
+      "type": "assert",
+      "assertions": [
+        {
+          "type": "httpStatus",
+          "equals": 200
+        },
+        {
+          "type": "responseOk",
+          "equals": true
+        },
+        {
+          "type": "equals",
+          "source": "responses.region_map",
+          "path": "payload.success",
+          "equals": true
+        },
+        {
+          "type": "equals",
+          "source": "responses.region_map",
+          "path": "payload.region.regionId",
+          "equals": "$fixture.pendingRegionId"
+        },
+        {
+          "type": "equals",
+          "source": "responses.region_map",
+          "path": "payload.region.currentLocationId",
+          "equalsFrom": {
+            "source": "responses.enter_region",
+            "path": "payload.location.id"
+          }
+        },
+        {
+          "type": "uniqueBy",
+          "source": "responses.region_map",
+          "path": "payload.region.locations",
+          "key": "id"
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "responses.region_map",
+          "path": "payload.region.locations",
+          "where": {
+            "id": "$fixture.childLocationStubId"
+          },
+          "equals": 1
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "responses.region_map",
+          "path": "payload.region.locations",
+          "where": {
+            "id": "$response.enter_region.payload.location.id"
+          },
+          "equals": 1
+        },
+        {
+          "type": "equals",
+          "source": "responses.origin_after_expansion",
+          "path": "payload.location.exits.qa_frost_march.destination",
+          "equalsFrom": {
+            "source": "responses.enter_region",
+            "path": "payload.location.id"
+          }
+        },
+        {
+          "type": "equals",
+          "source": "responses.origin_after_expansion",
+          "path": "payload.location.exits.qa_frost_march.destinationRegion",
+          "equals": "$fixture.pendingRegionId"
+        },
+        {
+          "type": "equals",
+          "source": "responses.child_after_expansion",
+          "path": "payload.stub.targetRegionId",
+          "equals": "$fixture.pendingRegionId"
+        },
+        {
+          "type": "equals",
+          "source": "responses.child_after_expansion",
+          "path": "payload.stub.isRegionEntryStub",
+          "equals": false
+        },
+        {
+          "type": "noRealtimeErrors"
+        },
+        {
+          "type": "noUnexpectedErrorLogs",
+          "allowedPrefixes": [
+            "ERROR_chatCompletionError_region_stub_locations_"
+          ]
+        }
+      ]
+    }
+  ],
+  "humanReview": [
+    "Confirm the direct-move response reports arrival at the generated QA Frost March entrance and does not expose a second competing entrance."
+  ]
+}

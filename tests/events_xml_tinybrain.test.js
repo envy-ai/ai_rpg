@@ -139,6 +139,29 @@ test('tiny-brain event stage parser validates allowlists, semantics, trackers, a
 
     assert.throws(
         () => Events.parseTinyBrainEventXmlStage(
+            '<events><npcArrival><npcName>Rika the Gazer</npcName><hideFromPlayer>false</hideFromPlayer></npcArrival></events>',
+            {
+                sectionKind: 'destination',
+                stageId: 'characters',
+                allowedTags: ['npcArrival'],
+                authoritativeMovementCompanionNames: ['Rika the Gazer']
+            }
+        ),
+        /must not emit <npcArrival> for authoritative player-movement companion "Rika the Gazer"/
+    );
+    const unrelatedArrival = Events.parseTinyBrainEventXmlStage(
+        '<events><npcArrival><npcName>Station Porter</npcName><hideFromPlayer>false</hideFromPlayer></npcArrival></events>',
+        {
+            sectionKind: 'destination',
+            stageId: 'characters',
+            allowedTags: ['npcArrival'],
+            authoritativeMovementCompanionNames: ['Rika the Gazer']
+        }
+    );
+    assert.match(unrelatedArrival.value.xml, /<npcArrival>/);
+
+    assert.throws(
+        () => Events.parseTinyBrainEventXmlStage(
             '<events><currency><amount>5</amount></currency></events>',
             { stageId: 'scene', allowedTags: ['alterLocation'] }
         ),
@@ -175,6 +198,26 @@ test('tiny-brain event stage parser validates allowlists, semantics, trackers, a
         { sectionKind: 'tracker', stageId: 'trackers', allowedTags: ['trackerUpdates'] }
     );
     assert.match(tracker.value.xml, /<trackerUpdates>/);
+
+    const bareTracker = Events.parseTinyBrainEventXmlStage(
+        '<trackerUpdates><trackerUpdate><trackerName>Alarm</trackerName><type>numerical_count</type><action>add</action><newValue>2</newValue><reason>Two guards remain.</reason></trackerUpdate></trackerUpdates>',
+        { sectionKind: 'tracker', stageId: 'trackers', allowedTags: ['trackerUpdates'] }
+    );
+    assert.match(bareTracker.value.xml, /^<trackerUpdates>/);
+
+    const bareCurrency = Events.parseTinyBrainEventXmlStage(
+        '<currency><amount>5</amount></currency>',
+        { stageId: 'items', allowedTags: ['currency'] }
+    );
+    assert.match(bareCurrency.value.xml, /^<currency>/);
+
+    assert.throws(
+        () => Events.parseTinyBrainEventXmlStage(
+            '<currency><amount>5</amount></currency>',
+            { stageId: 'scene', allowedTags: ['alterLocation'] }
+        ),
+        /missing <events> block/
+    );
     assert.throws(
         () => Events.parseTinyBrainEventXmlStage(
             '<events><trackerUpdates></trackerUpdates></events>',
@@ -238,9 +281,362 @@ test('tiny-brain event stage parser rejects empty and malformed responses', () =
     );
 });
 
+test('tiny-brain thing arrivals cannot strip ownership or containment', () => {
+    const previousDeps = Events._deps;
+    const owner = { id: 'char_player', name: 'Baato' };
+    const satchel = {
+        id: 'thing_satchel',
+        name: 'QA Satchel',
+        metadata: { ownerId: owner.id },
+        whoseInventory: () => [owner],
+    };
+    const carriedCase = {
+        id: 'thing_case',
+        name: 'QA Brass Travel Case',
+        metadata: { ownerId: owner.id },
+        whoseInventory: () => [owner],
+    };
+    const sceneCrate = {
+        id: 'thing_crate',
+        name: 'QA Supply Crate',
+        metadata: { locationId: 'loc_origin' },
+        whoseInventory: () => [],
+    };
+    const containedChip = {
+        id: 'thing_chip',
+        name: 'QA Contained Chip',
+        metadata: { containerId: satchel.id },
+        whoseInventory: () => [],
+        whoseContainer: () => [satchel],
+    };
+    const things = new Map([
+        [carriedCase.id, carriedCase],
+        [sceneCrate.id, sceneCrate],
+        [containedChip.id, containedChip],
+        [satchel.id, satchel],
+    ]);
+    Events._deps = {
+        ...previousDeps,
+        things,
+        findThingByName: (name) => Array.from(things.values()).find(
+            (thing) => thing.name === name,
+        ) || null,
+        findActorById: (id) => id === owner.id ? owner : null,
+    };
+
+    try {
+        assert.throws(
+            () => Events.parseTinyBrainEventXmlStage(
+                '<events><thingArrival><thingName>QA Brass Travel Case</thingName></thingArrival></events>',
+                {
+                    sectionKind: 'destination',
+                    stageId: 'scene',
+                    allowedTags: ['thingArrival'],
+                    eventLocation: { id: 'loc_destination' },
+                },
+            ),
+            /must not emit <thingArrival> for owned thing "QA Brass Travel Case" carried by "Baato"/,
+        );
+        assert.throws(
+            () => Events.parseTinyBrainEventXmlStage(
+                '<events><thingArrival><thingName>QA Contained Chip</thingName></thingArrival></events>',
+                {
+                    sectionKind: 'destination',
+                    stageId: 'scene',
+                    allowedTags: ['thingArrival'],
+                    eventLocation: { id: 'loc_destination' },
+                },
+            ),
+            /must not emit <thingArrival> for contained thing "QA Contained Chip"/,
+        );
+
+        const legitimateArrival = Events.parseTinyBrainEventXmlStage(
+            '<events><thingArrival><thingName>QA Supply Crate</thingName></thingArrival></events>',
+            {
+                sectionKind: 'destination',
+                stageId: 'scene',
+                allowedTags: ['thingArrival'],
+                eventLocation: { id: 'loc_destination' },
+            },
+        );
+        assert.match(legitimateArrival.value.xml, /<thingArrival>/);
+    } finally {
+        Events._deps = previousDeps;
+    }
+});
+
+test('tiny-brain event stage parser requires a persistent outcome for zero-health defeated enemies', () => {
+    const previousDeps = Events._deps;
+    const frostSlug = {
+        name: 'Frost Slug',
+        health: 0,
+        isDead: false
+    };
+    Events._deps = {
+        ...previousDeps,
+        findActorByName: (name) => name === frostSlug.name ? frostSlug : null
+    };
+
+    try {
+        assert.throws(
+            () => Events.parseTinyBrainEventXmlStage(
+                '<events><defeatedEnemy><enemyName>Frost Slug</enemyName></defeatedEnemy></events>',
+                {
+                    stageId: 'combat',
+                    allowedTags: ['deathIncapacitation', 'defeatedEnemy']
+                }
+            ),
+            /without a matching <deathIncapacitation>/
+        );
+
+        const resolvedTogether = Events.parseTinyBrainEventXmlStage(
+            '<events><deathIncapacitation><actorName>Frost Slug</actorName><outcome>dead</outcome></deathIncapacitation><defeatedEnemy><enemyName>Frost Slug</enemyName></defeatedEnemy></events>',
+            {
+                stageId: 'combat',
+                allowedTags: ['deathIncapacitation', 'defeatedEnemy']
+            }
+        );
+        assert.deepEqual(resolvedTogether.value.deathOutcomeNames, ['frost slug']);
+
+        const resolvedEarlier = Events.parseTinyBrainEventXmlStage(
+            '<events><defeatedEnemy><enemyName>Frost Slug</enemyName></defeatedEnemy></events>',
+            {
+                stageId: 'final',
+                allowedTags: ['defeatedEnemy'],
+                acceptedDeathOutcomeNames: ['Frost Slug']
+            }
+        );
+        assert.match(resolvedEarlier.value.xml, /<defeatedEnemy>/);
+
+        frostSlug.health = 4;
+        const nonHealthDefeat = Events.parseTinyBrainEventXmlStage(
+            '<events><defeatedEnemy><enemyName>Frost Slug</enemyName></defeatedEnemy></events>',
+            {
+                stageId: 'combat',
+                allowedTags: ['defeatedEnemy']
+            }
+        );
+        assert.match(nonHealthDefeat.value.xml, /<defeatedEnemy>/);
+    } finally {
+        Events._deps = previousDeps;
+    }
+});
+
+test('tiny-brain event stage parser rejects status gains and losses that contradict current actor state', () => {
+    const previousDeps = Events._deps;
+    const wanderer = {
+        name: 'Wanderer',
+        getStatusEffects: () => [{
+            name: 'Burnt',
+            description: 'Charred skin and singed clothing.'
+        }]
+    };
+    Events._deps = {
+        ...previousDeps,
+        findActorByName: (name) => name === wanderer.name ? wanderer : null
+    };
+
+    try {
+        assert.throws(
+            () => Events.parseTinyBrainEventXmlStage(
+                '<events><statusEffectChange><entityName>Wanderer</entityName><statusEffectName>Burnt</statusEffectName><action>gained</action></statusEffectChange></events>',
+                { stageId: 'characters', allowedTags: ['statusEffectChange'] }
+            ),
+            /already has it/
+        );
+
+        const loss = Events.parseTinyBrainEventXmlStage(
+            '<events><statusEffectChange><entityName>Wanderer</entityName><statusEffectName>Burnt</statusEffectName><action>lost</action></statusEffectChange></events>',
+            { stageId: 'characters', allowedTags: ['statusEffectChange'] }
+        );
+        assert.match(loss.value.xml, /<statusEffectChange>/);
+
+        assert.throws(
+            () => Events.parseTinyBrainEventXmlStage(
+                '<events><statusEffectChange><entityName>Wanderer</entityName><statusEffectName>Poisoned</statusEffectName><action>lost</action></statusEffectChange></events>',
+                { stageId: 'characters', allowedTags: ['statusEffectChange'] }
+            ),
+            /does not currently have it/
+        );
+
+        const gain = Events.parseTinyBrainEventXmlStage(
+            '<events><statusEffectChange><entityName>Wanderer</entityName><statusEffectName>Poisoned</statusEffectName><action>gained</action></statusEffectChange></events>',
+            { stageId: 'characters', allowedTags: ['statusEffectChange'] }
+        );
+        assert.match(gain.value.xml, /<statusEffectChange>/);
+    } finally {
+        Events._deps = previousDeps;
+    }
+});
+
+test('tiny-brain status stage rejects a renamed duplicate of an accepted authoritative item effect', () => {
+    const previousDeps = Events._deps;
+    const actor = {
+        name: 'Baato',
+        isDead: false,
+        statusEffects: [],
+    };
+    const item = {
+        name: 'QA Focus Draught',
+        causeStatusEffectOnTarget: {
+            name: 'QA Focused',
+            description: 'A sharp, clear-headed sensation from a test draught.',
+            duration: 5,
+        },
+    };
+
+    Events._deps = {
+        ...previousDeps,
+        findActorByName: (name) => name === actor.name ? actor : null,
+        findThingByName: (name) => name === item.name ? item : null,
+    };
+
+    try {
+        const acceptedItemStage = {
+            1: {
+                value: {
+                    xml: '<itemIngest><fullItemName>QA Focus Draught</fullItemName><consumerName>Baato</consumerName></itemIngest>',
+                },
+            },
+        };
+        const applications = Events._collectTinyBrainAcceptedItemStatusApplications(
+            acceptedItemStage,
+        );
+        assert.deepEqual(applications, [{
+            targetName: 'Baato',
+            itemName: 'QA Focus Draught',
+            effectName: 'QA Focused',
+            effectDescription: 'A sharp, clear-headed sensation from a test draught.',
+            sourceTag: 'itemIngest',
+        }]);
+
+        assert.throws(
+            () => Events.parseTinyBrainEventXmlStage(
+                '<events><statusEffectChange><entityName>Baato</entityName><statusEffectName>QA Focus Draught effect</statusEffectName><action>gained</action><level>1</level></statusEffectChange></events>',
+                {
+                    stageId: 'characters',
+                    allowedTags: ['statusEffectChange'],
+                    acceptedItemStatusApplications: applications,
+                },
+            ),
+            /already applies its authoritative configured status/,
+        );
+
+        const independent = Events.parseTinyBrainEventXmlStage(
+            '<events><statusEffectChange><entityName>Baato</entityName><statusEffectName>Chilled</statusEffectName><action>gained</action><level>1</level></statusEffectChange></events>',
+            {
+                stageId: 'characters',
+                allowedTags: ['statusEffectChange'],
+                acceptedItemStatusApplications: applications,
+            },
+        );
+        assert.match(
+            independent.value.xml,
+            /<statusEffectName>Chilled<\/statusEffectName>/,
+        );
+    } finally {
+        Events._deps = previousDeps;
+    }
+});
+
+test('tiny-brain event stage parser rejects healing and new effects on dead actors', () => {
+    const previousDeps = Events._deps;
+    const corpse = {
+        name: 'Frost Slug',
+        health: 0,
+        isDead: true,
+        getStatusEffects: () => [{ name: 'Deceased', description: 'Deceased' }]
+    };
+    Events._deps = {
+        ...previousDeps,
+        findActorByName: (name) => name === corpse.name ? corpse : null
+    };
+
+    try {
+        const deadTargetCases = [
+            {
+                xml: '<events><itemInflict><fullItemName>Bandage</fullItemName><targetName>Frost Slug</targetName><statusEffect>Useless</statusEffect></itemInflict></events>',
+                options: { stageId: 'items', allowedTags: ['itemInflict'] },
+                tag: 'itemInflict'
+            },
+            {
+                xml: '<events><itemIngest><fullItemName>Tonic</fullItemName><consumerName>Frost Slug</consumerName></itemIngest></events>',
+                options: { stageId: 'items', allowedTags: ['itemIngest'] },
+                tag: 'itemIngest'
+            },
+            {
+                xml: '<events><healRecover><characterName>Frost Slug</characterName><magnitude>small</magnitude><reason>Bandaged</reason></healRecover></events>',
+                options: { stageId: 'combat', allowedTags: ['healRecover'] },
+                tag: 'healRecover'
+            },
+            {
+                xml: '<events><environmentalStatusDamage><actorName>Frost Slug</actorName><effect>healing</effect><severity>low</severity><reason>Warm light</reason></environmentalStatusDamage></events>',
+                options: {
+                    stageId: 'combat',
+                    allowedTags: ['environmentalStatusDamage']
+                },
+                tag: 'environmentalStatusDamage'
+            },
+            {
+                xml: '<events><statusEffectChange><entityName>Frost Slug</entityName><statusEffectName>Restored</statusEffectName><action>gained</action></statusEffectChange></events>',
+                options: { stageId: 'characters', allowedTags: ['statusEffectChange'] },
+                tag: 'status'
+            }
+        ];
+
+        for (const entry of deadTargetCases) {
+            assert.throws(
+                () => Events.parseTinyBrainEventXmlStage(entry.xml, entry.options),
+                new RegExp(`cannot (?:use <${entry.tag}> on|gain ${entry.tag})?.*dead actor|dead actor`)
+            );
+        }
+    } finally {
+        Events._deps = previousDeps;
+    }
+});
+
+test('tiny-brain item stage rejects consume-plus-container quantities beyond authoritative stock', () => {
+    const previousDeps = Events._deps;
+    const tonic = { name: 'QA Focus Draught', count: 1, metadata: { count: 1 } };
+    Events._deps = {
+        ...previousDeps,
+        findThingByName: (name) => name.toLowerCase() === tonic.name.toLowerCase()
+            ? tonic
+            : null,
+    };
+
+    const response = `<events>
+<consumeItem><fullItemName>QA Focus Draught</fullItemName><quantity>1</quantity><reason>Drank it</reason></consumeItem>
+<putItemInContainer><character>Baato</character><fullItemName>QA Focus Draught</fullItemName><quantity>1</quantity><containerName>Satchel</containerName></putItemInContainer>
+</events>`;
+
+    try {
+        assert.throws(
+            () => Events.parseTinyBrainEventXmlStage(response, {
+                stageId: 'items',
+                allowedTags: ['consumeItem', 'putItemInContainer'],
+            }),
+            /cannot consume 1 and put 1 .* when only 1 exists/,
+        );
+
+        tonic.count = 2;
+        tonic.metadata.count = 2;
+        const parsed = Events.parseTinyBrainEventXmlStage(response, {
+            stageId: 'items',
+            allowedTags: ['consumeItem', 'putItemInContainer'],
+        });
+        assert.match(parsed.value.xml, /<consumeItem>/);
+        assert.match(parsed.value.xml, /<putItemInContainer>/);
+    } finally {
+        Events._deps = previousDeps;
+    }
+});
+
 test('events tiny-brain template registers category checkpoints and local result builder', () => {
     const env = createEventsPromptEnv();
-    const ctx = buildEventsContext();
+    const ctx = buildEventsContext({
+        tinyBrainAuthoritativeMovementCompanionNames: ['Rika the Gazer']
+    });
     const templateContext = { ...ctx };
     const tinyBrain = configureTinyBrainPromptContext(templateContext, 'event_checks');
     const state = tinyBrain.renderState;
@@ -290,6 +686,36 @@ test('events tiny-brain template registers category checkpoints and local result
         full,
         /If there are none, return exactly `<events><done\/><\/events>`/,
         'empty checkpoint response must use the explicit events wrapper'
+    );
+    assert.match(
+        full,
+        /defeatedEnemy alone does not resolve the actor's persistent condition/,
+        'zero-health enemy defeats must request an explicit persistent outcome'
+    );
+    assert.match(
+        full,
+        /physically places a named character in the current scene[\s\S]*emit npcArrival even if the character arrives or remains hidden/,
+        'character-presence stage must require hidden arrivals that differ from current membership'
+    );
+    assert.match(
+        full,
+        /A plan, memory, dialogue mention, or offscreen action alone is not physical presence/,
+        'character-presence stage must not turn mere references into arrivals'
+    );
+    assert.match(
+        full,
+        /The item must cease being carried or owned by that character/,
+        'drop-item guidance must require a real ownership change'
+    );
+    assert.match(
+        full,
+        /luggage beside the owner's seat/,
+        'temporary travel placement must not become a drop event'
+    );
+    assert.match(
+        full,
+        /authoritative player-movement companions for this turn:[\s\S]*Rika the Gazer[\s\S]*Do not emit `<npcArrival>`, `<npcDeparture>`, or `<npcArrivalDeparture>`/,
+        'authoritative companions must be excluded from event-owned NPC movement'
     );
     assert.doesNotMatch(full, /Do not write any XML in this first step/);
 
@@ -409,10 +835,12 @@ test('event sequence carries accepted section responses into the next section tr
     const env = createEventsPromptEnv();
     const eventSequence = Events.createTinyBrainEventSequence();
     const completionMessages = [];
+    const providerMessages = [];
     const logCalls = [];
     const logFilePath = '/tmp/tinybrain-events-sequence.log';
     const scriptedResponses = [
         '<events><currency><amount>5</amount></currency></events>',
+        '<events><done/></events>',
         '<events><done/></events>'
     ];
     let responseIndex = 0;
@@ -423,6 +851,10 @@ test('event sequence carries accepted section responses into the next section tr
             tinyBrainEventSectionKind: sectionKind,
             tinyBrainEventSectionLabel: sectionKind.toUpperCase(),
             tinyBrainAcceptedEventXml: Events._buildTinyBrainAcceptedEventXml(eventSequence),
+            currentLocation: {
+                name: `${sectionKind} location`,
+                description: `${sectionKind.toUpperCase()}_BASE_CONTEXT_SENTINEL`,
+            },
             tinyBrainEventStages: [{
                 id: 'items',
                 label: 'currency',
@@ -448,6 +880,15 @@ test('event sequence carries accepted section responses into the next section tr
     Globals.config = { ai: { retryAttempts: 0 } };
     LLMClient.chatCompletion = async (options = {}) => {
         completionMessages.push(options.messages.map(message => ({ ...message })));
+        const policy = LLMClient.applyBaseContextToolPolicy(options.messages, {
+            metadataLabel: 'event_checks',
+            additionalPayload: {},
+            preserveCallerToolDefinitions: true
+        });
+        providerMessages.push(
+            LLMClient.expandPromptMessageBoundaries(policy.messages)
+                .map(message => ({ ...message }))
+        );
         return scriptedResponses[responseIndex++];
     };
     LLMClient.logPrompt = (options = {}) => {
@@ -458,16 +899,55 @@ test('event sequence carries accepted section responses into the next section tr
     try {
         const origin = await runSection('origin');
         const destination = await runSection('destination');
+        const tracker = await runSection('tracker');
 
         assert.match(origin, /<currency>/);
         assert.doesNotMatch(destination, /<currency>/);
-        assert.equal(completionMessages.length, 2);
+        assert.doesNotMatch(tracker, /<currency>/);
+        assert.equal(completionMessages.length, 3);
         assert.ok(completionMessages[1].some(message => (
             message.role === 'assistant'
             && message.content === scriptedResponses[0]
         )));
         assert.match(completionMessages[1].at(-1).content, /<acceptedSectionEvents>/);
         assert.match(completionMessages[1].at(-1).content, /<currency><amount>5<\/amount><\/currency>/);
+        const baseContextEndMarker = LLMClient.getBaseContextEndMarker();
+        const rawSecondTranscript = completionMessages[1]
+            .map(message => message.content || '')
+            .join('\n');
+        const rawThirdTranscript = completionMessages[2]
+            .map(message => message.content || '')
+            .join('\n');
+        assert.equal(rawSecondTranscript.split(baseContextEndMarker).length - 1, 1);
+        assert.equal(rawThirdTranscript.split(baseContextEndMarker).length - 1, 1);
+        assert.match(rawSecondTranscript, /DESTINATION_BASE_CONTEXT_SENTINEL/);
+        assert.doesNotMatch(rawSecondTranscript, /ORIGIN_BASE_CONTEXT_SENTINEL/);
+        assert.match(rawThirdTranscript, /TRACKER_BASE_CONTEXT_SENTINEL/);
+        assert.doesNotMatch(
+            rawThirdTranscript,
+            /ORIGIN_BASE_CONTEXT_SENTINEL|DESTINATION_BASE_CONTEXT_SENTINEL/
+        );
+        assert.equal(providerMessages.length, 3);
+        assert.ok(providerMessages[1].some(message => (
+            message.role === 'assistant'
+            && message.content === scriptedResponses[0]
+        )));
+        assert.ok(providerMessages[1].every(message => (
+            typeof message.content !== 'string'
+            || !message.content.includes(LLMClient.getBaseContextEndMarker())
+        )));
+        assert.ok(providerMessages[1].every(message => (
+            typeof message.content !== 'string'
+            || !message.content.includes(LLMClient.getBaseContextSectionMessageBoundaryMarker())
+        )));
+        const providerThirdTranscript = providerMessages[2]
+            .map(message => message.content || '')
+            .join('\n');
+        assert.match(providerThirdTranscript, /TRACKER_BASE_CONTEXT_SENTINEL/);
+        assert.doesNotMatch(
+            providerThirdTranscript,
+            /ORIGIN_BASE_CONTEXT_SENTINEL|DESTINATION_BASE_CONTEXT_SENTINEL/
+        );
         assert.equal(eventSequence.continuationState.logFilePath, logFilePath);
         assert.equal(logCalls.filter(call => !call.append).length, 1);
         assert.ok(logCalls.slice(1).every(call => call.filePath === logFilePath));

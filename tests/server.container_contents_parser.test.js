@@ -208,3 +208,51 @@ test('thing XML parser strict mode rejects malformed generated XML', async () =>
         Globals.config = previousConfig;
     }
 });
+
+test('thing XML parser rejects an invalid itemOrScenery value', async () => {
+    const parseThingsXml = loadParseThingsXml();
+    const previousConfig = Globals.config;
+
+    Globals.config = { ...(previousConfig || {}), strictXMLParsing: false };
+    try {
+        await assert.rejects(
+            parseThingsXml(`
+<items>
+  <item>
+    <name>Impossible Record</name>
+    <description>A record with an invalid structural kind.</description>
+    <shortDescription>Invalid test record</shortDescription>
+    <itemOrScenery>portable</itemOrScenery>
+    <type>document</type>
+  </item>
+</items>`),
+            /invalid <itemOrScenery> value "portable"/
+        );
+    } finally {
+        Globals.config = previousConfig;
+    }
+});
+
+test('thing XML parser rejects output that disagrees with the requested thing type', async () => {
+    const parseThingsXml = loadParseThingsXml();
+    const previousConfig = Globals.config;
+
+    Globals.config = { ...(previousConfig || {}), strictXMLParsing: false };
+    try {
+        await assert.rejects(
+            parseThingsXml(`
+<items>
+  <item>
+    <name>QA Sealed Record</name>
+    <description>A sealed archive record.</description>
+    <shortDescription>Sealed archive record</shortDescription>
+    <itemOrScenery>scenery</itemOrScenery>
+    <type>document</type>
+  </item>
+</items>`, { expectedThingType: 'item' }),
+            /must be item, but the response declared scenery/
+        );
+    } finally {
+        Globals.config = previousConfig;
+    }
+});

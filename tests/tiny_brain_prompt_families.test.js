@@ -153,6 +153,26 @@ test('tiny-brain NPC stages expose lookup-only tools at the information checkpoi
     assert.match(apiSource, /isLookupCheckpoint \? tinyBrainNpcLookupTools : \[\]/);
 });
 
+test('tiny-brain player-action destination lookup exposes only moreInfo', () => {
+    const apiSource = fs.readFileSync(path.join(__dirname, '..', 'api.js'), 'utf8');
+    assert.match(
+        apiSource,
+        /const TINY_BRAIN_PLAYER_ACTION_DESTINATION_LOOKUP_TOOL_NAMES = new Set\(\[\s*'moreInfo'\s*\]\)/
+    );
+    assert.match(
+        apiSource,
+        /checkpoint\?\.parserName === 'player_action_more_info_or_na'/
+    );
+    assert.match(
+        apiSource,
+        /isDestinationLookupCheckpoint\s*\? tinyBrainPlayerActionDestinationLookupTools\s*:\s*enabledChatTools/
+    );
+    assert.match(
+        apiSource,
+        /configureRequestChatTools\(\s*stageRequestOptions,\s*stageToolDefinitions\s*\)/
+    );
+});
+
 test('random and creative narrative-scope travel decisions render the full movement schema', () => {
     const env = createPromptEnv();
     for (const family of ['random_event', 'creative_mode_action']) {

@@ -224,6 +224,171 @@ test('completed quest awards NPC dispositions and skips unknown NPCs with warnin
     }
 });
 
+test('completed quest directly grants item and currency rewards without event-checking reward prose', async () => {
+    const previousDeps = Events._deps;
+    const previousConfig = Globals.config;
+    const previousBaseDir = Globals.baseDir;
+    const previousChatCompletion = LLMClient.chatCompletion;
+    const previousLogPrompt = LLMClient.logPrompt;
+    const previousRunEventChecks = Events.runEventChecks;
+
+    const inventory = [];
+    const experienceAwards = [];
+    let currency = 7;
+    let eventCheckCalls = 0;
+    let archiveSealAttempts = 0;
+
+    try {
+        Globals.baseDir = rootDir;
+        Globals.config = {
+            baseHealthPerLevel: 10,
+            slop_buster: false,
+            ai: { tinybrain: false }
+        };
+        Player.reloadDefinitionCaches({ refreshInstances: false });
+        LLMClient.chatCompletion = async () => 'The configured quest rewards were granted.';
+        LLMClient.logPrompt = () => {};
+        Events.runEventChecks = async () => {
+            eventCheckCalls += 1;
+            throw new Error('Quest reward prose must not be event-checked.');
+        };
+
+        Events._deps = {
+            ...(previousDeps || {}),
+            getConfig: () => Globals.config,
+            generateItemsByNames: async ({ itemNames, options }) => {
+                assert.equal(itemNames.length, 1);
+                assert.equal(options.mergeStacks, false);
+                assert.equal(options.creationMetadata.questRewardQuestId, 'quest_reward_test');
+                const rewardIndex = options.creationMetadata.questRewardIndex;
+                assert.ok(rewardIndex === 0 || rewardIndex === 1);
+                const expectedName = rewardIndex === 0 ? 'Archivist Token' : 'Archive Seal';
+                assert.deepEqual(itemNames, [expectedName]);
+                if (rewardIndex === 1) {
+                    archiveSealAttempts += 1;
+                    if (archiveSealAttempts === 1) {
+                        throw new Error('Temporary Archive Seal generation failure.');
+                    }
+                }
+                const item = {
+                    id: `thing_reward_${rewardIndex}`,
+                    name: expectedName,
+                    metadata: { ...options.creationMetadata }
+                };
+                inventory.push(item);
+                return [item];
+            },
+            promptEnv: {
+                render() {
+                    return '<prompt/>';
+                }
+            },
+            parseXMLTemplate() {
+                return {
+                    systemPrompt: 'system',
+                    generationPrompt: 'generation'
+                };
+            },
+            prepareBasePromptContext: async () => ({})
+        };
+
+        const quest = new Quest({
+            id: 'quest_reward_test',
+            name: 'Archive Delivery',
+            objectives: ['Report completion'],
+            rewardItems: ['Archivist Token', 'Archive Seal'],
+            rewardCurrency: 10,
+            rewardXp: 25
+        });
+        const player = {
+            id: 'player_1',
+            name: 'Player',
+            getQuestByName(name) {
+                return name === quest.name ? quest : null;
+            },
+            getQuestByIndex(index) {
+                return index === 0 ? quest : null;
+            },
+            getInventoryItems() {
+                return inventory;
+            },
+            getCurrency() {
+                return currency;
+            },
+            adjustCurrency(delta) {
+                currency += delta;
+                return currency;
+            },
+            addExperience(amount) {
+                experienceAwards.push(amount);
+            }
+        };
+        const context = {
+            player,
+            completedQuestObjectives: [],
+            questCompletionRewards: [],
+            experienceAwards: [],
+            currencyChanges: [],
+            factionStandingChanges: [],
+            dispositionChanges: [],
+            followupQueue: [],
+            followupResults: []
+        };
+
+        const completionEntry = {
+            questIndex: 1,
+            objectiveIndex: 1,
+            statusReason: 'The delivery was reported.'
+        };
+
+        await assert.rejects(
+            Events.processQuestObjectiveCompletionEntries([completionEntry], context),
+            /Temporary Archive Seal generation failure/,
+        );
+        assert.equal(quest.completed, true);
+        assert.equal(quest.rewardClaimed, false);
+        assert.equal(currency, 7);
+        assert.deepEqual(experienceAwards, []);
+        assert.deepEqual(inventory.map(item => item.name), ['Archivist Token']);
+        assert.equal(context.completedQuestObjectives.length, 1);
+
+        await Events.processQuestObjectiveCompletionEntries([completionEntry], context);
+
+        assert.equal(quest.completed, true);
+        assert.equal(quest.rewardClaimed, true);
+        assert.equal(currency, 17);
+        assert.deepEqual(experienceAwards, [25]);
+        assert.equal(inventory.length, 2);
+        assert.deepEqual(inventory.map(item => item.name), ['Archivist Token', 'Archive Seal']);
+        assert.equal(context.completedQuestObjectives.length, 1);
+        assert.deepEqual(context.currencyChanges, [{
+            amount: 10,
+            before: 7,
+            after: 17,
+            reason: 'Completed quest: Archive Delivery'
+        }]);
+        assert.deepEqual(context.questCompletionRewards[0].items, ['Archivist Token', 'Archive Seal']);
+        assert.equal(eventCheckCalls, 0);
+
+        await Events.processQuestObjectiveCompletionEntries([{
+            questIndex: 1,
+            objectiveIndex: 1,
+            statusReason: 'Duplicate completion attempt.'
+        }], context);
+        assert.equal(currency, 17);
+        assert.deepEqual(experienceAwards, [25]);
+        assert.equal(inventory.length, 2);
+    } finally {
+        Events.runEventChecks = previousRunEventChecks;
+        LLMClient.chatCompletion = previousChatCompletion;
+        LLMClient.logPrompt = previousLogPrompt;
+        Events._deps = previousDeps;
+        Globals.config = previousConfig;
+        Globals.baseDir = previousBaseDir;
+        Player.reloadDefinitionCaches({ refreshInstances: false });
+    }
+});
+
 test('quest disposition rewards are exposed through editor and API source hooks', () => {
     const apiSource = fs.readFileSync(path.join(rootDir, 'api.js'), 'utf8');
     const viewSource = fs.readFileSync(path.join(rootDir, 'views', 'index.njk'), 'utf8');

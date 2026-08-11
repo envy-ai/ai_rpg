@@ -1,0 +1,255 @@
+{
+  "version": 1,
+  "scenario": "combat",
+  "case": "COMBAT-1-hostile-npc-attack",
+  "description": "Entering combat defensively must resolve exactly one isolated hostile NPC attack and prevent the same actor from receiving a duplicate scheduled turn.",
+  "fixture": "combat-elemental-skirmish",
+  "configProfile": "combat-mechanics",
+  "trackedPaths": [
+    "player.payload.player.health",
+    "calendar.payload.worldTime.timeMinutes",
+    "currentLocation.payload.location.npcIds"
+  ],
+  "steps": [
+    {
+      "type": "loadFixture"
+    },
+    {
+      "type": "request",
+      "name": "isolate_frost",
+      "method": "POST",
+      "route": "/api/npcs/$fixture.frostBeetleId/teleport",
+      "body": {
+        "locationId": "$fixture.isolationLocationId",
+        "accountTravelTime": false
+      }
+    },
+    {
+      "type": "assert",
+      "assertions": [
+        {
+          "type": "httpStatus",
+          "equals": 200
+        },
+        {
+          "type": "responseOk",
+          "equals": true
+        }
+      ]
+    },
+    {
+      "type": "request",
+      "name": "isolate_shieldhand",
+      "method": "POST",
+      "route": "/api/npcs/$fixture.shieldhandId/teleport",
+      "body": {
+        "locationId": "$fixture.isolationLocationId",
+        "accountTravelTime": false
+      }
+    },
+    {
+      "type": "assert",
+      "assertions": [
+        {
+          "type": "httpStatus",
+          "equals": 200
+        },
+        {
+          "type": "responseOk",
+          "equals": true
+        }
+      ]
+    },
+    {
+      "type": "request",
+      "name": "make_ash_attack_deterministic",
+      "method": "PUT",
+      "route": "/api/npcs/$fixture.ashBeetleId",
+      "body": {
+        "attributes": {
+          "strength": 20
+        },
+        "skills": {
+          "Melee Combat": 20
+        }
+      }
+    },
+    {
+      "type": "assert",
+      "assertions": [
+        {
+          "type": "httpStatus",
+          "equals": 200
+        },
+        {
+          "type": "responseOk",
+          "equals": true
+        },
+        {
+          "type": "equals",
+          "source": "responses.make_ash_attack_deterministic",
+          "path": "payload.npc.attributes.strength",
+          "equals": 20
+        },
+        {
+          "type": "equals",
+          "source": "responses.make_ash_attack_deterministic",
+          "path": "payload.npc.skills.Melee Combat",
+          "equals": 20
+        }
+      ]
+    },
+    {
+      "type": "snapshot",
+      "name": "combat_ready"
+    },
+    {
+      "type": "chat",
+      "name": "hostile_round",
+      "text": "I deliberately enter physical combat with QA Ash Beetle by planting my feet in a defensive guard. <12> I do not attack, move, flee, use an item, attempt a skill maneuver, or cause any other character to act during my own action; I simply brace and wait for the hostile beetle's turn.",
+      "interactive": {
+        "roll": null,
+        "questAccepted": false,
+        "confirmed": false
+      }
+    },
+    {
+      "type": "assert",
+      "assertions": [
+        {
+          "type": "httpStatus",
+          "equals": 200
+        },
+        {
+          "type": "responseOk",
+          "equals": true
+        },
+        {
+          "type": "count",
+          "source": "responses.hostile_round",
+          "path": "payload.attackSummaries",
+          "equals": 1
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "responses.hostile_round",
+          "path": "payload.toolInvocations",
+          "where": {
+            "name": "resolveAttack"
+          },
+          "equals": 1
+        },
+        {
+          "type": "absent",
+          "source": "responses.hostile_round",
+          "path": "payload.npcTurns"
+        },
+        {
+          "type": "equals",
+          "source": "responses.hostile_round",
+          "path": "payload.attackSummaries.0.hit",
+          "equals": true
+        },
+        {
+          "type": "equals",
+          "source": "responses.hostile_round",
+          "path": "payload.attackSummaries.0.roll.die",
+          "equals": 12
+        },
+        {
+          "type": "equals",
+          "source": "responses.hostile_round",
+          "path": "payload.attackSummaries.0.attacker.name",
+          "equals": "QA Ash Beetle"
+        },
+        {
+          "type": "equals",
+          "source": "responses.hostile_round",
+          "path": "payload.toolInvocations.0.metadata.attacker",
+          "equals": "QA Ash Beetle"
+        },
+        {
+          "type": "equals",
+          "source": "responses.hostile_round",
+          "path": "payload.attackDamage.targetId",
+          "equals": "$fixture.playerId"
+        },
+        {
+          "type": "equals",
+          "source": "responses.hostile_round",
+          "path": "payload.attackDamage.targetName",
+          "equals": "Baato"
+        },
+        {
+          "type": "equals",
+          "source": "responses.hostile_round",
+          "path": "payload.checkResultsRecorded",
+          "equals": true
+        },
+        {
+          "type": "greaterThan",
+          "source": "responses.hostile_round",
+          "path": "payload.attackDamage.damageApplied",
+          "value": 0
+        },
+        {
+          "type": "equals",
+          "source": "snapshots.combat_ready",
+          "path": "player.payload.player.health",
+          "equalsFrom": {
+            "source": "responses.hostile_round",
+            "path": "payload.attackDamage.startingHealth"
+          }
+        },
+        {
+          "type": "equals",
+          "source": "after",
+          "path": "player.payload.player.health",
+          "equalsFrom": {
+            "source": "responses.hostile_round",
+            "path": "payload.attackDamage.endingHealth"
+          }
+        },
+        {
+          "type": "lessThan",
+          "source": "after",
+          "path": "player.payload.player.health",
+          "valueFrom": {
+            "source": "snapshots.combat_ready",
+            "path": "player.payload.player.health"
+          }
+        },
+        {
+          "type": "entityField",
+          "source": "after",
+          "collection": "players",
+          "id": "$fixture.ashBeetleId",
+          "path": "health",
+          "equals": 35
+        },
+        {
+          "type": "historyAddedTypeCount",
+          "entryType": "check-results",
+          "equals": 1,
+          "beforeSource": "snapshots.combat_ready",
+          "afterSource": "after"
+        },
+        {
+          "type": "historyAddedTypeCount",
+          "entryType": "player-action",
+          "equals": 1,
+          "beforeSource": "snapshots.combat_ready",
+          "afterSource": "after"
+        },
+        {
+          "type": "noRealtimeErrors"
+        }
+      ]
+    }
+  ],
+  "humanReview": [
+    "Confirm the player-action prose describes QA Ash Beetle as the attacker and does not attribute the attack to QA Frost Beetle, QA Shieldhand, or Baato.",
+    "Confirm the prose follows the authoritative hit, damage, and surviving-player result without inventing a second attack.",
+    "Flag dialogue or actions attributed to characters who are absent from the current location; this is human review only and must not be enforced with prose regexes or classifiers."
+  ]
+}

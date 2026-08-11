@@ -517,6 +517,12 @@ class AIRPGChat {
         this.questConfirmationAcceptButton = null;
         this.questConfirmationDeclineButton = null;
         this.questConfirmationSubmitting = false;
+        this.comfyCacheMonitorWarningStorageKey = 'airpg:hideComfyCacheMonitorFallbackWarning';
+        this.comfyCacheMonitorWarningModal = null;
+        this.comfyCacheMonitorWarningMessage = null;
+        this.comfyCacheMonitorWarningCheckbox = null;
+        this.comfyCacheMonitorWarningCloseButton = null;
+        this.comfyCacheMonitorWarningDismissButton = null;
 
         this.latestPlayerActionEntryKey = null;
         this.pendingRedoStorageKey = 'airpg:pendingRedoPlayerAction';
@@ -548,6 +554,7 @@ class AIRPGChat {
 
         this.setupEditModal();
         this.setupQuestConfirmationModal();
+        this.setupComfyCacheMonitorWarningModal();
         this.setupPrefixHelpModal();
         this.setupEmptyActionConfirmModal();
         this.setupSlashUploadModal();
@@ -681,6 +688,109 @@ class AIRPGChat {
                 this.submitQuestConfirmation(false);
             }
         });
+    }
+
+    setupComfyCacheMonitorWarningModal() {
+        if (this.comfyCacheMonitorWarningModal) {
+            return;
+        }
+
+        const container = document.createElement('div');
+        container.className = 'comfy-cache-monitor-warning';
+        container.setAttribute('hidden', '');
+        container.innerHTML = `
+            <div class="comfy-cache-monitor-warning__backdrop" role="presentation"></div>
+            <div class="comfy-cache-monitor-warning__dialog" role="dialog" aria-modal="true" aria-labelledby="comfyCacheMonitorWarningTitle">
+                <header class="comfy-cache-monitor-warning__header">
+                    <h2 id="comfyCacheMonitorWarningTitle" class="comfy-cache-monitor-warning__title">ComfyUI cache acceleration unavailable</h2>
+                    <button type="button" class="comfy-cache-monitor-warning__close" aria-label="Close">&times;</button>
+                </header>
+                <div class="comfy-cache-monitor-warning__body">
+                    <p class="comfy-cache-monitor-warning__message"></p>
+                    <p>The fallback releases ComfyUI's system-RAM model cache, so later image generations may take longer to start.</p>
+                    <label class="comfy-cache-monitor-warning__preference">
+                        <input type="checkbox" class="comfy-cache-monitor-warning__checkbox">
+                        <span>Don't show this warning again on this browser</span>
+                    </label>
+                </div>
+                <footer class="comfy-cache-monitor-warning__footer">
+                    <button type="button" class="comfy-cache-monitor-warning__dismiss">Got it</button>
+                </footer>
+            </div>
+        `;
+        document.body.appendChild(container);
+
+        this.comfyCacheMonitorWarningModal = container;
+        this.comfyCacheMonitorWarningMessage = container.querySelector('.comfy-cache-monitor-warning__message');
+        this.comfyCacheMonitorWarningCheckbox = container.querySelector('.comfy-cache-monitor-warning__checkbox');
+        this.comfyCacheMonitorWarningCloseButton = container.querySelector('.comfy-cache-monitor-warning__close');
+        this.comfyCacheMonitorWarningDismissButton = container.querySelector('.comfy-cache-monitor-warning__dismiss');
+
+        const close = () => this.closeComfyCacheMonitorWarningModal();
+        this.comfyCacheMonitorWarningCloseButton?.addEventListener('click', close);
+        this.comfyCacheMonitorWarningDismissButton?.addEventListener('click', close);
+        container.querySelector('.comfy-cache-monitor-warning__backdrop')?.addEventListener('click', close);
+        document.addEventListener('keydown', (event) => {
+            if (event.key === 'Escape' && this.isComfyCacheMonitorWarningVisible()) {
+                close();
+            }
+        });
+    }
+
+    isComfyCacheMonitorWarningSuppressed() {
+        try {
+            return window.localStorage.getItem(this.comfyCacheMonitorWarningStorageKey) === 'true';
+        } catch (error) {
+            console.warn('Unable to read the ComfyUI Cache Monitor warning preference:', error?.message || error);
+            return false;
+        }
+    }
+
+    isComfyCacheMonitorWarningVisible() {
+        return Boolean(
+            this.comfyCacheMonitorWarningModal
+            && !this.comfyCacheMonitorWarningModal.hasAttribute('hidden')
+        );
+    }
+
+    handleComfyCacheMonitorFallback(payload = {}) {
+        if (this.isComfyCacheMonitorWarningSuppressed()) {
+            return;
+        }
+        this.setupComfyCacheMonitorWarningModal();
+        if (this.isComfyCacheMonitorWarningVisible()) {
+            return;
+        }
+
+        const defaultMessage = 'ComfyUI Cache Monitor was unavailable, so AI RPG used ComfyUI\'s full memory cleanup instead. Install or enable the comfyui-cache-monitor custom nodes to preserve the system-RAM model cache and speed up later image generation.';
+        if (this.comfyCacheMonitorWarningMessage) {
+            this.comfyCacheMonitorWarningMessage.textContent = (
+                typeof payload?.message === 'string' && payload.message.trim()
+                    ? payload.message.trim()
+                    : defaultMessage
+            );
+        }
+        if (this.comfyCacheMonitorWarningCheckbox) {
+            this.comfyCacheMonitorWarningCheckbox.checked = false;
+        }
+        this.comfyCacheMonitorWarningModal.removeAttribute('hidden');
+        this.comfyCacheMonitorWarningModal.classList.add('is-open');
+        window.setTimeout(() => this.comfyCacheMonitorWarningDismissButton?.focus(), 0);
+    }
+
+    closeComfyCacheMonitorWarningModal() {
+        if (!this.comfyCacheMonitorWarningModal) {
+            return;
+        }
+        if (this.comfyCacheMonitorWarningCheckbox?.checked) {
+            try {
+                window.localStorage.setItem(this.comfyCacheMonitorWarningStorageKey, 'true');
+            } catch (error) {
+                console.warn('Unable to save the ComfyUI Cache Monitor warning preference:', error?.message || error);
+            }
+        }
+        this.comfyCacheMonitorWarningModal.setAttribute('hidden', '');
+        this.comfyCacheMonitorWarningModal.classList.remove('is-open');
     }
 
     setupPrefixHelpModal() {
@@ -4924,6 +5034,9 @@ class AIRPGChat {
                 break;
             case 'summary_error':
                 this.handleSummaryError(payload);
+                break;
+            case 'comfy_cache_monitor_fallback':
+                this.handleComfyCacheMonitorFallback(payload);
                 break;
             case 'generation_status':
                 this.handleGenerationStatus(payload);

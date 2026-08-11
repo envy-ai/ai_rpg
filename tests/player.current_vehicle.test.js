@@ -63,6 +63,7 @@ test('Player.currentVehicle exposes computed trip-state fields for prompts', () 
 
         let currentVehicle = player.currentVehicle;
         assert.ok(currentVehicle);
+        assert.equal(currentVehicle.vehicleKind, 'region');
         assert.equal(currentVehicle.destination, 'Derelict Sector');
         assert.equal(currentVehicle.destinationResolved, false);
         assert.deepEqual(currentVehicle.pendingDestination, {
@@ -77,6 +78,7 @@ test('Player.currentVehicle exposes computed trip-state fields for prompts', () 
         assert.equal(currentVehicle.isUnderway, false);
         assert.equal(currentVehicle.hasArrived, false);
         assert.equal(currentVehicle.isArriving, false);
+        assert.deepEqual(currentVehicle.allowedDestinations, []);
         assert.equal(currentVehicle.vehicleInfo.isUnderway, false);
         assert.equal(currentVehicle.vehicleInfo.hasArrived, false);
         assert.equal(currentVehicle.vehicleInfo.isArriving, false);
@@ -114,6 +116,53 @@ test('Player.currentVehicle exposes computed trip-state fields for prompts', () 
         assert.equal(currentVehicle.vehicleInfo.isUnderway, false);
         assert.equal(currentVehicle.vehicleInfo.hasArrived, true);
         assert.equal(currentVehicle.vehicleInfo.isArriving, true);
+
+        region.vehicleInfo = {
+            currentDestination: null,
+            pendingDestination: null,
+            destinations: ['test-destination-location'],
+            ETA: null,
+            departureTime: null,
+            vehicleExitId: null
+        };
+
+        currentVehicle = player.currentVehicle;
+        assert.ok(currentVehicle);
+        assert.equal(currentVehicle.minutesToDestination, null);
+        assert.equal(currentVehicle.timeToDestination, null);
+        assert.equal(currentVehicle.isUnderway, false);
+        assert.equal(currentVehicle.hasArrived, false);
+        assert.equal(currentVehicle.isArriving, false);
+        assert.deepEqual(currentVehicle.allowedDestinations, [{
+            kind: 'location',
+            routeEntry: 'test-destination-location',
+            locationId: 'test-destination-location',
+            locationName: 'Derelict Sector Approach',
+            regionId: 'test-region-current-vehicle',
+            regionName: 'Mourning Star'
+        }]);
+
+        region.vehicleInfo = null;
+        currentLocation.vehicleInfo = {
+            currentDestination: null,
+            pendingDestination: null,
+            destinations: ['test-destination-location'],
+            ETA: null,
+            departureTime: null,
+            vehicleExitId: null
+        };
+        currentVehicle = player.currentVehicle;
+        assert.ok(currentVehicle);
+        assert.equal(currentVehicle.vehicleKind, 'location');
+        assert.equal(currentVehicle.name, 'Cockpit');
+        assert.deepEqual(currentVehicle.allowedDestinations, [{
+            kind: 'location',
+            routeEntry: 'test-destination-location',
+            locationId: 'test-destination-location',
+            locationName: 'Derelict Sector Approach',
+            regionId: 'test-region-current-vehicle',
+            regionName: 'Mourning Star'
+        }]);
     } finally {
         Globals.currentPlayer = previousPlayer;
         Globals.config = previousConfig;

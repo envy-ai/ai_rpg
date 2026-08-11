@@ -22,6 +22,7 @@ function createMinimalRuntime({
     isAssistantProseLikeEntry = () => true,
     requestUserInput = null,
     deleteThingById = null,
+    createLocationFromEvent = null,
     characters = [],
     currentPlayer = { currentLocation: 'loc-origin' },
     things = [],
@@ -37,9 +38,9 @@ function createMinimalRuntime({
         serializeNpcForClient: () => ({}),
         buildLocationResponse: () => ({}),
         getCurrentPlayer: () => currentPlayer,
-        createLocationFromEvent: async () => {
+        createLocationFromEvent: createLocationFromEvent || (async () => {
             throw new Error('createLocationFromEvent should not be reached for this test.');
-        },
+        }),
         createRegionStubFromEvent: async () => {
             throw new Error('createRegionStubFromEvent should not be reached for this test.');
         },
@@ -98,6 +99,82 @@ test('moreInfo tool description discourages redundant lookups for visible full X
 
     assert.ok(definition, 'Expected moreInfo chat tool definition.');
     assert.match(definition.description, /do not call.*items or characters.*full XML.*redundant information/i);
+});
+
+test('tool loop rejects a model-emitted tool that was not declared for the request', async () => {
+    const capturedMessagesByRound = [];
+    const debugEvents = [];
+    let createLocationCalls = 0;
+    const moreInfoTool = CHAT_TOOL_DEFINITIONS.find(
+        definition => definition?.function?.name === 'moreInfo'
+    );
+    assert.ok(moreInfoTool, 'Expected the moreInfo chat tool definition.');
+
+    const runtime = createMinimalRuntime({
+        capturedMessagesByRound,
+        debugEvents,
+        createLocationFromEvent: async () => {
+            createLocationCalls += 1;
+            return { id: 'should-not-exist' };
+        },
+        llmResponses: [
+            {
+                data: {
+                    choices: [{
+                        message: {
+                            content: '',
+                            tool_calls: [{
+                                id: 'call-undeclared-location-stub',
+                                type: 'function',
+                                function: {
+                                    name: 'createLocationStub',
+                                    arguments: JSON.stringify({
+                                        name: 'Forbidden Stub',
+                                        region: 'Forbidden Region'
+                                    })
+                                }
+                            }]
+                        }
+                    }]
+                }
+            },
+            {
+                data: {
+                    choices: [{
+                        message: {
+                            content: 'READY',
+                            tool_calls: []
+                        }
+                    }]
+                }
+            }
+        ]
+    });
+
+    const result = await runtime.runChatCompletionWithToolLoop({
+        requestOptions: {
+            messages: [{ role: 'user', content: 'Look up the destination.' }],
+            additionalPayload: {
+                tools: [moreInfoTool],
+                tool_choice: 'auto'
+            }
+        },
+        metadataLabel: 'undeclared_tool_test',
+        onToolCallDebug: event => debugEvents.push(structuredClone(event))
+    });
+
+    assert.equal(result.aiResponse, 'READY');
+    assert.equal(createLocationCalls, 0);
+    assert.equal(result.toolInvocations.length, 1);
+    assert.equal(result.toolInvocations[0].name, 'createLocationStub');
+    assert.equal(result.toolInvocations[0].metadata.error, true);
+    assert.equal(result.toolInvocations[0].metadata.code, 'tool_not_declared');
+    assert.deepEqual(debugEvents.map(event => event.phase), ['started', 'error']);
+
+    const toolMessage = capturedMessagesByRound[1].find(message => message.role === 'tool');
+    assert.ok(toolMessage, 'Expected the undeclared-tool error in the retry context.');
+    assert.match(toolMessage.content, /<code>tool_not_declared<\/code>/);
+    assert.match(toolMessage.content, /Use only these declared tools: moreInfo\./);
 });
 
 test('deleteThing tool definition requires only a thing identifier', () => {

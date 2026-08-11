@@ -1,0 +1,348 @@
+{
+  "version": 1,
+  "scenario": "stealth-hidden",
+  "case": "HIDE-6-corpse-visibility",
+  "description": "Killing an already-hidden NPC reveals the corpse, and a later attempt to conceal that corpse cannot restore the hidden flag.",
+  "fixture": "stealth-hidden-npcs",
+  "configProfile": "stealth-hidden-mechanics",
+  "trackedPaths": [
+    "player.payload.player.locationId",
+    "players.payload.players",
+    "currentLocation.payload.location.npcIds",
+    "currentLocation.payload.location.npcs",
+    "history.payload",
+    "calendar.payload.worldTime.timeMinutes"
+  ],
+  "steps": [
+    {
+      "type": "loadFixture"
+    },
+    {
+      "type": "assert",
+      "assertions": [
+        {
+          "type": "entityField",
+          "source": "after",
+          "collection": "players",
+          "id": "$fixture.scoutId",
+          "path": "isDead",
+          "equals": false
+        },
+        {
+          "type": "entityField",
+          "source": "after",
+          "collection": "players",
+          "id": "$fixture.scoutId",
+          "path": "hiddenFromPlayer",
+          "equals": true
+        },
+        {
+          "type": "entityField",
+          "source": "after",
+          "collection": "players",
+          "id": "$fixture.scoutId",
+          "path": "locationId",
+          "equals": "$fixture.baselineLocationId"
+        },
+        {
+          "type": "includes",
+          "source": "after",
+          "path": "currentLocation.payload.location.npcIds",
+          "value": "$fixture.scoutId"
+        }
+      ]
+    },
+    {
+      "type": "snapshot",
+      "name": "before_hidden_npc_death"
+    },
+    {
+      "type": "request",
+      "name": "kill_hidden_scout_while_requesting_concealment",
+      "method": "PUT",
+      "route": "/api/npcs/$fixture.scoutId",
+      "body": {
+        "isDead": true,
+        "hiddenFromPlayer": true
+      }
+    },
+    {
+      "type": "assert",
+      "assertions": [
+        {
+          "type": "httpStatus",
+          "equals": 200
+        },
+        {
+          "type": "responseOk",
+          "equals": true
+        },
+        {
+          "type": "equals",
+          "source": "responses.kill_hidden_scout_while_requesting_concealment",
+          "path": "payload.npc.id",
+          "equals": "$fixture.scoutId"
+        },
+        {
+          "type": "equals",
+          "source": "responses.kill_hidden_scout_while_requesting_concealment",
+          "path": "payload.npc.name",
+          "equals": "$fixture.scoutName"
+        },
+        {
+          "type": "equals",
+          "source": "responses.kill_hidden_scout_while_requesting_concealment",
+          "path": "payload.npc.isDead",
+          "equals": true
+        },
+        {
+          "type": "equals",
+          "source": "responses.kill_hidden_scout_while_requesting_concealment",
+          "path": "payload.npc.hiddenFromPlayer",
+          "equals": false
+        },
+        {
+          "type": "equals",
+          "source": "responses.kill_hidden_scout_while_requesting_concealment",
+          "path": "payload.npc.health",
+          "equals": 0
+        },
+        {
+          "type": "equals",
+          "source": "responses.kill_hidden_scout_while_requesting_concealment",
+          "path": "payload.npc.corpseCountdown",
+          "equals": 5
+        },
+        {
+          "type": "equals",
+          "source": "responses.kill_hidden_scout_while_requesting_concealment",
+          "path": "payload.npc.locationId",
+          "equals": "$fixture.baselineLocationId"
+        },
+        {
+          "type": "entityField",
+          "source": "after",
+          "collection": "players",
+          "id": "$fixture.scoutId",
+          "path": "isDead",
+          "equals": true
+        },
+        {
+          "type": "entityField",
+          "source": "after",
+          "collection": "players",
+          "id": "$fixture.scoutId",
+          "path": "hiddenFromPlayer",
+          "equals": false
+        },
+        {
+          "type": "entityField",
+          "source": "after",
+          "collection": "players",
+          "id": "$fixture.scoutId",
+          "path": "health",
+          "equals": 0
+        },
+        {
+          "type": "entityField",
+          "source": "after",
+          "collection": "players",
+          "id": "$fixture.scoutId",
+          "path": "corpseCountdown",
+          "equals": 5
+        },
+        {
+          "type": "entityField",
+          "source": "after",
+          "collection": "players",
+          "id": "$fixture.scoutId",
+          "path": "locationId",
+          "equals": "$fixture.baselineLocationId"
+        },
+        {
+          "type": "includes",
+          "source": "after",
+          "path": "currentLocation.payload.location.npcIds",
+          "value": "$fixture.scoutId"
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "after",
+          "path": "currentLocation.payload.location.npcs",
+          "where": {
+            "id": "$fixture.scoutId",
+            "name": "$fixture.scoutName",
+            "isDead": true,
+            "hiddenFromPlayer": false,
+            "health": 0,
+            "locationId": "$fixture.baselineLocationId"
+          },
+          "equals": 1
+        }
+      ]
+    },
+    {
+      "type": "request",
+      "name": "attempt_to_reconceal_scout_corpse",
+      "method": "PUT",
+      "route": "/api/npcs/$fixture.scoutId",
+      "body": {
+        "hiddenFromPlayer": true
+      }
+    },
+    {
+      "type": "request",
+      "name": "read_scout_corpse_status",
+      "method": "GET",
+      "route": "/api/npcs/$fixture.scoutId"
+    },
+    {
+      "type": "assert",
+      "assertions": [
+        {
+          "type": "httpStatus",
+          "equals": 200
+        },
+        {
+          "type": "responseOk",
+          "equals": true
+        },
+        {
+          "type": "equals",
+          "source": "responses.attempt_to_reconceal_scout_corpse",
+          "path": "status",
+          "equals": 200
+        },
+        {
+          "type": "equals",
+          "source": "responses.attempt_to_reconceal_scout_corpse",
+          "path": "payload.success",
+          "equals": true
+        },
+        {
+          "type": "equals",
+          "source": "responses.attempt_to_reconceal_scout_corpse",
+          "path": "payload.npc.isDead",
+          "equals": true
+        },
+        {
+          "type": "equals",
+          "source": "responses.attempt_to_reconceal_scout_corpse",
+          "path": "payload.npc.hiddenFromPlayer",
+          "equals": false
+        },
+        {
+          "type": "equals",
+          "source": "responses.read_scout_corpse_status",
+          "path": "payload.npc.isDead",
+          "equals": true
+        },
+        {
+          "type": "equals",
+          "source": "responses.read_scout_corpse_status",
+          "path": "payload.npc.hiddenFromPlayer",
+          "equals": false
+        },
+        {
+          "type": "equals",
+          "source": "responses.read_scout_corpse_status",
+          "path": "payload.npc.health",
+          "equals": 0
+        },
+        {
+          "type": "equals",
+          "source": "responses.read_scout_corpse_status",
+          "path": "payload.npc.corpseCountdown",
+          "equals": 5
+        },
+        {
+          "type": "entityField",
+          "source": "after",
+          "collection": "players",
+          "id": "$fixture.scoutId",
+          "path": "isDead",
+          "equals": true
+        },
+        {
+          "type": "entityField",
+          "source": "after",
+          "collection": "players",
+          "id": "$fixture.scoutId",
+          "path": "hiddenFromPlayer",
+          "equals": false
+        },
+        {
+          "type": "entityField",
+          "source": "after",
+          "collection": "players",
+          "id": "$fixture.scoutId",
+          "path": "last_seen_time",
+          "equals": null
+        },
+        {
+          "type": "entityField",
+          "source": "after",
+          "collection": "players",
+          "id": "$fixture.scoutId",
+          "path": "last_seen_location",
+          "equals": null
+        },
+        {
+          "type": "includes",
+          "source": "after",
+          "path": "currentLocation.payload.location.npcIds",
+          "value": "$fixture.scoutId"
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "after",
+          "path": "currentLocation.payload.location.npcs",
+          "where": {
+            "id": "$fixture.scoutId",
+            "isDead": true,
+            "hiddenFromPlayer": false,
+            "health": 0,
+            "corpseCountdown": 5
+          },
+          "equals": 1
+        },
+        {
+          "type": "historyAddedTypeCount",
+          "entryType": "check-results",
+          "equals": 0,
+          "beforeSource": "snapshots.before_hidden_npc_death",
+          "afterSource": "after"
+        },
+        {
+          "type": "historyAddedTypeCount",
+          "entryType": "player-action",
+          "equals": 0,
+          "beforeSource": "snapshots.before_hidden_npc_death",
+          "afterSource": "after"
+        },
+        {
+          "type": "historyAddedTypeCount",
+          "entryType": "event-summary",
+          "equals": 0,
+          "beforeSource": "snapshots.before_hidden_npc_death",
+          "afterSource": "after"
+        },
+        {
+          "type": "equals",
+          "source": "after",
+          "path": "calendar.payload.worldTime.timeMinutes",
+          "equals": 663
+        },
+        {
+          "type": "noRealtimeErrors"
+        },
+        {
+          "type": "noUnexpectedErrorLogs"
+        }
+      ]
+    }
+  ],
+  "humanReview": [
+    "No assistant prose is generated. The structured location payload exposes QA Veiled Scout as a visible corpse after both the death mutation and an explicit attempt to conceal the corpse again."
+  ]
+}

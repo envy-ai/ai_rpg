@@ -93,13 +93,11 @@ function buildIdentifierIndex(characterDescriptors) {
         ))];
         for (const identifier of values) {
             const key = identifier.toLowerCase();
-            const existing = identifiers.get(key);
-            if (existing && existing.name.toLowerCase() !== canonicalKey) {
-                throw new Error(
-                    `Accompanying character identifier "${identifier}" is ambiguous between "${existing.name}" and "${name}".`
-                );
+            const matches = identifiers.get(key) || [];
+            if (!matches.some(existing => existing.name.toLowerCase() === canonicalKey)) {
+                matches.push({ name, identifier });
             }
-            identifiers.set(key, { name, identifier });
+            identifiers.set(key, matches);
         }
     }
     return identifiers;
@@ -116,10 +114,17 @@ function normalizePlayerActionAccompanyingCharacterSelection(
     const seen = new Set();
     return characterNames.map((identifier, index) => {
         const requested = normalizeIdentifier(identifier, `Accompanying character ${index + 1}`);
-        const match = identifiers.get(requested.toLowerCase());
-        if (!match) {
+        const matches = identifiers.get(requested.toLowerCase());
+        if (!matches?.length) {
             throw new Error(`"${requested}" is not an allowed exact character name or alias.`);
         }
+        if (matches.length > 1) {
+            const names = matches.map(match => `"${match.name}"`);
+            throw new Error(
+                `Accompanying character identifier "${requested}" is ambiguous between ${names.join(' and ')}.`
+            );
+        }
+        const [match] = matches;
         const canonicalKey = match.name.toLowerCase();
         if (seen.has(canonicalKey)) {
             throw new Error(`Accompanying character "${match.name}" is duplicated.`);

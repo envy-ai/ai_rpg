@@ -5,6 +5,7 @@ const vm = require('vm');
 
 const Globals = require('../Globals.js');
 const VehicleInfo = require('../VehicleInfo.js');
+const Utils = require('../Utils.js');
 
 function loadVehicleExitAvailabilityHelpers() {
     const source = fs.readFileSync(require.resolve('../api.js'), 'utf8');
@@ -34,6 +35,54 @@ this.shouldHideVehicleExitFromList = shouldHideVehicleExitFromList;`,
         shouldHideVehicleExitFromList: context.shouldHideVehicleExitFromList
     };
 }
+
+function loadVehicleTravelDisplayDetails() {
+    const source = fs.readFileSync(require.resolve('../api.js'), 'utf8');
+    const start = source.indexOf("function buildVehicleTravelDisplayDetails(vehicleInfo, { contextLabel = 'Vehicle' } = {}) {");
+    const end = source.indexOf('\n        function buildLocationResponse(location) {', start);
+    if (start < 0 || end < 0) {
+        throw new Error('Unable to locate vehicle travel display helper in api.js');
+    }
+
+    const context = {
+        VehicleInfo,
+        Globals,
+        Utils,
+        gameLocations: new Map(),
+        formatPendingVehicleDestinationLabel: () => null
+    };
+    vm.createContext(context);
+    vm.runInContext(
+        `${source.slice(start, end)}
+this.buildVehicleTravelDisplayDetails = buildVehicleTravelDisplayDetails;`,
+        context
+    );
+    return context.buildVehicleTravelDisplayDetails;
+}
+
+test('vehicle travel display leaves countdown fields null when ETA is unset', () => {
+    const previousElapsedTime = Globals.elapsedTime;
+    Globals.elapsedTime = 658;
+
+    try {
+        const buildVehicleTravelDisplayDetails = loadVehicleTravelDisplayDetails();
+        const details = buildVehicleTravelDisplayDetails({
+            currentDestination: null,
+            pendingDestination: null,
+            destinations: ['west-platform', 'east-platform'],
+            ETA: null,
+            departureTime: null,
+            vehicleExitId: 'tram-exit'
+        });
+
+        assert.equal(details.minutesToDestination, null);
+        assert.equal(details.timeToDestination, null);
+        assert.equal(details.isUnderway, false);
+        assert.equal(details.hasArrived, false);
+    } finally {
+        Globals.elapsedTime = previousElapsedTime;
+    }
+});
 
 test('getVehicleExitAvailabilityState treats ETA-elapsed pending arrivals as blocked', () => {
     const previousElapsedTime = Globals.elapsedTime;

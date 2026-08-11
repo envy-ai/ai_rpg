@@ -186,6 +186,41 @@ test('XML event parser converts core camelCase tags to existing event keys', () 
     }
 });
 
+test('event-check NPC updates expose canonical actor names from sanitized tracking sets', () => {
+    const previousDeps = Events._deps;
+
+    const scout = {
+        id: 'npc-scout',
+        name: 'QA Veiled Scout'
+    };
+    const courier = {
+        id: 'npc-courier',
+        name: 'QA Snow Courier'
+    };
+
+    try {
+        Events.initialize({
+            findActorByName: (name) => {
+                const normalized = String(name || '').trim().toLowerCase();
+                if (normalized === 'qa veiled scout') return scout;
+                if (normalized === 'qa snow courier') return courier;
+                return null;
+            }
+        });
+        Events._resetTrackingSets();
+        Events.newCharacters.add('QA Snow Courier');
+        Events.departedCharacters.add('QA Veiled Scout');
+
+        const state = Events._buildEventCheckNpcUpdateState(null);
+
+        assert.deepEqual(state.addedCharacters, ['QA Snow Courier']);
+        assert.deepEqual(state.departedCharacters, ['QA Veiled Scout']);
+    } finally {
+        Events._resetTrackingSets();
+        Events._deps = previousDeps;
+    }
+});
+
 test('XML event parser strictly parses and aggregates anyQuestObjectivesCompleted', () => {
     const parsed = Events._parseXmlEventCheckResponse(`
 <events>
@@ -421,6 +456,268 @@ test('hidden NPC reveal and hide events use configured opposed checks before tog
         Events._deps = previousDeps;
         Events._handlers = previousHandlers;
         Events._parsers = previousParsers;
+        Globals.currentPlayer = previousCurrentPlayer;
+    }
+});
+
+test('hidden NPC events reuse a matching player-action opposed check instead of rolling twice', async () => {
+    const previousDeps = Events._deps;
+    const previousHandlers = Events._handlers;
+    const previousParsers = Events._parsers;
+    const previousCurrentPlayer = Globals.currentPlayer;
+
+    const player = { id: 'player-1', name: 'Baato', isNPC: false, aliases: [] };
+    const shade = {
+        id: 'npc-shade',
+        name: 'Shade',
+        aliases: ['Whisper'],
+        isNPC: true,
+        isDead: false,
+        hiddenFromPlayer: true
+    };
+    let unexpectedRolls = 0;
+
+    try {
+        Globals.currentPlayer = player;
+        Events.initialize({
+            getCurrentPlayer: () => player,
+            findActorByName: (name) => ['shade', 'whisper'].includes(String(name || '').toLowerCase()) ? shade : null,
+            ensureNpcByName: async () => null,
+            getActiveSettingSnapshot: () => ({
+                hidingAttribute: 'dexterity',
+                hidingSkill: 'Stealth',
+                perceptionAttribute: 'wisdom',
+                perceptionSkill: 'Perception'
+            }),
+            resolveActionOutcome: () => {
+                unexpectedRolls += 1;
+                throw new Error('A matching pre-resolved check must not roll again.');
+            }
+        });
+
+        const successContext = {
+            preResolvedHiddenNpcChecks: [{
+                toolName: 'resolveOpposedSkillCheck',
+                actorName: 'player',
+                opponentName: 'Shade',
+                actionResolution: {
+                    success: true,
+                    skill: 'Perception',
+                    attribute: 'wisdom',
+                    opponent: {
+                        id: shade.id,
+                        name: shade.name,
+                        skill: 'Stealth',
+                        attribute: 'dexterity'
+                    }
+                }
+            }],
+            consumedPreResolvedHiddenNpcCheckIndexes: new Set()
+        };
+        await Events.applyEventOutcomes({
+            parsed: {
+                reveal_hidden_npc: [{
+                    name: 'Whisper',
+                    description: 'Baato spots the hidden scout.',
+                    useOpposedCheck: true
+                }]
+            }
+        }, successContext);
+
+        assert.equal(shade.hiddenFromPlayer, false);
+        assert.equal(successContext.hiddenNpcChecks, undefined);
+        assert.equal(unexpectedRolls, 0);
+
+        shade.hiddenFromPlayer = true;
+        const failureContext = {
+            preResolvedHiddenNpcChecks: [{
+                toolName: 'resolveOpposedSkillCheck',
+                actorName: 'Baato',
+                opponentName: 'Whisper',
+                actionResolution: {
+                    success: false,
+                    skill: 'Perception',
+                    attribute: 'wisdom',
+                    opponent: {
+                        id: shade.id,
+                        name: shade.name,
+                        skill: 'Stealth',
+                        attribute: 'dexterity'
+                    }
+                }
+            }],
+            consumedPreResolvedHiddenNpcCheckIndexes: new Set()
+        };
+        const parsed = {
+            parsed: {
+                reveal_hidden_npc: [{
+                    name: 'Shade',
+                    description: 'Baato searches but fails.',
+                    useOpposedCheck: true
+                }]
+            }
+        };
+        await Events.applyEventOutcomes(parsed, failureContext);
+
+        assert.equal(shade.hiddenFromPlayer, true);
+        assert.equal(parsed.parsed.reveal_hidden_npc[0].success, false);
+        assert.equal(parsed.parsed.reveal_hidden_npc[0].reusedActionCheck, true);
+        assert.equal(failureContext.hiddenNpcChecks, undefined);
+        assert.equal(unexpectedRolls, 0);
+    } finally {
+        Events._deps = previousDeps;
+        Events._handlers = previousHandlers;
+        Events._parsers = previousParsers;
+        Globals.currentPlayer = previousCurrentPlayer;
+    }
+});
+
+test('XML runEventChecks forwards a pre-resolved hidden NPC check into event outcomes', async () => {
+    const previousConfig = Globals.config;
+    const previousCurrentPlayer = Globals.currentPlayer;
+    const previousChatCompletion = LLMClient.chatCompletion;
+    const previousLogPrompt = LLMClient.logPrompt;
+    const previousDeps = Events._deps;
+    const previousTimeout = Events._baseTimeout;
+    const previousHandlers = Events._handlers;
+    const previousParsers = Events._parsers;
+    const previousAggregators = Events._aggregators;
+
+    const location = { id: 'loc-1', name: 'Marker', things: [] };
+    const player = {
+        id: 'player-1',
+        name: 'Baato',
+        aliases: [],
+        isNPC: false,
+        currentLocation: location.id
+    };
+    const shade = {
+        id: 'npc-shade',
+        name: 'Shade',
+        aliases: ['Whisper'],
+        isNPC: true,
+        isDead: false,
+        hiddenFromPlayer: true,
+        currentLocation: location.id
+    };
+    let unexpectedRolls = 0;
+
+    try {
+        Globals.config = {
+            ai: {},
+            event_checks: { enabled: true, use_xml: true },
+            quests: { enabled: false },
+            omit_npc_generation: true
+        };
+        Globals.currentPlayer = player;
+        LLMClient.chatCompletion = async () => `<events>
+  <revealHiddenNpc>
+    <npcName>Whisper</npcName>
+    <description>Baato spots the hidden scout.</description>
+    <useOpposedCheck>true</useOpposedCheck>
+  </revealHiddenNpc>
+</events>`;
+        LLMClient.logPrompt = () => {};
+        Events.initialize({
+            promptEnv: {
+                render: () => '<systemPrompt>system</systemPrompt><generationPrompt>generation</generationPrompt>'
+            },
+            parseXMLTemplate: () => ({
+                systemPrompt: 'system',
+                generationPrompt: 'generation'
+            }),
+            prepareBasePromptContext: async () => ({
+                needBarDefinitions: [],
+                npcs: [shade],
+                party: []
+            }),
+            Location: {
+                get: (id) => id === location.id ? location : null
+            },
+            findRegionByLocationId: () => null,
+            getCurrentPlayer: () => player,
+            findActorByName: (name) => ['shade', 'whisper'].includes(String(name || '').toLowerCase()) ? shade : null,
+            ensureNpcByName: async () => null,
+            getActiveSettingSnapshot: () => ({
+                hidingAttribute: 'dexterity',
+                hidingSkill: 'Stealth',
+                perceptionAttribute: 'wisdom',
+                perceptionSkill: 'Perception'
+            }),
+            resolveActionOutcome: () => {
+                unexpectedRolls += 1;
+                throw new Error('The XML event pipeline must reuse the supplied check.');
+            },
+            getConfig: () => Globals.config
+        });
+
+        const result = await Events.runEventChecks({
+            textToCheck: 'Baato spots Whisper.',
+            suppressNeedBarEventChecks: true,
+            suppressHousekeeping: true,
+            preResolvedHiddenNpcChecks: [{
+                toolName: 'resolveOpposedSkillCheck',
+                actorName: 'player',
+                opponentName: shade.name,
+                actionResolution: {
+                    success: true,
+                    skill: 'Perception',
+                    attribute: 'intelligence',
+                    opponent: {
+                        id: shade.id,
+                        name: shade.name,
+                        skill: 'Stealth',
+                        attribute: null
+                    }
+                }
+            }]
+        });
+
+        assert.equal(shade.hiddenFromPlayer, false);
+        assert.equal(
+            result.xmlEvents.beforeTravel.structured.parsed.reveal_hidden_npc[0].reusedActionCheck,
+            true
+        );
+        assert.deepEqual(result.hiddenNpcChecks, []);
+        assert.equal(unexpectedRolls, 0);
+
+        const conflictingResolution = {
+            success: true,
+            skill: 'Investigation',
+            attribute: 'wisdom',
+            opponent: {
+                id: shade.id,
+                name: shade.name,
+                skill: 'Stealth',
+                attribute: 'dexterity'
+            }
+        };
+        const conflictingMatch = Events._consumeMatchingPreResolvedHiddenNpcCheck({
+            context: {
+                preResolvedHiddenNpcChecks: [{
+                    toolName: 'resolveOpposedSkillCheck',
+                    actorName: 'player',
+                    opponentName: shade.name,
+                    actionResolution: conflictingResolution
+                }]
+            },
+            actor: player,
+            opponent: shade,
+            actorAttribute: 'wisdom',
+            actorSkill: 'Perception',
+            opponentAttribute: 'dexterity',
+            opponentSkill: 'Stealth'
+        });
+        assert.equal(conflictingMatch, null);
+    } finally {
+        Events._deps = previousDeps;
+        Events._baseTimeout = previousTimeout;
+        Events._handlers = previousHandlers;
+        Events._parsers = previousParsers;
+        Events._aggregators = previousAggregators;
+        LLMClient.chatCompletion = previousChatCompletion;
+        LLMClient.logPrompt = previousLogPrompt;
+        Globals.config = previousConfig;
         Globals.currentPlayer = previousCurrentPlayer;
     }
 });

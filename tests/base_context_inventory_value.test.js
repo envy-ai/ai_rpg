@@ -52,11 +52,11 @@ test('base-context compact inventory item lines include value before description
 
     assert.match(
         rendered,
-        /Fractured Sorcerous Orb: Uncommon level 2 \(24 gold\) - Fractured obsidian orb pulsing with unstable violet magical energy\./
+        /Fractured Sorcerous Orb: quantity 1; Uncommon level 2 \(24 gold\) - Fractured obsidian orb pulsing with unstable violet magical energy\./
     );
     assert.match(
         rendered,
-        /Brass Compass: Common level 1 \(3 gold\) - Points toward the nearest open road\./
+        /Brass Compass: quantity 1; Common level 1 \(3 gold\) - Points toward the nearest open road\./
     );
 });
 
@@ -203,7 +203,7 @@ test('base-context compact item lines render stack counts as a separate quantity
         rendered,
         /Training Dummy: quantity 7; Common level 1 \(0 gold\) - A battered straw target\./
     );
-    assert.doesNotMatch(rendered, /Single Torch: quantity 1;/);
+    assert.match(rendered, /Single Torch: quantity 1;/);
     assert.doesNotMatch(rendered, /Fractured Sorcerous Orb \(x2\):/);
     assert.doesNotMatch(rendered, /Silver Key \(x2\)/);
 });
@@ -380,6 +380,63 @@ test('base-context current location NPC list omits party members', () => {
     assert.match(currentLocationNpcBlock, /<name>Tessa<\/name>/);
 });
 
+test('base-context identifies dead actors and excludes them from current needs', () => {
+    const promptEnv = createPromptEnv();
+    const actor = ({ id, name, isDead, needs }) => ({
+        id,
+        name,
+        isDead,
+        description: `${name} description.`,
+        class: 'Tester',
+        race: 'Human',
+        personality: { type: '', traits: '', goals: [], notes: '', aiNotes: '' },
+        dispositionsTowardsPlayer: [],
+        selectedImportantMemories: [],
+        inventory: [],
+        skills: [],
+        abilities: [],
+        statusEffects: [],
+        needs
+    });
+    const deadNpc = actor({
+        id: 'npc-dead',
+        name: 'Fallen Tessa',
+        isDead: true,
+        needs: ['Fallen Tessa is fully rested.']
+    });
+    const livingNpc = actor({
+        id: 'npc-living',
+        name: 'Living Tessa',
+        isDead: false,
+        needs: ['Living Tessa needs water.']
+    });
+    const deadPartyMember = actor({
+        id: 'party-dead',
+        name: 'Fallen Mira',
+        isDead: true,
+        needs: ['Fallen Mira is fully energized.']
+    });
+    const context = {
+        ...buildRenderContext(),
+        npcs: [deadNpc, livingNpc],
+        party: [deadPartyMember],
+        partyMemberIds: [deadPartyMember.id]
+    };
+
+    const rendered = promptEnv.render('base-context.xml.njk', context);
+    const deadNpcBlock = rendered.match(/<npc>\s*<id>npc-dead<\/id>[\s\S]*?<\/npc>/)?.[0] || '';
+    const livingNpcBlock = rendered.match(/<npc>\s*<id>npc-living<\/id>[\s\S]*?<\/npc>/)?.[0] || '';
+    const deadPartyBlock = rendered.match(/<member>\s*<id>party-dead<\/id>[\s\S]*?<\/member>/)?.[0] || '';
+    const currentNeedsBlock = rendered.match(/<currentCharacterNeeds>([\s\S]*?)<\/currentCharacterNeeds>/)?.[1] || '';
+
+    assert.match(deadNpcBlock, /<isDead>true<\/isDead>/);
+    assert.match(livingNpcBlock, /<isDead>false<\/isDead>/);
+    assert.match(deadPartyBlock, /<isDead>true<\/isDead>/);
+    assert.doesNotMatch(currentNeedsBlock, /Fallen Tessa/);
+    assert.doesNotMatch(currentNeedsBlock, /Fallen Mira/);
+    assert.match(currentNeedsBlock, /Living Tessa needs water\./);
+});
+
 test('base-context renders character relationship sections with comments', () => {
     const promptEnv = createPromptEnv();
     const context = buildRenderContext();
@@ -497,7 +554,7 @@ test('base-context includes character hidden field only when true', () => {
 
     assert.match(
         rendered,
-        /<npc>\s*<id>npc-hidden<\/id>\s*<name>Shade<\/name>\s*<hidden>true<\/hidden>/
+        /<npc>\s*<id>npc-hidden<\/id>\s*<name>Shade<\/name>\s*<isDead>false<\/isDead>\s*<hidden>true<\/hidden>/
     );
     assert.doesNotMatch(
         rendered,

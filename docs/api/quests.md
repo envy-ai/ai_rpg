@@ -107,11 +107,13 @@ Objective completion:
 
 Completion rewards:
 - Rewards are processed once per completed quest. `rewardClaimed` is set to true when rewards are processed.
+- Reward item names are generated directly into the player's inventory. Each generated item carries its quest id and reward index in metadata and remains a distinct stack, allowing retries to recognize an already-created reward without merging it into unrelated inventory.
+- Currency rewards call `player.adjustCurrency(...)` and append `currencyChanges`.
 - XP rewards call `player.addExperience(...)` and append `experienceAwards`.
 - Faction reputation rewards resolve stored faction ids and call `player.setFactionStanding(...)`; applied rows append `factionStandingChanges` and reward summaries.
 - NPC disposition rewards resolve target NPCs, convert configured intensity to a disposition delta using the disposition range settings, apply the first-impression multiplier when applicable, write the NPC disposition toward the current player, and append `dispositionChanges`.
 - Unknown faction or NPC reward targets are skipped with console warnings during reward application.
-- Reward item names and reward currency are stored and displayed on quests. The completion handler includes them in reward summary/prose data, but it does not instantiate item rewards into inventory or adjust player currency in the active code path.
+- Reward prose is derived from the structured rewards after they are applied and is not run through event checks. This prevents narration from duplicating currency, items, XP, faction reputation, NPC dispositions, or incidental effects.
 
 ## Quest Shape
 

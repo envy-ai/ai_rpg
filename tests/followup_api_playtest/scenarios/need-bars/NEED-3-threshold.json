@@ -1,0 +1,344 @@
+{
+  "version": 1,
+  "scenario": "need-bars",
+  "case": "NEED-3-threshold",
+  "description": "Cross exactly one Rest threshold by the smallest representable downward amount and prove the canonical threshold label/effect metadata changes once without duplicate bars or side effects.",
+  "fixture": "need-bars-status-lifecycle",
+  "configProfile": "need-bars-mechanics",
+  "trackedPaths": [
+    "player.payload.player.locationId",
+    "player.payload.player.needBars",
+    "player.payload.player.statusEffects",
+    "player.payload.player.inventory",
+    "players.payload.players",
+    "calendar.payload.worldTime.timeMinutes",
+    "history.payload"
+  ],
+  "steps": [
+    {
+      "type": "loadFixture"
+    },
+    {
+      "type": "request",
+      "name": "set_at_threshold",
+      "method": "PUT",
+      "route": "/api/player/needs",
+      "body": {
+        "needs": [
+          {
+            "id": "rest",
+            "value": 150
+          }
+        ]
+      }
+    },
+    {
+      "type": "assert",
+      "assertions": [
+        {
+          "type": "httpStatus",
+          "equals": 200
+        },
+        {
+          "type": "responseOk",
+          "equals": true
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "responses.set_at_threshold",
+          "path": "payload.applied",
+          "where": {
+            "id": "rest",
+            "value": 150,
+            "currentThreshold": {
+              "threshold": 150,
+              "name": "Tired",
+              "effect": "Reduced focus and minor penalties"
+            }
+          },
+          "equals": 1
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "after",
+          "path": "player.payload.player.needBars",
+          "where": {
+            "id": "rest",
+            "value": 150,
+            "currentThreshold": {
+              "threshold": 150,
+              "name": "Tired",
+              "effect": "Reduced focus and minor penalties"
+            }
+          },
+          "equals": 1
+        }
+      ]
+    },
+    {
+      "type": "snapshot",
+      "name": "at_threshold"
+    },
+    {
+      "type": "request",
+      "name": "cross_threshold",
+      "method": "PUT",
+      "route": "/api/player/needs",
+      "body": {
+        "needs": [
+          {
+            "id": "rest",
+            "value": 149.99999999999997
+          }
+        ]
+      }
+    },
+    {
+      "type": "assert",
+      "assertions": [
+        {
+          "type": "httpStatus",
+          "equals": 200
+        },
+        {
+          "type": "responseOk",
+          "equals": true
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "responses.cross_threshold",
+          "path": "payload.applied",
+          "where": {
+            "id": "rest",
+            "value": 149.99999999999997,
+            "currentThreshold": {
+              "threshold": 10,
+              "name": "Very Tired",
+              "effect": "-5% to health and attributes"
+            }
+          },
+          "equals": 1
+        },
+        {
+          "type": "count",
+          "source": "responses.cross_threshold",
+          "path": "payload.needs",
+          "equals": 4
+        },
+        {
+          "type": "uniqueBy",
+          "source": "responses.cross_threshold",
+          "path": "payload.needs",
+          "key": "id"
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "after",
+          "path": "player.payload.player.needBars",
+          "where": {
+            "id": "rest",
+            "value": 149.99999999999997,
+            "currentThreshold": {
+              "threshold": 10,
+              "name": "Very Tired",
+              "effect": "-5% to health and attributes"
+            }
+          },
+          "equals": 1
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "after",
+          "path": "player.payload.player.needBars",
+          "where": {
+            "id": "rest",
+            "currentThreshold": {
+              "threshold": 150
+            }
+          },
+          "equals": 0
+        },
+        {
+          "type": "stateUnchanged",
+          "beforeSource": "snapshots.at_threshold",
+          "afterSource": "after",
+          "paths": [
+            "player.payload.player.locationId",
+            "player.payload.player.statusEffects",
+            "player.payload.player.inventory",
+            "calendar.payload.worldTime.timeMinutes",
+            "history.payload"
+          ]
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "after",
+          "path": "player.payload.player.needBars",
+          "where": {
+            "id": "food",
+            "value": 600
+          },
+          "equals": 1
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "after",
+          "path": "player.payload.player.needBars",
+          "where": {
+            "id": "stamina",
+            "value": 600
+          },
+          "equals": 1
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "after",
+          "path": "player.payload.player.needBars",
+          "where": {
+            "id": "mana",
+            "value": 600
+          },
+          "equals": 1
+        },
+        {
+          "type": "entityArrayObjectCount",
+          "source": "after",
+          "collection": "players",
+          "id": "$fixture.companionId",
+          "path": "needBars",
+          "where": {
+            "id": "food",
+            "value": 600
+          },
+          "equals": 1
+        },
+        {
+          "type": "entityArrayObjectCount",
+          "source": "after",
+          "collection": "players",
+          "id": "$fixture.companionId",
+          "path": "needBars",
+          "where": {
+            "id": "rest",
+            "value": 401
+          },
+          "equals": 1
+        },
+        {
+          "type": "entityArrayObjectCount",
+          "source": "after",
+          "collection": "players",
+          "id": "$fixture.companionId",
+          "path": "needBars",
+          "where": {
+            "id": "stamina",
+            "value": 600
+          },
+          "equals": 1
+        },
+        {
+          "type": "entityArrayObjectCount",
+          "source": "after",
+          "collection": "players",
+          "id": "$fixture.nonPartyNpcId",
+          "path": "needBars",
+          "where": {
+            "id": "stamina",
+            "value": 900
+          },
+          "equals": 1
+        },
+        {
+          "type": "entityArrayObjectCount",
+          "source": "after",
+          "collection": "players",
+          "id": "$fixture.nonPartyNpcId",
+          "path": "needBars",
+          "where": {
+            "id": "mana",
+            "value": 500
+          },
+          "equals": 1
+        }
+      ]
+    },
+    {
+      "type": "snapshot",
+      "name": "after_crossing"
+    },
+    {
+      "type": "request",
+      "name": "repeat_crossed_value",
+      "method": "PUT",
+      "route": "/api/player/needs",
+      "body": {
+        "needs": [
+          {
+            "id": "rest",
+            "value": 149.99999999999997
+          }
+        ]
+      }
+    },
+    {
+      "type": "assert",
+      "assertions": [
+        {
+          "type": "httpStatus",
+          "equals": 200
+        },
+        {
+          "type": "responseOk",
+          "equals": true
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "responses.repeat_crossed_value",
+          "path": "payload.applied",
+          "where": {
+            "id": "rest",
+            "value": 149.99999999999997,
+            "currentThreshold": {
+              "threshold": 10,
+              "name": "Very Tired",
+              "effect": "-5% to health and attributes"
+            }
+          },
+          "equals": 1
+        },
+        {
+          "type": "count",
+          "source": "responses.repeat_crossed_value",
+          "path": "payload.needs",
+          "equals": 4
+        },
+        {
+          "type": "uniqueBy",
+          "source": "responses.repeat_crossed_value",
+          "path": "payload.needs",
+          "key": "id"
+        },
+        {
+          "type": "stateUnchanged",
+          "beforeSource": "snapshots.after_crossing",
+          "afterSource": "after",
+          "paths": [
+            "player.payload.player.locationId",
+            "player.payload.player.needBars",
+            "player.payload.player.statusEffects",
+            "player.payload.player.inventory",
+            "players.payload.players",
+            "calendar.payload.worldTime.timeMinutes",
+            "history.payload"
+          ]
+        },
+        {
+          "type": "noRealtimeErrors"
+        },
+        {
+          "type": "noUnexpectedErrorLogs"
+        }
+      ]
+    }
+  ]
+}

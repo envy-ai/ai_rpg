@@ -24,12 +24,12 @@ Presentation-only instructions should remain advisory or be normalized when thei
 
 7. **Event no-result syntax.** Bare no-event replies are intentionally tolerated, but the current `<done` substring check is too broad. Parse a real empty `<done/>` element or a recognized plain no-result token; do not accept malformed XML merely because it begins with `<done`.
 
-8. **Nested event schemas and semantic duplicate detection.** Validate allowed, unique direct children for every built-in event type. Canonicalize events by their parsed semantic fields so reordering children or adding ignored children cannot evade duplicate detection and apply the same event twice. Registered mod events should use their registered schema/validator.
+8. **Nested event schemas and semantic duplicate detection.** Validate allowed, unique direct children for every built-in event type. Canonicalize events by their parsed semantic fields so reordering children or adding ignored children cannot evade duplicate detection and apply the same event twice. Registered mod events should use their registered schema/validator. Implemented subset: a TinyBrain `defeatedEnemy` for a live zero-health actor is rejected unless a matching dead/incapacitated outcome appears in the current or an earlier accepted checkpoint; this closes the defeat-XP-without-persistent-outcome case without inspecting prose.
 
 9. **SKIP — prose-to-fact verification.** Do not add parser enforcement that attempts to prove quest-reward, crafting, location-modification, NPC-action, or game-intro prose contains every authoritative fact. Coverage/audit checkpoints and normal prompt review remain responsible for prose fidelity; brittle substring or heuristic prose validation would create false failures.
 
 10. **Scheduled-event tool-plan reconciliation.** The final parser preserves the approved summary and player-presence rules, but it does not prove that all planned state changes were implemented exactly once or that the hidden summary matches tool outcomes. Introduce a structured plan checkpoint and compare it with successful tool invocations inside the retryable final parser. Legitimate events requiring no mutation must remain valid.
 
-## Operational retry improvement
+## Operational retry feedback
 
-Parse retries currently remove the malformed terminal response and rerun the unchanged prompt without a concise correction. This can repeat a deterministic error until `ai.retryAttempts` is exhausted. A future change should provide a short, parser-generated correction instruction without exposing a backtrace or internal error details, while retaining prior successful tool results and preventing duplicate state-changing calls.
+Implemented: parse retries remove the malformed terminal response, retain prior successful tool calls/results, and append a concise correction request containing the parser's message without its stack trace. The correction explicitly forbids repeating successful tool calls already present in the conversation. This gives deterministic semantic failures actionable feedback instead of resampling an unchanged checkpoint until `ai.retryAttempts` is exhausted.

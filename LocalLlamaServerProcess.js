@@ -59,12 +59,19 @@ class LocalLlamaServerProcess {
         );
     }
 
-    async start() {
+    async start({ beforeStartOptions = {} } = {}) {
         if (this.child || this.pid !== null) {
             throw new Error(`Managed llama.cpp server is already running with PID ${this.pid}.`);
         }
+        if (
+            !beforeStartOptions
+            || typeof beforeStartOptions !== 'object'
+            || Array.isArray(beforeStartOptions)
+        ) {
+            throw new Error('Managed llama.cpp beforeStartOptions must be an object.');
+        }
 
-        await this.beforeStart();
+        await this.beforeStart(beforeStartOptions);
 
         let child;
         try {

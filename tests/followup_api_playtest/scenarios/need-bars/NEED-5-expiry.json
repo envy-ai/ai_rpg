@@ -1,0 +1,362 @@
+{
+  "version": 1,
+  "scenario": "need-bars",
+  "case": "NEED-5-expiry",
+  "description": "Install the fixture's deterministic ten-minute timed status, advance to one minute remaining, cross expiry once, and prove the modifier does not tick or expire twice.",
+  "fixture": "need-bars-status-lifecycle",
+  "configProfile": "need-bars-mechanics",
+  "trackedPaths": [
+    "player.payload.player.locationId",
+    "player.payload.player.health",
+    "player.payload.player.maxHealth",
+    "player.payload.player.needBars",
+    "player.payload.player.statusEffects",
+    "player.payload.player.inventory",
+    "players.payload.players",
+    "calendar.payload.worldTime.timeMinutes",
+    "history.payload"
+  ],
+  "steps": [
+    {
+      "type": "loadFixture"
+    },
+    {
+      "type": "snapshot",
+      "name": "before_status"
+    },
+    {
+      "type": "request",
+      "name": "install_status",
+      "method": "PUT",
+      "route": "/api/player/status",
+      "body": {
+        "statusEffects": [
+          {
+            "id": "status_194",
+            "name": "$fixture.effectName",
+            "description": "$fixture.effectName",
+            "attributes": [
+              {
+                "attribute": "$fixture.effectAttribute",
+                "modifier": "$fixture.effectAttributeModifier"
+              }
+            ],
+            "skills": [],
+            "needBars": [
+              {
+                "name": "$fixture.effectNeedBarId",
+                "delta": "$fixture.effectNeedDeltaPerMinute"
+              }
+            ],
+            "duration": "$fixture.effectDurationMinutes",
+            "appliedAt": 663
+          }
+        ]
+      }
+    },
+    {
+      "type": "assert",
+      "assertions": [
+        {
+          "type": "httpStatus",
+          "equals": 200
+        },
+        {
+          "type": "responseOk",
+          "equals": true
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "after",
+          "path": "player.payload.player.statusEffects",
+          "where": {
+            "id": "status_194",
+            "name": "$fixture.effectName",
+            "duration": "$fixture.effectDurationMinutes",
+            "appliedAt": 663
+          },
+          "equals": 1
+        },
+        {
+          "type": "exactDelta",
+          "beforeSource": "snapshots.before_status",
+          "afterSource": "after",
+          "path": "player.payload.player.maxHealth",
+          "delta": 4
+        },
+        {
+          "type": "exactDelta",
+          "beforeSource": "snapshots.before_status",
+          "afterSource": "after",
+          "path": "calendar.payload.worldTime.timeMinutes",
+          "delta": 0
+        },
+        {
+          "type": "stateUnchanged",
+          "beforeSource": "snapshots.before_status",
+          "afterSource": "after",
+          "paths": [
+            "history.payload.history",
+            "player.payload.player.locationId",
+            "player.payload.player.inventory"
+          ]
+        }
+      ]
+    },
+    {
+      "type": "snapshot",
+      "name": "status_start"
+    },
+    {
+      "type": "request",
+      "name": "advance_to_one_minute_remaining",
+      "method": "POST",
+      "route": "/api/slash-command",
+      "body": {
+        "command": "time",
+        "argsText": "+9 minutes"
+      }
+    },
+    {
+      "type": "assert",
+      "assertions": [
+        {
+          "type": "httpStatus",
+          "equals": 200
+        },
+        {
+          "type": "responseOk",
+          "equals": true
+        },
+        {
+          "type": "exactDelta",
+          "beforeSource": "snapshots.status_start",
+          "afterSource": "after",
+          "path": "calendar.payload.worldTime.timeMinutes",
+          "delta": 9
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "after",
+          "path": "player.payload.player.statusEffects",
+          "where": {
+            "id": "status_194",
+            "name": "$fixture.effectName",
+            "duration": 1,
+            "appliedAt": 672
+          },
+          "equals": 1
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "after",
+          "path": "player.payload.player.statusEffects.0.attributes",
+          "where": {
+            "attribute": "$fixture.effectAttribute",
+            "modifier": "$fixture.effectAttributeModifier"
+          },
+          "equals": 1
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "after",
+          "path": "player.payload.player.statusEffects.0.needBars",
+          "where": {
+            "name": "$fixture.effectNeedBarId",
+            "delta": "$fixture.effectNeedDeltaPerMinute"
+          },
+          "equals": 1
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "after",
+          "path": "player.payload.player.needBars",
+          "where": {
+            "id": "food",
+            "value": 638.7
+          },
+          "equals": 1
+        },
+        {
+          "type": "equals",
+          "source": "after",
+          "path": "player.payload.player.maxHealth",
+          "equals": 43
+        },
+        {
+          "type": "equals",
+          "source": "after",
+          "path": "player.payload.player.health",
+          "equals": 43
+        },
+        {
+          "type": "stateUnchanged",
+          "beforeSource": "snapshots.status_start",
+          "afterSource": "after",
+          "paths": [
+            "history.payload.history",
+            "player.payload.player.locationId",
+            "player.payload.player.inventory"
+          ]
+        }
+      ]
+    },
+    {
+      "type": "snapshot",
+      "name": "one_minute_remaining"
+    },
+    {
+      "type": "request",
+      "name": "cross_expiry",
+      "method": "POST",
+      "route": "/api/slash-command",
+      "body": {
+        "command": "time",
+        "argsText": "+1 minute"
+      }
+    },
+    {
+      "type": "assert",
+      "assertions": [
+        {
+          "type": "httpStatus",
+          "equals": 200
+        },
+        {
+          "type": "responseOk",
+          "equals": true
+        },
+        {
+          "type": "exactDelta",
+          "beforeSource": "snapshots.one_minute_remaining",
+          "afterSource": "after",
+          "path": "calendar.payload.worldTime.timeMinutes",
+          "delta": 1
+        },
+        {
+          "type": "count",
+          "source": "after",
+          "path": "player.payload.player.statusEffects",
+          "equals": 0
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "after",
+          "path": "player.payload.player.needBars",
+          "where": {
+            "id": "food",
+            "value": 643
+          },
+          "equals": 1
+        },
+        {
+          "type": "equals",
+          "source": "after",
+          "path": "player.payload.player.maxHealth",
+          "equals": 39
+        },
+        {
+          "type": "equals",
+          "source": "after",
+          "path": "player.payload.player.health",
+          "equals": 39
+        },
+        {
+          "type": "stateUnchanged",
+          "beforeSource": "snapshots.one_minute_remaining",
+          "afterSource": "after",
+          "paths": [
+            "history.payload.history",
+            "player.payload.player.locationId",
+            "player.payload.player.inventory"
+          ]
+        }
+      ]
+    },
+    {
+      "type": "snapshot",
+      "name": "after_expiry"
+    },
+    {
+      "type": "request",
+      "name": "advance_after_expiry",
+      "method": "POST",
+      "route": "/api/slash-command",
+      "body": {
+        "command": "time",
+        "argsText": "+1 minute"
+      }
+    },
+    {
+      "type": "assert",
+      "assertions": [
+        {
+          "type": "httpStatus",
+          "equals": 200
+        },
+        {
+          "type": "responseOk",
+          "equals": true
+        },
+        {
+          "type": "exactDelta",
+          "beforeSource": "snapshots.after_expiry",
+          "afterSource": "after",
+          "path": "calendar.payload.worldTime.timeMinutes",
+          "delta": 1
+        },
+        {
+          "type": "count",
+          "source": "after",
+          "path": "player.payload.player.statusEffects",
+          "equals": 0
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "after",
+          "path": "player.payload.player.needBars",
+          "where": {
+            "id": "food",
+            "value": 642.3
+          },
+          "equals": 1
+        },
+        {
+          "type": "equals",
+          "source": "after",
+          "path": "player.payload.player.maxHealth",
+          "equals": 39
+        },
+        {
+          "type": "equals",
+          "source": "after",
+          "path": "player.payload.player.health",
+          "equals": 39
+        },
+        {
+          "type": "historyAddedTypeCount",
+          "entryType": "status-summary",
+          "equals": 0,
+          "beforeSource": "snapshots.status_start",
+          "afterSource": "after"
+        },
+        {
+          "type": "stateUnchanged",
+          "beforeSource": "snapshots.after_expiry",
+          "afterSource": "after",
+          "paths": [
+            "history.payload.history",
+            "player.payload.player.locationId",
+            "player.payload.player.inventory"
+          ]
+        },
+        {
+          "type": "noRealtimeErrors"
+        },
+        {
+          "type": "noUnexpectedErrorLogs"
+        }
+      ]
+    }
+  ]
+}

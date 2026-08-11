@@ -1,0 +1,271 @@
+{
+  "version": 1,
+  "scenario": "stealth-hidden",
+  "case": "HIDE-4-visible-npc-hides",
+  "description": "A visible NPC's precommitted voluntary hiding demonstration must resolve one NPC Stealth versus player Perception check and conceal the NPC only after success.",
+  "fixture": "stealth-hidden-npcs",
+  "configProfile": "stealth-hidden-mechanics",
+  "trackedPaths": [
+    "player.payload.player.locationId",
+    "players.payload.players",
+    "currentLocation.payload.location.npcIds",
+    "history.payload",
+    "calendar.payload.worldTime.timeMinutes"
+  ],
+  "steps": [
+    {
+      "type": "loadFixture"
+    },
+    {
+      "type": "request",
+      "name": "make_player_perception_certain_to_lose",
+      "method": "PUT",
+      "route": "/api/npcs/$fixture.playerId",
+      "body": {
+        "attributes": {
+          "wisdom": 1
+        },
+        "skills": {
+          "Perception": 0
+        }
+      }
+    },
+    {
+      "type": "request",
+      "name": "prepare_decoy_voluntary_hiding_demo",
+      "method": "PUT",
+      "route": "/api/npcs/$fixture.decoyId",
+      "body": {
+        "hiddenFromPlayer": false,
+        "attributes": {
+          "dexterity": 20
+        },
+        "skills": {
+          "Stealth": 20
+        },
+        "aiNotes": "QA test continuity: QA Loud Decoy has already volunteered to perform exactly one hiding demonstration when Baato gives the agreed signal. This is the NPC's own precommitted action, not an order or assertion of player control. The opposed mechanic is QA Loud Decoy's Stealth against Baato's Perception."
+      }
+    },
+    {
+      "type": "request",
+      "name": "isolate_scout",
+      "method": "POST",
+      "route": "/api/npcs/$fixture.scoutId/teleport",
+      "body": {
+        "locationId": "$fixture.isolationLocationId",
+        "accountTravelTime": false
+      }
+    },
+    {
+      "type": "request",
+      "name": "isolate_courier",
+      "method": "POST",
+      "route": "/api/npcs/char_37/teleport",
+      "body": {
+        "locationId": "$fixture.isolationLocationId",
+        "accountTravelTime": false
+      }
+    },
+    {
+      "type": "assert",
+      "assertions": [
+        {
+          "type": "httpStatus",
+          "equals": 200
+        },
+        {
+          "type": "responseOk",
+          "equals": true
+        },
+        {
+          "type": "equals",
+          "source": "responses.make_player_perception_certain_to_lose",
+          "path": "payload.npc.attributes.wisdom",
+          "equals": 1
+        },
+        {
+          "type": "equals",
+          "source": "responses.make_player_perception_certain_to_lose",
+          "path": "payload.npc.skills.Perception",
+          "equals": 0
+        },
+        {
+          "type": "equals",
+          "source": "responses.prepare_decoy_voluntary_hiding_demo",
+          "path": "payload.npc.hiddenFromPlayer",
+          "equals": false
+        },
+        {
+          "type": "equals",
+          "source": "responses.prepare_decoy_voluntary_hiding_demo",
+          "path": "payload.npc.attributes.dexterity",
+          "equals": 20
+        },
+        {
+          "type": "equals",
+          "source": "responses.prepare_decoy_voluntary_hiding_demo",
+          "path": "payload.npc.skills.Stealth",
+          "equals": 20
+        },
+        {
+          "type": "entityField",
+          "source": "after",
+          "collection": "players",
+          "id": "$fixture.scoutId",
+          "path": "locationId",
+          "equals": "$fixture.isolationLocationId"
+        },
+        {
+          "type": "entityField",
+          "source": "after",
+          "collection": "players",
+          "id": "char_37",
+          "path": "locationId",
+          "equals": "$fixture.isolationLocationId"
+        },
+        {
+          "type": "entityField",
+          "source": "after",
+          "collection": "players",
+          "id": "$fixture.decoyId",
+          "path": "locationId",
+          "equals": "$fixture.baselineLocationId"
+        },
+        {
+          "type": "entityField",
+          "source": "after",
+          "collection": "players",
+          "id": "$fixture.decoyId",
+          "path": "hiddenFromPlayer",
+          "equals": false
+        }
+      ]
+    },
+    {
+      "type": "snapshot",
+      "name": "before_hiding_demo"
+    },
+    {
+      "type": "chat",
+      "name": "observe_hiding_demo",
+      "text": "<f> I give QA Loud Decoy the agreed signal and remain still while she voluntarily performs the one hiding demonstration she already promised. She is the acting character and I am only the observer; I do not direct or force her. Resolve exactly one opposed contest as QA Loud Decoy's Stealth against my Perception. If she succeeds, she conceals herself from me and remains hidden through the end of the response; do not have her reappear, step out, or end the demonstration yet. I do not move, attack, use an item, search afterward, or perform any second action.",
+      "travel": false,
+      "interactive": {
+        "roll": 20,
+        "questAccepted": false,
+        "confirmed": false
+      }
+    },
+    {
+      "type": "assert",
+      "assertions": [
+        {
+          "type": "httpStatus",
+          "equals": 200
+        },
+        {
+          "type": "responseOk",
+          "equals": true
+        },
+        {
+          "type": "count",
+          "source": "responses.observe_hiding_demo",
+          "path": "payload.toolInvocations",
+          "equals": 1
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "responses.observe_hiding_demo",
+          "path": "payload.toolInvocations",
+          "where": {
+            "name": "resolveOpposedSkillCheck",
+            "metadata": {
+              "actor": "$fixture.decoyName",
+              "opponent": "$fixture.playerName",
+              "actionResolution": {
+                "success": true,
+                "skill": "Stealth",
+                "opponent": {
+                  "id": "$fixture.playerId",
+                  "name": "$fixture.playerName",
+                  "skill": "Perception"
+                }
+              }
+            }
+          },
+          "equals": 1
+        },
+        {
+          "type": "equals",
+          "source": "responses.observe_hiding_demo",
+          "path": "payload.checkResultsRecorded",
+          "equals": true
+        },
+        {
+          "type": "equals",
+          "source": "responses.observe_hiding_demo",
+          "path": "payload.locationRefreshRequested",
+          "equals": true
+        },
+        {
+          "type": "entityField",
+          "source": "after",
+          "collection": "players",
+          "id": "$fixture.decoyId",
+          "path": "hiddenFromPlayer",
+          "equals": true
+        },
+        {
+          "type": "entityField",
+          "source": "after",
+          "collection": "players",
+          "id": "$fixture.decoyId",
+          "path": "locationId",
+          "equals": "$fixture.baselineLocationId"
+        },
+        {
+          "type": "includes",
+          "source": "after",
+          "path": "currentLocation.payload.location.npcIds",
+          "value": "$fixture.decoyId"
+        },
+        {
+          "type": "historyAddedTypeCount",
+          "entryType": "check-results",
+          "equals": 1,
+          "beforeSource": "snapshots.before_hiding_demo",
+          "afterSource": "after"
+        },
+        {
+          "type": "historyAddedTypeCount",
+          "entryType": "player-action",
+          "equals": 1,
+          "beforeSource": "snapshots.before_hiding_demo",
+          "afterSource": "after"
+        },
+        {
+          "type": "historyAddedTypeCount",
+          "entryType": "event-summary",
+          "equals": 1,
+          "beforeSource": "snapshots.before_hiding_demo",
+          "afterSource": "after"
+        },
+        {
+          "type": "equals",
+          "source": "after",
+          "path": "player.payload.player.locationId",
+          "equals": "$fixture.baselineLocationId"
+        },
+        {
+          "type": "noRealtimeErrors"
+        },
+        {
+          "type": "noUnexpectedErrorLogs"
+        }
+      ]
+    }
+  ],
+  "humanReview": [
+    "The prose should portray QA Loud Decoy voluntarily attempting one hiding demonstration and becoming concealed only after the successful opposed result. Baato must remain an observer and perform no search, movement, combat, item use, or second action. This is human review only; do not encode prose wording checks."
+  ]
+}

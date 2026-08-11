@@ -1,0 +1,144 @@
+{
+  "version": 1,
+  "scenario": "fast-travel",
+  "case": "FAST-7-invalid-target",
+  "description": "Fast-travel preview and teleport reject the same nonexistent canonical destination before any player, character, location, clock, or history mutation.",
+  "fixture": "fast-travel-visited-favorites",
+  "configProfile": "cross-region-mechanics",
+  "trackedPaths": [
+    "player.payload.player.locationId",
+    "players.payload.players",
+    "locations.payload.locations",
+    "calendar.payload.worldTime.timeMinutes",
+    "history.payload"
+  ],
+  "steps": [
+    {
+      "type": "loadFixture"
+    },
+    {
+      "type": "snapshot",
+      "name": "before_invalid_requests"
+    },
+    {
+      "type": "request",
+      "name": "preview_missing_target",
+      "method": "GET",
+      "route": "/api/player/fast-travel-preview?destinationId=qa_missing_fast_travel_target"
+    },
+    {
+      "type": "assert",
+      "assertions": [
+        {
+          "type": "httpStatus",
+          "equals": 404
+        },
+        {
+          "type": "responseOk",
+          "equals": false
+        },
+        {
+          "type": "equals",
+          "source": "responses.preview_missing_target",
+          "path": "payload.success",
+          "equals": false
+        },
+        {
+          "type": "equals",
+          "source": "responses.preview_missing_target",
+          "path": "payload.error",
+          "equals": "Destination location 'qa_missing_fast_travel_target' not found."
+        },
+        {
+          "type": "stateUnchanged",
+          "beforeSource": "snapshots.before_invalid_requests",
+          "afterSource": "after",
+          "paths": [
+            "player.payload.player.locationId",
+            "players.payload.players",
+            "locations.payload.locations",
+            "calendar.payload.worldTime.timeMinutes",
+            "history.payload"
+          ]
+        }
+      ]
+    },
+    {
+      "type": "request",
+      "name": "teleport_missing_target",
+      "method": "POST",
+      "route": "/api/npcs/$fixture.playerId/teleport",
+      "body": {
+        "locationId": "qa_missing_fast_travel_target",
+        "accountTravelTime": true,
+        "storyToolTeleport": false,
+        "accompanyingCharacters": []
+      }
+    },
+    {
+      "type": "assert",
+      "assertions": [
+        {
+          "type": "httpStatus",
+          "equals": 404
+        },
+        {
+          "type": "responseOk",
+          "equals": false
+        },
+        {
+          "type": "equals",
+          "source": "responses.teleport_missing_target",
+          "path": "payload.success",
+          "equals": false
+        },
+        {
+          "type": "equals",
+          "source": "responses.teleport_missing_target",
+          "path": "payload.error",
+          "equals": "Destination location 'qa_missing_fast_travel_target' not found"
+        },
+        {
+          "type": "stateUnchanged",
+          "beforeSource": "snapshots.before_invalid_requests",
+          "afterSource": "after",
+          "paths": [
+            "player.payload.player.locationId",
+            "players.payload.players",
+            "locations.payload.locations",
+            "calendar.payload.worldTime.timeMinutes",
+            "history.payload"
+          ]
+        },
+        {
+          "type": "historyAddedTypeCount",
+          "entryType": "player-action",
+          "equals": 0,
+          "beforeSource": "snapshots.before_invalid_requests",
+          "afterSource": "after"
+        },
+        {
+          "type": "historyAddedTypeCount",
+          "entryType": "event-summary",
+          "equals": 0,
+          "beforeSource": "snapshots.before_invalid_requests",
+          "afterSource": "after"
+        },
+        {
+          "type": "historyAddedTypeCount",
+          "entryType": "while-you-were-away",
+          "equals": 0,
+          "beforeSource": "snapshots.before_invalid_requests",
+          "afterSource": "after"
+        },
+        {
+          "type": "noRealtimeErrors"
+        },
+        {
+          "type": "noUnexpectedErrorLogs"
+        }
+      ]
+    }
+  ],
+  "humanReview": []
+}

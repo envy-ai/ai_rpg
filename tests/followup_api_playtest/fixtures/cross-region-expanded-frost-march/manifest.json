@@ -1,0 +1,128 @@
+{
+  "version": 1,
+  "name": "cross-region-expanded-frost-march",
+  "description": "Validated post-REG-1 QA Frost March fixture with Baato at the generated entrance and QA Border Lantern preserved as an unexpanded child stub.",
+  "createdAt": "2026-08-11T09:28:05.957Z",
+  "source": {
+    "setupCommand": "Derived from the planned @@ QA Frost March fixture after the fully verified REG-1 direct-entry traversal. The target region is expanded once, Baato remains at its canonical entrance, and QA Border Lantern remains unexpanded for REG-2.",
+    "saveName": "2026-08-11T09-25-58-423Z_Monster_Girl_Life_2026-06b-Baato-March_Start_Marker-char_2-msoggqhj",
+    "saveType": "saves",
+    "settingName": "Monster Girl Life 2026-06b",
+    "playerName": "Baato"
+  },
+  "configProfile": "cross-region-mechanics",
+  "requiredMods": [
+    "implants",
+    "modules",
+    "nsfw-boost",
+    "party-needs",
+    "scene-illustration"
+  ],
+  "worldTime": {
+    "dayIndex": 0,
+    "timeMinutes": 663
+  },
+  "entities": {
+    "playerId": "char_2",
+    "originRegionId": "region_1",
+    "originLocationId": "loc_5",
+    "expandedRegionId": "region_1786438821952_m5baxvz2",
+    "entranceLocationId": "loc_39",
+    "childLocationStubId": "loc_38",
+    "originExitId": "exit_68",
+    "entranceToChildExitId": "exit_80",
+    "childToEntranceExitId": "exit_70"
+  },
+  "invariants": [
+    {
+      "type": "equals",
+      "source": "after",
+      "path": "player.payload.player.locationId",
+      "equals": "loc_39"
+    },
+    {
+      "type": "equals",
+      "source": "after",
+      "path": "calendar.payload.worldTime.timeMinutes",
+      "equals": 663
+    },
+    {
+      "type": "entityField",
+      "source": "after",
+      "collection": "regions",
+      "id": "region_1786438821952_m5baxvz2",
+      "path": "name",
+      "equals": "QA Frost March"
+    },
+    {
+      "type": "entityField",
+      "source": "after",
+      "collection": "locations",
+      "id": "loc_39",
+      "path": "regionId",
+      "equals": "region_1786438821952_m5baxvz2"
+    },
+    {
+      "type": "entityField",
+      "source": "after",
+      "collection": "locations",
+      "id": "loc_39",
+      "path": "isStub",
+      "equals": false
+    },
+    {
+      "type": "entityField",
+      "source": "after",
+      "collection": "locations",
+      "id": "loc_38",
+      "path": "name",
+      "equals": "QA Border Lantern"
+    },
+    {
+      "type": "entityField",
+      "source": "after",
+      "collection": "locations",
+      "id": "loc_38",
+      "path": "regionId",
+      "equals": "region_1786438821952_m5baxvz2"
+    },
+    {
+      "type": "entityField",
+      "source": "after",
+      "collection": "locations",
+      "id": "loc_38",
+      "path": "isStub",
+      "equals": true
+    },
+    {
+      "type": "equals",
+      "source": "after",
+      "path": "currentLocation.payload.location.exits.qa_border_lantern.id",
+      "equals": "exit_80"
+    },
+    {
+      "type": "equals",
+      "source": "after",
+      "path": "currentLocation.payload.location.exits.qa_border_lantern.destination",
+      "equals": "loc_38"
+    },
+    {
+      "type": "equals",
+      "source": "after",
+      "path": "currentLocation.payload.location.exits.qa_border_lantern.travelTimeMinutes",
+      "equals": 2
+    },
+    {
+      "type": "equals",
+      "source": "after",
+      "path": "currentLocation.payload.location.exits.qa_border_lantern.destinationIsRegionEntryStub",
+      "equals": false
+    }
+  ],
+  "validation": {
+    "passed": true,
+    "checkedAt": "2026-08-11T09:22:54.357Z",
+    "evidence": "REG-1 live-verify attempt 4 passed 40/40 authoritative assertions. The generated region map had unique membership; loc_39 was the sole canonical entrance/current location; loc_38 remained one ordinary child stub in QA Frost March with a two-minute reciprocal route."
+  },
+  "integrity": "sha256:b404c2bd938d9f0b0c83d6150b4cfcb9cbaa037893a69aa758c76ac2222a6e16"
+}

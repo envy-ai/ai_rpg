@@ -280,8 +280,8 @@ test('resolveAreaAttack returns grouped per-target content and metadata', async 
     const toolMessage = capturedMessagesByRound[1].find(message => message.role === 'tool');
     assert.equal(toolMessage.content, [
         'Area attack results:',
-        '- Commander Razorclaw: hit, Damage: 14%, Remaining health: 62%',
-        '- Goblin Sapper: hit, Damage: 8%, Remaining health: 41%',
+        '- Commander Razorclaw: hit, Damage: 14%, Remaining health: 62%, Defeated by this attack: NO — the target remains alive and is not incapacitated or defeated by this attack.',
+        '- Goblin Sapper: hit, Damage: 8%, Remaining health: 41%, Defeated by this attack: NO — the target remains alive and is not incapacitated or defeated by this attack.',
         '- Shield Adept: miss, no damage'
     ].join('\n'));
     assert.equal(debugEvents[1].phase, 'completed');
@@ -387,8 +387,8 @@ test('resolveAreaAttack marks all-hit area results distinctly', async () => {
     const toolMessage = capturedMessagesByRound[1].find(message => message.role === 'tool');
     assert.equal(toolMessage.content, [
         'Area attack results:',
-        '- Commander Razorclaw: hit, Damage: 14%, Remaining health: 62%',
-        '- Goblin Sapper: hit, Damage: 8%, Remaining health: 41%'
+        '- Commander Razorclaw: hit, Damage: 14%, Remaining health: 62%, Defeated by this attack: NO — the target remains alive and is not incapacitated or defeated by this attack.',
+        '- Goblin Sapper: hit, Damage: 8%, Remaining health: 41%, Defeated by this attack: NO — the target remains alive and is not incapacitated or defeated by this attack.'
     ].join('\n'));
 });
 
@@ -507,17 +507,58 @@ test('resolveAreaAttack caches repeated same-round area effects with sorted targ
     assert.deepEqual(toolMessages.map(message => message.content), [
         [
             'Area attack results:',
-            '- Commander Razorclaw: hit, Damage: 14%, Remaining health: 62%',
+            '- Commander Razorclaw: hit, Damage: 14%, Remaining health: 62%, Defeated by this attack: NO — the target remains alive and is not incapacitated or defeated by this attack.',
             '- Goblin Sapper: miss, no damage',
             '- Shield Adept: miss, no damage'
         ].join('\n'),
         [
             'Area attack results:',
-            '- Commander Razorclaw: hit, Damage: 14%, Remaining health: 62%',
+            '- Commander Razorclaw: hit, Damage: 14%, Remaining health: 62%, Defeated by this attack: NO — the target remains alive and is not incapacitated or defeated by this attack.',
             '- Goblin Sapper: miss, no damage',
             '- Shield Adept: miss, no damage',
             '',
             CACHED_CHECK_TOOL_CALL_NOTE
         ].join('\n')
     ]);
+});
+
+test('resolveAreaAttack forwards a fixed prompt die-roll override to the resolver', async () => {
+    const capturedMessagesByRound = [];
+    let capturedDieRollOverride = null;
+    const runtime = makeRuntime({
+        firstResponse: resolveAreaAttackToolResponse(areaAttackArgs),
+        capturedMessagesByRound,
+        resolveAreaAttack: async ({ dieRollOverride }) => {
+            capturedDieRollOverride = dieRollOverride;
+            return {
+                hitCount: 0,
+                targetCount: 3,
+                locationRefreshRequested: false,
+                summary: {
+                    kind: 'area-attack',
+                    attacker: 'Exis',
+                    weapon: 'Concussion Grenade',
+                    ability: 'N/A',
+                    areaShape: 'blast',
+                    rollMode: 'sharedAttackRoll',
+                    sharedRoll: { die: 20, total: 38 },
+                    results: areaAttackArgs.targets.map(target => ({
+                        target: target.name,
+                        hit: false,
+                        damageApplied: 0,
+                        remainingHealthPercent: 100,
+                        position: target.position
+                    }))
+                }
+            };
+        }
+    });
+
+    await runtime.runChatCompletionWithToolLoop({
+        requestOptions: { messages: [{ role: 'user', content: 'Throw the grenade.' }] },
+        metadataLabel: 'test_resolve_area_attack_fixed_roll',
+        dieRollOverride: 20
+    });
+
+    assert.equal(capturedDieRollOverride, 20);
 });

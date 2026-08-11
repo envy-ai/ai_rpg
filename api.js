@@ -31,7 +31,11 @@ const {
     resolveCriticalThresholdFormulas,
     validateCriticalThresholdValues
 } = require('./utils/critical-threshold-formulas.js');
-const { createChatToolRuntime, getChatToolDefinitions } = require('./chat_tool_calls.js');
+const {
+    createChatToolRuntime,
+    getChatToolDefinitions,
+    requireExplicitSkillCheckActors
+} = require('./chat_tool_calls.js');
 const {
     configureTinyBrainPromptContext,
     isTinyBrainPromptEnabled,
@@ -82,6 +86,10 @@ const {
 const { normalizeUnifiedTonalScaleSelections } = require('./UnifiedTonalScale.js');
 const { loadMergedDefinitionFile } = require('./DefinitionLoader.js');
 const {
+    resolveConfiguredPromptMaxAttempts,
+    runPromptWithParseRetries
+} = require('./PromptRetryPolicy.js');
+const {
     buildModManagerState,
     clearPendingLoadIntent,
     diffEnabledMods,
@@ -122,6 +130,21 @@ const INFORMATION_GATHERING_CHAT_TOOL_NAMES = new Set([
     'locateThings'
 ]);
 
+const PLAYER_ACTION_INVALID_VEHICLE_ROUTE = 'PLAYER_ACTION_INVALID_VEHICLE_ROUTE';
+
+function createPlayerActionInvalidVehicleRouteError(message) {
+    if (typeof message !== 'string' || !message.trim()) {
+        throw new TypeError('Player-action invalid vehicle route errors require a non-empty message.');
+    }
+    const error = new Error(message.trim());
+    error.code = PLAYER_ACTION_INVALID_VEHICLE_ROUTE;
+    return error;
+}
+
+function shouldPropagatePlayerActionEventCheckError(error) {
+    return error?.code === PLAYER_ACTION_INVALID_VEHICLE_ROUTE;
+}
+
 function sanitizeSlopHistorySegments(historySegments) {
     if (!Array.isArray(historySegments)) {
         throw new TypeError('Slop history sanitation requires an array of strings.');
@@ -149,6 +172,10 @@ const TINY_BRAIN_NPC_LOOKUP_TOOL_NAMES = new Set([
     'getTravelTime',
     'locateNpcs',
     'locateThings'
+]);
+
+const TINY_BRAIN_PLAYER_ACTION_DESTINATION_LOOKUP_TOOL_NAMES = new Set([
+    'moreInfo'
 ]);
 
 const GENERIC_PROMPT_ONLY_BUILT_IN_CHAT_TOOL_NAMES = new Set([
@@ -187,6 +214,70 @@ const CHECK_RESULT_CHAT_TOOL_NAMES = new Set([
     'resolvePlausibilityCheck',
     'resolveOpposedPlausibilityCheck'
 ]);
+
+function getCombatActionUnavailableReason(actor) {
+    if (!actor || typeof actor !== 'object') {
+        throw new TypeError('Combat action availability requires an actor object.');
+    }
+    if (actor.isDead === true) {
+        return 'dead';
+    }
+    if (Number.isFinite(actor.health) && actor.health <= 0) {
+        return 'incapacitated';
+    }
+    return null;
+}
+
+function assertActorCanInitiateAttack(actor, { toolName = 'attack resolver' } = {}) {
+    const reason = getCombatActionUnavailableReason(actor);
+    if (!reason) {
+        return actor;
+    }
+    const actorName = typeof actor.name === 'string' && actor.name.trim()
+        ? actor.name.trim()
+        : (actor.id || 'Unknown actor');
+    throw new Error(`${toolName} attacker "${actorName}" cannot attack because the actor is ${reason}.`);
+}
+
+function collectSuccessfulNpcAttackActorIds(toolInvocations, resolveActorByName) {
+    if (!Array.isArray(toolInvocations)) {
+        throw new TypeError('Successful attack actor collection requires a tool invocation array.');
+    }
+    if (typeof resolveActorByName !== 'function') {
+        throw new TypeError('Successful attack actor collection requires an actor resolver.');
+    }
+
+    const actorIds = new Set();
+    for (const invocation of toolInvocations) {
+        if (!invocation || !['resolveAttack', 'resolveAreaAttack'].includes(invocation.name)) {
+            continue;
+        }
+        if (invocation.metadata?.error === true) {
+            continue;
+        }
+        const summaryAttacker = invocation.metadata?.summary?.attacker;
+        const attackerName = typeof invocation.metadata?.attacker === 'string'
+            ? invocation.metadata.attacker.trim()
+            : (typeof summaryAttacker === 'string'
+                ? summaryAttacker.trim()
+                : (typeof summaryAttacker?.name === 'string' ? summaryAttacker.name.trim() : ''));
+        if (!attackerName || ['player', 'the player', 'you'].includes(attackerName.toLowerCase())) {
+            continue;
+        }
+
+        const actor = resolveActorByName(attackerName);
+        if (!actor) {
+            throw new Error(`Successful ${invocation.name} invocation references unresolved attacker "${attackerName}".`);
+        }
+        if (actor.isNPC === true) {
+            if (typeof actor.id !== 'string' || !actor.id.trim()) {
+                throw new Error(`Successful ${invocation.name} NPC attacker "${attackerName}" has no stable id.`);
+            }
+            actorIds.add(actor.id.trim());
+        }
+    }
+    return actorIds;
+}
 
 const UPLOADED_ENTITY_IMAGE_TYPES = new Map([
     ['image/png', { extension: 'png', label: 'PNG' }],
@@ -867,6 +958,31 @@ function parseGeneratedBarterStockCount(value, fieldName = 'generated barter sto
         throw new Error(`${fieldName} must be a non-negative integer.`);
     }
     return numeric;
+}
+
+function validateGeneratedBarterStockBounds(entries, {
+    minimum,
+    maximum
+} = {}) {
+    if (!Array.isArray(entries)) {
+        throw new TypeError('Generated barter stock entries must be an array.');
+    }
+    if (!Number.isInteger(minimum) || minimum < 0) {
+        throw new TypeError('Generated barter stock minimum must be a non-negative integer.');
+    }
+    if (!Number.isInteger(maximum) || maximum < 0) {
+        throw new TypeError('Generated barter stock maximum must be a non-negative integer.');
+    }
+    if (minimum > maximum) {
+        throw new Error('Generated barter stock minimum must be less than or equal to maximum.');
+    }
+    if (entries.length < minimum || entries.length > maximum) {
+        throw new Error(
+            `Generated barter stock returned ${entries.length} effective item seed(s); `
+            + `expected between ${minimum} and ${maximum}.`
+        );
+    }
+    return entries;
 }
 
 function isMeaningfulInstalledModuleReference(value) {
@@ -3108,6 +3224,7 @@ module.exports = function registerApiRoutes(scope) {
                 location: questLocation || null,
                 stream: stream || null,
                 questsAwarded: [],
+                declinedQuests: [],
                 updatedQuests: []
             };
             if (questLocation && typeof findRegionByLocationId === 'function') {
@@ -3129,6 +3246,9 @@ module.exports = function registerApiRoutes(scope) {
                     : [],
                 updatedQuests: Array.isArray(questContext.updatedQuests)
                     ? questContext.updatedQuests
+                    : [],
+                declinedQuests: Array.isArray(questContext.declinedQuests)
+                    ? questContext.declinedQuests
                     : [],
                 lastQuest: questContext.lastQuest && typeof questContext.lastQuest.toJSON === 'function'
                     ? questContext.lastQuest.toJSON()
@@ -3748,7 +3868,9 @@ module.exports = function registerApiRoutes(scope) {
             playerItems = [],
             merchantItems = [],
             playerItemIds = new Set(),
-            merchantItemIds = new Set()
+            merchantItemIds = new Set(),
+            generatedStockMinimum = 0,
+            generatedStockMaximum = 0
         } = {}) {
             const xml = sanitizeBarterPricingXmlForParsing(
                 extractBarterPricesXml(responseText),
@@ -3869,6 +3991,10 @@ module.exports = function registerApiRoutes(scope) {
                     reason: directChildText(itemNode, 'reason')
                 });
             }
+            validateGeneratedBarterStockBounds(newStock, {
+                minimum: generatedStockMinimum,
+                maximum: generatedStockMaximum
+            });
 
             return {
                 haggleResponse: directChildText(root, 'haggleResponse'),
@@ -4152,22 +4278,55 @@ module.exports = function registerApiRoutes(scope) {
                 requestOptions.temperature = parsedTemplate.temperature;
             }
 
-            const response = await LLMClient.chatCompletion(requestOptions);
-            LLMClient.logPrompt({
-                prefix: haggle ? 'barter_haggle' : 'barter_prices',
-                metadataLabel: 'barter_prices',
-                systemPrompt: parsedTemplate.systemPrompt,
-                generationPrompt: parsedTemplate.generationPrompt,
-                response
+            const promptAttempt = await runPromptWithParseRetries({
+                messages: requestOptions.messages,
+                maxAttempts: resolveConfiguredPromptMaxAttempts(config?.ai, { fallbackMaxAttempts: 3 }),
+                complete: ({ messages }) => LLMClient.chatCompletion({
+                    ...requestOptions,
+                    messages
+                }),
+                parse: response => parseBarterPricesResponse(response, {
+                    playerItems,
+                    merchantItems: [
+                        ...npcInventoryItems,
+                        ...npcBarterItems
+                    ],
+                    generatedStockMinimum: allowGeneratedStock ? barterConfig.generatedStockMin : 0,
+                    generatedStockMaximum: allowGeneratedStock ? barterConfig.generatedStockMax : 0
+                }),
+                buildRetryInstruction: error => [
+                    `The previous barter-pricing XML could not be accepted: ${error?.message || error}`,
+                    'Correct the structured response and return one complete <barterPrices>...</barterPrices> block only.'
+                ].join('\n'),
+                onAttempt: ({ attempt, maxAttempts, response, error, accepted }) => {
+                    LLMClient.logPrompt({
+                        prefix: haggle ? 'barter_haggle' : 'barter_prices',
+                        metadataLabel: 'barter_prices',
+                        systemPrompt: parsedTemplate.systemPrompt,
+                        generationPrompt: parsedTemplate.generationPrompt,
+                        response,
+                        sections: [
+                            {
+                                title: 'Structured response attempt',
+                                content: `${attempt}/${maxAttempts}`
+                            },
+                            {
+                                title: 'Structured response validation',
+                                content: accepted
+                                    ? 'accepted'
+                                    : `rejected: ${error?.stack || error?.message || error}`
+                            }
+                        ]
+                    });
+                    if (!accepted) {
+                        console.warn(
+                            `Barter pricing response attempt ${attempt}/${maxAttempts} failed validation: `
+                            + `${error?.message || error}`
+                        );
+                    }
+                }
             });
-
-            const parsed = parseBarterPricesResponse(response, {
-                playerItems,
-                merchantItems: [
-                    ...npcInventoryItems,
-                    ...npcBarterItems
-                ]
-            });
+            const parsed = promptAttempt.value;
             if (refreshMerchantCurrency) {
                 if (!Number.isInteger(parsed.merchantCurrency)) {
                     throw new Error('Barter pricing response did not include a valid <merchantCurrency> for refreshed merchant stock.');
@@ -8113,8 +8272,19 @@ module.exports = function registerApiRoutes(scope) {
             clientId = null,
             requestId = null,
             locationWasVisitedBeforeArrival = undefined,
-            locationLastVisitedTimeBeforeArrival = undefined
+            locationLastVisitedTimeBeforeArrival = undefined,
+            suppressVisibleProse = false,
+            replacementArrivalEntry = null
         } = {}) {
+            if (typeof suppressVisibleProse !== 'boolean') {
+                throw new TypeError('While-you-were-away suppressVisibleProse must be a boolean.');
+            }
+            if (
+                suppressVisibleProse
+                && (!replacementArrivalEntry || typeof replacementArrivalEntry !== 'object' || Array.isArray(replacementArrivalEntry))
+            ) {
+                throw new Error('Suppressing while-you-were-away visible prose requires a replacement arrival entry.');
+            }
             const resolvedLocation = locationOverride
                 || (typeof currentPlayer?.currentLocation === 'string' && currentPlayer.currentLocation.trim()
                     ? (gameLocations.get(currentPlayer.currentLocation.trim()) || Location.get(currentPlayer.currentLocation.trim()) || null)
@@ -8298,6 +8468,9 @@ module.exports = function registerApiRoutes(scope) {
                 Globals.config?.ai,
                 'while_you_were_away'
             );
+            if (suppressVisibleProse && !useTinyBrainWhileAway) {
+                throw new Error('While-you-were-away visible prose may only be suppressed for the TinyBrain family.');
+            }
             const tinyBrain = useTinyBrainWhileAway
                 ? configureTinyBrainPromptContext(
                     whileAwayPromptContext,
@@ -8504,7 +8677,7 @@ module.exports = function registerApiRoutes(scope) {
                 ? parsedResponse.proseForPlayer.trim()
                 : '';
             let slopRemovalInfo = null;
-            if (playerFacingProse && Globals.config?.slop_buster === true) {
+            if (!suppressVisibleProse && playerFacingProse && Globals.config?.slop_buster === true) {
                 const slopResult = await applySlopRemoval(playerFacingProse, { returnDiagnostics: true });
                 playerFacingProse = slopResult.text;
                 if (slopResult.ran) {
@@ -8515,7 +8688,7 @@ module.exports = function registerApiRoutes(scope) {
                     };
                 }
             }
-            if (whileAwayLiveDeslopInfo?.ran) {
+            if (!suppressVisibleProse && whileAwayLiveDeslopInfo?.ran) {
                 slopRemovalInfo = {
                     ...(slopRemovalInfo || {}),
                     slopWords: Array.from(new Set([
@@ -8535,7 +8708,7 @@ module.exports = function registerApiRoutes(scope) {
             }
 
             let storedVisibleEntry = null;
-            if (playerFacingProse) {
+            if (!suppressVisibleProse && playerFacingProse) {
                 const visibleEntry = {
                     role: 'assistant',
                     content: playerFacingProse,
@@ -8597,7 +8770,10 @@ module.exports = function registerApiRoutes(scope) {
             }
 
             if (eventResult) {
-                const summaryParentEntry = storedVisibleEntry || hiddenEntry || null;
+                const summaryParentEntry = storedVisibleEntry
+                    || (suppressVisibleProse ? replacementArrivalEntry : null)
+                    || hiddenEntry
+                    || null;
                 appendEventSummariesToChat({
                     summaryLabel: '📋 Events – While You Were Away',
                     statusLabel: '🌀 Status Changes – While You Were Away',
@@ -8616,7 +8792,16 @@ module.exports = function registerApiRoutes(scope) {
             }
 
             return returnEntries
-                ? { hiddenEntry, visibleEntry: storedVisibleEntry, eventResult, movedItemScenery }
+                ? {
+                    hiddenEntry,
+                    visibleEntry: storedVisibleEntry,
+                    parentLinkEntry: storedVisibleEntry
+                        || (suppressVisibleProse ? replacementArrivalEntry : null)
+                        || hiddenEntry
+                        || null,
+                    eventResult,
+                    movedItemScenery
+                }
                 : hiddenEntry;
         }
 
@@ -12251,10 +12436,14 @@ module.exports = function registerApiRoutes(scope) {
             intendedItemName = null,
             craftTargetType = null,
             targetName = null,
-            inputItems = []
+            inputItems = [],
+            validateResults = null
         } = {}) {
             if (!baseOutcomeXml || typeof baseOutcomeXml !== 'string' || !baseOutcomeXml.trim()) {
                 throw new Error('craft-success-degree requires a non-empty base outcome XML payload.');
+            }
+            if (validateResults !== null && typeof validateResults !== 'function') {
+                throw new TypeError('craft-success-degree validateResults must be a function when provided.');
             }
 
             const renderedTemplate = promptEnv.render('base-context.xml.njk', {
@@ -12288,25 +12477,65 @@ module.exports = function registerApiRoutes(scope) {
                 requestOptions.temperature = parsedTemplate.temperature;
             }
 
-            const response = await LLMClient.chatCompletion(requestOptions);
+            const promptAttempt = await runPromptWithParseRetries({
+                messages: requestOptions.messages,
+                maxAttempts: resolveConfiguredPromptMaxAttempts(config?.ai, { fallbackMaxAttempts: 3 }),
+                complete: ({ messages }) => LLMClient.chatCompletion({
+                    ...requestOptions,
+                    messages
+                }),
+                parse: async response => {
+                    if (!response || !response.trim()) {
+                        throw new Error('Craft success-degree returned no response.');
+                    }
 
-            LLMClient.logPrompt({
-                metadataLabel: requestOptions.metadataLabel,
-                systemPrompt: parsedTemplate.systemPrompt,
-                generationPrompt: parsedTemplate.generationPrompt,
-                response
+                    const results = await parseCraftingResultsResponse(response, { baseOutcomeXml });
+                    if (!results.size) {
+                        throw new Error('Craft success-degree response did not include any results.');
+                    }
+                    const selectedResult = results.get(successOrFailure) || null;
+                    if (!selectedResult) {
+                        throw new Error(`Craft success-degree response missing result for level '${successOrFailure}'.`);
+                    }
+                    if (validateResults) {
+                        await validateResults({ results, selectedResult, response });
+                    }
+                    return results;
+                },
+                buildRetryInstruction: error => [
+                    `The previous craft success-degree XML could not be accepted: ${error?.message || error}`,
+                    'Correct the structured response. <itemsConsumed> may name each selected Thing at most once; stack counts do not authorize duplicate names.',
+                    'Return one complete <response>...</response> block only.'
+                ].join('\n'),
+                onAttempt: ({ attempt, maxAttempts, response, error, accepted }) => {
+                    LLMClient.logPrompt({
+                        metadataLabel: requestOptions.metadataLabel,
+                        systemPrompt: parsedTemplate.systemPrompt,
+                        generationPrompt: parsedTemplate.generationPrompt,
+                        response,
+                        sections: [
+                            {
+                                title: 'Structured response attempt',
+                                content: `${attempt}/${maxAttempts}`
+                            },
+                            {
+                                title: 'Structured response validation',
+                                content: accepted
+                                    ? 'accepted'
+                                    : `rejected: ${error?.stack || error?.message || error}`
+                            }
+                        ]
+                    });
+                    if (!accepted) {
+                        console.warn(
+                            `Craft success-degree response attempt ${attempt}/${maxAttempts} failed validation: `
+                            + `${error?.message || error}`
+                        );
+                    }
+                }
             });
 
-            if (!response || !response.trim()) {
-                throw new Error('Craft success-degree returned no response.');
-            }
-
-            const results = await parseCraftingResultsResponse(response, { baseOutcomeXml });
-            if (!results.size) {
-                throw new Error('Craft success-degree response did not include any results.');
-            }
-
-            return { raw: response, results };
+            return { raw: promptAttempt.response, results: promptAttempt.value };
         }
 
         function parseCraftingNarrativeResponse(xmlContent) {
@@ -16998,7 +17227,7 @@ module.exports = function registerApiRoutes(scope) {
                     regionName: destinationRegionName
                 });
             if (!canSetCurrentDestination) {
-                throw new Error(
+                throw createPlayerActionInvalidVehicleRouteError(
                     `Vehicle "${vehicleTarget.label}" cannot travel to "${destinationLabel}" `
                     + 'because that destination is not in its allowed route.'
                 );
@@ -17014,6 +17243,8 @@ module.exports = function registerApiRoutes(scope) {
                 && travelTimeMinutes > 0
                 && currentOutsideLocationId
                 && (
+                    normalizedVehicleInfo.isUnderway
+                    ||
                     !destinationId
                     || currentOutsideLocationId !== destinationId
                 )
@@ -17085,6 +17316,27 @@ module.exports = function registerApiRoutes(scope) {
             });
 
             return moveResult;
+        };
+
+        const stopVehicleFormoveTurnResult = (vehicleName) => {
+            const {
+                vehicleTarget,
+                normalizedVehicleInfo
+            } = resolvemoveTurnResultVehicleState(vehicleName);
+            if (!normalizedVehicleInfo.isUnderway) {
+                throw new Error(`Vehicle "${vehicleTarget.label}" cannot stop because it is not underway.`);
+            }
+
+            applyVehicleInfoStateUpdate({
+                vehicleTarget,
+                normalizedVehicleInfo,
+                updates: {
+                    pendingDestination: null,
+                    ETA: null,
+                    departureTime: null
+                },
+                contextLabel: `Vehicle "${vehicleTarget.label}" stop`
+            });
         };
 
         const processDueVehicleArrivals = async () => {
@@ -17295,6 +17547,7 @@ module.exports = function registerApiRoutes(scope) {
             let vehicleCurrentDestinationName = '';
             let vehicleCurrentDestinationRegionId = '';
             let vehicleCurrentOutsideLocationId = '';
+            let vehicleWasUnderway = false;
             let vehicleSourceLocationForDestinationResolution = null;
             let vehicleDestinationCreateOriginExit = true;
             if (travelVehicleName) {
@@ -17305,6 +17558,7 @@ module.exports = function registerApiRoutes(scope) {
                     throw new Error(`Vehicle "${travelVehicleName}" is missing vehicleInfo.`);
                 }
                 const normalizedVehicleInfo = new VehicleInfo(rawVehicleInfo);
+                vehicleWasUnderway = normalizedVehicleInfo.isUnderway;
                 const vehicleExitId = typeof normalizedVehicleInfo.vehicleExitId === 'string'
                     ? normalizedVehicleInfo.vehicleExitId.trim()
                     : '';
@@ -17465,6 +17719,8 @@ module.exports = function registerApiRoutes(scope) {
                 && vehicleTravelTimeMinutes > 0
                 && vehicleCurrentOutsideLocationId
                 && (
+                    vehicleWasUnderway
+                    ||
                     !resolvedVehicleDestinationId
                     || vehicleCurrentOutsideLocationId !== resolvedVehicleDestinationId
                 )
@@ -17513,6 +17769,11 @@ module.exports = function registerApiRoutes(scope) {
             const hasEffectivePlayerDestination = Boolean(effectivePlayerDestinationText);
             const shouldSplitEventChecks = hasEffectivePlayerDestination && !moveTurnResultEventLocationRepresentsVehicle;
             const suppressOriginTimeAdvance = shouldSplitEventChecks && Boolean(destinationProse);
+            const authoritativeMovementCompanionNames = Array.isArray(
+                moveTurnResultPayload.accompanyingCharacters
+            )
+                ? moveTurnResultPayload.accompanyingCharacters.slice()
+                : [];
 
             let destinationLocation = null;
             let vehicleMovement = null;
@@ -17545,12 +17806,21 @@ module.exports = function registerApiRoutes(scope) {
                     eventSectionKind: 'origin',
                     suppressTrackerUpdates: useTinyBrainSectionedEventChecks,
                     tinyBrainEventSequence,
+                    authoritativeMovementCompanionNames,
                     entryCollector
                 });
             }
 
             try {
-                if (travelVehicleName && effectiveVehicleDestinationText) {
+                if (travelVehicleName && !effectiveVehicleDestinationText) {
+                    if (vehicleTravelTimeMinutes !== 0) {
+                        throw new Error(
+                            `Vehicle "${travelVehicleName}" without a destination must use exactly 0 minutes to stop.`
+                        );
+                    }
+                    stopVehicleFormoveTurnResult(travelVehicleName);
+                    vehicleStateChanged = true;
+                } else if (travelVehicleName && effectiveVehicleDestinationText) {
                     const vehicleDestinationOriginLocation = vehicleSourceLocationForDestinationResolution || location;
                     let vehicleDestinationLocation = resolvedVehicleDestination?.location || null;
                     let vehicleDestinationRegion = resolvedVehicleDestination?.region || null;
@@ -17712,6 +17982,7 @@ module.exports = function registerApiRoutes(scope) {
                             eventSectionKind: 'origin',
                             suppressTrackerUpdates: true,
                             tinyBrainEventSequence,
+                            authoritativeMovementCompanionNames,
                             entryCollector
                         }));
                     }
@@ -17727,6 +17998,7 @@ module.exports = function registerApiRoutes(scope) {
                             eventSectionKind: 'between',
                             suppressTrackerUpdates: true,
                             tinyBrainEventSequence,
+                            authoritativeMovementCompanionNames,
                             entryCollector
                         }));
                     }
@@ -17746,6 +18018,7 @@ module.exports = function registerApiRoutes(scope) {
                             eventSectionKind: 'destination',
                             suppressTrackerUpdates: true,
                             tinyBrainEventSequence,
+                            authoritativeMovementCompanionNames,
                             entryCollector
                         }));
                     }
@@ -17762,6 +18035,7 @@ module.exports = function registerApiRoutes(scope) {
                         eventMode: 'trackers',
                         tinyBrainAcceptedEventXml: acceptedSectionEventResult?.raw || '',
                         tinyBrainEventSequence,
+                        authoritativeMovementCompanionNames,
                         entryCollector
                     }));
                     combinedEventResult = mergeEventResults(sectionResults);
@@ -17818,6 +18092,7 @@ module.exports = function registerApiRoutes(scope) {
                     eventSectionKind: 'between',
                     suppressTrackerUpdates: true,
                     tinyBrainEventSequence,
+                    authoritativeMovementCompanionNames,
                     entryCollector
                 });
             }
@@ -17837,6 +18112,7 @@ module.exports = function registerApiRoutes(scope) {
                     eventSectionKind: 'destination',
                     suppressTrackerUpdates: useTinyBrainSectionedEventChecks,
                     tinyBrainEventSequence,
+                    authoritativeMovementCompanionNames,
                     entryCollector
                 });
             }
@@ -17859,6 +18135,7 @@ module.exports = function registerApiRoutes(scope) {
                     eventMode: 'trackers',
                     tinyBrainAcceptedEventXml: acceptedSectionEventResult?.raw || '',
                     tinyBrainEventSequence,
+                    authoritativeMovementCompanionNames,
                     entryCollector
                 });
             }
@@ -19397,37 +19674,44 @@ module.exports = function registerApiRoutes(scope) {
             return runSeedByRarity(selectedOption.type);
         }
 
-        function parseAttackCheckResponse(responseText) {
+        function parseAttackCheckResponse(responseText, { expectedAttackerNames = [] } = {}) {
             if (!responseText || typeof responseText !== 'string') {
-                return null;
+                throw new TypeError('Attack check response must be a non-empty string.');
             }
 
             const trimmed = responseText.trim();
             if (!trimmed) {
-                return null;
+                throw new Error('Attack check response was empty.');
             }
 
             let doc;
             try {
                 doc = Utils.parseXmlDocument(sanitizeForXml(trimmed), 'text/xml');
             } catch (error) {
-                console.warn('Failed to parse attack check XML:', error.message);
-                return null;
+                throw new Error(`Failed to parse attack check XML: ${error.message}`);
             }
 
             if (!doc || doc.getElementsByTagName('parsererror')?.length) {
-                console.warn('Attack check XML contained parser errors.');
-                return null;
+                throw new Error('Attack check XML contained parser errors.');
             }
 
             const attackNodes = Array.from(doc.getElementsByTagName('attack'));
-            if (!attackNodes.length) {
+            if (attackNodes.length === 0) {
                 const normalized = trimmed.toLowerCase();
                 if (normalized === 'n/a') {
                     return { attacks: [], hasAttack: false };
                 }
-                return null;
+                throw new Error('Attack check response must contain exactly one <attack> block.');
             }
+            if (attackNodes.length !== 1) {
+                throw new Error(`Attack check response must contain exactly one <attack> block; received ${attackNodes.length}.`);
+            }
+
+            const normalizedExpectedAttackers = new Set(
+                (Array.isArray(expectedAttackerNames) ? expectedAttackerNames : [expectedAttackerNames])
+                    .filter(value => typeof value === 'string' && value.trim())
+                    .map(value => value.trim().toLowerCase())
+            );
 
             const normalizeValue = (value) => {
                 if (value === null || value === undefined) {
@@ -19447,6 +19731,8 @@ module.exports = function registerApiRoutes(scope) {
                 }
                 return normalizeValue(element.textContent);
             };
+
+            const hasTag = (node, tag) => Boolean(node.getElementsByTagName(tag)?.[0]);
 
             const getNestedTagValue = (node, parentTag, childTag) => {
                 const parentNode = node.getElementsByTagName(parentTag)?.[0];
@@ -19476,19 +19762,23 @@ module.exports = function registerApiRoutes(scope) {
                 if (rejectedNode) {
                     const rejectionText = getNestedTagValue(attackNode, 'rejected', 'reason')
                         || getTagValue(rejectedNode, 'reason');
-                    if (rejectionText) {
-                        rejectionReason = rejectionReason || rejectionText;
+                    if (!rejectionText) {
+                        throw new Error('Rejected attack check response requires a non-empty <reason>.');
                     }
+                    rejectionReason = rejectionText;
                     continue;
                 }
 
+                if (!hasTag(attackNode, 'attacker')) {
+                    throw new Error('Attack check response requires an <attacker> tag.');
+                }
                 const attacker = getTagValue(attackNode, 'attacker');
                 const defender = getTagValue(attackNode, 'defender');
                 const ability = getTagValue(attackNode, 'ability');
                 const weapon = getTagValue(attackNode, 'weapon');
                 const damageEffectivenessRaw = getNumericTagValue(attackNode, 'damageEffectiveness');
                 const damageEffectiveness = Number.isFinite(damageEffectivenessRaw)
-                    ? Math.round(damageEffectivenessRaw)
+                    ? damageEffectivenessRaw
                     : null;
 
                 const attackSkill = getNestedTagValue(attackNode, 'attackerInfo', 'attackSkill');
@@ -19504,10 +19794,37 @@ module.exports = function registerApiRoutes(scope) {
                     continue;
                 }
 
-                const attackEntry = { attacker, defender, ability, weapon };
-                if (damageEffectiveness !== null) {
-                    attackEntry.damageEffectiveness = damageEffectiveness;
+                if (!attacker) {
+                    throw new Error('Attack check <attacker> must be an exact actor name or N/A.');
                 }
+                if (normalizedExpectedAttackers.size > 0
+                    && !normalizedExpectedAttackers.has(attacker.toLowerCase())) {
+                    throw new Error(
+                        `Attack check attacker "${attacker}" does not match the acting character.`
+                    );
+                }
+                if (!defender) {
+                    throw new Error('Attack check for a real attack requires a non-empty <defender>.');
+                }
+                if (!attackSkill || !damageAttribute) {
+                    throw new Error('Attack check requires non-empty <attackSkill> and <damageAttribute> values.');
+                }
+                if (!hasTag(attackNode, 'ability') || !hasTag(attackNode, 'weapon')) {
+                    throw new Error('Attack check requires both <ability> and <weapon> tags; use N/A where appropriate.');
+                }
+                if (!hasTag(attackNode, 'evadeSkill')
+                    && !hasTag(attackNode, 'deflectSkill')
+                    && !hasTag(attackNode, 'defenseSkill')) {
+                    throw new Error('Attack check requires defender skill tags; use N/A where appropriate.');
+                }
+                if (!Number.isInteger(damageEffectiveness)
+                    || damageEffectiveness < 1
+                    || damageEffectiveness > 5) {
+                    throw new Error('Attack check <damageEffectiveness> must be an integer from 1 through 5.');
+                }
+
+                const attackEntry = { attacker, defender, ability, weapon };
+                attackEntry.damageEffectiveness = damageEffectiveness;
 
                 const collectCircumstanceModifiers = (node) => {
                     if (!node || typeof node.getElementsByTagName !== 'function') {
@@ -19538,8 +19855,10 @@ module.exports = function registerApiRoutes(scope) {
                         let amount = amountText !== null && amountText !== '' ? Number(amountText) : null;
                         const hasReason = reasonText && reasonText.toLowerCase() !== 'n/a';
 
-                        if (!Number.isFinite(amount) && !hasReason) {
-                            continue;
+                        if (!Number.isInteger(amount) || amount < -10 || amount > 10) {
+                            throw new Error(
+                                'Attack check circumstance modifier amounts must be integers from -10 through 10.'
+                            );
                         }
 
                         if (modifierNode.nodeName === 'defenderCircumstanceModifier') {
@@ -19547,7 +19866,7 @@ module.exports = function registerApiRoutes(scope) {
                         }
 
                         modifiers.push({
-                            amount: Number.isFinite(amount) ? amount : 0,
+                            amount,
                             reason: hasReason ? reasonText : null
                         });
                     }
@@ -19646,9 +19965,10 @@ module.exports = function registerApiRoutes(scope) {
             locationOverride,
             characterName = 'The player',
             itemContext = '',
-            abilityContext = ''
+            abilityContext = '',
+            allowWhenLegacyChecksDisabled = false
         }) {
-            if (Globals.config?.use_legacy_prompt_checks !== true) {
+            if (Globals.config?.use_legacy_prompt_checks !== true && !allowWhenLegacyChecksDisabled) {
                 console.info('Attack check skipped: use_legacy_prompt_checks is false.');
                 return null;
             }
@@ -19666,7 +19986,10 @@ module.exports = function registerApiRoutes(scope) {
                 return null;
             }
 
-            const shouldRunFullAttackCheck = await runAttackPrecheck({ actionText });
+            const shouldRunFullAttackCheck = await runAttackPrecheck({
+                actionText,
+                allowWhenLegacyChecksDisabled
+            });
             if (!shouldRunFullAttackCheck) {
                 return null;
             }
@@ -19703,35 +20026,81 @@ module.exports = function registerApiRoutes(scope) {
                     requestOptions.temperature = parsedTemplate.temperature;
                 }
 
-                const attackResponse = await LLMClient.chatCompletion(requestOptions);
+                const expectedAttackerNames = characterName.trim().toLowerCase() === 'the player'
+                    ? ['player', 'the player', currentPlayer.name]
+                    : [characterName];
+                const configuredParserRetries = Number(Globals.config?.ai?.retryAttempts);
+                const parserRetryAttempts = Number.isInteger(configuredParserRetries)
+                    && configuredParserRetries >= 0
+                    ? configuredParserRetries
+                    : 2;
+                let completionMessages = messages.map(message => ({ ...message }));
+                let attackResponse = '';
+                let structuredAttackResponse = null;
 
-                LLMClient.logPrompt({
-                    prefix: 'attack_check',
-                    metadataLabel: 'attack_check',
-                    systemPrompt: parsedTemplate.systemPrompt,
-                    generationPrompt: parsedTemplate.generationPrompt,
-                    response: attackResponse
-                });
+                for (let parserAttempt = 0; parserAttempt <= parserRetryAttempts; parserAttempt += 1) {
+                    attackResponse = await LLMClient.chatCompletion({
+                        ...requestOptions,
+                        messages: completionMessages
+                    });
 
-                if (!attackResponse.trim()) {
-                    return null;
+                    LLMClient.logPrompt({
+                        prefix: 'attack_check',
+                        metadataLabel: 'attack_check',
+                        systemPrompt: parsedTemplate.systemPrompt,
+                        generationPrompt: completionMessages
+                            .filter(message => message.role !== 'system')
+                            .map(message => `${message.role}: ${message.content}`)
+                            .join('\n\n'),
+                        response: attackResponse
+                    });
+
+                    try {
+                        structuredAttackResponse = parseAttackCheckResponse(attackResponse, {
+                            expectedAttackerNames
+                        });
+                        break;
+                    } catch (parseError) {
+                        if (parserAttempt >= parserRetryAttempts) {
+                            throw new Error(
+                                `Attack check remained invalid after ${parserRetryAttempts + 1} attempts: ${parseError.message}`
+                            );
+                        }
+                        console.warn(
+                            `Attack check parse failed (attempt ${parserAttempt + 1} of ${parserRetryAttempts + 1}): ${parseError.message}`
+                        );
+                        completionMessages = completionMessages.concat([
+                            { role: 'assistant', content: attackResponse || '(empty response)' },
+                            {
+                                role: 'user',
+                                content: `The preceding XML failed structured validation: ${parseError.message}\nReturn a corrected answer as exactly one <attack>...</attack> block and XML only.`
+                            }
+                        ]);
+                    }
+                }
+
+                if (!structuredAttackResponse) {
+                    throw new Error('Attack check did not produce a validated structured response.');
                 }
 
                 const safeResponse = Events.escapeHtml(attackResponse.trim());
                 return {
                     raw: attackResponse,
                     html: safeResponse.replace(/\n/g, '<br>'),
-                    structured: parseAttackCheckResponse(attackResponse)
+                    structured: structuredAttackResponse
                 };
             } catch (error) {
                 console.warn('Attack check failed:', error.message);
                 console.debug(error);
+                if (allowWhenLegacyChecksDisabled) {
+                    throw error;
+                }
                 return null;
             }
         }
 
-        async function runAttackPrecheck({ actionText }) {
-            if (Globals.config?.use_legacy_prompt_checks !== true) {
+        async function runAttackPrecheck({ actionText, allowWhenLegacyChecksDisabled = false }) {
+            if (Globals.config?.use_legacy_prompt_checks !== true && !allowWhenLegacyChecksDisabled) {
                 console.info('Attack precheck skipped: use_legacy_prompt_checks is false.');
                 return false;
             }
@@ -20353,6 +20722,7 @@ module.exports = function registerApiRoutes(scope) {
                     attackAttribute: roll.attackAttribute || null
                 },
                 defender: {
+                    id: target?.id || null,
                     name: target?.name || targetOutcome?.name || null,
                     level: Number.isFinite(target?.level) ? target.level : (Number.isFinite(targetOutcome?.level) ? targetOutcome.level : null),
                     defenseSkill: difficulty.defenseSkill || null
@@ -20399,6 +20769,7 @@ module.exports = function registerApiRoutes(scope) {
                     startingHealth: Number.isFinite(targetOutcome.startingHealth) ? targetOutcome.startingHealth : (Number.isFinite(target.health) ? target.health : null),
                     remainingHealth: Number.isFinite(targetOutcome.remainingHealth) ? targetOutcome.remainingHealth : (Number.isFinite(target.remainingHealth) ? target.remainingHealth : null),
                     rawRemainingHealth: Number.isFinite(targetOutcome.rawRemainingHealth) ? targetOutcome.rawRemainingHealth : null,
+                    maxHealth: Number.isFinite(targetOutcome.maxHealth) ? targetOutcome.maxHealth : (Number.isFinite(target.maxHealth) ? target.maxHealth : null),
                     defeated: typeof targetOutcome.defeated === 'boolean' ? targetOutcome.defeated : (typeof target.defeated === 'boolean' ? target.defeated : null),
                     toughness: targetOutcome.toughness || target.toughness || null,
                     healthLostPercent: Number.isFinite(targetOutcome.healthLostPercent)
@@ -20700,7 +21071,7 @@ module.exports = function registerApiRoutes(scope) {
             };
         }
 
-        function resolveAreaAttackToolCall({ areaAttackEntry } = {}) {
+        function resolveAreaAttackToolCall({ areaAttackEntry, dieRollOverride = null } = {}) {
             if (!areaAttackEntry || typeof areaAttackEntry !== 'object') {
                 throw new Error('resolveAreaAttack requires an areaAttackEntry object.');
             }
@@ -20765,6 +21136,7 @@ module.exports = function registerApiRoutes(scope) {
             };
 
             const attacker = resolveChatToolActor(areaAttackEntry.attacker, 'attacker');
+            assertActorCanInitiateAttack(attacker, { toolName: 'resolveAreaAttack' });
             const attackerLocationId = attacker.currentLocation || attacker.locationId || currentPlayer?.currentLocation || null;
             const attackerLocation = attackerLocationId ? Location.get(attackerLocationId) : null;
             const revealAttackerIfHidden = () => {
@@ -20861,7 +21233,9 @@ module.exports = function registerApiRoutes(scope) {
                     attackCheckInfo,
                     actor: attacker,
                     location: attackerLocation || null,
-                    dieRollOverride: sharedDieRoll
+                    dieRollOverride: sharedDieRoll === null
+                        ? (Number.isInteger(dieRollOverride) ? dieRollOverride : null)
+                        : sharedDieRoll
                 });
 
                 if (!attackContext?.isAttack) {
@@ -21033,7 +21407,7 @@ module.exports = function registerApiRoutes(scope) {
             };
         }
 
-        function resolveAttackToolCall({ attackEntry } = {}) {
+        function resolveAttackToolCall({ attackEntry, dieRollOverride = null } = {}) {
             if (!attackEntry || typeof attackEntry !== 'object') {
                 throw new Error('resolveAttack requires an attackEntry object.');
             }
@@ -21082,6 +21456,7 @@ module.exports = function registerApiRoutes(scope) {
             };
 
             const attacker = resolveActor(attackEntry.attacker, 'attacker');
+            assertActorCanInitiateAttack(attacker, { toolName: 'resolveAttack' });
             const defender = resolveActor(attackEntry.defender, 'defender');
             if (defender?.id) {
                 attackEntry.targetActorId = defender.id;
@@ -21105,7 +21480,8 @@ module.exports = function registerApiRoutes(scope) {
             const attackContext = buildAttackContextForActor({
                 attackCheckInfo,
                 actor: attacker,
-                location: attackerLocation || null
+                location: attackerLocation || null,
+                dieRollOverride: Number.isInteger(dieRollOverride) ? dieRollOverride : null
             });
 
             if (!attackContext?.isAttack) {
@@ -21432,7 +21808,16 @@ module.exports = function registerApiRoutes(scope) {
             return names;
         }
 
-        async function runNextNpcListPrompt({ locationOverride = null, maxFriendlyNpcsToAct, maxHostileNpcsToAct, currentTurnLog } = {}) {
+        async function runNextNpcListPrompt({
+            locationOverride = null,
+            maxFriendlyNpcsToAct,
+            maxHostileNpcsToAct,
+            currentTurnLog,
+            excludedNpcIds = new Set()
+        } = {}) {
+            if (!(excludedNpcIds instanceof Set)) {
+                throw new TypeError('runNextNpcListPrompt excludedNpcIds must be a Set.');
+            }
             const filterNpcNamesToContext = (names, locationCandidate = null) => {
                 if (!Array.isArray(names) || !names.length) {
                     return [];
@@ -21513,6 +21898,13 @@ module.exports = function registerApiRoutes(scope) {
                     const npc = typeof findActorByName === 'function' ? findActorByName(name) : null;
                     if (!npc || !npc.isNPC) {
                         console.warn(`pruneNpcNamesToDispositionLimits: unable to classify NPC '${name}'.`);
+                        continue;
+                    }
+                    if (getCombatActionUnavailableReason(npc)) {
+                        continue;
+                    }
+                    if (npc.id && excludedNpcIds.has(npc.id)) {
+                        console.log(`Skipping NPC turn for ${npc.name || npc.id} because that actor already resolved an attack this turn.`);
                         continue;
                     }
 
@@ -23547,7 +23939,8 @@ module.exports = function registerApiRoutes(scope) {
             maxHostileNpcsToAct = 0,
             currentTurnLog,
             forcedNpcs = null,
-            npcActionContext = null
+            npcActionContext = null,
+            excludedNpcIds = new Set()
         }) {
             console.log(`Executing NPC turns after player at location: ${location?.name || 'Unknown Location'}: skipNpcEvents=${skipNpcEvents}, maxFriendlyNpcsToAct=${maxFriendlyNpcsToAct}, maxHostileNpcsToAct=${maxHostileNpcsToAct}`);
             if (skipNpcEvents) {
@@ -23556,6 +23949,9 @@ module.exports = function registerApiRoutes(scope) {
             }
             if (!Array.isArray(entryCollector)) {
                 throw new Error('executeNpcTurnsAfterPlayer requires an entryCollector array when NPC turns are processed.');
+            }
+            if (!(excludedNpcIds instanceof Set)) {
+                throw new TypeError('executeNpcTurnsAfterPlayer excludedNpcIds must be a Set.');
             }
             const results = [];
             const pendingNpcTurnTextForName = (npcName) => `*${npcName || 'NPC'} is taking their turn...*`;
@@ -23675,7 +24071,13 @@ module.exports = function registerApiRoutes(scope) {
                 pendingNpcTurnEntry = createPendingNpcTurnEntry({ locationOverride: location });
                 const npcQueue = hasForcedNpcQueue
                     ? { raw: '', names: forcedNpcQueue }
-                    : await runNextNpcListPrompt({ locationOverride: location, maxFriendlyNpcsToAct, maxHostileNpcsToAct, currentTurnLog });
+                    : await runNextNpcListPrompt({
+                        locationOverride: location,
+                        maxFriendlyNpcsToAct,
+                        maxHostileNpcsToAct,
+                        currentTurnLog,
+                        excludedNpcIds
+                    });
                 const npcQueueEntries = Array.isArray(npcQueue.names) ? npcQueue.names : [];
 
                 console.log(`NPC turn queue: ${npcQueueEntries.length} NPCs to process.`);
@@ -23703,7 +24105,11 @@ module.exports = function registerApiRoutes(scope) {
                     const npc = forcedNpcId
                         ? (players.get(forcedNpcId) || Player.getById(forcedNpcId) || Player.get(forcedNpcId))
                         : (typeof findActorByName === 'function' ? findActorByName(npcName) : null);
-                    if (!npc || !npc.isNPC || npc.isDead) {
+                    if (!npc || !npc.isNPC || getCombatActionUnavailableReason(npc)) {
+                        continue;
+                    }
+                    if (npc.id && excludedNpcIds.has(npc.id)) {
+                        console.log(`Skipping queued NPC turn for ${npc.name || npc.id} because that actor already resolved an attack this turn.`);
                         continue;
                     }
 
@@ -23723,6 +24129,10 @@ module.exports = function registerApiRoutes(scope) {
                         }
                     } catch (error) {
                         console.warn(`Failed to tick status effects for NPC ${npc.name}:`, error.message);
+                    }
+                    if (getCombatActionUnavailableReason(npc)) {
+                        console.log(`Skipping NPC turn for ${npc.name || npc.id} because status-effect ticking left the actor unable to act.`);
+                        continue;
                     }
                     activeNpcTurnEntry = pendingNpcTurnEntry || createPendingNpcTurnEntry({
                         npcName: npc.name || npcName,
@@ -23770,7 +24180,10 @@ module.exports = function registerApiRoutes(scope) {
 
                     let attackCheck = null;
                     let attackContext = null;
-                    if (Globals.config?.use_legacy_prompt_checks === true) {
+                    const tinyBrainNpcActionEnabled = isTinyBrainPromptEnabled(Globals.config?.ai, 'npc_action');
+                    const shouldPreResolveNpcAttack = Globals.config?.use_legacy_prompt_checks === true
+                        || tinyBrainNpcActionEnabled;
+                    if (shouldPreResolveNpcAttack) {
                         if (stream && stream.isEnabled) {
                             stream.status('npc_turn:attack_check', {
                                 npcName: npc.name || npcName,
@@ -23783,7 +24196,8 @@ module.exports = function registerApiRoutes(scope) {
                             locationOverride: npcLocation,
                             characterName: npc.name || 'Unknown NPC',
                             itemContext,
-                            abilityContext
+                            abilityContext,
+                            allowWhenLegacyChecksDisabled: tinyBrainNpcActionEnabled
                         });
 
                         attackContext = buildAttackContextForActor({
@@ -24795,7 +25209,11 @@ module.exports = function registerApiRoutes(scope) {
             };
 
             let whileYouWereAwayProcessed = false;
-            const runWhileYouWereAwayOnArrivalIfNeeded = async ({ parentEntryId = null } = {}) => {
+            const runWhileYouWereAwayOnArrivalIfNeeded = async ({
+                parentEntryId = null,
+                suppressVisibleProse = false,
+                replacementArrivalEntry = null
+            } = {}) => {
                 if (whileYouWereAwayProcessed) {
                     return null;
                 }
@@ -24828,7 +25246,9 @@ module.exports = function registerApiRoutes(scope) {
                     parentEntryId,
                     stream,
                     locationWasVisitedBeforeArrival,
-                    locationLastVisitedTimeBeforeArrival
+                    locationLastVisitedTimeBeforeArrival,
+                    suppressVisibleProse,
+                    replacementArrivalEntry
                 });
             };
 
@@ -25901,7 +26321,9 @@ module.exports = function registerApiRoutes(scope) {
                                         destinationLocation
                                     });
                                 return {
+                                    locationId: destinationLocation.id || null,
                                     location: destinationLocationName || null,
+                                    regionId: destinationRegion?.id || null,
                                     region: destinationRegionName || null,
                                     travelTimeMinutes
                                 };
@@ -25916,6 +26338,19 @@ module.exports = function registerApiRoutes(scope) {
                                 location,
                                 players
                             });
+                            const currentPlayerName = typeof currentPlayer?.name === 'string'
+                                ? currentPlayer.name.trim()
+                                : '';
+                            if (!currentPlayerName) {
+                                throw new Error('Tiny-brain player-action skill-check actors require a named current player.');
+                            }
+                            const playerActionSkillCheckActors = [
+                                {
+                                    name: currentPlayerName,
+                                    aliases: ['player', 'the player', 'you']
+                                },
+                                ...playerActionAccompanyingCharacters
+                            ];
 
                             promptVariables = {
                                 ...baseContext,
@@ -25929,7 +26364,10 @@ module.exports = function registerApiRoutes(scope) {
                                 travelTargetLocationName: promptTravelContext?.destinationLocation?.name || null,
                                 playerActionTravelDestination,
                                 playerActionTravelMovementKind,
-                                playerActionAccompanyingCharacters
+                                playerActionAccompanyingCharacters,
+                                playerActionSkillCheckActors,
+                                playerActionOriginLocationId: location?.id || currentPlayer?.currentLocation || null,
+                                playerActionWorldTimeMinutes: Globals.getTotalWorldMinutes()
                             };
                         } else if (isQuestionAction) {
                             promptVariables = {
@@ -26297,8 +26735,21 @@ module.exports = function registerApiRoutes(scope) {
                 const enabledChatTools = isNoContextPromptAction
                     ? []
                     : filterEnabledChatTools({ allowWorldMutationTools, modExtensionRegistry });
-                if (Array.isArray(enabledChatTools) && enabledChatTools.length > 0) {
-                    additionalPayload.tools = enabledChatTools;
+                const hardenPlayerActionSkillCheckActors = promptType === 'player-action'
+                    && useTinyBrainPlayerAction;
+                const promptChatTools = hardenPlayerActionSkillCheckActors
+                    ? requireExplicitSkillCheckActors(enabledChatTools)
+                    : enabledChatTools;
+                const tinyBrainPlayerActionDestinationLookupTools = promptChatTools.filter(
+                    toolDefinition => {
+                        const toolName = typeof toolDefinition?.function?.name === 'string'
+                            ? toolDefinition.function.name.trim()
+                            : '';
+                        return TINY_BRAIN_PLAYER_ACTION_DESTINATION_LOOKUP_TOOL_NAMES.has(toolName);
+                    }
+                );
+                if (Array.isArray(promptChatTools) && promptChatTools.length > 0) {
+                    additionalPayload.tools = promptChatTools;
                     additionalPayload.tool_choice = 'auto';
                 }
 
@@ -26328,6 +26779,25 @@ module.exports = function registerApiRoutes(scope) {
                 const toolResultCache = {
                     roundKey: stream.requestId || `${promptMetadataLabel}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`,
                     entries: new Map()
+                };
+                const getSelectedTinyBrainSkillCheckActors = () => {
+                    if (!hardenPlayerActionSkillCheckActors || !tinyBrainPromptState) {
+                        return null;
+                    }
+                    const checkpoint = tinyBrainPromptState.checkpoints.find(candidate => (
+                        candidate?.parserName === 'player_action_checked_action_actors'
+                    ));
+                    if (!checkpoint) {
+                        throw new Error('Tiny-brain player-action prompt is missing its checked-action actor checkpoint.');
+                    }
+                    const completed = tinyBrainPromptState.completedCheckpoints?.[checkpoint.index];
+                    if (!completed) {
+                        return null;
+                    }
+                    if (!Array.isArray(completed.value)) {
+                        throw new Error('Tiny-brain checked-action actor checkpoint returned a non-array value.');
+                    }
+                    return completed.value.slice();
                 };
                 const toolCallDebugRecorder = Globals.config?.debug_tool_calls === true
                     ? createToolCallDebugRecorder({
@@ -26435,12 +26905,24 @@ module.exports = function registerApiRoutes(scope) {
                                 ? 'final response'
                                 : `checkpoint ${checkpoint.index + 1}`;
                             stream.status('player_action:prompt', `Awaiting tiny-brain ${stepLabel} (attempt ${attempt + 1})...`);
-                            const stageRequestOptions = {
+                            let stageRequestOptions = {
                                 ...requestOptions,
                                 messages,
                                 queueReservation
                             };
                             delete stageRequestOptions.requiredRegex;
+                            const isDestinationLookupCheckpoint = !isFinal
+                                && checkpoint?.parserName === 'player_action_more_info_or_na';
+                            const stageToolDefinitions = isDestinationLookupCheckpoint
+                                ? tinyBrainPlayerActionDestinationLookupTools
+                                : promptChatTools;
+                            if (isDestinationLookupCheckpoint) {
+                                stageRequestOptions = configureRequestChatTools(
+                                    stageRequestOptions,
+                                    stageToolDefinitions
+                                );
+                                stageRequestOptions.preserveBaseContextToolDefinitions = true;
+                            }
                             const liveDeslopProseMode = liveDeslopController
                                 ? resolveTinyBrainLiveDeslopProseMode({ messages, isFinal, checkpoint })
                                 : null;
@@ -26461,13 +26943,18 @@ module.exports = function registerApiRoutes(scope) {
                                     });
                                 })()
                                 : stageRequestOptions;
+                            const selectedSkillCheckActors = getSelectedTinyBrainSkillCheckActors();
 
-                            if (Array.isArray(enabledChatTools) && enabledChatTools.length > 0) {
+                            if (Array.isArray(stageToolDefinitions) && stageToolDefinitions.length > 0) {
                                 const toolLoopResult = await runChatCompletionWithToolLoop({
                                     requestOptions: effectiveStageRequestOptions,
                                     streamEmitter: stream,
                                     metadataLabel: promptMetadataLabel,
                                     toolResultCache,
+                                    defaultToolActor: selectedSkillCheckActors?.length === 1
+                                        ? selectedSkillCheckActors[0]
+                                        : null,
+                                    allowedSkillCheckActors: selectedSkillCheckActors,
                                     includeAllHistoryEntryTypes: allowWorldMutationTools,
                                     requestUserInput: createRequestUserInputHandler({
                                         stream,
@@ -26478,6 +26965,8 @@ module.exports = function registerApiRoutes(scope) {
                                         stream,
                                         promptLabel: promptMetadataLabel
                                     }),
+                                    dieRollOverride: injectedDieRollOverride,
+                                    requireExplicitSkillCheckActor: hardenPlayerActionSkillCheckActors,
                                     onToolCallEvent: event => checkResultsRecorder.record(event),
                                     onToolCallDebug: toolCallDebugRecorder
                                         ? event => toolCallDebugRecorder.record(event)
@@ -26509,7 +26998,7 @@ module.exports = function registerApiRoutes(scope) {
                         debugInfo.tinyBrain = true;
                         debugInfo.tinyBrainLogFile = tinyBrainResult.logFilePath;
                     }
-                } else if (Array.isArray(enabledChatTools) && enabledChatTools.length > 0) {
+                } else if (Array.isArray(promptChatTools) && promptChatTools.length > 0) {
                     const effectiveRequestOptions = liveDeslopController
                         ? (() => {
                             liveDeslopController.beginGeneration();
@@ -26534,6 +27023,8 @@ module.exports = function registerApiRoutes(scope) {
                             stream,
                             promptLabel: promptMetadataLabel
                         }),
+                        dieRollOverride: injectedDieRollOverride,
+                        requireExplicitSkillCheckActor: hardenPlayerActionSkillCheckActors,
                         onToolCallEvent: event => checkResultsRecorder.record(event),
                         onToolCallDebug: toolCallDebugRecorder
                             ? event => toolCallDebugRecorder.record(event)
@@ -26709,11 +27200,16 @@ module.exports = function registerApiRoutes(scope) {
                                     if (rerendered.temperature !== null) {
                                         rerunOptions.temperature = rerendered.temperature;
                                     }
+                                    const rerunSelectedSkillCheckActors = getSelectedTinyBrainSkillCheckActors();
                                     const rerunLoopResult = await runChatCompletionWithToolLoop({
                                         requestOptions: rerunOptions,
                                         streamEmitter: stream,
                                         metadataLabel: `${promptMetadataLabel}_rerun`,
                                         toolResultCache,
+                                        defaultToolActor: rerunSelectedSkillCheckActors?.length === 1
+                                            ? rerunSelectedSkillCheckActors[0]
+                                            : null,
+                                        allowedSkillCheckActors: rerunSelectedSkillCheckActors,
                                         includeAllHistoryEntryTypes: allowWorldMutationTools,
                                         requestUserInput: createRequestUserInputHandler({
                                             stream,
@@ -26724,6 +27220,8 @@ module.exports = function registerApiRoutes(scope) {
                                             stream,
                                             promptLabel: `${promptMetadataLabel}_rerun`
                                         }),
+                                        dieRollOverride: injectedDieRollOverride,
+                                        requireExplicitSkillCheckActor: hardenPlayerActionSkillCheckActors,
                                         onToolCallEvent: event => checkResultsRecorder.record(event),
                                         onToolCallDebug: toolCallDebugRecorder
                                             ? event => toolCallDebugRecorder.record(event)
@@ -26906,6 +27404,15 @@ module.exports = function registerApiRoutes(scope) {
                     const responseData = {
                         response: aiResponse
                     };
+                    const authoritativeMovementType = useTinyBrainPlayerAction
+                        && promptType === 'player-action'
+                        && typeof promptVariablesSnapshot?.playerActionTravelMovementKind === 'string'
+                        && promptVariablesSnapshot.playerActionTravelMovementKind.trim()
+                        ? promptVariablesSnapshot.playerActionTravelMovementKind.trim()
+                        : null;
+                    if (authoritativeMovementType) {
+                        responseData.authoritativeMovementType = authoritativeMovementType;
+                    }
                     if (
                         currentActionIsTravel
                         && !travelMetadataIsEventDriven
@@ -26917,6 +27424,7 @@ module.exports = function registerApiRoutes(scope) {
                         responseData.locationRefreshRequested = true;
                     }
                     let playerActionEventCheckResolutions = [];
+                    let playerActionPreResolvedHiddenNpcChecks = [];
 
                     if (toolInvocations.length) {
                         responseData.toolInvocations = toolInvocations;
@@ -26961,6 +27469,12 @@ module.exports = function registerApiRoutes(scope) {
                             .map(entry => entry.metadata.actionResolution)
                             .filter(resolution => resolution && typeof resolution === 'object');
                         playerActionEventCheckResolutions = actionResolutions;
+                        playerActionPreResolvedHiddenNpcChecks = plausibilityToolInvocations.map((entry) => ({
+                            toolName: entry.name,
+                            actorName: entry.metadata.actor || null,
+                            opponentName: entry.metadata.opponent || null,
+                            actionResolution: entry.metadata.actionResolution || null,
+                        }));
                         if (actionResolutions.length) {
                             responseData.actionResolutions = actionResolutions;
                             responseData.actionResolution = responseData.actionResolution || actionResolutions[0];
@@ -27207,6 +27721,7 @@ module.exports = function registerApiRoutes(scope) {
                                     suppressMoveEvents: suppressDirectTravelPromptMutation,
                                     suppressTimeAdvance: suppressDirectTravelPromptMutation
                                         || (suppressEventDrivenExitTimeAdvance && eventDrivenTravelWillSucceed),
+                                    preResolvedHiddenNpcChecks: playerActionPreResolvedHiddenNpcChecks,
                                     initialTimeProgress: playerActionTimeProgress,
                                     entryCollector: newChatEntries
                                 });
@@ -27223,6 +27738,9 @@ module.exports = function registerApiRoutes(scope) {
                                 questResult = questCheckOutcome;
                             }
                         } catch (eventError) {
+                            if (shouldPropagatePlayerActionEventCheckError(eventError)) {
+                                throw eventError;
+                            }
                             console.warn('Failed to run event checks:', eventError.message);
                             console.debug(eventError);
                         }
@@ -27912,8 +28430,19 @@ module.exports = function registerApiRoutes(scope) {
                         }, newChatEntries);
                     }
 
+                    const suppressTinyBrainWhileAwayVisibleProse = Boolean(
+                        useTinyBrainPlayerAction
+                        && promptType === 'player-action'
+                        && typeof moveTurnResultPayload?.destinationProse === 'string'
+                        && moveTurnResultPayload.destinationProse.trim()
+                        && isTinyBrainPromptEnabled(Globals.config?.ai, 'while_you_were_away')
+                    );
                     await runWhileYouWereAwayOnArrivalIfNeeded({
-                        parentEntryId: aiResponseEntry?.id || null
+                        parentEntryId: aiResponseEntry?.id || null,
+                        suppressVisibleProse: suppressTinyBrainWhileAwayVisibleProse,
+                        replacementArrivalEntry: suppressTinyBrainWhileAwayVisibleProse
+                            ? aiResponseEntry
+                            : null
                     });
 
                     if (stream.isEnabled && !playerActionStreamSent) {
@@ -28005,6 +28534,12 @@ module.exports = function registerApiRoutes(scope) {
 
                         let npcTurns = null;
                         if (!skipNpcTurns) {
+                            const excludedNpcIds = collectSuccessfulNpcAttackActorIds(
+                                toolInvocations,
+                                attackerName => (typeof findActorByName === 'function'
+                                    ? findActorByName(attackerName)
+                                    : null)
+                            );
 
                             const roll = Math.random();
                             console.log(`NPC turn frequency check: rolled ${roll.toFixed(3)} for frequency ${npcTurnFrequency}`);
@@ -28017,7 +28552,8 @@ module.exports = function registerApiRoutes(scope) {
                                     entryCollector: newChatEntries,
                                     maxFriendlyNpcsToAct: maxNpcsToAct,
                                     maxHostileNpcsToAct,
-                                    currentTurnLog
+                                    currentTurnLog,
+                                    excludedNpcIds
                                 });
                             }
                         }
@@ -30633,9 +31169,11 @@ module.exports = function registerApiRoutes(scope) {
                 throw new Error(`${contextLabel} info is invalid: ${error?.message || error}`);
             }
 
-            const etaMinutes = Number(normalizedInfo.ETA);
+            const etaMinutes = normalizedInfo.ETA;
             const elapsedMinutes = Number(Globals.elapsedTime);
-            const hasEtaMinutes = Number.isFinite(etaMinutes) && Number.isInteger(etaMinutes);
+            const hasEtaMinutes = typeof etaMinutes === 'number'
+                && Number.isFinite(etaMinutes)
+                && Number.isInteger(etaMinutes);
             const hasElapsedMinutes = Number.isFinite(elapsedMinutes) && Number.isInteger(elapsedMinutes);
             const rawTimeToDestination = hasEtaMinutes && hasElapsedMinutes
                 ? etaMinutes - elapsedMinutes
@@ -30664,7 +31202,9 @@ module.exports = function registerApiRoutes(scope) {
                 hasArrived: normalizedInfo.hasArrived,
                 isArriving: normalizedInfo.isArriving,
                 minutesToDestination: rawTimeToDestination,
-                timeToDestination: Utils.formatMinutesAsDuration(rawTimeToDestination, { includeAgo: true }),
+                timeToDestination: rawTimeToDestination === null
+                    ? null
+                    : Utils.formatMinutesAsDuration(rawTimeToDestination, { includeAgo: true }),
                 tripCompleteFraction: normalizedInfo.tripCompleteFraction,
                 destinationResolved: Boolean(currentDestinationId),
                 displayDestination: displayDestination || null
@@ -32211,17 +32751,6 @@ module.exports = function registerApiRoutes(scope) {
 
                 const check = resolveBarterHaggleCheck(npc);
                 const locationId = currentPlayer.currentLocation || npc.currentLocation;
-                const playerEntry = pushChatEntry({
-                    role: 'user',
-                    type: 'barter-haggle',
-                    content: `[Barter offer to ${npc.name || 'merchant'}] ${offerText}`,
-                    metadata: {
-                        npcId: npc.id,
-                        sessionId: session.id,
-                        haggleCheck: check
-                    }
-                }, chatEntries, locationId);
-
                 const promptHistory = [
                     ...session.haggleHistory,
                     {
@@ -32240,6 +32769,16 @@ module.exports = function registerApiRoutes(scope) {
                 });
                 const responseText = pricing.haggleResponse
                     || `${npc.name || 'The merchant'} considers the offer.`;
+                const playerEntry = pushChatEntry({
+                    role: 'user',
+                    type: 'barter-haggle',
+                    content: `[Barter offer to ${npc.name || 'merchant'}] ${offerText}`,
+                    metadata: {
+                        npcId: npc.id,
+                        sessionId: session.id,
+                        haggleCheck: check
+                    }
+                }, chatEntries, locationId);
                 const responseEntry = pushChatEntry({
                     role: 'assistant',
                     type: 'barter-haggle',
@@ -33323,14 +33862,17 @@ module.exports = function registerApiRoutes(scope) {
                         });
                     }
 
-                    actionSucceeded = currentPlayer.equipItemInSlot(targetItem, resolvedSlotName);
+                    const equipResult = currentPlayer.equipItemInSlot(targetItem, resolvedSlotName);
 
-                    if (!actionSucceeded) {
+                    if (equipResult !== true) {
                         return res.status(400).json({
                             success: false,
-                            error: 'Failed to equip item in the requested slot'
+                            error: typeof equipResult === 'string' && equipResult.trim()
+                                ? equipResult
+                                : 'Failed to equip item in the requested slot'
                         });
                     }
+                    actionSucceeded = true;
                 } else {
                     const gearEntry = gearSnapshot[resolvedSlotName];
                     if (!gearEntry?.itemId) {
@@ -40434,6 +40976,7 @@ module.exports = function registerApiRoutes(scope) {
                             : []
                 })));*/
                 let effectiveResults = craftingResults;
+                const availableThings = slotItems.map(entry => entry.thing);
 
                 if (mappedLevel && mappedLevel !== 'success') {
                     const degreeMode = isHarvestAction ? 'harvest' : (isSalvageAction ? 'salvage' : craftingMode);
@@ -40452,12 +40995,20 @@ module.exports = function registerApiRoutes(scope) {
                         intendedItemName: promptPayload.intendedItemName || intendedItemName,
                         craftTargetType: effectiveCraftTargetType,
                         targetName: degreeTargetName,
-                        inputItems: craftingItemsForPrompt
+                        inputItems: craftingItemsForPrompt,
+                        validateResults: ({ selectedResult: candidateResult }) => {
+                            const candidateConsumedNames = Array.isArray(candidateResult.itemsConsumed)
+                                ? candidateResult.itemsConsumed.filter(name => typeof name === 'string' && name.trim())
+                                : [];
+                            resolveCraftConsumedThings({
+                                inputThings: availableThings,
+                                consumedNames: candidateConsumedNames,
+                                mode: craftingMode,
+                                allowFallbackConsumeFirst: isSalvageAction
+                            });
+                        }
                     });
                     effectiveResults = degreeResult.results;
-                    if (!effectiveResults.has(mappedLevel)) {
-                        throw new Error(`Craft success-degree response missing result for level '${mappedLevel}'.`);
-                    }
                 }
 
                 let selectedResult = mappedLevel ? effectiveResults.get(mappedLevel) : null;
@@ -40487,8 +41038,6 @@ module.exports = function registerApiRoutes(scope) {
                 console.log(`   - Consumed items: ${consumedNameList.length ? consumedNameList.join(', ') : 'None'}`);
                 console.log(`   - Crafting mode: ${craftingMode}`);
 
-
-                const availableThings = slotItems.map(entry => entry.thing);
                 const {
                     consumedThings,
                     unmatchedConsumedNames
@@ -43075,6 +43624,7 @@ module.exports = function registerApiRoutes(scope) {
             const allThings = [keepThing, ...mergeThings];
             const seenIds = new Set();
             let qualityKey = null;
+            let mechanicsChecksum = null;
             let holderKey = null;
             let owner = null;
             let container = null;
@@ -43099,6 +43649,22 @@ module.exports = function registerApiRoutes(scope) {
                     throw createAiItemCombinerValidationError('Equipped items cannot be combined.');
                 }
 
+                const currentMechanicsChecksum = typeof thing.combinerMechanicsChecksum === 'string'
+                    ? thing.combinerMechanicsChecksum.trim()
+                    : '';
+                if (!currentMechanicsChecksum) {
+                    throw createAiItemCombinerValidationError(
+                        `Item stack "${thing.id}" is missing an authoritative mechanics checksum.`
+                    );
+                }
+                if (mechanicsChecksum === null) {
+                    mechanicsChecksum = currentMechanicsChecksum;
+                } else if (currentMechanicsChecksum !== mechanicsChecksum) {
+                    throw createAiItemCombinerValidationError(
+                        'All item stacks in a combine group must have identical authoritative mechanics.'
+                    );
+                }
+
                 const currentQualityKey = getItemCombinerQualityKey(thing);
                 if (qualityKey === null) {
                     qualityKey = currentQualityKey;
@@ -43120,6 +43686,7 @@ module.exports = function registerApiRoutes(scope) {
 
             return {
                 qualityKey,
+                mechanicsChecksum,
                 holderKey,
                 owner,
                 container,
@@ -45160,6 +45727,10 @@ module.exports = function registerApiRoutes(scope) {
                     actionText,
                     stream,
                     locationOverride: location || null,
+                    ignoredEventKeys: ['alter_item'],
+                    eventCheckIgnoreInstructions:
+                        'The checked-container route already applied the authoritative lock state. '
+                        + 'Do not emit alterItem for the attempted container.',
                     initialTimeProgress: containerOpenTimeProgress,
                     entryCollector: newChatEntries
                 });
@@ -45359,6 +45930,12 @@ module.exports = function registerApiRoutes(scope) {
                         error: 'Only item-type things can be moved into an inventory.'
                     });
                 }
+                if (thing.isEquipped || thing.equippedSlot) {
+                    return res.status(400).json({
+                        success: false,
+                        error: 'Equipped items must be unequipped before they can be moved.'
+                    });
+                }
 
                 const payload = req.body && typeof req.body === 'object' ? req.body : {};
 
@@ -45556,6 +46133,12 @@ module.exports = function registerApiRoutes(scope) {
                 if (!thing) {
                     return res.status(404).json({ success: false, error: 'Thing not found' });
                 }
+                if (thing.isEquipped || thing.equippedSlot) {
+                    return res.status(400).json({
+                        success: false,
+                        error: 'Equipped items must be unequipped before they can be moved.'
+                    });
+                }
 
                 const body = req.body && typeof req.body === 'object' ? req.body : {};
                 const rawLocationId = typeof body.locationId === 'string' ? body.locationId.trim() : '';
@@ -45752,6 +46335,12 @@ module.exports = function registerApiRoutes(scope) {
                     return res.status(404).json({
                         success: false,
                         error: 'Thing not found'
+                    });
+                }
+                if (thing.isEquipped || thing.equippedSlot) {
+                    return res.status(400).json({
+                        success: false,
+                        error: 'Equipped items must be unequipped before they can be moved.'
                     });
                 }
 
@@ -51488,6 +52077,54 @@ module.exports = function registerApiRoutes(scope) {
             });
         });
 
+        app.get('/api/llm-completion-cassette/status', (req, res) => {
+            try {
+                return res.json({
+                    success: true,
+                    ...LLMClient.getCompletionCassetteStatus()
+                });
+            } catch (error) {
+                console.error('Failed to read LLM completion cassette status:', error);
+                return res.status(500).json({
+                    success: false,
+                    error: error.message
+                });
+            }
+        });
+
+        app.post('/api/llm-completion-cassette/assert-consumed', (req, res) => {
+            try {
+                return res.json({
+                    success: true,
+                    replay: LLMClient.assertCompletionCassetteConsumed()
+                });
+            } catch (error) {
+                return res.status(409).json({
+                    success: false,
+                    error: error.message,
+                    ...LLMClient.getCompletionCassetteStatus()
+                });
+            }
+        });
+
+        app.post('/api/llm-completion-cassette/complete-recording', (req, res) => {
+            try {
+                const description = typeof req.body?.description === 'string'
+                    ? req.body.description
+                    : undefined;
+                return res.json({
+                    success: true,
+                    recording: LLMClient.completeCompletionCassetteRecording({ description })
+                });
+            } catch (error) {
+                return res.status(409).json({
+                    success: false,
+                    error: error.message,
+                    ...LLMClient.getCompletionCassetteStatus()
+                });
+            }
+        });
+
         // API endpoint to test configuration without saving
         app.post('/api/test-config', async (req, res) => {
             try {
@@ -52628,6 +53265,7 @@ module.exports.resolveBarterOfferItemReference = resolveBarterOfferItemReference
 module.exports.buildBarterCurrencySettlement = buildBarterCurrencySettlement;
 module.exports.sanitizeBarterPricingXmlForParsing = sanitizeBarterPricingXmlForParsing;
 module.exports.parseGeneratedBarterStockCount = parseGeneratedBarterStockCount;
+module.exports.validateGeneratedBarterStockBounds = validateGeneratedBarterStockBounds;
 module.exports.clearNewGameRuntimeRegistries = clearNewGameRuntimeRegistries;
 module.exports.shouldIncludePlayerActionForEventChecks = shouldIncludePlayerActionForEventChecks;
 module.exports.extractRegisteredThingBlueprintFields = extractRegisteredThingBlueprintFields;
@@ -52650,3 +53288,8 @@ module.exports.assertSafeSaveDirectoryName = assertSafeSaveDirectoryName;
 module.exports.snapshotPlayerActionBaseContextForSlop = snapshotPlayerActionBaseContextForSlop;
 module.exports.isExitButtonTravelToExterior = isExitButtonTravelToExterior;
 module.exports.sanitizeSlopHistorySegments = sanitizeSlopHistorySegments;
+module.exports.getCombatActionUnavailableReason = getCombatActionUnavailableReason;
+module.exports.assertActorCanInitiateAttack = assertActorCanInitiateAttack;
+module.exports.collectSuccessfulNpcAttackActorIds = collectSuccessfulNpcAttackActorIds;
+module.exports.createPlayerActionInvalidVehicleRouteError = createPlayerActionInvalidVehicleRouteError;
+module.exports.shouldPropagatePlayerActionEventCheckError = shouldPropagatePlayerActionEventCheckError;

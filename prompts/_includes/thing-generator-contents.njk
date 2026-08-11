@@ -13,7 +13,7 @@
 {% endfor %}
 </equipmentSlots>
 
-<task>Generate the contents of the container "{{ container.name }}" appropriate to the container, setting, current location and current region. Strictly keep the name and count fields as they are, and fill in the rest of the fields in a way that makes sense with the existing ones. Return them in this format:</task>
+<task>Generate only the items listed inside the container "{{ container.name }}". Do not generate the container itself. The template below contains exactly the required top-level item entries. Do not add, remove, combine, split, rename, or recount them. Keep every name and count exactly as shown, and fill in only the remaining fields in a way that fits the setting, current location, and current region. Return the completed template in this format:</task>
 
 {% include "_includes/generation-prompt-instructions.njk" %}
 

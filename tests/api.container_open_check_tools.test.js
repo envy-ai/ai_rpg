@@ -50,6 +50,17 @@ test('checked container open-check autosaves after applying route mutations', ()
     assert.ok(response > autosaveWarning, 'Expected autosave before success response.');
 });
 
+test('checked container open-check does not duplicate its authoritative lock mutation as alterItem', () => {
+    const source = fs.readFileSync(require.resolve('../api.js'), 'utf8');
+    const routeSource = extractContainerOpenCheckRoute(source);
+
+    assert.match(routeSource, /ignoredEventKeys:\s*\['alter_item'\]/);
+    assert.match(
+        routeSource,
+        /eventCheckIgnoreInstructions:[\s\S]*checked-container route already applied the authoritative lock state/
+    );
+});
+
 test('tiny-brain checked-container semantics are validated before the final response is accepted', () => {
     const source = fs.readFileSync(require.resolve('../api.js'), 'utf8');
     const routeSource = extractContainerOpenCheckRoute(source);

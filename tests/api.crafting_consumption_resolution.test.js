@@ -58,6 +58,19 @@ test('craft consumption resolution throws on unmatched consumed item names', () 
     }, /did not match the provided inputs/i);
 });
 
+test('craft consumption resolution rejects duplicate names for one selected stack', () => {
+    const resolveCraftConsumedThings = loadResolveCraftConsumedThings();
+
+    assert.throws(() => {
+        resolveCraftConsumedThings({
+            inputThings: [{ id: 'wood-stack', name: 'QA Wood', count: 2 }],
+            consumedNames: ['QA Wood', 'QA Wood'],
+            mode: 'craft',
+            allowFallbackConsumeFirst: false
+        });
+    }, /did not match the provided inputs/i);
+});
+
 test('salvage consumption resolution still falls back to the target item when unnamed', () => {
     const resolveCraftConsumedThings = loadResolveCraftConsumedThings();
     const target = { id: 'sword-1', name: 'Rusty Sword' };

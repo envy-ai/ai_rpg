@@ -374,6 +374,7 @@ Response:
 Notes:
 - `slotName` must match a key in the current player's gear snapshot.
 - When `itemId` is present, the item must be in the current player's inventory and `Player.equipItemInSlot(...)` must accept it for the requested slot.
+- `Player.equipItemInSlot(...)` may return an explanatory error string for semantic failures such as an incompatible slot type. The route treats only literal `true` as success and returns that message with HTTP 400 otherwise; a truthy error string can never produce a success response.
 - Clearing an empty slot returns success.
 
 ## PUT /api/player/factions/:id/standing

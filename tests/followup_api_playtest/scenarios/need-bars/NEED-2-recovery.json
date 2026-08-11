@@ -1,0 +1,410 @@
+{
+  "version": 1,
+  "scenario": "need-bars",
+  "case": "NEED-2-recovery",
+  "description": "After deterministic audience isolation, one explicit stationary minute applies only the supported player recovery changes, combines them with passive elapsed-time rates, and never exceeds a need bar's configured range.",
+  "fixture": "need-bars-status-lifecycle",
+  "configProfile": "need-bars-mechanics",
+  "trackedPaths": [
+    "player.payload.player.locationId",
+    "player.payload.player.needBars",
+    "player.payload.player.statusEffects",
+    "player.payload.player.inventory",
+    "players.payload.players",
+    "calendar.payload.worldTime.timeMinutes",
+    "history.payload"
+  ],
+  "steps": [
+    {
+      "type": "loadFixture"
+    },
+    {
+      "type": "request",
+      "name": "remove_companion",
+      "method": "DELETE",
+      "route": "/api/player/party",
+      "body": {
+        "ownerId": "$fixture.playerId",
+        "memberId": "$fixture.companionId"
+      }
+    },
+    {
+      "type": "assert",
+      "assertions": [
+        {
+          "type": "httpStatus",
+          "equals": 200
+        },
+        {
+          "type": "responseOk",
+          "equals": true
+        },
+        {
+          "type": "equals",
+          "source": "responses.remove_companion",
+          "path": "payload.success",
+          "equals": true
+        }
+      ]
+    },
+    {
+      "type": "request",
+      "name": "relocate_companion",
+      "method": "POST",
+      "route": "/api/npcs/$fixture.companionId/teleport",
+      "body": {
+        "locationId": "$fixture.isolationLocationId",
+        "accountTravelTime": false
+      }
+    },
+    {
+      "type": "assert",
+      "assertions": [
+        {
+          "type": "httpStatus",
+          "equals": 200
+        },
+        {
+          "type": "responseOk",
+          "equals": true
+        },
+        {
+          "type": "equals",
+          "source": "responses.relocate_companion",
+          "path": "payload.success",
+          "equals": true
+        }
+      ]
+    },
+    {
+      "type": "request",
+      "name": "relocate_courier",
+      "method": "POST",
+      "route": "/api/npcs/$fixture.nonPartyNpcId/teleport",
+      "body": {
+        "locationId": "$fixture.isolationLocationId",
+        "accountTravelTime": false
+      }
+    },
+    {
+      "type": "assert",
+      "assertions": [
+        {
+          "type": "httpStatus",
+          "equals": 200
+        },
+        {
+          "type": "responseOk",
+          "equals": true
+        },
+        {
+          "type": "equals",
+          "source": "responses.relocate_courier",
+          "path": "payload.success",
+          "equals": true
+        }
+      ]
+    },
+    {
+      "type": "snapshot",
+      "name": "before_action"
+    },
+    {
+      "type": "chat",
+      "name": "rest_action",
+      "text": "I take a short rest for exactly one minute by sitting completely still and quietly resting, without eating, drinking, meditating, using magic, or performing any other activity.",
+      "travel": false,
+      "interactive": {
+        "roll": null,
+        "questAccepted": false,
+        "confirmed": false
+      }
+    },
+    {
+      "type": "assert",
+      "assertions": [
+        {
+          "type": "httpStatus",
+          "equals": 200
+        },
+        {
+          "type": "responseOk",
+          "equals": true
+        },
+        {
+          "type": "exactDelta",
+          "beforeSource": "snapshots.before_action",
+          "afterSource": "after",
+          "path": "calendar.payload.worldTime.timeMinutes",
+          "delta": 1
+        },
+        {
+          "type": "equals",
+          "source": "responses.rest_action",
+          "path": "payload.timeProgress.advancedMinutes",
+          "equals": 1
+        },
+        {
+          "type": "equals",
+          "source": "after",
+          "path": "player.payload.player.locationId",
+          "equals": "$fixture.baselineLocationId"
+        },
+        {
+          "type": "count",
+          "source": "responses.rest_action",
+          "path": "payload.debug.eventStructured.parsed.needbar_change",
+          "equals": 2
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "responses.rest_action",
+          "path": "payload.debug.eventStructured.parsed.needbar_change",
+          "where": {
+            "character": "$fixture.playerName",
+            "bar": "rest",
+            "direction": "increase",
+            "magnitude": "small"
+          },
+          "equals": 1
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "responses.rest_action",
+          "path": "payload.debug.eventStructured.parsed.needbar_change",
+          "where": {
+            "character": "$fixture.playerName",
+            "bar": "stamina",
+            "direction": "increase",
+            "magnitude": "full"
+          },
+          "equals": 1
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "responses.rest_action",
+          "path": "payload.debug.eventStructured.parsed.needbar_change",
+          "where": {
+            "character": "$fixture.companionName"
+          },
+          "equals": 0
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "responses.rest_action",
+          "path": "payload.debug.eventStructured.parsed.needbar_change",
+          "where": {
+            "character": "$fixture.nonPartyNpcName"
+          },
+          "equals": 0
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "after",
+          "path": "player.payload.player.needBars",
+          "where": {
+            "id": "food",
+            "value": 599.3,
+            "max": 1000
+          },
+          "equals": 1
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "after",
+          "path": "player.payload.player.needBars",
+          "where": {
+            "id": "rest",
+            "value": 500.4,
+            "max": 1000
+          },
+          "equals": 1
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "after",
+          "path": "player.payload.player.needBars",
+          "where": {
+            "id": "stamina",
+            "value": 1000,
+            "max": 1000
+          },
+          "equals": 1
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "after",
+          "path": "player.payload.player.needBars",
+          "where": {
+            "id": "mana",
+            "value": 610,
+            "max": 1000
+          },
+          "equals": 1
+        },
+        {
+          "type": "entityArrayObjectCount",
+          "source": "after",
+          "collection": "players",
+          "id": "$fixture.companionId",
+          "path": "needBars",
+          "where": {
+            "id": "food",
+            "value": 599.3
+          },
+          "equals": 1
+        },
+        {
+          "type": "entityArrayObjectCount",
+          "source": "after",
+          "collection": "players",
+          "id": "$fixture.companionId",
+          "path": "needBars",
+          "where": {
+            "id": "rest",
+            "value": 400.4
+          },
+          "equals": 1
+        },
+        {
+          "type": "entityArrayObjectCount",
+          "source": "after",
+          "collection": "players",
+          "id": "$fixture.companionId",
+          "path": "needBars",
+          "where": {
+            "id": "stamina",
+            "value": 650
+          },
+          "equals": 1
+        },
+        {
+          "type": "entityArrayObjectCount",
+          "source": "after",
+          "collection": "players",
+          "id": "$fixture.nonPartyNpcId",
+          "path": "needBars",
+          "where": {
+            "id": "stamina",
+            "value": 950
+          },
+          "equals": 1
+        },
+        {
+          "type": "entityArrayObjectCount",
+          "source": "after",
+          "collection": "players",
+          "id": "$fixture.nonPartyNpcId",
+          "path": "needBars",
+          "where": {
+            "id": "mana",
+            "value": 510
+          },
+          "equals": 1
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "after",
+          "path": "player.payload.player.inventory",
+          "where": {
+            "id": "$fixture.mealId",
+            "count": 1
+          },
+          "equals": 1
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "after",
+          "path": "player.payload.player.statusEffects",
+          "where": {
+            "name": "QA Well Fed"
+          },
+          "equals": 0
+        },
+        {
+          "type": "historyAddedTypeCount",
+          "entryType": "player-action",
+          "equals": 1,
+          "beforeSource": "snapshots.before_action",
+          "afterSource": "after"
+        },
+        {
+          "type": "historyAddedTypeCount",
+          "entryType": "event-summary",
+          "equals": 1,
+          "beforeSource": "snapshots.before_action",
+          "afterSource": "after"
+        },
+        {
+          "type": "historyAddedNestedObjectCount",
+          "entryWhere": {
+            "type": "event-summary"
+          },
+          "path": "summaryItems",
+          "where": {
+            "sourceType": "need_bar_change",
+            "metadata": {
+              "needBarChange": {
+                "actorId": "$fixture.playerId",
+                "needBarId": "rest",
+                "delta": 100,
+                "direction": "increase",
+                "magnitude": "small",
+                "max": 1000
+              }
+            }
+          },
+          "equals": 1,
+          "beforeSource": "snapshots.before_action",
+          "afterSource": "after"
+        },
+        {
+          "type": "historyAddedNestedObjectCount",
+          "entryWhere": {
+            "type": "event-summary"
+          },
+          "path": "summaryItems",
+          "where": {
+            "sourceType": "need_bar_change",
+            "metadata": {
+              "needBarChange": {
+                "actorId": "$fixture.playerId",
+                "needBarId": "stamina",
+                "delta": 350,
+                "direction": "increase",
+                "magnitude": "all",
+                "max": 1000
+              }
+            }
+          },
+          "equals": 1,
+          "beforeSource": "snapshots.before_action",
+          "afterSource": "after"
+        },
+        {
+          "type": "historyAddedNestedObjectCount",
+          "entryWhere": {
+            "type": "event-summary"
+          },
+          "path": "summaryItems",
+          "where": {
+            "sourceType": "time_passed"
+          },
+          "equals": 1,
+          "beforeSource": "snapshots.before_action",
+          "afterSource": "after"
+        },
+        {
+          "type": "noRealtimeErrors"
+        },
+        {
+          "type": "noUnexpectedErrorLogs"
+        }
+      ]
+    },
+    {
+      "type": "humanReviewNote",
+      "text": "Confirm the prose depicts only one quiet stationary minute and does not invent food, drink, meditation, magic, sleep, strenuous activity, or a second player action."
+    }
+  ]
+}

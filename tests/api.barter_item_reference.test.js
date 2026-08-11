@@ -8,7 +8,8 @@ const {
     resolveBarterOfferItemReference,
     buildBarterCurrencySettlement,
     sanitizeBarterPricingXmlForParsing,
-    parseGeneratedBarterStockCount
+    parseGeneratedBarterStockCount,
+    validateGeneratedBarterStockBounds
 } = require('../api.js');
 
 function resolve(items, reference) {
@@ -183,4 +184,21 @@ test('barter pricing parser skips zero-count generated stock before inventory ge
     assert.match(parseBlock, /parseGeneratedBarterStockCount/);
     assert.match(parseBlock, /if \(count === 0\) \{\s*continue;\s*\}/);
     assert.doesNotMatch(parseBlock, /parseBarterPositiveInteger\(directChildText\(itemNode, 'count'\)/);
+});
+
+test('barter generated-stock bounds reject effective stock outside the prompt contract', () => {
+    const seeds = [{ name: 'Torch' }, { name: 'Rope' }];
+
+    assert.equal(
+        validateGeneratedBarterStockBounds(seeds, { minimum: 1, maximum: 2 }),
+        seeds
+    );
+    assert.throws(
+        () => validateGeneratedBarterStockBounds(seeds, { minimum: 0, maximum: 0 }),
+        /returned 2 effective item seed\(s\); expected between 0 and 0/
+    );
+    assert.throws(
+        () => validateGeneratedBarterStockBounds([], { minimum: 1, maximum: 2 }),
+        /returned 0 effective item seed\(s\); expected between 1 and 2/
+    );
 });

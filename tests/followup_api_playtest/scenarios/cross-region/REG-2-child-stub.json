@@ -1,0 +1,260 @@
+{
+  "version": 1,
+  "scenario": "cross-region",
+  "case": "REG-2-child-stub",
+  "description": "Moving from the generated QA Frost March entrance to QA Border Lantern expands the existing child stub in place, keeps it in QA Frost March, preserves the reciprocal entrance route, and moves the player exactly once.",
+  "fixture": "cross-region-expanded-frost-march",
+  "configProfile": "cross-region-mechanics",
+  "trackedPaths": [
+    "player.payload.player.locationId",
+    "locations.payload.locations",
+    "regions.payload.regions",
+    "calendar.payload.worldTime.timeMinutes"
+  ],
+  "steps": [
+    {
+      "type": "loadFixture"
+    },
+    {
+      "type": "snapshot",
+      "name": "unexpanded_child"
+    },
+    {
+      "type": "request",
+      "name": "enter_child",
+      "method": "POST",
+      "route": "/api/player/move",
+      "body": {
+        "destinationId": "$fixture.childLocationStubId",
+        "expectedOriginLocationId": "$fixture.entranceLocationId",
+        "accompanyingCharacters": []
+      },
+      "interactive": {
+        "roll": null,
+        "questAccepted": false,
+        "confirmed": false
+      }
+    },
+    {
+      "type": "assert",
+      "assertions": [
+        {
+          "type": "httpStatus",
+          "equals": 200
+        },
+        {
+          "type": "responseOk",
+          "equals": true
+        },
+        {
+          "type": "equals",
+          "source": "responses.enter_child",
+          "path": "payload.success",
+          "equals": true
+        },
+        {
+          "type": "equals",
+          "source": "responses.enter_child",
+          "path": "payload.location.id",
+          "equals": "$fixture.childLocationStubId"
+        },
+        {
+          "type": "equals",
+          "source": "responses.enter_child",
+          "path": "payload.location.name",
+          "equals": "QA Border Lantern"
+        },
+        {
+          "type": "equals",
+          "source": "responses.enter_child",
+          "path": "payload.location.regionId",
+          "equals": "$fixture.expandedRegionId"
+        },
+        {
+          "type": "equals",
+          "source": "responses.enter_child",
+          "path": "payload.location.isStub",
+          "equals": false
+        },
+        {
+          "type": "equals",
+          "source": "responses.enter_child",
+          "path": "payload.location.visited",
+          "equals": true
+        },
+        {
+          "type": "equals",
+          "source": "after",
+          "path": "player.payload.player.locationId",
+          "equals": "$fixture.childLocationStubId"
+        },
+        {
+          "type": "exactDelta",
+          "path": "calendar.payload.worldTime.timeMinutes",
+          "delta": 2,
+          "beforeSource": "snapshots.unexpanded_child",
+          "afterSource": "after"
+        },
+        {
+          "type": "entityField",
+          "source": "after",
+          "collection": "locations",
+          "id": "$fixture.childLocationStubId",
+          "path": "regionId",
+          "equals": "$fixture.expandedRegionId"
+        },
+        {
+          "type": "entityField",
+          "source": "after",
+          "collection": "locations",
+          "id": "$fixture.childLocationStubId",
+          "path": "isStub",
+          "equals": false
+        },
+        {
+          "type": "entityField",
+          "source": "after",
+          "collection": "locations",
+          "id": "$fixture.childLocationStubId",
+          "path": "visited",
+          "equals": true
+        },
+        {
+          "type": "historyAddedTypeCount",
+          "entryType": "event-summary",
+          "equals": 1,
+          "beforeSource": "snapshots.unexpanded_child",
+          "afterSource": "after"
+        },
+        {
+          "type": "noRealtimeErrors"
+        },
+        {
+          "type": "noUnexpectedErrorLogs"
+        }
+      ]
+    },
+    {
+      "type": "request",
+      "name": "region_map",
+      "method": "GET",
+      "route": "/api/map/region?regionId=$fixture.expandedRegionId"
+    },
+    {
+      "type": "request",
+      "name": "entrance_after_expansion",
+      "method": "GET",
+      "route": "/api/locations/$fixture.entranceLocationId"
+    },
+    {
+      "type": "request",
+      "name": "child_after_expansion",
+      "method": "GET",
+      "route": "/api/locations/$fixture.childLocationStubId"
+    },
+    {
+      "type": "assert",
+      "assertions": [
+        {
+          "type": "httpStatus",
+          "equals": 200
+        },
+        {
+          "type": "responseOk",
+          "equals": true
+        },
+        {
+          "type": "equals",
+          "source": "responses.region_map",
+          "path": "payload.success",
+          "equals": true
+        },
+        {
+          "type": "equals",
+          "source": "responses.region_map",
+          "path": "payload.region.regionId",
+          "equals": "$fixture.expandedRegionId"
+        },
+        {
+          "type": "equals",
+          "source": "responses.region_map",
+          "path": "payload.region.currentLocationId",
+          "equals": "$fixture.childLocationStubId"
+        },
+        {
+          "type": "uniqueBy",
+          "source": "responses.region_map",
+          "path": "payload.region.locations",
+          "key": "id"
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "responses.region_map",
+          "path": "payload.region.locations",
+          "where": {
+            "id": "$fixture.childLocationStubId",
+            "regionId": "$fixture.expandedRegionId",
+            "isStub": false
+          },
+          "equals": 1
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "responses.region_map",
+          "path": "payload.region.locations",
+          "where": {
+            "id": "$fixture.entranceLocationId",
+            "regionId": "$fixture.expandedRegionId",
+            "isStub": false
+          },
+          "equals": 1
+        },
+        {
+          "type": "equals",
+          "source": "responses.entrance_after_expansion",
+          "path": "payload.location.exits.qa_border_lantern.destination",
+          "equals": "$fixture.childLocationStubId"
+        },
+        {
+          "type": "equals",
+          "source": "responses.entrance_after_expansion",
+          "path": "payload.location.exits.qa_border_lantern.travelTimeMinutes",
+          "equals": 2
+        },
+        {
+          "type": "equals",
+          "source": "responses.child_after_expansion",
+          "path": "payload.location.id",
+          "equals": "$fixture.childLocationStubId"
+        },
+        {
+          "type": "equals",
+          "source": "responses.child_after_expansion",
+          "path": "payload.location.regionId",
+          "equals": "$fixture.expandedRegionId"
+        },
+        {
+          "type": "equals",
+          "source": "responses.child_after_expansion",
+          "path": "payload.location.exits.qa_frost_march.destination",
+          "equals": "$fixture.entranceLocationId"
+        },
+        {
+          "type": "equals",
+          "source": "responses.child_after_expansion",
+          "path": "payload.location.exits.qa_frost_march.travelTimeMinutes",
+          "equals": 2
+        },
+        {
+          "type": "noRealtimeErrors"
+        },
+        {
+          "type": "noUnexpectedErrorLogs"
+        }
+      ]
+    }
+  ],
+  "humanReview": [
+    "Confirm QA Border Lantern's generated description and contents fit its saved QA Frost March child-stub blueprint without changing the canonical name or inventing a second location."
+  ]
+}

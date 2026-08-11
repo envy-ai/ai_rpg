@@ -239,6 +239,57 @@ test('base-context system prompt preserves CDATA-like literal text when XML norm
     assert.match(parsed.generationPrompt, /offscreen NPC activity/);
 });
 
+test('location things prompt preserves cardinality XML tag names as instructional text', () => {
+    Globals.config = { strictXMLParsing: true };
+    const parseXMLTemplate = loadServerFunction('parseXMLTemplate');
+    const promptEnv = new nunjucks.Environment(
+        new nunjucks.FileSystemLoader(path.join(__dirname, '..', 'prompts')),
+        { autoescape: false }
+    );
+
+    const rendered = promptEnv.render('location-generator-things.njk', {
+        setting: 'Test Setting',
+        region: { regionName: 'Test Region', regionDescription: 'A region.' },
+        location: { name: 'Test Room', description: 'A room.' },
+        attributeDefinitions: {},
+        equipmentSlots: [],
+        attributes: [],
+        rarityDefinitions: [{ label: 'Common', description: 'Ordinary.' }],
+        rarityList: {
+            items: { Common: 1 },
+            scenery: { Common: 2 }
+        },
+        itemCount: 1,
+        sceneryCount: 2,
+        recentThings: [],
+        lorebookEntries: [],
+        thingGeneratorPromptFields: [],
+        modGenerationPromptInstructions: []
+    });
+    const parsed = parseXMLTemplate(rendered);
+
+    assert.match(
+        parsed.generationPrompt,
+        /Return exactly 1 top-level <item> entry whose <itemOrScenery> is item/
+    );
+    assert.match(
+        parsed.generationPrompt,
+        /exactly 2 top-level <item> entries whose <itemOrScenery> is scenery/
+    );
+    assert.match(
+        parsed.generationPrompt,
+        /inner <count> is only that entry's stack quantity/
+    );
+    assert.match(
+        parsed.generationPrompt,
+        /After exactly 3 total top-level entries, close <\/things> immediately and stop\. Do not add any other entries or commentary\.$/
+    );
+    assert.doesNotMatch(
+        parsed.generationPrompt,
+        /<\/count><\/itemOrScenery><\/item><\/itemOrScenery><\/item>/
+    );
+});
+
 test('scene summary parser extracts the final scenes block from prose-heavy responses', () => {
     Globals.config = { strictXMLParsing: true };
     const parseSceneSummaryResponse = loadServerFunction('parseSceneSummaryResponse');

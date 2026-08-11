@@ -1,0 +1,246 @@
+{
+  "version": 1,
+  "scenario": "vehicle",
+  "case": "VEH-8-timed-arrival",
+  "description": "An underway fixed-route vehicle remains underway before its ETA, arrives exactly when due, and does not process the same arrival twice.",
+  "fixture": "vehicle-underway-eastbound",
+  "configProfile": "vehicle-mechanics-replay",
+  "trackedPaths": [
+    "player.payload.player.locationId",
+    "currentLocation.payload.location.vehicleInfo",
+    "currentLocation.payload.location.exits",
+    "calendar.payload.worldTime.timeMinutes"
+  ],
+  "steps": [
+    {
+      "type": "loadFixture"
+    },
+    {
+      "type": "snapshot",
+      "name": "departed"
+    },
+    {
+      "type": "request",
+      "name": "before_eta",
+      "method": "POST",
+      "route": "/api/slash-command",
+      "body": {
+        "command": "time",
+        "argsText": "+9 minutes"
+      }
+    },
+    {
+      "type": "assert",
+      "assertions": [
+        {
+          "type": "httpStatus",
+          "equals": 200
+        },
+        {
+          "type": "responseOk",
+          "equals": true
+        },
+        {
+          "type": "equals",
+          "source": "responses.before_eta",
+          "path": "payload.success",
+          "equals": true
+        },
+        {
+          "type": "exactDelta",
+          "beforeSource": "snapshots.departed",
+          "afterSource": "after",
+          "path": "calendar.payload.worldTime.timeMinutes",
+          "delta": 9
+        },
+        {
+          "type": "equals",
+          "source": "after",
+          "path": "currentLocation.payload.location.vehicleInfo.pendingDestination.locationId",
+          "equals": "$fixture.eastPlatformId"
+        },
+        {
+          "type": "equals",
+          "source": "after",
+          "path": "currentLocation.payload.location.vehicleInfo.ETA",
+          "equals": 669
+        },
+        {
+          "type": "equals",
+          "source": "after",
+          "path": "currentLocation.payload.location.vehicleInfo.departureTime",
+          "equals": 659
+        },
+        {
+          "type": "equals",
+          "source": "after",
+          "path": "currentLocation.payload.location.vehicleInfo.isUnderway",
+          "equals": true
+        },
+        {
+          "type": "count",
+          "source": "after",
+          "path": "currentLocation.payload.location.exits",
+          "equals": 0
+        },
+        {
+          "type": "notIncludes",
+          "source": "responses.before_eta",
+          "path": "payload.replies.0.content",
+          "value": "Processed"
+        }
+      ]
+    },
+    {
+      "type": "snapshot",
+      "name": "pre_arrival"
+    },
+    {
+      "type": "request",
+      "name": "at_eta",
+      "method": "POST",
+      "route": "/api/slash-command",
+      "body": {
+        "command": "time",
+        "argsText": "+1 minute"
+      }
+    },
+    {
+      "type": "assert",
+      "assertions": [
+        {
+          "type": "httpStatus",
+          "equals": 200
+        },
+        {
+          "type": "responseOk",
+          "equals": true
+        },
+        {
+          "type": "exactDelta",
+          "beforeSource": "snapshots.pre_arrival",
+          "afterSource": "after",
+          "path": "calendar.payload.worldTime.timeMinutes",
+          "delta": 1
+        },
+        {
+          "type": "includes",
+          "source": "responses.at_eta",
+          "path": "payload.replies.0.content",
+          "value": "Processed 1 due vehicle arrival."
+        },
+        {
+          "type": "equals",
+          "source": "after",
+          "path": "currentLocation.payload.location.vehicleInfo.currentDestination",
+          "equals": "$fixture.eastPlatformId"
+        },
+        {
+          "type": "equals",
+          "source": "after",
+          "path": "currentLocation.payload.location.vehicleInfo.pendingDestination",
+          "equals": null
+        },
+        {
+          "type": "equals",
+          "source": "after",
+          "path": "currentLocation.payload.location.vehicleInfo.ETA",
+          "equals": null
+        },
+        {
+          "type": "equals",
+          "source": "after",
+          "path": "currentLocation.payload.location.vehicleInfo.departureTime",
+          "equals": null
+        },
+        {
+          "type": "equals",
+          "source": "after",
+          "path": "currentLocation.payload.location.vehicleInfo.isUnderway",
+          "equals": false
+        },
+        {
+          "type": "count",
+          "source": "after",
+          "path": "currentLocation.payload.location.exits",
+          "equals": 1
+        },
+        {
+          "type": "entityField",
+          "source": "after",
+          "collection": "players",
+          "id": "$fixture.carrierId",
+          "path": "locationId",
+          "equals": "$fixture.tramId"
+        },
+        {
+          "type": "entityField",
+          "source": "after",
+          "collection": "things",
+          "id": "$fixture.travelCaseId",
+          "path": "metadata.ownerId",
+          "equals": "$fixture.carrierId"
+        }
+      ]
+    },
+    {
+      "type": "snapshot",
+      "name": "arrived"
+    },
+    {
+      "type": "request",
+      "name": "arrival_is_idempotent",
+      "method": "POST",
+      "route": "/api/slash-command",
+      "body": {
+        "command": "time",
+        "argsText": "0 minutes"
+      }
+    },
+    {
+      "type": "assert",
+      "assertions": [
+        {
+          "type": "httpStatus",
+          "equals": 200
+        },
+        {
+          "type": "responseOk",
+          "equals": true
+        },
+        {
+          "type": "exactDelta",
+          "beforeSource": "snapshots.arrived",
+          "afterSource": "after",
+          "path": "calendar.payload.worldTime.timeMinutes",
+          "delta": 0
+        },
+        {
+          "type": "stateUnchanged",
+          "beforeSource": "snapshots.arrived",
+          "afterSource": "after",
+          "paths": [
+            "player.payload.player.locationId",
+            "currentLocation.payload.location.vehicleInfo",
+            "currentLocation.payload.location.exits"
+          ]
+        },
+        {
+          "type": "notIncludes",
+          "source": "responses.arrival_is_idempotent",
+          "path": "payload.replies.0.content",
+          "value": "Processed"
+        },
+        {
+          "type": "noRealtimeErrors"
+        },
+        {
+          "type": "noUnexpectedErrorLogs"
+        }
+      ]
+    }
+  ],
+  "humanReview": [
+    "Confirm the slash-command reply reports exactly one due arrival at ETA and no second arrival on the zero-minute follow-up."
+  ]
+}

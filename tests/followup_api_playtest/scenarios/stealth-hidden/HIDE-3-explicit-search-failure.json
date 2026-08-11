@@ -1,0 +1,272 @@
+{
+  "version": 1,
+  "scenario": "stealth-hidden",
+  "case": "HIDE-3-explicit-search-failure",
+  "description": "An explicit forced-low search must resolve exactly one failed player perception versus scout hiding check, retain concealment and unseen tracking, and avoid a reveal refresh.",
+  "fixture": "stealth-hidden-npcs",
+  "configProfile": "stealth-hidden-mechanics",
+  "trackedPaths": [
+    "player.payload.player.locationId",
+    "players.payload.players",
+    "currentLocation.payload.location.npcIds",
+    "history.payload",
+    "calendar.payload.worldTime.timeMinutes"
+  ],
+  "steps": [
+    {
+      "type": "loadFixture"
+    },
+    {
+      "type": "request",
+      "name": "make_player_search_certain_to_fail",
+      "method": "PUT",
+      "route": "/api/npcs/$fixture.playerId",
+      "body": {
+        "attributes": {
+          "wisdom": 1
+        },
+        "skills": {
+          "Perception": 0
+        }
+      }
+    },
+    {
+      "type": "request",
+      "name": "make_scout_hiding_certain_to_win",
+      "method": "PUT",
+      "route": "/api/npcs/$fixture.scoutId",
+      "body": {
+        "hiddenFromPlayer": true,
+        "attributes": {
+          "dexterity": 20
+        },
+        "skills": {
+          "Stealth": 20
+        }
+      }
+    },
+    {
+      "type": "request",
+      "name": "isolate_decoy",
+      "method": "POST",
+      "route": "/api/npcs/$fixture.decoyId/teleport",
+      "body": {
+        "locationId": "$fixture.isolationLocationId",
+        "accountTravelTime": false
+      }
+    },
+    {
+      "type": "request",
+      "name": "isolate_courier",
+      "method": "POST",
+      "route": "/api/npcs/char_37/teleport",
+      "body": {
+        "locationId": "$fixture.isolationLocationId",
+        "accountTravelTime": false
+      }
+    },
+    {
+      "type": "assert",
+      "assertions": [
+        {
+          "type": "httpStatus",
+          "equals": 200
+        },
+        {
+          "type": "responseOk",
+          "equals": true
+        },
+        {
+          "type": "equals",
+          "source": "responses.make_player_search_certain_to_fail",
+          "path": "payload.npc.attributes.wisdom",
+          "equals": 1
+        },
+        {
+          "type": "equals",
+          "source": "responses.make_player_search_certain_to_fail",
+          "path": "payload.npc.skills.Perception",
+          "equals": 0
+        },
+        {
+          "type": "equals",
+          "source": "responses.make_scout_hiding_certain_to_win",
+          "path": "payload.npc.hiddenFromPlayer",
+          "equals": true
+        },
+        {
+          "type": "equals",
+          "source": "responses.make_scout_hiding_certain_to_win",
+          "path": "payload.npc.attributes.dexterity",
+          "equals": 20
+        },
+        {
+          "type": "equals",
+          "source": "responses.make_scout_hiding_certain_to_win",
+          "path": "payload.npc.skills.Stealth",
+          "equals": 20
+        },
+        {
+          "type": "entityField",
+          "source": "after",
+          "collection": "players",
+          "id": "$fixture.decoyId",
+          "path": "locationId",
+          "equals": "$fixture.isolationLocationId"
+        },
+        {
+          "type": "entityField",
+          "source": "after",
+          "collection": "players",
+          "id": "char_37",
+          "path": "locationId",
+          "equals": "$fixture.isolationLocationId"
+        },
+        {
+          "type": "entityField",
+          "source": "after",
+          "collection": "players",
+          "id": "$fixture.scoutId",
+          "path": "locationId",
+          "equals": "$fixture.baselineLocationId"
+        },
+        {
+          "type": "entityField",
+          "source": "after",
+          "collection": "players",
+          "id": "$fixture.scoutId",
+          "path": "hiddenFromPlayer",
+          "equals": true
+        }
+      ]
+    },
+    {
+      "type": "snapshot",
+      "name": "before_explicit_search"
+    },
+    {
+      "type": "chat",
+      "name": "explicit_search",
+      "text": "I deliberately search March Start Marker for the concealed scout known as Whisper. <f> This is one careful perception-versus-hiding attempt. If the opposed check fails, I do not spot, locate, identify, reveal, approach, or interact with that person. I do not move, attack, use an item, or perform any second action.",
+      "travel": false,
+      "interactive": {
+        "roll": 1,
+        "questAccepted": false,
+        "confirmed": false
+      }
+    },
+    {
+      "type": "assert",
+      "assertions": [
+        {
+          "type": "httpStatus",
+          "equals": 200
+        },
+        {
+          "type": "responseOk",
+          "equals": true
+        },
+        {
+          "type": "count",
+          "source": "responses.explicit_search",
+          "path": "payload.toolInvocations",
+          "equals": 1
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "responses.explicit_search",
+          "path": "payload.toolInvocations",
+          "where": {
+            "name": "resolveOpposedSkillCheck",
+            "metadata": {
+              "actor": "player",
+              "opponent": "$fixture.scoutName",
+              "actionResolution": {
+                "success": false,
+                "roll": {
+                  "die": 1
+                },
+                "opponent": {
+                  "id": "$fixture.scoutId",
+                  "name": "$fixture.scoutName"
+                }
+              }
+            }
+          },
+          "equals": 1
+        },
+        {
+          "type": "equals",
+          "source": "responses.explicit_search",
+          "path": "payload.checkResultsRecorded",
+          "equals": true
+        },
+        {
+          "type": "absent",
+          "source": "responses.explicit_search",
+          "path": "payload.locationRefreshRequested"
+        },
+        {
+          "type": "entityField",
+          "source": "after",
+          "collection": "players",
+          "id": "$fixture.scoutId",
+          "path": "hiddenFromPlayer",
+          "equals": true
+        },
+        {
+          "type": "entityField",
+          "source": "after",
+          "collection": "players",
+          "id": "$fixture.scoutId",
+          "path": "last_seen_time",
+          "equals": null
+        },
+        {
+          "type": "entityField",
+          "source": "after",
+          "collection": "players",
+          "id": "$fixture.scoutId",
+          "path": "last_seen_location",
+          "equals": null
+        },
+        {
+          "type": "historyAddedTypeCount",
+          "entryType": "check-results",
+          "equals": 1,
+          "beforeSource": "snapshots.before_explicit_search",
+          "afterSource": "after"
+        },
+        {
+          "type": "historyAddedTypeCount",
+          "entryType": "player-action",
+          "equals": 1,
+          "beforeSource": "snapshots.before_explicit_search",
+          "afterSource": "after"
+        },
+        {
+          "type": "historyAddedTypeCount",
+          "entryType": "event-summary",
+          "equals": 1,
+          "beforeSource": "snapshots.before_explicit_search",
+          "afterSource": "after"
+        },
+        {
+          "type": "equals",
+          "source": "after",
+          "path": "player.payload.player.locationId",
+          "equals": "$fixture.baselineLocationId"
+        },
+        {
+          "type": "noRealtimeErrors"
+        },
+        {
+          "type": "noUnexpectedErrorLogs"
+        }
+      ]
+    }
+  ],
+  "humanReview": [
+    "The player-action prose should describe one unsuccessful search without locating, identifying, revealing, approaching, or interacting with QA Veiled Scout/Whisper, and without adding movement, combat, item use, or a second action. This is human review only; do not encode prose wording checks."
+  ]
+}

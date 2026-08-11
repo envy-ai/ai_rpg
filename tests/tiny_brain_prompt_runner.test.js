@@ -5,6 +5,10 @@ const nunjucks = require('nunjucks');
 const LLMClient = require('../LLMClient.js');
 const { buildPlayerActionTinyBrainResult } = require('../PlayerActionTinyBrainResult.js');
 const {
+    formatPlayerActionDestinationAbsence,
+    resolvePlayerActionDestinationContext
+} = require('../PlayerActionDestinationContext.js');
+const {
     TinyBrainPromptExtension,
     TinyBrainPromptRunner,
     createTinyBrainContinuationState,
@@ -43,6 +47,19 @@ function createEnvironment(programTemplate) {
     return environment;
 }
 
+function addPlayerActionDestinationGlobals(promptEnv) {
+    promptEnv.addGlobal(
+        'resolvePlayerActionDestinationContext',
+        (destination, originLocationId = null, currentWorldMinutes = 0) => (
+            resolvePlayerActionDestinationContext(destination, {
+                originLocationId,
+                currentWorldMinutes
+            })
+        )
+    );
+    promptEnv.addGlobal('formatPlayerActionDestinationAbsence', formatPlayerActionDestinationAbsence);
+}
+
 function parseTemplate(rendered) {
     const systemMatch = rendered.match(/<systemPrompt><!\[CDATA\[([\s\S]*?)\]\]><\/systemPrompt>/);
     const generationMatch = rendered.match(/<generationPrompt><!\[CDATA\[([\s\S]*?)\]\]><\/generationPrompt>/);
@@ -55,12 +72,12 @@ function parseTemplate(rendered) {
     };
 }
 
-test('tiny-brain runner keeps tool results and retries only the failed checkpoint or final step', async () => {
+test('tiny-brain runner keeps tool results and gives parser feedback when retrying only the failed checkpoint or final step', async () => {
     const environment = createEnvironment([
         'Decide travel. ',
         "{% llmparse('travel_with_reason', 'expected parser argument') as travel %}",
         '{% if travel %}Travel branch YES.{% else %}Travel branch NO.{% endif %} ',
-        'Analyze the scene now. {% llm_dummy_action %}',
+        "Analyze the scene now. {% llmparse('mod_step_test') as sceneAnalysis %}",
         'Write final XML now.'
     ].join(''));
     const renderState = TinyBrainPromptRunner.createRenderState();
@@ -129,7 +146,7 @@ test('tiny-brain runner keeps tool results and retries only the failed checkpoin
                         { role: 'tool', tool_call_id: 'tool_1', name: 'moreInfo', content: 'Useful retained result.' },
                         { role: 'assistant', content: aiResponse }
                     ],
-                    toolInvocations: [{ id: 'tool_1', name: 'moreInfo', metadata: { error: true } }]
+                    toolInvocations: [{ id: 'tool_1', name: 'moreInfo', metadata: {} }]
                 };
             }
             if (completionCalls.length === 3) {
@@ -141,10 +158,10 @@ test('tiny-brain runner keeps tool results and retries only the failed checkpoin
                     messages.filter(message => message.role === 'user' && message.content === checkpointPrompt).length,
                     1
                 );
-                assert.ok(!messages.some(message => (
-                    message.role === 'user'
-                    && /parser error|previous response could not be parsed/i.test(message.content)
-                )));
+                assert.match(messages.at(-1).content, /previous response failed validation/i);
+                assert.match(messages.at(-1).content, /requires a non-whitespace LLM response/i);
+                assert.match(messages.at(-1).content, /Do not repeat any successful tool calls/i);
+                assert.doesNotMatch(messages.at(-1).content, /TinyBrainPromptRunner\.js:\d+/);
                 const aiResponse = 'Scene analysis complete.';
                 return {
                     aiResponse,
@@ -166,7 +183,9 @@ test('tiny-brain runner keeps tool results and retries only the failed checkpoin
             assert.equal(completionCalls.length, 5);
             assert.equal(isFinal, true);
             assert.equal(attempt, 1);
-            assert.match(messages[messages.length - 1].content, /Write final XML now\./);
+            assert.match(messages.at(-1).content, /previous response failed validation/i);
+            assert.match(messages.at(-1).content, /<turnResult>/);
+            assert.doesNotMatch(messages.at(-1).content, /TinyBrainPromptRunner\.js:\d+/);
             assert.ok(!messages.some(message => (
                 message.role === 'assistant'
                 && message.content === 'Malformed final response.'
@@ -214,19 +233,20 @@ test('tiny-brain runner keeps tool results and retries only the failed checkpoin
         call.sections?.[0]?.title === 'Tiny-brain checkpoint 2 prompt retry 1'
     ));
     assert.equal(
-        retryCheckpointPromptLog?.sections?.[0]?.content,
-        initialCheckpointPromptLog?.sections?.[0]?.content
+        initialCheckpointPromptLog?.sections?.[0]?.content,
+        completionCalls[1].messages.at(-1).content
     );
+    assert.match(retryCheckpointPromptLog?.sections?.[0]?.content, /previous response failed validation/i);
+    assert.match(retryCheckpointPromptLog?.sections?.[0]?.content, /requires a non-whitespace LLM response/i);
     const initialFinalPromptLog = logCalls.find(call => (
         call.sections?.[0]?.title === 'Tiny-brain final response prompt'
     ));
     const retryFinalPromptLog = logCalls.find(call => (
         call.sections?.[0]?.title === 'Tiny-brain final response prompt retry 1'
     ));
-    assert.equal(
-        retryFinalPromptLog?.sections?.[0]?.content,
-        initialFinalPromptLog?.sections?.[0]?.content
-    );
+    assert.match(initialFinalPromptLog?.sections?.[0]?.content, /Write final XML now\./);
+    assert.match(retryFinalPromptLog?.sections?.[0]?.content, /previous response failed validation/i);
+    assert.match(retryFinalPromptLog?.sections?.[0]?.content, /<turnResult>/);
     assert.equal(parseFailures.length, 2);
     assert.equal(parseFailures[0].response, '   ');
     assert.equal(parseFailures[0].checkpoint.index, 1);
@@ -236,6 +256,132 @@ test('tiny-brain runner keeps tool results and retries only the failed checkpoin
     assert.equal(parseFailures[1].checkpoint.kind, 'final');
     assert.equal(parseFailures[1].attempt, 0);
     assert.equal(parseFailures[1].isFinal, true);
+});
+
+test('tiny-brain runner retries failed tool invocations without replaying successful calls or returning errors', async () => {
+    const environment = createEnvironment([
+        'Resolve the scene tools. {% llm_dummy_action %}',
+        'Write the final response.'
+    ].join(''));
+    const renderState = TinyBrainPromptRunner.createRenderState();
+    const templateContext = { __tinyBrainState: renderState };
+    const initialRenderedTemplate = environment.render('wrapper.xml.njk', templateContext);
+    const completionCalls = [];
+    const parseFailures = [];
+
+    const runner = new TinyBrainPromptRunner({
+        promptEnv: environment,
+        parseXMLTemplate: parseTemplate,
+        retryAttempts: 1,
+        onParseFailure(failure) {
+            parseFailures.push(failure);
+        },
+        logPrompt(options) {
+            return options.filePath || '/test/logs/tinybrain-tool-error-retry.log';
+        },
+        async complete({ messages, checkpoint, attempt, isFinal }) {
+            completionCalls.push({ messages, checkpoint, attempt, isFinal });
+            if (completionCalls.length === 1) {
+                const aiResponse = 'The failed lookup can be ignored.';
+                return {
+                    aiResponse,
+                    conversationMessages: [
+                        ...messages,
+                        {
+                            role: 'assistant',
+                            content: '',
+                            tool_calls: [
+                                {
+                                    id: 'tool_success',
+                                    type: 'function',
+                                    function: { name: 'resolveAttack', arguments: '{}' }
+                                },
+                                {
+                                    id: 'tool_failure',
+                                    type: 'function',
+                                    function: { name: 'moreInfo', arguments: '{}' }
+                                }
+                            ]
+                        },
+                        {
+                            role: 'tool',
+                            tool_call_id: 'tool_success',
+                            name: 'resolveAttack',
+                            content: 'Attack resolved once.'
+                        },
+                        {
+                            role: 'tool',
+                            tool_call_id: 'tool_failure',
+                            name: 'moreInfo',
+                            content: 'Lookup failed because the target does not exist.'
+                        },
+                        { role: 'assistant', content: aiResponse }
+                    ],
+                    toolInvocations: [
+                        { id: 'tool_success', name: 'resolveAttack', metadata: { status: 'success' } },
+                        {
+                            id: 'tool_failure',
+                            name: 'moreInfo',
+                            metadata: {
+                                error: true,
+                                code: 'target_not_found',
+                                message: 'Lookup failed because the target does not exist.'
+                            }
+                        }
+                    ]
+                };
+            }
+            if (completionCalls.length === 2) {
+                assert.equal(attempt, 1);
+                assert.equal(isFinal, false);
+                assert.ok(messages.some(message => (
+                    message.role === 'tool'
+                    && message.tool_call_id === 'tool_success'
+                    && message.content === 'Attack resolved once.'
+                )));
+                assert.ok(messages.some(message => (
+                    message.role === 'tool'
+                    && message.tool_call_id === 'tool_failure'
+                    && /target does not exist/i.test(message.content)
+                )));
+                assert.match(messages.at(-1).content, /moreInfo: Lookup failed because the target does not exist/i);
+                assert.match(messages.at(-1).content, /Do not repeat any successful tool calls/i);
+                assert.ok(!messages.some(message => (
+                    message.role === 'assistant'
+                    && message.content === 'The failed lookup can be ignored.'
+                )));
+                const aiResponse = 'Scene tools are resolved.';
+                return {
+                    aiResponse,
+                    conversationMessages: [...messages, { role: 'assistant', content: aiResponse }],
+                    toolInvocations: []
+                };
+            }
+            assert.equal(completionCalls.length, 3);
+            assert.equal(isFinal, true);
+            const aiResponse = '<final>Done.</final>';
+            return {
+                aiResponse,
+                conversationMessages: [...messages, { role: 'assistant', content: aiResponse }],
+                toolInvocations: []
+            };
+        }
+    });
+
+    const result = await runner.run({
+        initialRenderedTemplate,
+        templateContext,
+        renderState,
+        programTemplateName: 'program.njk'
+    });
+
+    assert.equal(completionCalls.length, 3);
+    assert.equal(parseFailures.length, 1);
+    assert.match(parseFailures[0].error.message, /moreInfo: Lookup failed because the target does not exist/i);
+    assert.deepEqual(result.toolInvocations, [
+        { id: 'tool_success', name: 'resolveAttack', metadata: { status: 'success' } }
+    ]);
+    assert.equal(result.aiResponse, '<final>Done.</final>');
 });
 
 test('tiny-brain dummy checkpoints accept blank text after a successful tool call and finals return normalized responses', async () => {
@@ -679,6 +825,7 @@ test('real tiny-brain player-action template renders conditional parser branches
         { autoescape: false }
     );
     promptEnv.addExtension('TinyBrainPromptExtension', new TinyBrainPromptExtension());
+    addPlayerActionDestinationGlobals(promptEnv);
 
     const renderState = TinyBrainPromptRunner.createRenderState();
     const templateContext = {
@@ -738,6 +885,8 @@ test('real tiny-brain player-action template renders conditional parser branches
             let aiResponse = 'Done.';
             if (checkpoint.parserName === 'accept_or_reject') {
                 aiResponse = '<accepted></accepted>';
+            } else if (checkpoint.parserName === 'player_action_more_info_or_na') {
+                aiResponse = 'N/A';
             } else if (checkpoint.parserName === 'player_action_movement') {
                 aiResponse = 'DESTINATION';
             } else if (checkpoint.parserName === 'player_action_destination') {
@@ -798,6 +947,35 @@ test('real tiny-brain player-action template renders conditional parser branches
     assert.ok(completionPrompts.some(prompt => /Answer with exactly one keyword/i.test(prompt)));
     assert.ok(completionPrompts.some(prompt => /State the player's destination using exactly two lines/i.test(prompt)));
     assert.ok(completionPrompts.some(prompt => /Mira Vale/.test(prompt) && /accompany the player/i.test(prompt)));
+    assert.ok(completionPrompts.some(prompt => (
+        /Each resolveAttack result authorizes exactly one resolved attack action/i.test(prompt)
+        && /A second approach, lunge, charge, strike, bite, shot, impact, graze, or miss/i.test(prompt)
+    )));
+    assert.ok(completionPrompts.some(prompt => (
+        /Each attacking character requires a separate tool call/i.test(prompt)
+        && /Never use an unrolled follow-up attack by the same character or an ally/i.test(prompt)
+    )));
+    assert.ok(completionPrompts.some(prompt => (
+        /Compare every character who attacks, damages, incapacitates, or defeats someone/i.test(prompt)
+        && /Count a new approach, lunge, charge, strike, bite, shot, impact, graze, or miss/i.test(prompt)
+    )));
+    assert.ok(completionPrompts.some(prompt => (
+        /delete its complete sentences or paragraph wholesale/i.test(prompt)
+        && /do not paraphrase, relocate, substitute, or preserve its damage/i.test(prompt)
+    )));
+    assert.ok(completionPrompts.some(prompt => /Never let an unrolled NPC follow-up change a rolled target's outcome/i.test(prompt)));
+    assert.ok(completionPrompts.some(prompt => (
+        /Any player speech, decision, agreement, nod, gesture, or follow-up action/i.test(prompt)
+        && /is also railroading/i.test(prompt)
+    )));
+    assert.ok(completionPrompts.some(prompt => (
+        /compare every player action, line of speech, decision, agreement, and gesture/i.test(prompt)
+        && /against the <playerAction>/i.test(prompt)
+    )));
+    assert.ok(completionPrompts.some(prompt => (
+        /Remove any player response, agreement, gesture, decision, or follow-up action/i.test(prompt)
+        && /not expressly committed in the <playerAction>/i.test(prompt)
+    )));
     assert.ok(!completionPrompts.some(prompt => /inside the moveTurnResult tags/i.test(prompt)));
     assert.match(result.aiResponse, /<moveTurnResult>/);
     assert.match(result.aiResponse, /<location>Beyond the Archway<\/location>/);
@@ -806,12 +984,139 @@ test('real tiny-brain player-action template renders conditional parser branches
     assert.match(result.aiResponse, /<destinationProse>/);
 });
 
+test('real TinyBrain player-action resolves revisit context and skips a programmatic duration question', async () => {
+    const promptEnv = new nunjucks.Environment(
+        new nunjucks.FileSystemLoader(path.join(__dirname, '..', 'prompts'), { noCache: true }),
+        { autoescape: false }
+    );
+    promptEnv.addExtension('TinyBrainPromptExtension', new TinyBrainPromptExtension());
+    addPlayerActionDestinationGlobals(promptEnv);
+    const destinationContextResolver = () => ({
+        resolved: true,
+        locationId: 'town-square',
+        locationName: 'Town Square',
+        regionId: 'old-town',
+        regionName: 'Old Town',
+        description: 'An old fountain stands at the center of the busy square.',
+        visitedBefore: true,
+        lastVisitedTime: 120,
+        minutesSinceLastVisitAtPrompt: 60,
+        presentNpcNames: ['Ada', 'Merek'],
+        travelTimeMinutes: 15,
+        travelDuration: { text: '15 minutes', minutes: 15 }
+    });
+    promptEnv.addGlobal('resolvePlayerActionDestinationContext', destinationContextResolver);
+
+    const renderState = TinyBrainPromptRunner.createRenderState();
+    const templateContext = {
+        __tinyBrainState: renderState,
+        actionText: 'Walk back to the Town Square.',
+        characterName: 'Tester',
+        config: {
+            prose_instructions: 'Write clear prose.',
+            prose_length: 'three paragraphs',
+            prose_prompt_suffix: '',
+            repetition_buster: true,
+            use_legacy_prompt_checks: false
+        },
+        currentLocationLastSeenNpcs: [],
+        currentPlayer: { name: 'Rowan' },
+        currentVehicle: null,
+        isAttack: false,
+        isExterior: false,
+        modPlayerActionPromptSteps: [],
+        npcs: [],
+        party: [],
+        playerActionAccompanyingCharacters: [],
+        playerActionDestinationContextResolver: destinationContextResolver,
+        playerActionOriginLocationId: 'market-gate',
+        playerActionWorldTimeMinutes: 180,
+        setting: { writingStyleNotes: 'Keep it concrete.' }
+    };
+    const renderedProgram = promptEnv.render('_includes/player-action.tinybrain.njk', templateContext);
+    const initialRenderedTemplate = [
+        '<template>',
+        '<systemPrompt><![CDATA[Test system prompt.]]></systemPrompt>',
+        '<generationPrompt><![CDATA[Fixed base context.',
+        renderState.programStartMarker,
+        renderedProgram,
+        ']]></generationPrompt>',
+        '</template>'
+    ].join('');
+    const prompts = [];
+    const parserNames = [];
+    const runner = new TinyBrainPromptRunner({
+        promptEnv,
+        parseXMLTemplate: parseTemplate,
+        retryAttempts: 0,
+        resultBuilders: { player_action_result: buildPlayerActionTinyBrainResult },
+        logPrompt(options) {
+            return options.filePath || '/test/logs/revisit-destination.log';
+        },
+        async complete({ messages, checkpoint }) {
+            prompts.push(messages.at(-1).content);
+            parserNames.push(checkpoint.parserName);
+            let aiResponse = 'Done.';
+            if (checkpoint.parserName === 'accept_or_reject') {
+                aiResponse = '<accepted></accepted>';
+            } else if (checkpoint.parserName === 'player_action_more_info_or_na') {
+                aiResponse = 'N/A';
+            } else if (checkpoint.parserName === 'player_action_movement') {
+                aiResponse = 'DESTINATION';
+            } else if (checkpoint.parserName === 'player_action_destination') {
+                aiResponse = 'Location: Town Square\nRegion: Old Town';
+            } else if (checkpoint.parserName === 'player_action_accompanying_characters') {
+                aiResponse = 'NONE';
+            } else if (checkpoint.parserName === 'player_action_prose_scope') {
+                aiResponse = 'DESTINATION';
+            } else if (checkpoint.parserName === 'player_action_destination_changes') {
+                aiResponse = '- The fountain is under repair.\n- Ada has opened a flower stall.';
+            } else if (checkpoint.parserName === 'player_action_required_prose') {
+                aiResponse = 'Rowan finds the old fountain under repair while Ada tends a new flower stall beside it.';
+            } else if (checkpoint.parserName === 'player_action_hidden_notes') {
+                aiResponse = 'N/A';
+            }
+            return {
+                aiResponse,
+                conversationMessages: [...messages, { role: 'assistant', content: aiResponse }],
+                toolInvocations: []
+            };
+        }
+    });
+
+    const result = await runner.run({
+        initialRenderedTemplate,
+        templateContext,
+        renderState,
+        programTemplateName: '_includes/player-action.tinybrain.njk'
+    });
+
+    assert.ok(!parserNames.includes('player_action_duration'));
+    assert.equal(parserNames.filter(name => name === 'player_action_destination_changes').length, 1);
+    assert.ok(prompts.some(prompt => (
+        /Canonical description: An old fountain stands at the center/i.test(prompt)
+        && /programmatically: 15 minutes/i.test(prompt)
+    )));
+    assert.ok(prompts.some(prompt => (
+        /away from Town Square for 1 hour, 15 minutes/i.test(prompt)
+        && /NPCs currently present: Ada, Merek/i.test(prompt)
+    )));
+    assert.ok(prompts.some(prompt => (
+        /destination changes were already accepted/i.test(prompt)
+        && /The fountain is under repair/i.test(prompt)
+        && /Ada has opened a flower stall/i.test(prompt)
+    )));
+    assert.match(result.aiResponse, /<travelTime>15 minutes<\/travelTime>/);
+    assert.match(result.aiResponse, /<location>Town Square<\/location>/);
+});
+
 test('real player-action template passes committed travel movement to terminal result assembly', async () => {
     const promptEnv = new nunjucks.Environment(
         new nunjucks.FileSystemLoader(path.join(__dirname, '..', 'prompts'), { noCache: true }),
         { autoescape: false }
     );
     promptEnv.addExtension('TinyBrainPromptExtension', new TinyBrainPromptExtension());
+    addPlayerActionDestinationGlobals(promptEnv);
 
     const renderState = TinyBrainPromptRunner.createRenderState();
     const templateContext = {
@@ -839,6 +1144,7 @@ test('real player-action template passes committed travel movement to terminal r
         },
         playerActionTravelMovementKind: 'destination',
         playerActionAccompanyingCharacters: [],
+        playerActionWorldTimeMinutes: 0,
         setting: { writingStyleNotes: 'Keep it concrete.' }
     };
     const programTemplateName = '_includes/player-action.tinybrain.njk';
@@ -868,6 +1174,8 @@ test('real player-action template passes committed travel movement to terminal r
             let aiResponse = 'Done.';
             if (checkpoint.parserName === 'accept_or_reject') {
                 aiResponse = '<accepted></accepted>';
+            } else if (checkpoint.parserName === 'player_action_more_info_or_na') {
+                aiResponse = 'N/A';
             } else if (checkpoint.parserName === 'player_action_accompanying_characters') {
                 aiResponse = 'NONE';
             } else if (checkpoint.parserName === 'player_action_prose_scope') {
@@ -897,17 +1205,18 @@ test('real player-action template passes committed travel movement to terminal r
     assert.match(result.aiResponse, /<moveTurnResult>/);
     assert.match(result.aiResponse, /<location>Stairwell<\/location>/);
     assert.match(result.aiResponse, /<region>Herbal Alchemy Shop Interior<\/region>/);
-    assert.match(result.aiResponse, /<travelTime>1 minutes<\/travelTime>/);
+    assert.match(result.aiResponse, /<travelTime>1 minute<\/travelTime>/);
     assert.match(result.aiResponse, /<destinationProse><!\[CDATA\[Tester descends into the Stairwell\.\]\]><\/destinationProse>/);
 });
 
 test('real player-action template preserves underway vehicle normal and redirect control flow', async () => {
-    const runScenario = async ({ vehicleAnswer, expectedRoot }) => {
+    const runScenario = async ({ vehicleAnswer, expectedRoot, invalidFirstDestination = false }) => {
         const promptEnv = new nunjucks.Environment(
             new nunjucks.FileSystemLoader(path.join(__dirname, '..', 'prompts'), { noCache: true }),
             { autoescape: false }
         );
         promptEnv.addExtension('TinyBrainPromptExtension', new TinyBrainPromptExtension());
+        addPlayerActionDestinationGlobals(promptEnv);
         const renderState = TinyBrainPromptRunner.createRenderState();
         const templateContext = {
             __tinyBrainState: renderState,
@@ -929,8 +1238,16 @@ test('real player-action template preserves underway vehicle normal and redirect
                 timeToDestination: '20 minutes',
                 vehicleInfo: {
                     hasArrived: false,
-                    isUnderway: true
-                }
+                    isUnderway: true,
+                    destinations: ['new-harbor-station']
+                },
+                allowedDestinations: [{
+                    kind: 'location',
+                    routeEntry: 'new-harbor-station',
+                    locationId: 'new-harbor-station',
+                    locationName: 'New Harbor Station',
+                    regionName: 'New Harbor'
+                }]
             },
             isAttack: false,
             modPlayerActionPromptSteps: [],
@@ -952,26 +1269,32 @@ test('real player-action template preserves underway vehicle normal and redirect
         ].join('');
         const prompts = [];
         let finalCompletionCount = 0;
+        let vehicleDestinationAttempts = 0;
         const runner = new TinyBrainPromptRunner({
             promptEnv,
             parseXMLTemplate: parseTemplate,
-            retryAttempts: 0,
+            retryAttempts: 1,
             resultBuilders: { player_action_result: buildPlayerActionTinyBrainResult },
             logPrompt(options) {
                 return options.filePath || `/test/logs/vehicle-${vehicleAnswer.toLowerCase()}.log`;
             },
-            async complete({ messages, checkpoint, isFinal }) {
+            async complete({ messages, checkpoint, isFinal, attempt }) {
                 prompts.push(messages.at(-1).content);
                 finalCompletionCount += isFinal ? 1 : 0;
                 let aiResponse = 'Done.';
                 if (checkpoint.parserName === 'accept_or_reject') {
                     aiResponse = '<accepted></accepted>';
+                } else if (checkpoint.parserName === 'player_action_more_info_or_na') {
+                    aiResponse = 'N/A';
                 } else if (checkpoint.parserName === 'player_action_movement') {
                     aiResponse = 'NONE';
                 } else if (checkpoint.parserName === 'player_action_vehicle_decision') {
                     aiResponse = vehicleAnswer;
-                } else if (checkpoint.parserName === 'player_action_destination') {
-                    aiResponse = 'Location: New Harbor Station\nRegion: New Harbor';
+                } else if (checkpoint.parserName === 'player_action_vehicle_destination') {
+                    vehicleDestinationAttempts += 1;
+                    aiResponse = vehicleAnswer === 'REDIRECT' && invalidFirstDestination && attempt === 0
+                        ? 'Location: Ember Hollow Village Square\nRegion: Ember Hollow'
+                        : 'Location: New Harbor Station\nRegion: New Harbor';
                 } else if (checkpoint.parserName === 'player_action_duration') {
                     aiResponse = vehicleAnswer === 'UNCHANGED' ? '3 minutes' : '30 minutes';
                 } else if (checkpoint.parserName === 'player_action_prose_scope') {
@@ -1002,7 +1325,9 @@ test('real player-action template preserves underway vehicle normal and redirect
         assert.match(result.aiResponse, new RegExp(`<${expectedRoot}>`));
         assert.ok(prompts.some(prompt => /Night Train/.test(prompt) && /20 minutes/.test(prompt)));
         assert.ok(prompts.some(prompt => /Ordinary riding, waiting, or talking aboard is UNCHANGED/i.test(prompt)));
-        return { result, prompts };
+        assert.ok(prompts.some(prompt => /mechanical outcome that actually occurs in the second draft/i.test(prompt)));
+        assert.ok(prompts.some(prompt => /conditional offer or request still awaiting approval is UNCHANGED/i.test(prompt)));
+        return { result, prompts, vehicleDestinationAttempts };
     };
 
     const unchanged = await runScenario({ vehicleAnswer: 'UNCHANGED', expectedRoot: 'turnResult' });
@@ -1012,4 +1337,14 @@ test('real player-action template preserves underway vehicle normal and redirect
     assert.match(redirect.result.aiResponse, /<name>Night Train<\/name>/);
     assert.match(redirect.result.aiResponse, /<vehicleDestination>/);
     assert.doesNotMatch(redirect.result.aiResponse, /<playerDestination>/);
+    assert.equal(redirect.vehicleDestinationAttempts, 1);
+
+    await assert.rejects(
+        () => runScenario({
+            vehicleAnswer: 'REDIRECT',
+            expectedRoot: 'moveTurnResult',
+            invalidFirstDestination: true
+        }),
+        /failed to parse after 2 attempts.*may not replace the initially extracted destination/is
+    );
 });

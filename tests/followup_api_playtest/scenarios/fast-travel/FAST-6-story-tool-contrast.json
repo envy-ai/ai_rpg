@@ -1,0 +1,254 @@
+{
+  "version": 1,
+  "scenario": "fast-travel",
+  "case": "FAST-6-story-tool-contrast",
+  "description": "A player story-tool teleport moves only the player and skips travel time, companion movement, WYWA, hidden-arrival checks, sighting updates, prompts, and travel summaries even when ordinary travel would cross the revisit threshold.",
+  "fixture": "fast-travel-visited-favorites",
+  "configProfile": "cross-region-mechanics",
+  "trackedPaths": [
+    "player.payload.player.locationId",
+    "players.payload.players",
+    "locations.payload.locations",
+    "calendar.payload.worldTime.timeMinutes",
+    "history.payload"
+  ],
+  "steps": [
+    {
+      "type": "loadFixture"
+    },
+    {
+      "type": "request",
+      "name": "age_destination",
+      "method": "POST",
+      "route": "/api/slash-command",
+      "body": {
+        "command": "time",
+        "argsText": "+31 minutes"
+      }
+    },
+    {
+      "type": "request",
+      "name": "hide_grove_npc",
+      "method": "PUT",
+      "route": "/api/npcs/$fixture.groveNpcId",
+      "body": {
+        "hiddenFromPlayer": true
+      }
+    },
+    {
+      "type": "assert",
+      "assertions": [
+        {
+          "type": "httpStatus",
+          "equals": 200
+        },
+        {
+          "type": "responseOk",
+          "equals": true
+        },
+        {
+          "type": "equals",
+          "source": "responses.hide_grove_npc",
+          "path": "payload.success",
+          "equals": true
+        },
+        {
+          "type": "entityField",
+          "source": "after",
+          "collection": "players",
+          "id": "$fixture.groveNpcId",
+          "path": "hiddenFromPlayer",
+          "equals": true
+        }
+      ]
+    },
+    {
+      "type": "snapshot",
+      "name": "before_story_tool_teleport"
+    },
+    {
+      "type": "request",
+      "name": "story_tool_teleport",
+      "method": "POST",
+      "route": "/api/npcs/$fixture.playerId/teleport",
+      "body": {
+        "locationId": "$fixture.groveLocationId",
+        "accountTravelTime": true,
+        "storyToolTeleport": true,
+        "accompanyingCharacters": [
+          "$fixture.courierAlias"
+        ]
+      }
+    },
+    {
+      "type": "assert",
+      "assertions": [
+        {
+          "type": "httpStatus",
+          "equals": 200
+        },
+        {
+          "type": "responseOk",
+          "equals": true
+        },
+        {
+          "type": "equals",
+          "source": "responses.story_tool_teleport",
+          "path": "payload.success",
+          "equals": true
+        },
+        {
+          "type": "equals",
+          "source": "responses.story_tool_teleport",
+          "path": "payload.npc.id",
+          "equals": "$fixture.playerId"
+        },
+        {
+          "type": "equals",
+          "source": "responses.story_tool_teleport",
+          "path": "payload.npc.locationId",
+          "equals": "$fixture.groveLocationId"
+        },
+        {
+          "type": "equals",
+          "source": "responses.story_tool_teleport",
+          "path": "payload.destination.id",
+          "equals": "$fixture.groveLocationId"
+        },
+        {
+          "type": "equals",
+          "source": "responses.story_tool_teleport",
+          "path": "payload.previousLocation.id",
+          "equals": "$fixture.baselineLocationId"
+        },
+        {
+          "type": "equals",
+          "source": "responses.story_tool_teleport",
+          "path": "payload.worldTime",
+          "equals": null
+        },
+        {
+          "type": "equals",
+          "source": "responses.story_tool_teleport",
+          "path": "payload.timeProgress",
+          "equals": null
+        },
+        {
+          "type": "equals",
+          "source": "responses.story_tool_teleport",
+          "path": "payload.removedFromParty",
+          "equals": false
+        },
+        {
+          "type": "absent",
+          "source": "responses.story_tool_teleport",
+          "path": "payload.arrivalProcessingError"
+        },
+        {
+          "type": "equals",
+          "source": "after",
+          "path": "player.payload.player.locationId",
+          "equals": "$fixture.groveLocationId"
+        },
+        {
+          "type": "exactDelta",
+          "beforeSource": "snapshots.before_story_tool_teleport",
+          "afterSource": "after",
+          "path": "calendar.payload.worldTime.timeMinutes",
+          "delta": 0
+        },
+        {
+          "type": "stateUnchanged",
+          "beforeSource": "snapshots.before_story_tool_teleport",
+          "afterSource": "after",
+          "paths": [
+            "history.payload"
+          ]
+        },
+        {
+          "type": "entityField",
+          "source": "after",
+          "collection": "players",
+          "id": "$fixture.courierId",
+          "path": "locationId",
+          "equals": "$fixture.baselineLocationId"
+        },
+        {
+          "type": "entityField",
+          "source": "after",
+          "collection": "players",
+          "id": "$fixture.groveNpcId",
+          "path": "locationId",
+          "equals": "$fixture.groveLocationId"
+        },
+        {
+          "type": "entityField",
+          "source": "after",
+          "collection": "players",
+          "id": "$fixture.groveNpcId",
+          "path": "hiddenFromPlayer",
+          "equals": true
+        },
+        {
+          "type": "entityField",
+          "source": "after",
+          "collection": "players",
+          "id": "$fixture.groveNpcId",
+          "path": "last_seen_time",
+          "equals": null
+        },
+        {
+          "type": "entityField",
+          "source": "after",
+          "collection": "players",
+          "id": "$fixture.groveNpcId",
+          "path": "last_seen_location",
+          "equals": null
+        },
+        {
+          "type": "entityField",
+          "source": "after",
+          "collection": "players",
+          "id": "$fixture.groveNpcId",
+          "path": "was_in_player_location_previous_round",
+          "equals": false
+        },
+        {
+          "type": "historyAddedTypeCount",
+          "entryType": "while-you-were-away",
+          "equals": 0,
+          "beforeSource": "snapshots.before_story_tool_teleport",
+          "afterSource": "after"
+        },
+        {
+          "type": "historyAddedTypeCount",
+          "entryType": "while-you-were-away-player",
+          "equals": 0,
+          "beforeSource": "snapshots.before_story_tool_teleport",
+          "afterSource": "after"
+        },
+        {
+          "type": "historyAddedTypeCount",
+          "entryType": "event-summary",
+          "equals": 0,
+          "beforeSource": "snapshots.before_story_tool_teleport",
+          "afterSource": "after"
+        },
+        {
+          "type": "historyAddedTypeCount",
+          "entryType": "player-action",
+          "equals": 0,
+          "beforeSource": "snapshots.before_story_tool_teleport",
+          "afterSource": "after"
+        },
+        {
+          "type": "noRealtimeErrors"
+        },
+        {
+          "type": "noUnexpectedErrorLogs"
+        }
+      ]
+    }
+  ],
+  "humanReview": []
+}

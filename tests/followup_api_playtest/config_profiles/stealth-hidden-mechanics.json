@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "name": "stealth-hidden-mechanics",
+  "description": "Runs hidden-NPC perception, reveal/hide event extraction, and player-action checks without unrelated background prompts or image generation.",
+  "extends": "isolated-base",
+  "values": {
+    "event_checks.enabled": true,
+    "plausibility_checks.enabled": true,
+    "hide_hide_checks": true
+  }
+}

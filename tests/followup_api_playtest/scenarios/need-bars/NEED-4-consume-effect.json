@@ -1,0 +1,449 @@
+{
+  "version": 1,
+  "scenario": "need-bars",
+  "case": "NEED-4-consume-effect",
+  "description": "Consume exactly one deterministic meal, distinguish its immediate normal-meal need change from its per-minute status modifier, and verify the timed attribute-bearing status starts once.",
+  "fixture": "need-bars-status-lifecycle",
+  "configProfile": "need-bars-mechanics",
+  "trackedPaths": [
+    "player.payload.player.locationId",
+    "player.payload.player.health",
+    "player.payload.player.maxHealth",
+    "player.payload.player.needBars",
+    "player.payload.player.statusEffects",
+    "player.payload.player.attributes",
+    "player.payload.player.inventory",
+    "players.payload.players",
+    "things.payload.things",
+    "calendar.payload.worldTime.timeMinutes",
+    "history.payload"
+  ],
+  "steps": [
+    {
+      "type": "loadFixture"
+    },
+    {
+      "type": "request",
+      "name": "remove_companion",
+      "method": "DELETE",
+      "route": "/api/player/party",
+      "body": {
+        "ownerId": "$fixture.playerId",
+        "memberId": "$fixture.companionId"
+      }
+    },
+    {
+      "type": "assert",
+      "assertions": [
+        {
+          "type": "httpStatus",
+          "equals": 200
+        },
+        {
+          "type": "responseOk",
+          "equals": true
+        }
+      ]
+    },
+    {
+      "type": "request",
+      "name": "relocate_companion",
+      "method": "POST",
+      "route": "/api/npcs/$fixture.companionId/teleport",
+      "body": {
+        "locationId": "$fixture.isolationLocationId",
+        "accountTravelTime": false
+      }
+    },
+    {
+      "type": "assert",
+      "assertions": [
+        {
+          "type": "httpStatus",
+          "equals": 200
+        },
+        {
+          "type": "responseOk",
+          "equals": true
+        }
+      ]
+    },
+    {
+      "type": "request",
+      "name": "relocate_courier",
+      "method": "POST",
+      "route": "/api/npcs/$fixture.nonPartyNpcId/teleport",
+      "body": {
+        "locationId": "$fixture.isolationLocationId",
+        "accountTravelTime": false
+      }
+    },
+    {
+      "type": "assert",
+      "assertions": [
+        {
+          "type": "httpStatus",
+          "equals": 200
+        },
+        {
+          "type": "responseOk",
+          "equals": true
+        }
+      ]
+    },
+    {
+      "type": "request",
+      "name": "set_food_for_exact_delta",
+      "method": "PUT",
+      "route": "/api/player/needs",
+      "body": {
+        "needs": [
+          {
+            "id": "food",
+            "value": 100
+          }
+        ]
+      }
+    },
+    {
+      "type": "assert",
+      "assertions": [
+        {
+          "type": "httpStatus",
+          "equals": 200
+        },
+        {
+          "type": "responseOk",
+          "equals": true
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "responses.set_food_for_exact_delta",
+          "path": "payload.applied",
+          "where": {
+            "id": "food",
+            "value": 100
+          },
+          "equals": 1
+        }
+      ]
+    },
+    {
+      "type": "snapshot",
+      "name": "before_action"
+    },
+    {
+      "type": "chat",
+      "name": "eat_meal",
+      "text": "I eat exactly one QA Restorative Meal as one normal meal over exactly one minute, finish that one meal, and perform no other activity. This is a normal meal, not a feast or large meal, and I do not eat until completely full.",
+      "travel": false,
+      "interactive": {
+        "roll": null,
+        "questAccepted": false,
+        "confirmed": false
+      }
+    },
+    {
+      "type": "assert",
+      "assertions": [
+        {
+          "type": "httpStatus",
+          "equals": 200
+        },
+        {
+          "type": "responseOk",
+          "equals": true
+        },
+        {
+          "type": "exactDelta",
+          "beforeSource": "snapshots.before_action",
+          "afterSource": "after",
+          "path": "calendar.payload.worldTime.timeMinutes",
+          "delta": 1
+        },
+        {
+          "type": "equals",
+          "source": "responses.eat_meal",
+          "path": "payload.timeProgress.advancedMinutes",
+          "equals": 1
+        },
+        {
+          "type": "equals",
+          "source": "after",
+          "path": "player.payload.player.locationId",
+          "equals": "$fixture.baselineLocationId"
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "responses.eat_meal",
+          "path": "payload.debug.eventStructured.parsed.item_ingest",
+          "where": {
+            "item": "$fixture.mealName",
+            "target": "$fixture.playerName"
+          },
+          "equals": 1
+        },
+        {
+          "type": "count",
+          "source": "responses.eat_meal",
+          "path": "payload.debug.eventStructured.parsed.item_ingest",
+          "equals": 1
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "responses.eat_meal",
+          "path": "payload.debug.eventStructured.parsed.consume_item",
+          "where": {
+            "item": "$fixture.mealName",
+            "quantity": 1
+          },
+          "equals": 1
+        },
+        {
+          "type": "count",
+          "source": "responses.eat_meal",
+          "path": "payload.debug.eventStructured.parsed.consume_item",
+          "equals": 1
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "responses.eat_meal",
+          "path": "payload.debug.eventStructured.parsed.status_effect_change",
+          "where": {
+            "entity": "$fixture.playerName",
+            "detail": "$fixture.effectName",
+            "action": "gained",
+            "source": "item_ingest",
+            "item": "$fixture.mealName"
+          },
+          "equals": 1
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "responses.eat_meal",
+          "path": "payload.debug.eventStructured.parsed.needbar_change",
+          "where": {
+            "character": "$fixture.playerName",
+            "bar": "food",
+            "direction": "increase",
+            "magnitude": "large"
+          },
+          "equals": 1
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "responses.eat_meal",
+          "path": "payload.debug.eventStructured.parsed.needbar_change",
+          "where": {
+            "character": "$fixture.companionName"
+          },
+          "equals": 0
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "responses.eat_meal",
+          "path": "payload.debug.eventStructured.parsed.needbar_change",
+          "where": {
+            "character": "$fixture.nonPartyNpcName"
+          },
+          "equals": 0
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "after",
+          "path": "player.payload.player.needBars",
+          "where": {
+            "id": "food",
+            "value": 799.3,
+            "max": 1000
+          },
+          "equals": 1
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "after",
+          "path": "player.payload.player.needBars",
+          "where": {
+            "id": "rest",
+            "value": 400.4
+          },
+          "equals": 1
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "after",
+          "path": "player.payload.player.needBars",
+          "where": {
+            "id": "mana",
+            "value": 610
+          },
+          "equals": 1
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "after",
+          "path": "player.payload.player.inventory",
+          "where": {
+            "id": "$fixture.mealId"
+          },
+          "equals": 0
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "after",
+          "path": "things.payload.things",
+          "where": {
+            "id": "$fixture.mealId"
+          },
+          "equals": 0
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "after",
+          "path": "player.payload.player.statusEffects",
+          "where": {
+            "id": "status_194",
+            "name": "$fixture.effectName",
+            "description": "$fixture.effectName",
+            "duration": "$fixture.effectDurationMinutes",
+            "appliedAt": 664
+          },
+          "equals": 1
+        },
+        {
+          "type": "count",
+          "source": "after",
+          "path": "player.payload.player.statusEffects",
+          "equals": 1
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "after",
+          "path": "player.payload.player.statusEffects.0.attributes",
+          "where": {
+            "attribute": "$fixture.effectAttribute",
+            "modifier": "$fixture.effectAttributeModifier"
+          },
+          "equals": 1
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "after",
+          "path": "player.payload.player.statusEffects.0.needBars",
+          "where": {
+            "name": "$fixture.effectNeedBarId",
+            "delta": "$fixture.effectNeedDeltaPerMinute"
+          },
+          "equals": 1
+        },
+        {
+          "type": "exactDelta",
+          "beforeSource": "snapshots.before_action",
+          "afterSource": "after",
+          "path": "player.payload.player.maxHealth",
+          "delta": 4
+        },
+        {
+          "type": "exactDelta",
+          "beforeSource": "snapshots.before_action",
+          "afterSource": "after",
+          "path": "player.payload.player.health",
+          "delta": 4
+        },
+        {
+          "type": "historyAddedTypeCount",
+          "entryType": "player-action",
+          "equals": 1,
+          "beforeSource": "snapshots.before_action",
+          "afterSource": "after"
+        },
+        {
+          "type": "historyAddedTypeCount",
+          "entryType": "event-summary",
+          "equals": 1,
+          "beforeSource": "snapshots.before_action",
+          "afterSource": "after"
+        },
+        {
+          "type": "historyAddedTypeCount",
+          "entryType": "status-summary",
+          "equals": 1,
+          "beforeSource": "snapshots.before_action",
+          "afterSource": "after"
+        },
+        {
+          "type": "historyAddedNestedObjectCount",
+          "entryWhere": {
+            "type": "event-summary"
+          },
+          "path": "summaryItems",
+          "where": {
+            "sourceType": "consume_item"
+          },
+          "equals": 1,
+          "beforeSource": "snapshots.before_action",
+          "afterSource": "after"
+        },
+        {
+          "type": "historyAddedNestedObjectCount",
+          "entryWhere": {
+            "type": "event-summary"
+          },
+          "path": "summaryItems",
+          "where": {
+            "sourceType": "need_bar_change",
+            "metadata": {
+              "needBarChange": {
+                "actorId": "$fixture.playerId",
+                "needBarId": "food",
+                "delta": 700,
+                "direction": "increase",
+                "magnitude": "large",
+                "max": 1000
+              }
+            }
+          },
+          "equals": 1,
+          "beforeSource": "snapshots.before_action",
+          "afterSource": "after"
+        },
+        {
+          "type": "historyAddedNestedObjectCount",
+          "entryWhere": {
+            "type": "status-summary"
+          },
+          "path": "summaryItems",
+          "where": {
+            "sourceType": "status_effect_change"
+          },
+          "equals": 1,
+          "beforeSource": "snapshots.before_action",
+          "afterSource": "after"
+        },
+        {
+          "type": "historyAddedNestedObjectCount",
+          "entryWhere": {
+            "type": "event-summary"
+          },
+          "path": "summaryItems",
+          "where": {
+            "sourceType": "time_passed"
+          },
+          "equals": 1,
+          "beforeSource": "snapshots.before_action",
+          "afterSource": "after"
+        },
+        {
+          "type": "noRealtimeErrors"
+        },
+        {
+          "type": "noUnexpectedErrorLogs"
+        }
+      ]
+    },
+    {
+      "type": "humanReviewNote",
+      "text": "Confirm Baato eats exactly one complete QA Restorative Meal during one minute without another player action or another consumed item."
+    }
+  ]
+}

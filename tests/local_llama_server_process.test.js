@@ -16,7 +16,7 @@ test('managed local llama server clears ComfyUI before spawning and retains the 
     const child = createFakeChild();
     const processManager = new LocalLlamaServerProcess({
         startupScriptPath: '/tmp/start-llama.sh',
-        beforeStart: async () => events.push('comfy-unload'),
+        beforeStart: async options => events.push(['comfy-unload', options]),
         spawnProcess: (scriptPath, args, options) => {
             events.push(['spawn-script', scriptPath, args, options.cwd, options.detached]);
             setImmediate(() => child.emit('spawn'));
@@ -27,12 +27,14 @@ test('managed local llama server clears ComfyUI before spawning and retains the 
         logger: { log: () => {}, error: () => {} }
     });
 
-    const result = await processManager.start();
+    const result = await processManager.start({
+        beforeStartOptions: { preserveComfySystemCache: true }
+    });
 
     assert.equal(result.pid, 4321);
     assert.equal(processManager.getPid(), 4321);
     assert.deepEqual(events, [
-        'comfy-unload',
+        ['comfy-unload', { preserveComfySystemCache: true }],
         ['spawn-script', '/tmp/start-llama.sh', [], '/tmp', true],
         ['ready', 4321]
     ]);

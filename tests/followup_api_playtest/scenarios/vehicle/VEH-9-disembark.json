@@ -1,0 +1,211 @@
+{
+  "version": 1,
+  "scenario": "vehicle",
+  "case": "VEH-9-disembark",
+  "description": "After a fixed-route vehicle has arrived, the ordinary event-driven exit path must classify the committed move as disembark and place the player outside without mutating the vehicle route.",
+  "fixture": "vehicle-underway-eastbound",
+  "configProfile": "vehicle-mechanics",
+  "trackedPaths": [
+    "player.payload.player.locationId",
+    "locations.payload.locations",
+    "calendar.payload.worldTime.timeMinutes"
+  ],
+  "steps": [
+    {
+      "type": "loadFixture"
+    },
+    {
+      "type": "request",
+      "name": "arrive",
+      "method": "POST",
+      "route": "/api/slash-command",
+      "body": {
+        "command": "time",
+        "argsText": "+10 minutes"
+      }
+    },
+    {
+      "type": "assert",
+      "assertions": [
+        {
+          "type": "httpStatus",
+          "equals": 200
+        },
+        {
+          "type": "responseOk",
+          "equals": true
+        },
+        {
+          "type": "includes",
+          "source": "responses.arrive",
+          "path": "payload.replies.0.content",
+          "value": "Processed 1 due vehicle arrival."
+        },
+        {
+          "type": "equals",
+          "source": "after",
+          "path": "player.payload.player.locationId",
+          "equals": "$fixture.tramId"
+        },
+        {
+          "type": "equals",
+          "source": "after",
+          "path": "currentLocation.payload.location.vehicleInfo.currentDestination",
+          "equals": "$fixture.eastPlatformId"
+        },
+        {
+          "type": "equals",
+          "source": "after",
+          "path": "currentLocation.payload.location.vehicleInfo.isUnderway",
+          "equals": false
+        }
+      ]
+    },
+    {
+      "type": "snapshot",
+      "name": "arrived"
+    },
+    {
+      "type": "chat",
+      "name": "disembark",
+      "text": "Baato steps off QA Clockwork Tram onto QA East Platform after the tram's completed arrival.",
+      "travel": true,
+      "travelMetadata": {
+        "mode": "event",
+        "eventDriven": true,
+        "exit": {
+          "exitId": "$fixture.vehicleExitId",
+          "originLocationId": "$fixture.tramId",
+          "direction": "qa_west_platform",
+          "destinationId": "$fixture.eastPlatformId",
+          "destinationRegionId": "$fixture.regionId",
+          "destinationIsStub": false,
+          "destinationIsRegionEntryStub": false,
+          "isVehicle": true,
+          "vehicleType": "rail tram",
+          "destinationName": "QA East Platform",
+          "regionName": "Ember Hollow Settlement"
+        }
+      },
+      "interactive": {
+        "roll": null,
+        "questAccepted": false,
+        "confirmed": false
+      }
+    },
+    {
+      "type": "assert",
+      "assertions": [
+        {
+          "type": "httpStatus",
+          "equals": 200
+        },
+        {
+          "type": "responseOk",
+          "equals": true
+        },
+        {
+          "type": "equals",
+          "source": "responses.disembark",
+          "path": "payload.authoritativeMovementType",
+          "equals": "disembark"
+        },
+        {
+          "type": "equals",
+          "source": "after",
+          "path": "player.payload.player.locationId",
+          "equals": "$fixture.eastPlatformId"
+        },
+        {
+          "type": "exactDelta",
+          "beforeSource": "snapshots.arrived",
+          "afterSource": "after",
+          "path": "calendar.payload.worldTime.timeMinutes",
+          "delta": 0
+        },
+        {
+          "type": "historyAddedTypeCount",
+          "entryType": "player-action",
+          "equals": 1,
+          "beforeSource": "snapshots.arrived",
+          "afterSource": "after"
+        },
+        {
+          "type": "historyAddedTypeCount",
+          "entryType": "event-summary",
+          "equals": 1,
+          "beforeSource": "snapshots.arrived",
+          "afterSource": "after"
+        },
+        {
+          "type": "noRealtimeErrors"
+        },
+        {
+          "type": "noUnexpectedErrorLogs"
+        }
+      ]
+    },
+    {
+      "type": "request",
+      "name": "tram_after_disembark",
+      "method": "GET",
+      "route": "/api/locations/$fixture.tramId"
+    },
+    {
+      "type": "assert",
+      "assertions": [
+        {
+          "type": "httpStatus",
+          "equals": 200
+        },
+        {
+          "type": "responseOk",
+          "equals": true
+        },
+        {
+          "type": "equals",
+          "source": "responses.tram_after_disembark",
+          "path": "payload.location.vehicleInfo.currentDestination",
+          "equals": "$fixture.eastPlatformId"
+        },
+        {
+          "type": "equals",
+          "source": "responses.tram_after_disembark",
+          "path": "payload.location.vehicleInfo.pendingDestination",
+          "equals": null
+        },
+        {
+          "type": "equals",
+          "source": "responses.tram_after_disembark",
+          "path": "payload.location.vehicleInfo.ETA",
+          "equals": null
+        },
+        {
+          "type": "equals",
+          "source": "responses.tram_after_disembark",
+          "path": "payload.location.vehicleInfo.departureTime",
+          "equals": null
+        },
+        {
+          "type": "equals",
+          "source": "responses.tram_after_disembark",
+          "path": "payload.location.vehicleInfo.destinations",
+          "equals": [
+            "$fixture.westPlatformId",
+            "$fixture.eastPlatformId"
+          ]
+        },
+        {
+          "type": "equals",
+          "source": "responses.tram_after_disembark",
+          "path": "payload.location.vehicleInfo.vehicleExitId",
+          "equals": "$fixture.vehicleExitId"
+        }
+      ]
+    }
+  ],
+  "humanReview": [
+    "Confirm the visible prose describes leaving the tram after arrival and does not claim the tram changed route or departed again.",
+    "Confirm the single event-summary row presents the disembark movement once."
+  ]
+}

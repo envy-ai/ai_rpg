@@ -69,6 +69,20 @@ stagger_concurrent_prompts: 4
 - `max_concurrent_requests_all_models` is optional. When set to a positive integer, `LLMClient` enforces that cap across all real text-generation requests regardless of backend, model, API key, OAuth identity, or CLI bridge session key. Each request still also honors the existing per-model/API-key semaphore from `ai.max_concurrent_requests`.
 - `stagger_concurrent_prompts` is the number of seconds between staggered prompt launches. It defaults to `4` when omitted or blank. Event checks launch immediately, need-bar event checks launch after one interval, and quest checks launch after two intervals. Values must be non-negative finite numbers.
 
+## Test-only completion recording and replay
+
+`ai.record_outputs_file` and `ai.force_outputs_file` support deterministic API regression runs. Their environment-variable equivalents are `LLM_RECORD_OUTPUTS_FILE` and `LLM_FORCE_OUTPUTS_FILE`. Relative paths resolve from the project root.
+
+```yaml
+ai:
+  record_outputs_file: tmp/vehicle-live-record.json
+  force_outputs_file: ""
+```
+
+Only one may be nonblank. `record_outputs_file` atomically records accepted logical LLM completions as an incomplete version 2 cassette until the scenario explicitly completes it through the cassette API. `force_outputs_file` accepts the existing legacy by-label fixtures or a complete version 2 cassette. Version 2 replay is globally ordered and requires an exact semantic request fingerprint; mismatch, exhaustion, concurrency, incomplete input, or unused entries fail explicitly and never fall through to a live model.
+
+These are test controls, not normal gameplay settings. A replay startup profile should also blank `ai.local_startup_script_path`, set `ai.unload_during_image_generation: false`, blank `router_preload_model`, and set `unload_model_on_switch: false` when the goal is to prove the case runs without starting or contacting local llama.cpp. `tests/followup_api_playtest/config_profiles/vehicle-mechanics-replay.json` provides that overlay.
+
 ## Pause AI Model During Image Generation
 
 Two mutually exclusive AI settings coordinate GPU ownership with ComfyUI. Router mode uses `unload_during_image_generation`; locally managed process mode uses `terminate_during_image_generation`. Both modes flush image-prompt writing immediately, wait for active text requests, hold the exclusive model-lifecycle gate during the complete render batch, and require `ai.backend: openai_compatible` plus `imagegen.engine: comfyui`.
@@ -94,7 +108,7 @@ When enabled:
 2. Active text requests finish, while new text requests wait behind an exclusive lifecycle gate.
 3. The server verifies the configured model through llama.cpp router `GET /models`, then calls `POST /models/unload` and waits for `unloaded`. Transient status-read failures receive two bounded retries; non-transient failures still surface immediately.
 4. Every queued ComfyUI render runs using normal `imagegen.maxConcurrentJobs` concurrency.
-5. After the render queue is empty, the server asks ComfyUI `/free` to unload models and free memory, calls llama.cpp `POST /models/load`, waits for `loaded`, and releases queued text requests.
+5. After the render queue is empty, the server POSTs to ComfyUI Cache Monitor's `/comfyui-cache-monitor/release_vram` so active model weights leave VRAM without detaching their RAM-backed caches. If Cache Monitor fails, the server uses full ComfyUI `/free` cleanup and broadcasts a browser warning recommending installation or enablement of the custom nodes. It then calls llama.cpp `POST /models/load`, waits for `loaded`, and releases queued text requests.
 
 The enabled setting requires `ai.backend: openai_compatible` and `imagegen.engine: comfyui`; incompatible configurations fail validation. The llama.cpp endpoint must be a router-mode server that exposes `/models`, `/models/unload`, and `/models/load`. ComfyUI cleanup is optional and logs a warning on failure, but llama.cpp reload is still attempted. Image-prompt requests received during rendering wait until the current model has reloaded, then begin the next cycle.
 
@@ -126,7 +140,7 @@ For each image-render batch:
 1. Image-prompt writing becomes quiescent and active text requests finish.
 2. The server sends `SIGTERM` to the saved llama.cpp process group and waits for exit. A process that ignores the termination timeout receives `SIGKILL`; failure remains fatal and rendering does not start.
 3. The queued ComfyUI render batch drains normally.
-4. Even if rendering failed, the server strictly calls ComfyUI `/free` and then immediately runs whichever startup script was active when rendering began.
+4. Even if rendering failed, the server POSTs to ComfyUI Cache Monitor's `/comfyui-cache-monitor/release_vram` so its RAM-backed cache is preserved. If that fails, it strictly performs full `/free` cleanup and broadcasts the Cache Monitor installation warning. It then immediately runs whichever startup script was active when rendering began.
 5. The server waits for `/health`, then releases queued text prompts. If rendering and restart both fail, both errors are preserved in an `AggregateError`.
 
 Configuration-page changes require the documented server restart to replace the process owner.
@@ -1278,7 +1292,7 @@ use_legacy_prompt_checks: false
 Rules:
 - Must be a boolean when present.
 - Default is `false`.
-- When `false`, regular prose prompts get `resolveAttack`, `resolveSkillCheck`, and `resolveOpposedSkillCheck` tools and resolve attacks/checks inside the prose tool loop.
+- When `false`, regular prose prompts get `resolveAttack`, `resolveSkillCheck`, and `resolveOpposedSkillCheck` tools and resolve attacks/checks inside the prose tool loop. The staged TinyBrain NPC-action family is the exception for attacks: its prose program accepts an already-resolved mechanical outcome and exposes only lookup tools, so the NPC turn runs the existing attack detector/resolver before staged narration. This prevents an NPC attack plan from being mislabeled as a trivial automatic success without applying damage.
 - When `true`, regular player/NPC prose prompts do not receive those mechanical check tools. Player actions run the legacy `attack_precheck`/`attack_check` and player-action plausibility prompt before prose generation; NPC turns run their existing action-plan plausibility prompt and legacy attack check before NPC prose generation.
 
 ## NPC turn gates

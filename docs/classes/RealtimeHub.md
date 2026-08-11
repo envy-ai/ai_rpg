@@ -40,6 +40,7 @@ The hub is a transport helper. Event schema, request correlation, hidden-note fi
 - Player-input prompts use targeted `player_input_request` and `player_input_request_closed` events. Responses are submitted through `/api/chat/user-input-response`; the hub does not receive answer payloads from the browser.
 - `LLMClient` broadcasts `prompt_progress` and `prompt_progress_cleared` while streaming prompt output.
 - Image jobs emit targeted or broadcast `image_job_update` events from `server.js`.
+- A post-render Cache Monitor failure broadcasts `comfy_cache_monitor_fallback` after the server successfully falls back to full ComfyUI `/free` cleanup. The browser uses it to show an install/enable recommendation unless that browser has suppressed the warning in localStorage.
 - Location and map mutations can broadcast events such as `location_relocated`, `location_exit_created`, `location_exit_deleted`, and `location_stub_expanded`.
 - Quest confirmations are emitted through `Globals.emitToClient` as `quest_confirmation_request`.
 

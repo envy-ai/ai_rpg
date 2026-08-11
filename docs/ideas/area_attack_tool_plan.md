@@ -97,8 +97,8 @@ The tool content shown back to the model stays concise:
 
 ```text
 Area attack results:
-- Commander Razorclaw: hit, Damage: 14%, Remaining health: 62%
-- Goblin Sapper: hit, Damage: 8%, Remaining health: 41%
+- Commander Razorclaw: hit, Damage: 14%, Remaining health: 62%, Defeated by this attack: NO — the target remains alive and is not incapacitated or defeated by this attack.
+- Goblin Sapper: hit, Damage: 8%, Remaining health: 41%, Defeated by this attack: NO — the target remains alive and is not incapacitated or defeated by this attack.
 - Shield Adept: miss, no damage
 ```
 

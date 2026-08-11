@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "name": "combat-friendly-only",
+  "description": "Isolates a TinyBrain combat turn with one friendly scheduler slot and no hostile or ordinary NPC follow-up slots.",
+  "extends": "isolated-base",
+  "values": {
+    "event_checks.enabled": true,
+    "plausibility_checks.enabled": true,
+    "use_legacy_prompt_checks": false,
+    "healthRegenPercentPerMinute": 0,
+    "omit_item_generation": true,
+    "npc_turns.enabled": false,
+    "combat_npc_turns.enabled": true,
+    "combat_npc_turns.npcTurnFrequency": 1,
+    "combat_npc_turns.maxFriendlyNpcsToAct": 1,
+    "combat_npc_turns.maxHostileNpcsToAct": 0
+  }
+}

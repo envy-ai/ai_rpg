@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "name": "combat-mechanics",
+  "description": "Runs isolated combat event/check processing with one friendly and one hostile NPC turn slot.",
+  "extends": "isolated-base",
+  "values": {
+    "event_checks.enabled": true,
+    "plausibility_checks.enabled": true,
+    "healthRegenPercentPerMinute": 0,
+    "omit_item_generation": true,
+    "npc_turns.enabled": false,
+    "combat_npc_turns.enabled": true,
+    "combat_npc_turns.npcTurnFrequency": 1,
+    "combat_npc_turns.maxFriendlyNpcsToAct": 1,
+    "combat_npc_turns.maxHostileNpcsToAct": 1
+  }
+}

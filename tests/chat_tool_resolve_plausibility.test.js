@@ -1,7 +1,11 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 
-const { CHAT_TOOL_DEFINITIONS, createChatToolRuntime } = require('../chat_tool_calls.js');
+const {
+    CHAT_TOOL_DEFINITIONS,
+    createChatToolRuntime,
+    requireExplicitSkillCheckActors
+} = require('../chat_tool_calls.js');
 
 const CACHED_CHECK_TOOL_CALL_NOTE = 'You already made this tool call. Do not re-run tool calls for the same checks that you made in earlier drafts.';
 
@@ -150,6 +154,112 @@ test('skill-check tool schemas expose separate unopposed and opposed check calls
     );
 });
 
+test('player-action skill-check schemas require an explicit actor without mutating shared definitions', () => {
+    const original = findToolDefinition('resolveOpposedSkillCheck');
+    const hardenedDefinitions = requireExplicitSkillCheckActors(CHAT_TOOL_DEFINITIONS);
+    const hardened = hardenedDefinitions.find(
+        entry => entry?.function?.name === 'resolveOpposedSkillCheck'
+    )?.function;
+
+    assert.ok(hardened);
+    assert.equal(original.parameters.required.includes('actor'), false);
+    assert.equal(hardened.parameters.required.includes('actor'), true);
+    assert.match(hardened.parameters.properties.actor.description, /Required exact acting character name/);
+});
+
+test('player-action skill-check execution rejects an omitted explicit actor before resolving', async () => {
+    const capturedMessagesByRound = [];
+    const runtime = makeRuntime({
+        firstResponse: toolResponse('resolveOpposedSkillCheck', {
+            reason: 'Rook tries to hide from the player.',
+            skill: 'Stealth',
+            attribute: 'Dexterity',
+            opponent: 'player',
+            opponentSkill: 'Perception',
+            opponentAttribute: 'Wisdom',
+            circumstanceModifiers: []
+        }),
+        capturedMessagesByRound
+    });
+
+    const result = await runtime.runChatCompletionWithToolLoop({
+        requestOptions: { messages: [{ role: 'user', content: 'Rook hides.' }] },
+        metadataLabel: 'test_player_action_requires_explicit_actor',
+        requireExplicitSkillCheckActor: true
+    });
+
+    assert.equal(result.toolInvocations.length, 1);
+    assert.equal(result.toolInvocations[0].metadata.error, true);
+    assert.equal(result.toolInvocations[0].metadata.code, 'missing_explicit_actor');
+    const toolMessage = capturedMessagesByRound[1].find(message => message.role === 'tool');
+    assert.match(toolMessage.content, /requires an explicit actor/);
+});
+
+test('player-action skill-check execution uses the sole parser-selected actor for an omitted tool field', async () => {
+    const capturedMessagesByRound = [];
+    let capturedActor = null;
+    const runtime = makeRuntime({
+        firstResponse: toolResponse('resolveOpposedSkillCheck', {
+            reason: 'Rook tries to hide from the player.',
+            skill: 'Stealth',
+            attribute: 'Dexterity',
+            opponent: 'player',
+            opponentSkill: 'Perception',
+            opponentAttribute: 'Wisdom',
+            circumstanceModifiers: []
+        }),
+        capturedMessagesByRound,
+        resolveOpposedPlausibilityCheck: async ({ actor, plausibility }) => {
+            capturedActor = actor;
+            return {
+                actionResolution: {
+                    label: 'success',
+                    degree: 'success',
+                    success: true
+                },
+                plausibility: { raw: null, structured: plausibility }
+            };
+        }
+    });
+
+    const result = await runtime.runChatCompletionWithToolLoop({
+        requestOptions: { messages: [{ role: 'user', content: 'Rook hides.' }] },
+        metadataLabel: 'test_player_action_selected_actor_default',
+        defaultToolActor: 'Rook',
+        allowedSkillCheckActors: ['Rook'],
+        requireExplicitSkillCheckActor: true
+    });
+
+    assert.equal(capturedActor, 'Rook');
+    assert.equal(result.toolInvocations[0].metadata.actor, 'Rook');
+    assert.equal(result.toolInvocations[0].metadata.error, undefined);
+});
+
+test('player-action skill-check execution rejects an actor outside the parser-selected set', async () => {
+    const capturedMessagesByRound = [];
+    const runtime = makeRuntime({
+        firstResponse: toolResponse('resolveSkillCheck', {
+            actor: 'Player',
+            reason: 'The player tries to hide.',
+            skill: 'Stealth',
+            attribute: 'Dexterity',
+            difficultyLevel: 'Medium',
+            circumstanceModifiers: []
+        }),
+        capturedMessagesByRound
+    });
+
+    const result = await runtime.runChatCompletionWithToolLoop({
+        requestOptions: { messages: [{ role: 'user', content: 'Rook hides.' }] },
+        metadataLabel: 'test_player_action_rejects_unselected_actor',
+        allowedSkillCheckActors: ['Rook'],
+        requireExplicitSkillCheckActor: true
+    });
+
+    assert.equal(result.toolInvocations[0].metadata.error, true);
+    assert.equal(result.toolInvocations[0].metadata.code, 'skill_check_actor_not_planned');
+});
+
 test('resolveSkillCheck returns outcome content and action resolution metadata', async () => {
     const capturedMessagesByRound = [];
     let capturedActor = null;
@@ -236,6 +346,7 @@ test('resolveSkillCheck can request and inject a forced die roll', async () => {
     await runtime.runChatCompletionWithToolLoop({
         requestOptions: { messages: [{ role: 'user', content: 'Force the door open.' }] },
         metadataLabel: 'test_forced_skill_roll',
+        dieRollOverride: 20,
         forcedSkillCheckRoll: async (request) => {
             forcedRollRequests.push(request);
             return 4;
@@ -249,6 +360,41 @@ test('resolveSkillCheck can request and inject a forced die roll', async () => {
     assert.equal(forcedRollRequests[0].attribute, 'Strength');
     assert.equal(forcedRollRequests[0].difficultyLevel, 'Moderate');
     assert.equal(capturedDieRollOverride, 4);
+});
+
+test('resolveSkillCheck forwards a fixed prompt die-roll override without interactive input', async () => {
+    const capturedMessagesByRound = [];
+    let capturedDieRollOverride = null;
+    const runtime = makeRuntime({
+        firstResponse: toolResponse('resolveSkillCheck', {
+            actor: 'player',
+            reason: 'The player tries to force the stuck door.',
+            skill: 'Athletics',
+            attribute: 'Strength',
+            difficultyLevel: 'Moderate',
+            circumstanceModifiers: []
+        }),
+        capturedMessagesByRound,
+        resolvePlausibilityCheck: async ({ dieRollOverride }) => {
+            capturedDieRollOverride = dieRollOverride;
+            return {
+                actionResolution: {
+                    label: 'critical success',
+                    degree: 'critical_success',
+                    success: true,
+                    roll: { die: 20, total: 30 }
+                }
+            };
+        }
+    });
+
+    await runtime.runChatCompletionWithToolLoop({
+        requestOptions: { messages: [{ role: 'user', content: 'Force the door open.' }] },
+        metadataLabel: 'test_fixed_skill_roll',
+        dieRollOverride: 20
+    });
+
+    assert.equal(capturedDieRollOverride, 20);
 });
 
 test('resolveSkillCheck accepts finite circumstance modifiers beyond ten points', async () => {

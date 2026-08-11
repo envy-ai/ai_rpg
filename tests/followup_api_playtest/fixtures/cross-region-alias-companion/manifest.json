@@ -1,0 +1,141 @@
+{
+  "version": 1,
+  "name": "cross-region-alias-companion",
+  "description": "Validated QA Frost March entrance fixture with QA Border Lantern unexpanded and living aliased NPC QA Quartermaster (Kuroha) colocated with Baato for REG-3 dialogue movement.",
+  "createdAt": "2026-08-11T09:35:35.264Z",
+  "source": {
+    "setupCommand": "Derived through normal APIs from cross-region-expanded-frost-march: teleport existing living QA Quartermaster to March Start Marker without travel time, preserving alias Kuroha, the player state, and the unexpanded child stub. This is the deterministic equivalent of the planned @@ companion fixture setup.",
+    "saveName": "2026-08-11T09-34-32-876Z_Monster_Girl_Life_2026-06b-Baato-March_Start_Marker-char_2-msogrrfw",
+    "saveType": "saves",
+    "settingName": "Monster Girl Life 2026-06b",
+    "playerName": "Baato"
+  },
+  "configProfile": "cross-region-mechanics",
+  "requiredMods": [
+    "implants",
+    "modules",
+    "nsfw-boost",
+    "party-needs",
+    "scene-illustration"
+  ],
+  "worldTime": {
+    "dayIndex": 0,
+    "timeMinutes": 663
+  },
+  "entities": {
+    "playerId": "char_2",
+    "originRegionId": "region_1",
+    "originLocationId": "loc_5",
+    "expandedRegionId": "region_1786438821952_m5baxvz2",
+    "entranceLocationId": "loc_39",
+    "childLocationStubId": "loc_38",
+    "originExitId": "exit_68",
+    "entranceToChildExitId": "exit_80",
+    "childToEntranceExitId": "exit_70",
+    "companionId": "char_9",
+    "companionName": "QA Quartermaster",
+    "companionAlias": "Kuroha"
+  },
+  "invariants": [
+    {
+      "type": "equals",
+      "source": "after",
+      "path": "player.payload.player.locationId",
+      "equals": "loc_39"
+    },
+    {
+      "type": "equals",
+      "source": "after",
+      "path": "calendar.payload.worldTime.timeMinutes",
+      "equals": 663
+    },
+    {
+      "type": "entityField",
+      "source": "after",
+      "collection": "regions",
+      "id": "region_1786438821952_m5baxvz2",
+      "path": "name",
+      "equals": "QA Frost March"
+    },
+    {
+      "type": "entityField",
+      "source": "after",
+      "collection": "locations",
+      "id": "loc_39",
+      "path": "regionId",
+      "equals": "region_1786438821952_m5baxvz2"
+    },
+    {
+      "type": "entityField",
+      "source": "after",
+      "collection": "locations",
+      "id": "loc_39",
+      "path": "isStub",
+      "equals": false
+    },
+    {
+      "type": "entityField",
+      "source": "after",
+      "collection": "locations",
+      "id": "loc_38",
+      "path": "name",
+      "equals": "QA Border Lantern"
+    },
+    {
+      "type": "entityField",
+      "source": "after",
+      "collection": "locations",
+      "id": "loc_38",
+      "path": "regionId",
+      "equals": "region_1786438821952_m5baxvz2"
+    },
+    {
+      "type": "entityField",
+      "source": "after",
+      "collection": "locations",
+      "id": "loc_38",
+      "path": "isStub",
+      "equals": true
+    },
+    {
+      "type": "entityField",
+      "source": "after",
+      "collection": "players",
+      "id": "char_9",
+      "path": "name",
+      "equals": "QA Quartermaster"
+    },
+    {
+      "type": "entityField",
+      "source": "after",
+      "collection": "players",
+      "id": "char_9",
+      "path": "aliases",
+      "equals": [
+        "Kuroha"
+      ]
+    },
+    {
+      "type": "entityField",
+      "source": "after",
+      "collection": "players",
+      "id": "char_9",
+      "path": "locationId",
+      "equals": "loc_39"
+    },
+    {
+      "type": "entityField",
+      "source": "after",
+      "collection": "players",
+      "id": "char_9",
+      "path": "isDead",
+      "equals": false
+    }
+  ],
+  "validation": {
+    "passed": true,
+    "checkedAt": "2026-08-11T09:34:32.876Z",
+    "evidence": "State-only REG-3 fixture setup attempt 1 passed 16/16 assertions. The normal NPC teleport endpoint placed living char_9 at loc_39 with alias Kuroha while Baato remained at loc_39, time remained 663, and loc_38 remained an unexpanded QA Frost March child stub."
+  },
+  "integrity": "sha256:c37670178e91881aeb5d5eda9b035e27ac3337aaf9573c57c039fe388bfcfb07"
+}

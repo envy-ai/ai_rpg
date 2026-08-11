@@ -29,6 +29,12 @@ const CHAT_TOOLS_THAT_MAY_LAUNCH_PROMPTS = new Set([
     'createThing',
     'rerunSceneSummary'
 ]);
+const SKILL_CHECK_TOOL_NAMES = new Set([
+    'resolveSkillCheck',
+    'resolveOpposedSkillCheck',
+    'resolvePlausibilityCheck',
+    'resolveOpposedPlausibilityCheck'
+]);
 const UPDATE_MYSTERY_BOX_FIELD_NAMES = Object.freeze([
     'name',
     'keys',
@@ -2166,6 +2172,32 @@ const getChatToolDefinitions = ({ modExtensionRegistry = null, getActiveSettingS
             { modExtensionRegistry, getActiveSettingSnapshot }
         )
     ));
+
+const requireExplicitSkillCheckActors = (toolDefinitions = []) => {
+    if (!Array.isArray(toolDefinitions)) {
+        throw new TypeError('Explicit skill-check actor schemas require an array of tool definitions.');
+    }
+    return toolDefinitions.map(toolDefinition => {
+        const toolName = typeof toolDefinition?.function?.name === 'string'
+            ? toolDefinition.function.name.trim()
+            : '';
+        if (!SKILL_CHECK_TOOL_NAMES.has(toolName)) {
+            return toolDefinition;
+        }
+        const clonedDefinition = cloneToolDefinition(toolDefinition);
+        const parameters = clonedDefinition?.function?.parameters;
+        if (!parameters?.properties?.actor) {
+            throw new Error(`Skill-check tool "${toolName}" is missing its actor schema.`);
+        }
+        const required = Array.isArray(parameters.required) ? parameters.required.slice() : [];
+        if (!required.includes('actor')) {
+            required.unshift('actor');
+        }
+        parameters.required = required;
+        parameters.properties.actor.description = 'Required exact acting character name or "player". Identify the character whose skill and attribute are being rolled; never omit this field.';
+        return clonedDefinition;
+    });
+};
 
 const ensureFunction = (value, name) => {
     if (typeof value !== 'function') {
@@ -7703,12 +7735,23 @@ const createChatToolRuntime = ({
         return true;
     };
 
-    const buildResolveAttackHitContent = ({ resolved, damage }) => {
+    const buildResolveAttackScopeInstruction = ({ attacker, defender }) => (
+        `Scope: this result authorizes exactly one resolved attack action by ${attacker} against ${defender}. `
+        + 'One attack action may include its setup or approach and one impact, miss, or damaging contact; after that, write only reactions, aftermath, withdrawal, or non-attacking posture. '
+        + `A second approach, lunge, charge, strike, bite, shot, impact, graze, or miss by ${attacker} against ${defender} is another attack and is not authorized by this result. `
+        + 'Do not portray any other character attacking, damaging, incapacitating, or defeating anyone unless that separate attack receives its own resolveAttack or resolveAreaAttack result.'
+    );
+
+    const buildResolveAttackHitContent = ({ resolved, damage, attacker, defender }) => {
         const application = resolved?.application && typeof resolved.application === 'object'
             ? resolved.application
             : {};
         const summary = resolved?.summary && typeof resolved.summary === 'object'
             ? resolved.summary
+            : {};
+        const attackOutcomeTarget = resolved?.attackOutcome?.target
+            && typeof resolved.attackOutcome.target === 'object'
+            ? resolved.attackOutcome.target
             : {};
         const summaryDamage = summary.damage && typeof summary.damage === 'object'
             ? summary.damage
@@ -7722,7 +7765,10 @@ const createChatToolRuntime = ({
             application.maxHealthBefore,
             summaryTarget.maxHealth,
             summaryTarget.maximumHealth,
-            summaryTarget.totalHealth
+            summaryTarget.totalHealth,
+            attackOutcomeTarget.maxHealth,
+            attackOutcomeTarget.maximumHealth,
+            attackOutcomeTarget.totalHealth
         );
         const appliedDamage = firstFiniteNumberOrNull(
             application.damageApplied,
@@ -7749,7 +7795,9 @@ const createChatToolRuntime = ({
             application.endingHealth,
             application.rawRemainingHealth,
             summaryTarget.remainingHealth,
-            summaryTarget.rawRemainingHealth
+            summaryTarget.rawRemainingHealth,
+            attackOutcomeTarget.remainingHealth,
+            attackOutcomeTarget.rawRemainingHealth
         );
         let remainingHealthPercent = ceilPercentFromHealthRatioOrNull(
             remainingHealth,
@@ -7769,10 +7817,21 @@ const createChatToolRuntime = ({
             );
         }
 
-        const defeatedText = remainingHealthPercent <= 0 ? ' (incapacitated or dead)' : '';
+        const defeated = typeof application.defeated === 'boolean'
+            ? application.defeated
+            : (typeof summaryTarget.defeated === 'boolean'
+                ? summaryTarget.defeated
+                : (typeof attackOutcomeTarget.defeated === 'boolean'
+                    ? attackOutcomeTarget.defeated
+                    : remainingHealthPercent <= 0));
+        const defeatedText = defeated
+            ? 'YES — portray the target as incapacitated or dead.'
+            : 'NO — the target remains alive and is not incapacitated or defeated by this attack.';
         return [
             `Damage: ${damagePercent}%`,
-            `Remaining health: ${remainingHealthPercent}%${defeatedText}`
+            `Remaining health: ${remainingHealthPercent}%`,
+            `Defeated by this attack: ${defeatedText}`,
+            buildResolveAttackScopeInstruction({ attacker, defender })
         ].join('\n');
     };
 
@@ -7785,7 +7844,7 @@ const createChatToolRuntime = ({
         weapon,
         circumstanceModifiers,
         damageEffectiveness
-    } = {}) => {
+    } = {}, { dieRollOverride = null } = {}) => {
         const functionName = 'resolveAttack';
         if (typeof resolveAttack !== 'function') {
             throw new ToolVisibleError(
@@ -7873,7 +7932,10 @@ const createChatToolRuntime = ({
             circumstanceModifiers: attackerModifiers.concat(defenderModifiers)
         };
 
-        const resolved = await resolveAttack({ attackEntry });
+        const resolved = await resolveAttack({
+            attackEntry,
+            dieRollOverride: Number.isInteger(dieRollOverride) ? dieRollOverride : null
+        });
         if (!resolved || typeof resolved !== 'object') {
             throw new ToolVisibleError(
                 'resolveAttack completed without returning an attack result.',
@@ -7884,7 +7946,10 @@ const createChatToolRuntime = ({
 
         if (!resolved.hit) {
             return {
-                content: 'miss',
+                content: [
+                    'Miss. The defender is not defeated by this attack.',
+                    buildResolveAttackScopeInstruction({ attacker: attackerName, defender: defenderName })
+                ].join('\n'),
                 metadata: {
                     result: 'miss',
                     hit: false,
@@ -7912,7 +7977,12 @@ const createChatToolRuntime = ({
         }
 
         return {
-            content: buildResolveAttackHitContent({ resolved, damage }),
+            content: buildResolveAttackHitContent({
+                resolved,
+                damage,
+                attacker: attackerName,
+                defender: defenderName
+            }),
             metadata: {
                 result: 'damage',
                 hit: true,
@@ -7999,12 +8069,17 @@ const createChatToolRuntime = ({
                 );
             }
 
-            const defeatedText = remainingHealthPercent <= 0 ? ' (incapacitated or dead)' : '';
+            const defeated = typeof result.defeated === 'boolean'
+                ? result.defeated
+                : remainingHealthPercent <= 0;
+            const defeatedText = defeated
+                ? 'YES — portray the target as incapacitated or dead.'
+                : 'NO — the target remains alive and is not incapacitated or defeated by this attack.';
             const effectName = normalizeOptionalString(result.secondaryEffect || result.effect);
             const effectText = result.secondaryEffectApplied && effectName
                 ? `, effect: ${effectName}`
                 : '';
-            lines.push(`- ${target}: hit, Damage: ${damagePercent}%, Remaining health: ${remainingHealthPercent}%${defeatedText}${effectText}`);
+            lines.push(`- ${target}: hit, Damage: ${damagePercent}%, Remaining health: ${remainingHealthPercent}%, Defeated by this attack: ${defeatedText}${effectText}`);
         }
         return lines.join('\n');
     };
@@ -8020,7 +8095,7 @@ const createChatToolRuntime = ({
         rollMode,
         circumstanceModifiers,
         secondaryEffect
-    } = {}) => {
+    } = {}, { dieRollOverride = null } = {}) => {
         const functionName = 'resolveAreaAttack';
         if (typeof resolveAreaAttack !== 'function') {
             throw new ToolVisibleError(
@@ -8179,7 +8254,10 @@ const createChatToolRuntime = ({
             }
         };
 
-        const resolved = await resolveAreaAttack({ areaAttackEntry });
+        const resolved = await resolveAreaAttack({
+            areaAttackEntry,
+            dieRollOverride: Number.isInteger(dieRollOverride) ? dieRollOverride : null
+        });
         if (!resolved || typeof resolved !== 'object') {
             throw new ToolVisibleError(
                 'resolveAreaAttack completed without returning an area attack result.',
@@ -8286,7 +8364,8 @@ const createChatToolRuntime = ({
     } = {}, {
         defaultActorName = null,
         toolName = 'resolveSkillCheck',
-        forcedSkillCheckRoll = null
+        forcedSkillCheckRoll = null,
+        dieRollOverride = null
     } = {}) => {
         const functionName = toolName;
         if (typeof resolvePlausibilityCheck !== 'function') {
@@ -8314,7 +8393,7 @@ const createChatToolRuntime = ({
             circumstanceModifiers: modifiers
         });
 
-        const dieRollOverride = typeof forcedSkillCheckRoll === 'function'
+        const resolvedDieRollOverride = typeof forcedSkillCheckRoll === 'function'
             ? await forcedSkillCheckRoll({
                 toolName: functionName,
                 checkType: 'unopposed',
@@ -8325,12 +8404,12 @@ const createChatToolRuntime = ({
                 difficultyLevel: difficultyName,
                 circumstanceModifiers: modifiers
             })
-            : null;
+            : (Number.isInteger(dieRollOverride) ? dieRollOverride : null);
 
         const resolved = await resolvePlausibilityCheck({
             actor: actorName,
             plausibility,
-            dieRollOverride: Number.isInteger(dieRollOverride) ? dieRollOverride : null
+            dieRollOverride: Number.isInteger(resolvedDieRollOverride) ? resolvedDieRollOverride : null
         });
         const actionResolution = resolved?.actionResolution || resolved;
         if (!actionResolution || typeof actionResolution !== 'object') {
@@ -8370,7 +8449,8 @@ const createChatToolRuntime = ({
     } = {}, {
         defaultActorName = null,
         toolName = 'resolveOpposedSkillCheck',
-        forcedSkillCheckRoll = null
+        forcedSkillCheckRoll = null,
+        dieRollOverride = null
     } = {}) => {
         const functionName = toolName;
         if (typeof resolveOpposedPlausibilityCheck !== 'function') {
@@ -8405,7 +8485,7 @@ const createChatToolRuntime = ({
             circumstanceModifiers: modifiers
         });
 
-        const dieRollOverride = typeof forcedSkillCheckRoll === 'function'
+        const resolvedDieRollOverride = typeof forcedSkillCheckRoll === 'function'
             ? await forcedSkillCheckRoll({
                 toolName: functionName,
                 checkType: 'opposed',
@@ -8418,12 +8498,12 @@ const createChatToolRuntime = ({
                 opponentAttribute: opponentAttributeName,
                 circumstanceModifiers: modifiers
             })
-            : null;
+            : (Number.isInteger(dieRollOverride) ? dieRollOverride : null);
 
         const resolved = await resolveOpposedPlausibilityCheck({
             actor: actorName,
             plausibility,
-            dieRollOverride: Number.isInteger(dieRollOverride) ? dieRollOverride : null
+            dieRollOverride: Number.isInteger(resolvedDieRollOverride) ? resolvedDieRollOverride : null
         });
         const actionResolution = resolved?.actionResolution || resolved;
         if (!actionResolution || typeof actionResolution !== 'object') {
@@ -10819,9 +10899,14 @@ const createChatToolRuntime = ({
         const updatedQuests = Array.isArray(result.updatedQuests)
             ? result.updatedQuests
             : [];
+        const declinedQuests = Array.isArray(result.declinedQuests)
+            ? result.declinedQuests
+            : [];
         const status = questsAwarded.length || updatedQuests.length
             ? 'success'
-            : 'not_created';
+            : declinedQuests.length
+                ? 'declined'
+                : 'not_created';
         const lines = [
             '<createQuestResult>',
             `  <status>${xmlEscapeText(status)}</status>`,
@@ -10854,6 +10939,24 @@ const createChatToolRuntime = ({
             lines.push('    </quest>');
         }
         lines.push('  </updatedQuests>');
+        lines.push('  <declinedQuests>');
+        for (const quest of declinedQuests) {
+            lines.push('    <quest>');
+            lines.push(`      <id>${xmlEscapeText(toTrimmedString(quest?.id))}</id>`);
+            lines.push(`      <name>${xmlEscapeText(toTrimmedString(quest?.name))}</name>`);
+            if (toTrimmedString(quest?.summary)) {
+                lines.push(`      <summary>${xmlEscapeText(toTrimmedString(quest.summary))}</summary>`);
+            }
+            if (toTrimmedString(quest?.giver)) {
+                lines.push(`      <giver>${xmlEscapeText(toTrimmedString(quest.giver))}</giver>`);
+            }
+            lines.push('      <accepted>false</accepted>');
+            lines.push('    </quest>');
+        }
+        lines.push('  </declinedQuests>');
+        if (status === 'declined') {
+            lines.push('  <instruction>The player declined this quest offer. The createQuest request is resolved; do not retry it.</instruction>');
+        }
         lines.push('</createQuestResult>');
 
         return {
@@ -10861,7 +10964,8 @@ const createChatToolRuntime = ({
             metadata: {
                 status,
                 questsAwarded,
-                updatedQuests
+                updatedQuests,
+                declinedQuests
             }
         };
     };
@@ -10977,14 +11081,95 @@ const createChatToolRuntime = ({
         )
     );
 
+    const resolveDeclaredToolNames = requestOptions => {
+        const explicitDefinitionSources = [
+            { value: requestOptions.tools, label: 'requestOptions.tools', legacy: false },
+            {
+                value: requestOptions.additionalPayload?.tools,
+                label: 'requestOptions.additionalPayload.tools',
+                legacy: false
+            },
+            { value: requestOptions.functions, label: 'requestOptions.functions', legacy: true },
+            {
+                value: requestOptions.additionalPayload?.functions,
+                label: 'requestOptions.additionalPayload.functions',
+                legacy: true
+            }
+        ].filter(source => source.value !== undefined && source.value !== null);
+
+        const explicitlyDisablesToolCalls = [
+            requestOptions.tool_choice,
+            requestOptions.function_call,
+            requestOptions.additionalPayload?.tool_choice,
+            requestOptions.additionalPayload?.function_call
+        ].some(value => typeof value === 'string' && value.trim().toLowerCase() === 'none');
+        if (explicitlyDisablesToolCalls) {
+            return new Set();
+        }
+
+        const definitionSources = explicitDefinitionSources.length
+            ? explicitDefinitionSources
+            : [
+                { value: CHAT_TOOL_DEFINITIONS, label: 'default chat tools', legacy: false },
+                {
+                    value: (() => {
+                        const registry = typeof getModExtensionRegistry === 'function'
+                            ? getModExtensionRegistry()
+                            : null;
+                        return registry && typeof registry.getChatToolDefinitions === 'function'
+                            ? registry.getChatToolDefinitions()
+                            : [];
+                    })(),
+                    label: 'default mod chat tools',
+                    legacy: false
+                }
+            ];
+
+        const names = new Set();
+        for (const source of definitionSources) {
+            if (!Array.isArray(source.value)) {
+                throw new TypeError(`${source.label} must be an array when provided.`);
+            }
+            for (const [index, definition] of source.value.entries()) {
+                const rawName = source.legacy
+                    ? definition?.name
+                    : definition?.function?.name;
+                const name = toTrimmedString(rawName);
+                if (!name) {
+                    throw new Error(`${source.label}[${index}] is missing a tool function name.`);
+                }
+                names.add(name);
+            }
+        }
+        return names;
+    };
+
+    const buildUndeclaredToolCallResult = (functionName, declaredToolNames) => {
+        const safeFunctionName = toTrimmedString(functionName) || 'unknownTool';
+        const allowedNames = [...declaredToolNames].sort();
+        const allowedInstruction = allowedNames.length
+            ? `Use only these declared tools: ${allowedNames.join(', ')}.`
+            : 'No tools are declared for this prompt checkpoint.';
+        return buildToolVisibleErrorResult(
+            safeFunctionName,
+            new ToolVisibleError(
+                `Tool "${safeFunctionName}" is not declared for this prompt checkpoint. Do not call it. ${allowedInstruction}`,
+                { code: 'tool_not_declared' }
+            )
+        );
+    };
+
     const executeChatToolCall = async (
         toolCall,
         {
             resultCache = null,
             defaultActorName = null,
+            requireExplicitSkillCheckActor = false,
+            allowedSkillCheckActors = null,
             includeAllHistoryEntryTypes = false,
             requestUserInputHandler = null,
             forcedSkillCheckRoll = null,
+            dieRollOverride = null,
             promptStream = null,
             allowRelationshipRemoval = false
         } = {}
@@ -10993,7 +11178,45 @@ const createChatToolRuntime = ({
             throw new Error('Tool execution requires a tool call object.');
         }
         try {
-            const argumentsObject = toolCall.argumentsObject || {};
+            const argumentsObject = {
+                ...(toolCall.argumentsObject || {})
+            };
+            if (SKILL_CHECK_TOOL_NAMES.has(toolCall.functionName) && allowedSkillCheckActors !== null) {
+                if (!allowedSkillCheckActors.length) {
+                    throw new ToolVisibleError(
+                        `${toolCall.functionName} cannot run because the checked-action actor checkpoint selected NONE. Do not resolve a skill check in this draft.`,
+                        { code: 'skill_check_actor_not_planned' }
+                    );
+                }
+                const suppliedActor = normalizeOptionalString(argumentsObject.actor)
+                    || normalizeOptionalString(defaultActorName);
+                if (!suppliedActor) {
+                    throw new ToolVisibleError(
+                        `${toolCall.functionName} requires an explicit actor chosen by the checked-action actor checkpoint.`,
+                        { code: 'missing_explicit_actor' }
+                    );
+                }
+                const canonicalActor = allowedSkillCheckActors.find(
+                    actorName => actorName.toLowerCase() === suppliedActor.toLowerCase()
+                );
+                if (!canonicalActor) {
+                    throw new ToolVisibleError(
+                        `${toolCall.functionName} actor "${suppliedActor}" was not selected by the checked-action actor checkpoint. Use one of: ${allowedSkillCheckActors.join(', ')}.`,
+                        { code: 'skill_check_actor_not_planned' }
+                    );
+                }
+                argumentsObject.actor = canonicalActor;
+            }
+            if (
+                requireExplicitSkillCheckActor
+                && SKILL_CHECK_TOOL_NAMES.has(toolCall.functionName)
+                && !normalizeOptionalString(argumentsObject.actor)
+            ) {
+                throw new ToolVisibleError(
+                    `${toolCall.functionName} requires an explicit actor for this player-action prompt. Supply the exact acting character name or "player"; do not infer the actor from the reason or prose.`,
+                    { code: 'missing_explicit_actor' }
+                );
+            }
             const cacheKey = resultCache
                 ? getCacheKeyForToolCall(toolCall.functionName, argumentsObject, resultCache.roundKey)
                 : null;
@@ -11104,20 +11327,22 @@ const createChatToolRuntime = ({
             } else if (toolCall.functionName === 'alterLocation') {
                 toolResult = executeAlterLocationTool(argumentsObject);
             } else if (toolCall.functionName === 'resolveAttack') {
-                toolResult = executeResolveAttackTool(argumentsObject);
+                toolResult = executeResolveAttackTool(argumentsObject, { dieRollOverride });
             } else if (toolCall.functionName === 'resolveAreaAttack') {
-                toolResult = executeResolveAreaAttackTool(argumentsObject);
+                toolResult = executeResolveAreaAttackTool(argumentsObject, { dieRollOverride });
             } else if (toolCall.functionName === 'resolveSkillCheck' || toolCall.functionName === 'resolvePlausibilityCheck') {
                 toolResult = executeResolvePlausibilityCheckTool(argumentsObject, {
                     defaultActorName,
                     toolName: toolCall.functionName,
-                    forcedSkillCheckRoll
+                    forcedSkillCheckRoll,
+                    dieRollOverride
                 });
             } else if (toolCall.functionName === 'resolveOpposedSkillCheck' || toolCall.functionName === 'resolveOpposedPlausibilityCheck') {
                 toolResult = executeResolveOpposedPlausibilityCheckTool(argumentsObject, {
                     defaultActorName,
                     toolName: toolCall.functionName,
-                    forcedSkillCheckRoll
+                    forcedSkillCheckRoll,
+                    dieRollOverride
                 });
             } else if (toolCall.functionName === 'locateNpcs') {
                 toolResult = executeLocateNpcsTool(argumentsObject);
@@ -11177,6 +11402,9 @@ const createChatToolRuntime = ({
         includeAllHistoryEntryTypes = false,
         requestUserInput: requestUserInputHandler = null,
         forcedSkillCheckRoll = null,
+        dieRollOverride = null,
+        requireExplicitSkillCheckActor = false,
+        allowedSkillCheckActors = null,
         promptLogFile = null
     }) => {
         if (!requestOptions || typeof requestOptions !== 'object') {
@@ -11193,6 +11421,21 @@ const createChatToolRuntime = ({
         }
         if (forcedSkillCheckRoll !== null && forcedSkillCheckRoll !== undefined && typeof forcedSkillCheckRoll !== 'function') {
             throw new Error('runChatCompletionWithToolLoop forcedSkillCheckRoll must be a function when provided.');
+        }
+        if (dieRollOverride !== null && dieRollOverride !== undefined && !Number.isInteger(dieRollOverride)) {
+            throw new Error('runChatCompletionWithToolLoop dieRollOverride must be an integer when provided.');
+        }
+        if (typeof requireExplicitSkillCheckActor !== 'boolean') {
+            throw new Error('runChatCompletionWithToolLoop requireExplicitSkillCheckActor must be a boolean.');
+        }
+        if (
+            allowedSkillCheckActors !== null
+            && (
+                !Array.isArray(allowedSkillCheckActors)
+                || allowedSkillCheckActors.some(actor => typeof actor !== 'string' || !actor.trim())
+            )
+        ) {
+            throw new Error('runChatCompletionWithToolLoop allowedSkillCheckActors must be null or an array of non-empty names.');
         }
         if (promptLogFile !== null && promptLogFile !== undefined && typeof promptLogFile !== 'string') {
             throw new Error('runChatCompletionWithToolLoop promptLogFile must be a string when provided.');
@@ -11221,6 +11464,7 @@ const createChatToolRuntime = ({
                 ? JSON.parse(JSON.stringify(message))
                 : message
         ));
+        const declaredToolNames = resolveDeclaredToolNames(requestOptions);
 
         let aiResponse = '';
         let lastResponse = null;
@@ -11234,6 +11478,15 @@ const createChatToolRuntime = ({
         const toolInvocations = [];
         const resultCache = normalizeToolResultCache(toolResultCache, { metadataLabel });
         const defaultActorName = normalizeOptionalString(defaultToolActor);
+        const allowedSkillCheckActorNames = allowedSkillCheckActors === null
+            ? null
+            : allowedSkillCheckActors.map(actor => actor.trim());
+        if (
+            allowedSkillCheckActorNames
+            && new Set(allowedSkillCheckActorNames.map(actor => actor.toLowerCase())).size !== allowedSkillCheckActorNames.length
+        ) {
+            throw new Error('runChatCompletionWithToolLoop allowedSkillCheckActors contains duplicate names.');
+        }
         let toolInvocationSequence = 0;
         const notifyToolCallLifecycle = async (payload) => {
             if (typeof onToolCallEvent === 'function') {
@@ -11467,15 +11720,23 @@ const createChatToolRuntime = ({
                     const executeTool = () => executeChatToolCall(toolCall, {
                         resultCache,
                         defaultActorName,
+                        requireExplicitSkillCheckActor,
+                        allowedSkillCheckActors: allowedSkillCheckActorNames,
                         includeAllHistoryEntryTypes,
                         requestUserInputHandler,
                         forcedSkillCheckRoll,
+                        dieRollOverride,
                         promptStream: streamEmitter
                     });
                     if (toolCallsExhausted) {
                         toolResult = buildToolCallAttemptsExhaustedResult(
                             toolCall.functionName,
                             maxRounds
+                        );
+                    } else if (!declaredToolNames.has(toolCall.functionName)) {
+                        toolResult = buildUndeclaredToolCallResult(
+                            toolCall.functionName,
+                            declaredToolNames
                         );
                     } else if (
                         requestOptions.queueReservation
@@ -11606,5 +11867,6 @@ const createChatToolRuntime = ({
 module.exports = {
     CHAT_TOOL_DEFINITIONS,
     createChatToolRuntime,
-    getChatToolDefinitions
+    getChatToolDefinitions,
+    requireExplicitSkillCheckActors
 };

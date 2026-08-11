@@ -1,0 +1,559 @@
+{
+  "version": 1,
+  "scenario": "stealth-hidden",
+  "case": "HIDE-7-hidden-movement",
+  "description": "A hidden NPC departs and returns through NPC movement events, preserves concealment across both legs, then receives exactly one automatic first-shared-location perception check when the player re-enters.",
+  "fixture": "stealth-hidden-npcs",
+  "configProfile": "stealth-hidden-mechanics",
+  "trackedPaths": [
+    "player.payload.player.locationId",
+    "players.payload.players",
+    "locations.payload.locations",
+    "currentLocation.payload.location.npcIds",
+    "currentLocation.payload.location.npcs",
+    "history.payload",
+    "calendar.payload.worldTime.timeMinutes"
+  ],
+  "steps": [
+    {
+      "type": "loadFixture"
+    },
+    {
+      "type": "request",
+      "name": "make_player_perception_certain_to_fail",
+      "method": "PUT",
+      "route": "/api/npcs/$fixture.playerId",
+      "body": {
+        "attributes": {
+          "wisdom": 1
+        },
+        "skills": {
+          "Perception": 0
+        }
+      }
+    },
+    {
+      "type": "request",
+      "name": "restore_hidden_scout_movement_state",
+      "method": "PUT",
+      "route": "/api/npcs/$fixture.scoutId",
+      "body": {
+        "isDead": false,
+        "hiddenFromPlayer": true,
+        "attributes": {
+          "dexterity": 20
+        },
+        "skills": {
+          "Stealth": 20
+        },
+        "aiNotes": "QA test continuity: QA Veiled Scout has independently volunteered to tell Baato that she will briefly depart for Stairwell, then return to March Start Marker while hidden as soon as he waits there. This is her own precommitted round trip, not a player order. She remains hidden throughout, does not approach or interact with Baato, and stays at March Start Marker after returning."
+      }
+    },
+    {
+      "type": "request",
+      "name": "isolate_decoy",
+      "method": "POST",
+      "route": "/api/npcs/$fixture.decoyId/teleport",
+      "body": {
+        "locationId": "$fixture.isolationLocationId",
+        "accountTravelTime": false
+      }
+    },
+    {
+      "type": "request",
+      "name": "isolate_courier",
+      "method": "POST",
+      "route": "/api/npcs/char_37/teleport",
+      "body": {
+        "locationId": "$fixture.isolationLocationId",
+        "accountTravelTime": false
+      }
+    },
+    {
+      "type": "assert",
+      "assertions": [
+        {
+          "type": "httpStatus",
+          "equals": 200
+        },
+        {
+          "type": "responseOk",
+          "equals": true
+        },
+        {
+          "type": "equals",
+          "source": "responses.make_player_perception_certain_to_fail",
+          "path": "payload.npc.attributes.wisdom",
+          "equals": 1
+        },
+        {
+          "type": "equals",
+          "source": "responses.make_player_perception_certain_to_fail",
+          "path": "payload.npc.skills.Perception",
+          "equals": 0
+        },
+        {
+          "type": "equals",
+          "source": "responses.restore_hidden_scout_movement_state",
+          "path": "payload.npc.hiddenFromPlayer",
+          "equals": true
+        },
+        {
+          "type": "equals",
+          "source": "responses.restore_hidden_scout_movement_state",
+          "path": "payload.npc.attributes.dexterity",
+          "equals": 20
+        },
+        {
+          "type": "equals",
+          "source": "responses.restore_hidden_scout_movement_state",
+          "path": "payload.npc.skills.Stealth",
+          "equals": 20
+        },
+        {
+          "type": "entityField",
+          "source": "after",
+          "collection": "players",
+          "id": "$fixture.scoutId",
+          "path": "locationId",
+          "equals": "$fixture.baselineLocationId"
+        },
+        {
+          "type": "entityField",
+          "source": "after",
+          "collection": "players",
+          "id": "$fixture.scoutId",
+          "path": "hiddenFromPlayer",
+          "equals": true
+        },
+        {
+          "type": "entityField",
+          "source": "after",
+          "collection": "players",
+          "id": "$fixture.scoutId",
+          "path": "isDead",
+          "equals": false
+        },
+        {
+          "type": "entityField",
+          "source": "after",
+          "collection": "players",
+          "id": "$fixture.decoyId",
+          "path": "locationId",
+          "equals": "$fixture.isolationLocationId"
+        }
+      ]
+    },
+    {
+      "type": "chat",
+      "name": "record_scout_round_trip_commitment",
+      "text": "# QA test continuity: Before this movement test, QA Veiled Scout independently volunteered and told Baato she would briefly travel to Stairwell, then return to March Start Marker hidden as soon as he waited there. This is her own plan, not a player order.",
+      "travel": false,
+      "interactive": {
+        "roll": null,
+        "questAccepted": false,
+        "confirmed": false
+      }
+    },
+    {
+      "type": "assert",
+      "assertions": [
+        {
+          "type": "httpStatus",
+          "equals": 200
+        },
+        {
+          "type": "responseOk",
+          "equals": true
+        },
+        {
+          "type": "equals",
+          "source": "responses.record_scout_round_trip_commitment",
+          "path": "payload.commentLogged",
+          "equals": true
+        },
+        {
+          "type": "equals",
+          "source": "responses.record_scout_round_trip_commitment",
+          "path": "payload.response",
+          "equals": ""
+        }
+      ]
+    },
+    {
+      "type": "snapshot",
+      "name": "before_hidden_departure"
+    },
+    {
+      "type": "chat",
+      "name": "hidden_scout_departs",
+      "text": "!! QA Veiled Scout leaves March Start Marker in QA Frost March and travels to the exact existing Stairwell location in Herbal Alchemy Shop Interior. She remains hidden from Baato throughout and after this NPC departure. This is only QA Veiled Scout's departure; Baato does not move, nobody arrives, and no one is revealed.",
+      "travel": false,
+      "interactive": {
+        "roll": null,
+        "questAccepted": false,
+        "confirmed": false
+      }
+    },
+    {
+      "type": "assert",
+      "assertions": [
+        {
+          "type": "httpStatus",
+          "equals": 200
+        },
+        {
+          "type": "responseOk",
+          "equals": true
+        },
+        {
+          "type": "includes",
+          "source": "responses.hidden_scout_departs",
+          "path": "payload.npcUpdates.departed",
+          "value": "$fixture.scoutName"
+        },
+        {
+          "type": "count",
+          "source": "responses.hidden_scout_departs",
+          "path": "payload.npcUpdates.departed",
+          "equals": 1
+        },
+        {
+          "type": "count",
+          "source": "responses.hidden_scout_departs",
+          "path": "payload.npcUpdates.added",
+          "equals": 0
+        },
+        {
+          "type": "equals",
+          "source": "after",
+          "path": "player.payload.player.locationId",
+          "equals": "$fixture.baselineLocationId"
+        },
+        {
+          "type": "entityField",
+          "source": "after",
+          "collection": "players",
+          "id": "$fixture.scoutId",
+          "path": "locationId",
+          "equals": "$fixture.isolationLocationId"
+        },
+        {
+          "type": "entityField",
+          "source": "after",
+          "collection": "players",
+          "id": "$fixture.scoutId",
+          "path": "hiddenFromPlayer",
+          "equals": true
+        },
+        {
+          "type": "entityField",
+          "source": "after",
+          "collection": "players",
+          "id": "$fixture.scoutId",
+          "path": "was_in_player_location_previous_round",
+          "equals": false
+        },
+        {
+          "type": "notIncludes",
+          "source": "after",
+          "path": "currentLocation.payload.location.npcIds",
+          "value": "$fixture.scoutId"
+        },
+        {
+          "type": "historyAddedTypeCount",
+          "entryType": "check-results",
+          "equals": 0,
+          "beforeSource": "snapshots.before_hidden_departure",
+          "afterSource": "after"
+        }
+      ]
+    },
+    {
+      "type": "snapshot",
+      "name": "after_hidden_departure"
+    },
+    {
+      "type": "chat",
+      "name": "hidden_scout_arrives",
+      "text": "!! QA Veiled Scout arrives at March Start Marker in QA Frost March from the exact existing Stairwell location in Herbal Alchemy Shop Interior. She remains hidden from Baato throughout and after this NPC arrival. This is only QA Veiled Scout's arrival; Baato does not move, nobody departs, and no one is revealed.",
+      "travel": false,
+      "interactive": {
+        "roll": null,
+        "questAccepted": false,
+        "confirmed": false
+      }
+    },
+    {
+      "type": "assert",
+      "assertions": [
+        {
+          "type": "httpStatus",
+          "equals": 200
+        },
+        {
+          "type": "responseOk",
+          "equals": true
+        },
+        {
+          "type": "includes",
+          "source": "responses.hidden_scout_arrives",
+          "path": "payload.npcUpdates.added",
+          "value": "$fixture.scoutName"
+        },
+        {
+          "type": "count",
+          "source": "responses.hidden_scout_arrives",
+          "path": "payload.npcUpdates.added",
+          "equals": 1
+        },
+        {
+          "type": "count",
+          "source": "responses.hidden_scout_arrives",
+          "path": "payload.npcUpdates.departed",
+          "equals": 0
+        },
+        {
+          "type": "equals",
+          "source": "responses.hidden_scout_arrives",
+          "path": "payload.locationRefreshRequested",
+          "equals": true
+        },
+        {
+          "type": "entityField",
+          "source": "after",
+          "collection": "players",
+          "id": "$fixture.scoutId",
+          "path": "locationId",
+          "equals": "$fixture.baselineLocationId"
+        },
+        {
+          "type": "entityField",
+          "source": "after",
+          "collection": "players",
+          "id": "$fixture.scoutId",
+          "path": "hiddenFromPlayer",
+          "equals": true
+        },
+        {
+          "type": "entityField",
+          "source": "after",
+          "collection": "players",
+          "id": "$fixture.scoutId",
+          "path": "was_in_player_location_previous_round",
+          "equals": false
+        },
+        {
+          "type": "entityField",
+          "source": "after",
+          "collection": "players",
+          "id": "$fixture.scoutId",
+          "path": "last_seen_time",
+          "equals": null
+        },
+        {
+          "type": "entityField",
+          "source": "after",
+          "collection": "players",
+          "id": "$fixture.scoutId",
+          "path": "last_seen_location",
+          "equals": null
+        },
+        {
+          "type": "includes",
+          "source": "after",
+          "path": "currentLocation.payload.location.npcIds",
+          "value": "$fixture.scoutId"
+        },
+        {
+          "type": "historyAddedTypeCount",
+          "entryType": "check-results",
+          "equals": 0,
+          "beforeSource": "snapshots.after_hidden_departure",
+          "afterSource": "after"
+        }
+      ]
+    },
+    {
+      "type": "request",
+      "name": "separate_player_without_arrival_processing",
+      "method": "POST",
+      "route": "/api/npcs/$fixture.playerId/teleport",
+      "body": {
+        "locationId": "$fixture.isolationLocationId",
+        "accountTravelTime": false,
+        "storyToolTeleport": true
+      }
+    },
+    {
+      "type": "assert",
+      "assertions": [
+        {
+          "type": "httpStatus",
+          "equals": 200
+        },
+        {
+          "type": "responseOk",
+          "equals": true
+        },
+        {
+          "type": "equals",
+          "source": "after",
+          "path": "player.payload.player.locationId",
+          "equals": "$fixture.isolationLocationId"
+        },
+        {
+          "type": "entityField",
+          "source": "after",
+          "collection": "players",
+          "id": "$fixture.scoutId",
+          "path": "locationId",
+          "equals": "$fixture.baselineLocationId"
+        },
+        {
+          "type": "entityField",
+          "source": "after",
+          "collection": "players",
+          "id": "$fixture.scoutId",
+          "path": "hiddenFromPlayer",
+          "equals": true
+        }
+      ]
+    },
+    {
+      "type": "snapshot",
+      "name": "before_first_shared_location_check"
+    },
+    {
+      "type": "request",
+      "name": "return_player_to_hidden_scout",
+      "method": "POST",
+      "route": "/api/npcs/$fixture.playerId/teleport",
+      "body": {
+        "locationId": "$fixture.baselineLocationId",
+        "accountTravelTime": false,
+        "storyToolTeleport": false,
+        "accompanyingCharacters": []
+      }
+    },
+    {
+      "type": "request",
+      "name": "history_after_first_shared_location_check",
+      "method": "GET",
+      "route": "/api/chat/history?includeAllEntries=true"
+    },
+    {
+      "type": "assert",
+      "assertions": [
+        {
+          "type": "httpStatus",
+          "equals": 200
+        },
+        {
+          "type": "responseOk",
+          "equals": true
+        },
+        {
+          "type": "equals",
+          "source": "responses.return_player_to_hidden_scout",
+          "path": "payload.success",
+          "equals": true
+        },
+        {
+          "type": "equals",
+          "source": "responses.return_player_to_hidden_scout",
+          "path": "payload.arrivalProcessingError",
+          "equals": null
+        },
+        {
+          "type": "equals",
+          "source": "after",
+          "path": "player.payload.player.locationId",
+          "equals": "$fixture.baselineLocationId"
+        },
+        {
+          "type": "entityField",
+          "source": "after",
+          "collection": "players",
+          "id": "$fixture.scoutId",
+          "path": "locationId",
+          "equals": "$fixture.baselineLocationId"
+        },
+        {
+          "type": "entityField",
+          "source": "after",
+          "collection": "players",
+          "id": "$fixture.scoutId",
+          "path": "hiddenFromPlayer",
+          "equals": true
+        },
+        {
+          "type": "entityField",
+          "source": "after",
+          "collection": "players",
+          "id": "$fixture.scoutId",
+          "path": "was_in_player_location_previous_round",
+          "equals": false
+        },
+        {
+          "type": "entityField",
+          "source": "after",
+          "collection": "players",
+          "id": "$fixture.scoutId",
+          "path": "last_seen_time",
+          "equals": null
+        },
+        {
+          "type": "entityField",
+          "source": "after",
+          "collection": "players",
+          "id": "$fixture.scoutId",
+          "path": "last_seen_location",
+          "equals": null
+        },
+        {
+          "type": "includes",
+          "source": "after",
+          "path": "currentLocation.payload.location.npcIds",
+          "value": "$fixture.scoutId"
+        },
+        {
+          "type": "historyAddedTypeCount",
+          "entryType": "check-results",
+          "equals": 1,
+          "beforeSource": "snapshots.before_first_shared_location_check",
+          "afterSource": "after"
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "responses.history_after_first_shared_location_check",
+          "path": "payload.history",
+          "where": {
+            "type": "check-results",
+            "metadata": {
+              "hiddenNpcCheck": true,
+              "automatic": true,
+              "action": "automatic_reveal_hidden_npc",
+              "npcId": "$fixture.scoutId",
+              "npcName": "$fixture.scoutName",
+              "hiddenFromClient": true
+            }
+          },
+          "equals": 1
+        },
+        {
+          "type": "noRealtimeErrors"
+        },
+        {
+          "type": "noUnexpectedErrorLogs",
+          "allowedPrefixes": [
+            "ERROR_chatCompletionError_events-xml_"
+          ]
+        }
+      ]
+    }
+  ],
+  "humanReview": [
+    "Both NPC movement legs use deterministic forced-event acknowledgements, and the automatic first-shared-location checks run through prose-free player arrival processing. There is no generated narrative channel to review for a hidden-identity leak; movement fidelity is established by structured NPC departure/arrival summaries and authoritative actor/location state."
+  ]
+}

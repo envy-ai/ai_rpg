@@ -1,0 +1,16 @@
+{
+  "strict": true,
+  "description": "NEED-7 staged TinyBrain need-bar parser failures followed by one valid characters response.",
+  "byMetadataLabel": {
+    "need_bar_event_checks": [
+      "Wanderer loses a small amount of stamina after swinging a weapon.",
+      "<characters><character><name>Wanderer</name><affectedNeedBars><needBar><id>hunger</id><changeDirection>decrease</changeDirection><change>small</change><reason>swung a weapon</reason></needBar></affectedNeedBars></character></characters>",
+      "<characters><character><name>Wanderer</name><affectedNeedBars><needBar><id>stamina</id><changeDirection>decrease</changeDirection><change>small</change><reason>swung a weapon</reason></needBar></affectedNeedBars></character><character><name>wanderer</name><affectedNeedBars><needBar><id>stamina</id><changeDirection>decrease</changeDirection><change>small</change><reason>swung again</reason></needBar></affectedNeedBars></character></characters>",
+      "<characters><character><name>Wanderer</name><affectedNeedBars><needBar><id>stamina</id><changeDirection>decrease</changeDirection><change>small</change><reason>swung a weapon</reason></needBar><needBar><id>STAMINA</id><changeDirection>decrease</changeDirection><change>medium</change><reason>kept swinging</reason></needBar></affectedNeedBars></character></characters>",
+      "<characters><character><name>Wanderer</name><affectedNeedBars><needBar><id>stamina</id><changeDirection>lower</changeDirection><change>small</change><reason>swung a weapon</reason></needBar></affectedNeedBars></character></characters>",
+      "<characters><character><name>Wanderer</name><affectedNeedBars><needBar><id>stamina</id><changeDirection>decrease</changeDirection><change>slightly</change><reason>swung a weapon</reason></needBar></affectedNeedBars></character></characters>",
+      "<characters><commentary>Wanderer used stamina.</commentary></characters>",
+      "<characters><character><name>Wanderer</name><affectedNeedBars><needBar><id>stamina</id><changeDirection>decrease</changeDirection><change>small</change><reason>swung a weapon</reason></needBar></affectedNeedBars></character></characters>"
+    ]
+  }
+}

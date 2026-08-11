@@ -1,0 +1,32 @@
+{
+  "version": 1,
+  "name": "isolated-base",
+  "description": "Disables image generation and unrelated foreground/background turn work for deterministic API scenarios.",
+  "values": {
+    "imagegen.enabled": false,
+    "random_event_frequency.enabled": false,
+    "npc_turns.enabled": false,
+    "combat_npc_turns.enabled": false,
+    "quest_checks.enabled": false,
+    "event_checks.enabled": false,
+    "plausibility_checks.enabled": false,
+    "plot_analysis.enabled": false,
+    "improvement_prompt.enabled": false,
+    "tonal_scale_evaluation.enabled": false,
+    "extra_plot_prompts.plot_summary": false,
+    "extra_plot_prompts.plot_expander": false,
+    "extra_plot_prompts.supplemental_story_info": false,
+    "extra_plot_prompts.offscreen-npc-activity-daily": false,
+    "extra_plot_prompts.offscreen-npc-activity-weekly": false,
+    "supplemental_story_info_prompt_frequency": 0,
+    "offscreen_npc_activity_prompt_count": 0,
+    "offscreen_npc_activity_daily_max_turns_between_prompts": 0,
+    "offscreen_npc_activity_weekly_max_turns_between_prompts": 0,
+    "plot_expander_prompt_frequency": 0,
+    "plot_summary_prompt_frequency": 0,
+    "housekeeping.interval": 1000000000,
+    "mystery_box_cleanup.interval": 1000000000,
+    "stagger_concurrent_prompts": 1,
+    "summaries.summarize_on_load": false
+  }
+}

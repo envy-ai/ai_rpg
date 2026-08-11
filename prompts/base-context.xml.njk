@@ -280,6 +280,7 @@ This is a list of all characters in the story and a short description of each.
       <npc>
         <id>{{ npc.id | default('unknown', true) }}</id>
         <name>{{ npc.name }}</name>
+        <isDead>{{ npc.isDead | default(false) }}</isDead>
         {% if npc.hiddenFromPlayer %}<hidden>true</hidden>{% endif %}
         <description>{{ npc.description }}</description>
         <class>{{ npc.class | default('Unknown') }}</class>
@@ -572,6 +573,7 @@ This is a list of all characters in the story and a short description of each.
     <member>
       <id>{{ member.id | default('unknown', true) }}</id>
       <name>{{ member.name }}</name>
+      <isDead>{{ member.isDead | default(false) }}</isDead>
       {% if member.hiddenFromPlayer %}<hidden>true</hidden>{% endif %}
       <description>{{ member.description }}</description>
       <class>{{ member.class | default('Unknown') }}</class>
@@ -819,7 +821,7 @@ This evaluation is current as of {{ tonalScaleEvaluationTurnsAgo | default(0, tr
   <currentCharacterNeeds>
     {% set listedPartyMemberIds = partyMemberIds | default([], true) %}
     {% for npc in npcs %}
-    {% if (not npc.id or not (npc.id in listedPartyMemberIds)) and npc.needs and npc.needs | length %}
+    {% if not (npc.isDead | default(false)) and (not npc.id or not (npc.id in listedPartyMemberIds)) and npc.needs and npc.needs | length %}
     <character>
       <name>{{ npc.name }}</name>
       <needs>
@@ -829,7 +831,7 @@ This evaluation is current as of {{ tonalScaleEvaluationTurnsAgo | default(0, tr
     {% endif %}
     {% endfor %}
     {% for member in party %}
-    {% if member.needs and member.needs | length %}
+    {% if not (member.isDead | default(false)) and member.needs and member.needs | length %}
     <character>
       <name>{{ member.name }}</name>
       <needs>

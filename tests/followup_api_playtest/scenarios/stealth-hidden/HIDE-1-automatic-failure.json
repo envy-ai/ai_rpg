@@ -1,0 +1,219 @@
+{
+  "version": 1,
+  "scenario": "stealth-hidden",
+  "case": "HIDE-1-automatic-failure",
+  "description": "A first shared-location encounter with mathematically inferior player perception records exactly one client-hidden automatic opposed-check failure and leaves the scout concealed.",
+  "fixture": "stealth-hidden-npcs",
+  "configProfile": "stealth-hidden-mechanics",
+  "trackedPaths": [
+    "player.payload.player.locationId",
+    "players.payload.players",
+    "currentLocation.payload.location.npcIds",
+    "history.payload",
+    "calendar.payload.worldTime.timeMinutes"
+  ],
+  "steps": [
+    {
+      "type": "loadFixture"
+    },
+    {
+      "type": "request",
+      "name": "make_perception_certain_to_fail",
+      "method": "PUT",
+      "route": "/api/npcs/$fixture.playerId",
+      "body": {
+        "attributes": {
+          "wisdom": 1
+        },
+        "skills": {
+          "Perception": 0
+        }
+      }
+    },
+    {
+      "type": "assert",
+      "assertions": [
+        {
+          "type": "httpStatus",
+          "equals": 200
+        },
+        {
+          "type": "responseOk",
+          "equals": true
+        },
+        {
+          "type": "equals",
+          "source": "responses.make_perception_certain_to_fail",
+          "path": "payload.npc.attributes.wisdom",
+          "equals": 1
+        },
+        {
+          "type": "equals",
+          "source": "responses.make_perception_certain_to_fail",
+          "path": "payload.npc.skills.Perception",
+          "equals": 0
+        }
+      ]
+    },
+    {
+      "type": "request",
+      "name": "separate_player_without_arrival_processing",
+      "method": "POST",
+      "route": "/api/npcs/$fixture.playerId/teleport",
+      "body": {
+        "locationId": "$fixture.isolationLocationId",
+        "accountTravelTime": false,
+        "storyToolTeleport": true
+      }
+    },
+    {
+      "type": "assert",
+      "assertions": [
+        {
+          "type": "httpStatus",
+          "equals": 200
+        },
+        {
+          "type": "responseOk",
+          "equals": true
+        },
+        {
+          "type": "equals",
+          "source": "after",
+          "path": "player.payload.player.locationId",
+          "equals": "$fixture.isolationLocationId"
+        },
+        {
+          "type": "entityField",
+          "source": "after",
+          "collection": "players",
+          "id": "$fixture.scoutId",
+          "path": "locationId",
+          "equals": "$fixture.baselineLocationId"
+        },
+        {
+          "type": "entityField",
+          "source": "after",
+          "collection": "players",
+          "id": "$fixture.scoutId",
+          "path": "hiddenFromPlayer",
+          "equals": true
+        }
+      ]
+    },
+    {
+      "type": "snapshot",
+      "name": "before_first_shared_location"
+    },
+    {
+      "type": "request",
+      "name": "enter_hidden_scout_location",
+      "method": "POST",
+      "route": "/api/npcs/$fixture.playerId/teleport",
+      "body": {
+        "locationId": "$fixture.baselineLocationId",
+        "accountTravelTime": false,
+        "storyToolTeleport": false,
+        "accompanyingCharacters": []
+      }
+    },
+    {
+      "type": "request",
+      "name": "history_after_failure",
+      "method": "GET",
+      "route": "/api/chat/history?includeAllEntries=true"
+    },
+    {
+      "type": "assert",
+      "assertions": [
+        {
+          "type": "httpStatus",
+          "equals": 200
+        },
+        {
+          "type": "responseOk",
+          "equals": true
+        },
+        {
+          "type": "equals",
+          "source": "responses.enter_hidden_scout_location",
+          "path": "payload.success",
+          "equals": true
+        },
+        {
+          "type": "equals",
+          "source": "responses.enter_hidden_scout_location",
+          "path": "payload.arrivalProcessingError",
+          "equals": null
+        },
+        {
+          "type": "equals",
+          "source": "after",
+          "path": "player.payload.player.locationId",
+          "equals": "$fixture.baselineLocationId"
+        },
+        {
+          "type": "equals",
+          "source": "after",
+          "path": "calendar.payload.worldTime.timeMinutes",
+          "equals": 663
+        },
+        {
+          "type": "entityField",
+          "source": "after",
+          "collection": "players",
+          "id": "$fixture.scoutId",
+          "path": "hiddenFromPlayer",
+          "equals": true
+        },
+        {
+          "type": "historyAddedTypeCount",
+          "entryType": "check-results",
+          "equals": 1,
+          "beforeSource": "snapshots.before_first_shared_location",
+          "afterSource": "after"
+        },
+        {
+          "type": "historyAddedTypeCount",
+          "entryType": "player-action",
+          "equals": 0,
+          "beforeSource": "snapshots.before_first_shared_location",
+          "afterSource": "after"
+        },
+        {
+          "type": "historyAddedTypeCount",
+          "entryType": "event-summary",
+          "equals": 0,
+          "beforeSource": "snapshots.before_first_shared_location",
+          "afterSource": "after"
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "responses.history_after_failure",
+          "path": "payload.history",
+          "where": {
+            "type": "check-results",
+            "metadata": {
+              "hiddenNpcCheck": true,
+              "automatic": true,
+              "action": "automatic_reveal_hidden_npc",
+              "npcId": "$fixture.scoutId",
+              "npcName": "$fixture.scoutName",
+              "hiddenFromClient": true
+            }
+          },
+          "equals": 1
+        },
+        {
+          "type": "noRealtimeErrors"
+        },
+        {
+          "type": "noUnexpectedErrorLogs"
+        }
+      ]
+    }
+  ],
+  "humanReview": [
+    "The automatic arrival path produced no assistant prose, so there is no narrative channel in which the hidden scout's identity could leak; the sole check-results entry is explicitly hidden from the client."
+  ]
+}

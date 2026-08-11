@@ -40,6 +40,14 @@ function directChildElements(node) {
     return Array.from(node?.childNodes || []).filter(child => child?.nodeType === 1);
 }
 
+function directTextContent(node) {
+    return Array.from(node?.childNodes || [])
+        .filter(child => child?.nodeType === 3 || child?.nodeType === 4)
+        .map(child => String(child.nodeValue || ''))
+        .join('')
+        .trim();
+}
+
 function directChildrenByTagName(node, tagName) {
     const expected = String(tagName || '').toLowerCase();
     return directChildElements(node).filter(child => normalizedTagName(child) === expected);
@@ -105,6 +113,56 @@ function rejectPlayerActionResultMarkup(response, label, { rejectHidden = false 
     if (forbidden.test(response)) {
         throw new Error(`${label} must not contain player-action result XML.`);
     }
+}
+
+function parsePlayerActionMoreInfoOrNa(response, parseContext = {}) {
+    const currentToolInvocations = Array.isArray(parseContext?.currentToolInvocations)
+        ? parseContext.currentToolInvocations
+        : [];
+    const unexpectedToolInvocation = currentToolInvocations.find(invocation => (
+        invocation?.name !== 'moreInfo'
+    ));
+    if (unexpectedToolInvocation) {
+        throw new Error(
+            `Player-action destination lookup may only call moreInfo; received ${unexpectedToolInvocation.name || 'an unnamed tool'}.`
+        );
+    }
+
+    const failedMoreInfoInvocation = currentToolInvocations.find(invocation => (
+        invocation?.name === 'moreInfo'
+        && invocation?.metadata?.error === true
+    ));
+    if (failedMoreInfoInvocation) {
+        throw new Error('Player-action destination lookup moreInfo execution failed.');
+    }
+
+    const successfulMoreInfoInvocations = currentToolInvocations.filter(invocation => (
+        invocation?.name === 'moreInfo'
+        && invocation?.metadata?.error !== true
+    ));
+    const normalized = normalizeCompactChoiceResponse(
+        response,
+        'player-action destination lookup'
+    ).toUpperCase();
+    if (normalized === 'N/A' || normalized === 'NA') {
+        if (successfulMoreInfoInvocations.length) {
+            throw new Error(
+                'Player-action destination lookup must answer READY after a successful moreInfo call.'
+            );
+        }
+        return { value: false };
+    }
+    if (normalized === 'READY') {
+        if (!successfulMoreInfoInvocations.length) {
+            throw new Error(
+                'Player-action destination lookup cannot answer READY without a successful moreInfo call.'
+            );
+        }
+        return { value: true };
+    }
+    throw new Error(
+        'Player-action destination lookup must be exactly N/A, or READY after calling moreInfo.'
+    );
 }
 
 function parsePlayerActionMovement(response, onVehicle = false) {
@@ -232,6 +290,189 @@ function parsePlayerActionDestination(response) {
     return { value: { location, region } };
 }
 
+function normalizeExactRouteText(value) {
+    return typeof value === 'string' && value.trim()
+        ? value.trim().toLowerCase().replace(/\s+/g, ' ')
+        : null;
+}
+
+function parsePlayerActionVehicleDestination(response, currentVehicle = null, parseContext = null) {
+    const parsed = parsePlayerActionDestination(response);
+    if (!currentVehicle || typeof currentVehicle !== 'object' || Array.isArray(currentVehicle)) {
+        throw new Error('Player-action vehicle destination requires current vehicle context.');
+    }
+    const vehicleInfo = currentVehicle.vehicleInfo;
+    if (!vehicleInfo || typeof vehicleInfo !== 'object' || Array.isArray(vehicleInfo)) {
+        throw new Error('Player-action vehicle destination requires current vehicle route state.');
+    }
+    const routeEntries = vehicleInfo.destinations === undefined
+        ? []
+        : vehicleInfo.destinations;
+    if (!Array.isArray(routeEntries)) {
+        throw new Error('Player-action current vehicle destinations must be an array.');
+    }
+    if (!routeEntries.length) {
+        return parsed;
+    }
+
+    const allowedDestinations = currentVehicle.allowedDestinations;
+    if (!Array.isArray(allowedDestinations) || allowedDestinations.length !== routeEntries.length) {
+        throw new Error(
+            'Player-action fixed-route vehicle context must provide every canonical allowed destination.'
+        );
+    }
+    const retryState = parseContext?.retryState;
+    if (retryState !== undefined && (
+        !retryState
+        || typeof retryState !== 'object'
+        || Array.isArray(retryState)
+    )) {
+        throw new Error('Player-action vehicle destination retry state must be an object.');
+    }
+    const normalizedRouteEntries = new Set(routeEntries.map(entry => String(entry)));
+    const normalizedLocation = normalizeExactRouteText(parsed.value.location);
+    const normalizedRegion = normalizeExactRouteText(parsed.value.region);
+    const parsedDestination = {
+        location: parsed.value.location,
+        region: parsed.value.region,
+        normalizedLocation,
+        normalizedRegion
+    };
+    if (retryState) {
+        const anchorKey = 'playerActionVehicleDestination';
+        const anchored = retryState[anchorKey];
+        if (!anchored) {
+            retryState[anchorKey] = Object.freeze(parsedDestination);
+        } else if (
+            anchored.normalizedLocation !== normalizedLocation
+            || anchored.normalizedRegion !== normalizedRegion
+        ) {
+            const initialLabel = [anchored.location, anchored.region].filter(Boolean).join(' — ');
+            const replacementLabel = [parsed.value.location, parsed.value.region].filter(Boolean).join(' — ');
+            throw new Error(
+                `Player-action vehicle-destination retry may not replace the initially extracted destination `
+                + `"${initialLabel}" with "${replacementLabel}". Preserve the same mechanical destination `
+                + `and correct only its representation.`
+            );
+        }
+    }
+    const matches = [];
+    for (const [index, candidate] of allowedDestinations.entries()) {
+        if (!candidate || typeof candidate !== 'object' || Array.isArray(candidate)) {
+            throw new Error(`Player-action allowed vehicle destination ${index + 1} must be an object.`);
+        }
+        if (typeof candidate.routeEntry !== 'string' || !normalizedRouteEntries.has(candidate.routeEntry)) {
+            throw new Error(
+                `Player-action allowed vehicle destination ${index + 1} does not match the current vehicle route.`
+            );
+        }
+        const kind = typeof candidate.kind === 'string' ? candidate.kind.trim().toLowerCase() : '';
+        const candidateRegion = normalizeExactRouteText(candidate.regionName);
+        if (kind === 'location') {
+            const candidateLocation = normalizeExactRouteText(candidate.locationName);
+            const candidateLocationId = normalizeExactRouteText(candidate.locationId);
+            if (!candidateLocation || !candidateLocationId) {
+                throw new Error(
+                    `Player-action allowed vehicle destination ${index + 1} is missing canonical location identity.`
+                );
+            }
+            const locationMatches = normalizedLocation === candidateLocation
+                || normalizedLocation === candidateLocationId;
+            const regionMatches = !normalizedRegion || normalizedRegion === candidateRegion;
+            if (locationMatches && regionMatches) {
+                matches.push(candidate);
+            }
+            continue;
+        }
+        if (kind === 'region') {
+            if (!candidateRegion) {
+                throw new Error(
+                    `Player-action allowed vehicle destination ${index + 1} is missing a canonical region name.`
+                );
+            }
+            if (normalizedRegion === candidateRegion) {
+                matches.push(candidate);
+            }
+            continue;
+        }
+        throw new Error(
+            `Player-action allowed vehicle destination ${index + 1} has unknown kind "${candidate.kind}".`
+        );
+    }
+
+    const routeLabels = allowedDestinations.map(candidate => (
+        candidate.kind === 'location'
+            ? [candidate.locationName, candidate.regionName].filter(Boolean).join(' — ')
+            : candidate.regionName
+    ));
+    const requestedLabel = [parsed.value.location, parsed.value.region].filter(Boolean).join(' — ');
+    if (!matches.length) {
+        throw new Error(
+            `Vehicle "${currentVehicle.name || 'current vehicle'}" cannot travel to "${requestedLabel}" `
+            + `because that destination is not in its allowed route. Allowed destinations: ${routeLabels.join(', ')}.`
+        );
+    }
+    if (matches.length > 1) {
+        throw new Error(
+            `Player-action vehicle destination "${requestedLabel}" is ambiguous within the allowed route.`
+        );
+    }
+
+    const matched = matches[0];
+    if (matched.kind === 'location') {
+        return {
+            value: {
+                location: matched.locationName,
+                region: matched.regionName || parsed.value.region
+            }
+        };
+    }
+    return {
+        value: {
+            location: parsed.value.location,
+            region: matched.regionName
+        }
+    };
+}
+
+function parsePlayerActionDestinationChanges(response) {
+    const normalized = normalizePlainResponse(response, 'player-action destination changes');
+    rejectPlayerActionResultMarkup(normalized, 'Player-action destination changes', { rejectHidden: true });
+    if (/^(?:NONE|N\s*\/\s*A)$/i.test(normalized)) {
+        return { value: [], normalizedResponse: 'NONE' };
+    }
+
+    const lines = normalized.split(/\r?\n/).filter(line => line.trim());
+    const changes = [];
+    const seen = new Set();
+    for (const line of lines) {
+        const match = line.match(/^\s*-\s+(.+?)\s*$/);
+        if (!match || !match[1].trim()) {
+            throw new Error('Player-action destination changes must be exactly NONE or a Markdown bullet list.');
+        }
+        const change = match[1].trim();
+        if (/^n\s*\/\s*a$/i.test(change) || /^none$/i.test(change)) {
+            throw new Error('Player-action destination changes cannot mix NONE or N/A with bullets.');
+        }
+        if (/<\/?(?:turnResult|moveTurnResult|hidden)\b/i.test(change)) {
+            throw new Error('Player-action destination changes must not contain player-action result XML.');
+        }
+        const key = change.toLowerCase().replace(/\s+/g, ' ');
+        if (seen.has(key)) {
+            throw new Error(`Player-action destination changes contains duplicate bullet "${change}".`);
+        }
+        seen.add(key);
+        changes.push(change);
+    }
+    if (!changes.length) {
+        throw new Error('Player-action destination changes requires NONE or at least one Markdown bullet.');
+    }
+    return {
+        value: changes,
+        normalizedResponse: changes.map(change => `- ${change}`).join('\n')
+    };
+}
+
 function parsePlayerActionDuration(response, minimumMinutes = 1) {
     const normalized = normalizePlainResponse(response, 'player-action duration');
     if (!Number.isInteger(minimumMinutes) || minimumMinutes < 0) {
@@ -252,9 +493,9 @@ function parsePlayerActionDuration(response, minimumMinutes = 1) {
     return { value: { text: normalized, minutes } };
 }
 
-function parsePlayerActionAccompanyingCharacters(response, allowedCharacters = []) {
-    const normalized = normalizeCompactChoiceResponse(response, 'player-action accompanying characters');
-    rejectPlayerActionResultMarkup(normalized, 'Player-action accompanying characters');
+function parsePlayerActionCharacterNameSelection(response, allowedCharacters, label) {
+    const normalized = normalizeCompactChoiceResponse(response, label.toLowerCase());
+    rejectPlayerActionResultMarkup(normalized, label);
     if (/^none$/i.test(normalized)) {
         return { value: [] };
     }
@@ -263,7 +504,7 @@ function parsePlayerActionAccompanyingCharacters(response, allowedCharacters = [
         .map(value => value.replace(/^\s*[-*]\s*/, '').trim())
         .filter(Boolean);
     if (identifiers.some(value => !value)) {
-        throw new Error('Player-action accompanying characters must use one exact character name or alias per non-empty line.');
+        throw new Error(`${label} must use one exact character name or alias per non-empty line.`);
     }
     if (identifiers.length === 1 && identifiers[0].includes(',')) {
         try {
@@ -283,6 +524,22 @@ function parsePlayerActionAccompanyingCharacters(response, allowedCharacters = [
             allowedCharacters
         )
     };
+}
+
+function parsePlayerActionAccompanyingCharacters(response, allowedCharacters = []) {
+    return parsePlayerActionCharacterNameSelection(
+        response,
+        allowedCharacters,
+        'Player-action accompanying characters'
+    );
+}
+
+function parsePlayerActionCheckedActionActors(response, allowedCharacters = []) {
+    return parsePlayerActionCharacterNameSelection(
+        response,
+        allowedCharacters,
+        'Player-action checked-action actors'
+    );
 }
 
 function parsePlayerActionRequiredProse(response) {
@@ -327,6 +584,8 @@ function parseNeedBarCharactersResult(response, allowedNeedBarIds = []) {
     }
 
     const { xml, root } = parseStrictXml(response, 'need-bar characters result');
+    let normalizedXml = xml;
+    let normalizedMagnitudeAlias = false;
     if (normalizedTagName(root) !== 'characters') {
         throw new Error('Need-bar characters result must use <characters> as its document root.');
     }
@@ -403,15 +662,31 @@ function parseNeedBarCharactersResult(response, allowedNeedBarIds = []) {
                 throw new Error('Need-bar <changeDirection> must be exactly increase or decrease.');
             }
 
-            const magnitude = requireSingleDirectChild(
+            const magnitudeField = requireSingleDirectChild(
                 needBarNode,
                 'change',
                 `Need-bar entry for "${characterName}"`
-            ).text.toLowerCase();
+            );
+            const magnitudeAlias = magnitudeField.text.toLowerCase();
+            const magnitude = magnitudeAlias === 'fill'
+                ? 'full'
+                : (magnitudeAlias === 'drain' ? 'empty' : magnitudeAlias);
             if (!['small', 'medium', 'large', 'all', 'full', 'empty'].includes(magnitude)) {
                 throw new Error(
-                    'Need-bar <change> must be exactly small, medium, large, all, full, or empty.'
+                    'Need-bar <change> must be exactly small, medium, large, all, full/fill, or empty/drain.'
                 );
+            }
+            if (
+                (magnitude === 'full' && direction !== 'increase')
+                || (magnitude === 'empty' && direction !== 'decrease')
+            ) {
+                throw new Error(
+                    `Need-bar <change>${magnitude}</change> requires <changeDirection>${magnitude === 'full' ? 'increase' : 'decrease'}</changeDirection>.`
+                );
+            }
+            if (magnitude !== magnitudeAlias) {
+                magnitudeField.node.textContent = magnitude;
+                normalizedMagnitudeAlias = true;
             }
 
             requireSingleDirectChild(
@@ -422,7 +697,10 @@ function parseNeedBarCharactersResult(response, allowedNeedBarIds = []) {
         }
     }
 
-    return { value: xml, normalizedResponse: xml };
+    if (normalizedMagnitudeAlias) {
+        normalizedXml = root.toString();
+    }
+    return { value: normalizedXml, normalizedResponse: normalizedXml };
 }
 
 function parseRevisionDecision(response) {
@@ -748,7 +1026,8 @@ function parseWhileYouWereAwayResult(response) {
         { allowEmpty: true }
     ).node;
     validateWhileAwayCharacterUpdatesRoot(characterUpdatesRoot, {
-        label: 'While-you-were-away result <characterUpdates>'
+        label: 'While-you-were-away result <characterUpdates>',
+        allowHere: true
     });
     const itemSceneryMovesRoot = requireSingleDirectChild(
         root,
@@ -764,7 +1043,8 @@ function parseWhileYouWereAwayResult(response) {
 
 function validateWhileAwayTravelDestination(node, {
     label,
-    requireHere = false
+    requireHere = false,
+    allowHere = false
 } = {}) {
     if (!node) {
         if (requireHere) {
@@ -774,16 +1054,23 @@ function validateWhileAwayTravelDestination(node, {
     }
     rejectUnexpectedDirectChildren(node, ['location', 'region'], `${label} <travelDestination>`);
     const children = directChildElements(node);
+    const directText = directTextContent(node);
     if (requireHere) {
-        if (children.length || String(node.textContent || '').trim().toUpperCase() !== 'HERE') {
+        if (children.length || directText.toUpperCase() !== 'HERE') {
             throw new Error(`${label} requires <travelDestination>HERE</travelDestination>.`);
         }
         return;
     }
     if (!children.length) {
+        if (allowHere && directText.toUpperCase() === 'HERE') {
+            return;
+        }
         throw new Error(
-            `${label} <travelDestination> must use <location> and/or <region> child tags.`
+            `${label} <travelDestination> must use <location> and/or <region> child tags${allowHere ? ' or the exact HERE sentinel' : ''}.`
         );
+    }
+    if (directText) {
+        throw new Error(`${label} <travelDestination> must not mix text with <location> or <region> child tags.`);
     }
     if (directChildrenByTagName(node, 'location').length > 1 || directChildrenByTagName(node, 'region').length > 1) {
         throw new Error(`${label} <travelDestination> may contain at most one <location> and one <region>.`);
@@ -812,7 +1099,8 @@ function validateWhileAwayNeedBarValue(value, label) {
 function validateWhileAwayCharacterUpdateElement(root, {
     expectedName = null,
     label = 'While-you-were-away character update',
-    requireHere = false
+    requireHere = false,
+    allowHere = false
 } = {}) {
     if (normalizedTagName(root) !== 'characterupdate') {
         throw new Error(`${label} must use <characterUpdate> as its document root.`);
@@ -852,21 +1140,27 @@ function validateWhileAwayCharacterUpdateElement(root, {
     if (travelDestinationNodes.length > 1) {
         throw new Error(`${label} may contain at most one <travelDestination>.`);
     }
-    validateWhileAwayTravelDestination(travelDestinationNodes[0] || null, { label, requireHere });
+    validateWhileAwayTravelDestination(travelDestinationNodes[0] || null, {
+        label,
+        requireHere,
+        allowHere
+    });
     requireSingleDirectChild(root, 'update', label);
     return name;
 }
 
 function validateWhileAwayCharacterUpdatesRoot(root, {
     label = 'While-you-were-away character updates',
-    requireHere = false
+    requireHere = false,
+    allowHere = false
 } = {}) {
     rejectUnexpectedDirectChildren(root, ['characterupdate'], label);
     const seenNames = new Set();
     for (const [index, updateNode] of directChildrenByTagName(root, 'characterUpdate').entries()) {
         const name = validateWhileAwayCharacterUpdateElement(updateNode, {
             label: `${label} entry #${index + 1}`,
-            requireHere
+            requireHere,
+            allowHere
         });
         const nameKey = name.toLowerCase();
         if (seenNames.has(nameKey)) {
@@ -1122,9 +1416,13 @@ module.exports = {
     parseNarrativeScope,
     parseOutcomeAcknowledgement,
     parsePlayerActionDestination,
+    parsePlayerActionVehicleDestination,
+    parsePlayerActionDestinationChanges,
     parsePlayerActionDuration,
     parsePlayerActionAccompanyingCharacters,
+    parsePlayerActionCheckedActionActors,
     parsePlayerActionHiddenNotes,
+    parsePlayerActionMoreInfoOrNa,
     parsePlayerActionMovement,
     parsePlayerActionProseScope,
     parsePlayerActionRequiredProse,

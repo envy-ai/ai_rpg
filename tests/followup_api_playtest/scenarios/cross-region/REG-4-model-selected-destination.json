@@ -1,0 +1,248 @@
+{
+  "version": 1,
+  "scenario": "cross-region",
+  "case": "REG-4-model-selected-destination",
+  "description": "A TinyBrain player action selects a named nonexistent location in an existing region without exit-button metadata; the server creates and expands it, creates the route, and commits one authoritative player move.",
+  "fixture": "cross-region-expanded-frost-march",
+  "configProfile": "cross-region-mechanics",
+  "trackedPaths": [
+    "player.payload.player.locationId",
+    "locations.payload.locations",
+    "regions.payload.regions",
+    "calendar.payload.worldTime.timeMinutes"
+  ],
+  "steps": [
+    {
+      "type": "loadFixture"
+    },
+    {
+      "type": "snapshot",
+      "name": "ready"
+    },
+    {
+      "type": "chat",
+      "name": "create_and_travel",
+      "text": "I leave March Start Marker and travel to a new place called QA Aurora Cairn in QA Frost March. The trip takes exactly three minutes. I walk the full route and arrive at QA Aurora Cairn now.",
+      "travel": true,
+      "interactive": {
+        "roll": null,
+        "questAccepted": false,
+        "confirmed": false
+      }
+    },
+    {
+      "type": "assert",
+      "assertions": [
+        {
+          "type": "httpStatus",
+          "equals": 200
+        },
+        {
+          "type": "responseOk",
+          "equals": true
+        },
+        {
+          "type": "absent",
+          "source": "responses.create_and_travel",
+          "path": "payload.authoritativeMovementType"
+        },
+        {
+          "type": "equals",
+          "source": "after",
+          "path": "currentLocation.payload.location.name",
+          "equals": "QA Aurora Cairn"
+        },
+        {
+          "type": "equals",
+          "source": "after",
+          "path": "currentLocation.payload.location.regionId",
+          "equals": "$fixture.expandedRegionId"
+        },
+        {
+          "type": "equals",
+          "source": "after",
+          "path": "currentLocation.payload.location.isStub",
+          "equals": false
+        },
+        {
+          "type": "equals",
+          "source": "after",
+          "path": "currentLocation.payload.location.visited",
+          "equals": true
+        },
+        {
+          "type": "equals",
+          "source": "after",
+          "path": "player.payload.player.locationId",
+          "equalsFrom": {
+            "source": "after",
+            "path": "currentLocation.payload.location.id"
+          }
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "after",
+          "path": "locations.payload.locations",
+          "where": {
+            "name": "QA Aurora Cairn",
+            "regionId": "$fixture.expandedRegionId",
+            "isStub": false
+          },
+          "equals": 1
+        },
+        {
+          "type": "exactDelta",
+          "path": "calendar.payload.worldTime.timeMinutes",
+          "delta": 3,
+          "beforeSource": "snapshots.ready",
+          "afterSource": "after"
+        },
+        {
+          "type": "historyAddedTypeCount",
+          "entryType": "player-action",
+          "equals": 1,
+          "beforeSource": "snapshots.ready",
+          "afterSource": "after"
+        },
+        {
+          "type": "historyAddedTypeCount",
+          "entryType": "event-summary",
+          "equals": 1,
+          "beforeSource": "snapshots.ready",
+          "afterSource": "after"
+        },
+        {
+          "type": "noRealtimeErrors"
+        },
+        {
+          "type": "noUnexpectedErrorLogs"
+        }
+      ]
+    },
+    {
+      "type": "snapshot",
+      "name": "arrived"
+    },
+    {
+      "type": "request",
+      "name": "origin_after_travel",
+      "method": "GET",
+      "route": "/api/locations/$fixture.entranceLocationId"
+    },
+    {
+      "type": "request",
+      "name": "destination_after_travel",
+      "method": "GET",
+      "route": "/api/locations/$snapshot.arrived.currentLocation.payload.location.id"
+    },
+    {
+      "type": "request",
+      "name": "region_map",
+      "method": "GET",
+      "route": "/api/map/region?regionId=$fixture.expandedRegionId"
+    },
+    {
+      "type": "assert",
+      "assertions": [
+        {
+          "type": "httpStatus",
+          "equals": 200
+        },
+        {
+          "type": "responseOk",
+          "equals": true
+        },
+        {
+          "type": "equals",
+          "source": "responses.origin_after_travel",
+          "path": "payload.location.exits.qa_aurora_cairn.destination",
+          "equalsFrom": {
+            "source": "snapshots.arrived",
+            "path": "currentLocation.payload.location.id"
+          }
+        },
+        {
+          "type": "equals",
+          "source": "responses.origin_after_travel",
+          "path": "payload.location.exits.qa_aurora_cairn.destinationRegion",
+          "equals": "$fixture.expandedRegionId"
+        },
+        {
+          "type": "equals",
+          "source": "responses.origin_after_travel",
+          "path": "payload.location.exits.qa_aurora_cairn.travelTimeMinutes",
+          "equals": 3
+        },
+        {
+          "type": "equals",
+          "source": "responses.destination_after_travel",
+          "path": "payload.location.id",
+          "equalsFrom": {
+            "source": "snapshots.arrived",
+            "path": "currentLocation.payload.location.id"
+          }
+        },
+        {
+          "type": "equals",
+          "source": "responses.destination_after_travel",
+          "path": "payload.location.name",
+          "equals": "QA Aurora Cairn"
+        },
+        {
+          "type": "equals",
+          "source": "responses.destination_after_travel",
+          "path": "payload.location.regionId",
+          "equals": "$fixture.expandedRegionId"
+        },
+        {
+          "type": "equals",
+          "source": "responses.destination_after_travel",
+          "path": "payload.location.exits.march_start_marker.destination",
+          "equals": "$fixture.entranceLocationId"
+        },
+        {
+          "type": "equals",
+          "source": "responses.destination_after_travel",
+          "path": "payload.location.exits.march_start_marker.travelTimeMinutes",
+          "equals": 3
+        },
+        {
+          "type": "equals",
+          "source": "responses.region_map",
+          "path": "payload.region.currentLocationId",
+          "equalsFrom": {
+            "source": "snapshots.arrived",
+            "path": "currentLocation.payload.location.id"
+          }
+        },
+        {
+          "type": "uniqueBy",
+          "source": "responses.region_map",
+          "path": "payload.region.locations",
+          "key": "id"
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "responses.region_map",
+          "path": "payload.region.locations",
+          "where": {
+            "name": "QA Aurora Cairn",
+            "regionId": "$fixture.expandedRegionId",
+            "isStub": false
+          },
+          "equals": 1
+        },
+        {
+          "type": "noRealtimeErrors"
+        },
+        {
+          "type": "noUnexpectedErrorLogs"
+        }
+      ]
+    }
+  ],
+  "humanReview": [
+    "Confirm the prose describes one coherent trip from March Start Marker to the newly created QA Aurora Cairn and does not narrate a duplicate move or arrival.",
+    "Confirm the generated destination remains a plausible QA Frost March cairn and does not contradict the explicit three-minute route or create a competing destination name."
+  ]
+}

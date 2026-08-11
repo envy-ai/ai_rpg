@@ -207,7 +207,8 @@ function loadWhileYouWereAwayHelpers({
     eventsRunEventChecks = async () => null,
     appendEventSummariesToChat = () => {},
     globalsElapsedTime = typeof currentPlayer?.elapsedTime === 'number' ? currentPlayer.elapsedTime : 0,
-    globalsTotalWorldMinutes = globalsElapsedTime
+    globalsTotalWorldMinutes = globalsElapsedTime,
+    useTinyBrainWhileAway = false
 } = {}) {
     const source = fs.readFileSync(require.resolve('../api.js'), 'utf8');
     const start = source.indexOf('        function resolveRegionForLocationObject(location) {');
@@ -353,7 +354,14 @@ function loadWhileYouWereAwayHelpers({
         },
         appendEventSummariesToChat,
         applySlopRemoval,
-        isTinyBrainPromptEnabled: () => false,
+        isTinyBrainPromptEnabled: () => useTinyBrainWhileAway,
+        configureTinyBrainPromptContext: () => ({
+            renderState: { completedCheckpoints: {} }
+        }),
+        runTinyBrainNarrativePrompt: async () => ({
+            result: { aiResponse: llmResponse },
+            liveDeslopController: null
+        }),
         recordSlopRemovalEntry: recordSlopRemovalEntry || defaultRecordSlopRemovalEntry,
         requireLocationId: (value, label) => {
             if (typeof value !== 'string' || !value.trim()) {
@@ -748,6 +756,72 @@ test('runWhileYouWereAwayPrompt applies absolute need values, moves NPCs, and re
     assert.equal(pushedEntries[1].type, 'while-you-were-away-player');
     assert.equal(pushedEntries[1].parentId, 'parent-1');
     assert.match(pushedEntries[1].content, /Mira waves you over and quickly fills you in before returning to the inn\./);
+});
+
+test('TinyBrain while-you-were-away suppression keeps bookkeeping and event checks without visible prose', async () => {
+    const square = createLocation({ id: 'square', name: 'Town Square', regionId: 'alpha' });
+    const regions = new Map([
+        ['alpha', { id: 'alpha', name: 'Alpha', locationIds: ['square'], entranceLocationId: 'square' }]
+    ]);
+    const gameLocations = new Map([[square.id, square]]);
+    const collector = [];
+    const eventCheckTexts = [];
+    const eventSummaryCalls = [];
+    let slopRemovalCalls = 0;
+    const replacementArrivalEntry = {
+        id: 'arrival-prose',
+        timestamp: '2026-08-07T12:00:00.000Z',
+        type: 'player-action'
+    };
+    const { runWhileYouWereAwayPrompt, pushedEntries } = loadWhileYouWereAwayHelpers({
+        config: { ai: { tinybrain: true }, slop_buster: true },
+        currentPlayer: {
+            id: 'player',
+            name: 'Baato',
+            currentLocation: 'square'
+        },
+        gameLocations,
+        regions,
+        prepareBasePromptContext: async () => ({ whileYouWereAwayNpcs: [] }),
+        llmResponse: `
+<response>
+  <characterUpdates></characterUpdates>
+  <proseForPlayer>The repaired fountain runs again.</proseForPlayer>
+</response>
+`,
+        useTinyBrainWhileAway: true,
+        applySlopRemoval: async text => {
+            slopRemovalCalls += 1;
+            return { text, ran: false, slopWords: [], slopRegexes: [], slopNgrams: [] };
+        },
+        eventsRunEventChecks: async ({ textToCheck }) => {
+            eventCheckTexts.push(textToCheck);
+            return { structured: [{ type: 'alterLocation' }] };
+        },
+        appendEventSummariesToChat: options => eventSummaryCalls.push(options)
+    });
+
+    const result = await runWhileYouWereAwayPrompt({
+        locationOverride: square,
+        locationId: square.id,
+        locationWasVisitedBeforeArrival: true,
+        returnEntries: true,
+        entryCollector: collector,
+        parentEntryId: replacementArrivalEntry.id,
+        suppressVisibleProse: true,
+        replacementArrivalEntry
+    });
+
+    assert.equal(result.hiddenEntry.type, 'while-you-were-away');
+    assert.equal(result.visibleEntry, null);
+    assert.equal(result.parentLinkEntry, replacementArrivalEntry);
+    assert.equal(slopRemovalCalls, 0);
+    assert.equal(pushedEntries.some(entry => entry.type === 'while-you-were-away-player'), false);
+    assert.equal(eventCheckTexts.length, 1);
+    assert.match(eventCheckTexts[0], /The repaired fountain runs again/);
+    assert.equal(eventSummaryCalls.length, 1);
+    assert.equal(eventSummaryCalls[0].parentId, replacementArrivalEntry.id);
+    assert.equal(eventSummaryCalls[0].timestamp, replacementArrivalEntry.timestamp);
 });
 
 test('runWhileYouWereAwayPrompt skips unvisited arrival locations before rendering prompt', async () => {

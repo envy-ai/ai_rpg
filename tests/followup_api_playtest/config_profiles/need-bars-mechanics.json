@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "name": "need-bars-mechanics",
+  "description": "Runs player-action event extraction and TinyBrain need-bar checks without unrelated quest, NPC-turn, random-event, or image-generation work.",
+  "extends": "isolated-base",
+  "values": {
+    "event_checks.enabled": true,
+    "plausibility_checks.enabled": true,
+    "ai.tinybrain_prompts.need_bar_event_checks": true
+  }
+}

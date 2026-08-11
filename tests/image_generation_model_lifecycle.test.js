@@ -2,9 +2,18 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const ImageGenerationModelLifecycle = require('../ImageGenerationModelLifecycle.js');
 
-function createHarness({ renderError = null, comfyError = null, unloadError = null, restartError = null } = {}) {
+function createHarness({
+    renderError = null,
+    comfyError = null,
+    comfyFallbackUsed = false,
+    unloadError = null,
+    restartError = null
+} = {}) {
     const events = [];
     const warnings = [];
+    const fallbackNotifications = [];
+    let comfyReleaseCount = 0;
+    const localStartOptions = [];
     const router = {
         unloadModelIfLoaded: async () => {
             events.push('llm-unload');
@@ -22,8 +31,9 @@ function createHarness({ renderError = null, comfyError = null, unloadError = nu
             events.push('llm-terminate');
             return { pid: 4100 };
         },
-        start: async () => {
-            events.push('comfy-unload-before-script');
+        start: async options => {
+            localStartOptions.push(options);
+            events.push('comfy-release-vram-before-script');
             events.push('llm-script-start');
             if (restartError) {
                 throw restartError;
@@ -45,15 +55,23 @@ function createHarness({ renderError = null, comfyError = null, unloadError = nu
             }
         },
         getComfyClient: () => ({
-            unloadModels: async () => {
-                events.push('comfy-unload');
+            releaseVram: async () => {
+                comfyReleaseCount += 1;
+                events.push('comfy-release-vram');
                 if (comfyError) {
                     throw comfyError;
                 }
+                return comfyFallbackUsed
+                    ? {
+                        fallbackUsed: true,
+                        cacheMonitorError: 'Cache Monitor returned 404.'
+                    }
+                    : { fallbackUsed: false };
             }
         }),
         getLocalServerProcess: () => localServerProcess,
         createRouterClient: () => router,
+        onComfyCacheMonitorFallback: async payload => fallbackNotifications.push(payload),
         logger: {
             log: () => {},
             warn: message => warnings.push(message)
@@ -66,10 +84,18 @@ function createHarness({ renderError = null, comfyError = null, unloadError = nu
         }
         return 'rendered';
     };
-    return { lifecycle, renderBatch, events, warnings };
+    return {
+        lifecycle,
+        renderBatch,
+        events,
+        warnings,
+        fallbackNotifications,
+        getComfyReleaseCount: () => comfyReleaseCount,
+        localStartOptions
+    };
 }
 
-test('image lifecycle unloads LLM, renders the full batch, frees ComfyUI, and reloads LLM', async () => {
+test('image lifecycle unloads LLM, renders the full batch, preserves the ComfyUI host cache, and reloads LLM', async () => {
     const harness = createHarness();
 
     const result = await harness.lifecycle.run({ mode: 'unload', renderBatch: harness.renderBatch });
@@ -80,10 +106,11 @@ test('image lifecycle unloads LLM, renders the full batch, frees ComfyUI, and re
         'resolve-router',
         'llm-unload',
         'render-batch',
-        'comfy-unload',
+        'comfy-release-vram',
         'llm-load',
         'exclusive-exit'
     ]);
+    assert.equal(harness.getComfyReleaseCount(), 1);
 });
 
 test('image lifecycle reloads the LLM after a render batch failure', async () => {
@@ -99,12 +126,24 @@ test('image lifecycle reloads the LLM after a render batch failure', async () =>
 });
 
 test('optional ComfyUI cleanup failure is visible and does not prevent LLM reload', async () => {
-    const harness = createHarness({ comfyError: new Error('free endpoint missing') });
+    const harness = createHarness({ comfyError: new Error('cache endpoint missing') });
 
     await harness.lifecycle.run({ mode: 'unload', renderBatch: harness.renderBatch });
 
     assert.equal(harness.events.includes('llm-load'), true);
-    assert.match(harness.warnings.join('\n'), /free endpoint missing/);
+    assert.match(harness.warnings.join('\n'), /cache endpoint missing/);
+});
+
+test('Cache Monitor fallback reloads the LLM and broadcasts a browser warning', async () => {
+    const harness = createHarness({ comfyFallbackUsed: true });
+
+    await harness.lifecycle.run({ mode: 'unload', renderBatch: harness.renderBatch });
+
+    assert.equal(harness.events.includes('llm-load'), true);
+    assert.match(harness.warnings.join('\n'), /used full \/free cleanup/);
+    assert.deepEqual(harness.fallbackNotifications, [{
+        cacheMonitorError: 'Cache Monitor returned 404.'
+    }]);
 });
 
 test('image lifecycle does not render if llama.cpp unload fails before starting', async () => {
@@ -127,7 +166,7 @@ test('disabled image lifecycle renders without acquiring exclusive model access'
     assert.deepEqual(harness.events, ['render-batch']);
 });
 
-test('terminate lifecycle stops the saved local PID, renders, clears ComfyUI, and runs the startup script', async () => {
+test('terminate lifecycle stops the saved local PID, renders, preserves the ComfyUI host cache, and runs the startup script', async () => {
     const harness = createHarness();
 
     const result = await harness.lifecycle.run({ mode: 'terminate', renderBatch: harness.renderBatch });
@@ -137,10 +176,13 @@ test('terminate lifecycle stops the saved local PID, renders, clears ComfyUI, an
         'exclusive-enter',
         'llm-terminate',
         'render-batch',
-        'comfy-unload-before-script',
+        'comfy-release-vram-before-script',
         'llm-script-start',
         'exclusive-exit'
     ]);
+    assert.deepEqual(harness.localStartOptions, [{
+        beforeStartOptions: { preserveComfySystemCache: true }
+    }]);
 });
 
 test('terminate lifecycle restarts the local server after a render failure', async () => {

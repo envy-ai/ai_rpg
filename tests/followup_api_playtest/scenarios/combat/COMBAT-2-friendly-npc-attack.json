@@ -1,0 +1,213 @@
+{
+  "version": 1,
+  "scenario": "combat",
+  "case": "COMBAT-2-friendly-npc-attack",
+  "description": "A friendly character's immediate TinyBrain combat action must receive its own mechanical attack result while legacy prompt checks are disabled, then be excluded from duplicate NPC scheduling.",
+  "fixture": "combat-elemental-skirmish",
+  "configProfile": "combat-friendly-only",
+  "trackedPaths": [
+    "player.payload.player.health",
+    "calendar.payload.worldTime.timeMinutes",
+    "currentLocation.payload.location.npcIds"
+  ],
+  "steps": [
+    {
+      "type": "loadFixture"
+    },
+    {
+      "type": "request",
+      "name": "isolate_frost",
+      "method": "POST",
+      "route": "/api/npcs/$fixture.frostBeetleId/teleport",
+      "body": {
+        "locationId": "$fixture.isolationLocationId",
+        "accountTravelTime": false
+      }
+    },
+    {
+      "type": "assert",
+      "assertions": [
+        {
+          "type": "httpStatus",
+          "equals": 200
+        },
+        {
+          "type": "responseOk",
+          "equals": true
+        }
+      ]
+    },
+    {
+      "type": "request",
+      "name": "prepare_shieldhand",
+      "method": "PUT",
+      "route": "/api/npcs/$fixture.shieldhandId",
+      "body": {
+        "attributes": {
+          "strength": 20
+        },
+        "skills": {
+          "Melee Combat": 20
+        },
+        "aiNotes": "QA deterministic combat fixture: when combat starts, immediately use exactly one Shield Bash attack against QA Ash Beetle. Do not attack Baato, do not target another ally, and do not choose a non-attack action."
+      }
+    },
+    {
+      "type": "assert",
+      "assertions": [
+        {
+          "type": "httpStatus",
+          "equals": 200
+        },
+        {
+          "type": "responseOk",
+          "equals": true
+        },
+        {
+          "type": "equals",
+          "source": "responses.prepare_shieldhand",
+          "path": "payload.npc.attributes.strength",
+          "equals": 20
+        },
+        {
+          "type": "equals",
+          "source": "responses.prepare_shieldhand",
+          "path": "payload.npc.skills.Melee Combat",
+          "equals": 20
+        }
+      ]
+    },
+    {
+      "type": "snapshot",
+      "name": "combat_ready"
+    },
+    {
+      "type": "chat",
+      "name": "friendly_round",
+      "text": "I deliberately begin combat with QA Ash Beetle by drawing my weapon and taking a guarded stance. <12> During my own action I do not attack, move, flee, use an item, attempt a skill maneuver, or direct another character's action. I hold position and leave the next combat turn to whoever is ready.",
+      "interactive": {
+        "roll": null,
+        "questAccepted": false,
+        "confirmed": false
+      }
+    },
+    {
+      "type": "assert",
+      "assertions": [
+        {
+          "type": "httpStatus",
+          "equals": 200
+        },
+        {
+          "type": "responseOk",
+          "equals": true
+        },
+        {
+          "type": "count",
+          "source": "responses.friendly_round",
+          "path": "payload.toolInvocations",
+          "equals": 2
+        },
+        {
+          "type": "attackResultCount",
+          "source": "responses.friendly_round",
+          "path": "payload.toolInvocations",
+          "where": {},
+          "equals": 2
+        },
+        {
+          "type": "attackResultCount",
+          "source": "responses.friendly_round",
+          "path": "payload.toolInvocations",
+          "where": {
+            "attacker": "QA Ash Beetle",
+            "targetId": "$fixture.playerId",
+            "targetName": "Baato",
+            "hit": true,
+            "die": 12
+          },
+          "equals": 1
+        },
+        {
+          "type": "attackResultCount",
+          "source": "responses.friendly_round",
+          "path": "payload.toolInvocations",
+          "where": {
+            "attacker": "QA Shieldhand",
+            "targetId": "$fixture.ashBeetleId",
+            "targetName": "QA Ash Beetle",
+            "hit": true,
+            "die": 12
+          },
+          "equals": 1
+        },
+        {
+          "type": "attackResultApplied",
+          "source": "responses.friendly_round",
+          "path": "payload.toolInvocations",
+          "where": {
+            "attacker": "QA Ash Beetle",
+            "targetId": "$fixture.playerId"
+          },
+          "beforeSource": "snapshots.combat_ready",
+          "afterSource": "after",
+          "expectHealthLoss": true
+        },
+        {
+          "type": "attackResultApplied",
+          "source": "responses.friendly_round",
+          "path": "payload.toolInvocations",
+          "where": {
+            "attacker": "QA Shieldhand",
+            "targetId": "$fixture.ashBeetleId"
+          },
+          "beforeSource": "snapshots.combat_ready",
+          "afterSource": "after",
+          "expectHealthLoss": true
+        },
+        {
+          "type": "entityField",
+          "source": "after",
+          "collection": "players",
+          "id": "$fixture.shieldhandId",
+          "path": "health",
+          "equals": 35
+        },
+        {
+          "type": "absent",
+          "source": "responses.friendly_round",
+          "path": "payload.npcTurns"
+        },
+        {
+          "type": "historyAddedTypeCount",
+          "entryType": "check-results",
+          "equals": 1,
+          "beforeSource": "snapshots.combat_ready",
+          "afterSource": "after"
+        },
+        {
+          "type": "historyAddedTypeCount",
+          "entryType": "player-action",
+          "equals": 1,
+          "beforeSource": "snapshots.combat_ready",
+          "afterSource": "after"
+        },
+        {
+          "type": "historyAddedTypeCount",
+          "entryType": "npc-action",
+          "equals": 0,
+          "beforeSource": "snapshots.combat_ready",
+          "afterSource": "after"
+        },
+        {
+          "type": "noRealtimeErrors"
+        }
+      ]
+    }
+  ],
+  "humanReview": [
+    "Confirm the player-action prose attributes exactly one attack to QA Ash Beetle against Baato and exactly one separate Shield Bash attack to QA Shieldhand against QA Ash Beetle.",
+    "Confirm each narrated outcome follows that actor's own authoritative hit, damage, and survival result, without borrowing the other attack's result.",
+    "Confirm neither already-acted combatant receives a duplicate scheduled NPC turn. Flag any extra attack or action/dialogue by an absent character; this is human review only and must not be enforced with prose regexes or classifiers."
+  ]
+}

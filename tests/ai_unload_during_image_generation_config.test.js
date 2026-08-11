@@ -96,9 +96,11 @@ test('server initializes the managed local llama process only after ComfyUI and 
     assert.match(source, /await initializeImageEngine\(\)[\s\S]*?await initializeManagedLocalLlamaServer\(\)/);
     assert.match(
         source,
-        /beforeStart: async \(\) => \{[\s\S]*?clearComfyVramBeforeLocalLlamaStartup[\s\S]*?waitUntilReady: readiness => waitForManagedLlamaServerReady/
+        /beforeStart: async \(\{ preserveComfySystemCache = false \} = \{\}\) => \{[\s\S]*?clearComfyVramBeforeLocalLlamaStartup\(\{ preserveComfySystemCache \}\)[\s\S]*?waitUntilReady: readiness => waitForManagedLlamaServerReady/
     );
     assert.match(source, /await comfyUIClient\.unloadModels\(\)/);
+    assert.match(source, /await comfyUIClient\.releaseVram\(\)/);
+    assert.match(source, /'comfy_cache_monitor_fallback'/);
     assert.match(source, /configureManagedLocalModelStartupBeforePrompts\(\)/);
     assert.match(source, /localLlamaServerProcess\.switchStartupScriptPath/);
     assert.match(source, /resolveManagedLocalLlamaStartupScriptCandidates\(config\)/);
@@ -156,6 +158,70 @@ test('ComfyUI unloadModels posts both unload and free-memory flags', { concurren
             unload_models: true,
             free_memory: true
         });
+    } finally {
+        axios.post = originalPost;
+    }
+});
+
+test('ComfyUI releaseVram uses Cache Monitor without calling the standard free endpoint', { concurrency: false }, async () => {
+    const originalPost = axios.post;
+    let captured = null;
+    axios.post = async (url, payload, options) => {
+        captured = { url, payload, options };
+        return { data: { released: true, released_bytes: 4096 } };
+    };
+
+    try {
+        const client = new ComfyUIClient({
+            imagegen: {
+                server: { host: 'comfy.example', port: 8188 }
+            }
+        });
+        const result = await client.releaseVram();
+        assert.equal(result.success, true);
+        assert.equal(result.fallbackUsed, false);
+        assert.equal(captured.url, 'http://comfy.example:8188/comfyui-cache-monitor/release_vram');
+        assert.deepEqual(captured.payload, {});
+        assert.equal(result.data.released_bytes, 4096);
+    } finally {
+        axios.post = originalPost;
+    }
+});
+
+test('ComfyUI releaseVram falls back to full cleanup when Cache Monitor is unavailable', { concurrency: false }, async () => {
+    const originalPost = axios.post;
+    const captured = [];
+    axios.post = async (url, payload, options) => {
+        captured.push({ url, payload, options });
+        if (url.endsWith('/comfyui-cache-monitor/release_vram')) {
+            throw new Error('Request failed with status code 404');
+        }
+        return { data: { fallback: 'complete' } };
+    };
+
+    try {
+        const client = new ComfyUIClient({
+            imagegen: {
+                server: { host: 'comfy.example', port: 8188 }
+            }
+        });
+        const result = await client.releaseVram();
+        assert.equal(result.success, true);
+        assert.equal(result.fallbackUsed, true);
+        assert.match(result.cacheMonitorError, /status code 404/);
+        assert.deepEqual(captured.map(call => ({ url: call.url, payload: call.payload })), [
+            {
+                url: 'http://comfy.example:8188/comfyui-cache-monitor/release_vram',
+                payload: {}
+            },
+            {
+                url: 'http://comfy.example:8188/free',
+                payload: {
+                    unload_models: true,
+                    free_memory: true
+                }
+            }
+        ]);
     } finally {
         axios.post = originalPost;
     }

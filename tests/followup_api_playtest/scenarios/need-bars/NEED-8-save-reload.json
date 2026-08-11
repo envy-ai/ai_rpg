@@ -1,0 +1,689 @@
+{
+  "version": 1,
+  "scenario": "need-bars",
+  "case": "NEED-8-save-reload",
+  "description": "Distinct raw player need values and a partially elapsed timed status survive a normal save/reload, including remaining duration, timestamps, modifiers, derived health, and the next ordinary tick.",
+  "fixture": "need-bars-status-lifecycle",
+  "configProfile": "need-bars-mechanics",
+  "trackedPaths": [
+    "player.payload.player.locationId",
+    "player.payload.player.health",
+    "player.payload.player.maxHealth",
+    "player.payload.player.needBars",
+    "player.payload.player.statusEffects",
+    "player.payload.player.inventory",
+    "calendar.payload.worldTime.timeMinutes",
+    "history.payload"
+  ],
+  "steps": [
+    {
+      "type": "loadFixture"
+    },
+    {
+      "type": "request",
+      "name": "set_distinct_raw_needs",
+      "method": "PUT",
+      "route": "/api/player/needs",
+      "body": {
+        "needs": [
+          {
+            "id": "food",
+            "value": 300
+          },
+          {
+            "id": "rest",
+            "value": 200
+          },
+          {
+            "id": "stamina",
+            "value": 250
+          },
+          {
+            "id": "mana",
+            "value": 350
+          }
+        ]
+      }
+    },
+    {
+      "type": "assert",
+      "assertions": [
+        {
+          "type": "httpStatus",
+          "equals": 200
+        },
+        {
+          "type": "responseOk",
+          "equals": true
+        },
+        {
+          "type": "count",
+          "source": "responses.set_distinct_raw_needs",
+          "path": "payload.applied",
+          "equals": 4
+        },
+        {
+          "type": "uniqueBy",
+          "source": "responses.set_distinct_raw_needs",
+          "path": "payload.applied",
+          "key": "id"
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "after",
+          "path": "player.payload.player.needBars",
+          "where": {
+            "id": "food",
+            "value": 300
+          },
+          "equals": 1
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "after",
+          "path": "player.payload.player.needBars",
+          "where": {
+            "id": "rest",
+            "value": 200
+          },
+          "equals": 1
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "after",
+          "path": "player.payload.player.needBars",
+          "where": {
+            "id": "stamina",
+            "value": 250
+          },
+          "equals": 1
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "after",
+          "path": "player.payload.player.needBars",
+          "where": {
+            "id": "mana",
+            "value": 350
+          },
+          "equals": 1
+        }
+      ]
+    },
+    {
+      "type": "request",
+      "name": "install_active_status",
+      "method": "PUT",
+      "route": "/api/player/status",
+      "body": {
+        "statusEffects": [
+          {
+            "id": "status_194",
+            "name": "$fixture.effectName",
+            "description": "$fixture.effectName",
+            "attributes": [
+              {
+                "attribute": "$fixture.effectAttribute",
+                "modifier": "$fixture.effectAttributeModifier"
+              }
+            ],
+            "skills": [],
+            "needBars": [
+              {
+                "name": "$fixture.effectNeedBarId",
+                "delta": "$fixture.effectNeedDeltaPerMinute"
+              }
+            ],
+            "duration": "$fixture.effectDurationMinutes",
+            "appliedAt": 663
+          }
+        ]
+      }
+    },
+    {
+      "type": "assert",
+      "assertions": [
+        {
+          "type": "httpStatus",
+          "equals": 200
+        },
+        {
+          "type": "responseOk",
+          "equals": true
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "after",
+          "path": "player.payload.player.statusEffects",
+          "where": {
+            "id": "status_194",
+            "name": "$fixture.effectName",
+            "duration": 10,
+            "appliedAt": 663
+          },
+          "equals": 1
+        },
+        {
+          "type": "equals",
+          "source": "after",
+          "path": "player.payload.player.maxHealth",
+          "equals": 43
+        },
+        {
+          "type": "equals",
+          "source": "after",
+          "path": "player.payload.player.health",
+          "equals": 43
+        }
+      ]
+    },
+    {
+      "type": "request",
+      "name": "elapse_before_save",
+      "method": "POST",
+      "route": "/api/slash-command",
+      "body": {
+        "command": "time",
+        "argsText": "+3 minutes"
+      }
+    },
+    {
+      "type": "assert",
+      "assertions": [
+        {
+          "type": "httpStatus",
+          "equals": 200
+        },
+        {
+          "type": "responseOk",
+          "equals": true
+        },
+        {
+          "type": "equals",
+          "source": "after",
+          "path": "calendar.payload.worldTime.timeMinutes",
+          "equals": 666
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "after",
+          "path": "player.payload.player.needBars",
+          "where": {
+            "id": "food",
+            "value": 312.9
+          },
+          "equals": 1
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "after",
+          "path": "player.payload.player.needBars",
+          "where": {
+            "id": "rest",
+            "value": 198.2
+          },
+          "equals": 1
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "after",
+          "path": "player.payload.player.needBars",
+          "where": {
+            "id": "stamina",
+            "value": 400
+          },
+          "equals": 1
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "after",
+          "path": "player.payload.player.needBars",
+          "where": {
+            "id": "mana",
+            "value": 380
+          },
+          "equals": 1
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "after",
+          "path": "player.payload.player.statusEffects",
+          "where": {
+            "id": "status_194",
+            "name": "$fixture.effectName",
+            "duration": 7,
+            "appliedAt": 666
+          },
+          "equals": 1
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "after",
+          "path": "player.payload.player.statusEffects.0.attributes",
+          "where": {
+            "attribute": "$fixture.effectAttribute",
+            "modifier": "$fixture.effectAttributeModifier"
+          },
+          "equals": 1
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "after",
+          "path": "player.payload.player.statusEffects.0.needBars",
+          "where": {
+            "name": "$fixture.effectNeedBarId",
+            "delta": "$fixture.effectNeedDeltaPerMinute"
+          },
+          "equals": 1
+        },
+        {
+          "type": "equals",
+          "source": "after",
+          "path": "player.payload.player.maxHealth",
+          "equals": 43
+        },
+        {
+          "type": "equals",
+          "source": "after",
+          "path": "player.payload.player.health",
+          "equals": 43
+        }
+      ]
+    },
+    {
+      "type": "snapshot",
+      "name": "active_status_before_save"
+    },
+    {
+      "type": "save",
+      "name": "active_status_save"
+    },
+    {
+      "type": "assert",
+      "assertions": [
+        {
+          "type": "httpStatus",
+          "equals": 200
+        },
+        {
+          "type": "responseOk",
+          "equals": true
+        },
+        {
+          "type": "equals",
+          "source": "responses.active_status_save",
+          "path": "payload.success",
+          "equals": true
+        },
+        {
+          "type": "stateUnchanged",
+          "beforeSource": "snapshots.active_status_before_save",
+          "afterSource": "after",
+          "paths": [
+            "player.payload.player.needBars",
+            "player.payload.player.statusEffects",
+            "player.payload.player.health",
+            "player.payload.player.maxHealth",
+            "calendar.payload.worldTime.timeMinutes"
+          ]
+        },
+        {
+          "type": "historyAddedTypeCount",
+          "entryType": "save-notice",
+          "equals": 1,
+          "beforeSource": "snapshots.active_status_before_save",
+          "afterSource": "after"
+        }
+      ]
+    },
+    {
+      "type": "snapshot",
+      "name": "saved_with_notice"
+    },
+    {
+      "type": "request",
+      "name": "overwrite_saved_needs",
+      "method": "PUT",
+      "route": "/api/player/needs",
+      "body": {
+        "needs": [
+          {
+            "id": "food",
+            "value": 10
+          },
+          {
+            "id": "rest",
+            "value": 20
+          },
+          {
+            "id": "stamina",
+            "value": 30
+          },
+          {
+            "id": "mana",
+            "value": 40
+          }
+        ]
+      }
+    },
+    {
+      "type": "request",
+      "name": "remove_saved_status",
+      "method": "PUT",
+      "route": "/api/player/status",
+      "body": {
+        "statusEffects": null
+      }
+    },
+    {
+      "type": "request",
+      "name": "advance_mutated_state",
+      "method": "POST",
+      "route": "/api/slash-command",
+      "body": {
+        "command": "time",
+        "argsText": "+2 minutes"
+      }
+    },
+    {
+      "type": "assert",
+      "assertions": [
+        {
+          "type": "httpStatus",
+          "equals": 200
+        },
+        {
+          "type": "responseOk",
+          "equals": true
+        },
+        {
+          "type": "equals",
+          "source": "after",
+          "path": "calendar.payload.worldTime.timeMinutes",
+          "equals": 668
+        },
+        {
+          "type": "count",
+          "source": "after",
+          "path": "player.payload.player.statusEffects",
+          "equals": 0
+        },
+        {
+          "type": "equals",
+          "source": "after",
+          "path": "player.payload.player.maxHealth",
+          "equals": 39
+        },
+        {
+          "type": "equals",
+          "source": "after",
+          "path": "player.payload.player.health",
+          "equals": 39
+        }
+      ]
+    },
+    {
+      "type": "reload",
+      "name": "reload_active_status"
+    },
+    {
+      "type": "assert",
+      "assertions": [
+        {
+          "type": "httpStatus",
+          "equals": 200
+        },
+        {
+          "type": "responseOk",
+          "equals": true
+        },
+        {
+          "type": "equals",
+          "source": "responses.reload_active_status",
+          "path": "payload.success",
+          "equals": true
+        },
+        {
+          "type": "stateUnchanged",
+          "beforeSource": "snapshots.active_status_before_save",
+          "afterSource": "after",
+          "paths": [
+            "player.payload.player.locationId",
+            "player.payload.player.needBars",
+            "player.payload.player.statusEffects",
+            "player.payload.player.health",
+            "player.payload.player.maxHealth",
+            "player.payload.player.inventory",
+            "calendar.payload.worldTime.timeMinutes"
+          ]
+        },
+        {
+          "type": "stateUnchanged",
+          "beforeSource": "snapshots.saved_with_notice",
+          "afterSource": "after",
+          "paths": [
+            "history.payload.history"
+          ]
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "after",
+          "path": "player.payload.player.needBars",
+          "where": {
+            "id": "food",
+            "value": 312.9
+          },
+          "equals": 1
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "after",
+          "path": "player.payload.player.needBars",
+          "where": {
+            "id": "rest",
+            "value": 198.2
+          },
+          "equals": 1
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "after",
+          "path": "player.payload.player.needBars",
+          "where": {
+            "id": "stamina",
+            "value": 400
+          },
+          "equals": 1
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "after",
+          "path": "player.payload.player.needBars",
+          "where": {
+            "id": "mana",
+            "value": 380
+          },
+          "equals": 1
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "after",
+          "path": "player.payload.player.statusEffects",
+          "where": {
+            "id": "status_194",
+            "name": "$fixture.effectName",
+            "duration": 7,
+            "appliedAt": 666
+          },
+          "equals": 1
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "after",
+          "path": "player.payload.player.statusEffects.0.attributes",
+          "where": {
+            "attribute": "$fixture.effectAttribute",
+            "modifier": "$fixture.effectAttributeModifier"
+          },
+          "equals": 1
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "after",
+          "path": "player.payload.player.statusEffects.0.needBars",
+          "where": {
+            "name": "$fixture.effectNeedBarId",
+            "delta": "$fixture.effectNeedDeltaPerMinute"
+          },
+          "equals": 1
+        },
+        {
+          "type": "equals",
+          "source": "after",
+          "path": "player.payload.player.maxHealth",
+          "equals": 43
+        },
+        {
+          "type": "equals",
+          "source": "after",
+          "path": "player.payload.player.health",
+          "equals": 43
+        }
+      ]
+    },
+    {
+      "type": "snapshot",
+      "name": "reloaded_active_status"
+    },
+    {
+      "type": "request",
+      "name": "tick_after_reload",
+      "method": "POST",
+      "route": "/api/slash-command",
+      "body": {
+        "command": "time",
+        "argsText": "+1 minute"
+      }
+    },
+    {
+      "type": "assert",
+      "assertions": [
+        {
+          "type": "httpStatus",
+          "equals": 200
+        },
+        {
+          "type": "responseOk",
+          "equals": true
+        },
+        {
+          "type": "exactDelta",
+          "beforeSource": "snapshots.reloaded_active_status",
+          "afterSource": "after",
+          "path": "calendar.payload.worldTime.timeMinutes",
+          "delta": 1
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "after",
+          "path": "player.payload.player.needBars",
+          "where": {
+            "id": "food",
+            "value": 317.2
+          },
+          "equals": 1
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "after",
+          "path": "player.payload.player.needBars",
+          "where": {
+            "id": "rest",
+            "value": 197.6
+          },
+          "equals": 1
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "after",
+          "path": "player.payload.player.needBars",
+          "where": {
+            "id": "stamina",
+            "value": 450
+          },
+          "equals": 1
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "after",
+          "path": "player.payload.player.needBars",
+          "where": {
+            "id": "mana",
+            "value": 390
+          },
+          "equals": 1
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "after",
+          "path": "player.payload.player.statusEffects",
+          "where": {
+            "id": "status_194",
+            "name": "$fixture.effectName",
+            "duration": 6,
+            "appliedAt": 667
+          },
+          "equals": 1
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "after",
+          "path": "player.payload.player.statusEffects.0.attributes",
+          "where": {
+            "attribute": "$fixture.effectAttribute",
+            "modifier": "$fixture.effectAttributeModifier"
+          },
+          "equals": 1
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "after",
+          "path": "player.payload.player.statusEffects.0.needBars",
+          "where": {
+            "name": "$fixture.effectNeedBarId",
+            "delta": "$fixture.effectNeedDeltaPerMinute"
+          },
+          "equals": 1
+        },
+        {
+          "type": "equals",
+          "source": "after",
+          "path": "player.payload.player.maxHealth",
+          "equals": 43
+        },
+        {
+          "type": "equals",
+          "source": "after",
+          "path": "player.payload.player.health",
+          "equals": 43
+        },
+        {
+          "type": "stateUnchanged",
+          "beforeSource": "snapshots.reloaded_active_status",
+          "afterSource": "after",
+          "paths": [
+            "player.payload.player.locationId",
+            "player.payload.player.inventory",
+            "history.payload.history"
+          ]
+        },
+        {
+          "type": "noRealtimeErrors"
+        },
+        {
+          "type": "noUnexpectedErrorLogs"
+        }
+      ]
+    }
+  ]
+}

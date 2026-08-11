@@ -226,6 +226,90 @@ test('vehicle_status command reports pending destinations for underway trips', a
     }
 });
 
+test('vehicle_status command leaves timing fields unset for an idle location vehicle', async () => {
+    const previousPlayer = Globals.currentPlayer;
+    const previousConfig = Globals.config;
+    const previousWorldTime = Globals.worldTime;
+    const createdLocations = [];
+
+    Player.clearRuntimeRegistries();
+    Region.clear();
+    Globals.config = {
+        ...(previousConfig && typeof previousConfig === 'object' ? previousConfig : {}),
+        baseHealthPerLevel: Number.isFinite(previousConfig?.baseHealthPerLevel)
+            ? previousConfig.baseHealthPerLevel
+            : 10
+    };
+
+    try {
+        const region = new Region({
+            id: 'idle-location-vehicle-region',
+            name: 'Test Rail Line',
+            description: 'A compact test region.'
+        });
+        const west = new Location({
+            id: 'idle-location-vehicle-west',
+            name: 'West Platform',
+            description: 'A test platform.',
+            regionId: region.id
+        });
+        createdLocations.push(west);
+        const tram = new Location({
+            id: 'idle-location-vehicle-tram',
+            name: 'Clockwork Tram',
+            description: 'A stationary test tram.',
+            regionId: region.id,
+            vehicleInfo: {
+                currentDestination: null,
+                pendingDestination: null,
+                destinations: [west.id],
+                ETA: null,
+                departureTime: null,
+                vehicleExitId: 'idle-location-vehicle-exit'
+            }
+        });
+        createdLocations.push(tram);
+        tram.addExit('platform', new LocationExit({
+            id: 'idle-location-vehicle-exit',
+            description: 'West Platform',
+            destination: west.id,
+            bidirectional: false,
+            isVehicle: true
+        }));
+
+        Globals.currentPlayer = new Player({
+            id: 'idle-location-vehicle-player',
+            name: 'Exis',
+            location: tram.id,
+            elapsedTime: 658
+        });
+        Globals.worldTime = { dayIndex: 0, timeMinutes: 658 };
+
+        let replyPayload = null;
+        await VehicleStatusCommand.execute({
+            reply: async (payload) => {
+                replyPayload = payload;
+            }
+        });
+
+        assert.ok(replyPayload);
+        assert.match(replyPayload.content, /Vehicle kind: \*\*Location vehicle\*\*/);
+        assert.match(replyPayload.content, /Travel start time: \*\*-\*\*/);
+        assert.match(replyPayload.content, /ETA: \*\*-\*\*/);
+        assert.match(replyPayload.content, /Minutes to destination: \*\*-\*\*/);
+        assert.match(replyPayload.content, /Time to destination: \*\*-\*\*/);
+    } finally {
+        Globals.currentPlayer = previousPlayer;
+        Globals.config = previousConfig;
+        Globals.worldTime = previousWorldTime;
+        Player.clearRuntimeRegistries();
+        Region.clear();
+        for (const location of createdLocations) {
+            Location.removeFromIndex(location);
+        }
+    }
+});
+
 test('vehicle_status command rejects when the current player is not in a vehicle', async () => {
     const previousPlayer = Globals.currentPlayer;
     const previousConfig = Globals.config;

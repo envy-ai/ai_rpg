@@ -33,6 +33,7 @@ test('item_ingest applies the item target effect and suppresses same-pair item_i
             name: 'Restored',
             description: 'Restored moderate health.',
             duration: 2,
+            appliedAt: null,
         },
     };
     const baato = {

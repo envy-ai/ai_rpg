@@ -13,6 +13,13 @@ At every checkpoint:
 - Output no commentary and no markdown fences.
 </task>
 
+{% if tinyBrainAuthoritativeMovementCompanionNames and tinyBrainAuthoritativeMovementCompanionNames.length %}
+The following characters are authoritative player-movement companions for this turn:
+{% for companionName in tinyBrainAuthoritativeMovementCompanionNames %}- {{ companionName }}
+{% endfor %}
+Do not emit `<npcArrival>`, `<npcDeparture>`, or `<npcArrivalDeparture>` for these characters in any section. The authoritative player movement endpoint moves them exactly once.
+{% endif %}
+
 {% if tinyBrainAcceptedEventXml %}
 The following event XML was already accepted from earlier prose sections in this same turn. Use it as context for this section. Do not repeat ordinary action events from it. Still emit every checkpoint-required state tag for the current section, even when an earlier section emitted the same state tag:
 <acceptedSectionEvents>

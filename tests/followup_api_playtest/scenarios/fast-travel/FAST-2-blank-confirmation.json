@@ -1,0 +1,213 @@
+{
+  "version": 1,
+  "scenario": "fast-travel",
+  "case": "FAST-2-blank-confirmation",
+  "description": "The blank map/Favorites confirmation path logs only its comment-style travel entry, skips player-action prose generation, then performs one gameplay teleport with exact graph time and ordinary arrival processing.",
+  "fixture": "fast-travel-visited-favorites",
+  "configProfile": "cross-region-mechanics",
+  "trackedPaths": [
+    "player.payload.player.locationId",
+    "players.payload.players",
+    "locations.payload.locations",
+    "calendar.payload.worldTime.timeMinutes",
+    "history.payload"
+  ],
+  "steps": [
+    {
+      "type": "loadFixture"
+    },
+    {
+      "type": "snapshot",
+      "name": "before_blank_confirmation"
+    },
+    {
+      "type": "chat",
+      "name": "blank_comment",
+      "text": "# Baato moved to QA Fast Travel Grove.",
+      "travel": true,
+      "interactive": {
+        "roll": null,
+        "questAccepted": false,
+        "confirmed": false
+      }
+    },
+    {
+      "type": "assert",
+      "assertions": [
+        {
+          "type": "httpStatus",
+          "equals": 200
+        },
+        {
+          "type": "responseOk",
+          "equals": true
+        },
+        {
+          "type": "equals",
+          "source": "responses.blank_comment",
+          "path": "payload.commentLogged",
+          "equals": true
+        },
+        {
+          "type": "equals",
+          "source": "responses.blank_comment",
+          "path": "payload.response",
+          "equals": ""
+        },
+        {
+          "type": "equals",
+          "source": "after",
+          "path": "player.payload.player.locationId",
+          "equals": "$fixture.baselineLocationId"
+        },
+        {
+          "type": "exactDelta",
+          "beforeSource": "snapshots.before_blank_confirmation",
+          "afterSource": "after",
+          "path": "calendar.payload.worldTime.timeMinutes",
+          "delta": 0
+        },
+        {
+          "type": "historyAddedTypeCount",
+          "entryType": "unknown",
+          "equals": 1,
+          "beforeSource": "snapshots.before_blank_confirmation",
+          "afterSource": "after"
+        },
+        {
+          "type": "historyAddedTypeCount",
+          "entryType": "player-action",
+          "equals": 0,
+          "beforeSource": "snapshots.before_blank_confirmation",
+          "afterSource": "after"
+        }
+      ]
+    },
+    {
+      "type": "snapshot",
+      "name": "comment_logged"
+    },
+    {
+      "type": "request",
+      "name": "teleport_grove",
+      "method": "POST",
+      "route": "/api/npcs/$fixture.playerId/teleport",
+      "body": {
+        "locationId": "$fixture.groveLocationId",
+        "accountTravelTime": true,
+        "storyToolTeleport": false,
+        "accompanyingCharacters": []
+      },
+      "interactive": {
+        "roll": null,
+        "questAccepted": false,
+        "confirmed": false
+      }
+    },
+    {
+      "type": "assert",
+      "assertions": [
+        {
+          "type": "httpStatus",
+          "equals": 200
+        },
+        {
+          "type": "responseOk",
+          "equals": true
+        },
+        {
+          "type": "equals",
+          "source": "responses.teleport_grove",
+          "path": "payload.success",
+          "equals": true
+        },
+        {
+          "type": "equals",
+          "source": "responses.teleport_grove",
+          "path": "payload.npc.id",
+          "equals": "$fixture.playerId"
+        },
+        {
+          "type": "equals",
+          "source": "responses.teleport_grove",
+          "path": "payload.npc.locationId",
+          "equals": "$fixture.groveLocationId"
+        },
+        {
+          "type": "equals",
+          "source": "responses.teleport_grove",
+          "path": "payload.destination.id",
+          "equals": "$fixture.groveLocationId"
+        },
+        {
+          "type": "equals",
+          "source": "responses.teleport_grove",
+          "path": "payload.previousLocation.id",
+          "equals": "$fixture.baselineLocationId"
+        },
+        {
+          "type": "equals",
+          "source": "responses.teleport_grove",
+          "path": "payload.arrivalProcessingError",
+          "equals": null
+        },
+        {
+          "type": "equals",
+          "source": "after",
+          "path": "player.payload.player.locationId",
+          "equals": "$fixture.groveLocationId"
+        },
+        {
+          "type": "exactDelta",
+          "beforeSource": "snapshots.comment_logged",
+          "afterSource": "after",
+          "path": "calendar.payload.worldTime.timeMinutes",
+          "delta": 4
+        },
+        {
+          "type": "entityField",
+          "source": "after",
+          "collection": "players",
+          "id": "$fixture.courierId",
+          "path": "locationId",
+          "equals": "$fixture.baselineLocationId"
+        },
+        {
+          "type": "historyAddedTypeCount",
+          "entryType": "event-summary",
+          "equals": 1,
+          "beforeSource": "snapshots.comment_logged",
+          "afterSource": "after"
+        },
+        {
+          "type": "historyAddedTypeCount",
+          "entryType": "player-action",
+          "equals": 0,
+          "beforeSource": "snapshots.before_blank_confirmation",
+          "afterSource": "after"
+        },
+        {
+          "type": "historyAddedTypeCount",
+          "entryType": "while-you-were-away",
+          "equals": 0,
+          "beforeSource": "snapshots.comment_logged",
+          "afterSource": "after"
+        },
+        {
+          "type": "historyAddedTypeCount",
+          "entryType": "while-you-were-away-player",
+          "equals": 0,
+          "beforeSource": "snapshots.comment_logged",
+          "afterSource": "after"
+        },
+        {
+          "type": "noRealtimeErrors"
+        },
+        {
+          "type": "noUnexpectedErrorLogs"
+        }
+      ]
+    }
+  ],
+  "humanReview": []
+}

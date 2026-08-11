@@ -1,0 +1,307 @@
+{
+  "version": 1,
+  "scenario": "combat",
+  "case": "COMBAT-3-area-attack",
+  "description": "One player-thrown Fire Bomb must resolve as a single shared-roll area attack with distinct per-target effectiveness and damage, one grouped check row, unique targets, exact health application, and item consumption.",
+  "fixture": "combat-elemental-skirmish",
+  "configProfile": "combat-player-only",
+  "trackedPaths": [
+    "calendar.payload.worldTime.timeMinutes",
+    "currentLocation.payload.location.npcIds"
+  ],
+  "steps": [
+    {
+      "type": "loadFixture"
+    },
+    {
+      "type": "request",
+      "name": "isolate_shieldhand",
+      "method": "POST",
+      "route": "/api/npcs/$fixture.shieldhandId/teleport",
+      "body": {
+        "locationId": "$fixture.isolationLocationId",
+        "accountTravelTime": false
+      }
+    },
+    {
+      "type": "assert",
+      "assertions": [
+        {
+          "type": "httpStatus",
+          "equals": 200
+        },
+        {
+          "type": "responseOk",
+          "equals": true
+        }
+      ]
+    },
+    {
+      "type": "request",
+      "name": "prepare_ash",
+      "method": "PUT",
+      "route": "/api/npcs/$fixture.ashBeetleId",
+      "body": {
+        "aiNotes": "QA deterministic area-attack fixture: during the next player action, do not initiate an attack, movement, or other independent action. React only to Baato's QA Fire Bomb blast. Preserve the existing fire vulnerability."
+      }
+    },
+    {
+      "type": "assert",
+      "assertions": [
+        {
+          "type": "httpStatus",
+          "equals": 200
+        },
+        {
+          "type": "responseOk",
+          "equals": true
+        },
+        {
+          "type": "equals",
+          "source": "responses.prepare_ash",
+          "path": "payload.npc.vulnerabilities",
+          "equals": "fire"
+        }
+      ]
+    },
+    {
+      "type": "request",
+      "name": "prepare_frost",
+      "method": "PUT",
+      "route": "/api/npcs/$fixture.frostBeetleId",
+      "body": {
+        "aiNotes": "QA deterministic area-attack fixture: during the next player action, do not initiate an attack, movement, or other independent action. React only to Baato's QA Fire Bomb blast. Preserve the existing fire resistance."
+      }
+    },
+    {
+      "type": "assert",
+      "assertions": [
+        {
+          "type": "httpStatus",
+          "equals": 200
+        },
+        {
+          "type": "responseOk",
+          "equals": true
+        },
+        {
+          "type": "equals",
+          "source": "responses.prepare_frost",
+          "path": "payload.npc.resistances",
+          "equals": "fire"
+        }
+      ]
+    },
+    {
+      "type": "snapshot",
+      "name": "blast_ready"
+    },
+    {
+      "type": "chat",
+      "name": "fire_bomb_blast",
+      "text": "I take my single QA Fire Bomb from my inventory and throw it so one shared blast catches both QA Ash Beetle and QA Frost Beetle in the main flames, with no other character affected. <20> This is one area attack, not separate attacks. The Fire Bomb is consumed by the throw. Both beetles only react to this blast during the turn and do not make attacks of their own.",
+      "interactive": {
+        "roll": null,
+        "questAccepted": false,
+        "confirmed": false
+      }
+    },
+    {
+      "type": "assert",
+      "assertions": [
+        {
+          "type": "httpStatus",
+          "equals": 200
+        },
+        {
+          "type": "responseOk",
+          "equals": true
+        },
+        {
+          "type": "count",
+          "source": "responses.fire_bomb_blast",
+          "path": "payload.toolInvocations",
+          "equals": 1
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "responses.fire_bomb_blast",
+          "path": "payload.toolInvocations",
+          "where": {
+            "name": "resolveAreaAttack",
+            "metadata": {
+              "kind": "area-attack",
+              "targetCount": 2,
+              "cached": false,
+              "summary": {
+                "attacker": "Baato",
+                "weapon": "QA Fire Bomb",
+                "rollMode": "sharedAttackRoll",
+                "sharedRoll": {
+                  "die": 20
+                }
+              }
+            }
+          },
+          "equals": 1
+        },
+        {
+          "type": "count",
+          "source": "responses.fire_bomb_blast",
+          "path": "payload.toolInvocations.0.metadata.results",
+          "equals": 2
+        },
+        {
+          "type": "uniqueBy",
+          "source": "responses.fire_bomb_blast",
+          "path": "payload.toolInvocations.0.metadata.results",
+          "key": "targetId"
+        },
+        {
+          "type": "attackResultCount",
+          "source": "responses.fire_bomb_blast",
+          "path": "payload.toolInvocations",
+          "where": {
+            "toolName": "resolveAreaAttack"
+          },
+          "equals": 2
+        },
+        {
+          "type": "attackResultCount",
+          "source": "responses.fire_bomb_blast",
+          "path": "payload.toolInvocations",
+          "where": {
+            "attacker": "Baato",
+            "targetId": "$fixture.ashBeetleId",
+            "targetName": "QA Ash Beetle",
+            "hit": true,
+            "die": 20
+          },
+          "equals": 1
+        },
+        {
+          "type": "attackResultCount",
+          "source": "responses.fire_bomb_blast",
+          "path": "payload.toolInvocations",
+          "where": {
+            "attacker": "Baato",
+            "targetId": "$fixture.frostBeetleId",
+            "targetName": "QA Frost Beetle",
+            "hit": true,
+            "die": 20
+          },
+          "equals": 1
+        },
+        {
+          "type": "attackResultApplied",
+          "source": "responses.fire_bomb_blast",
+          "path": "payload.toolInvocations",
+          "where": {
+            "attacker": "Baato",
+            "targetId": "$fixture.ashBeetleId"
+          },
+          "beforeSource": "snapshots.blast_ready",
+          "afterSource": "after",
+          "expectHealthLoss": true
+        },
+        {
+          "type": "attackResultApplied",
+          "source": "responses.fire_bomb_blast",
+          "path": "payload.toolInvocations",
+          "where": {
+            "attacker": "Baato",
+            "targetId": "$fixture.frostBeetleId"
+          },
+          "beforeSource": "snapshots.blast_ready",
+          "afterSource": "after",
+          "expectHealthLoss": true
+        },
+        {
+          "type": "attackResultCompare",
+          "source": "responses.fire_bomb_blast",
+          "path": "payload.toolInvocations",
+          "leftWhere": {
+            "attacker": "Baato",
+            "targetId": "$fixture.ashBeetleId"
+          },
+          "rightWhere": {
+            "attacker": "Baato",
+            "targetId": "$fixture.frostBeetleId"
+          },
+          "field": "damageEffectiveness",
+          "operator": "greaterThan"
+        },
+        {
+          "type": "attackResultCompare",
+          "source": "responses.fire_bomb_blast",
+          "path": "payload.toolInvocations",
+          "leftWhere": {
+            "attacker": "Baato",
+            "targetId": "$fixture.ashBeetleId"
+          },
+          "rightWhere": {
+            "attacker": "Baato",
+            "targetId": "$fixture.frostBeetleId"
+          },
+          "field": "damageMultiplier",
+          "operator": "greaterThan"
+        },
+        {
+          "type": "attackResultCompare",
+          "source": "responses.fire_bomb_blast",
+          "path": "payload.toolInvocations",
+          "leftWhere": {
+            "attacker": "Baato",
+            "targetId": "$fixture.ashBeetleId"
+          },
+          "rightWhere": {
+            "attacker": "Baato",
+            "targetId": "$fixture.frostBeetleId"
+          },
+          "field": "damageApplied",
+          "operator": "notEquals"
+        },
+        {
+          "type": "entityArrayObjectCount",
+          "source": "after",
+          "collection": "players",
+          "id": "$fixture.playerId",
+          "path": "inventory",
+          "where": {
+            "id": "$fixture.fireBombId"
+          },
+          "equals": 0
+        },
+        {
+          "type": "historyAddedTypeCount",
+          "entryType": "check-results",
+          "equals": 1,
+          "beforeSource": "snapshots.blast_ready",
+          "afterSource": "after"
+        },
+        {
+          "type": "historyAddedTypeCount",
+          "entryType": "player-action",
+          "equals": 1,
+          "beforeSource": "snapshots.blast_ready",
+          "afterSource": "after"
+        },
+        {
+          "type": "historyAddedTypeCount",
+          "entryType": "npc-action",
+          "equals": 0,
+          "beforeSource": "snapshots.blast_ready",
+          "afterSource": "after"
+        },
+        {
+          "type": "noRealtimeErrors"
+        }
+      ]
+    }
+  ],
+  "humanReview": [
+    "Confirm the prose depicts one Fire Bomb blast by Baato affecting both beetles, not two separate attacks or repeated damage.",
+    "Confirm QA Ash Beetle is portrayed as taking the stronger fire-vulnerability outcome and QA Frost Beetle the weaker fire-resistance outcome, while each survival/defeat statement follows its own structured result.",
+    "Confirm neither beetle nor the absent QA Shieldhand performs an extra attack or dialogue; this is human review only and must not be enforced with prose regexes or classifiers."
+  ]
+}

@@ -16,6 +16,33 @@ Simple health check.
 Response:
 - 200: `{ message: 'Hello World!', timestamp, port }` (no `success` flag)
 
+## GET /api/llm-completion-cassette/status
+
+Returns the process-local deterministic completion recording/replay state.
+
+Response:
+
+- 200: `{ success: true, replay, recording }`; active version 2 replay status includes source/resolved paths, entry totals, consumption, `allConsumed`, and `completionActive`. Recording status includes its path, entry count, completeness, and active-completion state.
+- 500: `{ success: false, error }` when the configured fixture cannot be loaded or validated.
+
+## POST /api/llm-completion-cassette/assert-consumed
+
+Requires an active version 2 replay, no logical completion currently in progress, and zero unused entries. It never resets or advances the cassette.
+
+Response:
+
+- 200: `{ success: true, replay }`.
+- 409: `{ success: false, error, replay, recording }` when replay is absent, legacy, active, or not fully consumed.
+
+## POST /api/llm-completion-cassette/complete-recording
+
+Marks the configured version 2 recording complete only after the owning scenario has settled. Optional body: `{ description?: string }`.
+
+Response:
+
+- 200: `{ success: true, recording }`.
+- 409: `{ success: false, error, replay, recording }` when recording is not configured or cannot safely be completed.
+
 ## POST /api/test-config
 Test an AI backend configuration without saving it.
 

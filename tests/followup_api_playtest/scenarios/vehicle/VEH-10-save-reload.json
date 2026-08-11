@@ -1,0 +1,319 @@
+{
+  "version": 1,
+  "scenario": "vehicle",
+  "case": "VEH-10-save-reload",
+  "description": "An active fixed-route trip survives a normal save/reload with its player, route, ETA, exit, companion, and carried item intact, then arrives exactly once.",
+  "fixture": "vehicle-underway-eastbound",
+  "configProfile": "vehicle-mechanics-replay",
+  "trackedPaths": [
+    "player.payload.player.locationId",
+    "currentLocation.payload.location.vehicleInfo",
+    "currentLocation.payload.location.exits",
+    "calendar.payload.worldTime.timeMinutes"
+  ],
+  "steps": [
+    {
+      "type": "loadFixture"
+    },
+    {
+      "type": "snapshot",
+      "name": "underway_before_save"
+    },
+    {
+      "type": "save",
+      "name": "active_trip_save"
+    },
+    {
+      "type": "assert",
+      "assertions": [
+        {
+          "type": "httpStatus",
+          "equals": 200
+        },
+        {
+          "type": "responseOk",
+          "equals": true
+        },
+        {
+          "type": "equals",
+          "source": "responses.active_trip_save",
+          "path": "payload.success",
+          "equals": true
+        }
+      ]
+    },
+    {
+      "type": "request",
+      "name": "mutate_after_save",
+      "method": "POST",
+      "route": "/api/slash-command",
+      "body": {
+        "command": "time",
+        "argsText": "+5 minutes"
+      }
+    },
+    {
+      "type": "assert",
+      "assertions": [
+        {
+          "type": "httpStatus",
+          "equals": 200
+        },
+        {
+          "type": "responseOk",
+          "equals": true
+        },
+        {
+          "type": "exactDelta",
+          "beforeSource": "snapshots.underway_before_save",
+          "afterSource": "after",
+          "path": "calendar.payload.worldTime.timeMinutes",
+          "delta": 5
+        },
+        {
+          "type": "equals",
+          "source": "after",
+          "path": "currentLocation.payload.location.vehicleInfo.pendingDestination.locationId",
+          "equals": "$fixture.eastPlatformId"
+        },
+        {
+          "type": "equals",
+          "source": "after",
+          "path": "currentLocation.payload.location.vehicleInfo.ETA",
+          "equals": 669
+        },
+        {
+          "type": "equals",
+          "source": "after",
+          "path": "currentLocation.payload.location.vehicleInfo.isUnderway",
+          "equals": true
+        }
+      ]
+    },
+    {
+      "type": "reload",
+      "name": "reload_active_trip"
+    },
+    {
+      "type": "assert",
+      "assertions": [
+        {
+          "type": "httpStatus",
+          "equals": 200
+        },
+        {
+          "type": "responseOk",
+          "equals": true
+        },
+        {
+          "type": "equals",
+          "source": "responses.reload_active_trip",
+          "path": "payload.success",
+          "equals": true
+        },
+        {
+          "type": "exactDelta",
+          "beforeSource": "snapshots.underway_before_save",
+          "afterSource": "after",
+          "path": "calendar.payload.worldTime.timeMinutes",
+          "delta": 0
+        },
+        {
+          "type": "stateUnchanged",
+          "beforeSource": "snapshots.underway_before_save",
+          "afterSource": "after",
+          "paths": [
+            "player.payload.player.locationId",
+            "currentLocation.payload.location.vehicleInfo",
+            "currentLocation.payload.location.exits"
+          ]
+        },
+        {
+          "type": "equals",
+          "source": "after",
+          "path": "currentLocation.payload.location.vehicleInfo.pendingDestination.locationId",
+          "equals": "$fixture.eastPlatformId"
+        },
+        {
+          "type": "equals",
+          "source": "after",
+          "path": "currentLocation.payload.location.vehicleInfo.ETA",
+          "equals": 669
+        },
+        {
+          "type": "equals",
+          "source": "after",
+          "path": "currentLocation.payload.location.vehicleInfo.departureTime",
+          "equals": 659
+        },
+        {
+          "type": "equals",
+          "source": "after",
+          "path": "currentLocation.payload.location.vehicleInfo.vehicleExitId",
+          "equals": "$fixture.vehicleExitId"
+        },
+        {
+          "type": "entityField",
+          "source": "after",
+          "collection": "players",
+          "id": "$fixture.carrierId",
+          "path": "locationId",
+          "equals": "$fixture.tramId"
+        },
+        {
+          "type": "entityField",
+          "source": "after",
+          "collection": "things",
+          "id": "$fixture.travelCaseId",
+          "path": "metadata.ownerId",
+          "equals": "$fixture.carrierId"
+        }
+      ]
+    },
+    {
+      "type": "snapshot",
+      "name": "restored_underway"
+    },
+    {
+      "type": "request",
+      "name": "arrive_after_reload",
+      "method": "POST",
+      "route": "/api/slash-command",
+      "body": {
+        "command": "time",
+        "argsText": "+10 minutes"
+      }
+    },
+    {
+      "type": "assert",
+      "assertions": [
+        {
+          "type": "httpStatus",
+          "equals": 200
+        },
+        {
+          "type": "responseOk",
+          "equals": true
+        },
+        {
+          "type": "exactDelta",
+          "beforeSource": "snapshots.restored_underway",
+          "afterSource": "after",
+          "path": "calendar.payload.worldTime.timeMinutes",
+          "delta": 10
+        },
+        {
+          "type": "includes",
+          "source": "responses.arrive_after_reload",
+          "path": "payload.replies.0.content",
+          "value": "Processed 1 due vehicle arrival."
+        },
+        {
+          "type": "equals",
+          "source": "after",
+          "path": "currentLocation.payload.location.vehicleInfo.currentDestination",
+          "equals": "$fixture.eastPlatformId"
+        },
+        {
+          "type": "equals",
+          "source": "after",
+          "path": "currentLocation.payload.location.vehicleInfo.pendingDestination",
+          "equals": null
+        },
+        {
+          "type": "equals",
+          "source": "after",
+          "path": "currentLocation.payload.location.vehicleInfo.ETA",
+          "equals": null
+        },
+        {
+          "type": "equals",
+          "source": "after",
+          "path": "currentLocation.payload.location.vehicleInfo.departureTime",
+          "equals": null
+        },
+        {
+          "type": "equals",
+          "source": "after",
+          "path": "currentLocation.payload.location.vehicleInfo.isUnderway",
+          "equals": false
+        },
+        {
+          "type": "count",
+          "source": "after",
+          "path": "currentLocation.payload.location.exits",
+          "equals": 1
+        },
+        {
+          "type": "entityField",
+          "source": "after",
+          "collection": "players",
+          "id": "$fixture.carrierId",
+          "path": "locationId",
+          "equals": "$fixture.tramId"
+        },
+        {
+          "type": "entityField",
+          "source": "after",
+          "collection": "things",
+          "id": "$fixture.travelCaseId",
+          "path": "metadata.ownerId",
+          "equals": "$fixture.carrierId"
+        }
+      ]
+    },
+    {
+      "type": "snapshot",
+      "name": "arrived_after_reload"
+    },
+    {
+      "type": "request",
+      "name": "arrival_remains_single",
+      "method": "POST",
+      "route": "/api/slash-command",
+      "body": {
+        "command": "time",
+        "argsText": "0 minutes"
+      }
+    },
+    {
+      "type": "assert",
+      "assertions": [
+        {
+          "type": "httpStatus",
+          "equals": 200
+        },
+        {
+          "type": "responseOk",
+          "equals": true
+        },
+        {
+          "type": "stateUnchanged",
+          "beforeSource": "snapshots.arrived_after_reload",
+          "afterSource": "after",
+          "paths": [
+            "player.payload.player.locationId",
+            "currentLocation.payload.location.vehicleInfo",
+            "currentLocation.payload.location.exits",
+            "calendar.payload.worldTime.timeMinutes"
+          ]
+        },
+        {
+          "type": "notIncludes",
+          "source": "responses.arrival_remains_single",
+          "path": "payload.replies.0.content",
+          "value": "Processed"
+        },
+        {
+          "type": "noRealtimeErrors"
+        },
+        {
+          "type": "noUnexpectedErrorLogs"
+        }
+      ]
+    }
+  ],
+  "humanReview": [
+    "Confirm the restored trip produces exactly one due-arrival reply and the zero-minute follow-up produces none."
+  ]
+}

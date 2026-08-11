@@ -1,0 +1,138 @@
+{
+  "version": 1,
+  "name": "cross-region-ambiguous-destination",
+  "description": "Validated QA Frost March entrance fixture with two unexpanded location stubs named QA Ambiguous Cairn in different live regions for REG-5 failure isolation.",
+  "createdAt": "2026-08-11T10:19:49.769Z",
+  "source": {
+    "setupCommand": "Derived from cross-region-expanded-frost-march through the documented @@ setup command. Two successful createLocationStub tool calls created loc_43 in Ember Hollow Settlement and loc_44 in QA Frost March from March Start Marker, without moving actors, advancing time, or expanding either stub.",
+    "saveName": "2026-08-11T10-18-22-775Z_Monster_Girl_Life_2026-06b-Baato-March_Start_Marker-char_2-msoic4on",
+    "saveType": "saves",
+    "settingName": "Monster Girl Life 2026-06b",
+    "playerName": "Baato"
+  },
+  "configProfile": "cross-region-mechanics",
+  "requiredMods": [
+    "implants",
+    "modules",
+    "nsfw-boost",
+    "party-needs",
+    "scene-illustration"
+  ],
+  "worldTime": {
+    "dayIndex": 0,
+    "timeMinutes": 663
+  },
+  "entities": {
+    "playerId": "char_2",
+    "originRegionId": "region_1",
+    "originLocationId": "loc_5",
+    "expandedRegionId": "region_1786438821952_m5baxvz2",
+    "entranceLocationId": "loc_39",
+    "childLocationStubId": "loc_38",
+    "originRegionAmbiguousLocationId": "loc_43",
+    "expandedRegionAmbiguousLocationId": "loc_44",
+    "originRegionAmbiguousExitId": "exit_81",
+    "expandedRegionAmbiguousExitId": "exit_83"
+  },
+  "invariants": [
+    {
+      "type": "equals",
+      "source": "after",
+      "path": "player.payload.player.locationId",
+      "equals": "loc_39"
+    },
+    {
+      "type": "equals",
+      "source": "after",
+      "path": "calendar.payload.worldTime.timeMinutes",
+      "equals": 663
+    },
+    {
+      "type": "entityField",
+      "source": "after",
+      "collection": "locations",
+      "id": "loc_43",
+      "path": "name",
+      "equals": "QA Ambiguous Cairn"
+    },
+    {
+      "type": "entityField",
+      "source": "after",
+      "collection": "locations",
+      "id": "loc_43",
+      "path": "regionId",
+      "equals": "region_1"
+    },
+    {
+      "type": "entityField",
+      "source": "after",
+      "collection": "locations",
+      "id": "loc_43",
+      "path": "isStub",
+      "equals": true
+    },
+    {
+      "type": "entityField",
+      "source": "after",
+      "collection": "locations",
+      "id": "loc_44",
+      "path": "name",
+      "equals": "QA Ambiguous Cairn"
+    },
+    {
+      "type": "entityField",
+      "source": "after",
+      "collection": "locations",
+      "id": "loc_44",
+      "path": "regionId",
+      "equals": "region_1786438821952_m5baxvz2"
+    },
+    {
+      "type": "entityField",
+      "source": "after",
+      "collection": "locations",
+      "id": "loc_44",
+      "path": "isStub",
+      "equals": true
+    },
+    {
+      "type": "arrayObjectCount",
+      "source": "after",
+      "path": "locations.payload.locations",
+      "where": {
+        "name": "QA Ambiguous Cairn"
+      },
+      "equals": 2
+    },
+    {
+      "type": "equals",
+      "source": "after",
+      "path": "currentLocation.payload.location.exits.qa_ambiguous_cairn.id",
+      "equals": "exit_81"
+    },
+    {
+      "type": "equals",
+      "source": "after",
+      "path": "currentLocation.payload.location.exits.qa_ambiguous_cairn.destination",
+      "equals": "loc_43"
+    },
+    {
+      "type": "equals",
+      "source": "after",
+      "path": "currentLocation.payload.location.exits.qa_ambiguous_cairn_2.id",
+      "equals": "exit_83"
+    },
+    {
+      "type": "equals",
+      "source": "after",
+      "path": "currentLocation.payload.location.exits.qa_ambiguous_cairn_2.destination",
+      "equals": "loc_44"
+    }
+  ],
+  "validation": {
+    "passed": true,
+    "checkedAt": "2026-08-11T10:18:24.757Z",
+    "evidence": "REG-5 fixture setup live-verify attempt 2 passed 23/23 assertions. Two successful createLocationStub tool calls produced one same-named unexpanded stub in each intended live region, retained distinct canonical ids/exits, and left player location and world time unchanged."
+  },
+  "integrity": "sha256:0fdc9ed72df4ab9216764d4a03ab484eaaa3ae0684df8b0f061f96025ef317b4"
+}

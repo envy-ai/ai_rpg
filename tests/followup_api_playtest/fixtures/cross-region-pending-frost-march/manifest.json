@@ -1,0 +1,127 @@
+{
+  "version": 1,
+  "name": "cross-region-pending-frost-march",
+  "description": "Pending QA Frost March region-entry fixture with a preserved QA Border Lantern child stub, reached from Ember Hollow Outskirts by a legacy zero-minute exit.",
+  "createdAt": "2026-08-11T09:02:12.812Z",
+  "source": {
+    "setupCommand": "Equivalent deterministic API setup for the planned @@ fixture: create QA Frost March from Ember Hollow Outskirts, create QA Border Lantern inside that pending region, keep both unexpanded, and leave Baato at the origin.",
+    "saveName": "2026-08-11T09-00-51-855Z_Monster_Girl_Life_2026-06b-Baato-Ember_Hollow_Outskirts-char_2-msofkg0f",
+    "saveType": "saves",
+    "settingName": "Monster Girl Life 2026-06b",
+    "playerName": "Baato"
+  },
+  "configProfile": "cross-region-mechanics",
+  "requiredMods": [
+    "implants",
+    "modules",
+    "nsfw-boost",
+    "party-needs",
+    "scene-illustration"
+  ],
+  "worldTime": {
+    "dayIndex": 0,
+    "timeMinutes": 658
+  },
+  "entities": {
+    "playerId": "char_2",
+    "originRegionId": "region_1",
+    "originLocationId": "loc_5",
+    "pendingRegionId": "region_1786438821952_m5baxvz2",
+    "regionEntryStubId": "loc_37",
+    "childLocationStubId": "loc_38",
+    "originExitId": "exit_68",
+    "entryToChildExitId": "exit_69"
+  },
+  "invariants": [
+    {
+      "type": "equals",
+      "source": "after",
+      "path": "player.payload.player.locationId",
+      "equals": "loc_5"
+    },
+    {
+      "type": "equals",
+      "source": "after",
+      "path": "calendar.payload.worldTime.timeMinutes",
+      "equals": 658
+    },
+    {
+      "type": "entityField",
+      "source": "after",
+      "collection": "locations",
+      "id": "loc_37",
+      "path": "name",
+      "equals": "QA Frost March"
+    },
+    {
+      "type": "entityField",
+      "source": "after",
+      "collection": "locations",
+      "id": "loc_37",
+      "path": "regionId",
+      "equals": "region_1786438821952_m5baxvz2"
+    },
+    {
+      "type": "entityField",
+      "source": "after",
+      "collection": "locations",
+      "id": "loc_37",
+      "path": "isStub",
+      "equals": true
+    },
+    {
+      "type": "entityField",
+      "source": "after",
+      "collection": "locations",
+      "id": "loc_38",
+      "path": "name",
+      "equals": "QA Border Lantern"
+    },
+    {
+      "type": "entityField",
+      "source": "after",
+      "collection": "locations",
+      "id": "loc_38",
+      "path": "regionId",
+      "equals": "region_1786438821952_m5baxvz2"
+    },
+    {
+      "type": "entityField",
+      "source": "after",
+      "collection": "locations",
+      "id": "loc_38",
+      "path": "isStub",
+      "equals": true
+    },
+    {
+      "type": "equals",
+      "source": "after",
+      "path": "currentLocation.payload.location.exits.qa_frost_march.id",
+      "equals": "exit_68"
+    },
+    {
+      "type": "equals",
+      "source": "after",
+      "path": "currentLocation.payload.location.exits.qa_frost_march.destination",
+      "equals": "loc_37"
+    },
+    {
+      "type": "equals",
+      "source": "after",
+      "path": "currentLocation.payload.location.exits.qa_frost_march.travelTimeMinutes",
+      "equals": 0
+    },
+    {
+      "type": "equals",
+      "source": "after",
+      "path": "currentLocation.payload.location.exits.qa_frost_march.destinationIsRegionEntryStub",
+      "equals": true
+    }
+  ],
+  "validation": {
+    "passed": true,
+    "checkedAt": "2026-08-11T09:00:45.000Z",
+    "evidence": "Read-only API validation confirmed Baato at loc_5; loc_37 as the QA Frost March region-entry stub; loc_38 as the ordinary child stub in the same pending region; and exit_68 as a zero-minute unresolved region-entry route."
+  },
+  "integrity": "sha256:d7ed26fa846f3936cd6c3a6ab37863f3c636b1349ffa7c7c1d3f6f39a9e89035"
+}

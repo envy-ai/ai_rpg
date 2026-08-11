@@ -744,6 +744,25 @@ class Thing {
     return Thing.#computeQuickChecksum(JSON.stringify(normalized));
   }
 
+  get combinerMechanicsChecksum() {
+    const mechanics = this.toJSON();
+    for (const key of [
+      'id',
+      'name',
+      'description',
+      'shortDescription',
+      'imageId',
+      'imagePrompt',
+      'count',
+      'createdAt',
+      'lastUpdated'
+    ]) {
+      delete mechanics[key];
+    }
+    const normalized = Thing.#normalizeValueForChecksum(mechanics);
+    return Thing.#computeQuickChecksum(JSON.stringify(normalized));
+  }
+
   get count() {
     return this.#count;
   }

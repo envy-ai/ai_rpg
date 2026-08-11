@@ -6,6 +6,13 @@ const {
     validateGeneratedContainerContentsAgainstSeeds
 } = require('./ContainerContentsGeneration.js');
 const {
+    validateGeneratedLocationThingBatch
+} = require('./LocationThingGenerationValidation.js');
+const {
+    resolveConfiguredPromptMaxAttempts,
+    runPromptWithParseRetries
+} = require('./PromptRetryPolicy.js');
+const {
     TINY_BRAIN_PROMPT_METADATA_LABELS,
     getTinyBrainPromptConfigurationErrors,
     isTinyBrainPromptEnabled
@@ -139,6 +146,10 @@ const QuestConfirmationManager = require('./QuestConfirmationManager.js');
 const ModLoader = require('./ModLoader.js');
 const ModExtensionRegistry = require('./ModExtensionRegistry.js');
 const { TinyBrainPromptExtension } = require('./TinyBrainPromptRunner.js');
+const {
+    formatPlayerActionDestinationAbsence,
+    resolvePlayerActionDestinationContext
+} = require('./PlayerActionDestinationContext.js');
 const {
     CHAT_TOOL_DEFINITIONS,
     createChatToolRuntime,
@@ -885,12 +896,34 @@ function isComfyModelCleanupModeConfigured(configuration = config) {
     ));
 }
 
-async function clearComfyVramBeforeLocalLlamaStartup() {
+async function clearComfyVramBeforeLocalLlamaStartup({ preserveComfySystemCache = false } = {}) {
+    if (preserveComfySystemCache) {
+        if (!comfyUIClient || typeof comfyUIClient.releaseVram !== 'function') {
+            throw new Error('ComfyUI Cache Monitor VRAM release is unavailable before managed llama.cpp startup.');
+        }
+        const release = await comfyUIClient.releaseVram();
+        if (release?.fallbackUsed) {
+            console.warn(
+                `ComfyUI Cache Monitor VRAM release failed; used full /free cleanup before managed llama.cpp startup: ${release.cacheMonitorError}`
+            );
+            emitComfyCacheMonitorFallbackWarning(release.cacheMonitorError);
+        } else {
+            console.log('🎨 Released ComfyUI VRAM while preserving its system-memory cache immediately before managed llama.cpp startup.');
+        }
+        return;
+    }
     if (!comfyUIClient || typeof comfyUIClient.unloadModels !== 'function') {
         throw new Error('ComfyUI client is unavailable before managed llama.cpp startup.');
     }
     await comfyUIClient.unloadModels();
-    console.log('🎨 Cleared ComfyUI models and VRAM immediately before managed llama.cpp startup.');
+    console.log('🎨 Cleared ComfyUI models and memory immediately before managed llama.cpp startup.');
+}
+
+function emitComfyCacheMonitorFallbackWarning(cacheMonitorError = '') {
+    return Globals.emitToClient(null, 'comfy_cache_monitor_fallback', {
+        message: 'ComfyUI Cache Monitor was unavailable, so AI RPG used ComfyUI\'s full memory cleanup instead. Install or enable the comfyui-cache-monitor custom nodes to preserve the system-RAM model cache and speed up later image generation.',
+        cacheMonitorError: typeof cacheMonitorError === 'string' ? cacheMonitorError : String(cacheMonitorError)
+    });
 }
 
 function configureComfyModelCleanupBeforePrompts() {
@@ -936,6 +969,9 @@ const imageGenerationModelLifecycle = new ImageGenerationModelLifecycle({
     withExclusiveModelLifecycle: callback => LLMClient.withExclusiveModelLifecycle(callback),
     getComfyClient: () => comfyUIClient,
     getLocalServerProcess: () => localLlamaServerProcess,
+    onComfyCacheMonitorFallback: ({ cacheMonitorError }) => (
+        emitComfyCacheMonitorFallbackWarning(cacheMonitorError)
+    ),
     logger: console
 });
 
@@ -2257,9 +2293,9 @@ async function initializeManagedLocalLlamaServer() {
 
     localLlamaServerProcess = new LocalLlamaServerProcess({
         startupScriptPath: resolveLocalLlamaStartupScriptPathFromAiConfig(aiConfig),
-        beforeStart: async () => {
+        beforeStart: async ({ preserveComfySystemCache = false } = {}) => {
             if (resolveImageGenerationModelLifecycleMode() !== 'none') {
-                await clearComfyVramBeforeLocalLlamaStartup();
+                await clearComfyVramBeforeLocalLlamaStartup({ preserveComfySystemCache });
             }
         },
         waitUntilReady: readiness => waitForManagedLlamaServerReady({
@@ -7998,6 +8034,7 @@ function buildBasePromptContext({
             npcs.push({
                 id: npc.id,
                 name: npcStatus?.name || npc.name || 'Unknown NPC',
+                isDead: Boolean(npc.isDead),
                 description: npcStatus?.description || npc.description || '',
                 hiddenFromPlayer: Boolean(npc.hiddenFromPlayer && !npc.isDead),
                 class: npcStatus?.class || npc.class || null,
@@ -8055,6 +8092,7 @@ function buildBasePromptContext({
             party.push({
                 id: member.id,
                 name: memberStatus?.name || member.name || 'Unknown Ally',
+                isDead: Boolean(member.isDead),
                 description: memberStatus?.description || member.description || '',
                 hiddenFromPlayer: Boolean(member.hiddenFromPlayer && !member.isDead),
                 class: memberStatus?.class || member.class || null,
@@ -10594,6 +10632,17 @@ function resolveActionOutcome({ plausibility, player, dieRollOverride = null }) 
                 circumstanceModifiers,
                 circumstanceReason: circumstanceModifierReason
             };
+        }
+
+        const actingActorId = typeof player?.id === 'string' ? player.id.trim() : '';
+        const opponentActorId = typeof opponentActor?.id === 'string' ? opponentActor.id.trim() : '';
+        if (
+            opponentActor === player
+            || (actingActorId && opponentActorId && actingActorId === opponentActorId)
+        ) {
+            throw new Error(
+                `Opposed skill check actor and opponent resolve to the same character "${player?.name || opponentName || 'unknown'}".`
+            );
         }
 
         const opponentSkillInfo = resolvePlayerSkillValue(opponentActor, opponentSkillName || '');
@@ -13236,51 +13285,102 @@ async function expandRegionEntryStub(stubLocation) {
                 { role: 'user', content: userContent }
             ];
 
+            let parsedStubResponse = null;
             try {
                 console.log(`🌐 Generating locations for region stub ${regionName} (${targetRegionId})...`);
-                stubResponse = await runGenerationPromptCompletion({
-                    requestOptions: {
-                        messages,
-                        metadataLabel: 'region_stub_locations',
-                        multimodal: Boolean(resolvedImageDataUrl)
+                const stubGenerationResult = await runPromptWithParseRetries({
+                    messages,
+                    maxAttempts: resolveConfiguredPromptMaxAttempts(config?.ai, { fallbackMaxAttempts: 3 }),
+                    complete: async ({ messages: completionMessages }) => {
+                        const responseText = await runGenerationPromptCompletion({
+                            requestOptions: {
+                                messages: completionMessages,
+                                metadataLabel: 'region_stub_locations',
+                                multimodal: Boolean(resolvedImageDataUrl)
+                            },
+                            metadataLabel: 'region_stub_locations'
+                        });
+                        LLMClient.logPrompt({
+                            prefix: 'region_stub_locations',
+                            metadataLabel: 'region_stub_locations',
+                            systemPrompt: stubPrompt.systemPrompt || '',
+                            generationPrompt: completionMessages
+                                .filter(message => message.role !== 'system')
+                                .map(message => {
+                                    const content = typeof message.content === 'string'
+                                        ? message.content
+                                        : JSON.stringify(message.content, null, 2);
+                                    return `${message.role}: ${content}`;
+                                })
+                                .join('\n\n'),
+                            response: responseText || ''
+                        });
+                        return responseText || '';
                     },
-                    metadataLabel: 'region_stub_locations'
+                    parse: responseText => {
+                        const locationDefinitions = parseRegionStubLocations(responseText);
+                        if (!locationDefinitions.length) {
+                            throw new Error('Region stub generation response contained no locations.');
+                        }
+
+                        const responseControllingFactionName = extractXmlTagValue(responseText, {
+                            rootTag: 'region',
+                            tagName: 'controllingFaction'
+                        });
+                        return {
+                            locationDefinitions,
+                            exitDefinitions: parseRegionExitsResponse(responseText),
+                            vehicleDefinitions: parseRegionVehicleDefinitions(responseText),
+                            weatherDefinition: parseRegionWeatherResponse(responseText),
+                            characterConcepts: extractRegionCharacterConcepts(responseText),
+                            numImportantNPCs: extractRegionImportantNpcCount(responseText),
+                            secrets: extractRegionSecrets(responseText),
+                            regionShortDescription: parseRegionStubShortDescription(responseText),
+                            responseFactionResolution: resolveFactionNameToId(responseControllingFactionName, {
+                                allowBlank: Boolean(stubControllingFactionId),
+                                fieldLabel: 'Region controlling faction'
+                            })
+                        };
+                    },
+                    retainRejectedResponse: false,
+                    buildRetryInstruction: error => (
+                        'A previous region XML response failed structured validation: '
+                        + `${error.message}\n`
+                        + 'Generate a fresh, complete response as exactly one <region>...</region> block. '
+                        + 'Do not copy the rejected document. '
+                        + 'Close every opened tag and include at least one location. Output XML only.'
+                    ),
+                    onAttempt: ({ attempt, maxAttempts, error }) => {
+                        if (!error) {
+                            return;
+                        }
+                        console.warn(
+                            `Region stub generation response attempt ${attempt} of ${maxAttempts} failed validation: ${error.message}`
+                        );
+                    }
                 });
-                LLMClient.logPrompt({
-                    prefix: 'region_stub_locations',
-                    metadataLabel: 'region_stub_locations',
-                    systemPrompt: stubPrompt.systemPrompt || '',
-                    generationPrompt: stubPrompt.generationPrompt || '',
-                    response: stubResponse || ''
-                });
+                stubResponse = stubGenerationResult.response;
+                parsedStubResponse = stubGenerationResult.value;
             } catch (error) {
-                console.warn('Failed to generate region stub locations:', error.message);
-                return null;
+                throw new Error(
+                    `Failed to generate valid locations for region stub "${regionName}": ${error.message}`,
+                    { cause: error }
+                );
             }
 
-            const locationDefinitions = parseRegionStubLocations(stubResponse);
-            const exitDefinitions = parseRegionExitsResponse(stubResponse);
-            const vehicleDefinitions = parseRegionVehicleDefinitions(stubResponse);
-            const weatherDefinition = parseRegionWeatherResponse(stubResponse);
-            const characterConcepts = extractRegionCharacterConcepts(stubResponse);
-            const numImportantNPCs = extractRegionImportantNpcCount(stubResponse);
-            const secrets = extractRegionSecrets(stubResponse);
-            const regionShortDescription = parseRegionStubShortDescription(stubResponse);
-            const responseControllingFactionName = extractXmlTagValue(stubResponse, {
-                rootTag: 'region',
-                tagName: 'controllingFaction'
-            });
-            const responseFactionResolution = resolveFactionNameToId(responseControllingFactionName, {
-                allowBlank: Boolean(stubControllingFactionId),
-                fieldLabel: 'Region controlling faction'
-            });
+            const {
+                locationDefinitions,
+                exitDefinitions,
+                vehicleDefinitions,
+                weatherDefinition,
+                characterConcepts,
+                numImportantNPCs,
+                secrets,
+                regionShortDescription,
+                responseFactionResolution
+            } = parsedStubResponse;
 
             console.log("Character concepts extracted for region NPC generation:", characterConcepts);
-
-            if (!locationDefinitions.length) {
-                console.warn('Region stub generation returned no locations.');
-                return null;
-            }
 
             const sourceRegionId = pendingInfo?.sourceRegionId
                 || pendingInfo?.originRegionId
@@ -14355,6 +14455,19 @@ addDiceFilters(deterministicTemplateEnv);
 addLocationInfoGlobal(promptEnv, {
     getLocations: () => Location.getAll()
 });
+promptEnv.addGlobal(
+    'resolvePlayerActionDestinationContext',
+    (destination, originLocationId = null, currentWorldMinutes = undefined) => (
+        resolvePlayerActionDestinationContext(destination, {
+            originLocationId,
+            currentWorldMinutes
+        })
+    )
+);
+promptEnv.addGlobal(
+    'formatPlayerActionDestinationAbsence',
+    formatPlayerActionDestinationAbsence
+);
 
 const rarityDefinitions = Thing.getAllRarityDefinitions();
 [viewsEnv, promptEnv, imagePromptEnv, deterministicTemplateEnv].forEach(env => {
@@ -15050,6 +15163,18 @@ async function generateItemsByNames({
         : {};
     const treatAsScenery = normalizedOptions.treatAsScenery === true;
     const treatAsResource = normalizedOptions.treatAsResource === true;
+    const mergeStacks = normalizedOptions.mergeStacks !== false;
+    if (
+        normalizedOptions.creationMetadata !== undefined
+        && normalizedOptions.creationMetadata !== null
+        && (
+            typeof normalizedOptions.creationMetadata !== 'object'
+            || Array.isArray(normalizedOptions.creationMetadata)
+        )
+    ) {
+        throw new Error('generateItemsByNames options.creationMetadata must be an object when provided.');
+    }
+    const creationMetadata = sanitizeMetadataObject(normalizedOptions.creationMetadata || {});
     const forcedThingType = (treatAsScenery || treatAsResource) ? 'scenery' : null;
     if (forcedThingType === 'scenery' && owner) {
         throw new Error('generateItemsByNames cannot create scenery directly into an inventory owner.');
@@ -15303,27 +15428,49 @@ async function generateItemsByNames({
                 const requestStart = Date.now();
                 let requestPayloadForLog = null;
                 const generationMetadataLabel = `thing_generation_${requestLabel.replace(/[^a-z0-9]+/gi, '_').replace(/^_+|_+$/g, '').toLowerCase() || `auto_${index + 1}`}`;
-                const inventoryContent = await runGenerationPromptCompletion({
-                    requestOptions: {
-                        messages,
-                        metadataLabel: generationMetadataLabel,
-                        captureRequestPayload: (payload) => { requestPayloadForLog = payload; }
-                    },
-                    metadataLabel: generationMetadataLabel
-                });
+                let inventoryContent = null;
+                let validationAttempt = 0;
+                const parsedItems = await withRetry(async () => {
+                    validationAttempt += 1;
+                    requestPayloadForLog = null;
+                    const responseText = await runGenerationPromptCompletion({
+                        requestOptions: {
+                            messages,
+                            metadataLabel: generationMetadataLabel,
+                            captureRequestPayload: (payload) => { requestPayloadForLog = payload; }
+                        },
+                        metadataLabel: generationMetadataLabel
+                    });
 
-                if (!inventoryContent || !inventoryContent.trim()) {
-                    throw new Error('Empty item generation response from AI');
-                }
+                    try {
+                        if (!responseText || !responseText.trim()) {
+                            throw new Error('Empty item generation response from AI');
+                        }
+                        const parsed = await parseThingsXml(responseText, {
+                            isInventory: Boolean(owner),
+                            promptEnv,
+                            parseXMLTemplate,
+                            prepareBasePromptContext,
+                            strictXml: true,
+                            expectedThingType: requestedThingType
+                        }) || [];
+                        if (parsed.length !== 1) {
+                            throw new Error(
+                                `Single thing generation must return exactly one thing; received ${parsed.length}.`
+                            );
+                        }
+                        inventoryContent = responseText;
+                        return parsed;
+                    } catch (error) {
+                        console.warn(
+                            `Single thing generation response attempt ${validationAttempt} failed validation for "${requestLabel}": ${error.message}`
+                        );
+                        throw error;
+                    }
+                }, resolveConfiguredPromptMaxAttempts(config?.ai, { fallbackMaxAttempts: 3 }));
 
                 const apiDurationSeconds = (Date.now() - requestStart) / 1000;
-                const parsedItems = await parseThingsXml(inventoryContent, {
-                    isInventory: Boolean(owner),
-                    promptEnv,
-                    parseXMLTemplate,
-                    prepareBasePromptContext
-                }) || [];
-                const itemData = parsedItems.find(it => it?.name) || parsedItems[0] || null;
+                const itemData = parsedItems[0] || null;
                 if (!itemData) {
                     throw new Error('No item data returned by AI');
                 }
@@ -15408,6 +15555,7 @@ async function generateItemsByNames({
                     relativeLevel,
                     level: computedLevel
                 });
+                Object.assign(metadata, creationMetadata);
                 const booleanFlags = extractThingBooleanFlags(itemData);
                 const extensionFieldInputs = getThingExtensionFieldInputsFromSource(
                     itemData,
@@ -15459,7 +15607,7 @@ async function generateItemsByNames({
                 things.set(thing.id, thing);
 
                 if (owner && typeof owner.addInventoryItem === 'function') {
-                    owner.addInventoryItem(thing);
+                    owner.addInventoryItem(thing, { mergeStacks });
                     metadata.ownerId = owner.id;
                     delete metadata.locationId;
                     thing.metadata = metadata;
@@ -15606,36 +15754,69 @@ async function generateContainerContentsForThing({
     const requestStart = Date.now();
     let requestPayloadForLog = null;
     const contentsMetadataLabel = `thing_generator_contents_${String(container.name || container.id || 'container').replace(/[^a-z0-9]+/gi, '_').replace(/^_+|_+$/g, '').toLowerCase() || 'container'}`;
-    const responseText = await runGenerationPromptCompletion({
-        requestOptions: {
-            messages,
-            metadataLabel: contentsMetadataLabel,
-            validateXML: true,
-            validateXMLStrict: true,
-            requiredRegex: /<items\b[\s\S]*<\/items>\s*$/i,
-            captureRequestPayload: (payload) => { requestPayloadForLog = payload; }
-        },
-        metadataLabel: contentsMetadataLabel
-    });
+    let responseText = null;
+    let validationAttempt = 0;
+    const parsedItems = await withRetry(async () => {
+        validationAttempt += 1;
+        requestPayloadForLog = null;
+        responseText = await runGenerationPromptCompletion({
+            requestOptions: {
+                messages,
+                metadataLabel: contentsMetadataLabel,
+                validateXML: true,
+                validateXMLStrict: true,
+                requiredRegex: /<items\b[\s\S]*<\/items>\s*$/i,
+                captureRequestPayload: (payload) => { requestPayloadForLog = payload; }
+            },
+            metadataLabel: contentsMetadataLabel
+        });
 
-    if (!responseText || !responseText.trim()) {
-        throw new Error('Empty container contents generation response from AI.');
-    }
+        try {
+            if (!responseText || !responseText.trim()) {
+                throw new Error('Empty container contents generation response from AI.');
+            }
 
-    const responseXmlContent = Utils.extractFinalXmlBlockFromResponse(responseText) || responseText;
-    const parsedItems = await parseThingsXml(responseXmlContent, {
-        isInventory: true,
-        promptEnv,
-        parseXMLTemplate,
-        prepareBasePromptContext,
-        strictXml: true
-    });
-    if (!Array.isArray(parsedItems) || !parsedItems.length) {
-        throw new Error(`Container contents generation for "${container.name || container.id}" returned no items.`);
-    }
-    validateGeneratedContainerContentsAgainstSeeds(parsedItems, pendingContents, {
-        containerName: container.name || container.id || 'container'
-    });
+            const responseXmlContent = Utils.extractFinalXmlBlockFromResponse(responseText) || responseText;
+            const parsed = await parseThingsXml(responseXmlContent, {
+                isInventory: true,
+                promptEnv,
+                parseXMLTemplate,
+                prepareBasePromptContext,
+                strictXml: true
+            });
+            if (!Array.isArray(parsed) || !parsed.length) {
+                throw new Error(`Container contents generation for "${container.name || container.id}" returned no items.`);
+            }
+            validateGeneratedContainerContentsAgainstSeeds(parsed, pendingContents, {
+                containerName: container.name || container.id || 'container'
+            });
+            return parsed;
+        } catch (error) {
+            console.warn(
+                `Container contents response attempt ${validationAttempt} failed validation for `
+                + `"${container.name || container.id}": ${error.message}`
+            );
+            try {
+                LLMClient.logPrompt({
+                    prefix: 'thing_generator_contents_validation_failure',
+                    metadataLabel: contentsMetadataLabel,
+                    systemPrompt: parsedTemplate.systemPrompt || '',
+                    generationPrompt: parsedTemplate.generationPrompt || '',
+                    response: responseText || '',
+                    sections: [
+                        { title: 'Validation Attempt', content: String(validationAttempt) },
+                        { title: 'Validation Error', content: error.stack || error.message }
+                    ]
+                });
+            } catch (logError) {
+                console.warn(
+                    `Failed to log invalid container contents response for "${container.name || container.id}":`,
+                    logError?.message || logError
+                );
+            }
+            throw error;
+        }
+    }, resolveConfiguredPromptMaxAttempts(config?.ai, { fallbackMaxAttempts: 3 }));
 
     const baseReference = Number.isFinite(resolvedLocation?.baseLevel)
         ? resolvedLocation.baseLevel
@@ -23822,9 +24003,23 @@ async function parseThingsXml(xmlContent, {
     promptEnv = null,
     parseXMLTemplate = null,
     prepareBasePromptContext = null,
-    strictXml = false
+    strictXml = false,
+    expectedThingType = null
 } = {}) {
     try {
+        const normalizedExpectedThingType = typeof expectedThingType === 'string'
+            ? expectedThingType.trim().toLowerCase()
+            : null;
+        if (
+            normalizedExpectedThingType
+            && normalizedExpectedThingType !== 'item'
+            && normalizedExpectedThingType !== 'scenery'
+        ) {
+            throw new Error(
+                `parseThingsXml expectedThingType must be "item" or "scenery"; received "${expectedThingType}".`
+            );
+        }
+
         const doc = strictXml
             ? Utils.parseXmlDocumentStrict(xmlContent, 'text/xml')
             : Utils.parseXmlDocument(xmlContent, 'text/xml');
@@ -24157,6 +24352,16 @@ async function parseThingsXml(xmlContent, {
             const relativeLevel = relativeLevelNode ? Number(relativeLevelNode.textContent.trim()) : null;
 
             const rawItemOrScenery = getDirectChildText(node, 'itemOrScenery');
+            const normalizedItemOrScenery = rawItemOrScenery.trim().toLowerCase();
+            if (
+                normalizedItemOrScenery
+                && normalizedItemOrScenery !== 'item'
+                && normalizedItemOrScenery !== 'scenery'
+            ) {
+                throw new Error(
+                    `Thing "${entryName}" has invalid <itemOrScenery> value "${rawItemOrScenery}".`
+                );
+            }
             const fallbackKind = (() => {
                 const tagName = typeof node.tagName === 'string' ? node.tagName.trim().toLowerCase() : '';
                 if (tagName === 'scenery') return 'scenery';
@@ -24166,7 +24371,15 @@ async function parseThingsXml(xmlContent, {
 
             const resolvedKind = isInventory
                 ? 'item'
-                : (rawItemOrScenery || fallbackKind || 'item');
+                : (normalizedItemOrScenery || fallbackKind || 'item');
+            if (
+                normalizedExpectedThingType
+                && resolvedKind !== normalizedExpectedThingType
+            ) {
+                throw new Error(
+                    `Thing "${entryName}" must be ${normalizedExpectedThingType}, but the response declared ${resolvedKind}.`
+                );
+            }
 
             const countNode = getDirectChildElement(node, 'count');
             let parsedCount = 1;
@@ -24375,8 +24588,6 @@ async function parseThingSeparateResponse(xmlContent, options = {}) {
     return parsedItems;
 }
 
-const LOCATION_THINGS_GENERATION_MAX_ATTEMPTS = 3;
-
 async function generateLocationThingsForLocation({ location } = {}) {
     if (!location || typeof location.id !== 'string') {
         return [];
@@ -24490,27 +24701,32 @@ async function generateLocationThingsForLocation({ location } = {}) {
         { role: 'user', content: parsedTemplate.generationPrompt }
     ];
 
-    let validationAttempt = 0;
-    const parsedItems = await withRetry(async () => {
-        validationAttempt += 1;
-        const aiResponse = await runGenerationPromptCompletion({
-            requestOptions: {
-                messages,
-                temperature: parsedTemplate.temperature,
+    const locationThingsResult = await runPromptWithParseRetries({
+        messages,
+        maxAttempts: resolveConfiguredPromptMaxAttempts(config?.ai, { fallbackMaxAttempts: 3 }),
+        complete: async ({ messages: completionMessages }) => {
+            const aiResponse = await runGenerationPromptCompletion({
+                requestOptions: {
+                    messages: completionMessages,
+                    temperature: parsedTemplate.temperature,
+                    metadataLabel: 'location_things_generation'
+                },
                 metadataLabel: 'location_things_generation'
-            },
-            metadataLabel: 'location_things_generation'
-        });
+            });
 
-        LLMClient.logPrompt({
-            prefix: 'location_things_generation',
-            metadataLabel: 'location_things_generation',
-            systemPrompt: parsedTemplate.systemPrompt || '',
-            generationPrompt: parsedTemplate.generationPrompt || '',
-            response: aiResponse || ''
-        });
-
-        try {
+            LLMClient.logPrompt({
+                prefix: 'location_things_generation',
+                metadataLabel: 'location_things_generation',
+                systemPrompt: parsedTemplate.systemPrompt || '',
+                generationPrompt: completionMessages
+                    .filter(message => message.role !== 'system')
+                    .map(message => `${message.role}: ${message.content}`)
+                    .join('\n\n'),
+                response: aiResponse || ''
+            });
+            return aiResponse || '';
+        },
+        parse: async (aiResponse) => {
             if (!aiResponse || !aiResponse.trim()) {
                 throw new Error('Location things generation returned an empty AI response.');
             }
@@ -24523,14 +24739,30 @@ async function generateLocationThingsForLocation({ location } = {}) {
             if (!generatedItems.length) {
                 throw new Error('Location things generation response contained no item or scenery entries.');
             }
-            return generatedItems;
-        } catch (error) {
+            return validateGeneratedLocationThingBatch(generatedItems, {
+                itemCount,
+                sceneryCount,
+                rarityList
+            });
+        },
+        buildRetryInstruction: error => (
+            'The preceding location item/scenery XML failed structured validation: '
+            + `${error.message}\n`
+            + 'Return a corrected, complete response as exactly one <things>...</things> block. '
+            + `Return exactly ${itemCount} item entries and ${sceneryCount} scenery entries, `
+            + 'with exactly the requested rarity mix. Close </things> immediately after those entries. '
+            + 'Output XML only.'
+        ),
+        onAttempt: ({ attempt, maxAttempts, error }) => {
+            if (!error) {
+                return;
+            }
             console.warn(
-                `Location things generation response attempt ${validationAttempt} failed validation: ${error.message}`
+                `Location things generation response attempt ${attempt} of ${maxAttempts} failed validation: ${error.message}`
             );
-            throw error;
         }
-    }, LOCATION_THINGS_GENERATION_MAX_ATTEMPTS);
+    });
+    const parsedItems = locationThingsResult.value;
 
     const createdThings = [];
     for (const itemData of parsedItems) {
@@ -30961,25 +31193,18 @@ function parseRegionWeatherResponse(xmlSnippet) {
 
 function parseRegionStubLocations(xmlSnippet) {
     if (!xmlSnippet || typeof xmlSnippet !== 'string') {
-        return [];
+        throw new Error('Region stub response must be a non-empty XML string.');
     }
-
-    const sanitize = (input) => `<root>${input}</root>`
-        .replace(/&(?![#a-zA-Z0-9]+;)/g, '&amp;')
-        .replace(/<\s*br\s*>/gi, '<br/>')
-        .replace(/<\s*hr\s*>/gi, '<hr/>');
 
     let doc;
     try {
-        doc = Utils.parseXmlDocument(sanitize(xmlSnippet.trim()), 'text/xml');
+        doc = Utils.parseXmlDocumentStrict(xmlSnippet.trim(), 'text/xml');
     } catch (error) {
-        console.warn('Failed to parse region stub XML:', error.message);
-        return [];
+        throw new Error(`Failed to parse region stub XML strictly: ${error.message}`);
     }
 
     if (!doc || doc.getElementsByTagName('parsererror')?.length) {
-        console.warn('Region stub XML contained parser errors.');
-        return [];
+        throw new Error('Region stub XML contained parser errors.');
     }
 
     const getDirectChildByTag = (node, tagName) => {
@@ -31009,39 +31234,20 @@ function parseRegionStubLocations(xmlSnippet) {
     };
 
     const resolveLocationNodes = () => {
-        const regionNode = doc.getElementsByTagName('region')[0];
-        if (regionNode) {
-            const locationsParent = getDirectChildByTag(regionNode, 'locations');
-            if (locationsParent) {
-                const nodes = getDirectChildrenByTag(locationsParent, 'location');
-                if (nodes.length) {
-                    return nodes;
-                }
-            }
+        const regionNode = doc.documentElement;
+        if (!regionNode || String(regionNode.tagName || '').toLowerCase() !== 'region') {
+            throw new Error('Region stub XML must have exactly one <region> root element.');
         }
-
-        const directLocationsParent = doc.getElementsByTagName('locations')?.[0];
-        if (directLocationsParent) {
-            const nodes = getDirectChildrenByTag(directLocationsParent, 'location');
-            if (nodes.length) {
-                return nodes;
-            }
+        const locationsParent = getDirectChildByTag(regionNode, 'locations');
+        if (!locationsParent) {
+            throw new Error('Region stub XML is missing a direct <locations> child.');
         }
-
-        return Array.from(doc.getElementsByTagName('location')).filter(node => {
-            const parent = node?.parentNode;
-            return Boolean(
-                parent
-                && parent.nodeType === 1
-                && typeof parent.tagName === 'string'
-                && parent.tagName.toLowerCase() === 'locations'
-            );
-        });
+        return getDirectChildrenByTag(locationsParent, 'location');
     };
 
     const locationNodes = resolveLocationNodes();
     if (!locationNodes.length) {
-        return [];
+        throw new Error('Region stub XML must contain at least one direct <locations><location> entry.');
     }
 
     const getTagValue = (node, tag) => {

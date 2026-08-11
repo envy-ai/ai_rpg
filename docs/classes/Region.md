@@ -72,7 +72,7 @@
 - `controllingFaction`: faction name from generated XML; server instantiation resolves it to an id.
 - `hasWeather`: `yes`, `no`, `sheltered`, or `null`; boolean/boolean-like inputs normalize to `yes`/`no`, while legacy `outside` values normalize to canonical `sheltered` when generated XML or saved blueprints are loaded.
 
-During `server.js` region instantiation, blueprints become `Location` stubs with stub metadata such as `stubDescription`, `stubShortDescription`, suggested exits, level/NPC/hostile hints, controlling faction id, and weather exposure. Pending region-entry expansion can seed preserved location stubs into a region, match them by normalized name/alias, keep preserved stubs even when a blueprint omits them, and avoid deleting those preserved stubs during rollback.
+During `server.js` region instantiation, blueprints become `Location` stubs with stub metadata such as `stubDescription`, `stubShortDescription`, suggested exits, level/NPC/hostile hints, controlling faction id, and weather exposure. Pending region-entry expansion strictly parses the complete generated `<region>` document before creating any `Region`, `Location`, or exit records. Malformed XML, a non-`region` root, a missing direct `<locations>` child, or an empty location list triggers a parser-guided retry. Because these documents can be large and the model may copy a retained malformed response verbatim, the correction attempt starts again from the original prompt plus the exact validation error and an explicit fresh-generation instruction; the rejected document is logged but is not placed back in model context. The retry budget is `ai.retryAttempts + 1` total attempts. Pending region-entry expansion can also seed preserved location stubs into a region, match them by normalized name/alias, keep preserved stubs even when a blueprint omits them, and avoid deleting those preserved stubs during later instantiation rollback.
 
 Generated self-referential location exits are skipped with a console warning. Generated connected-region definitions that point to the region being created are skipped the same way.
 
@@ -91,7 +91,7 @@ Generated self-referential location exits are skipped with a console warning. Ge
 
 Missing region or location short descriptions log warnings but do not abort parsing. Invalid XML, missing region name, or missing region description throw clear errors.
 
-`server.js` performs additional parsing around the same generated XML for region exits and vehicles. `<regionExits><stubRegion>` entries require `<travelTime>`; parsed minutes are applied to created cross-region exits and are not stored on pending-region stub records. Large generated vehicles become location stubs; huge generated vehicles become pending region-entry stubs with vehicle metadata.
+`server.js` performs additional parsing around the same generated XML for region exits and vehicles. Pending-region expansion parses all of these components, weather, short description, secrets, character concepts, important-NPC count, and faction selection during the validation attempt, before consuming the result. Each completion attempt is logged. `<regionExits><stubRegion>` entries require `<travelTime>`; parsed minutes are applied to created cross-region exits and are not stored on pending-region stub records. Large generated vehicles become location stubs; huge generated vehicles become pending region-entry stubs with vehicle metadata.
 
 ## Region-Entry Doorways And Arrival Selection
 

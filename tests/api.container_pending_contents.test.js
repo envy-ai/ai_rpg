@@ -33,7 +33,10 @@ test('container contents generator uses the dedicated contents prompt and clears
     assert.match(functionSource, /validateXMLStrict:\s*true/);
     assert.match(functionSource, /requiredRegex:\s*\/<items/);
     assert.match(functionSource, /strictXml:\s*true/);
-    assert.match(functionSource, /validateGeneratedContainerContentsAgainstSeeds\(parsedItems, pendingContents/);
+    assert.match(functionSource, /withRetry\(async \(\) =>/);
+    assert.match(functionSource, /validateGeneratedContainerContentsAgainstSeeds\(parsed, pendingContents/);
+    assert.match(functionSource, /resolveConfiguredPromptMaxAttempts\(config\?\.ai/);
+    assert.match(functionSource, /thing_generator_contents_validation_failure/);
     assert.match(functionSource, /container\.addInventoryItem\(thing\)/);
     assert.match(functionSource, /container\.clearContainerContents\(\)/);
     assert.match(functionSource, /LLMClient\.logPrompt/);

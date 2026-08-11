@@ -101,6 +101,35 @@ test('createQuest delegates to the quest event-generation path', async () => {
     assert.match(result.content, /<name>Repair the Beacon<\/name>/);
 });
 
+test('createQuest reports a declined confirmation as a terminal tool outcome', async () => {
+    const runtime = createRuntime({
+        createQuestFromEvent: async () => ({
+            questsAwarded: [],
+            updatedQuests: [],
+            declinedQuests: [{
+                id: 'quest_2',
+                name: 'Investigate the Archive',
+                summary: 'Investigate the missing archive key.',
+                giver: 'Archivist Sela',
+                accepted: false
+            }]
+        })
+    });
+
+    const result = await executeTool(runtime, 'createQuest', {
+        summary: 'Investigate the missing archive key.',
+        giver: 'Archivist Sela'
+    });
+
+    assert.equal(result.metadata.status, 'declined');
+    assert.equal(result.metadata.declinedQuests.length, 1);
+    assert.match(result.content, /<status>declined<\/status>/);
+    assert.match(result.content, /<declinedQuests>/);
+    assert.match(result.content, /<name>Investigate the Archive<\/name>/);
+    assert.match(result.content, /<accepted>false<\/accepted>/);
+    assert.match(result.content, /The createQuest request is resolved; do not retry it\./);
+});
+
 test('createQuest returns a tool error when quest creation is unavailable', async () => {
     const runtime = createRuntime({
         createQuestFromEvent: null

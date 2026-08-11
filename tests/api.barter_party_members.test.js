@@ -185,6 +185,44 @@ test('barter stock refresh lets pricing prompt update merchant currency', () => 
     assert.match(sessionRouteBlock, /refreshMerchantCurrency: refreshResult\.shouldGenerateStock/);
 });
 
+test('barter pricing retries strict parsing before applying any accepted-state mutations', () => {
+    const apiSource = fs.readFileSync(path.join(rootDir, 'api.js'), 'utf8');
+    const pricingBlock = extractBlock(
+        apiSource,
+        'async function runBarterPricingPrompt',
+        'function createBarterSession'
+    );
+    const retryIndex = pricingBlock.indexOf('runPromptWithParseRetries({');
+    const parseIndex = pricingBlock.indexOf('parseBarterPricesResponse(response');
+    const currencyIndex = pricingBlock.indexOf('npc.setCurrency(parsed.merchantCurrency)');
+    const stockIndex = pricingBlock.indexOf('applyGeneratedBarterStock(npc, parsed.newStock)');
+
+    assert.notEqual(retryIndex, -1);
+    assert.ok(parseIndex > retryIndex);
+    assert.ok(currencyIndex > parseIndex);
+    assert.ok(stockIndex > parseIndex);
+    assert.match(pricingBlock, /resolveConfiguredPromptMaxAttempts\(config\?\.ai/);
+    assert.match(pricingBlock, /Barter pricing response attempt \$\{attempt\}\/\$\{maxAttempts\} failed validation/);
+    assert.match(pricingBlock, /generatedStockMinimum: allowGeneratedStock \? barterConfig\.generatedStockMin : 0/);
+    assert.match(pricingBlock, /generatedStockMaximum: allowGeneratedStock \? barterConfig\.generatedStockMax : 0/);
+});
+
+test('haggle chat entries are recorded only after pricing passes structured validation', () => {
+    const apiSource = fs.readFileSync(path.join(rootDir, 'api.js'), 'utf8');
+    const haggleBlock = extractBlock(
+        apiSource,
+        "app.post('/api/npcs/:id/trade/haggle'",
+        "app.post('/api/npcs/:id/trade/commit'"
+    );
+    const pricingIndex = haggleBlock.indexOf('const pricing = await runBarterPricingPrompt({');
+    const playerEntryIndex = haggleBlock.indexOf('const playerEntry = pushChatEntry({');
+    const responseEntryIndex = haggleBlock.indexOf('const responseEntry = pushChatEntry({');
+
+    assert.notEqual(pricingIndex, -1);
+    assert.ok(playerEntryIndex > pricingIndex);
+    assert.ok(responseEntryIndex > playerEntryIndex);
+});
+
 test('barter generated stock uses batched inventory generator prompts', () => {
     const apiSource = fs.readFileSync(path.join(rootDir, 'api.js'), 'utf8');
     const serverSource = fs.readFileSync(path.join(rootDir, 'server.js'), 'utf8');

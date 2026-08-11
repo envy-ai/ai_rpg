@@ -59,9 +59,9 @@ Represents a player-owned quest with objectives, reward metadata, giver metadata
 ## Event And Reward Flow
 - Quest generation and objective completion are driven by `Events`, not by the `Quest` constructor.
 - `Events.runQuestChecks()` uses `Quest.filterActiveQuests(player.currentQuests, { includePaused: false })`, builds one-based prompt indices from the player's canonical quest order, renders `quest-check`, and parses completed objective XML back into one-based quest/objective entries.
-- `Events.processQuestObjectiveCompletionEntries()` resolves quests by prompt index, marks objectives complete, records completion metadata, and processes rewards once per completed quest by setting `rewardClaimed = true`.
-- XP rewards call `player.addExperience(...)`. Faction reputation rewards resolve stored faction ids and update player faction standings. NPC disposition rewards resolve target NPCs, convert intensity through configured disposition ranges, apply first-impression scaling when applicable, and append `dispositionChanges`.
-- Reward item names and reward currency are part of quest reward summaries/prose. The active completion path does not instantiate reward items into inventory or adjust player currency.
+- `Events.processQuestObjectiveCompletionEntries()` resolves quests by prompt index, marks objectives complete, records completion metadata, and processes rewards once per completed quest.
+- Configured reward items are generated directly into the player's inventory with persisted quest/reward-index metadata and stack merging disabled. Currency calls `player.adjustCurrency(...)`; XP calls `player.addExperience(...)`; faction reputation and NPC dispositions use their authoritative state helpers. `rewardClaimed` is set only after those direct mutations succeed.
+- Quest reward prose is presentation output for already-applied structured rewards. It is not passed back through ordinary event checks, preventing narrated coins, items, XP, reputation, dispositions, or incidental status language from being applied a second time.
 
 ## API And UI Use
 - Generated quest offers pass through `QuestConfirmationManager`, emit `quest_confirmation_request`, and enter the player's quest list only when accepted through `/api/quests/confirm`.
@@ -70,6 +70,7 @@ Represents a player-owned quest with objectives, reward metadata, giver metadata
 - The quest panel reads `/api/player`, renders active and completed quest sections, supports edit/pause/abandon controls for active quests, and displays reward summaries. NPC disposition reward reasons are stored for reward application but omitted from quest-list disposition pills.
 - Chat tool field updates include quest and objective targets from the player's current and completed quests, with `rewardItems`, `rewardFactionReputation`, `rewardNpcDispositions`, `rewardClaimed`, `paused`, `completed`, and `optional` among the allowed persisted fields.
 - `createQuest({ summary, giver? })` is a mutation-capable chat tool for generic prompts and scheduled-event resolution. Parser-only housekeeping can still create quests by returning `<quests>` XML, which is converted afterward into `createQuest` executor calls. The executor feeds the supplied summary/giver into the same `received_quest` event handler used by event checks, including the quest-generation prompt, duplicate/update handling, reward normalization, and player confirmation for new quests.
+- When the player declines a tool-created quest offer, the event handler records that decision in `declinedQuests`. The tool returns the terminal structured status `declined`, the declined quest identity, and an instruction not to retry the resolved request. A generation path that produces no accepted, updated, or declined quest still returns `not_created`.
 
 ## Operational Notes
 - `Quest.QuestObjective` is assigned for external access to the helper class.

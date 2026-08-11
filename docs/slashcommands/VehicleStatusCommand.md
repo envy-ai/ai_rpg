@@ -34,7 +34,7 @@
 ## Formatting Rules
 - Blank, null, or unresolved scalar values render as `-`.
 - Markdown table separators and newlines in plain text values are escaped or flattened; ids are rendered as inline code.
-- Absolute minute fields render as raw minute counts. When `Globals.getTimeConfig()`, `Globals.formatDate(...)`, and `Globals.formatTime(...)` are available, they also include a formatted in-world date/time label.
+- Absolute minute fields render as raw minute counts. When `Globals.getTimeConfig()`, `Globals.formatDate(...)`, and `Globals.formatTime(...)` are available, they also include a formatted in-world date/time label. Unset `departureTime` and `ETA` values render as `-`; null is not coerced to elapsed minute zero.
 - Pending destination labels prefer explicit `locationName`/`regionName`, then stored location or region ids, then `rawText`, then the fallback label.
 
 ## Implementation

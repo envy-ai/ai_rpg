@@ -62,8 +62,16 @@ need_bars:
             ['rest']
         );
         assert.equal(npc.getNeedBarValue('rest'), 35);
+        assert.equal(
+            npc.getNeedBars({ scope: 'stored' }).find(bar => bar.id === 'rest')?.initialValue,
+            35
+        );
+
+        npc.setNeedBarValue('rest', 12);
 
         const saved = npc.toJSON();
+        assert.equal(saved.needBars.find(bar => bar.id === 'rest')?.value, 12);
+        assert.equal(saved.needBars.find(bar => bar.id === 'rest')?.initialValue, 35);
 
         Player.clearRuntimeRegistries();
         Player.reloadDefinitionCaches({ refreshInstances: false });
@@ -77,7 +85,11 @@ need_bars:
             loaded.getNeedBars({ scope: 'stored' }).map(bar => bar.id),
             ['rest']
         );
-        assert.equal(loaded.getNeedBarValue('rest'), 35);
+        assert.equal(loaded.getNeedBarValue('rest'), 12);
+        assert.equal(
+            loaded.getNeedBars({ scope: 'stored' }).find(bar => bar.id === 'rest')?.initialValue,
+            35
+        );
         assert.equal(loaded.getNeedBarValue('hunger'), null);
     });
 });

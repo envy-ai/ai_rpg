@@ -1,0 +1,310 @@
+{
+  "version": 1,
+  "scenario": "need-bars",
+  "case": "NEED-1-passive-decrease",
+  "description": "One explicit minute of strenuous shared activity applies one structured stamina decrease to the player and party member, combines it with passive per-minute changes, and records matching structured event-summary metadata.",
+  "fixture": "need-bars-status-lifecycle",
+  "configProfile": "need-bars-mechanics",
+  "trackedPaths": [
+    "player.payload.player.needBars",
+    "players.payload.players",
+    "calendar.payload.worldTime.timeMinutes",
+    "history.payload"
+  ],
+  "steps": [
+    {
+      "type": "loadFixture"
+    },
+    {
+      "type": "request",
+      "name": "establish_voluntary_training",
+      "method": "PUT",
+      "route": "/api/npcs/$fixture.companionId",
+      "body": {
+        "aiNotes": "QA test precondition: she has already volunteered and firmly committed to haul one end of the heavy training sled for exactly one minute when Baato gives their agreed start signal. This is her own prior decision."
+      }
+    },
+    {
+      "type": "assert",
+      "assertions": [
+        {
+          "type": "httpStatus",
+          "equals": 200
+        },
+        {
+          "type": "responseOk",
+          "equals": true
+        },
+        {
+          "type": "equals",
+          "source": "responses.establish_voluntary_training",
+          "path": "payload.success",
+          "equals": true
+        }
+      ]
+    },
+    {
+      "type": "snapshot",
+      "name": "before_action"
+    },
+    {
+      "type": "chat",
+      "name": "strenuous_action",
+      "text": "I give QA Tired Companion our agreed start signal, grab my end of the heavy training sled, sprint hard for exactly one minute, and stop.",
+      "travel": false,
+      "interactive": {
+        "roll": null,
+        "questAccepted": false,
+        "confirmed": false
+      }
+    },
+    {
+      "type": "assert",
+      "assertions": [
+        {
+          "type": "httpStatus",
+          "equals": 200
+        },
+        {
+          "type": "responseOk",
+          "equals": true
+        },
+        {
+          "type": "exactDelta",
+          "beforeSource": "snapshots.before_action",
+          "afterSource": "after",
+          "path": "calendar.payload.worldTime.timeMinutes",
+          "delta": 1
+        },
+        {
+          "type": "equals",
+          "source": "responses.strenuous_action",
+          "path": "payload.timeProgress.advancedMinutes",
+          "equals": 1
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "responses.strenuous_action",
+          "path": "payload.debug.eventStructured.parsed.needbar_change",
+          "where": {
+            "character": "Baato",
+            "bar": "stamina",
+            "direction": "decrease",
+            "magnitude": "small"
+          },
+          "equals": 1
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "responses.strenuous_action",
+          "path": "payload.debug.eventStructured.parsed.needbar_change",
+          "where": {
+            "character": "QA Tired Companion",
+            "bar": "stamina",
+            "direction": "decrease",
+            "magnitude": "small"
+          },
+          "equals": 1
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "responses.strenuous_action",
+          "path": "payload.debug.eventStructured.parsed.needbar_change",
+          "where": {
+            "character": "QA Courier"
+          },
+          "equals": 0
+        },
+        {
+          "type": "count",
+          "source": "responses.strenuous_action",
+          "path": "payload.debug.eventStructured.parsed.needbar_change",
+          "equals": 2
+        },
+        {
+          "type": "exists",
+          "source": "responses.strenuous_action",
+          "path": "payload.debug.eventStructured.parsed.needbar_change.0.reason"
+        },
+        {
+          "type": "exists",
+          "source": "responses.strenuous_action",
+          "path": "payload.debug.eventStructured.parsed.needbar_change.1.reason"
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "after",
+          "path": "player.payload.player.needBars",
+          "where": {
+            "id": "food",
+            "value": 599.3
+          },
+          "equals": 1
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "after",
+          "path": "player.payload.player.needBars",
+          "where": {
+            "id": "rest",
+            "value": 400.4
+          },
+          "equals": 1
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "after",
+          "path": "player.payload.player.needBars",
+          "where": {
+            "id": "stamina",
+            "value": 550
+          },
+          "equals": 1
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "after",
+          "path": "player.payload.player.needBars",
+          "where": {
+            "id": "mana",
+            "value": 610
+          },
+          "equals": 1
+        },
+        {
+          "type": "entityArrayObjectCount",
+          "source": "after",
+          "collection": "players",
+          "id": "$fixture.companionId",
+          "path": "needBars",
+          "where": {
+            "id": "food",
+            "value": 599.3
+          },
+          "equals": 1
+        },
+        {
+          "type": "entityArrayObjectCount",
+          "source": "after",
+          "collection": "players",
+          "id": "$fixture.companionId",
+          "path": "needBars",
+          "where": {
+            "id": "rest",
+            "value": 400.4
+          },
+          "equals": 1
+        },
+        {
+          "type": "entityArrayObjectCount",
+          "source": "after",
+          "collection": "players",
+          "id": "$fixture.companionId",
+          "path": "needBars",
+          "where": {
+            "id": "stamina",
+            "value": 550
+          },
+          "equals": 1
+        },
+        {
+          "type": "historyAddedNestedObjectCount",
+          "entryWhere": {
+            "type": "event-summary"
+          },
+          "path": "summaryItems",
+          "where": {
+            "sourceType": "need_bar_change",
+            "metadata": {
+              "needBarChange": {
+                "actorId": "$fixture.playerId",
+                "actorName": "$fixture.playerName",
+                "needBarId": "stamina",
+                "delta": -100,
+                "direction": "decrease",
+                "magnitude": "small",
+                "max": 1000
+              }
+            }
+          },
+          "equals": 1,
+          "beforeSource": "snapshots.before_action",
+          "afterSource": "after"
+        },
+        {
+          "type": "historyAddedNestedObjectCount",
+          "entryWhere": {
+            "type": "event-summary"
+          },
+          "path": "summaryItems",
+          "where": {
+            "sourceType": "need_bar_change",
+            "metadata": {
+              "needBarChange": {
+                "actorId": "$fixture.companionId",
+                "actorName": "$fixture.companionName",
+                "needBarId": "stamina",
+                "delta": -100,
+                "direction": "decrease",
+                "magnitude": "small",
+                "max": 1000
+              }
+            }
+          },
+          "equals": 1,
+          "beforeSource": "snapshots.before_action",
+          "afterSource": "after"
+        },
+        {
+          "type": "historyAddedNestedObjectCount",
+          "entryWhere": {
+            "type": "event-summary"
+          },
+          "path": "summaryItems",
+          "where": {
+            "sourceType": "need_bar_change"
+          },
+          "equals": 2,
+          "beforeSource": "snapshots.before_action",
+          "afterSource": "after"
+        },
+        {
+          "type": "historyAddedNestedObjectCount",
+          "entryWhere": {
+            "type": "event-summary"
+          },
+          "path": "summaryItems",
+          "where": {
+            "sourceType": "time_passed"
+          },
+          "equals": 1,
+          "beforeSource": "snapshots.before_action",
+          "afterSource": "after"
+        },
+        {
+          "type": "historyAddedTypeCount",
+          "entryType": "player-action",
+          "equals": 1,
+          "beforeSource": "snapshots.before_action",
+          "afterSource": "after"
+        },
+        {
+          "type": "historyAddedTypeCount",
+          "entryType": "event-summary",
+          "equals": 1,
+          "beforeSource": "snapshots.before_action",
+          "afterSource": "after"
+        },
+        {
+          "type": "noRealtimeErrors"
+        },
+        {
+          "type": "noUnexpectedErrorLogs"
+        }
+      ]
+    }
+  ],
+  "humanReview": [
+    "Confirm the prose depicts one shared minute of strenuous hauling and no unrelated recovery, eating, spellcasting, or additional elapsed activity."
+  ]
+}

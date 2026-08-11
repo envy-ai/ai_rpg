@@ -1,0 +1,246 @@
+{
+  "version": 1,
+  "scenario": "fast-travel",
+  "case": "FAST-4-companion-alias",
+  "description": "A nonblank fast-travel prompt accepts the local alias Quickstep, returns canonical QA Courier, and the gameplay teleport moves both actors exactly once without changing party membership.",
+  "fixture": "fast-travel-visited-favorites",
+  "configProfile": "cross-region-mechanics",
+  "trackedPaths": [
+    "player.payload.player.locationId",
+    "player.payload.player.partyMembers",
+    "players.payload.players",
+    "calendar.payload.worldTime.timeMinutes",
+    "history.payload"
+  ],
+  "steps": [
+    {
+      "type": "loadFixture"
+    },
+    {
+      "type": "snapshot",
+      "name": "before_alias_prompt"
+    },
+    {
+      "type": "chat",
+      "name": "alias_travel_prose",
+      "text": "\"Quickstep, come with me,\" I tell the courier. We leave March Start Marker together now and travel all the way to QA Fast Travel Grove.",
+      "travel": true,
+      "travelMetadata": {
+        "mode": "fast-travel",
+        "eventDriven": false,
+        "exit": {
+          "exitId": null,
+          "originLocationId": "$fixture.baselineLocationId",
+          "direction": null,
+          "destinationId": "$fixture.groveLocationId",
+          "destinationRegionId": "$fixture.regionId",
+          "destinationIsStub": false,
+          "destinationIsRegionEntryStub": false,
+          "isVehicle": false,
+          "vehicleType": null,
+          "destinationName": "QA Fast Travel Grove",
+          "regionName": "QA Frost March"
+        }
+      },
+      "interactive": {
+        "roll": null,
+        "questAccepted": false,
+        "confirmed": false
+      }
+    },
+    {
+      "type": "assert",
+      "assertions": [
+        {
+          "type": "httpStatus",
+          "equals": 200
+        },
+        {
+          "type": "responseOk",
+          "equals": true
+        },
+        {
+          "type": "equals",
+          "source": "responses.alias_travel_prose",
+          "path": "payload.authoritativeMovementType",
+          "equals": "destination"
+        },
+        {
+          "type": "count",
+          "source": "responses.alias_travel_prose",
+          "path": "payload.accompanyingCharacters",
+          "equals": 1
+        },
+        {
+          "type": "includes",
+          "source": "responses.alias_travel_prose",
+          "path": "payload.accompanyingCharacters",
+          "value": "$fixture.courierName"
+        },
+        {
+          "type": "equals",
+          "source": "after",
+          "path": "player.payload.player.locationId",
+          "equals": "$fixture.baselineLocationId"
+        },
+        {
+          "type": "entityField",
+          "source": "after",
+          "collection": "players",
+          "id": "$fixture.courierId",
+          "path": "locationId",
+          "equals": "$fixture.baselineLocationId"
+        },
+        {
+          "type": "entityField",
+          "source": "after",
+          "collection": "players",
+          "id": "$fixture.courierId",
+          "path": "isInPlayerParty",
+          "equals": false
+        },
+        {
+          "type": "notIncludes",
+          "source": "after",
+          "path": "player.payload.player.partyMembers",
+          "value": "$fixture.courierId"
+        },
+        {
+          "type": "exactDelta",
+          "beforeSource": "snapshots.before_alias_prompt",
+          "afterSource": "after",
+          "path": "calendar.payload.worldTime.timeMinutes",
+          "delta": 0
+        },
+        {
+          "type": "historyAddedTypeCount",
+          "entryType": "player-action",
+          "equals": 1,
+          "beforeSource": "snapshots.before_alias_prompt",
+          "afterSource": "after"
+        }
+      ]
+    },
+    {
+      "type": "snapshot",
+      "name": "alias_prose_complete"
+    },
+    {
+      "type": "request",
+      "name": "teleport_with_courier",
+      "method": "POST",
+      "route": "/api/npcs/$fixture.playerId/teleport",
+      "body": {
+        "locationId": "$fixture.groveLocationId",
+        "accountTravelTime": true,
+        "storyToolTeleport": false,
+        "accompanyingCharacters": "$response.alias_travel_prose.payload.accompanyingCharacters"
+      },
+      "interactive": {
+        "roll": null,
+        "questAccepted": false,
+        "confirmed": false
+      }
+    },
+    {
+      "type": "assert",
+      "assertions": [
+        {
+          "type": "httpStatus",
+          "equals": 200
+        },
+        {
+          "type": "responseOk",
+          "equals": true
+        },
+        {
+          "type": "equals",
+          "source": "responses.teleport_with_courier",
+          "path": "payload.success",
+          "equals": true
+        },
+        {
+          "type": "equals",
+          "source": "responses.teleport_with_courier",
+          "path": "payload.npc.locationId",
+          "equals": "$fixture.groveLocationId"
+        },
+        {
+          "type": "equals",
+          "source": "responses.teleport_with_courier",
+          "path": "payload.arrivalProcessingError",
+          "equals": null
+        },
+        {
+          "type": "equals",
+          "source": "after",
+          "path": "player.payload.player.locationId",
+          "equals": "$fixture.groveLocationId"
+        },
+        {
+          "type": "entityField",
+          "source": "after",
+          "collection": "players",
+          "id": "$fixture.courierId",
+          "path": "locationId",
+          "equals": "$fixture.groveLocationId"
+        },
+        {
+          "type": "entityField",
+          "source": "after",
+          "collection": "players",
+          "id": "$fixture.courierId",
+          "path": "aliases",
+          "equals": [
+            "Quickstep"
+          ]
+        },
+        {
+          "type": "entityField",
+          "source": "after",
+          "collection": "players",
+          "id": "$fixture.courierId",
+          "path": "isInPlayerParty",
+          "equals": false
+        },
+        {
+          "type": "notIncludes",
+          "source": "after",
+          "path": "player.payload.player.partyMembers",
+          "value": "$fixture.courierId"
+        },
+        {
+          "type": "exactDelta",
+          "beforeSource": "snapshots.alias_prose_complete",
+          "afterSource": "after",
+          "path": "calendar.payload.worldTime.timeMinutes",
+          "delta": 4
+        },
+        {
+          "type": "historyAddedTypeCount",
+          "entryType": "event-summary",
+          "equals": 1,
+          "beforeSource": "snapshots.alias_prose_complete",
+          "afterSource": "after"
+        },
+        {
+          "type": "historyAddedTypeCount",
+          "entryType": "player-action",
+          "equals": 1,
+          "beforeSource": "snapshots.before_alias_prompt",
+          "afterSource": "after"
+        },
+        {
+          "type": "noRealtimeErrors"
+        },
+        {
+          "type": "noUnexpectedErrorLogs"
+        }
+      ]
+    }
+  ],
+  "humanReview": [
+    "Confirm the prose treats Quickstep and QA Courier as one character who accompanies Baato for the single trip to QA Fast Travel Grove.",
+    "Confirm it does not imply that the courier joined the party or that either actor moved again after the Grove arrival."
+  ]
+}

@@ -27,21 +27,33 @@ function parseXMLTemplate(rendered) {
     };
 }
 
-test('need-bar TinyBrain prompt asks for planning and characters in separate completions', async () => {
+test('need-bar TinyBrain retries semantic parser failures only at characters phase with planning retained', { concurrency: false }, async () => {
     const previousConfig = Globals.config;
     const previousChatCompletion = LLMClient.chatCompletion;
     const previousLogPrompt = LLMClient.logPrompt;
+    const previousFixtureEnv = process.env.LLM_FORCE_OUTPUTS_FILE;
     const requests = [];
     const logCalls = [];
     const logPath = path.join(process.cwd(), 'logs', 'need-bar-tinybrain-test.log');
+    const forcedOutputPath = path.join(
+        __dirname,
+        'fixtures',
+        'need_bar_tinybrain_invalid_outputs.json'
+    );
+    const invalidResponses = require(forcedOutputPath)
+        .byMetadataLabel
+        .need_bar_event_checks
+        .slice(1, -1);
 
     Globals.config = {
         ai: {
             tinybrain: true,
             tinybrain_prompts: { need_bar_event_checks: true },
-            retryAttempts: 1
+            retryAttempts: invalidResponses.length
         }
     };
+    process.env.LLM_FORCE_OUTPUTS_FILE = forcedOutputPath;
+    LLMClient.resetForcedOutputState();
 
     try {
         LLMClient.logPrompt = (entry = {}) => {
@@ -50,16 +62,10 @@ test('need-bar TinyBrain prompt asks for planning and characters in separate com
         };
         LLMClient.chatCompletion = async (options = {}) => {
             requests.push(options.messages.map(message => ({ ...message })));
-            if (requests.length === 1) {
-                return 'Wanderer loses a small amount of stamina after swinging a weapon.';
-            }
-            if (requests.length === 2) {
-                return 'characters><character><name>Wanderer</name></character></characters>';
-            }
-            return '<characters><character><name>Wanderer</name><affectedNeedBars>'
-                + '<needBar><id>stamina</id><changeDirection>decrease</changeDirection>'
-                + '<change>small</change><reason>swung a weapon</reason></needBar>'
-                + '</affectedNeedBars></character></characters>';
+            return await previousChatCompletion.call(LLMClient, {
+                ...options,
+                output: 'silent'
+            });
         };
 
         const baseContext = {
@@ -83,7 +89,7 @@ test('need-bar TinyBrain prompt asks for planning and characters in separate com
             parseXMLTemplate
         });
 
-        assert.equal(requests.length, 3);
+        assert.equal(requests.length, 8);
         const planningPrompt = requests[0].at(-1).content;
         const charactersPrompt = requests[1].at(-1).content;
         assert.match(planningPrompt, /Planning phase:/);
@@ -96,11 +102,37 @@ test('need-bar TinyBrain prompt asks for planning and characters in separate com
             requests[1].some(message => message.role === 'assistant' && /loses a small amount/.test(message.content)),
             true
         );
-        assert.equal(requests[2].at(-1).content, charactersPrompt);
-        assert.equal(
-            requests[2].some(message => message.role === 'assistant' && /^characters>/.test(message.content)),
-            false
-        );
+        const characterPhaseRequests = requests.slice(1);
+        for (const request of characterPhaseRequests) {
+            assert.equal(
+                request.filter(message => (
+                    message.role === 'assistant'
+                    && message.content === 'Wanderer loses a small amount of stamina after swinging a weapon.'
+                )).length,
+                1
+            );
+            assert.equal(
+                request.filter(message => (
+                    message.role === 'user'
+                    && /Planning phase:/.test(message.content)
+                )).length,
+                1
+            );
+            for (const invalidResponse of invalidResponses) {
+                assert.equal(
+                    request.some(message => message.role === 'assistant' && message.content === invalidResponse),
+                    false
+                );
+            }
+        }
+        const retryFeedback = requests.slice(2).map(request => request.at(-1).content);
+        assert.equal(retryFeedback.every(text => /failed validation/.test(text)), true);
+        assert.match(retryFeedback[0], /unknown need-bar id "hunger"/i);
+        assert.match(retryFeedback[1], /duplicate character "wanderer"/i);
+        assert.match(retryFeedback[2], /duplicate need bar "STAMINA"/i);
+        assert.match(retryFeedback[3], /changeDirection.*increase or decrease/i);
+        assert.match(retryFeedback[4], /<change>.*small, medium, large/i);
+        assert.match(retryFeedback[5], /unexpected(?: direct child)? <commentary>/i);
         assert.deepEqual(result.entries, [{
             character: 'Wanderer',
             bar: 'stamina',
@@ -110,9 +142,24 @@ test('need-bar TinyBrain prompt asks for planning and characters in separate com
         }]);
         assert.equal(logCalls[0].prefix, 'need_bar_event_checks_tinybrain');
         assert.equal(logCalls.some(entry => entry.prefix === 'need_bar_event_checks'), false);
+        assert.equal(
+            logCalls.filter(entry => entry.sections?.some(section => /parse failure$/.test(section.title))).length,
+            invalidResponses.length
+        );
+        const fixtureStatus = LLMClient.getCompletionCassetteStatus();
+        assert.equal(fixtureStatus.replay.active, true);
+        assert.equal(fixtureStatus.replay.version, 1);
+        assert.equal(fixtureStatus.replay.total, 8);
+        assert.equal(fixtureStatus.replay.consumed, 8);
     } finally {
         LLMClient.chatCompletion = previousChatCompletion;
         LLMClient.logPrompt = previousLogPrompt;
         Globals.config = previousConfig;
+        if (previousFixtureEnv === undefined) {
+            delete process.env.LLM_FORCE_OUTPUTS_FILE;
+        } else {
+            process.env.LLM_FORCE_OUTPUTS_FILE = previousFixtureEnv;
+        }
+        LLMClient.resetForcedOutputState();
     }
 });

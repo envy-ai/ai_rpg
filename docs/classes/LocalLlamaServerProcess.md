@@ -9,14 +9,14 @@
 `new LocalLlamaServerProcess({ startupScriptPath, beforeStart, waitUntilReady, spawnProcess, signalProcessGroup, terminationTimeoutMs, logger })`
 
 - `startupScriptPath` is resolved to an absolute path. Server configuration validation requires it to be an executable regular file.
-- `beforeStart` is mandatory. The server supplies a callback that strictly calls ComfyUI `/free` when router-unload or process-termination image handoff is enabled and otherwise completes without contacting ComfyUI. The class always awaits it before invoking the script.
+- `beforeStart` is mandatory. The server supplies a callback that strictly calls ComfyUI `/free` when router-unload or process-termination image handoff is enabled and otherwise completes without contacting ComfyUI. The class always awaits it before invoking the script and passes through `start()`'s `beforeStartOptions` object.
 - `waitUntilReady` is awaited after the child emits `spawn`. The server polls the effective llama.cpp base URL's `/health` endpoint until HTTP 200 or the configured AI base timeout expires.
 - `spawnProcess` and `signalProcessGroup` default to Node's child-process spawn and `process.kill(-pid, signal)` behavior; they are injectable for tests.
 - `terminationTimeoutMs` defaults to 10 seconds for each of the graceful and forced-exit waits.
 
 ## Lifecycle
 
-`start()` rejects if a managed process is already recorded. After its configured pre-start callback, it executes the script with its directory as `cwd`, inherited stdio, and a detached process group. It saves `child.pid`, waits for spawn and readiness, logs the PID, and returns `{ pid }`. If startup or readiness fails, it terminates any child that began running before propagating the error.
+`start({ beforeStartOptions = {} } = {})` rejects if a managed process is already recorded. After passing `beforeStartOptions` to its configured pre-start callback, it executes the script with its directory as `cwd`, inherited stdio, and a detached process group. It saves `child.pid`, waits for spawn and readiness, logs the PID, and returns `{ pid }`. If startup or readiness fails, it terminates any child that began running before propagating the error. Image-generation restarts pass `{ preserveComfySystemCache: true }` through this object so cleanup uses Cache Monitor's partial VRAM release, with full `/free` fallback and browser notification if Cache Monitor fails. Initial starts and ordinary script switches use the default full ComfyUI cleanup.
 
 `stop()` requires a live saved PID. It sends `SIGTERM` to the complete process group and waits for the child exit event. If the first timeout expires, it sends `SIGKILL` and waits once more. Signal errors and a child that still does not exit are propagated explicitly. A successful stop clears the saved child and PID.
 

@@ -7,9 +7,13 @@ const {
     parseNarrativeScope,
     parseOutcomeAcknowledgement,
     parsePlayerActionDestination,
+    parsePlayerActionVehicleDestination,
+    parsePlayerActionDestinationChanges,
     parsePlayerActionDuration,
     parsePlayerActionAccompanyingCharacters,
+    parsePlayerActionCheckedActionActors,
     parsePlayerActionHiddenNotes,
+    parsePlayerActionMoreInfoOrNa,
     parsePlayerActionMovement,
     parsePlayerActionProseScope,
     parsePlayerActionRequiredProse,
@@ -28,6 +32,17 @@ function requireNonWhitespaceResponse(response, label = 'Tiny-brain checkpoint')
         throw new Error(`${label} requires a non-whitespace LLM response.`);
     }
     return response;
+}
+
+function buildParseRetryInstruction(error) {
+    const validationMessage = typeof error?.message === 'string' && error.message.trim()
+        ? error.message.trim()
+        : 'The response did not satisfy this checkpoint\'s parser.';
+    return [
+        'Your previous response failed validation. Correct it and answer the same checkpoint again.',
+        `Validation feedback: ${validationMessage}`,
+        'Return only what the checkpoint requests. Do not repeat any successful tool calls whose results are already present in the conversation.'
+    ].join('\n');
 }
 
 function parseAcceptOrReject(response) {
@@ -127,6 +142,26 @@ function cloneToolInvocation(invocation) {
         throw new Error('Tiny-brain continuation state contains an invalid tool invocation.');
     }
     return JSON.parse(JSON.stringify(invocation));
+}
+
+function getFailedToolInvocationMessage(toolInvocations) {
+    const failures = toolInvocations.filter(invocation => invocation?.metadata?.error === true);
+    if (!failures.length) {
+        return null;
+    }
+    const descriptions = failures.map((invocation, index) => {
+        const toolName = typeof invocation.name === 'string' && invocation.name.trim()
+            ? invocation.name.trim()
+            : `tool call ${index + 1}`;
+        const metadata = invocation.metadata;
+        const detail = typeof metadata.message === 'string' && metadata.message.trim()
+            ? metadata.message.trim()
+            : (typeof metadata.code === 'string' && metadata.code.trim()
+                ? `error code ${metadata.code.trim()}`
+                : 'the tool reported an error');
+        return `${toolName}: ${detail}`;
+    });
+    return `Tiny-brain completion contains ${failures.length} failed tool invocation${failures.length === 1 ? '' : 's'}: ${descriptions.join('; ')}`;
 }
 
 function createTinyBrainContinuationState() {
@@ -351,9 +386,13 @@ class TinyBrainPromptRunner {
             narrative_scope: parseNarrativeScope,
             outcome_acknowledgement: parseOutcomeAcknowledgement,
             player_action_destination: parsePlayerActionDestination,
+            player_action_vehicle_destination: parsePlayerActionVehicleDestination,
+            player_action_destination_changes: parsePlayerActionDestinationChanges,
             player_action_duration: parsePlayerActionDuration,
             player_action_accompanying_characters: parsePlayerActionAccompanyingCharacters,
+            player_action_checked_action_actors: parsePlayerActionCheckedActionActors,
             player_action_hidden_notes: parsePlayerActionHiddenNotes,
+            player_action_more_info_or_na: parsePlayerActionMoreInfoOrNa,
             player_action_movement: parsePlayerActionMovement,
             player_action_prose_scope: parsePlayerActionProseScope,
             player_action_required_prose: parsePlayerActionRequiredProse,
@@ -388,13 +427,17 @@ class TinyBrainPromptRunner {
         templateContext,
         renderState,
         programTemplateName = '_includes/player-action.tinybrain.njk',
-        continuationState = null
+        continuationState = null,
+        refreshContinuationBaseContext = false
     } = {}) {
         if (!renderState || typeof renderState !== 'object' || typeof renderState.runId !== 'string' || !renderState.runId.trim()) {
             throw new Error('TinyBrainPromptRunner requires its initial render state.');
         }
         if (continuationState !== null) {
             validateTinyBrainContinuationState(continuationState);
+        }
+        if (typeof refreshContinuationBaseContext !== 'boolean') {
+            throw new Error('TinyBrainPromptRunner refreshContinuationBaseContext must be a boolean.');
         }
         const progressGroupId = renderState.runId.trim();
         const runWithReservation = async () => LLMClient.withPromptQueueReservation(async (queueReservation) => (
@@ -411,7 +454,8 @@ class TinyBrainPromptRunner {
                         programTemplateName,
                         queueReservation,
                         progressGroupId,
-                        continuationState
+                        continuationState,
+                        refreshContinuationBaseContext
                     });
                     if (continuationState) {
                         continuationState.conversationMessages = result.conversationMessages.map(cloneMessage);
@@ -443,7 +487,8 @@ class TinyBrainPromptRunner {
         programTemplateName,
         queueReservation,
         progressGroupId,
-        continuationState
+        continuationState,
+        refreshContinuationBaseContext
     }) {
         if (typeof initialRenderedTemplate !== 'string' || !initialRenderedTemplate.trim()) {
             throw new Error('TinyBrainPromptRunner requires the initially rendered prompt template.');
@@ -471,7 +516,7 @@ class TinyBrainPromptRunner {
             throw new Error('Tiny-brain prompt contains more than one program start marker.');
         }
 
-        const fixedGenerationPrefix = initialGenerationPrompt.slice(0, programStartIndex);
+        let fixedGenerationPrefix = initialGenerationPrompt.slice(0, programStartIndex);
         let renderedProgram = initialGenerationPrompt.slice(
             programStartIndex + renderState.programStartMarker.length
         );
@@ -493,6 +538,14 @@ class TinyBrainPromptRunner {
         }
         if (messages[0].content.trim() !== systemPrompt) {
             throw new Error('Tiny-brain continuation system prompt changed between sequential runs.');
+        }
+        if (refreshContinuationBaseContext && continuationState?.conversationMessages?.length) {
+            const refreshed = this.#refreshContinuationBaseContext({
+                messages,
+                fixedGenerationPrefix
+            });
+            messages = refreshed.messages;
+            fixedGenerationPrefix = refreshed.fixedGenerationPrefix;
         }
         let logFilePath = continuationState?.logFilePath || null;
         const allToolInvocations = continuationState?.toolInvocations?.map(cloneToolInvocation) || [];
@@ -596,6 +649,53 @@ class TinyBrainPromptRunner {
                 recordProgressOutput: true
             };
         }
+    }
+
+    #refreshContinuationBaseContext({ messages, fixedGenerationPrefix }) {
+        const marker = LLMClient.getBaseContextEndMarker();
+        const freshParts = fixedGenerationPrefix.split(marker);
+        if (freshParts.length !== 2 || !freshParts[0].trim()) {
+            throw new Error(
+                'A refreshed tiny-brain continuation requires exactly one non-empty base-context prefix.'
+            );
+        }
+
+        let markerMessageIndex = -1;
+        let markerCount = 0;
+        for (let index = 0; index < messages.length; index += 1) {
+            const content = messages[index]?.content;
+            if (typeof content !== 'string' || !content.includes(marker)) {
+                continue;
+            }
+            markerCount += content.split(marker).length - 1;
+            markerMessageIndex = index;
+        }
+        if (markerCount !== 1 || markerMessageIndex < 0) {
+            throw new Error(
+                'A refreshed tiny-brain continuation transcript must contain exactly one base-context end marker.'
+            );
+        }
+
+        const markerMessage = messages[markerMessageIndex];
+        if (markerMessage?.role !== 'user') {
+            throw new Error('A refreshed tiny-brain continuation base context must be in a user message.');
+        }
+        const priorParts = markerMessage.content.split(marker);
+        if (priorParts.length !== 2 || !priorParts[0].trim() || !priorParts[1].trim()) {
+            throw new Error(
+                'A refreshed tiny-brain continuation marker requires non-empty base context and prompt content.'
+            );
+        }
+
+        const refreshedMessages = messages.map(cloneMessage);
+        refreshedMessages[markerMessageIndex] = {
+            ...refreshedMessages[markerMessageIndex],
+            content: `${freshParts[0]}${marker}${priorParts[1]}`
+        };
+        return {
+            messages: refreshedMessages,
+            fixedGenerationPrefix: freshParts[1]
+        };
     }
 
     #renderProgram({ programTemplateName, templateContext, renderState }) {
@@ -781,12 +881,16 @@ class TinyBrainPromptRunner {
         workingMessages.push({ role: 'user', content: trimmedPrompt });
         let currentLogPath = logFilePath;
         const toolInvocations = [];
+        const parserRetryState = Object.create(null);
 
         for (let attempt = 0; attempt <= this.retryAttempts; attempt += 1) {
+            const promptTextForAttempt = attempt === 0
+                ? trimmedPrompt
+                : workingMessages[workingMessages.length - 1]?.content;
             currentLogPath = this.#logPromptSegment({
                 logFilePath: currentLogPath,
                 systemPrompt,
-                promptText: trimmedPrompt,
+                promptText: promptTextForAttempt,
                 checkpoint,
                 attempt,
                 isFinal
@@ -839,9 +943,12 @@ class TinyBrainPromptRunner {
             if (!conversationMessages || !conversationMessages.length) {
                 throw new Error('Tiny-brain completion callback must return conversationMessages.');
             }
-            if (Array.isArray(completion.toolInvocations)) {
-                toolInvocations.push(...completion.toolInvocations);
-            }
+            const attemptToolInvocations = Array.isArray(completion.toolInvocations)
+                ? completion.toolInvocations.map(cloneToolInvocation)
+                : [];
+            toolInvocations.push(...attemptToolInvocations.filter(
+                invocation => invocation?.metadata?.error !== true
+            ));
 
             this.#logResponse({
                 logFilePath: currentLogPath,
@@ -852,10 +959,15 @@ class TinyBrainPromptRunner {
             });
 
             try {
+                const failedToolInvocationMessage = getFailedToolInvocationMessage(attemptToolInvocations);
+                if (failedToolInvocationMessage) {
+                    throw new Error(failedToolInvocationMessage);
+                }
                 const rawParsed = await parser(aiResponse, {
                     checkpoint: { ...checkpoint },
                     attempt,
                     isFinal,
+                    retryState: parserRetryState,
                     currentToolInvocations: toolInvocations.map(invocation => ({ ...invocation })),
                     toolInvocations: [
                         ...(Array.isArray(priorToolInvocations) ? priorToolInvocations : []),
@@ -902,6 +1014,10 @@ class TinyBrainPromptRunner {
                 workingMessages = this.#discardMalformedTerminalResponse({
                     conversationMessages,
                     aiResponse
+                });
+                workingMessages.push({
+                    role: 'user',
+                    content: buildParseRetryInstruction(error)
                 });
             }
         }

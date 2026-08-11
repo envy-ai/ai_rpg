@@ -394,6 +394,54 @@ class ComfyUIClient {
   }
 
   /**
+   * Release active model weights from VRAM while preserving Cache Monitor's
+   * RAM-backed model cache. If Cache Monitor is unavailable, fall back to
+   * ComfyUI's full /free cleanup and report that fallback to the caller.
+   * @returns {Promise<Object>} Cache Monitor or fallback response metadata
+   */
+  async releaseVram() {
+    let cacheMonitorError = null;
+    try {
+      const response = await axios.post(`${this.baseURL}/comfyui-cache-monitor/release_vram`, {}, {
+        timeout: this.timeout,
+        headers: {
+          'Content-Type': 'application/json'
+        }
+      });
+      if (response.data?.released !== true) {
+        throw new Error('ComfyUI Cache Monitor did not confirm that VRAM was released.');
+      }
+      return {
+        success: true,
+        fallbackUsed: false,
+        data: response.data
+      };
+    } catch (error) {
+      cacheMonitorError = new Error(
+        `Failed to ask ComfyUI Cache Monitor to release VRAM: ${error?.message || String(error)}`,
+        { cause: error }
+      );
+    }
+
+    let fallback;
+    try {
+      fallback = await this.unloadModels();
+    } catch (fallbackError) {
+      throw new AggregateError(
+        [cacheMonitorError, fallbackError],
+        'ComfyUI Cache Monitor VRAM release and the /free fallback both failed.'
+      );
+    }
+
+    return {
+      success: true,
+      fallbackUsed: true,
+      cacheMonitorError: cacheMonitorError.message,
+      data: fallback.data
+    };
+  }
+
+  /**
    * Remove this server's queued prompts and interrupt ComfyUI's active sampler.
    * Both requests are attempted so one failed cancellation does not suppress
    * the other.

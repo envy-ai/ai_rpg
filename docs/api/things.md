@@ -83,7 +83,7 @@ Response:
 Notes:
 - This is the authoritative mutation endpoint for the AI-backed item stack combiner. It revalidates all requested stacks before deleting anything.
 - The kept stack preserves its name, image, description, metadata, effects, value, and mechanics. Only its `count` changes.
-- Merge candidates must be item-type, unequipped, non-container stacks with the same quality/rarity and the same real holder: actor inventory, Thing container, or loose location.
+- Merge candidates must be item-type, unequipped, non-container stacks with the same quality/rarity, the same authoritative mechanics checksum, and the same real holder: actor inventory, Thing container, or loose location. The mechanics checksum deliberately ignores IDs, names, descriptive prose, images, timestamps, and quantity so an AI-approved cosmetic naming variant can merge, but it preserves structured type, effect, bonus, flag, value, weight, property, and mod-field differences. Validation finishes before any source stack is deleted.
 
 ## POST /api/mod-thing-context-actions/:actionId
 Execute a registered mod-owned Thing context-menu action.
@@ -185,7 +185,7 @@ Response:
 Notes:
 - Only things with `isContainer: true` can be opened.
 - `contents` contains item-type things held by the container; scenery containers can hold items, but scenery itself cannot be contained.
-- If the container has pending `containerContents` seeds, this route runs the dedicated `thing-generator-contents` prompt once, creates all listed contents as real item Things inside the container, clears the pending seeds, then returns the refreshed contents. Empty sentinels such as `empty`, `none`, or `n/a` and zero-count seeds are discarded during parsing/loading, so loaded empty containers return normally without firing that prompt.
+- If the container has pending `containerContents` seeds, this route runs the dedicated `thing-generator-contents` prompt, strictly parses its XML, and requires the exact pending name/count multiset. Invalid generated content is logged and the complete prompt/parse attempt is retried according to `ai.retryAttempts`; no Thing is created until validation succeeds. Success creates all listed contents as real item Things inside the container, clears the pending seeds, then returns the refreshed contents. Empty sentinels such as `empty`, `none`, or `n/a` and zero-count seeds are discarded during parsing/loading, so loaded empty containers return normally without firing that prompt.
 - This route remains the raw inventory fetch. Client UI calls the open-check route first for containers with `requiresCheckToOpen: true`.
 
 ## POST /api/things/:containerId/container/open-check
@@ -204,6 +204,7 @@ Notes:
 - The server renders the `player-action-open-container` prompt through base context, logs it with `LLMClient.logPrompt()` under `player_action_open_container`, sends regular prose information tools plus `resolveSkillCheck` / `resolveOpposedSkillCheck` in the LLM request payload even when prompt-level checks are enabled elsewhere, and fails loudly if no skill check was recorded. Including `<f>` or `<F>` in `actionText` strips that marker and opens a forced integer die-roll prompt for each skill-check tool call made while resolving the open attempt.
 - The prompt returns `<containerOpenResult><success>...</success><permanentlyOpened>...</permanentlyOpened><prose>...</prose><timePassed><duration>...</duration></timePassed></containerOpenResult>`. In TinyBrain mode, the retryable final parser verifies the single check invocation, tool identity, authoritative success value, failure/permanent-open consistency, and duration before the staged program can finish. The required `timePassed` duration advances world time before event checks and is passed into `Events.runEventChecks(...)` as `initialTimeProgress` so event-check `timePassed` / `time_passed` is only a fallback. Prose runs through the normal slop-removal pipeline, is stored visibly as a `player-action-open-container` chat entry, and then runs ordinary event checks. The `success` flag gates whether the client proceeds to `GET /api/things/:containerId/container`.
 - When `success` and `permanentlyOpened` are both true, the route persists `requiresCheckToOpen: false` on the container so future UI opens skip this check. Temporary successes should return `permanentlyOpened: false`.
+- The route's event-check pass ignores `alter_item` because the checked-open parser and route already own the authoritative container lock mutation. This prevents prose about the same unlock from launching a second AI alteration that can rewrite unrelated container fields; other event categories and the route's initial time progress still run normally.
 - Completed checked-open attempts run the standard autosave before returning, so the chat entry, elapsed time, event outcomes, and any cleared `requiresCheckToOpen` flag are durable.
 
 ## POST /api/things/:containerId/container/move-in
@@ -254,6 +255,7 @@ Response:
 
 Notes:
 - The route rejects non-item Things when `thingType` is present and not `item`.
+- Equipped items are rejected before any source-holder mutation; they must be unequipped first.
 - Moving an item into an inventory automatically merges it into an existing same-name/same-checksum stack owned by the destination actor. Containers and equipped items are excluded from automatic merging.
 
 ## POST /api/things/:id/drop
@@ -267,6 +269,7 @@ Response:
 - 400/404/500 with `{ success: false, error }`
 
 Notes:
+- Equipped items are rejected before inventory, container, or location state is changed; they must be unequipped first.
 - Dropping a contained Thing removes it from any containing Thing containers before adding it to the target location and clearing container ownership metadata.
 - Dropping an item-type Thing into a location automatically merges it into an existing loose same-name/same-checksum item stack in that location. Containers and equipped items are excluded from automatic merging.
 
@@ -281,6 +284,7 @@ Response:
 - 400/404/500 with `{ success: false, error }`
 
 Notes:
+- Equipped items are rejected before any owner or location is changed; they must be unequipped first.
 - Teleporting an item-type Thing to a location uses the same automatic loose-location stack merge as dropping.
 - The route removes the Thing from actor inventories and its previous metadata location. It does not use the drop route's containing-container detachment helper.
 

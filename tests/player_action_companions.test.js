@@ -4,7 +4,8 @@ const fs = require('node:fs');
 
 const {
     collectPlayerActionAccompanyingCharacters,
-    movePlayerActionAccompanyingCharacters
+    movePlayerActionAccompanyingCharacters,
+    normalizePlayerActionAccompanyingCharacterSelection
 } = require('../PlayerActionCompanions.js');
 
 function makeLocation(id, npcIds = []) {
@@ -130,6 +131,51 @@ test('player-action companion movement rejects unknown or unavailable characters
     );
     assert.equal(local.currentLocation, 'remote');
     assert.deepEqual(origin.npcIds, ['local']);
+    assert.deepEqual(destination.npcIds, []);
+});
+
+test('shared aliases do not block candidate collection and are rejected only when selected', () => {
+    const origin = makeLocation('origin', ['ash', 'frost']);
+    const destination = makeLocation('destination');
+    const ash = makeNpc('ash', 'QA Ash Beetle', 'origin', { aliases: ['Beetle'] });
+    const frost = makeNpc('frost', 'QA Frost Beetle', 'origin', { aliases: ['Beetle'] });
+    const currentPlayer = { id: 'player', getPartyMembers: () => [] };
+    const players = new Map([
+        ['ash', ash],
+        ['frost', frost]
+    ]);
+    const gameLocations = new Map([
+        [origin.id, origin],
+        [destination.id, destination]
+    ]);
+
+    const candidates = collectPlayerActionAccompanyingCharacters({
+        currentPlayer,
+        location: origin,
+        players
+    });
+    assert.deepEqual(candidates, [
+        { name: 'QA Ash Beetle', aliases: ['Beetle'] },
+        { name: 'QA Frost Beetle', aliases: ['Beetle'] }
+    ]);
+    assert.deepEqual(
+        normalizePlayerActionAccompanyingCharacterSelection(['QA Ash Beetle'], candidates),
+        ['QA Ash Beetle']
+    );
+    assert.throws(
+        () => movePlayerActionAccompanyingCharacters({
+            characterNames: ['Beetle'],
+            currentPlayer,
+            originLocation: origin,
+            destinationLocation: destination,
+            players,
+            gameLocations
+        }),
+        /identifier "Beetle" is ambiguous between "QA Ash Beetle" and "QA Frost Beetle"/i
+    );
+    assert.equal(ash.currentLocation, 'origin');
+    assert.equal(frost.currentLocation, 'origin');
+    assert.deepEqual(origin.npcIds, ['ash', 'frost']);
     assert.deepEqual(destination.npcIds, []);
 });
 

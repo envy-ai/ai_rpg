@@ -1,0 +1,180 @@
+{
+  "version": 1,
+  "name": "stealth-hidden-npcs",
+  "description": "Deterministic hidden-NPC baseline with one living concealed scout and one living visible decoy at March Start Marker.",
+  "createdAt": "2026-08-11T12:49:03.496Z",
+  "source": {
+    "setupCommand": "@@ QA FIXTURE SETUP ONLY. Create living QA Veiled Scout hidden at the player's location with alias Whisper and high stealth abilities, and visible QA Loud Decoy with low hiding ability; normalize exact mechanics through authoritative APIs.",
+    "saveName": "2026-08-11T12-47-37-203Z_Monster_Girl_Life_2026-06b-Baato-March_Start_Marker-char_2-msono1yr",
+    "saveType": "saves",
+    "settingName": "Monster Girl Life 2026-06b",
+    "playerName": "Baato"
+  },
+  "configProfile": "stealth-hidden-mechanics",
+  "requiredMods": [
+    "implants",
+    "modules",
+    "nsfw-boost",
+    "party-needs",
+    "scene-illustration"
+  ],
+  "worldTime": 663,
+  "entities": {
+    "playerId": "char_2",
+    "playerName": "Baato",
+    "baselineLocationId": "loc_39",
+    "baselineLocationName": "March Start Marker",
+    "isolationLocationId": "loc_30",
+    "isolationLocationName": "Stairwell",
+    "scoutId": "char_40",
+    "scoutName": "QA Veiled Scout",
+    "scoutAlias": "Whisper",
+    "decoyId": "char_41",
+    "decoyName": "QA Loud Decoy",
+    "hidingAttribute": "dexterity",
+    "hidingSkill": "Stealth",
+    "perceptionAttribute": "wisdom",
+    "perceptionSkill": "Perception"
+  },
+  "invariants": [
+    {
+      "type": "equals",
+      "source": "after",
+      "path": "player.payload.player.locationId",
+      "equals": "loc_39"
+    },
+    {
+      "type": "equals",
+      "source": "after",
+      "path": "calendar.payload.worldTime.timeMinutes",
+      "equals": 663
+    },
+    {
+      "type": "entityField",
+      "source": "after",
+      "collection": "players",
+      "id": "char_40",
+      "path": "name",
+      "equals": "QA Veiled Scout"
+    },
+    {
+      "type": "entityField",
+      "source": "after",
+      "collection": "players",
+      "id": "char_40",
+      "path": "locationId",
+      "equals": "loc_39"
+    },
+    {
+      "type": "entityField",
+      "source": "after",
+      "collection": "players",
+      "id": "char_40",
+      "path": "hiddenFromPlayer",
+      "equals": true
+    },
+    {
+      "type": "entityField",
+      "source": "after",
+      "collection": "players",
+      "id": "char_40",
+      "path": "aliases",
+      "equals": [
+        "Whisper"
+      ]
+    },
+    {
+      "type": "entityField",
+      "source": "after",
+      "collection": "players",
+      "id": "char_40",
+      "path": "attributes.dexterity",
+      "equals": 20
+    },
+    {
+      "type": "entityField",
+      "source": "after",
+      "collection": "players",
+      "id": "char_40",
+      "path": "skills.Stealth",
+      "equals": 20
+    },
+    {
+      "type": "entityField",
+      "source": "after",
+      "collection": "players",
+      "id": "char_40",
+      "path": "isDead",
+      "equals": false
+    },
+    {
+      "type": "entityField",
+      "source": "after",
+      "collection": "players",
+      "id": "char_41",
+      "path": "name",
+      "equals": "QA Loud Decoy"
+    },
+    {
+      "type": "entityField",
+      "source": "after",
+      "collection": "players",
+      "id": "char_41",
+      "path": "locationId",
+      "equals": "loc_39"
+    },
+    {
+      "type": "entityField",
+      "source": "after",
+      "collection": "players",
+      "id": "char_41",
+      "path": "hiddenFromPlayer",
+      "equals": false
+    },
+    {
+      "type": "entityField",
+      "source": "after",
+      "collection": "players",
+      "id": "char_41",
+      "path": "attributes.dexterity",
+      "equals": 1
+    },
+    {
+      "type": "entityField",
+      "source": "after",
+      "collection": "players",
+      "id": "char_41",
+      "path": "skills.Stealth",
+      "equals": 0
+    },
+    {
+      "type": "entityField",
+      "source": "after",
+      "collection": "players",
+      "id": "char_41",
+      "path": "isDead",
+      "equals": false
+    },
+    {
+      "type": "includes",
+      "source": "after",
+      "path": "currentLocation.payload.location.npcIds",
+      "value": "char_40"
+    },
+    {
+      "type": "includes",
+      "source": "after",
+      "path": "currentLocation.payload.location.npcIds",
+      "value": "char_41"
+    }
+  ],
+  "validation": {
+    "passed": true,
+    "scenario": "HIDE-fixture-setup plus HIDE-fixture-finalize",
+    "artifactDirectory": "tmp/followup-api-playtest/stealth-hidden/HIDE-fixture-finalize/attempt-1",
+    "assertionsPassed": 24,
+    "assertionsFailed": 0,
+    "notes": "The live setup attempt created both entities through @@ and normalized them; the state-only continuation corrected a capture-projection field name, revalidated all authoritative state, and saved without regenerating either NPC."
+  },
+  "integrity": "sha256:c8cedbb4c8a0a9d3da7cbcfd8e90af5cecc207459c46ee52e4815f3d23f2a03f"
+}

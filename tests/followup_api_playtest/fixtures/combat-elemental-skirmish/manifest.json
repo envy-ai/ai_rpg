@@ -1,0 +1,228 @@
+{
+  "version": 1,
+  "name": "combat-elemental-skirmish",
+  "description": "Canonical broader-combat fixture with Baato, two isolated hostile elemental beetles, one isolated friendly shield fighter, one fire area item, and one healing item at Ember Hollow Outskirts.",
+  "createdAt": "2026-08-10T19:41:45.986Z",
+  "source": {
+    "setupCommand": "@@ QA FIXTURE SETUP ONLY. Create QA Ash Beetle, QA Frost Beetle, QA Shieldhand (alias Bulwark), QA Fire Bomb, and QA Bandage at the player location; make Ash fire-vulnerable, Frost fire-resistant, both beetles hostile, and Shieldhand friendly. Do not overwrite generated abilities. Automatic NPC inventory generation was disabled. After successful setup, give only the two requested items to Baato and relocate pre-existing QA Quartermaster and QA Merin to loc_1 so Shieldhand is the sole eligible friendly combat NPC.",
+    "saveName": "2026-08-10T19-40-06-741Z_Monster_Girl_Life_2026-06b-Baato-Ember_Hollow_Outskirts-char_2-msnmyo5x",
+    "saveType": "saves",
+    "settingName": "Monster Girl Life 2026-06b",
+    "playerName": "Baato"
+  },
+  "configProfile": "combat-mechanics",
+  "requiredMods": [
+    "implants",
+    "modules",
+    "nsfw-boost",
+    "party-needs",
+    "scene-illustration"
+  ],
+  "worldTime": {
+    "dayIndex": 0,
+    "timeMinutes": 658
+  },
+  "entities": {
+    "playerId": "char_2",
+    "locationId": "loc_5",
+    "isolationLocationId": "loc_1",
+    "ashBeetleId": "char_34",
+    "frostBeetleId": "char_35",
+    "shieldhandId": "char_36",
+    "fireBombId": "thing_274",
+    "bandageId": "thing_275",
+    "relocatedQuartermasterId": "char_9",
+    "relocatedMerinId": "char_20"
+  },
+  "invariants": [
+    {
+      "type": "equals",
+      "source": "after",
+      "path": "player.payload.player.locationId",
+      "equals": "loc_5"
+    },
+    {
+      "type": "equals",
+      "source": "after",
+      "path": "player.payload.player.health",
+      "equals": 39
+    },
+    {
+      "type": "equals",
+      "source": "after",
+      "path": "currentLocation.payload.location.npcIds",
+      "equals": [
+        "char_34",
+        "char_35",
+        "char_36"
+      ]
+    },
+    {
+      "type": "equals",
+      "source": "after",
+      "path": "calendar.payload.worldTime.timeMinutes",
+      "equals": 658
+    },
+    {
+      "type": "entityField",
+      "collection": "players",
+      "id": "char_34",
+      "path": "health",
+      "equals": 35
+    },
+    {
+      "type": "entityField",
+      "collection": "players",
+      "id": "char_34",
+      "path": "isHostileToPlayer",
+      "equals": true
+    },
+    {
+      "type": "entityField",
+      "collection": "players",
+      "id": "char_34",
+      "path": "vulnerabilities",
+      "equals": "fire"
+    },
+    {
+      "type": "entityArrayObjectCount",
+      "collection": "players",
+      "id": "char_34",
+      "path": "abilities",
+      "where": {
+        "name": "Sulfur Bite",
+        "type": "Active"
+      },
+      "equals": 1
+    },
+    {
+      "type": "entityField",
+      "collection": "players",
+      "id": "char_35",
+      "path": "health",
+      "equals": 35
+    },
+    {
+      "type": "entityField",
+      "collection": "players",
+      "id": "char_35",
+      "path": "isHostileToPlayer",
+      "equals": true
+    },
+    {
+      "type": "entityField",
+      "collection": "players",
+      "id": "char_35",
+      "path": "resistances",
+      "equals": "fire"
+    },
+    {
+      "type": "entityArrayObjectCount",
+      "collection": "players",
+      "id": "char_35",
+      "path": "abilities",
+      "where": {
+        "name": "Ozone Snap",
+        "type": "Active"
+      },
+      "equals": 1
+    },
+    {
+      "type": "entityField",
+      "collection": "players",
+      "id": "char_36",
+      "path": "isHostileToPlayer",
+      "equals": false
+    },
+    {
+      "type": "entityField",
+      "collection": "players",
+      "id": "char_36",
+      "path": "aliases",
+      "equals": [
+        "Bulwark"
+      ]
+    },
+    {
+      "type": "entityArrayObjectCount",
+      "collection": "players",
+      "id": "char_36",
+      "path": "abilities",
+      "where": {
+        "name": "Shield Bash",
+        "type": "Active"
+      },
+      "equals": 1
+    },
+    {
+      "type": "entityField",
+      "collection": "players",
+      "id": "char_9",
+      "path": "locationId",
+      "equals": "loc_1"
+    },
+    {
+      "type": "entityField",
+      "collection": "players",
+      "id": "char_20",
+      "path": "locationId",
+      "equals": "loc_1"
+    },
+    {
+      "type": "entityField",
+      "collection": "things",
+      "id": "thing_274",
+      "path": "metadata.ownerId",
+      "equals": "char_2"
+    },
+    {
+      "type": "entityField",
+      "collection": "things",
+      "id": "thing_274",
+      "path": "causeStatusEffectOnTarget.name",
+      "equals": "Burn"
+    },
+    {
+      "type": "entityField",
+      "collection": "things",
+      "id": "thing_275",
+      "path": "metadata.ownerId",
+      "equals": "char_2"
+    },
+    {
+      "type": "entityField",
+      "collection": "things",
+      "id": "thing_275",
+      "path": "causeStatusEffectOnTarget.name",
+      "equals": "Healed"
+    },
+    {
+      "type": "entityArrayObjectCount",
+      "collection": "players",
+      "id": "char_2",
+      "path": "inventory",
+      "where": {
+        "id": "thing_274",
+        "count": 1
+      },
+      "equals": 1
+    },
+    {
+      "type": "entityArrayObjectCount",
+      "collection": "players",
+      "id": "char_2",
+      "path": "inventory",
+      "where": {
+        "id": "thing_275",
+        "count": 1
+      },
+      "equals": 1
+    }
+  ],
+  "validation": {
+    "passed": true,
+    "checkedAt": "2026-08-10T19:40:06.741Z",
+    "evidence": "Corrected setup attempt-2 contains eight successful requested mutations and no failed mutation; thing count increased by exactly two; the two give calls and two isolation teleports returned HTTP 200; the final saved API snapshot proves all listed entity, location, inventory, hostility, elemental, ability, health, and world-time invariants."
+  },
+  "integrity": "sha256:da118144f2c9a91b89eefaf6da275dfec9281da8ad1452d814c7ce9a017d0d89"
+}

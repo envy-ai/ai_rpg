@@ -135,7 +135,7 @@ test('ai item combiner response parser rejects duplicate ids across groups', () 
     `), /appeared in more than one/);
 });
 
-test('item combiner merge validation requires item stacks from same holder and quality', () => {
+test('item combiner merge validation requires item stacks with identical mechanics from same holder and quality', () => {
     const { validateItemCombinerMergeSet } = loadCombinerHelpers();
     const contexts = new Map([
         ['thing-a', { owner: { id: 'player-1' }, container: null, location: { id: 'loc-1' } }],
@@ -147,12 +147,13 @@ test('item combiner merge validation requires item stacks from same holder and q
         ['thing-g', { owner: { id: 'player-1' }, container: { id: 'chest-2' }, location: { id: 'loc-1' } }]
     ]);
     const resolver = thing => contexts.get(thing.id);
-    const keep = { id: 'thing-a', name: 'Torch', thingType: 'item', rarity: 'common', isContainer: false, isEquipped: false };
-    const mergeable = { id: 'thing-b', name: 'Lamp', thingType: 'item', rarity: 'common', isContainer: false, isEquipped: false };
+    const keep = { id: 'thing-a', name: 'Torch', thingType: 'item', rarity: 'common', isContainer: false, isEquipped: false, combinerMechanicsChecksum: 'mechanics-a' };
+    const mergeable = { id: 'thing-b', name: 'Lamp', thingType: 'item', rarity: 'common', isContainer: false, isEquipped: false, combinerMechanicsChecksum: 'mechanics-a' };
 
     const result = validateItemCombinerMergeSet(keep, [mergeable], resolver);
     assert.equal(result.holderKey, 'owner:player-1');
     assert.equal(result.qualityKey, 'common');
+    assert.equal(result.mechanicsChecksum, 'mechanics-a');
 
     const containedResult = validateItemCombinerMergeSet(
         { ...keep, id: 'thing-e' },
@@ -164,6 +165,10 @@ test('item combiner merge validation requires item stacks from same holder and q
     assert.throws(() => validateItemCombinerMergeSet(keep, [
         { ...mergeable, id: 'thing-d', rarity: 'rare' }
     ], resolver), /same quality/);
+
+    assert.throws(() => validateItemCombinerMergeSet(keep, [
+        { ...mergeable, id: 'thing-d', combinerMechanicsChecksum: 'mechanics-b' }
+    ], resolver), /identical authoritative mechanics/);
 
     assert.throws(() => validateItemCombinerMergeSet(keep, [
         { ...mergeable, id: 'thing-c' }

@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "name": "combat-player-only",
+  "description": "Runs isolated player-action combat mechanics and event checks with all scheduled NPC turn slots disabled.",
+  "extends": "isolated-base",
+  "values": {
+    "event_checks.enabled": true,
+    "plausibility_checks.enabled": true,
+    "use_legacy_prompt_checks": false,
+    "healthRegenPercentPerMinute": 0,
+    "omit_item_generation": true
+  }
+}

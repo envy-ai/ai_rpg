@@ -2,6 +2,9 @@ const Utils = require('./Utils.js');
 const {
     normalizePlayerActionAccompanyingCharacterSelection
 } = require('./PlayerActionCompanions.js');
+const {
+    resolvePlayerActionDestinationContext
+} = require('./PlayerActionDestinationContext.js');
 
 const PLAYER_ACTION_MOVEMENT = Object.freeze({
     NONE: 'none',
@@ -98,17 +101,34 @@ function normalizeAuthoritativeDestination(value) {
     }
     requirePlainObject(value, 'Authoritative player travel destination');
     const destination = normalizeDestination(value, 'Authoritative player travel destination');
-    const rawMinutes = value.travelTimeMinutes;
-    if (rawMinutes === null || rawMinutes === undefined) {
-        return { destination, duration: null };
-    }
-    const minutes = Number(rawMinutes);
-    if (!Number.isInteger(minutes) || minutes < 0) {
-        throw new Error('Authoritative player travel time must be a non-negative integer when provided.');
-    }
     return {
         destination,
-        duration: minutes > 0 ? { text: `${minutes} minutes`, minutes } : null
+        source: value
+    };
+}
+
+function resolveCanonicalPlayerDestination({ destination, source, templateContext }) {
+    const resolver = templateContext.playerActionDestinationContextResolver
+        || resolvePlayerActionDestinationContext;
+    if (typeof resolver !== 'function') {
+        throw new TypeError('Player-action destination context resolver must be a function.');
+    }
+    const destinationContext = resolver(source || destination, {
+        originLocationId: templateContext.playerActionOriginLocationId || null,
+        currentWorldMinutes: templateContext.playerActionWorldTimeMinutes
+    });
+    if (!destinationContext || typeof destinationContext !== 'object' || Array.isArray(destinationContext)) {
+        throw new Error('Player-action destination context resolver returned an invalid result.');
+    }
+    return {
+        destination: destinationContext.resolved
+            ? {
+                location: destinationContext.locationName,
+                region: destinationContext.regionName
+            }
+            : destination,
+        duration: destinationContext.travelDuration,
+        destinationContext
     };
 }
 
@@ -140,6 +160,13 @@ function validateMovementAndVehicle({ movement, vehicleDecision, currentVehicle 
         && vehicleDecision !== PLAYER_ACTION_VEHICLE_DECISION.UNCHANGED
     ) {
         throw new Error('Moving inside a vehicle cannot change vehicle state.');
+    }
+    if (
+        movement === PLAYER_ACTION_MOVEMENT.INSIDE_VEHICLE
+        && currentVehicle?.vehicleKind !== 'location'
+        && currentVehicle?.vehicleKind !== 'region'
+    ) {
+        throw new Error('Moving inside a vehicle requires currentVehicle.vehicleKind to be location or region.');
     }
     if (
         movement === PLAYER_ACTION_MOVEMENT.DISEMBARK
@@ -230,7 +257,8 @@ function buildMoveTurnResult({
     movement,
     vehicleDecision,
     authoritativePlayerDestination,
-    allowedAccompanyingCharacters
+    allowedAccompanyingCharacters,
+    templateContext
 }) {
     if (!Array.isArray(assignments.proseScopes) || !assignments.proseScopes.length) {
         throw new Error('Move-turn result requires at least one prose scope.');
@@ -253,21 +281,52 @@ function buildMoveTurnResult({
         requireNonEmptyString(proseByScope[scope], `Move-turn ${scope} prose`);
     }
 
-    const playerMoves = movement !== PLAYER_ACTION_MOVEMENT.NONE;
+    const movesWithinSingleLocationVehicle = movement === PLAYER_ACTION_MOVEMENT.INSIDE_VEHICLE
+        && currentVehicle?.vehicleKind === 'location';
+    const playerChangesLocation = movement !== PLAYER_ACTION_MOVEMENT.NONE
+        && !movesWithinSingleLocationVehicle;
     let playerDestination = null;
     let playerDuration = null;
-    if (playerMoves) {
+    if (movesWithinSingleLocationVehicle) {
+        if (
+            assignments.playerDestination !== undefined
+            || assignments.playerTravelDuration !== undefined
+            || assignments.accompanyingCharacters !== undefined
+        ) {
+            throw new Error(
+                'Movement within a single-location vehicle must not provide a player destination, travel duration, or accompanying-character selection.'
+            );
+        }
+    } else if (playerChangesLocation) {
         if (authoritativePlayerDestination) {
-            playerDestination = authoritativePlayerDestination.destination;
-            playerDuration = authoritativePlayerDestination.duration;
+            const resolved = resolveCanonicalPlayerDestination({
+                destination: authoritativePlayerDestination.destination,
+                source: authoritativePlayerDestination.source,
+                templateContext
+            });
+            playerDestination = resolved.destination;
+            playerDuration = resolved.duration;
         } else {
-            playerDestination = normalizeDestination(assignments.playerDestination, 'Player destination');
+            const parsedDestination = normalizeDestination(assignments.playerDestination, 'Player destination');
+            const resolved = resolveCanonicalPlayerDestination({
+                destination: parsedDestination,
+                source: parsedDestination,
+                templateContext
+            });
+            playerDestination = resolved.destination;
+            playerDuration = resolved.duration;
+        }
+        if (playerDuration) {
+            if (assignments.playerTravelDuration !== undefined) {
+                throw new Error('Parsed player travel duration must be absent when travel time was resolved programmatically.');
+            }
+        } else {
             playerDuration = normalizeDuration(assignments.playerTravelDuration, 'Player travel duration', {
                 minimumMinutes: 1
             });
         }
     }
-    const accompanyingCharacters = playerMoves
+    const accompanyingCharacters = playerChangesLocation
         ? normalizePlayerActionAccompanyingCharacterSelection(
             assignments.accompanyingCharacters,
             allowedAccompanyingCharacters
@@ -363,7 +422,8 @@ function buildPlayerActionTinyBrainResult({ assignments, templateContext } = {})
         movement,
         vehicleDecision,
         authoritativePlayerDestination,
-        allowedAccompanyingCharacters: templateContext.playerActionAccompanyingCharacters || []
+        allowedAccompanyingCharacters: templateContext.playerActionAccompanyingCharacters || [],
+        templateContext
     });
 }
 

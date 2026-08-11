@@ -27,6 +27,7 @@ function baseMoveAssignments(overrides = {}) {
 function vehicleContext(overrides = {}) {
     return {
         currentVehicle: {
+            vehicleKind: 'region',
             name: 'The Shuttle & Star',
             destination: 'Old Port',
             vehicleInfo: {
@@ -83,6 +84,38 @@ test('player-action TinyBrain result builder uses authoritative player travel me
     assert.equal(root.getElementsByTagName('region')[0].textContent, 'Canonical City');
     assert.equal(root.getElementsByTagName('travelTime')[0].textContent, '12 minutes');
     assert.equal(root.getElementsByTagName('hidden')[0].textContent, 'The gate guard noticed the player.');
+});
+
+test('player-action TinyBrain result builder uses canonical programmatic destination time', () => {
+    const destinationContextResolver = () => ({
+        resolved: true,
+        locationName: 'Canonical Square',
+        regionName: 'Canonical City',
+        travelDuration: { text: '0 minutes', minutes: 0 }
+    });
+    const xml = buildPlayerActionTinyBrainResult({
+        assignments: baseMoveAssignments({
+            playerTravelDuration: undefined
+        }),
+        templateContext: {
+            currentVehicle: null,
+            playerActionDestinationContextResolver: destinationContextResolver
+        }
+    });
+
+    assert.match(xml, /<location>Canonical Square<\/location>/);
+    assert.match(xml, /<region>Canonical City<\/region>/);
+    assert.match(xml, /<travelTime>0 minutes<\/travelTime>/);
+    assert.throws(
+        () => buildPlayerActionTinyBrainResult({
+            assignments: baseMoveAssignments(),
+            templateContext: {
+                currentVehicle: null,
+                playerActionDestinationContextResolver: destinationContextResolver
+            }
+        }),
+        /must be absent when travel time was resolved programmatically/i
+    );
 });
 
 test('player-action TinyBrain result builder requires a consistent authoritative movement type', () => {
@@ -258,6 +291,45 @@ test('player-action TinyBrain result builder omits vehicleInfo for inside moves 
         assert.doesNotMatch(xml, /<vehicleInfo>/);
         assert.match(xml, /<playerDestination>/);
     }
+});
+
+test('player-action TinyBrain result builder keeps movement within a location vehicle onboard', () => {
+    const xml = buildPlayerActionTinyBrainResult({
+        assignments: baseMoveAssignments({
+            movementKind: 'inside_vehicle',
+            vehicleDecision: 'unchanged',
+            playerDestination: undefined,
+            playerTravelDuration: undefined,
+            accompanyingCharacters: undefined,
+            proseScopes: ['destination'],
+            originProse: undefined,
+            destinationProse: 'You reach the driver booth without leaving the tram.'
+        }),
+        templateContext: vehicleContext({
+            vehicleKind: 'location',
+            vehicleInfo: { isUnderway: true, hasArrived: false }
+        })
+    });
+
+    assert.equal(parse(xml).tagName, 'moveTurnResult');
+    assert.doesNotMatch(xml, /<vehicleInfo>/);
+    assert.doesNotMatch(xml, /<playerDestination>/);
+    assert.doesNotMatch(xml, /<accompanyingCharacters>/);
+    assert.match(xml, /<destinationProse>/);
+
+    assert.throws(
+        () => buildPlayerActionTinyBrainResult({
+            assignments: baseMoveAssignments({
+                movementKind: 'inside_vehicle',
+                vehicleDecision: 'unchanged'
+            }),
+            templateContext: vehicleContext({
+                vehicleKind: 'location',
+                vehicleInfo: { isUnderway: true, hasArrived: false }
+            })
+        }),
+        /must not provide a player destination, travel duration, or accompanying-character selection/
+    );
 });
 
 test('player-action TinyBrain result builder rejects contradictory branch state', () => {

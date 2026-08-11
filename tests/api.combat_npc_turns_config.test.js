@@ -44,3 +44,24 @@ test('combat NPC turns can run when regular NPC turns are disabled', () => {
     assert.ok(enabledGateIndex !== -1, 'NPC-turn enabled gate not found');
     assert.ok(combatEnabledIndex < enabledGateIndex, 'combat enabled flag must be applied before the shared enabled gate');
 });
+
+test('TinyBrain NPC turns pre-resolve attacks before staged narration', () => {
+    const npcAttackBlock = extractBlock(
+        apiSource,
+        'let attackCheck = null;',
+        'const attackOutcome = attackContext?.outcome || null;'
+    );
+
+    assert.match(
+        npcAttackBlock,
+        /tinyBrainNpcActionEnabled\s*=\s*isTinyBrainPromptEnabled\(Globals\.config\?\.ai,\s*'npc_action'\)/
+    );
+    assert.match(
+        npcAttackBlock,
+        /shouldPreResolveNpcAttack\s*=\s*Globals\.config\?\.use_legacy_prompt_checks\s*===\s*true\s*\|\|\s*tinyBrainNpcActionEnabled/
+    );
+    assert.match(npcAttackBlock, /if \(shouldPreResolveNpcAttack\) \{/);
+    assert.match(npcAttackBlock, /attackCheck\s*=\s*await runAttackCheckPrompt\(/);
+    assert.match(npcAttackBlock, /allowWhenLegacyChecksDisabled:\s*tinyBrainNpcActionEnabled/);
+    assert.match(npcAttackBlock, /attackContext\s*=\s*buildAttackContextForActor\(/);
+});

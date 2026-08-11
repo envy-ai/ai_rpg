@@ -369,6 +369,49 @@ test('parseRegionStubLocations normalizes explicit zero-minute exits to 1 minute
     }
 });
 
+test('parseRegionStubLocations rejects malformed region XML instead of returning an empty blueprint', () => {
+    const parseRegionStubLocations = loadParseRegionStubLocations();
+    const malformedXml = `
+<region>
+  <regionDescription>A frozen borderland.
+  <locations>
+    <location>
+      <name>North Gate</name>
+      <description>An icebound gate.</description>
+    </location>
+  </locations>
+</region>`;
+
+    assert.throws(
+        () => parseRegionStubLocations(malformedXml),
+        /Failed to parse region stub XML strictly/i
+    );
+});
+
+test('parseRegionStubLocations rejects a well-formed region with no location entries', () => {
+    const parseRegionStubLocations = loadParseRegionStubLocations();
+
+    assert.throws(
+        () => parseRegionStubLocations('<region><locations></locations></region>'),
+        /at least one direct <locations><location> entry/i
+    );
+});
+
+test('pending-region generation uses parser-guided retries before consuming the blueprint', () => {
+    const source = fs.readFileSync(require.resolve('../server.js'), 'utf8');
+    const start = source.indexOf('async function expandRegionEntryStub(stubLocation) {');
+    const end = source.indexOf('\nfunction assertRegionEntryFinalizationIntegrity({', start);
+    assert(start >= 0 && end > start, 'Unable to locate expandRegionEntryStub in server.js');
+    const expansionSource = source.slice(start, end);
+
+    assert.match(expansionSource, /runPromptWithParseRetries\(\{/);
+    assert.match(expansionSource, /maxAttempts:\s*resolveConfiguredPromptMaxAttempts\(config\?\.ai/);
+    assert.match(expansionSource, /parse:\s*responseText\s*=>\s*\{[\s\S]*parseRegionStubLocations\(responseText\)/);
+    assert.match(expansionSource, /retainRejectedResponse:\s*false/);
+    assert.match(expansionSource, /buildRetryInstruction:\s*error\s*=>/);
+    assert.doesNotMatch(expansionSource, /Region stub generation returned no locations/);
+});
+
 test('parseRegionExitsResponse parses stubRegion travel times into integer minutes', () => {
     const previousConfig = Globals.config;
     Globals.config = { ...(Globals.config || {}), strictXMLParsing: true };

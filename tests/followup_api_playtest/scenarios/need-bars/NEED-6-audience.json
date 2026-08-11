@@ -1,0 +1,543 @@
+{
+  "version": 1,
+  "scenario": "need-bars",
+  "case": "NEED-6-audience",
+  "description": "Compare player, current-party, and non-party need endpoint audiences, then isolate the live prompt to the player and prove TinyBrain changes only that listed actor's applicable Mana bar.",
+  "fixture": "need-bars-status-lifecycle",
+  "configProfile": "need-bars-mechanics",
+  "trackedPaths": [
+    "player.payload.player.locationId",
+    "player.payload.player.needBars",
+    "player.payload.player.statusEffects",
+    "player.payload.player.inventory",
+    "players.payload.players",
+    "calendar.payload.worldTime.timeMinutes",
+    "history.payload"
+  ],
+  "steps": [
+    {
+      "type": "loadFixture"
+    },
+    {
+      "type": "request",
+      "name": "player_needs",
+      "method": "GET",
+      "route": "/api/player/needs"
+    },
+    {
+      "type": "assert",
+      "assertions": [
+        {
+          "type": "httpStatus",
+          "equals": 200
+        },
+        {
+          "type": "responseOk",
+          "equals": true
+        },
+        {
+          "type": "equals",
+          "source": "responses.player_needs",
+          "path": "payload.player.id",
+          "equals": "$fixture.playerId"
+        },
+        {
+          "type": "equals",
+          "source": "responses.player_needs",
+          "path": "payload.audience",
+          "equals": {
+            "player": true,
+            "party": false,
+            "nonParty": false
+          }
+        },
+        {
+          "type": "count",
+          "source": "responses.player_needs",
+          "path": "payload.needs",
+          "equals": 4
+        },
+        {
+          "type": "uniqueBy",
+          "source": "responses.player_needs",
+          "path": "payload.needs",
+          "key": "id"
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "responses.player_needs",
+          "path": "payload.needs",
+          "where": {
+            "id": "food"
+          },
+          "equals": 1
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "responses.player_needs",
+          "path": "payload.needs",
+          "where": {
+            "id": "rest"
+          },
+          "equals": 1
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "responses.player_needs",
+          "path": "payload.needs",
+          "where": {
+            "id": "stamina"
+          },
+          "equals": 1
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "responses.player_needs",
+          "path": "payload.needs",
+          "where": {
+            "id": "mana"
+          },
+          "equals": 1
+        }
+      ]
+    },
+    {
+      "type": "request",
+      "name": "companion_needs",
+      "method": "GET",
+      "route": "/api/npcs/$fixture.companionId/needs"
+    },
+    {
+      "type": "assert",
+      "assertions": [
+        {
+          "type": "httpStatus",
+          "equals": 200
+        },
+        {
+          "type": "responseOk",
+          "equals": true
+        },
+        {
+          "type": "equals",
+          "source": "responses.companion_needs",
+          "path": "payload.npc.id",
+          "equals": "$fixture.companionId"
+        },
+        {
+          "type": "equals",
+          "source": "responses.companion_needs",
+          "path": "payload.audience",
+          "equals": {
+            "player": false,
+            "party": true,
+            "nonParty": false
+          }
+        },
+        {
+          "type": "count",
+          "source": "responses.companion_needs",
+          "path": "payload.needs",
+          "equals": 3
+        },
+        {
+          "type": "uniqueBy",
+          "source": "responses.companion_needs",
+          "path": "payload.needs",
+          "key": "id"
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "responses.companion_needs",
+          "path": "payload.needs",
+          "where": {
+            "id": "food"
+          },
+          "equals": 1
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "responses.companion_needs",
+          "path": "payload.needs",
+          "where": {
+            "id": "rest"
+          },
+          "equals": 1
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "responses.companion_needs",
+          "path": "payload.needs",
+          "where": {
+            "id": "stamina"
+          },
+          "equals": 1
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "responses.companion_needs",
+          "path": "payload.needs",
+          "where": {
+            "id": "mana"
+          },
+          "equals": 0
+        }
+      ]
+    },
+    {
+      "type": "request",
+      "name": "courier_needs",
+      "method": "GET",
+      "route": "/api/npcs/$fixture.nonPartyNpcId/needs"
+    },
+    {
+      "type": "assert",
+      "assertions": [
+        {
+          "type": "httpStatus",
+          "equals": 200
+        },
+        {
+          "type": "responseOk",
+          "equals": true
+        },
+        {
+          "type": "equals",
+          "source": "responses.courier_needs",
+          "path": "payload.npc.id",
+          "equals": "$fixture.nonPartyNpcId"
+        },
+        {
+          "type": "equals",
+          "source": "responses.courier_needs",
+          "path": "payload.audience",
+          "equals": {
+            "player": false,
+            "party": false,
+            "nonParty": true
+          }
+        },
+        {
+          "type": "count",
+          "source": "responses.courier_needs",
+          "path": "payload.needs",
+          "equals": 2
+        },
+        {
+          "type": "uniqueBy",
+          "source": "responses.courier_needs",
+          "path": "payload.needs",
+          "key": "id"
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "responses.courier_needs",
+          "path": "payload.needs",
+          "where": {
+            "id": "stamina"
+          },
+          "equals": 1
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "responses.courier_needs",
+          "path": "payload.needs",
+          "where": {
+            "id": "mana"
+          },
+          "equals": 1
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "responses.courier_needs",
+          "path": "payload.needs",
+          "where": {
+            "id": "food"
+          },
+          "equals": 0
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "responses.courier_needs",
+          "path": "payload.needs",
+          "where": {
+            "id": "rest"
+          },
+          "equals": 0
+        }
+      ]
+    },
+    {
+      "type": "request",
+      "name": "remove_companion",
+      "method": "DELETE",
+      "route": "/api/player/party",
+      "body": {
+        "ownerId": "$fixture.playerId",
+        "memberId": "$fixture.companionId"
+      }
+    },
+    {
+      "type": "request",
+      "name": "relocate_companion",
+      "method": "POST",
+      "route": "/api/npcs/$fixture.companionId/teleport",
+      "body": {
+        "locationId": "$fixture.isolationLocationId",
+        "accountTravelTime": false
+      }
+    },
+    {
+      "type": "request",
+      "name": "relocate_courier",
+      "method": "POST",
+      "route": "/api/npcs/$fixture.nonPartyNpcId/teleport",
+      "body": {
+        "locationId": "$fixture.isolationLocationId",
+        "accountTravelTime": false
+      }
+    },
+    {
+      "type": "request",
+      "name": "cap_stamina",
+      "method": "PUT",
+      "route": "/api/player/needs",
+      "body": {
+        "needs": [
+          {
+            "id": "stamina",
+            "value": 1000
+          }
+        ]
+      }
+    },
+    {
+      "type": "assert",
+      "assertions": [
+        {
+          "type": "httpStatus",
+          "equals": 200
+        },
+        {
+          "type": "responseOk",
+          "equals": true
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "responses.cap_stamina",
+          "path": "payload.applied",
+          "where": {
+            "id": "stamina",
+            "value": 1000
+          },
+          "equals": 1
+        }
+      ]
+    },
+    {
+      "type": "snapshot",
+      "name": "before_action"
+    },
+    {
+      "type": "chat",
+      "name": "cast_minor_spell",
+      "text": "I cast exactly one minor spell over exactly one minute while otherwise remaining still, then stop. I perform no other action.",
+      "travel": false,
+      "interactive": {
+        "roll": null,
+        "questAccepted": false,
+        "confirmed": false
+      }
+    },
+    {
+      "type": "assert",
+      "assertions": [
+        {
+          "type": "httpStatus",
+          "equals": 200
+        },
+        {
+          "type": "responseOk",
+          "equals": true
+        },
+        {
+          "type": "exactDelta",
+          "beforeSource": "snapshots.before_action",
+          "afterSource": "after",
+          "path": "calendar.payload.worldTime.timeMinutes",
+          "delta": 1
+        },
+        {
+          "type": "equals",
+          "source": "after",
+          "path": "player.payload.player.locationId",
+          "equals": "$fixture.baselineLocationId"
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "responses.cast_minor_spell",
+          "path": "payload.debug.eventStructured.parsed.needbar_change",
+          "where": {
+            "character": "$fixture.playerName",
+            "bar": "mana",
+            "direction": "decrease",
+            "magnitude": "small"
+          },
+          "equals": 1
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "responses.cast_minor_spell",
+          "path": "payload.debug.eventStructured.parsed.needbar_change",
+          "where": {
+            "character": "$fixture.companionName"
+          },
+          "equals": 0
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "responses.cast_minor_spell",
+          "path": "payload.debug.eventStructured.parsed.needbar_change",
+          "where": {
+            "character": "$fixture.nonPartyNpcName"
+          },
+          "equals": 0
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "after",
+          "path": "player.payload.player.needBars",
+          "where": {
+            "id": "food",
+            "value": 599.3
+          },
+          "equals": 1
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "after",
+          "path": "player.payload.player.needBars",
+          "where": {
+            "id": "rest",
+            "value": 400.4
+          },
+          "equals": 1
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "after",
+          "path": "player.payload.player.needBars",
+          "where": {
+            "id": "stamina",
+            "value": 1000
+          },
+          "equals": 1
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "after",
+          "path": "player.payload.player.needBars",
+          "where": {
+            "id": "mana",
+            "value": 510
+          },
+          "equals": 1
+        },
+        {
+          "type": "entityArrayObjectCount",
+          "source": "after",
+          "collection": "players",
+          "id": "$fixture.companionId",
+          "path": "needBars",
+          "where": {
+            "id": "stamina",
+            "value": 650
+          },
+          "equals": 1
+        },
+        {
+          "type": "entityArrayObjectCount",
+          "source": "after",
+          "collection": "players",
+          "id": "$fixture.companionId",
+          "path": "needBars",
+          "where": {
+            "id": "mana"
+          },
+          "equals": 0
+        },
+        {
+          "type": "entityArrayObjectCount",
+          "source": "after",
+          "collection": "players",
+          "id": "$fixture.nonPartyNpcId",
+          "path": "needBars",
+          "where": {
+            "id": "stamina",
+            "value": 950
+          },
+          "equals": 1
+        },
+        {
+          "type": "entityArrayObjectCount",
+          "source": "after",
+          "collection": "players",
+          "id": "$fixture.nonPartyNpcId",
+          "path": "needBars",
+          "where": {
+            "id": "mana",
+            "value": 510
+          },
+          "equals": 1
+        },
+        {
+          "type": "historyAddedTypeCount",
+          "entryType": "player-action",
+          "equals": 1,
+          "beforeSource": "snapshots.before_action",
+          "afterSource": "after"
+        },
+        {
+          "type": "historyAddedTypeCount",
+          "entryType": "event-summary",
+          "equals": 1,
+          "beforeSource": "snapshots.before_action",
+          "afterSource": "after"
+        },
+        {
+          "type": "historyAddedNestedObjectCount",
+          "entryWhere": {
+            "type": "event-summary"
+          },
+          "path": "summaryItems",
+          "where": {
+            "sourceType": "need_bar_change",
+            "metadata": {
+              "needBarChange": {
+                "actorId": "$fixture.playerId",
+                "needBarId": "mana",
+                "delta": -100,
+                "direction": "decrease",
+                "magnitude": "small",
+                "max": 1000
+              }
+            }
+          },
+          "equals": 1,
+          "beforeSource": "snapshots.before_action",
+          "afterSource": "after"
+        },
+        {
+          "type": "noRealtimeErrors"
+        },
+        {
+          "type": "noUnexpectedErrorLogs"
+        }
+      ]
+    },
+    {
+      "type": "humanReviewNote",
+      "text": "Confirm the prose contains exactly one minor spell by Baato, no action by the relocated NPCs, and no second player action. Review the need_bar_event_checks prompt log to confirm Characters at location and Characters in party are empty after relocation; Baato remains the implicit player actor through playerAction/textToCheck and the player needs in base context."
+    }
+  ]
+}

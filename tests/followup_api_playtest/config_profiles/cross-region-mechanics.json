@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "name": "cross-region-mechanics",
+  "description": "Runs player-action movement, pending-region expansion, travel-time backfill, and event extraction without unrelated quest or background prompts.",
+  "extends": "isolated-base",
+  "values": {
+    "event_checks.enabled": true,
+    "plausibility_checks.enabled": true
+  }
+}

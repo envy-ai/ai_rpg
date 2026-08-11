@@ -70,7 +70,7 @@ this.buildSlopRemoverPromptData = buildSlopRemoverPromptData;`,
 
 function loadRunAttackPrecheck() {
     const source = fs.readFileSync(require.resolve('../api.js'), 'utf8');
-    const start = source.indexOf('        async function runAttackPrecheck({ actionText }) {');
+    const start = source.indexOf('        async function runAttackPrecheck({ actionText, allowWhenLegacyChecksDisabled = false }) {');
     const end = source.indexOf('\n        const BAREHANDED_KEYWORDS = new Set([', start);
     if (start < 0 || end < 0) {
         throw new Error('Unable to locate runAttackPrecheck in api.js');
@@ -249,5 +249,18 @@ test('attack precheck is skipped when legacy prompt checks are disabled', async 
     });
 
     assert.equal(result, false);
+    assert.equal(runtime.wasRenderCalled(), false);
+});
+
+test('attack precheck can be explicitly enabled for TinyBrain NPC attack resolution', async () => {
+    const runtime = loadRunAttackPrecheck();
+    runtime.setPromptUsesCaching(true);
+
+    const result = await runtime.runAttackPrecheck({
+        actionText: 'Kira attacks the Frost Slug with Ember Breath.',
+        allowWhenLegacyChecksDisabled: true
+    });
+
+    assert.equal(result, true);
     assert.equal(runtime.wasRenderCalled(), false);
 });

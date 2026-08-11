@@ -1,0 +1,101 @@
+{
+  "version": 1,
+  "name": "vehicle-underway-eastbound",
+  "description": "VEH-7 canonical fixed-route QA Clockwork Tram fixture: Baato and Mizore are aboard while the tram is underway from QA West Platform to QA East Platform.",
+  "createdAt": "2026-08-10T18:13:10.495Z",
+  "source": {
+    "setupCommand": "@@ QA FIXTURE SETUP ONLY. Create a location stub named QA West Platform connected to the player's current location. Create a vehicle location stub named QA Clockwork Tram with vehicle type rail tram and connect QA West Platform to it. Create a second fixed-route destination named QA East Platform and connect it to the tram's route. Create a portable item named QA Brass Travel Case at QA West Platform. Do not move the player. Return canonical names and IDs for all locations, exits, and the item.",
+    "saveName": "2026-08-09T01-59-52-503Z_Monster_Girl_Life_2026-06b-Baato-QA_Clockwork_Tram-char_2-msl5ncfr",
+    "saveType": "saves",
+    "settingName": "Monster Girl Life 2026-06b",
+    "playerName": "Baato"
+  },
+  "configProfile": "vehicle-mechanics",
+  "requiredMods": [
+    "implants",
+    "modules",
+    "nsfw-boost",
+    "party-needs",
+    "scene-illustration"
+  ],
+  "worldTime": {
+    "dayIndex": 0,
+    "timeMinutes": 659
+  },
+  "entities": {
+    "playerId": "char_2",
+    "operatorId": "char_27",
+    "regionId": "region_1",
+    "westPlatformId": "loc_34",
+    "tramId": "loc_35",
+    "eastPlatformId": "loc_36",
+    "vehicleExitId": "exit_65",
+    "carrierId": "char_21",
+    "travelCaseId": "thing_202"
+  },
+  "invariants": [
+    {
+      "type": "equals",
+      "source": "after",
+      "path": "player.payload.player.locationId",
+      "equals": "loc_35"
+    },
+    {
+      "type": "equals",
+      "source": "after",
+      "path": "currentLocation.payload.location.vehicleInfo.pendingDestination.locationId",
+      "equals": "loc_36"
+    },
+    {
+      "type": "equals",
+      "source": "after",
+      "path": "currentLocation.payload.location.vehicleInfo.destinations",
+      "equals": [
+        "loc_34",
+        "loc_36"
+      ]
+    },
+    {
+      "type": "equals",
+      "source": "after",
+      "path": "currentLocation.payload.location.vehicleInfo.isUnderway",
+      "equals": true
+    },
+    {
+      "type": "equals",
+      "source": "after",
+      "path": "calendar.payload.worldTime.timeMinutes",
+      "equals": 659
+    },
+    {
+      "type": "entityField",
+      "source": "after",
+      "collection": "players",
+      "id": "char_27",
+      "path": "locationId",
+      "equals": "loc_35"
+    },
+    {
+      "type": "entityField",
+      "source": "after",
+      "collection": "players",
+      "id": "char_21",
+      "path": "locationId",
+      "equals": "loc_35"
+    },
+    {
+      "type": "entityField",
+      "source": "after",
+      "collection": "things",
+      "id": "thing_202",
+      "path": "metadata.ownerId",
+      "equals": "char_21"
+    }
+  ],
+  "validation": {
+    "passed": true,
+    "checkedAt": "2026-08-10T18:13:00.000Z",
+    "evidence": "The preserved failing VEH-7 attempt captured all listed IDs, fixed-route state, world time, operator presence, and unchanged before/after mechanics through the live API."
+  },
+  "integrity": "sha256:c3a1d8a456f5bbeacdbef714216fb81a48379b0c767eefee6bdebb5d1530c10b"
+}

@@ -1,0 +1,259 @@
+{
+  "version": 1,
+  "scenario": "stealth-hidden",
+  "case": "HIDE-5-attack-reveal",
+  "description": "A living hidden NPC must reveal immediately when its precommitted attack resolves, even when the forced attack roll misses and applies no damage.",
+  "fixture": "stealth-hidden-npcs",
+  "configProfile": "stealth-hidden-mechanics",
+  "trackedPaths": [
+    "player.payload.player.health",
+    "player.payload.player.locationId",
+    "players.payload.players",
+    "currentLocation.payload.location.npcIds",
+    "history.payload",
+    "calendar.payload.worldTime.timeMinutes"
+  ],
+  "steps": [
+    {
+      "type": "loadFixture"
+    },
+    {
+      "type": "request",
+      "name": "prepare_hidden_scout_attack",
+      "method": "PUT",
+      "route": "/api/npcs/$fixture.scoutId",
+      "body": {
+        "hiddenFromPlayer": true,
+        "attributes": {
+          "strength": 1,
+          "dexterity": 1,
+          "intelligence": 1
+        },
+        "skills": {
+          "Melee Combat": 0,
+          "Ranged Combat": 0,
+          "Magic": 0,
+          "Stealth": 0
+        },
+        "aiNotes": "QA test continuity: QA Veiled Scout has already volunteered to make exactly one controlled surprise attack against Baato when he gives the agreed signal. This is her own precommitted action, not a player order. She begins hidden, attacks once, becomes plainly visible through the attack, and remains visibly present at the marker through the end of the response. She does not fade, hide again, retreat, move away, or take a second action. Resolve QA Veiled Scout as attacker and Baato as defender. Follow the attack result exactly: if it is a miss, the attack makes no contact with Baato, his clothes, or his gear; do not turn a miss into a skim, brush, graze, light hit, or harmless contact."
+      }
+    },
+    {
+      "type": "request",
+      "name": "isolate_decoy",
+      "method": "POST",
+      "route": "/api/npcs/$fixture.decoyId/teleport",
+      "body": {
+        "locationId": "$fixture.isolationLocationId",
+        "accountTravelTime": false
+      }
+    },
+    {
+      "type": "request",
+      "name": "isolate_courier",
+      "method": "POST",
+      "route": "/api/npcs/char_37/teleport",
+      "body": {
+        "locationId": "$fixture.isolationLocationId",
+        "accountTravelTime": false
+      }
+    },
+    {
+      "type": "assert",
+      "assertions": [
+        {
+          "type": "httpStatus",
+          "equals": 200
+        },
+        {
+          "type": "responseOk",
+          "equals": true
+        },
+        {
+          "type": "equals",
+          "source": "responses.prepare_hidden_scout_attack",
+          "path": "payload.npc.hiddenFromPlayer",
+          "equals": true
+        },
+        {
+          "type": "equals",
+          "source": "responses.prepare_hidden_scout_attack",
+          "path": "payload.npc.attributes.strength",
+          "equals": 1
+        },
+        {
+          "type": "equals",
+          "source": "responses.prepare_hidden_scout_attack",
+          "path": "payload.npc.skills.Melee Combat",
+          "equals": 0
+        },
+        {
+          "type": "entityField",
+          "source": "after",
+          "collection": "players",
+          "id": "$fixture.scoutId",
+          "path": "locationId",
+          "equals": "$fixture.baselineLocationId"
+        },
+        {
+          "type": "entityField",
+          "source": "after",
+          "collection": "players",
+          "id": "$fixture.decoyId",
+          "path": "locationId",
+          "equals": "$fixture.isolationLocationId"
+        },
+        {
+          "type": "entityField",
+          "source": "after",
+          "collection": "players",
+          "id": "char_37",
+          "path": "locationId",
+          "equals": "$fixture.isolationLocationId"
+        }
+      ]
+    },
+    {
+      "type": "snapshot",
+      "name": "before_hidden_attack"
+    },
+    {
+      "type": "chat",
+      "name": "hidden_scout_misses",
+      "text": "<1> I give the agreed signal and remain still while hidden QA Veiled Scout voluntarily performs the one controlled surprise attack she already promised. She is the attacker and Baato is the defender. Resolve exactly one attack by QA Veiled Scout against Baato and follow its result exactly. If the result is a miss, the attack makes no contact with Baato, his clothes, or his gear; do not describe a skim, brush, graze, light hit, or harmless contact. Her attack reveals her, and she remains plainly visible and at the marker through the end of the response; she does not fade, hide again, retreat, or move away. I do not attack, move, search, use an item, direct her action, or perform any second action.",
+      "travel": false,
+      "interactive": {
+        "roll": null,
+        "questAccepted": false,
+        "confirmed": false
+      }
+    },
+    {
+      "type": "assert",
+      "assertions": [
+        {
+          "type": "httpStatus",
+          "equals": 200
+        },
+        {
+          "type": "responseOk",
+          "equals": true
+        },
+        {
+          "type": "count",
+          "source": "responses.hidden_scout_misses",
+          "path": "payload.toolInvocations",
+          "equals": 1
+        },
+        {
+          "type": "attackResultCount",
+          "source": "responses.hidden_scout_misses",
+          "path": "payload.toolInvocations",
+          "where": {
+            "attacker": "$fixture.scoutName",
+            "targetId": "$fixture.playerId",
+            "targetName": "$fixture.playerName",
+            "hit": false,
+            "die": 1
+          },
+          "equals": 1
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "responses.hidden_scout_misses",
+          "path": "payload.toolInvocations",
+          "where": {
+            "name": "resolveAttack",
+            "metadata": {
+              "attacker": "$fixture.scoutName",
+              "defender": "$fixture.playerName",
+              "locationRefreshRequested": true
+            }
+          },
+          "equals": 1
+        },
+        {
+          "type": "equals",
+          "source": "responses.hidden_scout_misses",
+          "path": "payload.locationRefreshRequested",
+          "equals": true
+        },
+        {
+          "type": "equals",
+          "source": "responses.hidden_scout_misses",
+          "path": "payload.checkResultsRecorded",
+          "equals": true
+        },
+        {
+          "type": "entityField",
+          "source": "after",
+          "collection": "players",
+          "id": "$fixture.scoutId",
+          "path": "hiddenFromPlayer",
+          "equals": false
+        },
+        {
+          "type": "entityField",
+          "source": "after",
+          "collection": "players",
+          "id": "$fixture.scoutId",
+          "path": "isDead",
+          "equals": false
+        },
+        {
+          "type": "entityField",
+          "source": "after",
+          "collection": "players",
+          "id": "$fixture.scoutId",
+          "path": "locationId",
+          "equals": "$fixture.baselineLocationId"
+        },
+        {
+          "type": "equals",
+          "source": "after",
+          "path": "player.payload.player.health",
+          "equalsFrom": {
+            "source": "snapshots.before_hidden_attack",
+            "path": "player.payload.player.health"
+          }
+        },
+        {
+          "type": "includes",
+          "source": "after",
+          "path": "currentLocation.payload.location.npcIds",
+          "value": "$fixture.scoutId"
+        },
+        {
+          "type": "historyAddedTypeCount",
+          "entryType": "check-results",
+          "equals": 1,
+          "beforeSource": "snapshots.before_hidden_attack",
+          "afterSource": "after"
+        },
+        {
+          "type": "historyAddedTypeCount",
+          "entryType": "player-action",
+          "equals": 1,
+          "beforeSource": "snapshots.before_hidden_attack",
+          "afterSource": "after"
+        },
+        {
+          "type": "historyAddedTypeCount",
+          "entryType": "event-summary",
+          "equals": 1,
+          "beforeSource": "snapshots.before_hidden_attack",
+          "afterSource": "after"
+        },
+        {
+          "type": "noRealtimeErrors"
+        },
+        {
+          "type": "noUnexpectedErrorLogs"
+        }
+      ]
+    }
+  ],
+  "humanReview": [
+    "The prose should portray exactly one attack by QA Veiled Scout against Baato, reveal her through that attack, leave her visibly present at the marker, and follow the authoritative miss with no contact, damage, or defeat. Baato must not attack, move, search, use an item, or take a second action. This is human review only; do not encode prose wording checks."
+  ]
+}
