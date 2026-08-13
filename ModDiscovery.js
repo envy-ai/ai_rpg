@@ -19,14 +19,24 @@ function assertBaseDir(baseDir, functionName) {
 }
 
 function isValidModDirectoryEntry(entry, modsDir) {
-    if (!entry?.isDirectory?.()) {
-        return false;
-    }
+    if (!entry) return false;
     if (entry.name.startsWith('.') || IGNORED_MOD_DIRECTORY_NAMES.has(entry.name)) {
         return false;
     }
 
     const modDir = path.join(modsDir, entry.name);
+    if (!entry.isDirectory()) {
+        if (!entry.isSymbolicLink()) return false;
+
+        let targetStats;
+        try {
+            targetStats = fs.statSync(modDir);
+        } catch (error) {
+            throw new Error(`Failed to resolve symlinked mod directory mods/${entry.name}: ${error.message}`);
+        }
+        if (!targetStats.isDirectory()) return false;
+    }
+
     const modJsPath = path.join(modDir, 'mod.js');
     const defsDir = path.join(modDir, 'defs');
     const hasDefsDir = fs.existsSync(defsDir) && fs.statSync(defsDir).isDirectory();

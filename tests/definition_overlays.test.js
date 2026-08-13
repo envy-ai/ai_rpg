@@ -160,6 +160,90 @@ test('ModLoader treats defs-only directories as valid mods', () => {
     }
 });
 
+test('ModLoader discovers and loads symlinked mod directories', () => {
+    const rootDir = makeTempGameDir();
+
+    try {
+        writeFile(rootDir, 'linked-mod-target/mod.js', `
+module.exports = {
+  register(scope) {
+    scope.registerBaseContextContributor(() => 'symlinked-mod-loaded');
+  }
+};
+`);
+        fs.mkdirSync(path.join(rootDir, 'mods'), { recursive: true });
+        fs.symlinkSync(
+            path.join(rootDir, 'linked-mod-target'),
+            path.join(rootDir, 'mods', 'linked_mod'),
+            'dir'
+        );
+
+        const registry = new ModExtensionRegistry();
+        const loader = new ModLoader(rootDir);
+        assert.deepEqual(loader.getModDirectories(), ['linked_mod']);
+
+        const results = loader.loadMods({ modExtensionRegistry: registry });
+        assert.deepEqual(results.loaded, ['linked_mod']);
+        assert.equal(results.failed.length, 0);
+        assert.deepEqual(
+            registry.collectBaseContextContributions({}).map(entry => entry.value),
+            ['symlinked-mod-loaded']
+        );
+    } finally {
+        clearFrozenEnabledModManifests(rootDir);
+        fs.rmSync(rootDir, { recursive: true, force: true });
+    }
+});
+
+test('ModLoader applies defs overlays from symlinked mod directories', () => {
+    const rootDir = makeTempGameDir();
+
+    try {
+        writeFile(rootDir, 'defs/example.yaml', 'value: [base]\n');
+        writeFile(rootDir, 'linked-defs-target/defs/example.yaml', 'value: [linked]\n');
+        fs.mkdirSync(path.join(rootDir, 'mods'), { recursive: true });
+        fs.symlinkSync(
+            path.join(rootDir, 'linked-defs-target'),
+            path.join(rootDir, 'mods', 'linked_defs'),
+            'dir'
+        );
+
+        assert.deepEqual(getOverlayModDirectories(rootDir), ['linked_defs']);
+        const { value } = loadMergedDefinitionFile({
+            baseDir: rootDir,
+            filename: 'example.yaml'
+        });
+        assert.deepEqual(JSON.parse(JSON.stringify(value)), {
+            value: ['base', 'linked']
+        });
+    } finally {
+        clearFrozenEnabledModManifests(rootDir);
+        fs.rmSync(rootDir, { recursive: true, force: true });
+    }
+});
+
+test('ModLoader reports broken mod directory symlinks explicitly', () => {
+    const rootDir = makeTempGameDir();
+
+    try {
+        fs.mkdirSync(path.join(rootDir, 'mods'), { recursive: true });
+        fs.symlinkSync(
+            path.join(rootDir, 'missing-mod-target'),
+            path.join(rootDir, 'mods', 'broken_mod'),
+            'dir'
+        );
+
+        const loader = new ModLoader(rootDir);
+        assert.throws(
+            () => loader.getModDirectories(),
+            /Failed to resolve symlinked mod directory mods\/broken_mod/
+        );
+    } finally {
+        clearFrozenEnabledModManifests(rootDir);
+        fs.rmSync(rootDir, { recursive: true, force: true });
+    }
+});
+
 test('ModLoader supports mods that provide both mod.js hooks and defs overlays', () => {
     const rootDir = makeTempGameDir();
 

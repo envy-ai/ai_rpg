@@ -24,6 +24,7 @@ Mod directories live under `mods/`. A valid mod directory contains `mod.js`, `de
 Discovery is delegated to `ModDiscovery`:
 
 - Hidden directories and `mods/node_modules` are ignored.
+- Directory symlinks are followed and use the symlink basename as the mod name. Broken or unresolvable mod-directory symlinks fail discovery with an explicit error.
 - Valid mod manifests are sorted alphabetically by directory name.
 - `config.mods.<name>.enabled` takes precedence over `mods/<name>/config.json` `enabled`.
 - Missing enabled flags are treated as enabled.

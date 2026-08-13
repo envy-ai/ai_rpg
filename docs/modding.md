@@ -4,6 +4,8 @@
 
 `ModDiscovery` treats each non-hidden subdirectory of `mods/` as a valid mod when it contains `mod.js`, `defs/`, or both. `mods/node_modules` is ignored.
 
+Directory symlinks under `mods/` are supported and follow the same discovery and enablement rules. The symlink basename is the mod name; a broken or unresolvable mod-directory symlink raises a startup/discovery error instead of being silently ignored.
+
 - Runtime mods export `register(scope)` from `mod.js`.
 - Defs-only mods provide `defs/*.yaml` overlays and do not receive a registration scope.
 - Hybrid mods use both paths: runtime hooks register through `mod.js`, and defs overlays merge through `DefinitionLoader`.
