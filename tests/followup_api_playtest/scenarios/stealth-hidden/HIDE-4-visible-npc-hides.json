@@ -168,28 +168,23 @@
           "equals": true
         },
         {
-          "type": "count",
-          "source": "responses.observe_hiding_demo",
-          "path": "payload.toolInvocations",
-          "equals": 1
-        },
-        {
           "type": "arrayObjectCount",
           "source": "responses.observe_hiding_demo",
-          "path": "payload.toolInvocations",
+          "path": "payload.hiddenNpcChecks",
           "where": {
-            "name": "resolveOpposedSkillCheck",
-            "metadata": {
-              "actor": "$fixture.decoyName",
-              "opponent": "$fixture.playerName",
-              "actionResolution": {
-                "success": true,
-                "skill": "Stealth",
-                "opponent": {
-                  "id": "$fixture.playerId",
-                  "name": "$fixture.playerName",
-                  "skill": "Perception"
-                }
+            "action": "hide_visible_npc",
+            "actorId": "$fixture.decoyId",
+            "opponentId": "$fixture.playerId",
+            "success": true,
+            "resolution": {
+              "skill": "Stealth",
+              "roll": {
+                "die": 20
+              },
+              "opponent": {
+                "id": "$fixture.playerId",
+                "name": "$fixture.playerName",
+                "skill": "Perception"
               }
             }
           },

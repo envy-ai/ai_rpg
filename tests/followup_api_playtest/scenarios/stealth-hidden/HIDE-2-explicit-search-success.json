@@ -167,29 +167,21 @@
           "equals": true
         },
         {
-          "type": "count",
-          "source": "responses.explicit_search",
-          "path": "payload.toolInvocations",
-          "equals": 1
-        },
-        {
           "type": "arrayObjectCount",
           "source": "responses.explicit_search",
-          "path": "payload.toolInvocations",
+          "path": "payload.hiddenNpcChecks",
           "where": {
-            "name": "resolveOpposedSkillCheck",
-            "metadata": {
-              "actor": "player",
-              "opponent": "$fixture.scoutName",
-              "actionResolution": {
-                "success": true,
-                "roll": {
-                  "die": 20
-                },
-                "opponent": {
-                  "id": "$fixture.scoutId",
-                  "name": "$fixture.scoutName"
-                }
+            "action": "reveal_hidden_npc",
+            "actorId": "$fixture.playerId",
+            "opponentId": "$fixture.scoutId",
+            "success": true,
+            "resolution": {
+              "roll": {
+                "die": 20
+              },
+              "opponent": {
+                "id": "$fixture.scoutId",
+                "name": "$fixture.scoutName"
               }
             }
           },

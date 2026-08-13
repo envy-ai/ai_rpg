@@ -576,6 +576,160 @@ function parsePlayerActionAccompanyingCharacters(response, allowedCharacters = [
     );
 }
 
+function parsePlayerActionHiddenContests(response, hiddenContestContext = {}) {
+    const { xml, root } = parseStrictXml(response, 'player-action hidden contests');
+    if (normalizedTagName(root) !== 'hiddencontests') {
+        throw new Error('Player-action hidden contests must use <hiddenContests> as its document root.');
+    }
+    rejectUnexpectedDirectChildren(root, ['contest'], 'Player-action hidden contests');
+    if (directTextContent(root)) {
+        throw new Error('Player-action hidden contests cannot contain text outside <contest> elements.');
+    }
+
+    if (!hiddenContestContext || typeof hiddenContestContext !== 'object' || Array.isArray(hiddenContestContext)) {
+        throw new TypeError('Player-action hidden contests require a character context object.');
+    }
+    const player = hiddenContestContext.player;
+    const npcs = hiddenContestContext.npcs;
+    if (!player || typeof player !== 'object' || Array.isArray(player)) {
+        throw new TypeError('Player-action hidden contests require a player descriptor.');
+    }
+    if (!Array.isArray(npcs)) {
+        throw new TypeError('Player-action hidden contests require an NPC descriptor array.');
+    }
+
+    const requireCharacterDescriptor = (descriptor, label) => {
+        if (!descriptor || typeof descriptor !== 'object' || Array.isArray(descriptor)) {
+            throw new TypeError(`${label} must be a character descriptor.`);
+        }
+        if (typeof descriptor.id !== 'string' || !descriptor.id.trim()) {
+            throw new Error(`${label} requires a non-empty id.`);
+        }
+        if (typeof descriptor.name !== 'string' || !descriptor.name.trim()) {
+            throw new Error(`${label} requires a non-empty name.`);
+        }
+        if (descriptor.aliases !== undefined && !Array.isArray(descriptor.aliases)) {
+            throw new TypeError(`${label} aliases must be an array when provided.`);
+        }
+        return {
+            id: descriptor.id.trim(),
+            name: descriptor.name.trim(),
+            aliases: Array.isArray(descriptor.aliases)
+                ? descriptor.aliases.map((alias, index) => {
+                    if (typeof alias !== 'string' || !alias.trim()) {
+                        throw new Error(`${label} alias ${index + 1} must be a non-empty string.`);
+                    }
+                    return alias.trim();
+                })
+                : [],
+            isNPC: descriptor.isNPC === true,
+            hiddenFromPlayer: descriptor.hiddenFromPlayer === true
+        };
+    };
+
+    const canonicalPlayer = requireCharacterDescriptor(player, 'Hidden-contest player');
+    if (canonicalPlayer.isNPC) {
+        throw new Error('Hidden-contest player descriptor cannot be an NPC.');
+    }
+    const canonicalNpcs = npcs.map((npc, index) => {
+        const canonical = requireCharacterDescriptor(npc, `Hidden-contest NPC ${index + 1}`);
+        if (!canonical.isNPC) {
+            throw new Error(`Hidden-contest NPC "${canonical.name}" must be marked as an NPC.`);
+        }
+        return canonical;
+    });
+
+    const identifiers = new Map();
+    const registerIdentifier = (identifier, character) => {
+        const key = identifier.trim().toLowerCase();
+        const matches = identifiers.get(key) || [];
+        if (!matches.some(match => match.id === character.id)) {
+            matches.push(character);
+        }
+        identifiers.set(key, matches);
+    };
+    for (const character of [canonicalPlayer, ...canonicalNpcs]) {
+        registerIdentifier(character.name, character);
+        for (const alias of character.aliases) {
+            registerIdentifier(alias, character);
+        }
+    }
+    for (const playerAlias of ['player', 'the player', 'you']) {
+        registerIdentifier(playerAlias, canonicalPlayer);
+    }
+    const resolveCharacter = (identifier, label) => {
+        const matches = identifiers.get(identifier.trim().toLowerCase()) || [];
+        if (!matches.length) {
+            throw new Error(`${label} "${identifier}" is not an eligible local character name or alias.`);
+        }
+        if (matches.length > 1) {
+            throw new Error(`${label} "${identifier}" is ambiguous between ${matches.map(match => match.name).join(' and ')}.`);
+        }
+        return matches[0];
+    };
+
+    const contests = [];
+    const seen = new Set();
+    for (const [index, contestNode] of directChildrenByTagName(root, 'contest').entries()) {
+        const label = `Player-action hidden contest ${index + 1}`;
+        rejectUnexpectedDirectChildren(contestNode, ['action', 'actor', 'opponent'], label);
+        if (directTextContent(contestNode)) {
+            throw new Error(`${label} cannot contain text outside its named fields.`);
+        }
+        const requirePlainField = tagName => {
+            const field = requireSingleDirectChild(contestNode, tagName, label);
+            if (directChildElements(field.node).length) {
+                throw new Error(`${label} <${tagName}> must contain plain text only.`);
+            }
+            return field.text;
+        };
+        const actionText = requirePlainField('action').toLowerCase();
+        if (actionText !== 'reveal' && actionText !== 'hide') {
+            throw new Error(`${label} <action> must be exactly reveal or hide.`);
+        }
+        const actorText = requirePlainField('actor');
+        const opponentText = requirePlainField('opponent');
+        const actor = resolveCharacter(actorText, `${label} actor`);
+        const opponent = resolveCharacter(opponentText, `${label} opponent`);
+        if (actor.id === opponent.id) {
+            throw new Error(`${label} actor and opponent cannot be the same character.`);
+        }
+
+        if (actionText === 'reveal') {
+            if (actor.id !== canonicalPlayer.id) {
+                throw new Error(`${label} reveal actor must be the current player.`);
+            }
+            if (!opponent.isNPC || opponent.hiddenFromPlayer !== true) {
+                throw new Error(`${label} reveal opponent must be a currently hidden local NPC.`);
+            }
+        } else {
+            if (!actor.isNPC || actor.hiddenFromPlayer === true) {
+                throw new Error(`${label} hide actor must be a currently visible local NPC.`);
+            }
+            if (opponent.id !== canonicalPlayer.id) {
+                throw new Error(`${label} hide opponent must be the current player.`);
+            }
+        }
+
+        const key = `${actionText}:${actor.id}:${opponent.id}`;
+        if (seen.has(key)) {
+            throw new Error(`${label} duplicates an earlier hidden contest.`);
+        }
+        seen.add(key);
+        contests.push({
+            action: actionText === 'reveal' ? 'reveal_hidden_npc' : 'hide_visible_npc',
+            actorId: actor.id,
+            actorName: actor.name,
+            opponentId: opponent.id,
+            opponentName: opponent.name,
+            npcId: actionText === 'reveal' ? opponent.id : actor.id,
+            npcName: actionText === 'reveal' ? opponent.name : actor.name
+        });
+    }
+
+    return { value: contests, normalizedResponse: xml };
+}
+
 function parsePlayerActionRequiredProse(response) {
     const normalized = normalizePlainResponse(response, 'player-action prose');
     rejectPlayerActionResultMarkup(normalized, 'Player-action prose', { rejectHidden: true });
@@ -1824,6 +1978,7 @@ module.exports = {
     parsePlayerActionExplicitDuration,
     parsePlayerActionDuration,
     parsePlayerActionAccompanyingCharacters,
+    parsePlayerActionHiddenContests,
     parsePlayerActionHiddenNotes,
     parsePlayerActionMoreInfoOrNa,
     parsePlayerActionMovement,

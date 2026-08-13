@@ -13739,11 +13739,9 @@ class Events {
                         continue;
                     }
 
-                    if (entry?.useOpposedCheck !== false) {
-                        if (!player) {
-                            throw new Error("reveal_hidden_npc requires a current player for opposed checks.");
-                        }
-                        const preResolved = this._consumeMatchingPreResolvedHiddenNpcCheck({
+                    let preResolved = null;
+                    if (player) {
+                        preResolved = this._consumeMatchingPreResolvedHiddenNpcCheck({
                             context,
                             actor: player,
                             opponent: npc,
@@ -13752,6 +13750,11 @@ class Events {
                             opponentAttribute: settings.hidingAttribute,
                             opponentSkill: settings.hidingSkill,
                         });
+                    }
+                    if (preResolved || entry?.useOpposedCheck !== false) {
+                        if (!player) {
+                            throw new Error("reveal_hidden_npc requires a current player for opposed checks.");
+                        }
                         const resolution = preResolved || this._runHiddenNpcOpposedCheck({
                             actor: player,
                             opponent: npc,

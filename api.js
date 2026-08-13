@@ -72,7 +72,9 @@ const {
 } = require('./TinyBrainResultBuilders.js');
 const {
     collectPlayerActionAccompanyingCharacters,
-    movePlayerActionAccompanyingCharacters
+    collectPlayerActionHiddenContestContext,
+    movePlayerActionAccompanyingCharacters,
+    resolvePreResolvedPlayerActionHiddenContestToolCall
 } = require('./PlayerActionCompanions.js');
 const {
     LiveDeslopController,
@@ -17644,6 +17646,7 @@ module.exports = function registerApiRoutes(scope) {
             travelDestinationOverride = null,
             suppressPlayerMove = false,
             suppressTimeAdvance = false,
+            preResolvedHiddenNpcChecks = [],
             initialTimeProgress = null,
             originLabelFallback = 'Origin',
             destinationLabelFallback = 'Destination'
@@ -17982,6 +17985,7 @@ module.exports = function registerApiRoutes(scope) {
                     suppressMoveEvents: true,
                     allowMoveTurnAppearances: true,
                     suppressTimeAdvance: Boolean(suppressTimeAdvance || suppressOriginTimeAdvance),
+                    preResolvedHiddenNpcChecks,
                     locationOverride: location || null,
                     initialTimeProgress,
                     suppressHousekeeping: true,
@@ -18140,6 +18144,7 @@ module.exports = function registerApiRoutes(scope) {
                             || (moveTurnResultEventLocationRepresentsVehicle && hasEffectivePlayerDestination)
                         ),
                         suppressTimeAdvance: Boolean(suppressTimeAdvance),
+                        preResolvedHiddenNpcChecks,
                         locationOverride: moveTurnResultEventLocationRepresentsVehicle
                             ? moveTurnResultEventLocation
                             : location || null,
@@ -18158,6 +18163,7 @@ module.exports = function registerApiRoutes(scope) {
                             suppressMoveEvents: true,
                             allowMoveTurnAppearances: true,
                             suppressTimeAdvance: Boolean(suppressTimeAdvance),
+                            preResolvedHiddenNpcChecks,
                             locationOverride: moveTurnResultEventLocation || location || null,
                             initialTimeProgress,
                             suppressHousekeeping: true,
@@ -18194,6 +18200,7 @@ module.exports = function registerApiRoutes(scope) {
                             suppressMoveEvents: true,
                             allowMoveTurnAppearances: true,
                             suppressTimeAdvance: Boolean(suppressTimeAdvance),
+                            preResolvedHiddenNpcChecks: originProse ? [] : preResolvedHiddenNpcChecks,
                             locationOverride: location || moveTurnResultEventLocation || null,
                             initialTimeProgress: playerMoveTimeAdjustment?.timeProgress || initialTimeProgress,
                             suppressHousekeeping: true,
@@ -18288,6 +18295,7 @@ module.exports = function registerApiRoutes(scope) {
                     suppressMoveEvents: true,
                     allowMoveTurnAppearances: true,
                     suppressTimeAdvance: Boolean(suppressTimeAdvance),
+                    preResolvedHiddenNpcChecks: originProse ? [] : preResolvedHiddenNpcChecks,
                     locationOverride: destinationLocation || null,
                     initialTimeProgress: playerMoveTimeAdjustment?.timeProgress || initialTimeProgress,
                     suppressHousekeeping: true,
@@ -19042,6 +19050,118 @@ module.exports = function registerApiRoutes(scope) {
                     }
                 }
             };
+        }
+
+        async function resolvePlayerActionHiddenContests(contests, {
+            dieRollOverride = null,
+            forcedSkillCheckRoll = null
+        } = {}) {
+            if (!Array.isArray(contests)) {
+                throw new TypeError('Player-action hidden contests must be an array.');
+            }
+            if (
+                forcedSkillCheckRoll !== null
+                && forcedSkillCheckRoll !== undefined
+                && typeof forcedSkillCheckRoll !== 'function'
+            ) {
+                throw new TypeError('Player-action hidden contest forcedSkillCheckRoll must be a function when provided.');
+            }
+            if (!contests.length) {
+                return [];
+            }
+            if (!currentPlayer || typeof currentPlayer.id !== 'string' || !currentPlayer.id.trim()) {
+                throw new Error('Player-action hidden contests require a current player.');
+            }
+            const settings = getHidePerceptionCheckSettings();
+            const resolvedChecks = [];
+            for (const [index, contest] of contests.entries()) {
+                if (!contest || typeof contest !== 'object' || Array.isArray(contest)) {
+                    throw new TypeError(`Player-action hidden contest ${index + 1} must be an object.`);
+                }
+                const action = contest.action;
+                if (action !== 'reveal_hidden_npc' && action !== 'hide_visible_npc') {
+                    throw new Error(`Player-action hidden contest ${index + 1} has unknown action "${action}".`);
+                }
+                const actor = players.get(contest.actorId) || null;
+                const opponent = players.get(contest.opponentId) || null;
+                if (!actor || !opponent) {
+                    throw new Error(`Player-action hidden contest ${index + 1} no longer resolves both characters.`);
+                }
+                if (action === 'reveal_hidden_npc') {
+                    if (actor.id !== currentPlayer.id) {
+                        throw new Error(`Player-action hidden contest ${index + 1} reveal actor is not the current player.`);
+                    }
+                    if (opponent.isNPC !== true || opponent.isDead === true || opponent.hiddenFromPlayer !== true) {
+                        throw new Error(`Player-action hidden contest ${index + 1} reveal opponent is not an eligible hidden NPC.`);
+                    }
+                } else {
+                    if (actor.isNPC !== true || actor.isDead === true || actor.hiddenFromPlayer === true) {
+                        throw new Error(`Player-action hidden contest ${index + 1} hide actor is not an eligible visible NPC.`);
+                    }
+                    if (opponent.id !== currentPlayer.id) {
+                        throw new Error(`Player-action hidden contest ${index + 1} hide opponent is not the current player.`);
+                    }
+                }
+
+                const actorAttribute = action === 'reveal_hidden_npc'
+                    ? settings.perceptionAttribute
+                    : settings.hidingAttribute;
+                const actorSkill = action === 'reveal_hidden_npc'
+                    ? settings.perceptionSkill
+                    : settings.hidingSkill;
+                const opponentAttribute = action === 'reveal_hidden_npc'
+                    ? settings.hidingAttribute
+                    : settings.perceptionAttribute;
+                const opponentSkill = action === 'reveal_hidden_npc'
+                    ? settings.hidingSkill
+                    : settings.perceptionSkill;
+                const reason = action === 'reveal_hidden_npc'
+                    ? `${actor.name || 'The player'} attempts to notice ${opponent.name || 'a hidden NPC'}.`
+                    : `${actor.name || 'An NPC'} attempts to hide from ${opponent.name || 'the player'}.`;
+                const plausibility = buildHiddenNpcOpposedPlausibility({
+                    actor,
+                    opponent,
+                    actorAttribute,
+                    actorSkill,
+                    opponentAttribute,
+                    opponentSkill,
+                    reason
+                });
+                const resolvedDieRollOverride = typeof forcedSkillCheckRoll === 'function'
+                    ? await forcedSkillCheckRoll({
+                        toolName: 'resolveOpposedSkillCheck',
+                        checkType: 'opposed',
+                        actor: actor.name,
+                        reason,
+                        skill: actorSkill || actorAttribute,
+                        attribute: actorAttribute,
+                        opponent: opponent.name,
+                        opponentSkill: opponentSkill || opponentAttribute,
+                        opponentAttribute,
+                        circumstanceModifiers: []
+                    })
+                    : (Number.isInteger(dieRollOverride) ? dieRollOverride : null);
+                const resolution = resolveActionOutcome({
+                    plausibility,
+                    player: actor,
+                    dieRollOverride: Number.isInteger(resolvedDieRollOverride) ? resolvedDieRollOverride : null
+                });
+                if (!resolution || typeof resolution !== 'object') {
+                    throw new Error(`Player-action hidden contest ${index + 1} did not produce an action resolution.`);
+                }
+                resolvedChecks.push({
+                    ...contest,
+                    actorId: actor.id,
+                    actorName: actor.name,
+                    opponentId: opponent.id,
+                    opponentName: opponent.name,
+                    npcId: action === 'reveal_hidden_npc' ? opponent.id : actor.id,
+                    npcName: action === 'reveal_hidden_npc' ? opponent.name : actor.name,
+                    success: resolution.success === true,
+                    resolution
+                });
+            }
+            return resolvedChecks;
         }
 
         function recordHiddenNpcCheckResults(hiddenNpcChecks, {
@@ -25346,6 +25466,7 @@ module.exports = function registerApiRoutes(scope) {
             let tinyBrainPromptState = null;
             let tinyBrainPromptConfig = null;
             let tinyBrainRenderedPrompt = null;
+            let tinyBrainHiddenNpcContestChecks = [];
             const renderPlayerActionPrompt = (forceRepetitionBuster = null) => {
                 if (!promptTemplateName || !promptVariablesSnapshot) {
                     return null;
@@ -26565,6 +26686,11 @@ module.exports = function registerApiRoutes(scope) {
                                 location,
                                 players
                             });
+                            const playerActionHiddenContestContext = collectPlayerActionHiddenContestContext({
+                                currentPlayer,
+                                location,
+                                players
+                            });
 
                             promptVariables = {
                                 ...baseContext,
@@ -26579,6 +26705,7 @@ module.exports = function registerApiRoutes(scope) {
                                 playerActionTravelDestination,
                                 playerActionTravelMovementKind,
                                 playerActionAccompanyingCharacters,
+                                playerActionHiddenContestContext,
                                 playerActionOriginLocationId: location?.id || currentPlayer?.currentLocation || null,
                                 playerActionWorldTimeMinutes: Globals.getTotalWorldMinutes()
                             };
@@ -26957,6 +27084,15 @@ module.exports = function registerApiRoutes(scope) {
                         return TINY_BRAIN_PLAYER_ACTION_DESTINATION_LOOKUP_TOOL_NAMES.has(toolName);
                     }
                 );
+                const tinyBrainPlayerActionHiddenContestTools = promptChatTools.filter(
+                    toolDefinition => {
+                        const toolName = typeof toolDefinition?.function?.name === 'string'
+                            ? toolDefinition.function.name.trim()
+                            : '';
+                        return toolName !== 'requestUserInput'
+                            && isNonMutatingScheduledEventToolName(toolName);
+                    }
+                );
                 if (Array.isArray(promptChatTools) && promptChatTools.length > 0) {
                     additionalPayload.tools = promptChatTools;
                     additionalPayload.tool_choice = 'auto';
@@ -26970,8 +27106,13 @@ module.exports = function registerApiRoutes(scope) {
                         : (promptType === 'generic-prompt-nocontext'
                             ? 'generic_prompt_nocontext'
                             : (promptType === 'creative-mode-action'
-                                ? 'creative_mode_action'
+                            ? 'creative_mode_action'
                                 : 'player_action')));
+                const forcedSkillCheckRollResolver = createForcedSkillCheckRollResolver({
+                    enabled: forceSkillCheckRolls,
+                    stream,
+                    promptLabel: promptMetadataLabel
+                });
                 const usesActionXmlResponse = promptType === 'player-action'
                     || promptType === 'creative-mode-action';
                 const shouldUseRepetitionBusterXml = usesActionXmlResponse
@@ -27090,6 +27231,30 @@ module.exports = function registerApiRoutes(scope) {
                                     };
                                 }
                                 : null,
+                            afterParse: async ({ parsed, checkpoint, appendLogSection }) => {
+                                if (
+                                    promptType !== 'player-action'
+                                    || checkpoint?.parserName !== 'player_action_hidden_contests'
+                                ) {
+                                    return null;
+                                }
+                                const resolvedChecks = await resolvePlayerActionHiddenContests(parsed.value, {
+                                    dieRollOverride: injectedDieRollOverride,
+                                    forcedSkillCheckRoll: forcedSkillCheckRollResolver
+                                });
+                                tinyBrainHiddenNpcContestChecks = resolvedChecks;
+                                parsed.value = resolvedChecks;
+                                appendLogSection({
+                                    title: 'player-action hidden contest resolutions',
+                                    content: resolvedChecks.length
+                                        ? resolvedChecks.map(check => (
+                                            `${check.action}: ${check.actorName} vs ${check.opponentName} -> `
+                                            + `${check.resolution?.label || (check.success ? 'success' : 'failure')}`
+                                        )).join('\n')
+                                        : 'No hidden contests were planned.'
+                                });
+                                return null;
+                            },
                             complete: async ({
                             messages,
                             checkpoint,
@@ -27111,10 +27276,14 @@ module.exports = function registerApiRoutes(scope) {
                             delete stageRequestOptions.requiredRegex;
                             const isDestinationLookupCheckpoint = !isFinal
                                 && checkpoint?.parserName === 'player_action_more_info_or_na';
+                            const isHiddenContestCheckpoint = !isFinal
+                                && checkpoint?.parserName === 'player_action_hidden_contests';
                             const stageToolDefinitions = isDestinationLookupCheckpoint
                                 ? tinyBrainPlayerActionDestinationLookupTools
-                                : promptChatTools;
-                            if (isDestinationLookupCheckpoint) {
+                                : (isHiddenContestCheckpoint
+                                    ? tinyBrainPlayerActionHiddenContestTools
+                                    : promptChatTools);
+                            if (isDestinationLookupCheckpoint || isHiddenContestCheckpoint) {
                                 stageRequestOptions = configureRequestChatTools(
                                     stageRequestOptions,
                                     stageToolDefinitions
@@ -27152,13 +27321,36 @@ module.exports = function registerApiRoutes(scope) {
                                         stream,
                                         promptLabel: promptMetadataLabel
                                     }),
-                                    forcedSkillCheckRoll: createForcedSkillCheckRollResolver({
-                                        enabled: forceSkillCheckRolls,
-                                        stream,
-                                        promptLabel: promptMetadataLabel
-                                    }),
+                                    forcedSkillCheckRoll: forcedSkillCheckRollResolver,
                                     dieRollOverride: injectedDieRollOverride,
-                                    onToolCallEvent: event => checkResultsRecorder.record(event),
+                                    resolvePreResolvedToolCall: promptType === 'player-action'
+                                        ? toolCall => resolvePreResolvedPlayerActionHiddenContestToolCall(toolCall, {
+                                            hiddenNpcChecks: tinyBrainHiddenNpcContestChecks,
+                                            currentPlayer,
+                                            players
+                                        })
+                                        : null,
+                                    onToolCallEvent: event => {
+                                        const metadata = event?.result?.metadata || event?.error?.result?.metadata || null;
+                                        const startedPreResolvedHiddenContest = event?.phase === 'started'
+                                            && promptType === 'player-action'
+                                            && resolvePreResolvedPlayerActionHiddenContestToolCall({
+                                                name: event.name,
+                                                functionName: event.name,
+                                                argumentsObject: event.parameters
+                                            }, {
+                                                hiddenNpcChecks: tinyBrainHiddenNpcContestChecks,
+                                                currentPlayer,
+                                                players
+                                            }) !== null;
+                                        if (
+                                            metadata?.suppressCheckResultsRecord === true
+                                            || startedPreResolvedHiddenContest
+                                        ) {
+                                            return;
+                                        }
+                                        checkResultsRecorder.record(event);
+                                    },
                                     onToolCallDebug: toolCallDebugRecorder
                                         ? event => toolCallDebugRecorder.record(event)
                                         : null,
@@ -27624,6 +27816,30 @@ module.exports = function registerApiRoutes(scope) {
                     }
                     let playerActionEventCheckResolutions = [];
                     let playerActionPreResolvedHiddenNpcChecks = [];
+                    if (tinyBrainHiddenNpcContestChecks.length) {
+                        responseData.hiddenNpcChecks = tinyBrainHiddenNpcContestChecks.map(check => ({
+                            action: check.action,
+                            actorId: check.actorId,
+                            actorName: check.actorName,
+                            opponentId: check.opponentId,
+                            opponentName: check.opponentName,
+                            npcId: check.npcId,
+                            npcName: check.npcName,
+                            success: check.success,
+                            resolution: check.resolution
+                        }));
+                        playerActionEventCheckResolutions.push(
+                            ...tinyBrainHiddenNpcContestChecks.map(check => check.resolution)
+                        );
+                        playerActionPreResolvedHiddenNpcChecks.push(
+                            ...tinyBrainHiddenNpcContestChecks.map(check => ({
+                                toolName: 'resolveOpposedSkillCheck',
+                                actorName: check.actorName,
+                                opponentName: check.opponentName,
+                                actionResolution: check.resolution
+                            }))
+                        );
+                    }
 
                     if (toolInvocations.length) {
                         responseData.toolInvocations = toolInvocations;
@@ -27667,13 +27883,13 @@ module.exports = function registerApiRoutes(scope) {
                         const actionResolutions = plausibilityToolInvocations
                             .map(entry => entry.metadata.actionResolution)
                             .filter(resolution => resolution && typeof resolution === 'object');
-                        playerActionEventCheckResolutions = actionResolutions;
-                        playerActionPreResolvedHiddenNpcChecks = plausibilityToolInvocations.map((entry) => ({
+                        playerActionEventCheckResolutions.push(...actionResolutions);
+                        playerActionPreResolvedHiddenNpcChecks.push(...plausibilityToolInvocations.map((entry) => ({
                             toolName: entry.name,
                             actorName: entry.metadata.actor || null,
                             opponentName: entry.metadata.opponent || null,
                             actionResolution: entry.metadata.actionResolution || null,
-                        }));
+                        })));
                         if (actionResolutions.length) {
                             responseData.actionResolutions = actionResolutions;
                             responseData.actionResolution = responseData.actionResolution || actionResolutions[0];
@@ -27879,6 +28095,7 @@ module.exports = function registerApiRoutes(scope) {
                                         : null,
                                     suppressPlayerMove: suppressDirectTravelPromptMutation,
                                     suppressTimeAdvance: suppressTravelPromptTimeAdvance,
+                                    preResolvedHiddenNpcChecks: playerActionPreResolvedHiddenNpcChecks,
                                     initialTimeProgress: playerActionTimeProgress
                                 });
                                 eventResult = travelResult.eventResult;
@@ -28595,12 +28812,32 @@ module.exports = function registerApiRoutes(scope) {
                         }, newChatEntries);
                     });
 
-                    recordHiddenNpcCheckResults(eventResult?.hiddenNpcChecks, {
+                    const eventHiddenNpcChecks = Array.isArray(eventResult?.hiddenNpcChecks)
+                        ? eventResult.hiddenNpcChecks
+                        : [];
+                    if (eventHiddenNpcChecks.length) {
+                        responseData.hiddenNpcChecks = [
+                            ...(Array.isArray(responseData.hiddenNpcChecks) ? responseData.hiddenNpcChecks : []),
+                            ...eventHiddenNpcChecks
+                        ];
+                    }
+                    const recordedHiddenNpcCheckEntries = [
+                        ...recordHiddenNpcCheckResults(tinyBrainHiddenNpcContestChecks, {
+                            parentId: aiResponseEntry?.id || null,
+                            locationId: aiResponseLocationId,
+                            collector: newChatEntries,
+                            requestId: stream?.requestId || null
+                        }),
+                        ...recordHiddenNpcCheckResults(eventHiddenNpcChecks, {
                         parentId: aiResponseEntry?.id || null,
                         locationId: aiResponseLocationId,
                         collector: newChatEntries,
                         requestId: stream?.requestId || null
-                    });
+                        })
+                    ];
+                    if (recordedHiddenNpcCheckEntries.length) {
+                        responseData.checkResultsRecorded = true;
+                    }
 
                     if (Array.isArray(responseData.plausibilities) && responseData.plausibilities.length > 1) {
                         responseData.plausibilities.slice(1).forEach(plausibilityPayload => {

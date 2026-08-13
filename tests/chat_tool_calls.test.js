@@ -225,6 +225,77 @@ test('tool loop can finish locally once successful planned tool calls contain th
     assert.equal(result.conversationMessages.at(-1).content, 'READY');
 });
 
+test('tool loop can reuse an authoritative pre-resolved tool result', async () => {
+    const capturedMessagesByRound = [];
+    const debugEvents = [];
+    const moreInfoTool = CHAT_TOOL_DEFINITIONS.find(
+        definition => definition?.function?.name === 'moreInfo'
+    );
+    const runtime = createMinimalRuntime({
+        capturedMessagesByRound,
+        llmResponses: [
+            {
+                data: {
+                    choices: [{
+                        message: {
+                            content: '',
+                            tool_calls: [{
+                                id: 'call-pre-resolved',
+                                type: 'function',
+                                function: {
+                                    name: 'moreInfo',
+                                    arguments: JSON.stringify({ name: 'Known Answer', type: 'thing' })
+                                }
+                            }]
+                        }
+                    }]
+                }
+            },
+            {
+                data: {
+                    choices: [{
+                        message: { content: 'Done.', tool_calls: [] }
+                    }]
+                }
+            }
+        ]
+    });
+    const callbackInputs = [];
+
+    const result = await runtime.runChatCompletionWithToolLoop({
+        requestOptions: {
+            messages: [{ role: 'user', content: 'Use the answer already resolved by the game.' }],
+            additionalPayload: { tools: [moreInfoTool], tool_choice: 'auto' }
+        },
+        metadataLabel: 'pre_resolved_tool_test',
+        resolvePreResolvedToolCall(toolCall) {
+            callbackInputs.push(structuredClone(toolCall));
+            return {
+                content: 'authoritative result',
+                metadata: {
+                    cached: true,
+                    preResolved: true
+                }
+            };
+        },
+        onToolCallDebug: event => debugEvents.push(structuredClone(event))
+    });
+
+    assert.equal(result.aiResponse, 'Done.');
+    assert.equal(callbackInputs.length, 1);
+    assert.deepEqual(callbackInputs[0], {
+        name: 'moreInfo',
+        functionName: 'moreInfo',
+        argumentsObject: { name: 'Known Answer', type: 'thing' }
+    });
+    assert.equal(result.toolInvocations.length, 1);
+    assert.equal(result.toolInvocations[0].metadata.preResolved, true);
+    assert.deepEqual(debugEvents.map(event => event.phase), ['started', 'completed']);
+    assert.equal(debugEvents[1].cacheHit, true);
+    const toolMessage = capturedMessagesByRound[1].find(message => message.role === 'tool');
+    assert.equal(toolMessage.content, 'authoritative result');
+});
+
 test('deleteThing tool definition requires only a thing identifier', () => {
     const definition = findToolDefinition('deleteThing');
 

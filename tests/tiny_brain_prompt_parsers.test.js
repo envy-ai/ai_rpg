@@ -15,6 +15,7 @@ const {
     parsePlayerActionExplicitDuration,
     parsePlayerActionDuration,
     parsePlayerActionAccompanyingCharacters,
+    parsePlayerActionHiddenContests,
     parsePlayerActionHiddenNotes,
     parsePlayerActionMoreInfoOrNa,
     parsePlayerActionMovement,
@@ -36,6 +37,102 @@ const {
     parseWhileYouWereAwayResult,
     parseWhileYouWereAwayStagedResult
 } = require('../TinyBrainPromptParsers.js');
+
+const hiddenContestContext = {
+    player: {
+        id: 'player_1',
+        name: 'Baato',
+        aliases: ['the captain'],
+        isNPC: false,
+        hiddenFromPlayer: false
+    },
+    npcs: [
+        {
+            id: 'npc_hidden',
+            name: 'Veiled Scout',
+            aliases: ['Whisper'],
+            isNPC: true,
+            hiddenFromPlayer: true
+        },
+        {
+            id: 'npc_visible',
+            name: 'Loud Decoy',
+            aliases: ['Bell'],
+            isNPC: true,
+            hiddenFromPlayer: false
+        }
+    ]
+};
+
+test('player-action hidden-contest parser canonicalizes eligible names and aliases', () => {
+    assert.deepEqual(
+        parsePlayerActionHiddenContests('<hiddenContests/>', hiddenContestContext).value,
+        []
+    );
+    assert.deepEqual(
+        parsePlayerActionHiddenContests(
+            '<hiddenContests><contest><action>reveal</action><actor>you</actor>'
+                + '<opponent>Whisper</opponent></contest><contest><action>hide</action>'
+                + '<actor>Bell</actor><opponent>the captain</opponent></contest></hiddenContests>',
+            hiddenContestContext
+        ).value,
+        [
+            {
+                action: 'reveal_hidden_npc',
+                actorId: 'player_1',
+                actorName: 'Baato',
+                opponentId: 'npc_hidden',
+                opponentName: 'Veiled Scout',
+                npcId: 'npc_hidden',
+                npcName: 'Veiled Scout'
+            },
+            {
+                action: 'hide_visible_npc',
+                actorId: 'npc_visible',
+                actorName: 'Loud Decoy',
+                opponentId: 'player_1',
+                opponentName: 'Baato',
+                npcId: 'npc_visible',
+                npcName: 'Loud Decoy'
+            }
+        ]
+    );
+});
+
+test('player-action hidden-contest parser rejects mechanically ineligible plans', () => {
+    assert.throws(
+        () => parsePlayerActionHiddenContests(
+            '<hiddenContests><contest><action>reveal</action><actor>Baato</actor>'
+                + '<opponent>Loud Decoy</opponent></contest></hiddenContests>',
+            hiddenContestContext
+        ),
+        /currently hidden local NPC/i
+    );
+    assert.throws(
+        () => parsePlayerActionHiddenContests(
+            '<hiddenContests><contest><action>hide</action><actor>Whisper</actor>'
+                + '<opponent>Baato</opponent></contest></hiddenContests>',
+            hiddenContestContext
+        ),
+        /currently visible local NPC/i
+    );
+    assert.throws(
+        () => parsePlayerActionHiddenContests(
+            '<hiddenContests><contest><action>hide</action><actor>Bell</actor>'
+                + '<opponent>Whisper</opponent></contest></hiddenContests>',
+            hiddenContestContext
+        ),
+        /opponent must be the current player/i
+    );
+    assert.throws(
+        () => parsePlayerActionHiddenContests(
+            '<hiddenContests><contest><action>hide</action><actor>Bell</actor>'
+                + '<opponent>Baato</opponent><reason>because</reason></contest></hiddenContests>',
+            hiddenContestContext
+        ),
+        /unexpected direct child <reason>/i
+    );
+});
 
 test('exact XML root parser permits empty roots only when explicitly enabled', () => {
     assert.equal(

@@ -4,8 +4,10 @@ const fs = require('node:fs');
 
 const {
     collectPlayerActionAccompanyingCharacters,
+    collectPlayerActionHiddenContestContext,
     movePlayerActionAccompanyingCharacters,
-    normalizePlayerActionAccompanyingCharacterSelection
+    normalizePlayerActionAccompanyingCharacterSelection,
+    resolvePreResolvedPlayerActionHiddenContestToolCall
 } = require('../PlayerActionCompanions.js');
 
 function makeLocation(id, npcIds = []) {
@@ -57,6 +59,198 @@ test('player-action companion candidates include living party and origin NPCs on
             { name: 'Mira Vale', aliases: ['Mira'] },
             { name: 'Tal Stone', aliases: [] }
         ]
+    );
+});
+
+test('player-action hidden-contest context preserves visibility and aliases for local living NPCs', () => {
+    const origin = makeLocation('origin', ['hidden', 'visible', 'dead']);
+    const player = {
+        id: 'player',
+        name: 'Hero',
+        isNPC: false,
+        aliases: new Set(['Captain']),
+        getPartyMembers: () => ['party']
+    };
+    const players = new Map([
+        ['player', player],
+        ['party', makeNpc('party', 'Party Scout', null, { hiddenFromPlayer: false })],
+        ['hidden', makeNpc('hidden', 'Veiled Scout', 'origin', {
+            aliases: new Set(['Whisper']),
+            hiddenFromPlayer: true
+        })],
+        ['visible', makeNpc('visible', 'Loud Decoy', 'origin', { hiddenFromPlayer: false })],
+        ['dead', makeNpc('dead', 'Old Bones', 'origin', { isDead: true })]
+    ]);
+
+    assert.deepEqual(
+        collectPlayerActionHiddenContestContext({ currentPlayer: player, location: origin, players }),
+        {
+            player: {
+                id: 'player',
+                name: 'Hero',
+                aliases: ['Captain'],
+                isNPC: false,
+                hiddenFromPlayer: false
+            },
+            npcs: [
+                {
+                    id: 'party',
+                    name: 'Party Scout',
+                    aliases: [],
+                    isNPC: true,
+                    hiddenFromPlayer: false
+                },
+                {
+                    id: 'hidden',
+                    name: 'Veiled Scout',
+                    aliases: ['Whisper'],
+                    isNPC: true,
+                    hiddenFromPlayer: true
+                },
+                {
+                    id: 'visible',
+                    name: 'Loud Decoy',
+                    aliases: [],
+                    isNPC: true,
+                    hiddenFromPlayer: false
+                }
+            ]
+        }
+    );
+});
+
+test('pre-resolved hidden contests satisfy semantically matching opposed-check calls', () => {
+    const player = {
+        id: 'player',
+        name: 'Hero',
+        isNPC: false,
+        aliases: new Set(['Captain'])
+    };
+    const scout = makeNpc('scout', 'Veiled Scout', 'origin', {
+        aliases: new Set(['Whisper'])
+    });
+    const players = new Map([
+        [player.id, player],
+        [scout.id, scout]
+    ]);
+    const resolution = {
+        label: 'major success',
+        degree: 'major_success',
+        success: true,
+        skill: 'Perception',
+        attribute: 'Wisdom',
+        opponent: {
+            id: scout.id,
+            name: scout.name,
+            skill: 'Stealth',
+            attribute: 'Dexterity'
+        },
+        roll: { die: 20 }
+    };
+    const hiddenNpcChecks = [{
+        action: 'reveal_hidden_npc',
+        actorId: player.id,
+        actorName: player.name,
+        opponentId: scout.id,
+        opponentName: scout.name,
+        resolution
+    }];
+
+    const matched = resolvePreResolvedPlayerActionHiddenContestToolCall({
+        name: 'resolveOpposedSkillCheck',
+        argumentsObject: {
+            actor: 'Captain',
+            skill: 'perception',
+            attribute: 'wisdom',
+            opponent: 'Whisper',
+            opponentSkill: 'stealth',
+            opponentAttribute: 'dexterity'
+        }
+    }, {
+        hiddenNpcChecks,
+        currentPlayer: player,
+        players
+    });
+
+    assert.equal(matched.content, 'major success');
+    assert.equal(matched.metadata.preResolvedHiddenNpcCheck, true);
+    assert.equal(matched.metadata.suppressCheckResultsRecord, true);
+    assert.equal(matched.metadata.cached, true);
+    assert.deepEqual(matched.metadata.actionResolution, resolution);
+    assert.notEqual(matched.metadata.actionResolution, resolution);
+    assert.equal(resolvePreResolvedPlayerActionHiddenContestToolCall({
+        name: 'resolveOpposedSkillCheck',
+        argumentsObject: {
+            actor: 'Hero',
+            skill: 'Investigation',
+            attribute: 'intelligence',
+            opponent: 'Whisper',
+            opponentSkill: 'Stealth',
+            opponentAttribute: 'dexterity'
+        }
+    }, {
+        hiddenNpcChecks,
+        currentPlayer: player,
+        players
+    }), null);
+});
+
+test('pre-resolved hidden contests infer an omitted actor only when the mechanics identify one contest', () => {
+    const player = { id: 'player', name: 'Hero', isNPC: false };
+    const decoy = makeNpc('decoy', 'Loud Decoy', 'origin');
+    const secondDecoy = makeNpc('decoy-2', 'Second Decoy', 'origin');
+    const players = new Map([
+        [player.id, player],
+        [decoy.id, decoy],
+        [secondDecoy.id, secondDecoy]
+    ]);
+    const makeCheck = actor => ({
+        action: 'hide_visible_npc',
+        actorId: actor.id,
+        actorName: actor.name,
+        opponentId: player.id,
+        opponentName: player.name,
+        resolution: {
+            label: 'success',
+            success: true,
+            skill: 'Stealth',
+            attribute: 'Dexterity',
+            opponent: {
+                id: player.id,
+                name: player.name,
+                skill: 'Perception',
+                attribute: 'Wisdom'
+            }
+        }
+    });
+    const argumentsObject = {
+        skill: 'Stealth',
+        attribute: 'Dexterity',
+        opponent: 'the player',
+        opponentSkill: 'Perception',
+        opponentAttribute: 'Wisdom'
+    };
+
+    const matched = resolvePreResolvedPlayerActionHiddenContestToolCall({
+        functionName: 'resolveOpposedSkillCheck',
+        argumentsObject
+    }, {
+        hiddenNpcChecks: [makeCheck(decoy)],
+        currentPlayer: player,
+        players
+    });
+    assert.equal(matched.metadata.actor, 'Loud Decoy');
+
+    assert.throws(
+        () => resolvePreResolvedPlayerActionHiddenContestToolCall({
+            functionName: 'resolveOpposedSkillCheck',
+            argumentsObject
+        }, {
+            hiddenNpcChecks: [makeCheck(decoy), makeCheck(secondDecoy)],
+            currentPlayer: player,
+            players
+        }),
+        /provide an explicit actor to disambiguate/i
     );
 });
 

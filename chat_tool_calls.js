@@ -11389,6 +11389,7 @@ const createChatToolRuntime = ({
         metadataLabel = 'chat',
         toolResultCache = null,
         validateToolCall = null,
+        resolvePreResolvedToolCall = null,
         onToolCallDebug = null,
         onToolCallEvent = null,
         defaultToolActor = null,
@@ -11415,6 +11416,13 @@ const createChatToolRuntime = ({
         }
         if (validateToolCall !== null && validateToolCall !== undefined && typeof validateToolCall !== 'function') {
             throw new Error('runChatCompletionWithToolLoop validateToolCall must be a function when provided.');
+        }
+        if (
+            resolvePreResolvedToolCall !== null
+            && resolvePreResolvedToolCall !== undefined
+            && typeof resolvePreResolvedToolCall !== 'function'
+        ) {
+            throw new Error('runChatCompletionWithToolLoop resolvePreResolvedToolCall must be a function when provided.');
         }
         if (forcedSkillCheckRoll !== null && forcedSkillCheckRoll !== undefined && typeof forcedSkillCheckRoll !== 'function') {
             throw new Error('runChatCompletionWithToolLoop forcedSkillCheckRoll must be a function when provided.');
@@ -11728,6 +11736,16 @@ const createChatToolRuntime = ({
                                 functionName: toolCall.functionName,
                                 argumentsObject: JSON.parse(JSON.stringify(toolCall.argumentsObject || {}))
                             });
+                        }
+                        if (resolvePreResolvedToolCall) {
+                            const preResolvedResult = await resolvePreResolvedToolCall({
+                                name: toolCall.functionName,
+                                functionName: toolCall.functionName,
+                                argumentsObject: JSON.parse(JSON.stringify(toolCall.argumentsObject || {}))
+                            });
+                            if (preResolvedResult !== null && preResolvedResult !== undefined) {
+                                return preResolvedResult;
+                            }
                         }
                         return executeChatToolCall(toolCall, {
                             resultCache,

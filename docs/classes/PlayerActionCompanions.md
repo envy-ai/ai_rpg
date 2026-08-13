@@ -2,6 +2,10 @@
 
 `PlayerActionCompanions.js` owns the exact-identifier contract for characters who accompany the player during a TinyBrain-resolved move.
 
+The module also builds the read-only local character descriptor used by the TinyBrain hidden-contest parser. `collectPlayerActionHiddenContestContext(...)` returns the current player plus living party/local NPCs with canonical ids, names, aliases, NPC identity, and current `hiddenFromPlayer` state. The parser—not free-form prose matching—uses that descriptor to validate reveal and hide plans before code resolves their mechanics.
+
+`resolvePreResolvedPlayerActionHiddenContestToolCall(...)` recognizes a later opposed-check call only when its actor (when supplied), opponent, configured skill, and configured attribute semantics identify one already-resolved hidden contest. Exact canonical names, aliases, ids, and the usual player aliases are accepted. An omitted actor is inferred only when the other mechanics select exactly one contest; ambiguity throws. A match returns a cloned authoritative result marked so the generic check-results recorder does not create a second history row. Unrelated opposed checks continue through the ordinary resolver.
+
 ## Candidate collection
 
 `collectPlayerActionAccompanyingCharacters({ currentPlayer, location, players })` returns living NPCs eligible to leave the movement origin with the player:

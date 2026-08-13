@@ -553,7 +553,7 @@ test('hidden NPC events reuse a matching player-action opposed check instead of 
                 reveal_hidden_npc: [{
                     name: 'Shade',
                     description: 'Baato searches but fails.',
-                    useOpposedCheck: true
+                    useOpposedCheck: false
                 }]
             }
         };

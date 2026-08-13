@@ -133,11 +133,6 @@ In markdown format, list each of the 1-3 NPCs (or more, if specifically addresse
 
 {% llm_dummy_action %}
 
-Information gathering and tool calling: If necessary, call any tools that might provide necessary information for writing the prose that's missing from the context. Just write N/A (with no additional text) for this item if you have all the information you need (which will be the typical case). Note that the context contains the entire story history, although earlier parts may be abbreviated. 
-
-Make any necessary tool calls here to gather additional information before proceeding with the story continuation.
-
-{% llm_dummy_action %}
 {% if isExterior %}
 The current location is an EXTERIOR of a building, structure, or similar (or they are MOVING to the exterior of a building). Is anything supposed to happen when the INTERIOR of that building is reached? If so, list in markdown format what things will be deferred until they enter the building, as opposed to happening this turn. Use no more than 8 words per item, and no more than 5 items. If nothing is deferred, respond with N/A.
 
@@ -164,6 +159,39 @@ List them in markdown format, with one sentence of explanation per NPC.
 
 {% llm_dummy_action %}
 
+Identify every supported hidden-character contest that is actually committed to occur during this turn, based on <playerAction> and the NPC initiative plan above. This is mechanical planning only; do not write prose and do not call a check-resolution tool.
+
+The only supported contests here are:
+- REVEAL: {{ playerActionHiddenContestContext.player.name }} actively attempts to notice or reveal one currently hidden local NPC.
+- HIDE: one currently visible local NPC actively attempts to hide from {{ playerActionHiddenContestContext.player.name }}.
+
+Eligible exact character names (an alias is also accepted by the parser):
+- Player: {{ playerActionHiddenContestContext.player.name }}{% if playerActionHiddenContestContext.player.aliases.length %} (aliases: {{ playerActionHiddenContestContext.player.aliases | join(', ') }}){% endif %}
+{% for candidate in playerActionHiddenContestContext.npcs %}- {{ candidate.name }} — {{ 'hidden' if candidate.hiddenFromPlayer else 'visible' }}{% if candidate.aliases.length %} (aliases: {{ candidate.aliases | join(', ') }}){% endif %}
+{% endfor %}
+Do not invent a contest merely because an eligible character exists. Ordinary stealthy movement, looking for objects or exits, and passive observation are not one of these contests. If there are no qualifying contests, return exactly `<hiddenContests/>`. Otherwise return exactly this XML shape with one `<contest>` per qualifying attempt:
+<hiddenContests>
+  <contest>
+    <action>reveal or hide</action>
+    <actor>exact character name or alias</actor>
+    <opponent>exact character name or alias</opponent>
+  </contest>
+</hiddenContests>
+
+Output XML only.
+{% llmparse('player_action_hidden_contests', playerActionHiddenContestContext) as hiddenContests %}
+{% if hiddenContests.length %}
+These hidden-character contest results were resolved by the game and are authoritative for the prose and later event bookkeeping. Do not call resolveSkillCheck or resolveOpposedSkillCheck for them again:
+{% for contest in hiddenContests %}- {{ contest.actorName }} vs {{ contest.opponentName }} ({{ 'reveal' if contest.action == 'reveal_hidden_npc' else 'hide' }}): {{ contest.resolution.label }}. {% if contest.action == 'reveal_hidden_npc' %}{% if contest.success %}{{ contest.opponentName }} is noticed and revealed.{% else %}{{ contest.opponentName }} is not noticed, located, identified, revealed, approached, or interacted with.{% endif %}{% else %}{% if contest.success %}{{ contest.actorName }} becomes concealed and remains hidden unless a later explicit event reveals them.{% else %}{{ contest.actorName }} fails to become concealed and remains visible.{% endif %}{% endif %}
+{% endfor %}
+{% endif %}
+
+Information gathering and tool calling: If necessary, call any tools that might provide necessary information for writing the prose that's missing from the context. Just write N/A (with no additional text) for this item if you have all the information you need (which will be the typical case). Note that the context contains the entire story history, although earlier parts may be abbreviated.
+
+Make any necessary tool calls here to gather additional information before proceeding with the story continuation.
+
+{% llm_dummy_action %}
+
 Is the player currently under the effects of any kind of mental compulsion? If so, they may need to make a check in order to act on their own desires instead of the compulsion, or to resist doing something they don't want to do. If this is the case, call the necessary skill/attribute check tool and list the results here, then adhere to those results in your writing.
 
 Do this now.
@@ -179,7 +207,7 @@ Do this now.
 {% if config.use_legacy_prompt_checks %}
 Draft Response: Generate a preliminary but full draft that continues the story based on the current context, strictly adhering to this degree of success/failure: "{{ success_or_failure }}" regardless of how hard the action is. This is just a first attempt. Use no more than {{ config.prose_length }}.
 {% else %}
-Draft Response: Generate a preliminary but full draft that continues the story based on the current context{#, strictly adhering to this degree of success/failure: "{{ success_or_failure }}" regardless of how hard the action is#}. This is just a first attempt. Use no more than {{ config.prose_length }}. Resolve every attack written into the draft with resolveAttack or resolveAreaAttack and adhere to its outcome, including who attacked whom and whether the defender was defeated. Whenever a character makes a meaningful non-attack action that is not trivially easy, call resolveSkillCheck or resolveOpposedSkillCheck as appropriate and adhere to its result. Call the tool for every attack or check written into the draft, including actions introduced by NPC initiative. It is okay to interrupt the draft to call tools; formatting can be repaired in the second draft. Examples of skill checks include climbing a wall, searching for hidden exits, and moving a large rock. Examples of opposed skill checks include arm wrestling, stealth versus detection, and haggling. The user may signal a preferred skill or ability in [square brackets]; otherwise use your best judgment, and override an unsuitable suggestion when needed. Do not reference the same object, detail, or plot element in consecutive turns unless something about it has changed. If a detail was established in a previous turn, do not have characters reflect on it again unless new information emerges or a character is actively interacting with it. Characters must not repeat the same metaphor type, observation pattern, or speech tic multiple times in a scene. Variety in how characters express themselves is essential. Do NOT append "What do you do?" or any other text addressing the player directly.
+Draft Response: Generate a preliminary but full draft that continues the story based on the current context{#, strictly adhering to this degree of success/failure: "{{ success_or_failure }}" regardless of how hard the action is#}. This is just a first attempt. Use no more than {{ config.prose_length }}. Resolve every attack written into the draft with resolveAttack or resolveAreaAttack and adhere to its outcome, including who attacked whom and whether the defender was defeated. Whenever a character makes a meaningful non-attack action that is not trivially easy and was not already resolved in the authoritative hidden-character results above, call resolveSkillCheck or resolveOpposedSkillCheck as appropriate and adhere to its result. Call the tool for every unresolved attack or check written into the draft, including actions introduced by NPC initiative. It is okay to interrupt the draft to call tools; formatting can be repaired in the second draft. Examples of skill checks include climbing a wall, searching for hidden exits, and moving a large rock. Examples of opposed skill checks include arm wrestling, stealth versus detection, and haggling. The user may signal a preferred skill or ability in [square brackets]; otherwise use your best judgment, and override an unsuitable suggestion when needed. Do not reference the same object, detail, or plot element in consecutive turns unless something about it has changed. If a detail was established in a previous turn, do not have characters reflect on it again unless new information emerges or a character is actively interacting with it. Characters must not repeat the same metaphor type, observation pattern, or speech tic multiple times in a scene. Variety in how characters express themselves is essential. Do NOT append "What do you do?" or any other text addressing the player directly.
 {% endif %}
 Player agency boundary: Narrate only player speech, decisions, agreements, gestures, and actions that were explicitly committed in the <playerAction>. You may narrate their immediate consequences, but do not make the player answer an NPC, accept a request, nod or agree, choose a new task, or begin any follow-up action the player did not supply. When an NPC asks the player a question or requests another action, stop before the player's response so the player can choose it.
 Vehicle occupancy continuity: A vehicle moving or reaching its scheduled destination does not itself disembark the player or any other occupant. Honor explicit <playerAction> constraints that the player or other occupants remain aboard; an arrival, an open door, or a view of the platform outside is not permission to move anyone out of the vehicle.

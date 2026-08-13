@@ -177,7 +177,11 @@ test('tiny-brain player-action destination lookup exposes only moreInfo', () => 
     );
     assert.match(
         apiSource,
-        /isDestinationLookupCheckpoint\s*\? tinyBrainPlayerActionDestinationLookupTools\s*:\s*promptChatTools/
+        /isDestinationLookupCheckpoint\s*\? tinyBrainPlayerActionDestinationLookupTools\s*:\s*\(isHiddenContestCheckpoint\s*\? tinyBrainPlayerActionHiddenContestTools\s*:\s*promptChatTools\)/
+    );
+    assert.match(
+        apiSource,
+        /return toolName !== 'requestUserInput'\s*&& isNonMutatingScheduledEventToolName\(toolName\)/
     );
     assert.match(
         apiSource,

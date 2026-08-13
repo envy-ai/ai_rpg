@@ -60,6 +60,19 @@ function addPlayerActionDestinationGlobals(promptEnv) {
     promptEnv.addGlobal('formatPlayerActionDestinationAbsence', formatPlayerActionDestinationAbsence);
 }
 
+function makeHiddenContestContext(playerName = 'Tester') {
+    return {
+        player: {
+            id: 'player-test',
+            name: playerName,
+            aliases: [],
+            isNPC: false,
+            hiddenFromPlayer: false
+        },
+        npcs: []
+    };
+}
+
 function parseTemplate(rendered) {
     const systemMatch = rendered.match(/<systemPrompt><!\[CDATA\[([\s\S]*?)\]\]><\/systemPrompt>/);
     const generationMatch = rendered.match(/<generationPrompt><!\[CDATA\[([\s\S]*?)\]\]><\/generationPrompt>/);
@@ -948,6 +961,7 @@ test('real tiny-brain player-action template renders conditional parser branches
         npcs: [],
         party: [],
         playerActionAccompanyingCharacters: [{ name: 'Mira Vale', aliases: ['Mira'] }],
+        playerActionHiddenContestContext: makeHiddenContestContext(),
         setting: {
             writingStyleNotes: 'Keep it concrete.'
         }
@@ -985,7 +999,9 @@ test('real tiny-brain player-action template renders conditional parser branches
                 finalCompletionCount += 1;
             }
             let aiResponse = 'Done.';
-            if (checkpoint.parserName === 'accept_or_reject') {
+            if (checkpoint.parserName === 'player_action_hidden_contests') {
+                aiResponse = '<hiddenContests/>';
+            } else if (checkpoint.parserName === 'accept_or_reject') {
                 aiResponse = '<accepted></accepted>';
             } else if (checkpoint.parserName === 'player_action_explicit_duration') {
                 aiResponse = 'NONE';
@@ -1053,7 +1069,7 @@ test('real tiny-brain player-action template renders conditional parser branches
     assert.ok(completionPrompts.some(prompt => /Mira Vale/.test(prompt) && /accompany the player/i.test(prompt)));
     assert.ok(completionPrompts.some(prompt => (
         /Resolve every attack written into the draft with resolveAttack or resolveAreaAttack/i.test(prompt)
-        && /Call the tool for every attack or check written into the draft/i.test(prompt)
+        && /Call the tool for every unresolved attack or check written into the draft/i.test(prompt)
     )));
     assert.ok(!completionPrompts.some(prompt => (
         /Each resolveAttack result authorizes exactly one resolved attack action/i.test(prompt)
@@ -1118,6 +1134,7 @@ test('real TinyBrain player-action resolves revisit context and skips a programm
         npcs: [],
         party: [],
         playerActionAccompanyingCharacters: [],
+        playerActionHiddenContestContext: makeHiddenContestContext('Rowan'),
         playerActionDestinationContextResolver: destinationContextResolver,
         playerActionOriginLocationId: 'market-gate',
         playerActionWorldTimeMinutes: 180,
@@ -1147,7 +1164,9 @@ test('real TinyBrain player-action resolves revisit context and skips a programm
             prompts.push(messages.at(-1).content);
             parserNames.push(checkpoint.parserName);
             let aiResponse = 'Done.';
-            if (checkpoint.parserName === 'accept_or_reject') {
+            if (checkpoint.parserName === 'player_action_hidden_contests') {
+                aiResponse = '<hiddenContests/>';
+            } else if (checkpoint.parserName === 'accept_or_reject') {
                 aiResponse = '<accepted></accepted>';
             } else if (checkpoint.parserName === 'player_action_explicit_duration') {
                 aiResponse = 'NONE';
@@ -1236,6 +1255,7 @@ test('real player-action template passes committed travel movement to terminal r
         },
         playerActionTravelMovementKind: 'destination',
         playerActionAccompanyingCharacters: [],
+        playerActionHiddenContestContext: makeHiddenContestContext(),
         playerActionWorldTimeMinutes: 0,
         setting: { writingStyleNotes: 'Keep it concrete.' }
     };
@@ -1264,7 +1284,9 @@ test('real player-action template passes committed travel movement to terminal r
             parserNames.push(checkpoint.parserName);
             finalCompletionCount += isFinal ? 1 : 0;
             let aiResponse = 'Done.';
-            if (checkpoint.parserName === 'accept_or_reject') {
+            if (checkpoint.parserName === 'player_action_hidden_contests') {
+                aiResponse = '<hiddenContests/>';
+            } else if (checkpoint.parserName === 'accept_or_reject') {
                 aiResponse = '<accepted></accepted>';
             } else if (checkpoint.parserName === 'player_action_explicit_duration') {
                 aiResponse = 'NONE';
@@ -1349,6 +1371,7 @@ test('real player-action template preserves underway vehicle normal and redirect
             party: [],
             playerActionTravelDestination: null,
             playerActionAccompanyingCharacters: [],
+            playerActionHiddenContestContext: makeHiddenContestContext(),
             setting: { writingStyleNotes: 'Keep it concrete.' }
         };
         const renderedProgram = promptEnv.render('_includes/player-action.tinybrain.njk', templateContext);
@@ -1376,7 +1399,9 @@ test('real player-action template preserves underway vehicle normal and redirect
                 prompts.push(messages.at(-1).content);
                 finalCompletionCount += isFinal ? 1 : 0;
                 let aiResponse = 'Done.';
-                if (checkpoint.parserName === 'accept_or_reject') {
+                if (checkpoint.parserName === 'player_action_hidden_contests') {
+                    aiResponse = '<hiddenContests/>';
+                } else if (checkpoint.parserName === 'accept_or_reject') {
                     aiResponse = '<accepted></accepted>';
                 } else if (checkpoint.parserName === 'player_action_explicit_duration') {
                     aiResponse = 'NONE';
