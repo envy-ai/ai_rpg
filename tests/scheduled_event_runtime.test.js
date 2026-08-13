@@ -186,8 +186,7 @@ test('deterministic scheduled event execution runs exact direct updates and cach
         stateChangeRequired: true,
         directUpdates: [{
             objectType: 'thing',
-            objectId: 'thing-qa-marker',
-            objectName: 'QA Marker',
+            object: 'thing-qa-marker',
             field: 'description',
             value: 'The exact replacement.',
             eventValue: 'The exact replacement.'
@@ -245,7 +244,7 @@ test('deterministic scheduled event execution runs exact direct updates and cach
     });
 });
 
-test('deterministic scheduled event execution handles no-change plans and rejects richer tools', async () => {
+test('deterministic scheduled event execution handles no-call plans and exact other tools', async () => {
     const noChange = await executeDeterministicScheduledEventToolPlan({
         event: 'The bell rings once.',
         stateChangeRequired: false,
@@ -261,22 +260,32 @@ test('deterministic scheduled event execution handles no-change plans and reject
     });
     assert.deepEqual(noChange, { toolCalls: [], invocations: [] });
 
-    await assert.rejects(
-        () => executeDeterministicScheduledEventToolPlan({
-            event: 'Create an NPC.',
-            stateChangeRequired: true,
-            directUpdates: [],
-            otherTools: [{
-                name: 'createNpc',
-                argumentsObject: { name: 'Someone' },
-                purpose: 'Create the scheduled arrival.'
-            }]
-        }, {
-            executeChatToolCall: async () => ({ content: 'unused' }),
-            validateToolCall: () => true
-        }),
-        /only supports direct updateObjectFields plans/
-    );
+    const calls = [];
+    const lookup = await executeDeterministicScheduledEventToolPlan({
+        event: 'Confirm the bell remains at the dock.',
+        stateChangeRequired: false,
+        directUpdates: [],
+        otherTools: [{
+            name: 'locateThings',
+            argumentsObject: { query: 'Dock Bell' }
+        }]
+    }, {
+        executeChatToolCall: async toolCall => {
+            calls.push(toolCall);
+            return {
+                content: '<locateThingsResult><thing>Dock Bell</thing></locateThingsResult>',
+                metadata: { status: 'success' }
+            };
+        },
+        validateToolCall: toolCall => {
+            assert.equal(toolCall.name, 'locateThings');
+            assert.deepEqual(toolCall.argumentsObject, { query: 'Dock Bell' });
+        }
+    });
+    assert.equal(calls.length, 1);
+    assert.equal(lookup.toolCalls[0].functionName, 'locateThings');
+    assert.deepEqual(lookup.toolCalls[0].argumentsObject, { query: 'Dock Bell' });
+    assert.equal(lookup.invocations[0].name, 'locateThings');
 });
 
 test('deterministic scheduled event execution retries failed calls without repeating successful mutations', async () => {
@@ -286,15 +295,13 @@ test('deterministic scheduled event execution retries failed calls without repea
         directUpdates: [
             {
                 objectType: 'thing',
-                objectId: 'thing-surviving-marker',
-                objectName: 'QA Surviving Marker',
+                object: 'thing-surviving-marker',
                 field: 'description',
                 value: 'Updated exactly once.'
             },
             {
                 objectType: 'thing',
-                objectId: 'thing-missing-marker',
-                objectName: 'QA Missing Marker',
+                object: 'thing-missing-marker',
                 field: 'description',
                 value: 'This update cannot be applied.'
             }

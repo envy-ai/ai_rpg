@@ -13,29 +13,23 @@ Does this event still make sense now? Return exactly one XML block in this form,
 {% if scheduledEventApplies %}
 Plan the state changes needed for the event. You may make read-only lookup calls now when current context is insufficient, but do not call state-changing tools during planning. After any lookup results, return exactly one XML block in this form:
 <toolPlan>
-  <stateChangeRequired>yes or no</stateChangeRequired>
   <directUpdates>
     <update>
       <objectType>canonical updateObjectFields object type</objectType>
-      <objectId>exact id from game state, or empty only if unavailable</objectId>
-      <objectName>exact name from game state, or empty only if unavailable</objectName>
+      <object>exact id from game state when available, otherwise exact name</object>
       <field>allowlisted field name</field>
       <valueJson>replacement value as valid JSON</valueJson>
     </update>
   </directUpdates>
   <otherTools>
-    <tool><name>exact available tool name</name><argumentsJson>the exact JSON object to pass</argumentsJson><purpose>brief purpose</purpose></tool>
+    <tool><name>exact available tool name</name><argumentsJson>the exact JSON object to pass</argumentsJson></tool>
   </otherTools>
 </toolPlan>
 
-Use self-closing <directUpdates/> or <otherTools/> when that list is empty. Every `updateObjectFields` call must be represented under <directUpdates>. Read-only lookup calls are allowed during planning and under <otherTools> when information will still be needed during execution; do not list a lookup that already completed during planning. Set <stateChangeRequired> according to whether the event requires a persistent mutation; read-only lookups do not count as state changes. List each remaining call once with the arguments it should receive.
+Use self-closing <directUpdates/> or <otherTools/> when that list is empty. Every `updateObjectFields` call must be represented under <directUpdates>. Read-only lookup calls are allowed during planning and under <otherTools> when information will still be needed during execution; do not list a lookup that already completed during planning. List each remaining call once with the arguments it should receive.
 
 {% llmparse('scheduled_event_tool_plan', scheduledEvent.event, scheduledEventToolNames) as scheduledEventToolPlan %}
-{% if scheduledEventToolPlan.otherTools.length == 0 %}
-Execute the accepted direct-update plan exactly through the server's validated tool executor, or make no call when <stateChangeRequired> is no. Do not ask the model to restate an executable call as text.
-{% else %}
-Follow the plan that you wrote above, calling each tool now in order. Calls are validated against the accepted plan, and every planned successful call is checked before this stage can finish. If validation rejects a call, make only the requested correction. Do not repeat a successful call.
-{% endif %}
+The server now executes every accepted call in the plan exactly as validated, in listed order, without asking you to repeat it.
 
 {% llmparse('scheduled_event_tool_execution', scheduledEvent.event, scheduledEventToolPlan) %}
 

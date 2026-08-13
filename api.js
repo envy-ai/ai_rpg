@@ -33,6 +33,7 @@ const {
     validateCriticalThresholdValues
 } = require('./utils/critical-threshold-formulas.js');
 const {
+    chatToolMayLaunchPrompts,
     createChatToolRuntime,
     getChatToolDefinitions
 } = require('./chat_tool_calls.js');
@@ -49,7 +50,6 @@ const {
     parseLocationModificationNarrativeResult,
     parseScheduledEventInterruptionRewrite,
     parseScheduledEventStagedResult,
-    parseScheduledEventToolExecution,
     parseTurnNarrativeResult,
     validateScheduledEventToolCallAgainstPlan,
     parseWhileYouWereAwayResult,
@@ -8971,6 +8971,12 @@ module.exports = function registerApiRoutes(scope) {
             const scheduledEventInputStream = stream || (clientId
                 ? { clientId, requestId }
                 : null);
+            const scheduledEventRequestUserInputHandler = scheduledEventInputStream
+                ? createRequestUserInputHandler({
+                    stream: scheduledEventInputStream,
+                    promptLabel: 'scheduled_event_resolution'
+                })
+                : null;
             const scheduledEventToolResultCache = {
                 roundKey: [
                     'scheduled_event_resolution',
@@ -8981,38 +8987,12 @@ module.exports = function registerApiRoutes(scope) {
                 entries: new Map()
             };
             const scheduledEventDeterministicToolResultCache = new Map();
-            const runScheduledEventToolLoop = (
-                stageRequestOptions,
-                { toolPlan = null } = {}
-            ) => {
+            const runScheduledEventToolLoop = stageRequestOptions => {
                 return runChatCompletionWithToolLoop({
                     requestOptions: stageRequestOptions,
                     metadataLabel: 'scheduled_event_resolution',
                     toolResultCache: scheduledEventToolResultCache,
-                    validateToolCall: toolPlan
-                        ? toolCall => validateScheduledEventToolCallAgainstPlan(toolCall, toolPlan)
-                        : null,
-                    terminalResponseAfterToolCalls: toolPlan
-                        ? ({ toolInvocations }) => {
-                            try {
-                                parseScheduledEventToolExecution(
-                                    'Completed the accepted scheduled-event tool plan.',
-                                    scheduledEvent.event,
-                                    toolPlan,
-                                    { currentToolInvocations: toolInvocations }
-                                );
-                                return 'Completed the accepted scheduled-event tool plan.';
-                            } catch (_error) {
-                                return null;
-                            }
-                        }
-                        : null,
-                    requestUserInput: scheduledEventInputStream
-                        ? createRequestUserInputHandler({
-                            stream: scheduledEventInputStream,
-                            promptLabel: 'scheduled_event_resolution'
-                        })
-                        : null
+                    requestUserInput: scheduledEventRequestUserInputHandler
                 });
             };
             let rawResponse = '';
@@ -9047,26 +9027,13 @@ module.exports = function registerApiRoutes(scope) {
                         const scheduledEventToolPlan = isToolCheckpoint
                             ? stage.checkpoint?.parserArgs?.[1]
                             : null;
-                        const plannedToolNames = new Set([
-                            ...(scheduledEventToolPlan?.directUpdates?.length
-                                ? ['updateObjectFields']
-                                : []),
-                            ...(scheduledEventToolPlan?.otherTools || []).map(tool => tool?.name)
-                        ].filter(Boolean));
                         const stageToolDefinitions = isPlanCheckpoint
                             ? scheduledEventTools.filter(definition => (
                                 isNonMutatingScheduledEventToolName(
                                     definition?.function?.name
                                 )
                             ))
-                            : (isToolCheckpoint && (
-                                scheduledEventToolPlan?.stateChangeRequired
-                                || scheduledEventToolPlan?.otherTools?.length
-                            )
-                                ? scheduledEventTools.filter(definition => (
-                                    plannedToolNames.has(definition?.function?.name)
-                                ))
-                                : []);
+                            : [];
                         const stageRequestOptions = configureRequestChatTools(
                             stage.requestOptions,
                             stageToolDefinitions
@@ -9082,78 +9049,81 @@ module.exports = function registerApiRoutes(scope) {
                             };
                         }
                         if (isToolCheckpoint) {
-                            const canExecuteDeterministically = Array.isArray(scheduledEventToolPlan?.otherTools)
-                                && scheduledEventToolPlan.otherTools.length === 0;
-                            if (canExecuteDeterministically) {
-                                const execution = await executeDeterministicScheduledEventToolPlan(
-                                    scheduledEventToolPlan,
-                                    {
-                                        executeChatToolCall,
-                                        validateToolCall: toolCall => (
-                                            validateScheduledEventToolCallAgainstPlan(
-                                                toolCall,
-                                                scheduledEventToolPlan
-                                            )
-                                        ),
-                                        resultCache: scheduledEventDeterministicToolResultCache
-                                    }
-                                );
-                                const aiResponse = scheduledEventToolPlan.stateChangeRequired
-                                    ? 'Completed the accepted direct scheduled-event updates.'
-                                    : 'The accepted scheduled-event plan requires no state-changing tool calls.';
-                                const conversationMessages = stage.messages.map(message => ({ ...message }));
-                                if (execution.toolCalls.length) {
-                                    conversationMessages.push({
-                                        role: 'assistant',
-                                        content: '',
-                                        tool_calls: execution.toolCalls.map(toolCall => ({
-                                            id: toolCall.id,
-                                            type: 'function',
-                                            function: {
-                                                name: toolCall.functionName,
-                                                arguments: toolCall.argumentsText
-                                            }
-                                        }))
-                                    });
-                                    for (const invocation of execution.invocations) {
-                                        conversationMessages.push({
-                                            role: 'tool',
-                                            tool_call_id: invocation.id,
-                                            name: invocation.name,
-                                            content: invocation.content
-                                        });
+                            const executePlannedToolCall = (toolCall, executionOptions) => {
+                                const execute = () => executeChatToolCall(toolCall, executionOptions);
+                                if (
+                                    stage.requestOptions.queueReservation
+                                    && chatToolMayLaunchPrompts(toolCall.functionName)
+                                ) {
+                                    return LLMClient.withPromptQueueReservationYield(
+                                        stage.requestOptions.queueReservation,
+                                        execute
+                                    );
+                                }
+                                return execute();
+                            };
+                            const execution = await executeDeterministicScheduledEventToolPlan(
+                                scheduledEventToolPlan,
+                                {
+                                    executeChatToolCall: executePlannedToolCall,
+                                    validateToolCall: toolCall => (
+                                        validateScheduledEventToolCallAgainstPlan(
+                                            toolCall,
+                                            scheduledEventToolPlan
+                                        )
+                                    ),
+                                    resultCache: scheduledEventDeterministicToolResultCache,
+                                    executionOptions: {
+                                        requestUserInputHandler: scheduledEventRequestUserInputHandler
                                     }
                                 }
-                                conversationMessages.push({ role: 'assistant', content: aiResponse });
-                                stage.appendLogSection({
-                                    title: 'deterministic scheduled-event tool execution',
-                                    content: execution.invocations.length
-                                        ? execution.invocations.map(invocation => [
-                                            `Tool: ${invocation.name}`,
-                                            `Arguments: ${JSON.stringify(invocation.argumentsObject)}`,
-                                            `Result: ${invocation.content}`
-                                        ].join('\n')).join('\n\n')
-                                        : 'No state-changing tool calls were required by the accepted plan.'
-                                });
-                                return {
-                                    aiResponse,
-                                    conversationMessages,
-                                    toolInvocations: execution.invocations.map(invocation => ({
-                                        id: invocation.id,
-                                        name: invocation.name,
-                                        argumentsObject: invocation.argumentsObject,
-                                        metadata: invocation.metadata
-                                    }))
-                                };
-                            }
-                            const toolLoopResult = await runScheduledEventToolLoop(
-                                stageRequestOptions,
-                                { toolPlan: scheduledEventToolPlan }
                             );
+                            const aiResponse = execution.toolCalls.length
+                                ? 'The server completed the accepted scheduled-event tool plan.'
+                                : 'The accepted scheduled-event plan required no tool calls.';
+                            const conversationMessages = stage.messages.map(message => ({ ...message }));
+                            if (execution.toolCalls.length) {
+                                conversationMessages.push({
+                                    role: 'assistant',
+                                    content: '',
+                                    tool_calls: execution.toolCalls.map(toolCall => ({
+                                        id: toolCall.id,
+                                        type: 'function',
+                                        function: {
+                                            name: toolCall.functionName,
+                                            arguments: toolCall.argumentsText
+                                        }
+                                    }))
+                                });
+                                for (const invocation of execution.invocations) {
+                                    conversationMessages.push({
+                                        role: 'tool',
+                                        tool_call_id: invocation.id,
+                                        name: invocation.name,
+                                        content: invocation.content
+                                    });
+                                }
+                            }
+                            conversationMessages.push({ role: 'assistant', content: aiResponse });
+                            stage.appendLogSection({
+                                title: 'server-executed scheduled-event tool plan',
+                                content: execution.invocations.length
+                                    ? execution.invocations.map(invocation => [
+                                        `Tool: ${invocation.name}`,
+                                        `Arguments: ${JSON.stringify(invocation.argumentsObject)}`,
+                                        `Result: ${invocation.content}`
+                                    ].join('\n')).join('\n\n')
+                                    : 'The accepted plan contained no calls.'
+                            });
                             return {
-                                aiResponse: toolLoopResult.aiResponse,
-                                conversationMessages: toolLoopResult.conversationMessages,
-                                toolInvocations: toolLoopResult.toolInvocations
+                                aiResponse,
+                                conversationMessages,
+                                toolInvocations: execution.invocations.map(invocation => ({
+                                    id: invocation.id,
+                                    name: invocation.name,
+                                    argumentsObject: invocation.argumentsObject,
+                                    metadata: invocation.metadata
+                                }))
                             };
                         }
                         const response = await LLMClient.chatCompletion(stageRequestOptions);

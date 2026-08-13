@@ -376,28 +376,17 @@ function requireDeterministicScheduledEventToolPlan(toolPlan) {
   if (!Array.isArray(toolPlan.directUpdates) || !Array.isArray(toolPlan.otherTools)) {
     throw new Error('Deterministic scheduled event tool plan has malformed planned calls.');
   }
-  if (toolPlan.otherTools.length) {
-    throw new Error(
-      'Deterministic scheduled event execution only supports direct updateObjectFields plans.'
-    );
-  }
-  if (!toolPlan.stateChangeRequired && toolPlan.directUpdates.length) {
-    throw new Error('A no-change scheduled event tool plan cannot contain direct updates.');
-  }
-  if (toolPlan.stateChangeRequired && !toolPlan.directUpdates.length) {
-    throw new Error('A state-changing scheduled event tool plan requires direct updates.');
-  }
   return toolPlan;
 }
 
 function buildDeterministicScheduledEventToolCalls(toolPlan) {
   const plan = requireDeterministicScheduledEventToolPlan(toolPlan);
-  return plan.directUpdates.map((update, index) => {
+  const directUpdateCalls = plan.directUpdates.map((update, index) => {
     if (!update || typeof update !== 'object' || Array.isArray(update)) {
       throw new Error(`Scheduled event direct update ${index + 1} is malformed.`);
     }
     const objectType = normalizeText(update.objectType);
-    const object = normalizeText(update.objectId) || normalizeText(update.objectName);
+    const object = normalizeText(update.object);
     const field = normalizeText(update.field);
     if (!objectType || !object || !field || !Object.hasOwn(update, 'value')) {
       throw new Error(
@@ -418,6 +407,31 @@ function buildDeterministicScheduledEventToolCalls(toolPlan) {
       argumentsText: JSON.stringify(argumentsObject)
     };
   });
+  const otherToolCalls = plan.otherTools.map((plannedTool, index) => {
+    if (!plannedTool || typeof plannedTool !== 'object' || Array.isArray(plannedTool)) {
+      throw new Error(`Scheduled event planned tool ${index + 1} is malformed.`);
+    }
+    const functionName = normalizeText(plannedTool.name);
+    const argumentsObject = plannedTool.argumentsObject;
+    if (
+      !functionName
+      || !argumentsObject
+      || typeof argumentsObject !== 'object'
+      || Array.isArray(argumentsObject)
+    ) {
+      throw new Error(
+        `Scheduled event planned tool ${index + 1} requires a name and structured arguments.`
+      );
+    }
+    const clonedArguments = cloneJsonValue(argumentsObject);
+    return {
+      id: `scheduled_event_plan_${directUpdateCalls.length + index + 1}`,
+      functionName,
+      argumentsObject: clonedArguments,
+      argumentsText: JSON.stringify(clonedArguments)
+    };
+  });
+  return [...directUpdateCalls, ...otherToolCalls];
 }
 
 async function executeDeterministicScheduledEventToolPlan(toolPlan, {

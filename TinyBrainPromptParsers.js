@@ -1421,12 +1421,8 @@ function parseScheduledEventToolPlan(response, scheduledEventText, availableTool
     }
     rejectUnexpectedDirectChildren(
         root,
-        ['stateChangeRequired', 'directUpdates', 'otherTools'],
+        ['directUpdates', 'otherTools'],
         'Scheduled event tool plan'
-    );
-    const stateChangeRequired = parseBooleanText(
-        requireSingleDirectChild(root, 'stateChangeRequired', 'Scheduled event tool plan').text,
-        'Scheduled event tool plan <stateChangeRequired>'
     );
     const directUpdatesNode = requireSingleDirectChild(
         root,
@@ -1445,28 +1441,18 @@ function parseScheduledEventToolPlan(response, scheduledEventText, availableTool
         const label = `Scheduled event direct update ${index + 1}`;
         rejectUnexpectedDirectChildren(
             updateNode,
-            ['objectType', 'objectId', 'objectName', 'field', 'valueJson'],
+            ['objectType', 'object', 'field', 'valueJson'],
             label
         );
         const objectType = requireSingleDirectChild(updateNode, 'objectType', label).text;
         if (!UPDATE_OBJECT_TYPE_VALUES.includes(objectType)) {
             throw new Error(`${label} contains unsupported object type "${objectType}".`);
         }
-        const objectId = requireSingleDirectChild(
+        const object = requireSingleDirectChild(
             updateNode,
-            'objectId',
-            label,
-            { allowEmpty: true }
+            'object',
+            label
         ).text;
-        const objectName = requireSingleDirectChild(
-            updateNode,
-            'objectName',
-            label,
-            { allowEmpty: true }
-        ).text;
-        if (!objectId && !objectName) {
-            throw new Error(`${label} requires an object id or object name.`);
-        }
         const field = requireSingleDirectChild(updateNode, 'field', label).text;
         const allowedFields = UPDATE_OBJECT_FIELD_NAMES_BY_TYPE[objectType] || [];
         if (!allowedFields.includes(field)) {
@@ -1481,15 +1467,13 @@ function parseScheduledEventToolPlan(response, scheduledEventText, availableTool
         }
         const key = JSON.stringify([
             objectType,
-            objectId.toLowerCase(),
-            objectName.toLowerCase(),
+            normalizeScheduledEventContractText(object),
             field
         ]);
         if (directUpdateKeys.has(key)) {
             const existing = directUpdates.find(update => JSON.stringify([
                 update.objectType,
-                update.objectId.toLowerCase(),
-                update.objectName.toLowerCase(),
+                normalizeScheduledEventContractText(update.object),
                 update.field
             ]) === key);
             if (existing && isDeepStrictEqual(existing.value, value)) {
@@ -1500,8 +1484,7 @@ function parseScheduledEventToolPlan(response, scheduledEventText, availableTool
         directUpdateKeys.add(key);
         directUpdates.push({
             objectType,
-            objectId,
-            objectName,
+            object,
             field,
             value
         });
@@ -1519,7 +1502,7 @@ function parseScheduledEventToolPlan(response, scheduledEventText, availableTool
     const otherToolKeys = new Set();
     for (const [index, toolNode] of directChildrenByTagName(otherToolsNode, 'tool').entries()) {
         const label = `Scheduled event planned tool ${index + 1}`;
-        rejectUnexpectedDirectChildren(toolNode, ['name', 'argumentsJson', 'purpose'], label);
+        rejectUnexpectedDirectChildren(toolNode, ['name', 'argumentsJson'], label);
         const name = requireSingleDirectChild(toolNode, 'name', label).text;
         if (name === 'updateObjectFields') {
             throw new Error('Scheduled event updateObjectFields calls must be represented in <directUpdates>.');
@@ -1529,24 +1512,18 @@ function parseScheduledEventToolPlan(response, scheduledEventText, availableTool
         }
         const argumentsJson = requireSingleDirectChild(toolNode, 'argumentsJson', label).text;
         const argumentsObject = parseJsonObjectText(argumentsJson, `${label} <argumentsJson>`);
-        const purpose = requireSingleDirectChild(toolNode, 'purpose', label).text;
         const key = JSON.stringify([name, argumentsObject]);
         if (otherToolKeys.has(key)) {
             continue;
         }
         otherToolKeys.add(key);
-        otherTools.push({ name, argumentsObject, purpose });
+        otherTools.push({ name, argumentsObject });
     }
 
     const mutatingOtherTools = otherTools.filter(tool => (
         !NON_MUTATING_SCHEDULED_EVENT_TOOL_NAMES.has(tool.name)
     ));
-    if (!stateChangeRequired && (directUpdates.length || mutatingOtherTools.length)) {
-        throw new Error('Scheduled event tool plan cannot include state-changing calls when no state change is required.');
-    }
-    if (stateChangeRequired && !directUpdates.length && !mutatingOtherTools.length) {
-        throw new Error('Scheduled event tool plan requires at least one planned state-changing call.');
-    }
+    const stateChangeRequired = directUpdates.length > 0 || mutatingOtherTools.length > 0;
     return {
         value: {
             event: authoritativeEvent,
@@ -1576,8 +1553,8 @@ function requireScheduledEventToolPlan(toolPlan, authoritativeEvent) {
 
 function scheduledEventObjectReferenceMatches(value, plannedUpdate) {
     const normalized = normalizeScheduledEventContractText(value);
-    return Boolean(normalized) && [plannedUpdate.objectId, plannedUpdate.objectName]
-        .some(reference => normalizeScheduledEventContractText(reference) === normalized);
+    return Boolean(normalized)
+        && normalizeScheduledEventContractText(plannedUpdate.object) === normalized;
 }
 
 function validateScheduledEventToolCallAgainstPlan(toolCall, toolPlan) {
@@ -1681,7 +1658,7 @@ function parseScheduledEventToolExecution(response, scheduledEventText, toolPlan
         });
         if (!completed) {
             throw new Error(
-                `Scheduled event direct update for ${update.objectType} "${update.objectName || update.objectId}" `
+                `Scheduled event direct update for ${update.objectType} "${update.object}" `
                 + `field "${update.field}" has not completed with the exact planned value. Make that planned call now.`
             );
         }

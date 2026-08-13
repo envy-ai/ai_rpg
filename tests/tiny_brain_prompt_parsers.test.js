@@ -718,10 +718,9 @@ test('scheduled-event parsers preserve approved summaries and interruption non-p
 test('scheduled-event tool plan and execution parsers enforce exact direct-update contracts', () => {
     const event = 'Change QA Depot Marker description to exactly: The depot marker bears one fresh blue QA stripe.';
     const planXml = '<toolPlan>'
-        + '<stateChangeRequired>yes</stateChangeRequired>'
         + '<directUpdates><update>'
-        + '<objectType>thing</objectType><objectId>thing_348</objectId>'
-        + '<objectName>QA Depot Marker</objectName><field>description</field>'
+        + '<objectType>thing</objectType><object>thing_348</object>'
+        + '<field>description</field>'
         + '<valueJson>"The depot marker bears one fresh blue QA stripe."</valueJson>'
         + '</update></directUpdates><otherTools/>'
         + '</toolPlan>';
@@ -731,13 +730,22 @@ test('scheduled-event tool plan and execution parsers enforce exact direct-updat
         ['updateObjectFields', 'alterThing']
     ).value;
     assert.equal(plan.stateChangeRequired, true);
+    assert.equal(plan.directUpdates[0].object, 'thing_348');
     assert.equal(plan.directUpdates[0].field, 'description');
+    assert.throws(
+        () => parseScheduledEventToolPlan(
+            planXml.replace('<directUpdates>', '<stateChangeRequired>yes</stateChangeRequired><directUpdates>'),
+            event,
+            ['updateObjectFields']
+        ),
+        /unexpected direct child <statechangerequired>/i
+    );
 
     const readOnlyLookupPlan = planXml.replace(
         '<otherTools/>',
         '<otherTools><tool><name>locateThings</name>'
         + '<argumentsJson>{"query":"QA Depot Marker"}</argumentsJson>'
-        + '<purpose>Find the marker id.</purpose></tool></otherTools>'
+        + '</tool></otherTools>'
     );
     const planWithLookup = parseScheduledEventToolPlan(
         readOnlyLookupPlan,
@@ -745,6 +753,14 @@ test('scheduled-event tool plan and execution parsers enforce exact direct-updat
         ['updateObjectFields', 'locateThings']
     ).value;
     assert.equal(planWithLookup.otherTools[0].name, 'locateThings');
+    assert.throws(
+        () => parseScheduledEventToolPlan(
+            readOnlyLookupPlan.replace('</tool>', '<purpose>Redundant prose.</purpose></tool>'),
+            event,
+            ['updateObjectFields', 'locateThings']
+        ),
+        /unexpected direct child <purpose>/i
+    );
 
     const wrongFieldPlan = planXml.replace(
         '<field>description</field>',
@@ -777,7 +793,7 @@ test('scheduled-event tool plan and execution parsers enforce exact direct-updat
         name: 'updateObjectFields',
         argumentsObject: {
             objectType: 'thing',
-            object: 'QA Depot Marker',
+            object: 'thing_348',
             fields: {
                 shortDescription: 'The depot marker bears one fresh blue QA stripe.'
             }
@@ -792,7 +808,7 @@ test('scheduled-event tool plan and execution parsers enforce exact direct-updat
         name: 'updateObjectFields',
         argumentsObject: {
             objectType: 'thing',
-            object: 'QA Depot Marker',
+            object: 'thing_348',
             fields: {
                 description: 'The depot marker bears one fresh blue stripe.'
             }
@@ -807,7 +823,7 @@ test('scheduled-event tool plan and execution parsers enforce exact direct-updat
         name: 'updateObjectFields',
         argumentsObject: {
             objectType: 'thing',
-            object: 'QA Depot Marker',
+            object: 'thing_348',
             fields: {
                 description: 'The depot marker bears one fresh blue QA stripe.'
             }
@@ -834,14 +850,13 @@ test('scheduled-event tool plan and execution parsers enforce exact direct-updat
     );
 
     const noChangeEvent = 'QA Bell Runner rings QA Brass Bell exactly once; nobody and nothing moves.';
-    const noChangePlanXml = '<toolPlan>'
-        + '<stateChangeRequired>no</stateChangeRequired><directUpdates/><otherTools/>'
-        + '</toolPlan>';
+    const noChangePlanXml = '<toolPlan><directUpdates/><otherTools/></toolPlan>';
     const noChangePlan = parseScheduledEventToolPlan(
         noChangePlanXml,
         noChangeEvent,
         ['updateObjectFields']
     ).value;
+    assert.equal(noChangePlan.stateChangeRequired, false);
     assert.equal(
         parseScheduledEventToolExecution('No persistent update was needed.', noChangeEvent, noChangePlan, {
             currentToolInvocations: []

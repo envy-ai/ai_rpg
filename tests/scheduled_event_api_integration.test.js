@@ -19,14 +19,18 @@ test('api wires scheduled event scheduling and due-event resolution hooks', () =
     assert.match(apiSource, /const isToolCheckpoint = !stage\.isFinal\s*&& stage\.checkpoint\?\.index === 2/);
     assert.match(apiSource, /const isPlanCheckpoint = !stage\.isFinal\s*&& stage\.checkpoint\?\.index === 1/);
     assert.match(apiSource, /isNonMutatingScheduledEventToolName/);
-    assert.match(apiSource, /const plannedToolNames = new Set/);
     assert.match(apiSource, /scheduledEventTools\.filter\(definition/);
-    assert.match(apiSource, /validateScheduledEventToolCallAgainstPlan\(toolCall, toolPlan\)/);
+    assert.match(
+        apiSource,
+        /validateScheduledEventToolCallAgainstPlan\(\s*toolCall,\s*scheduledEventToolPlan\s*\)/
+    );
     assert.match(apiSource, /executeDeterministicScheduledEventToolPlan/);
     assert.match(apiSource, /scheduledEventDeterministicToolResultCache/);
+    assert.match(apiSource, /const executePlannedToolCall = \(toolCall, executionOptions\)/);
+    assert.match(apiSource, /chatToolMayLaunchPrompts\(toolCall\.functionName\)/);
+    assert.match(apiSource, /title:\s*'server-executed scheduled-event tool plan'/);
     assert.match(apiSource, /event:\s*scheduledEvent\.event\s*\|\|\s*''/);
     assert.match(apiSource, /event:\s*result\.event\s*\|\|\s*''/);
-    assert.match(apiSource, /scheduledEventToolPlan\.otherTools\.length === 0/);
     assert.doesNotMatch(apiSource, /scheduledEventTools[\s\S]{0,240}\.filter\(toolDefinition => toolDefinition\?\.\function\?\.name !== 'requestUserInput'\)/);
     assert.match(apiSource, /promptLabel:\s*'scheduled_event_resolution'/);
     assert.match(apiSource, /LLMClient\.logPrompt\(\{\s*prefix:\s*'scheduled_event_resolution'/);
@@ -56,6 +60,10 @@ test('scheduled resolution prompts treat player presence as visibility rather th
     }
     assert.match(tinyBrainPrompt, /scheduled_event_tool_plan/);
     assert.match(tinyBrainPrompt, /scheduled_event_tool_execution/);
+    assert.match(tinyBrainPrompt, /server now executes every accepted call/i);
+    assert.doesNotMatch(tinyBrainPrompt, /Make each planned call once now/i);
+    assert.doesNotMatch(tinyBrainPrompt, /stateChangeRequired/);
+    assert.doesNotMatch(tinyBrainPrompt, /<purpose>/);
     assert.match(tinyBrainPrompt, /read-only lookup calls now/i);
     assert.match(tinyBrainPrompt, /llmresult\('scheduled_event_result'\)/);
     assert.doesNotMatch(tinyBrainPrompt, /character-for-character/i);

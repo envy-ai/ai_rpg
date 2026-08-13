@@ -29,6 +29,10 @@ const CHAT_TOOLS_THAT_MAY_LAUNCH_PROMPTS = new Set([
     'createThing',
     'rerunSceneSummary'
 ]);
+
+function chatToolMayLaunchPrompts(name) {
+    return typeof name === 'string' && CHAT_TOOLS_THAT_MAY_LAUNCH_PROMPTS.has(name.trim());
+}
 const SKILL_CHECK_TOOL_NAMES = new Set([
     'resolveSkillCheck',
     'resolveOpposedSkillCheck',
@@ -11900,6 +11904,7 @@ module.exports = {
     CHAT_TOOL_DEFINITIONS,
     UPDATE_OBJECT_FIELD_NAMES_BY_TYPE,
     UPDATE_OBJECT_TYPE_VALUES,
+    chatToolMayLaunchPrompts,
     createChatToolRuntime,
     getChatToolDefinitions,
     requireExplicitSkillCheckActors
