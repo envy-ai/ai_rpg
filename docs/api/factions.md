@@ -143,12 +143,13 @@ Request:
 - `operation`: `create` or `update`.
 - `faction`: required for `update`; accepts faction id or exact faction name. Omit it for `create`.
 - `fields`: object of allowed faction field/value pairs.
-- Allowed fields: `name`, `description`, `shortDescription`, `tags`, `goals`, `homeRegionName`, `relations`, `assets`, `reputationTiers`.
+- Generic-admin prompts (`@`, `@@`, and `@@@`) allow `name`, `description`, `shortDescription`, `tags`, `goals`, `homeRegionName`, `relations`, `assets`, and `reputationTiers`. Other prompt schemas omit direct `shortDescription` mutation.
 
 Behavior:
 - `create` requires `fields.name`, rejects duplicate names, creates a persisted `Faction` instance, and inserts it into the active factions map.
 - `create` rejects a non-blank top-level `faction`; the faction name belongs in `fields.name`.
 - `update` resolves the target by id or exact name and rejects duplicate renames before mutation.
+- When a non-admin call supplies `description`, the runtime generates `shortDescription` from a detached draft before creating or updating the live faction. A generation failure leaves the live faction unchanged. An admin call that supplies both values skips that extra prompt.
 - The tool returns recoverable problems as `<toolError>` payloads with error codes and, where useful, candidates.
 - `tags`, `goals`, and tier `perks`/`penalties` accept arrays or newline-delimited strings.
 - `description`, `shortDescription`, and `homeRegionName` accept non-empty strings or `null`.

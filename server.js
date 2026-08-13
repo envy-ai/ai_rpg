@@ -17052,6 +17052,24 @@ function resolveShortDescriptionTypeConfig(itemType) {
         };
     }
 
+    if (normalized === 'npc' || normalized === 'character') {
+        return {
+            itemType: 'npc',
+            itemTypeLabel: 'NPC',
+            itemTypePlural: 'npcs',
+            itemTypePluralLabel: 'NPCs'
+        };
+    }
+
+    if (normalized === 'faction') {
+        return {
+            itemType: 'faction',
+            itemTypeLabel: 'faction',
+            itemTypePlural: 'factions',
+            itemTypePluralLabel: 'factions'
+        };
+    }
+
     if (normalized === 'location') {
         return {
             itemType: 'location',
@@ -17111,7 +17129,9 @@ async function runShortDescriptionPrompt({
         items: itemType === 'item' ? items : [],
         locations: itemType === 'location' ? (items || []) : [],
         regions: itemType === 'region' ? items : [],
-        abilities: itemType === 'ability' ? items : []
+        abilities: itemType === 'ability' ? items : [],
+        npcs: itemType === 'npc' ? items : [],
+        factions: itemType === 'faction' ? items : []
     };
 
     const renderedTemplate = promptEnv.render('short-description.xml.njk', templatePayload);
@@ -17412,6 +17432,48 @@ function buildAbilityShortDescriptionItem(ability) {
     };
 }
 
+function buildNpcShortDescriptionItem(npc) {
+    if (!npc || typeof npc !== 'object') {
+        throw new Error('NPC short description requires a valid NPC object.');
+    }
+    const name = typeof npc.name === 'string' ? npc.name.trim() : '';
+    if (!name) {
+        throw new Error('NPC short description requires a name.');
+    }
+    return {
+        name,
+        description: typeof npc.description === 'string' ? npc.description.trim() : '',
+        race: typeof npc.race === 'string' ? npc.race.trim() : '',
+        class: typeof npc.class === 'string' ? npc.class.trim() : '',
+        gender: typeof npc.gender === 'string' ? npc.gender.trim() : '',
+        personalityType: typeof npc.personalityType === 'string' ? npc.personalityType.trim() : '',
+        personalityTraits: typeof npc.personalityTraits === 'string' ? npc.personalityTraits.trim() : '',
+        personalityNotes: typeof npc.personalityNotes === 'string' ? npc.personalityNotes.trim() : '',
+        aiNotes: typeof npc.aiNotes === 'string' ? npc.aiNotes.trim() : '',
+        aliases: Array.isArray(npc.aliases) ? npc.aliases : [],
+        shortDescription: typeof npc.shortDescription === 'string' ? npc.shortDescription : ''
+    };
+}
+
+function buildFactionShortDescriptionItem(faction) {
+    if (!faction || typeof faction !== 'object') {
+        throw new Error('Faction short description requires a valid faction object.');
+    }
+    const name = typeof faction.name === 'string' ? faction.name.trim() : '';
+    if (!name) {
+        throw new Error('Faction short description requires a name.');
+    }
+    return {
+        name,
+        description: typeof faction.description === 'string' ? faction.description.trim() : '',
+        tags: Array.isArray(faction.tags) ? faction.tags : [],
+        goals: Array.isArray(faction.goals) ? faction.goals : [],
+        homeRegionName: typeof faction.homeRegionName === 'string' ? faction.homeRegionName.trim() : '',
+        assets: Array.isArray(faction.assets) ? faction.assets : [],
+        shortDescription: typeof faction.shortDescription === 'string' ? faction.shortDescription : ''
+    };
+}
+
 async function ensureThingShortDescriptions(things, options = {}) {
     return populateShortDescriptions({
         itemType: 'item',
@@ -17422,6 +17484,34 @@ async function ensureThingShortDescriptions(things, options = {}) {
         getShortDescription: thing => thing?.shortDescription,
         setShortDescription: (thing, shortDescription) => {
             thing.shortDescription = shortDescription;
+        }
+    });
+}
+
+async function ensureNpcShortDescriptions(npcs, options = {}) {
+    return populateShortDescriptions({
+        itemType: 'npc',
+        items: npcs,
+        setting: options.setting,
+        buildPromptItem: buildNpcShortDescriptionItem,
+        getName: npc => npc?.name,
+        getShortDescription: npc => npc?.shortDescription,
+        setShortDescription: (npc, shortDescription) => {
+            npc.shortDescription = shortDescription;
+        }
+    });
+}
+
+async function ensureFactionShortDescriptions(factionsToProcess, options = {}) {
+    return populateShortDescriptions({
+        itemType: 'faction',
+        items: factionsToProcess,
+        setting: options.setting,
+        buildPromptItem: buildFactionShortDescriptionItem,
+        getName: faction => faction?.name,
+        getShortDescription: faction => faction?.shortDescription,
+        setShortDescription: (faction, shortDescription) => {
+            faction.shortDescription = shortDescription;
         }
     });
 }
@@ -25740,6 +25830,8 @@ Globals.ensureThingShortDescriptions = ensureThingShortDescriptions;
 Globals.ensureLocationShortDescriptions = ensureLocationShortDescriptions;
 Globals.ensureRegionShortDescriptions = ensureRegionShortDescriptions;
 Globals.ensureAbilityShortDescriptions = ensureAbilityShortDescriptions;
+Globals.ensureNpcShortDescriptions = ensureNpcShortDescriptions;
+Globals.ensureFactionShortDescriptions = ensureFactionShortDescriptions;
 
 async function ensureUniqueThingNames({ things: candidateThings = [], location = null, owner = null } = {}) {
     if (!Array.isArray(candidateThings) || !candidateThings.length) {

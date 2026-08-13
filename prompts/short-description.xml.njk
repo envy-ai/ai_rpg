@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <template>
 <systemPrompt>
-You are a meticulous AI assistant whose job is to create concise short descriptions for RPG items, locations, and regions. These descriptions should capture the essence of the subject in 5-10 words, providing a clear and engaging summary that highlights its most distinctive features.
+You are a meticulous AI assistant whose job is to create concise short descriptions for RPG entities. These descriptions should capture the essence of the subject in 5-10 words, providing a clear and engaging summary that highlights its most distinctive features.
 </systemPrompt>
 
 <generationPrompt>
@@ -139,6 +139,45 @@ Ability Information:
   </ability>
   {% endfor %}
 </abilities>
+{% endif %}
+
+{% if itemType == 'npc' %}
+NPC Information:
+<npcs>
+  {% for npc in npcs %}
+  <npc>
+    <name>{{ npc.name }}</name>
+    <description>{{ npc.description }}</description>
+    <race>{{ npc.race }}</race>
+    <class>{{ npc.class }}</class>
+    <gender>{{ npc.gender }}</gender>
+    <personalityType>{{ npc.personalityType }}</personalityType>
+    <personalityTraits>{{ npc.personalityTraits }}</personalityTraits>
+    <personalityNotes>{{ npc.personalityNotes }}</personalityNotes>
+    <aiNotes>{{ npc.aiNotes }}</aiNotes>
+    <aliases>{{ (npc.aliases or []) | join(', ') }}</aliases>
+  </npc>
+  {% endfor %}
+</npcs>
+{% endif %}
+
+{% if itemType == 'faction' %}
+Faction Information:
+<factions>
+  {% for faction in factions %}
+  <faction>
+    <name>{{ faction.name }}</name>
+    <description>{{ faction.description }}</description>
+    <tags>{{ (faction.tags or []) | join(', ') }}</tags>
+    <goals>{{ (faction.goals or []) | join('; ') }}</goals>
+    <homeRegionName>{{ faction.homeRegionName }}</homeRegionName>
+    <assets>
+      {% for asset in faction.assets %}<asset>{{ asset.name | default(asset, true) }}</asset>
+      {% endfor %}
+    </assets>
+  </faction>
+  {% endfor %}
+</factions>
 {% endif %}
 
 <task>Above is a list of RPG {{ itemTypePluralLabel }} along with relevant context about the setting, region, and location they belong to. For each {{ itemTypeLabel }}, generate a concise short description consisting of 5-10 words that effectively captures its essence. Focus on highlighting the most distinctive features or characteristics that would make the most important essence of the {{ itemTypeLabel }} clear and understandable for an LLM.</task>

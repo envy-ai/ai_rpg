@@ -59,7 +59,8 @@ function makeRuntime({ factions, firstResponse }) {
         getGameLocations: () => new Map([[location.id, location]]),
         getFactions: () => factions,
         getRegionsMap: () => new Map([[region.id, region]]),
-        getPendingRegionStubs: () => new Map()
+        getPendingRegionStubs: () => new Map(),
+        regenerateShortDescription: async ({ objectType }) => `Generated ${objectType} summary.`
     });
 }
 
@@ -90,7 +91,8 @@ async function runTool({ factions, args }) {
     });
     return runtime.runChatCompletionWithToolLoop({
         requestOptions: { messages: [{ role: 'user', content: '@Update faction continuity.' }] },
-        metadataLabel: 'test_upsert_faction_fields'
+        metadataLabel: 'test_upsert_faction_fields',
+        allowDirectShortDescriptionUpdates: true
     });
 }
 
@@ -178,11 +180,12 @@ test('upsertFactionFields updates an existing faction by name', async () => {
     });
 
     assert.equal(faction.description, 'A formal trade guild.');
+    assert.equal(faction.shortDescription, 'Generated faction summary.');
     assert.deepEqual(faction.tags, ['merchant', 'political']);
     assert.equal(result.toolInvocations[0].metadata.status, 'success');
     assert.equal(result.toolInvocations[0].metadata.operation, 'update');
     assert.equal(result.toolInvocations[0].metadata.factionId, faction.id);
-    assert.deepEqual(result.toolInvocations[0].metadata.updatedFields, ['description', 'tags']);
+    assert.deepEqual(result.toolInvocations[0].metadata.updatedFields, ['description', 'tags', 'shortDescription']);
 });
 
 test('upsertFactionFields defaults omitted relation fields instead of requiring them', async () => {

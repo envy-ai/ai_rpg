@@ -895,6 +895,18 @@ test('scheduled-event tool plan and execution parsers enforce exact direct-updat
         ),
         /unsupported thing field "unknownField"/i
     );
+    const directShortDescriptionPlan = planXml.replace(
+        '<field>description</field>',
+        '<field>shortDescription</field>'
+    );
+    assert.throws(
+        () => parseScheduledEventToolPlan(
+            directShortDescriptionPlan,
+            event,
+            ['updateObjectFields']
+        ),
+        /unsupported thing field "shortDescription"/i
+    );
 
     const duplicatePlan = parseScheduledEventToolPlan(
         planXml.replace('</directUpdates>', planXml.match(/<update>[\s\S]*?<\/update>/)[0] + '</directUpdates>'),

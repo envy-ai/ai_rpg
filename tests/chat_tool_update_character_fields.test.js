@@ -1,7 +1,11 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 
-const { CHAT_TOOL_DEFINITIONS, createChatToolRuntime } = require('../chat_tool_calls.js');
+const {
+    CHAT_TOOL_DEFINITIONS,
+    createChatToolRuntime,
+    getChatToolDefinitions
+} = require('../chat_tool_calls.js');
 const ModExtensionRegistry = require('../ModExtensionRegistry.js');
 
 function findToolDefinition(name) {
@@ -311,7 +315,8 @@ function makeRuntime({
     regions = null,
     factions = [],
     modExtensionRegistry = null,
-    onChatCompletionOptions = null
+    onChatCompletionOptions = null,
+    regenerateShortDescription = async ({ objectType }) => `Generated ${objectType} summary.`
 }) {
     const locationList = locations || [makeLocation()];
     const regionList = regions || [makeRegion({ locationIds: locationList.map(location => location.id) })];
@@ -366,6 +371,7 @@ function makeRuntime({
         getRegionsMap: () => new Map(regionList.map(entry => [entry.id, entry])),
         getPendingRegionStubs: () => new Map(),
         clearLocationImageVariants: targetLocation => targetLocation.clearImageVariants(),
+        regenerateShortDescription,
         getModExtensionRegistry: () => modExtensionRegistry
     });
 }
@@ -408,6 +414,57 @@ test('updateObjectFields tool schema exists', () => {
     assert.equal(tool.parameters.properties.object.type, 'string');
     assert.equal(tool.parameters.properties.fields.type, 'object');
     assert.match(tool.description, /For locations, hasWeather accepts "yes", "no", "sheltered", or null/);
+});
+
+test('ordinary tool schemas hide direct short-description updates while generic admin schemas retain them', () => {
+    const ordinaryTools = getChatToolDefinitions();
+    const adminTools = getChatToolDefinitions({ allowDirectShortDescriptionUpdates: true });
+    for (const toolName of ['updateCharacterFields', 'updateObjectFields', 'upsertFactionFields']) {
+        const ordinary = ordinaryTools.find(entry => entry?.function?.name === toolName)?.function;
+        const admin = adminTools.find(entry => entry?.function?.name === toolName)?.function;
+        assert.ok(ordinary, `Expected ordinary ${toolName} schema.`);
+        assert.ok(admin, `Expected admin ${toolName} schema.`);
+        assert.doesNotMatch(ordinary.description, /shortDescription/);
+        if (toolName === 'updateObjectFields') {
+            assert.match(ordinary.description, /automatically refreshes its concise summary/);
+            assert.doesNotMatch(admin.description, /automatically refreshes its concise summary/);
+        } else {
+            assert.match(admin.description, /shortDescription/);
+        }
+    }
+});
+
+test('ordinary execution rejects direct short-description updates and generic admin execution accepts them', async () => {
+    const restrictedNpc = makeNpc({ shortDescription: 'Original short.' });
+    const restrictedRuntime = makeRuntime({
+        npc: restrictedNpc,
+        firstResponse: toolResponse({
+            character: restrictedNpc.name,
+            fields: { shortDescription: 'Rejected direct summary.' }
+        })
+    });
+    const restrictedResult = await restrictedRuntime.runChatCompletionWithToolLoop({
+        requestOptions: { messages: [{ role: 'user', content: 'Update Neka.' }] },
+        metadataLabel: 'test_restricted_short_description_update'
+    });
+    assert.equal(restrictedResult.toolInvocations[0].metadata.code, 'unsupported_field');
+    assert.equal(restrictedNpc.shortDescription, 'Original short.');
+
+    const adminNpc = makeNpc({ shortDescription: 'Original short.' });
+    const adminRuntime = makeRuntime({
+        npc: adminNpc,
+        firstResponse: toolResponse({
+            character: adminNpc.name,
+            fields: { shortDescription: 'Accepted direct summary.' }
+        })
+    });
+    const adminResult = await adminRuntime.runChatCompletionWithToolLoop({
+        requestOptions: { messages: [{ role: 'user', content: '@Update Neka.' }] },
+        metadataLabel: 'test_admin_short_description_update',
+        allowDirectShortDescriptionUpdates: true
+    });
+    assert.equal(adminResult.toolInvocations[0].metadata.status, 'success');
+    assert.equal(adminNpc.shortDescription, 'Accepted direct summary.');
 });
 
 test('tool-loop validation rejects a tool call before it can mutate state', async () => {
@@ -480,6 +537,7 @@ test('updateCharacterFields applies allowed scalar and map fields directly to an
 
     assert.equal(result.rounds, 2);
     assert.equal(npc.description, 'Now wears a patched hazard coat.');
+    assert.equal(npc.shortDescription, 'Generated character summary.');
     assert.equal(npc.aiNotes, 'Use her as a careful field medic.');
     assert.deepEqual(npc.aliases, ['Patch']);
     assert.equal(npc.attributes.Vigor, 13);
@@ -495,8 +553,38 @@ test('updateCharacterFields applies allowed scalar and map fields directly to an
         'attributes.Vigor',
         'skills.Medicine',
         'currency',
-        'willingToTrade'
+        'willingToTrade',
+        'shortDescription'
     ]);
+});
+
+test('description updates remain atomic when short-description generation fails', async () => {
+    const npc = makeNpc({
+        description: 'Original description.',
+        shortDescription: 'Original short.'
+    });
+    const runtime = makeRuntime({
+        npc,
+        firstResponse: toolResponse({
+            character: npc.name,
+            fields: {
+                description: 'A description that must not be applied alone.'
+            }
+        }),
+        regenerateShortDescription: async () => {
+            throw new Error('Short-description generation failed.');
+        }
+    });
+
+    const result = await runtime.runChatCompletionWithToolLoop({
+        requestOptions: { messages: [{ role: 'user', content: 'Update Neka.' }] },
+        metadataLabel: 'test_atomic_short_description_generation_failure'
+    });
+
+    assert.equal(result.toolInvocations[0].metadata.error, true);
+    assert.match(result.toolInvocations[0].metadata.message, /generation failed/i);
+    assert.equal(npc.description, 'Original description.');
+    assert.equal(npc.shortDescription, 'Original short.');
 });
 
 test('updateCharacterFields applies nested personality fields to persisted NPC personality fields', async () => {
@@ -656,10 +744,14 @@ test('updateObjectFields applies allowed thing, location, region, and faction fi
         });
 
         assertion();
+        assert.equal({ thing, location, region, faction }[objectType].shortDescription, `Generated ${objectType} summary.`);
         assert.equal(result.toolInvocations[0].metadata.status, 'success');
         assert.equal(result.toolInvocations[0].metadata.objectType, objectType);
-        assert.deepEqual(result.toolInvocations[0].metadata.updatedFields, Object.keys(fields));
-        assert.deepEqual(result.toolInvocations[0].metadata.updatedValues, fields);
+        assert.deepEqual(result.toolInvocations[0].metadata.updatedFields, [...Object.keys(fields), 'shortDescription']);
+        assert.deepEqual(result.toolInvocations[0].metadata.updatedValues, {
+            ...fields,
+            shortDescription: `Generated ${objectType} summary.`
+        });
     }
 });
 

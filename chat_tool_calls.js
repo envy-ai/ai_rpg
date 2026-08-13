@@ -27,7 +27,10 @@ const CHAT_TOOLS_THAT_MAY_LAUNCH_PROMPTS = new Set([
     'createNpc',
     'createQuest',
     'createThing',
-    'rerunSceneSummary'
+    'rerunSceneSummary',
+    'updateCharacterFields',
+    'updateObjectFields',
+    'upsertFactionFields'
 ]);
 
 function chatToolMayLaunchPrompts(name) {
@@ -77,7 +80,7 @@ const MORE_INFO_COMPACT_OMITTED_FIELDS = new Set([
     'stubMetadata',
     'generationHints'
 ]);
-const UPDATE_CHARACTER_FIELD_NAMES = Object.freeze([
+const ADMIN_UPDATE_CHARACTER_FIELD_NAMES = Object.freeze([
     'name',
     'description',
     'shortDescription',
@@ -107,6 +110,9 @@ const UPDATE_CHARACTER_FIELD_NAMES = Object.freeze([
     'relationships',
     'willingToTrade'
 ]);
+const UPDATE_CHARACTER_FIELD_NAMES = Object.freeze(
+    ADMIN_UPDATE_CHARACTER_FIELD_NAMES.filter(fieldName => fieldName !== 'shortDescription')
+);
 const UPDATE_CHARACTER_FIELD_SET = new Set(UPDATE_CHARACTER_FIELD_NAMES);
 const UPDATE_CHARACTER_PERSONALITY_FIELD_MAP = Object.freeze({
     type: 'personalityType',
@@ -144,11 +150,18 @@ const UPDATE_OBJECT_TYPE_ALIASES = Object.freeze({
     effect: 'statusEffect',
     statusEffect: 'statusEffect'
 });
+const SHORT_DESCRIPTION_OBJECT_TYPES = new Set([
+    'character',
+    'thing',
+    'location',
+    'region',
+    'faction'
+]);
 const UPSERT_FACTION_OPERATION_VALUES = Object.freeze(['create', 'update']);
 const UPSERT_FACTION_DEFAULT_RELATION_STATUS = 'neutral';
 const UPSERT_FACTION_DEFAULT_RELATION_NOTES = 'No explicit relationship provided.';
-const UPDATE_OBJECT_FIELD_NAMES_BY_TYPE = Object.freeze({
-    character: UPDATE_CHARACTER_FIELD_NAMES,
+const ADMIN_UPDATE_OBJECT_FIELD_NAMES_BY_TYPE = Object.freeze({
+    character: ADMIN_UPDATE_CHARACTER_FIELD_NAMES,
     thing: Object.freeze([
         'name',
         'description',
@@ -254,6 +267,12 @@ const UPDATE_OBJECT_FIELD_NAMES_BY_TYPE = Object.freeze({
         'appliedAt'
     ])
 });
+const UPDATE_OBJECT_FIELD_NAMES_BY_TYPE = Object.freeze(Object.fromEntries(
+    Object.entries(ADMIN_UPDATE_OBJECT_FIELD_NAMES_BY_TYPE).map(([objectType, fieldNames]) => [
+        objectType,
+        Object.freeze(fieldNames.filter(fieldName => fieldName !== 'shortDescription'))
+    ])
+));
 const CHAT_TOOL_DEFINITIONS = Object.freeze([
     {
         type: 'function',
@@ -1502,7 +1521,7 @@ const CHAT_TOOL_DEFINITIONS = Object.freeze([
         type: 'function',
         function: {
             name: 'updateCharacterFields',
-            description: `Directly update allowed persisted fields on an NPC without running the alter_npc event flow. Only use simple character fields from this allowlist: ${UPDATE_CHARACTER_FIELD_NAMES.join(', ')}. Do not use this for equipment, inventory, barter inventory, party membership, quests, location, dispositions, or other object-graph state.`,
+            description: `Directly update allowed persisted fields on an NPC without running the alter_npc event flow. Only use simple character fields from this allowlist: ${ADMIN_UPDATE_CHARACTER_FIELD_NAMES.join(', ')}. Do not use this for equipment, inventory, barter inventory, party membership, quests, location, dispositions, or other object-graph state.`,
             parameters: {
                 type: 'object',
                 properties: {
@@ -1551,7 +1570,7 @@ const CHAT_TOOL_DEFINITIONS = Object.freeze([
         type: 'function',
         function: {
             name: 'upsertFactionFields',
-            description: `Create a new faction or directly update allowed persisted fields on an existing faction. Provide individual field/value pairs in fields. For create, fields.name is required and must not duplicate an existing faction name. For update, faction is required and resolves by id or name. Allowed fields: ${UPDATE_OBJECT_FIELD_NAMES_BY_TYPE.faction.join(', ')}.`,
+            description: `Create a new faction or directly update allowed persisted fields on an existing faction. Provide individual field/value pairs in fields. For create, fields.name is required and must not duplicate an existing faction name. For update, faction is required and resolves by id or name. Allowed fields: ${ADMIN_UPDATE_OBJECT_FIELD_NAMES_BY_TYPE.faction.join(', ')}.`,
             parameters: {
                 type: 'object',
                 properties: {
@@ -2169,10 +2188,38 @@ const applyConfiguredTrackerLimitsToToolDefinition = (toolDefinition) => {
     return toolDefinition;
 };
 
-const getChatToolDefinitions = ({ modExtensionRegistry = null, getActiveSettingSnapshot = null } = {}) => CHAT_TOOL_DEFINITIONS
+const applyDirectShortDescriptionToolPolicy = (
+    toolDefinition,
+    { allowDirectShortDescriptionUpdates = false } = {}
+) => {
+    if (typeof allowDirectShortDescriptionUpdates !== 'boolean') {
+        throw new TypeError('allowDirectShortDescriptionUpdates must be a boolean.');
+    }
+    if (allowDirectShortDescriptionUpdates) {
+        return toolDefinition;
+    }
+    const functionName = toolDefinition?.function?.name;
+    if (functionName === 'updateCharacterFields') {
+        toolDefinition.function.description = `Directly update allowed persisted fields on an NPC without running the alter_npc event flow. Only use simple character fields from this allowlist: ${UPDATE_CHARACTER_FIELD_NAMES.join(', ')}. Changing description automatically refreshes the NPC's concise summary. Do not use this for equipment, inventory, barter inventory, party membership, quests, location, dispositions, or other object-graph state.`;
+    } else if (functionName === 'updateObjectFields') {
+        toolDefinition.function.description = `${toolDefinition.function.description} Changing an entity's description automatically refreshes its concise summary when that entity type has one.`;
+    } else if (functionName === 'upsertFactionFields') {
+        toolDefinition.function.description = `Create a new faction or directly update allowed persisted fields on an existing faction. Provide individual field/value pairs in fields. For create, fields.name is required and must not duplicate an existing faction name. For update, faction is required and resolves by id or name. Allowed fields: ${UPDATE_OBJECT_FIELD_NAMES_BY_TYPE.faction.join(', ')}. Changing description automatically refreshes the faction's concise summary.`;
+    }
+    return toolDefinition;
+};
+
+const getChatToolDefinitions = ({
+    modExtensionRegistry = null,
+    getActiveSettingSnapshot = null,
+    allowDirectShortDescriptionUpdates = false
+} = {}) => CHAT_TOOL_DEFINITIONS
     .map(toolDefinition => applyConfiguredTrackerLimitsToToolDefinition(
         applyRegisteredThingFieldsToToolDefinition(
-            cloneToolDefinition(toolDefinition),
+            applyDirectShortDescriptionToolPolicy(
+                cloneToolDefinition(toolDefinition),
+                { allowDirectShortDescriptionUpdates }
+            ),
             { modExtensionRegistry, getActiveSettingSnapshot }
         )
     ));
@@ -2722,6 +2769,7 @@ const createChatToolRuntime = ({
     getRegionsMap,
     getPendingRegionStubs,
     clearLocationImageVariants = null,
+    regenerateShortDescription = null,
     requestUserInput = null,
     getModExtensionRegistry = null
 } = {}) => {
@@ -2748,6 +2796,9 @@ const createChatToolRuntime = ({
     ensureFunction(getPendingRegionStubs, 'getPendingRegionStubs');
     if (clearLocationImageVariants !== null && clearLocationImageVariants !== undefined) {
         ensureFunction(clearLocationImageVariants, 'clearLocationImageVariants');
+    }
+    if (regenerateShortDescription !== null && regenerateShortDescription !== undefined) {
+        ensureFunction(regenerateShortDescription, 'regenerateShortDescription');
     }
     if (getModExtensionRegistry !== null && getModExtensionRegistry !== undefined) {
         ensureFunction(getModExtensionRegistry, 'getModExtensionRegistry');
@@ -5821,7 +5872,10 @@ const createChatToolRuntime = ({
         return value;
     };
 
-    const makeUpdateCharacterFieldOperations = (targetNpc, fieldsObject, { functionName } = {}) => {
+    const makeUpdateCharacterFieldOperations = (targetNpc, fieldsObject, {
+        functionName,
+        allowDirectShortDescriptionUpdates = false
+    } = {}) => {
         if (!isPlainObject(fieldsObject)) {
             throw new ToolVisibleError(
                 `${functionName} requires "fields" to be an object.`,
@@ -5840,7 +5894,9 @@ const createChatToolRuntime = ({
         const registeredPlayerUpdateFields = getRegisteredEntityFieldsForRuntime('player', { exposeToUpdateTool: true });
         const registeredPlayerUpdateFieldMap = new Map(registeredPlayerUpdateFields.map(field => [field.fieldName, field]));
         const allowedFields = [
-            ...UPDATE_CHARACTER_FIELD_NAMES,
+            ...(allowDirectShortDescriptionUpdates
+                ? ADMIN_UPDATE_CHARACTER_FIELD_NAMES
+                : UPDATE_CHARACTER_FIELD_NAMES),
             ...registeredPlayerUpdateFields.map(field => field.fieldName)
         ];
         const allowedFieldSet = new Set(allowedFields);
@@ -6642,9 +6698,16 @@ const createChatToolRuntime = ({
         return rawValue;
     };
 
-    const makeUpdateObjectFieldOperations = (target, fieldsObject, { functionName, objectType } = {}) => {
+    const makeUpdateObjectFieldOperations = (target, fieldsObject, {
+        functionName,
+        objectType,
+        allowDirectShortDescriptionUpdates = false
+    } = {}) => {
         if (objectType === 'character') {
-            return makeUpdateCharacterFieldOperations(target.record, fieldsObject, { functionName });
+            return makeUpdateCharacterFieldOperations(target.record, fieldsObject, {
+                functionName,
+                allowDirectShortDescriptionUpdates
+            });
         }
         if (!isPlainObject(fieldsObject)) {
             throw new ToolVisibleError(
@@ -6666,7 +6729,9 @@ const createChatToolRuntime = ({
             : [];
         const registeredThingUpdateFieldMap = new Map(registeredThingUpdateFields.map(field => [field.fieldName, field]));
         const allowedFields = [
-            ...(UPDATE_OBJECT_FIELD_NAMES_BY_TYPE[objectType] || []),
+            ...((allowDirectShortDescriptionUpdates
+                ? ADMIN_UPDATE_OBJECT_FIELD_NAMES_BY_TYPE
+                : UPDATE_OBJECT_FIELD_NAMES_BY_TYPE)[objectType] || []),
             ...registeredThingUpdateFields.map(field => field.fieldName)
         ];
         const allowedFieldSet = new Set(allowedFields);
@@ -6742,6 +6807,35 @@ const createChatToolRuntime = ({
         }
 
         return operations;
+    };
+
+    const regenerateConciseSummary = async ({
+        objectType,
+        record,
+        description,
+        functionName,
+        updates = null
+    } = {}) => {
+        if (!SHORT_DESCRIPTION_OBJECT_TYPES.has(objectType)) {
+            throw new Error(`${functionName} cannot regenerate a concise summary for object type "${objectType}".`);
+        }
+        if (description === null) {
+            return null;
+        }
+        if (typeof regenerateShortDescription !== 'function') {
+            throw new Error(`${functionName} cannot change ${objectType} description because short-description generation is unavailable.`);
+        }
+        const generated = await regenerateShortDescription({
+            objectType,
+            record,
+            description,
+            updates
+        });
+        const normalized = toTrimmedString(generated);
+        if (!normalized) {
+            throw new Error(`${functionName} short-description generation returned an empty result for ${objectType}.`);
+        }
+        return normalized;
     };
 
     const getFactionMapForUpsert = (functionName) => {
@@ -6991,7 +7085,8 @@ const createChatToolRuntime = ({
         functionName,
         operation,
         factionMap,
-        target = null
+        target = null,
+        allowDirectShortDescriptionUpdates = false
     } = {}) => {
         if (!isPlainObject(fieldsObject)) {
             throw new ToolVisibleError(
@@ -7006,7 +7101,9 @@ const createChatToolRuntime = ({
                 { code: 'invalid_arguments' }
             );
         }
-        const allowedFields = UPDATE_OBJECT_FIELD_NAMES_BY_TYPE.faction;
+        const allowedFields = (allowDirectShortDescriptionUpdates
+            ? ADMIN_UPDATE_OBJECT_FIELD_NAMES_BY_TYPE
+            : UPDATE_OBJECT_FIELD_NAMES_BY_TYPE).faction;
         const allowedFieldSet = new Set(allowedFields);
         for (const [fieldName] of fieldEntries) {
             if (!allowedFieldSet.has(fieldName)) {
@@ -7079,11 +7176,11 @@ const createChatToolRuntime = ({
         };
     };
 
-    const executeUpsertFactionFieldsTool = ({
+    const executeUpsertFactionFieldsTool = async ({
         operation,
         faction,
         fields
-    } = {}) => {
+    } = {}, { allowDirectShortDescriptionUpdates = false } = {}) => {
         const functionName = 'upsertFactionFields';
         const normalizedOperation = normalizeUpsertFactionOperation(operation, { functionName });
         const factionMap = getFactionMapForUpsert(functionName);
@@ -7098,12 +7195,25 @@ const createChatToolRuntime = ({
             const normalizedFields = normalizeUpsertFactionFields(fields, {
                 functionName,
                 operation: normalizedOperation,
-                factionMap
+                factionMap,
+                allowDirectShortDescriptionUpdates
             });
             assertFactionNameAvailableForUpsert(normalizedFields.name, {
                 functionName,
                 factionMap
             });
+            if (
+                Object.prototype.hasOwnProperty.call(normalizedFields, 'description')
+                && !Object.prototype.hasOwnProperty.call(normalizedFields, 'shortDescription')
+            ) {
+                normalizedFields.shortDescription = await regenerateConciseSummary({
+                    objectType: 'faction',
+                    record: normalizedFields,
+                    description: normalizedFields.description,
+                    functionName,
+                    updates: normalizedFields
+                });
+            }
             let createdFaction = null;
             try {
                 createdFaction = new Faction(normalizedFields);
@@ -7126,13 +7236,26 @@ const createChatToolRuntime = ({
             functionName,
             operation: normalizedOperation,
             factionMap,
-            target
+            target,
+            allowDirectShortDescriptionUpdates
         });
         if (Object.prototype.hasOwnProperty.call(normalizedFields, 'name')) {
             assertFactionNameAvailableForUpsert(normalizedFields.name, {
                 functionName,
                 factionMap,
                 currentId: getRecordId(target.record)
+            });
+        }
+        if (
+            Object.prototype.hasOwnProperty.call(normalizedFields, 'description')
+            && !Object.prototype.hasOwnProperty.call(normalizedFields, 'shortDescription')
+        ) {
+            normalizedFields.shortDescription = await regenerateConciseSummary({
+                objectType: 'faction',
+                record: target.record,
+                description: normalizedFields.description,
+                functionName,
+                updates: normalizedFields
             });
         }
         try {
@@ -7340,18 +7463,39 @@ const createChatToolRuntime = ({
         };
     };
 
-    const executeUpdateObjectFieldsTool = ({
+    const executeUpdateObjectFieldsTool = async ({
         objectType,
         object,
         fields
-    } = {}) => {
+    } = {}, { allowDirectShortDescriptionUpdates = false } = {}) => {
         const functionName = 'updateObjectFields';
         const canonicalObjectType = normalizeUpdateObjectType(objectType, { functionName });
         const target = resolveUpdateObjectTarget(canonicalObjectType, object, { functionName });
         const operations = makeUpdateObjectFieldOperations(target, fields, {
             functionName,
-            objectType: canonicalObjectType
+            objectType: canonicalObjectType,
+            allowDirectShortDescriptionUpdates
         });
+        let regeneratedShortDescription;
+        const shouldRegenerateShortDescription = SHORT_DESCRIPTION_OBJECT_TYPES.has(canonicalObjectType)
+            && Object.prototype.hasOwnProperty.call(fields, 'description')
+            && !Object.prototype.hasOwnProperty.call(fields, 'shortDescription');
+        if (shouldRegenerateShortDescription) {
+            const normalizedDescription = canonicalObjectType === 'character'
+                ? normalizeCharacterFieldString(fields.description, { functionName, fieldName: 'description' })
+                : normalizeUpdateObjectFieldValue(fields.description, {
+                    functionName,
+                    objectType: canonicalObjectType,
+                    fieldName: 'description'
+                });
+            regeneratedShortDescription = await regenerateConciseSummary({
+                objectType: canonicalObjectType,
+                record: target.record,
+                description: normalizedDescription,
+                functionName,
+                updates: fields
+            });
+        }
         const updatedFields = [];
         for (const operation of operations) {
             try {
@@ -7360,6 +7504,20 @@ const createChatToolRuntime = ({
             } catch (error) {
                 throw new ToolVisibleError(
                     `Failed to update "${operation.fieldName}" on ${canonicalObjectType} "${target.name || target.id || object}": ${error?.message || error}`,
+                    { code: 'field_update_failed' }
+                );
+            }
+        }
+        if (shouldRegenerateShortDescription) {
+            try {
+                target.record.shortDescription = regeneratedShortDescription;
+                if (typeof target.applyReplacement === 'function') {
+                    target.applyReplacement(target.record);
+                }
+                updatedFields.push('shortDescription');
+            } catch (error) {
+                throw new ToolVisibleError(
+                    `Failed to refresh the concise summary on ${canonicalObjectType} "${target.name || target.id || object}": ${error?.message || error}`,
                     { code: 'field_update_failed' }
                 );
             }
@@ -7393,15 +7551,20 @@ const createChatToolRuntime = ({
                 ownerId: target.ownerId || null,
                 ownerName: target.ownerName || null,
                 updatedFields,
-                updatedValues: JSON.parse(JSON.stringify(fields))
+                updatedValues: JSON.parse(JSON.stringify({
+                    ...fields,
+                    ...(shouldRegenerateShortDescription
+                        ? { shortDescription: regeneratedShortDescription }
+                        : {})
+                }))
             }
         };
     };
 
-    const executeUpdateCharacterFieldsTool = ({
+    const executeUpdateCharacterFieldsTool = async ({
         character,
         fields
-    } = {}) => {
+    } = {}, { allowDirectShortDescriptionUpdates = false } = {}) => {
         const functionName = 'updateCharacterFields';
         const characterQuery = normalizeRequiredString(character, {
             functionName,
@@ -7415,7 +7578,25 @@ const createChatToolRuntime = ({
             );
         }
 
-        const operations = makeUpdateCharacterFieldOperations(targetNpc, fields, { functionName });
+        const operations = makeUpdateCharacterFieldOperations(targetNpc, fields, {
+            functionName,
+            allowDirectShortDescriptionUpdates
+        });
+        let regeneratedShortDescription;
+        const shouldRegenerateShortDescription = Object.prototype.hasOwnProperty.call(fields, 'description')
+            && !Object.prototype.hasOwnProperty.call(fields, 'shortDescription');
+        if (shouldRegenerateShortDescription) {
+            regeneratedShortDescription = await regenerateConciseSummary({
+                objectType: 'character',
+                record: targetNpc,
+                description: normalizeCharacterFieldString(fields.description, {
+                    functionName,
+                    fieldName: 'description'
+                }),
+                functionName,
+                updates: fields
+            });
+        }
         const updatedFields = [];
         for (const operation of operations) {
             try {
@@ -7424,6 +7605,17 @@ const createChatToolRuntime = ({
             } catch (error) {
                 throw new ToolVisibleError(
                     `Failed to update "${operation.fieldName}" on "${targetNpc?.name || characterQuery}": ${error?.message || error}`,
+                    { code: 'field_update_failed' }
+                );
+            }
+        }
+        if (shouldRegenerateShortDescription) {
+            try {
+                targetNpc.shortDescription = regeneratedShortDescription;
+                updatedFields.push('shortDescription');
+            } catch (error) {
+                throw new ToolVisibleError(
+                    `Failed to refresh the concise summary on "${targetNpc?.name || characterQuery}": ${error?.message || error}`,
                     { code: 'field_update_failed' }
                 );
             }
@@ -11163,11 +11355,15 @@ const createChatToolRuntime = ({
             forcedSkillCheckRoll = null,
             dieRollOverride = null,
             promptStream = null,
-            allowRelationshipRemoval = false
+            allowRelationshipRemoval = false,
+            allowDirectShortDescriptionUpdates = false
         } = {}
     ) => {
         if (!toolCall || typeof toolCall !== 'object') {
             throw new Error('Tool execution requires a tool call object.');
+        }
+        if (typeof allowDirectShortDescriptionUpdates !== 'boolean') {
+            throw new TypeError('allowDirectShortDescriptionUpdates must be a boolean.');
         }
         try {
             const argumentsObject = {
@@ -11309,11 +11505,11 @@ const createChatToolRuntime = ({
             } else if (toolCall.functionName === 'alterNpc') {
                 toolResult = executeAlterNpcTool(argumentsObject);
             } else if (toolCall.functionName === 'updateCharacterFields') {
-                toolResult = executeUpdateCharacterFieldsTool(argumentsObject);
+                toolResult = executeUpdateCharacterFieldsTool(argumentsObject, { allowDirectShortDescriptionUpdates });
             } else if (toolCall.functionName === 'updateObjectFields') {
-                toolResult = executeUpdateObjectFieldsTool(argumentsObject);
+                toolResult = executeUpdateObjectFieldsTool(argumentsObject, { allowDirectShortDescriptionUpdates });
             } else if (toolCall.functionName === 'upsertFactionFields') {
-                toolResult = executeUpsertFactionFieldsTool(argumentsObject);
+                toolResult = executeUpsertFactionFieldsTool(argumentsObject, { allowDirectShortDescriptionUpdates });
             } else if (toolCall.functionName === 'updatePartyMembers') {
                 toolResult = executeUpdatePartyMembersTool(argumentsObject);
             } else if (toolCall.functionName === 'alterLocation') {
@@ -11400,13 +11596,17 @@ const createChatToolRuntime = ({
         requireExplicitSkillCheckActor = false,
         allowedSkillCheckActors = null,
         promptLogFile = null,
-        terminalResponseAfterToolCalls = null
+        terminalResponseAfterToolCalls = null,
+        allowDirectShortDescriptionUpdates = false
     }) => {
         if (!requestOptions || typeof requestOptions !== 'object') {
             throw new Error('runChatCompletionWithToolLoop requires requestOptions.');
         }
         if (!Array.isArray(requestOptions.messages) || !requestOptions.messages.length) {
             throw new Error('runChatCompletionWithToolLoop requires non-empty requestOptions.messages.');
+        }
+        if (typeof allowDirectShortDescriptionUpdates !== 'boolean') {
+            throw new TypeError('runChatCompletionWithToolLoop allowDirectShortDescriptionUpdates must be a boolean.');
         }
         if (onToolCallDebug !== null && onToolCallDebug !== undefined && typeof onToolCallDebug !== 'function') {
             throw new Error('runChatCompletionWithToolLoop onToolCallDebug must be a function when provided.');
@@ -11756,7 +11956,8 @@ const createChatToolRuntime = ({
                             requestUserInputHandler,
                             forcedSkillCheckRoll,
                             dieRollOverride,
-                            promptStream: streamEmitter
+                            promptStream: streamEmitter,
+                            allowDirectShortDescriptionUpdates
                         });
                     };
                     if (toolCallsExhausted) {

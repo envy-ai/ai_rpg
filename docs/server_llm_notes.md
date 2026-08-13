@@ -12,6 +12,8 @@ Definition files under `defs/` can be overlaid by enabled mods. Enabled mod dire
 
 `server.js` builds the `apiScope` object passed into `api.js`. That scope supplies state maps, prompt helpers, generation helpers, save/load helpers, entity serializers, image/job helpers, event dependencies, mod services, and mutation helpers. `server.js` also exports selected save/load and region-exit travel-time helpers for scripts/tests.
 
+The shared `short-description.xml.njk` generator supports things/items, locations, regions, abilities, NPCs, and factions. The NPC and faction variants include their relevant identity/profile or organization context and use the same logged, batched, retrying response parser as the older entity types. Direct chat-tool changes to a long description build a detached draft with all pending field changes, clear its concise description, and run the appropriate helper before touching the live record. Existing `alterThing`, `alterNpc`, and `alterLocation` generation flows already return both long and short descriptions and deliberately bypass this extra prompt; generic-admin calls that explicitly supply both values do the same.
+
 The HTTP server is bound only when `server.js` is run directly (`require.main === module`). Other modules that `require('./server')` purely for shared runtime state (for example `LocationExit.js`, which reads `gameLocations`/`pendingRegionStubs` through lazy requires) get the module's exports and route registration without binding a port. This keeps importing shared state free of listening side effects, so tests and tooling do not hang on an open server handle or hit `EADDRINUSE` when a dev server is already running.
 
 ## Prompt Rendering

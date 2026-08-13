@@ -873,7 +873,10 @@ function isTonalScaleEvaluationEnabled() {
 }
 
 function filterEnabledChatTools({ allowWorldMutationTools = false, modExtensionRegistry = null } = {}) {
-    const builtInTools = getChatToolDefinitions({ modExtensionRegistry }).filter(toolDefinition => {
+    const builtInTools = getChatToolDefinitions({
+        modExtensionRegistry,
+        allowDirectShortDescriptionUpdates: allowWorldMutationTools
+    }).filter(toolDefinition => {
         const functionName = typeof toolDefinition?.function?.name === 'string'
             ? toolDefinition.function.name.trim()
             : '';
@@ -3273,6 +3276,50 @@ module.exports = function registerApiRoutes(scope) {
             };
         };
 
+        const regenerateChatToolShortDescription = async ({
+            objectType,
+            record,
+            description,
+            updates = null
+        } = {}) => {
+            const ensureByObjectType = {
+                character: Globals.ensureNpcShortDescriptions,
+                thing: Globals.ensureThingShortDescriptions,
+                location: Globals.ensureLocationShortDescriptions,
+                region: Globals.ensureRegionShortDescriptions,
+                faction: Globals.ensureFactionShortDescriptions
+            };
+            const ensureShortDescriptions = ensureByObjectType[objectType];
+            if (typeof ensureShortDescriptions !== 'function') {
+                throw new Error(`Short-description generation is unavailable for object type "${objectType}".`);
+            }
+            const serialized = record && typeof record.toJSON === 'function'
+                ? record.toJSON()
+                : record;
+            let draft;
+            try {
+                draft = JSON.parse(JSON.stringify(serialized));
+            } catch (error) {
+                throw new Error(`Could not serialize ${objectType} for short-description generation: ${error?.message || error}`);
+            }
+            if (!draft || typeof draft !== 'object' || Array.isArray(draft)) {
+                throw new Error(`Could not build a ${objectType} draft for short-description generation.`);
+            }
+            if (updates && typeof updates === 'object' && !Array.isArray(updates)) {
+                Object.assign(draft, JSON.parse(JSON.stringify(updates)));
+            }
+            draft.description = description;
+            draft.shortDescription = '';
+            const result = await ensureShortDescriptions([draft]);
+            const generated = typeof draft.shortDescription === 'string'
+                ? draft.shortDescription.trim()
+                : '';
+            if (!result || result.remaining !== 0 || !generated) {
+                throw new Error(`Short-description generation did not produce a result for ${objectType} "${draft.name || draft.id || 'unknown'}".`);
+            }
+            return generated;
+        };
+
         const { collectHistoryMatches, runChatCompletionWithToolLoop, executeChatToolCall } = createChatToolRuntime({
             getConfig: () => config,
             getChatHistory: () => chatHistory,
@@ -3325,6 +3372,7 @@ module.exports = function registerApiRoutes(scope) {
             getRegionsMap: () => regions,
             getPendingRegionStubs: () => pendingRegionStubs,
             clearLocationImageVariants,
+            regenerateShortDescription: regenerateChatToolShortDescription,
             getModExtensionRegistry: () => modExtensionRegistry || Globals.modExtensionRegistry || null
         });
 
@@ -27317,6 +27365,7 @@ module.exports = function registerApiRoutes(scope) {
                                     metadataLabel: promptMetadataLabel,
                                     toolResultCache,
                                     includeAllHistoryEntryTypes: allowWorldMutationTools,
+                                    allowDirectShortDescriptionUpdates: allowWorldMutationTools,
                                     requestUserInput: createRequestUserInputHandler({
                                         stream,
                                         promptLabel: promptMetadataLabel
@@ -27412,6 +27461,7 @@ module.exports = function registerApiRoutes(scope) {
                         metadataLabel: promptMetadataLabel,
                         toolResultCache,
                         includeAllHistoryEntryTypes: allowWorldMutationTools,
+                        allowDirectShortDescriptionUpdates: allowWorldMutationTools,
                         requestUserInput: createRequestUserInputHandler({
                             stream,
                             promptLabel: promptMetadataLabel
@@ -27603,6 +27653,7 @@ module.exports = function registerApiRoutes(scope) {
                                         metadataLabel: `${promptMetadataLabel}_rerun`,
                                         toolResultCache,
                                         includeAllHistoryEntryTypes: allowWorldMutationTools,
+                                        allowDirectShortDescriptionUpdates: allowWorldMutationTools,
                                         requestUserInput: createRequestUserInputHandler({
                                             stream,
                                             promptLabel: `${promptMetadataLabel}_rerun`
