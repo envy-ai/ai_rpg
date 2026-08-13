@@ -783,13 +783,18 @@ const combat = [
                 { type: 'entityField', source: 'after', collection: 'players', id: '$fixture.frostBeetleId', path: 'isDead', equals: true },
                 { type: 'entityField', source: 'after', collection: 'players', id: '$fixture.frostBeetleId', path: 'health', equals: 0 }),
             snapshot('reloaded_combat'),
-            chat('next', 'I brace and hold position for one brief combat beat. I do not attack, move, flee, use an item, or end combat; let configured living NPC actors run afterward.'),
+            chat('next', 'I brace and hold position for one brief combat beat. I do not attack, move, flee, use an item, or end combat; let configured living NPC actors run afterward.', interactive, {
+                forcedNpcTurns: [
+                    { id: '$fixture.ashBeetleId' },
+                    { id: '$fixture.shieldhandId' }
+                ]
+            }),
             check(namedStatus('next'),
                 { type: 'entityField', source: 'after', collection: 'players', id: '$fixture.frostBeetleId', path: 'isDead', equals: true },
                 { type: 'entityField', source: 'after', collection: 'players', id: '$fixture.frostBeetleId', path: 'health', equals: 0 },
-                { type: 'attackResultCount', source: 'responses.next', path: 'payload.toolInvocations', where: { attacker: 'QA Frost Beetle' }, equals: 0 },
-                { type: 'attackResultCount', source: 'responses.next', path: 'payload.toolInvocations', where: { attacker: 'QA Ash Beetle' }, equals: 1 },
-                { type: 'arrayObjectCount', source: 'responses.next', path: 'payload.toolInvocations', where: { metadata: { error: true } }, equals: 0 },
+                { type: 'count', source: 'responses.next', path: 'payload.npcTurns', equals: 2 },
+                { type: 'arrayObjectCount', source: 'responses.next', path: 'payload.npcTurns', where: { npcId: '$fixture.frostBeetleId' }, equals: 0 },
+                { type: 'arrayObjectCount', source: 'responses.next', path: 'payload.npcTurns', where: { npcId: '$fixture.ashBeetleId', attackSummary: { attacker: { name: 'QA Ash Beetle' } } }, equals: 1 },
                 { type: 'arrayObjectCount', source: 'responses.next', path: 'payload.npcTurns', where: { npcId: '$fixture.shieldhandId' }, equals: 1 },
                 { type: 'exactDelta', path: 'calendar.payload.worldTime.timeMinutes', delta: 1, beforeSource: 'snapshots.reloaded_combat', afterSource: 'after' },
                 ...clean())],

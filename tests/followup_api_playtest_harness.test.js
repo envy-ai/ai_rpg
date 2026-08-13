@@ -127,6 +127,31 @@ test('scenario validation rejects unknown fields and assertion types before exec
         }),
         /unawaited startChat step.*background/i
     );
+    assert.throws(
+        () => validateScenarioDefinition({
+            version: 1,
+            scenario: 'synthetic',
+            case: 'empty-forced-npc-turns',
+            steps: [{
+                type: 'chat',
+                text: 'Wait.',
+                interactive: { roll: null, questAccepted: false, confirmed: false },
+                forcedNpcTurns: []
+            }]
+        }),
+        /forcedNpcTurns must be a non-empty array/i
+    );
+    assert.doesNotThrow(() => validateScenarioDefinition({
+        version: 1,
+        scenario: 'synthetic',
+        case: 'forced-npc-turns',
+        steps: [{
+            type: 'chat',
+            text: 'Wait.',
+            interactive: { roll: null, questAccepted: false, confirmed: false },
+            forcedNpcTurns: ['QA Ash Beetle', { id: '$fixture.shieldhandId' }]
+        }]
+    }));
 });
 
 test('readSavedJson captures a generated save file and rejects path traversal', { concurrency: false }, async () => {
@@ -246,8 +271,9 @@ test('background chat can wait on realtime state, cancel concurrently, and must 
     fs.mkdirSync(path.join(root, 'logs'), { recursive: true });
     let resolveChat;
     let endRequestCount = 0;
+    let chatRequestBody = null;
     const apiClient = {
-        async fetchJson(method, route) {
+        async fetchJson(method, route, body) {
             if (route === '/api/llm-completion-cassette/status') {
                 return {
                     method,
@@ -262,6 +288,7 @@ test('background chat can wait on realtime state, cancel concurrently, and must 
                 };
             }
             if (route === '/api/chat') {
+                chatRequestBody = body;
                 return await new Promise(resolve => {
                     resolveChat = resolve;
                 });
@@ -330,6 +357,7 @@ test('background chat can wait on realtime state, cancel concurrently, and must 
                         type: 'startChat',
                         name: 'background',
                         text: '? Keep working.',
+                        forcedNpcTurns: [{ id: 'char_34' }, { name: 'QA Shieldhand' }],
                         interactive: {
                             roll: null,
                             questAccepted: false,
@@ -381,6 +409,7 @@ test('background chat can wait on realtime state, cancel concurrently, and must 
             }
         });
         assert.equal(endRequestCount, 1);
+        assert.deepEqual(chatRequestBody.forcedNpcTurns, [{ id: 'char_34' }, { name: 'QA Shieldhand' }]);
         const stepResults = JSON.parse(fs.readFileSync(path.join(output.attemptDir, 'steps.json'), 'utf8'));
         assert.equal(stepResults.some(entry => entry.type === 'startChat'), true);
         assert.equal(stepResults.some(entry => entry.type === 'waitForRealtime'), true);

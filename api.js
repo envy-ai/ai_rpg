@@ -24980,8 +24980,43 @@ module.exports = function registerApiRoutes(scope) {
                 clientId: rawClientId,
                 requestId: rawRequestId,
                 travel: rawTravelFlag,
-                travelMetadata: rawTravelMetadata
+                travelMetadata: rawTravelMetadata,
+                forcedNpcTurns: rawForcedNpcTurns
             } = requestBody;
+            let forcedNpcTurns = null;
+            if (rawForcedNpcTurns !== undefined) {
+                if (!Array.isArray(rawForcedNpcTurns) || rawForcedNpcTurns.length === 0) {
+                    return res.status(400).json({
+                        error: 'forcedNpcTurns must be a non-empty array of NPC names or { id, name } objects.'
+                    });
+                }
+                try {
+                    forcedNpcTurns = rawForcedNpcTurns.map((entry, index) => {
+                        if (typeof entry === 'string' && entry.trim()) {
+                            return { id: null, name: entry.trim() };
+                        }
+                        if (!entry || typeof entry !== 'object' || Array.isArray(entry)) {
+                            throw new TypeError(`forcedNpcTurns[${index}] must be an NPC name or an { id, name } object.`);
+                        }
+                        const unknownFields = Object.keys(entry).filter(key => key !== 'id' && key !== 'name');
+                        if (unknownFields.length) {
+                            throw new TypeError(`forcedNpcTurns[${index}] has unknown field "${unknownFields[0]}".`);
+                        }
+                        const id = typeof entry.id === 'string' && entry.id.trim()
+                            ? entry.id.trim()
+                            : null;
+                        const name = typeof entry.name === 'string' && entry.name.trim()
+                            ? entry.name.trim()
+                            : null;
+                        if (!id && !name) {
+                            throw new TypeError(`forcedNpcTurns[${index}] requires a non-empty id or name.`);
+                        }
+                        return { id, name };
+                    });
+                } catch (error) {
+                    return res.status(400).json({ error: error.message });
+                }
+            }
             const stream = createStreamEmitter({ clientId: rawClientId, requestId: rawRequestId });
             Globals.currentPlayer = currentPlayer;
             let corpseProcessingRan = false;
@@ -28717,6 +28752,7 @@ module.exports = function registerApiRoutes(scope) {
                                     maxFriendlyNpcsToAct: maxNpcsToAct,
                                     maxHostileNpcsToAct,
                                     currentTurnLog,
+                                    forcedNpcs: forcedNpcTurns,
                                     excludedNpcIds
                                 });
                             }

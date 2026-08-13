@@ -45,7 +45,7 @@ const STEP_FIELDS = {
     loadFixture: new Set(['type', 'saveName', 'saveType', 'modMismatchChoice']),
     snapshot: new Set(['type', 'name']),
     request: new Set(['type', 'name', 'method', 'route', 'body', 'interactive']),
-    startChat: new Set(['type', 'name', 'text', 'travel', 'travelMetadata', 'interactive']),
+    startChat: new Set(['type', 'name', 'text', 'travel', 'travelMetadata', 'forcedNpcTurns', 'interactive']),
     awaitChat: new Set(['type', 'name']),
     waitForRealtime: new Set(['type', 'name', 'until', 'timeoutMs', 'pollIntervalMs']),
     waitForRequest: new Set([
@@ -58,7 +58,7 @@ const STEP_FIELDS = {
         'timeoutMs',
         'pollIntervalMs'
     ]),
-    chat: new Set(['type', 'name', 'text', 'travel', 'travelMetadata', 'interactive']),
+    chat: new Set(['type', 'name', 'text', 'travel', 'travelMetadata', 'forcedNpcTurns', 'interactive']),
     save: new Set(['type', 'name']),
     readSavedJson: new Set(['type', 'name', 'saveName', 'saveType', 'fileName']),
     reload: new Set(['type', 'name', 'saveName', 'saveType']),
@@ -175,6 +175,29 @@ function assertKnownFields(value, allowed, label) {
             throw new Error(`Unknown ${label} field "${key}".`);
         }
     }
+}
+
+function validateForcedNpcTurns(value, label) {
+    if (value === undefined) return;
+    if (!Array.isArray(value) || value.length === 0) {
+        throw new Error(`${label} must be a non-empty array.`);
+    }
+    value.forEach((entry, index) => {
+        const entryLabel = `${label}[${index}]`;
+        if (typeof entry === 'string') {
+            requireText(entry, entryLabel);
+            return;
+        }
+        if (!isPlainObject(entry)) {
+            throw new Error(`${entryLabel} must be an NPC name or an { id, name } object.`);
+        }
+        assertKnownFields(entry, new Set(['id', 'name']), entryLabel);
+        const hasId = typeof entry.id === 'string' && entry.id.trim();
+        const hasName = typeof entry.name === 'string' && entry.name.trim();
+        if (!hasId && !hasName) {
+            throw new Error(`${entryLabel} requires a non-empty id or name.`);
+        }
+    });
 }
 
 function validateAssertion(assertion, label) {
@@ -463,6 +486,7 @@ export function validateScenarioDefinition(definition) {
         if (step.type === 'chat' || step.type === 'startChat') {
             requireText(step.text, `scenario.steps[${index}].text`);
             validateInteractivePolicy(step.interactive, `scenario.steps[${index}].interactive`, { required: true });
+            validateForcedNpcTurns(step.forcedNpcTurns, `scenario.steps[${index}].forcedNpcTurns`);
             if (step.type === 'startChat') {
                 const pendingName = validateStepName(step.name, `scenario.steps[${index}].name`);
                 if (pendingChatNames.has(pendingName)) {
@@ -1012,6 +1036,7 @@ export async function runScenario({
                     travel: step.travel === true
                 };
                 if (step.travelMetadata !== undefined) body.travelMetadata = step.travelMetadata;
+                if (step.forcedNpcTurns !== undefined) body.forcedNpcTurns = step.forcedNpcTurns;
                 try {
                     lastResponse = await apiClient.fetchJson('POST', '/api/chat', body);
                 } finally {
@@ -1033,6 +1058,7 @@ export async function runScenario({
                     travel: step.travel === true
                 };
                 if (step.travelMetadata !== undefined) body.travelMetadata = step.travelMetadata;
+                if (step.forcedNpcTurns !== undefined) body.forcedNpcTurns = step.forcedNpcTurns;
                 const outcomePromise = apiClient.fetchJson('POST', '/api/chat', body).then(
                     response => ({ response, error: null }),
                     error => ({ response: null, error })

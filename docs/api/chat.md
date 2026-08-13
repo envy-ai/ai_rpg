@@ -13,6 +13,7 @@ Request:
   - `clientId` (optional string): enables realtime streaming events.
   - `requestId` (optional string): echoed back in `streamMeta` and chat metadata. For logged user actions, the browser also uses this value as the optimistic user `ChatEntry.id`, and the server preserves it as the stored user-entry id so message edits can resolve before the full turn finishes.
   - `travel` (optional boolean): marks the user message as a travel action.
+  - `forcedNpcTurns` (optional nonempty array): bypasses model-based post-player NPC selection and supplies an ordered queue of NPC names or `{ id, name }` objects. Canonical IDs are preferred. This controls selection only: dead, unconscious, missing, non-NPC, and same-turn already-resolved attackers are still rejected by the normal scheduler.
   - `travelMetadata` (optional object): required for event-driven travel and used by direct unexplored-exit prose prompts; normalized to:
     - `mode` (string | null; `fast-travel` validates origin/destination without requiring one adjacent exit)
     - `eventDriven` (boolean)
@@ -62,7 +63,7 @@ Response (200):
   - `experienceAwards`, `currencyChanges`, `environmentalDamageEvents`, `needBarChanges`, `dispositionChanges`, `factionReputationChanges`: arrays
   - `questsAwarded`, `questRewards`, `questObjectivesCompleted`, `followupEventChecks`: arrays
     - `questObjectivesCompleted[]` entries include quest/objective identifiers plus `objectiveDescription`, `reason`, `questCompleted`, and `questJustCompleted` when relevant
-  - `npcTurns`: array (NPC turn payloads; each finalized turn includes the updated chat-entry `timestamp` and `entryId` when available)
+  - `npcTurns`: array (authoritative post-player NPC turn payloads; pre-resolved NPC attacks expose `attackCheck`, `attackSummary`, and `attackDamage` here rather than as top-level player-action `toolInvocations`; each finalized turn includes the updated chat-entry `timestamp` and `entryId` when available)
   - `npcUpdates`: `{ added: string[], departed: string[], movedLocations: string[] }`
   - `locationRefreshRequested`: boolean
   - `corpseRemovals`, `corpseCountdownUpdates`: arrays

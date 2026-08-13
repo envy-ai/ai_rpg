@@ -82,11 +82,11 @@ Supported step types are:
 - `loadFixture`: optional explicit load information; canonical fixtures are already loaded at scenario setup and a matching step records that intent without a second mutation.
 - `snapshot`: capture a named state snapshot.
 - `request`: arbitrary method/route/body, optionally interactive.
-- `startChat`: begin `/api/chat` without blocking the scenario so realtime activity, pending input, and cancellation can be tested while the request is live. Every named start must have exactly one later `awaitChat`; definitions with missing, duplicate, or unknown pairs fail validation. Failure cleanup cancels/drains outstanding work and settles every started request.
+- `startChat`: begin `/api/chat` without blocking the scenario so realtime activity, pending input, and cancellation can be tested while the request is live. It accepts the same travel and optional `forcedNpcTurns` queue as `chat`. Every named start must have exactly one later `awaitChat`; definitions with missing, duplicate, or unknown pairs fail validation. Failure cleanup cancels/drains outstanding work and settles every started request.
 - `waitForRealtime`: poll mechanical assertions against the realtime event collection until they pass or its explicit timeout expires. This is the synchronization boundary for active prompts and deferred player-input events.
 - `awaitChat`: settle a previously named `startChat`, store its complete response envelope under `responses.<name>`, and end its realtime request scope.
 - `waitForRequest`: poll one read-only or otherwise idempotent method/route until its declared mechanical assertions pass; use this to synchronize on an observable authoritative outcome instead of a guessed sleep.
-- `chat`: `/api/chat` text plus optional travel metadata and interactive policy.
+- `chat`: `/api/chat` text plus optional travel metadata, interactive policy, and a nonempty `forcedNpcTurns` array of NPC names or `{ id, name }` objects when a scenario must exercise a deterministic post-player NPC queue. Forced selection does not bypass ordinary dead/incapacitated/missing/duplicate-actor rejection.
 - `waitForPromptIdle`: wait until a matching prompt-progress label is absent for a quiet period. Live modes can require an observed active frame; strict replay skips that requirement because millisecond cassette completions can start and finish between websocket snapshots.
 - `save` and `reload`: exercise normal persistence endpoints.
 - `readSavedJson`: capture one path-safe JSON file from a named save, or from the immediately preceding `save`, for assertions on private persisted fields that intentionally do not appear in gameplay API projections.

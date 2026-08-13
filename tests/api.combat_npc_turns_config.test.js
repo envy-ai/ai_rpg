@@ -65,3 +65,29 @@ test('TinyBrain NPC turns pre-resolve attacks before staged narration', () => {
     assert.match(npcAttackBlock, /allowWhenLegacyChecksDisabled:\s*tinyBrainNpcActionEnabled/);
     assert.match(npcAttackBlock, /attackContext\s*=\s*buildAttackContextForActor\(/);
 });
+
+test('chat can supply a validated deterministic NPC turn queue without bypassing scheduler eligibility', () => {
+    const chatRequestBlock = extractBlock(
+        apiSource,
+        "app.post('/api/chat', async (req, res) => {",
+        'const stream = createStreamEmitter({ clientId: rawClientId, requestId: rawRequestId });'
+    );
+    assert.match(chatRequestBlock, /forcedNpcTurns:\s*rawForcedNpcTurns/);
+    assert.match(chatRequestBlock, /forcedNpcTurns must be a non-empty array/);
+    assert.match(chatRequestBlock, /unknownFields/);
+
+    const schedulerCallBlock = extractBlock(
+        apiSource,
+        'let npcTurns = null;',
+        'if (skipRandomEvents)'
+    );
+    assert.match(schedulerCallBlock, /forcedNpcs:\s*forcedNpcTurns/);
+
+    const forcedQueueBlock = extractBlock(
+        apiSource,
+        'const forcedNpcQueue = Array.isArray(forcedNpcs)',
+        'Running plausibility check for NPC:'
+    );
+    assert.match(forcedQueueBlock, /getCombatActionUnavailableReason\(npc\)/);
+    assert.match(forcedQueueBlock, /excludedNpcIds\.has\(npc\.id\)/);
+});
