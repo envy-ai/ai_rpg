@@ -91,7 +91,18 @@ const ASSERTION_FIELDS = {
     greaterThanOrEqual: new Set(['type', 'source', 'path', 'value', 'valueFrom']),
     lessThan: new Set(['type', 'source', 'path', 'value', 'valueFrom']),
     lessThanOrEqual: new Set(['type', 'source', 'path', 'value', 'valueFrom']),
-    entityField: new Set(['type', 'source', 'collection', 'id', 'path', 'equals', 'equalsFrom']),
+    entityField: new Set([
+        'type',
+        'source',
+        'collection',
+        'id',
+        'path',
+        'equals',
+        'equalsFrom',
+        'notEquals',
+        'includes',
+        'caseSensitive'
+    ]),
     entityArrayObjectCount: new Set(['type', 'source', 'collection', 'id', 'path', 'where', 'equals']),
     entityArrayUnique: new Set(['type', 'source', 'collection', 'id', 'path']),
     arrayObjectCount: new Set(['type', 'source', 'path', 'where', 'equals']),
@@ -264,6 +275,29 @@ function validateAssertion(assertion, label) {
             .filter(field => assertion[field] !== undefined);
         if (!bounds.length || bounds.some(field => !Number.isFinite(assertion[field]))) {
             throw new Error(`${label} requires at least one finite numeric bound.`);
+        }
+    }
+    if (assertion.type === 'entityField') {
+        const hasOwn = field => Object.prototype.hasOwnProperty.call(assertion, field);
+        const checks = ['equals', 'equalsFrom', 'notEquals', 'includes'].filter(hasOwn);
+        if (!checks.length) {
+            throw new Error(`${label} requires equals, equalsFrom, notEquals, or includes.`);
+        }
+        if (hasOwn('equals') && hasOwn('equalsFrom')) {
+            throw new Error(`${label} cannot specify both equals and equalsFrom.`);
+        }
+        if (hasOwn('equalsFrom')) {
+            if (!isPlainObject(assertion.equalsFrom)) {
+                throw new Error(`${label}.equalsFrom must be an object.`);
+            }
+            requireText(assertion.equalsFrom.source, `${label}.equalsFrom.source`);
+            requireText(assertion.equalsFrom.path, `${label}.equalsFrom.path`);
+        }
+        if (hasOwn('includes')) {
+            requireText(assertion.includes, `${label}.includes`);
+        }
+        if (hasOwn('caseSensitive') && typeof assertion.caseSensitive !== 'boolean') {
+            throw new Error(`${label}.caseSensitive must be a boolean.`);
         }
     }
     if (assertion.type === 'realtimeEventCount') {

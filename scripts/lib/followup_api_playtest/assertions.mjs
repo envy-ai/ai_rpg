@@ -340,8 +340,13 @@ export function evaluateAssertion(assertion, context) {
                 return result(assertion, false, `Entity ${assertion.id} is missing from ${assertion.collection}.`);
             }
             const resolved = resolveObjectPath(entity, assertion.path);
+            if (!resolved.exists) {
+                return result(assertion, false, `${assertion.collection}:${assertion.id}.${assertion.path} is missing.`);
+            }
+            const hasOwn = field => Object.prototype.hasOwnProperty.call(assertion, field);
+            const checks = [];
             let expected = assertion.equals;
-            if (assertion.equalsFrom) {
+            if (hasOwn('equalsFrom')) {
                 const expectedSource = resolveSource(context, assertion.equalsFrom.source);
                 const expectedResolved = resolveObjectPath(expectedSource, assertion.equalsFrom.path);
                 if (!expectedResolved.exists) {
@@ -349,12 +354,38 @@ export function evaluateAssertion(assertion, context) {
                 }
                 expected = expectedResolved.value;
             }
-            const passed = resolved.exists && deepEqual(resolved.value, expected);
+            if (hasOwn('equals') || hasOwn('equalsFrom')) {
+                checks.push({
+                    passed: deepEqual(resolved.value, expected),
+                    description: `equals ${describeValue(expected)}`
+                });
+            }
+            if (hasOwn('notEquals')) {
+                checks.push({
+                    passed: !deepEqual(resolved.value, assertion.notEquals),
+                    description: `does not equal ${describeValue(assertion.notEquals)}`
+                });
+            }
+            if (hasOwn('includes')) {
+                const caseSensitive = assertion.caseSensitive !== false;
+                const actualText = typeof resolved.value === 'string' ? resolved.value : null;
+                const haystack = caseSensitive || actualText === null ? actualText : actualText.toLocaleLowerCase();
+                const needle = caseSensitive ? assertion.includes : assertion.includes.toLocaleLowerCase();
+                checks.push({
+                    passed: haystack !== null && haystack.includes(needle),
+                    description: `includes ${describeValue(assertion.includes)}${caseSensitive ? '' : ' ignoring case'}`
+                });
+            }
+            const failedChecks = checks.filter(check => !check.passed);
+            const passed = checks.length > 0 && failedChecks.length === 0;
             return result(
                 assertion,
                 passed,
-                `${assertion.collection}:${assertion.id}.${assertion.path}=${describeValue(resolved.value)}; expected ${describeValue(expected)}.`,
-                { actual: resolved.value, expected }
+                `${assertion.collection}:${assertion.id}.${assertion.path}=${describeValue(resolved.value)}; expected ${checks.map(check => check.description).join(' and ')}.`,
+                {
+                    actual: resolved.value,
+                    checks: checks.map(check => ({ passed: check.passed, description: check.description }))
+                }
             );
         }
         case 'entityArrayObjectCount': {

@@ -457,6 +457,42 @@ test('strict replay prompt-idle waits do not require a sampled active websocket 
     assert.equal(resolvePromptWaitRequireActivity('live-verify', false), false);
 });
 
+test('entityField can require changed text containing a case-insensitive term', { concurrency: false }, async () => {
+    const { evaluateAssertions } = await import('../scripts/lib/followup_api_playtest/assertions.mjs');
+    const assertion = {
+        type: 'entityField',
+        collection: 'things',
+        id: 'thing_1',
+        path: 'description',
+        notEquals: 'A plain marker.',
+        includes: 'stripe',
+        caseSensitive: false
+    };
+    const contextWithDescription = description => ({
+        after: {
+            things: {
+                payload: {
+                    things: [{ id: 'thing_1', description }]
+                }
+            }
+        }
+    });
+
+    const [passing] = evaluateAssertions(
+        [assertion],
+        contextWithDescription('A marker now painted with a bright BLUE STRIPE.')
+    );
+    assert.equal(passing.passed, true);
+    assert.equal(evaluateAssertions(
+        [assertion],
+        contextWithDescription('A plain marker.')
+    )[0].passed, false);
+    assert.equal(evaluateAssertions(
+        [assertion],
+        contextWithDescription('A newly painted blue line.')
+    )[0].passed, false);
+});
+
 test('disposition summary assertion matches each changed type to authoritative state once', { concurrency: false }, async () => {
     const { evaluateAssertions } = await import('../scripts/lib/followup_api_playtest/assertions.mjs');
     const before = {

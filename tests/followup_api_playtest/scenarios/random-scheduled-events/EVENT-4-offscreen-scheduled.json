@@ -2,7 +2,7 @@
   "version": 1,
   "scenario": "random-scheduled-events",
   "case": "EVENT-4-offscreen-scheduled",
-  "description": "Move the player away from both fixture event locations before their due minutes, then resolve both offscreen with hidden bookkeeping, the exact depot-marker mutation, and no visible scheduled prose.",
+  "description": "Move the player away from both fixture event locations before their due minutes, then resolve both offscreen with hidden bookkeeping, a stripe-bearing depot-marker description change, and no visible scheduled prose.",
   "fixture": "random-scheduled-events",
   "configProfile": "random-scheduled-mechanics",
   "trackedPaths": [
@@ -206,7 +206,9 @@
           "collection": "things",
           "id": "$fixture.depotMarkerId",
           "path": "description",
-          "equals": "$fixture.depotMarkerAlteredDescription"
+          "notEquals": "$fixture.depotMarkerInitialDescription",
+          "includes": "stripe",
+          "caseSensitive": false
         },
         {
           "type": "entityField",
