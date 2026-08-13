@@ -12,6 +12,8 @@ Audit the failures still present in model-benchmark session `qwen36-35b-a3b-2026
 
 This is not a plan to make every result green. It is a plan to use each failure as a diagnostic entry point, identify needless inherited prompt complexity, and simplify TinyBrain orchestration without losing functionality. A case may remain failed when the remaining responsibility genuinely belongs to the selected model.
 
+The audit is not limited to failed cases. After the failure-directed work, it must step through the complete TinyBrain prompt inventory, including prompts with no current benchmark failure, and look for the same unnecessary complexity proactively. Once both audits are complete, write a separate implementation plan for the justified findings and then implement that plan. Simplification must not remove genuine LLM agency.
+
 ## Governing principles
 
 1. **Audit necessity before correctness.** At the first failing checkpoint, ask whether the model needed to perform that step at all. Do not begin by adding instructions that make it perform the same step more reliably.
@@ -28,6 +30,8 @@ This is not a plan to make every result green. It is a plan to use each failure 
 12. **Keep diagnostics visible but correctly weighted.** Recovered parser/provider/tool errors remain evidence. Their presence alone is not a failed behavioral contract.
 13. **Do not change model routing unilaterally.** Log a routing recommendation with frequency and latency tradeoffs for later discussion; do not use routing as the audit's default remedy.
 14. **Allow honest residual failures.** Once a prompt has a necessary, focused responsibility and sound structured boundaries, a bad model judgment may remain an audited failure.
+15. **Preserve genuine LLM agency.** Do not hardcode narrative choices, NPC decisions, ambiguous semantic judgments, creative event selection, or other choices whose value comes from model interpretation. Control flow should remove orchestration burdens, not turn the model into a fixed script.
+16. **Use a conservative agency test.** If code cannot derive an answer from authoritative state or an earlier explicit commitment, and multiple contextually valid answers could preserve supported play, treat the choice as genuine model agency unless the audit proves otherwise.
 
 ## Required audit record for every failure
 
@@ -68,6 +72,7 @@ Create one section per logical case in `tmp/remaining_benchmark_failure_audit.md
 9. Functionality-preservation map showing where every removed responsibility goes.
 10. Focused tests and benchmark cases affected by the change.
 11. Result after one intentional rerun, without sampling repeatedly until a pass appears.
+12. An agency-impact statement naming every model choice affected and explaining why it is deterministic orchestration, retained agency, or intentionally unchanged.
 
 ## Audit method
 
@@ -145,18 +150,134 @@ Before implementing a simplification, enumerate the supported branches affected 
 
 TinyBrain may implement behavior differently from standard prompts, but must broadly retain the same supported functionality. Do not alter non-TinyBrain behavior merely to simplify a TinyBrain path unless the audit proves a shared defect.
 
-### Phase 6: Verify without benchmaxxing
+### Phase 6: Define verification without benchmaxxing
 
-For each justified change:
+For each proposed change, record the following verification requirements for the later implementation plan:
 
-1. Run syntax and focused parser/runtime tests.
-2. Run deterministic strict replay only when the prompt fingerprint remains compatible; an intentional prompt change should invalidate stale replay rather than silently reuse it.
-3. Rerun only the affected case or tightly related cluster in `qwen36-35b-a3b-20260812-clean`.
-4. Replace the selected result and regenerate the same uniquely named HTML dashboard.
-5. Review the new complete evidence even if the case turns green.
-6. Record prompt count, failed checkpoint attempts, and eliminated model decisions as diagnostic complexity measures—not as optimization targets that outweigh behavior.
-7. Run one intentional live rerun per change set. Do not keep sampling until the model happens to pass.
-8. If the case remains red, repeat the architectural audit only when new evidence reveals another unnecessary responsibility. Otherwise retain the failure.
+1. Syntax checks and focused parser/runtime tests.
+2. Whether deterministic strict replay remains compatible; an intentional prompt change should invalidate stale replay rather than silently reuse it.
+3. The affected case or tightly related cluster to rerun in `qwen36-35b-a3b-20260812-clean`.
+4. Replacement of selected results and regeneration of the same uniquely named HTML dashboard.
+5. Review of the new complete evidence even if the case turns green.
+6. Prompt count, failed checkpoint attempts, and eliminated model decisions as diagnostic complexity measures—not optimization targets that outweigh behavior.
+7. One intentional live rerun per change set, without repeated sampling until the model happens to pass.
+8. If the case remains red, another architectural audit only when new evidence reveals an additional unnecessary responsibility; otherwise retain the failure.
+
+Except for confirmed grader/fixture corrections from Phase 1, collect and synthesize prompt findings before implementing them. Prompt remediation begins from the written Phase 9 plan, not as ad hoc edits during the walkthrough.
+
+### Phase 7: Walk through every TinyBrain prompt
+
+After the failure-directed case audit, create `tmp/tinybrain_prompt_complexity_audit.md` and audit the complete current TinyBrain inventory even where no test is failing. Inventory prompt files dynamically using both the `*.tinybrain.njk` convention and other TinyBrain-named/registered templates so prompts added after this plan are included. The current known templates are:
+
+- `creative-mode-action.tinybrain.njk`;
+- `events-xml.tinybrain.njk`;
+- `game-intro.tinybrain.njk`;
+- `need-bars.tinybrain.njk`;
+- `npc-action.tinybrain.njk`;
+- `player-action-craft.tinybrain.njk`;
+- `player-action-modify-location.tinybrain.njk`;
+- `player-action-open-container.tinybrain.njk`;
+- `player-action.tinybrain.njk`;
+- `quest-reward-prose.tinybrain.njk`;
+- `random-event.tinybrain.njk`;
+- `scheduled-event-interruption-rewrite.tinybrain.njk`;
+- `scheduled-event-resolution.tinybrain.njk`;
+- `tinybrain-prose-audit.njk`;
+- `while-you-were-away.tinybrain.njk`.
+
+Also include any TinyBrain program registered outside the filename convention and each prompt's associated control flow, parser, result builder, tool executor, and post-parse hook. A template cannot be judged accurately in isolation from the code that consumes its answers.
+
+For every prompt family:
+
+1. Read the template from beginning to end in execution order.
+2. Trace every checkpoint, branch, parser output, tool opportunity, continuation, result builder, and mutation consumer.
+3. Write a one-sentence statement of the prompt's full supported functionality before proposing removals.
+4. Mark every instruction or checkpoint as one of:
+   - necessary model judgment;
+   - narrative/creative agency;
+   - deterministic orchestration that should move to code;
+   - semantic validation that belongs in a parser;
+   - compatibility/context information the model genuinely needs;
+   - duplicated, unused, contradictory, or obsolete complexity;
+   - unclear and therefore retained pending evidence.
+5. Look proactively for:
+   - frontier-model self-planning retained after conversion;
+   - instructions teaching the model how to choose branches already selected by code;
+   - multiple numbered questions that could be asked sequentially;
+   - model self-review that local parser retry can replace;
+   - repeated statements of facts already present in state or prior answers;
+   - broad tool/event documentation irrelevant to the active branch;
+   - plans followed by redundant forced tool calls;
+   - final XML that code can build from accepted pieces;
+   - duplicate target names, IDs, purposes, necessity flags, or change flags;
+   - checkpoints whose output is not consumed;
+   - prompts mixing semantic mechanics collection with prose generation;
+   - conditionals the model must remember across a long transcript even though control flow can enforce them;
+   - parser contracts that validate syntax but leave mechanically knowable contradictions for later stages;
+   - retry instructions that add prompt weight without changing the parser boundary.
+6. Record simplification opportunities even when no benchmark currently exercises them.
+7. Record `no issue` when the prompt is already focused; do not manufacture a finding to justify change.
+
+Each prompt section in the audit must contain:
+
+- current checkpoint/control-flow graph;
+- supported capability list;
+- model-agency list;
+- code-owned fact list;
+- unnecessary-complexity findings;
+- proposed responsibility transfers;
+- functionality and agency risks;
+- affected parsers/builders/tests;
+- recommendation: change, retain, discuss, or no issue.
+
+### Phase 8: Cross-prompt synthesis and agency review
+
+Once every prompt is reviewed:
+
+1. Deduplicate findings that arise from the same runner/parser/result-builder architecture.
+2. Prefer one shared infrastructure correction over parallel prompt-specific rules.
+3. Identify reusable control-flow or parser primitives rather than copying logic across families.
+4. Build a capability matrix proving where every supported behavior remains after proposed simplification.
+5. Build an agency matrix listing:
+   - choices the LLM keeps;
+   - deterministic burdens removed from the LLM;
+   - choices whose ownership is uncertain and will therefore remain unchanged;
+   - any proposal rejected because it would reduce genuine agency.
+6. Recheck standard-prompt parity without forcing TinyBrain to retain monolithic standard-prompt architecture.
+7. Separate safe mechanical simplifications from changes that require design discussion, especially model routing or changes to the boundaries of narrative authority.
+
+No remediation plan may proceed until every proposed change has both a functionality-preservation entry and an agency-impact entry.
+
+### Phase 9: Write the remediation implementation plan
+
+After the failure audit and full prompt walkthrough are complete, write `docs/tinybrain_prompt_simplification_implementation_plan.md` and add it to `docs/README.md`. The implementation plan must:
+
+1. Cite each finding from the temporary audits.
+2. Group findings by shared architectural cause rather than prompt filename alone.
+3. State the behavior retained, the complexity removed, and the new responsibility owner.
+4. Include before/after checkpoint graphs for control-flow changes.
+5. Include a parser and result-builder plan for every structured change.
+6. Include positive, negative, retry, rollback, and parity tests.
+7. Identify benchmark cases to rerun and prompts with no benchmark coverage that need new deterministic tests.
+8. Sequence shared infrastructure before prompt-family edits.
+9. Include an explicit agency-preservation section for every work item.
+10. Exclude or defer any change that would remove genuine LLM agency.
+11. Log model-routing recommendations for discussion without including them as implementation work.
+
+### Phase 10: Implement the remediation plan
+
+Once the remediation plan has been written and checked against the capability and agency matrices, implement it. This instruction authorizes implementation of the documented, in-scope findings without an additional approval pause, subject to the repository safety rules and these boundaries:
+
+1. Do not implement any item that removes or materially narrows genuine LLM agency.
+2. When agency ownership remains uncertain, retain current behavior and mark the item deferred for discussion.
+3. Do not change prompt-to-model routing without explicit user discussion and approval.
+4. Do not introduce generated-prose classifiers, fixture-specific behavior, or pass-seeking prompt rules.
+5. Implement in dependency-ordered batches with focused tests after each batch.
+6. Update parsers, result builders, program control flow, prompt templates, tests, and documentation together.
+7. Rerun only affected benchmark cases, update the existing HTML dashboard, and inspect the new evidence even when green.
+8. Add deterministic coverage for proactive findings not currently represented by a benchmark case.
+9. Preserve explicit exceptions and graceful visible failures; do not hide unsupported conditions behind fallbacks.
+10. Stop and request direction only if a finding requires a material scope expansion, destructive action, external coordination, or a user choice that cannot be conservatively resolved while preserving agency.
 
 ## Work waves
 
@@ -291,14 +412,15 @@ After Waves 0–5:
 
 ## Implementation discipline after the audit
 
-This document authorizes an audit plan, not automatic implementation of every proposed remedy. For each wave:
+The audit does not authorize improvising fixes while evidence is still being collected. Finish the failure audit and complete prompt walkthrough first, then write the remediation implementation plan required by Phase 9. Once that plan is written, implement it as required by Phase 10. For each implementation wave:
 
-1. Present the evidence, proposed responsibility transfer, and functionality-preservation map.
+1. Record the evidence, proposed responsibility transfer, functionality-preservation map, and agency-impact statement in the implementation plan.
 2. Group changes that share one architectural cause.
-3. Implement the smallest approved general change.
+3. Implement the smallest documented general change.
 4. Add parser/runtime tests before live reruns.
 5. Update relevant class/API docs and this audit record.
 6. Resume only affected benchmark cases so the existing HTML remains authoritative.
+7. Retain or defer any proposal that cannot be implemented without removing genuine LLM agency.
 
 Do not combine unrelated prompt rewrites merely because they are in the same benchmark family.
 
@@ -307,10 +429,15 @@ Do not combine unrelated prompt rewrites merely because they are in the same ben
 The audit is complete when:
 
 - all 18 currently failed variants have a complete audit record;
+- every TinyBrain prompt/program in the dynamic inventory has a complete complexity audit, including prompts with no associated failed test;
 - every grader/fixture defect is corrected and selectively rerun;
 - every production change is justified by a general responsibility or invariant;
 - every removed prompt responsibility is mapped to a new owner or shown to be unnecessary;
 - supported TinyBrain functionality is enumerated and regression-covered;
+- genuine LLM agency is enumerated and preserved, with uncertain ownership retained rather than hardcoded;
+- `docs/tinybrain_prompt_simplification_implementation_plan.md` has been written from the completed findings and indexed in `docs/README.md`;
+- the remediation implementation plan has been implemented in dependency order with its focused tests passing;
+- proactive findings without existing benchmark coverage have deterministic regression tests;
 - no generated-prose policing or fixture-specific production behavior was added;
 - affected results have been selectively rerun and the model-specific HTML regenerated;
 - remaining failures are explicitly classified and retained without pass-seeking changes;
