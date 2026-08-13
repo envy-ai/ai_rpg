@@ -426,6 +426,75 @@ test('a switched prompt unloads the previous effective model before transport', 
     }
 });
 
+test('a failed previous-model unload warns the client and still submits the replacement prompt', { concurrency: false }, async () => {
+    const originalConfig = Globals.config;
+    const originalRealtimeHub = Globals.realtimeHub;
+    const originalGet = axios.get;
+    const originalPost = axios.post;
+    const originalWarn = console.warn;
+    const events = [];
+    const warnings = [];
+    const emittedEvents = [];
+    const statuses = new Map([
+        ['base-model', 'loaded'],
+        ['alternate-model', 'unloaded']
+    ]);
+
+    Globals.config = buildConfig();
+    Globals.realtimeHub = {
+        emit(_room, type, payload) {
+            emittedEvents.push({ type, payload });
+        }
+    };
+    LLMClient.resetModelSwitchTracking();
+    console.warn = message => warnings.push(String(message));
+    axios.get = async () => ({
+        data: {
+            data: Array.from(statuses, ([id, value]) => ({ id, status: { value } }))
+        }
+    });
+    axios.post = async (url, payload) => {
+        if (url.endsWith('/models/unload')) {
+            events.push(`unload:${payload.model}`);
+            throw new Error('router unload request was rejected');
+        }
+        events.push(`prompt:${payload.model}`);
+        statuses.set(payload.model, 'loaded');
+        return responseFor(payload);
+    };
+
+    try {
+        await runPrompt('base_prompt');
+        const response = await runPrompt('alternate_prompt');
+
+        assert.equal(response, 'ok');
+        assert.deepEqual(events, [
+            'prompt:base-model',
+            'unload:base-model',
+            'prompt:alternate-model'
+        ]);
+        assert.equal(warnings.length, 1);
+        assert.match(warnings[0], /Failed to unload llama\.cpp model "base-model"/);
+        assert.equal(emittedEvents.length, 1);
+        assert.equal(emittedEvents[0].type, 'llama_router_unload_warning');
+        assert.equal(
+            emittedEvents[0].payload.message,
+            'Failed to unload llama.cpp model "base-model" before switching to "alternate-model". The game will continue and submit the prompt to the router anyway.'
+        );
+        assert.equal(emittedEvents[0].payload.promptLabel, 'alternate_prompt');
+        assert.equal(emittedEvents[0].payload.previousModel, 'base-model');
+        assert.equal(emittedEvents[0].payload.currentModel, 'alternate-model');
+        assert.match(emittedEvents[0].payload.details, /router unload request was rejected/);
+    } finally {
+        LLMClient.resetModelSwitchTracking();
+        console.warn = originalWarn;
+        axios.get = originalGet;
+        axios.post = originalPost;
+        Globals.realtimeHub = originalRealtimeHub;
+        Globals.config = originalConfig;
+    }
+});
+
 test('model switching waits for the previous prompt transport to finish', { concurrency: false }, async () => {
     const originalConfig = Globals.config;
     const originalGet = axios.get;
@@ -488,14 +557,17 @@ test('model switching waits for the previous prompt transport to finish', { conc
     }
 });
 
-test('model-switch unload failure prevents the replacement prompt', { concurrency: false }, async () => {
+test('model-switch unload failure still submits the replacement prompt', { concurrency: false }, async () => {
     const originalConfig = Globals.config;
     const originalGet = axios.get;
     const originalPost = axios.post;
+    const originalWarn = console.warn;
     const promptModels = [];
+    const warnings = [];
 
     Globals.config = buildConfig();
     LLMClient.resetModelSwitchTracking();
+    console.warn = message => warnings.push(String(message));
     axios.get = async () => ({
         data: {
             data: [
@@ -516,13 +588,12 @@ test('model-switch unload failure prevents the replacement prompt', { concurrenc
 
     try {
         await runPrompt('base_prompt');
-        await assert.rejects(
-            () => runPrompt('alternate_prompt'),
-            /Failed to unload previous llama\.cpp model "base-model".*busy/
-        );
-        assert.deepEqual(promptModels, ['base-model']);
+        assert.equal(await runPrompt('alternate_prompt'), 'ok');
+        assert.deepEqual(promptModels, ['base-model', 'alternate-model']);
+        assert.match(warnings[0], /Failed to unload llama\.cpp model "base-model".*busy/);
     } finally {
         LLMClient.resetModelSwitchTracking();
+        console.warn = originalWarn;
         axios.get = originalGet;
         axios.post = originalPost;
         Globals.config = originalConfig;

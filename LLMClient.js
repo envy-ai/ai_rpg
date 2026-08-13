@@ -2569,6 +2569,28 @@ class LLMClient {
         LLMClient.#lastPromptModelTarget = LLMClient.#resolvePromptModelTarget(attemptRuntime);
     }
 
+    static #emitRouterModelUnloadWarning({ previousTarget, currentTarget, promptLabel, cause } = {}) {
+        const message = `Failed to unload llama.cpp model "${previousTarget.model}" before switching to "${currentTarget.model}". The game will continue and submit the prompt to the router anyway.`;
+        const details = cause?.stack || cause?.message || String(cause);
+        console.warn(`⚠️ ${message} ${details}`);
+        try {
+            if (!Globals?.realtimeHub || typeof Globals.realtimeHub.emit !== 'function') {
+                return;
+            }
+            Globals.emitToClient(null, 'llama_router_unload_warning', {
+                message,
+                promptLabel,
+                previousModel: previousTarget.model,
+                currentModel: currentTarget.model,
+                details
+            });
+        } catch (warningError) {
+            console.warn(
+                `⚠️ Failed to broadcast llama.cpp model-unload warning: ${warningError?.message || String(warningError)}`
+            );
+        }
+    }
+
     static async #unloadPreviousPromptModelOnSwitch({ attemptRuntime, metadataLabel, log } = {}) {
         const currentTarget = LLMClient.#resolvePromptModelTarget(attemptRuntime, { required: true });
         const previousTarget = LLMClient.#lastPromptModelTarget;
@@ -2613,15 +2635,15 @@ class LLMClient {
         try {
             unloadState = await previousRouter.unloadModelIfLoaded();
         } catch (cause) {
-            const error = new Error(
-                `Failed to unload previous llama.cpp model "${previousTarget.model}" before prompt "${promptLabel}" switched to "${currentTarget.model}": ${cause?.message || String(cause)}`,
-                { cause }
-            );
-            error.isModelSwitchError = true;
-            throw error;
+            LLMClient.#emitRouterModelUnloadWarning({
+                previousTarget,
+                currentTarget,
+                promptLabel,
+                cause
+            });
         }
 
-        if (typeof log === 'function') {
+        if (unloadState && typeof log === 'function') {
             if (unloadState.unloadedByClient) {
                 log(
                     `🧠 Unloaded previous llama.cpp model "${previousTarget.model}" before switching to "${currentTarget.model}".`

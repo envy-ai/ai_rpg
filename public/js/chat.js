@@ -523,6 +523,11 @@ class AIRPGChat {
         this.comfyCacheMonitorWarningCheckbox = null;
         this.comfyCacheMonitorWarningCloseButton = null;
         this.comfyCacheMonitorWarningDismissButton = null;
+        this.llamaRouterUnloadWarningModal = null;
+        this.llamaRouterUnloadWarningMessage = null;
+        this.llamaRouterUnloadWarningDetails = null;
+        this.llamaRouterUnloadWarningCloseButton = null;
+        this.llamaRouterUnloadWarningDismissButton = null;
 
         this.latestPlayerActionEntryKey = null;
         this.pendingRedoStorageKey = 'airpg:pendingRedoPlayerAction';
@@ -791,6 +796,90 @@ class AIRPGChat {
         }
         this.comfyCacheMonitorWarningModal.setAttribute('hidden', '');
         this.comfyCacheMonitorWarningModal.classList.remove('is-open');
+    }
+
+    setupLlamaRouterUnloadWarningModal() {
+        if (this.llamaRouterUnloadWarningModal) {
+            return;
+        }
+
+        const container = document.createElement('div');
+        container.className = 'llama-router-unload-warning';
+        container.setAttribute('hidden', '');
+        container.innerHTML = `
+            <div class="llama-router-unload-warning__backdrop" role="presentation"></div>
+            <div class="llama-router-unload-warning__dialog" role="dialog" aria-modal="true" aria-labelledby="llamaRouterUnloadWarningTitle">
+                <header class="llama-router-unload-warning__header">
+                    <h2 id="llamaRouterUnloadWarningTitle" class="llama-router-unload-warning__title">llama.cpp model unload failed</h2>
+                    <button type="button" class="llama-router-unload-warning__close" aria-label="Close">&times;</button>
+                </header>
+                <div class="llama-router-unload-warning__body">
+                    <p class="llama-router-unload-warning__message"></p>
+                    <p>The turn is continuing. If the router cannot load the requested model while the previous model remains resident, this turn may still fail at the model request.</p>
+                    <details class="llama-router-unload-warning__technical-details">
+                        <summary>Technical details</summary>
+                        <pre class="llama-router-unload-warning__details"></pre>
+                    </details>
+                </div>
+                <footer class="llama-router-unload-warning__footer">
+                    <button type="button" class="llama-router-unload-warning__dismiss">Got it</button>
+                </footer>
+            </div>
+        `;
+        document.body.appendChild(container);
+
+        this.llamaRouterUnloadWarningModal = container;
+        this.llamaRouterUnloadWarningMessage = container.querySelector('.llama-router-unload-warning__message');
+        this.llamaRouterUnloadWarningDetails = container.querySelector('.llama-router-unload-warning__details');
+        this.llamaRouterUnloadWarningCloseButton = container.querySelector('.llama-router-unload-warning__close');
+        this.llamaRouterUnloadWarningDismissButton = container.querySelector('.llama-router-unload-warning__dismiss');
+
+        const close = () => this.closeLlamaRouterUnloadWarningModal();
+        this.llamaRouterUnloadWarningCloseButton?.addEventListener('click', close);
+        this.llamaRouterUnloadWarningDismissButton?.addEventListener('click', close);
+        container.querySelector('.llama-router-unload-warning__backdrop')?.addEventListener('click', close);
+        document.addEventListener('keydown', (event) => {
+            if (event.key === 'Escape' && this.isLlamaRouterUnloadWarningVisible()) {
+                close();
+            }
+        });
+    }
+
+    isLlamaRouterUnloadWarningVisible() {
+        return Boolean(
+            this.llamaRouterUnloadWarningModal
+            && !this.llamaRouterUnloadWarningModal.hasAttribute('hidden')
+        );
+    }
+
+    handleLlamaRouterUnloadWarning(payload = {}) {
+        this.setupLlamaRouterUnloadWarningModal();
+        const defaultMessage = 'llama.cpp could not unload the previous model before a model switch. The game is continuing the turn.';
+        if (this.llamaRouterUnloadWarningMessage) {
+            this.llamaRouterUnloadWarningMessage.textContent = (
+                typeof payload?.message === 'string' && payload.message.trim()
+                    ? payload.message.trim()
+                    : defaultMessage
+            );
+        }
+        if (this.llamaRouterUnloadWarningDetails) {
+            this.llamaRouterUnloadWarningDetails.textContent = (
+                typeof payload?.details === 'string' && payload.details.trim()
+                    ? payload.details.trim()
+                    : 'No additional router diagnostic was provided.'
+            );
+        }
+        this.llamaRouterUnloadWarningModal.removeAttribute('hidden');
+        this.llamaRouterUnloadWarningModal.classList.add('is-open');
+        window.setTimeout(() => this.llamaRouterUnloadWarningDismissButton?.focus(), 0);
+    }
+
+    closeLlamaRouterUnloadWarningModal() {
+        if (!this.llamaRouterUnloadWarningModal) {
+            return;
+        }
+        this.llamaRouterUnloadWarningModal.setAttribute('hidden', '');
+        this.llamaRouterUnloadWarningModal.classList.remove('is-open');
     }
 
     setupPrefixHelpModal() {
@@ -5037,6 +5126,9 @@ class AIRPGChat {
                 break;
             case 'comfy_cache_monitor_fallback':
                 this.handleComfyCacheMonitorFallback(payload);
+                break;
+            case 'llama_router_unload_warning':
+                this.handleLlamaRouterUnloadWarning(payload);
                 break;
             case 'generation_status':
                 this.handleGenerationStatus(payload);

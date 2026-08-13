@@ -964,6 +964,121 @@ p:not(:last-child) {
   outline-offset: 2px;
 }
 
+.llama-router-unload-warning {
+  position: fixed;
+  inset: 0;
+  z-index: 4002;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  pointer-events: none;
+}
+.llama-router-unload-warning.is-open {
+  pointer-events: auto;
+}
+.llama-router-unload-warning[hidden] {
+  display: none !important;
+}
+.llama-router-unload-warning__backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(8, 10, 24, 0.72);
+  backdrop-filter: blur(4px);
+}
+.llama-router-unload-warning__dialog {
+  position: relative;
+  z-index: 1;
+  width: min(620px, 94vw);
+  max-height: 90vh;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  color: rgba(255, 255, 255, 0.9);
+  background: var(--airpg-modal-surface);
+  border: 1px solid var(--airpg-modal-border);
+  border-radius: 16px;
+  box-shadow: var(--airpg-modal-shadow);
+}
+.llama-router-unload-warning__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 20px 24px;
+  border-bottom: 1px solid var(--airpg-modal-border);
+  background: linear-gradient(135deg, rgba(248, 113, 113, 0.24), rgba(153, 27, 27, 0.2));
+}
+.llama-router-unload-warning__title {
+  margin: 0;
+  color: #ffffff;
+  font-size: 1.2rem;
+  font-weight: 600;
+}
+.llama-router-unload-warning__close {
+  flex: 0 0 auto;
+  width: 34px;
+  height: 34px;
+  border: 0;
+  border-radius: 8px;
+  background: rgba(15, 23, 42, 0.62);
+  color: #e2e8f0;
+  font-size: 1.35rem;
+  line-height: 1;
+  cursor: pointer;
+}
+.llama-router-unload-warning__body {
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 22px 24px;
+  color: rgba(255, 255, 255, 0.84);
+  line-height: 1.5;
+}
+.llama-router-unload-warning__body p {
+  margin: 0;
+}
+.llama-router-unload-warning__message {
+  color: rgba(255, 255, 255, 0.94);
+}
+.llama-router-unload-warning__technical-details {
+  border: 1px solid rgba(248, 113, 113, 0.32);
+  border-radius: 10px;
+  background: rgba(127, 29, 29, 0.18);
+  padding: 10px 12px;
+}
+.llama-router-unload-warning__technical-details summary {
+  cursor: pointer;
+  color: #fecaca;
+  font-weight: 600;
+}
+.llama-router-unload-warning__details {
+  margin: 12px 0 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  color: #fecaca;
+  font-size: 0.8rem;
+}
+.llama-router-unload-warning__footer {
+  display: flex;
+  justify-content: flex-end;
+  padding: 16px 24px 20px;
+  border-top: 1px solid var(--airpg-modal-border);
+  background: rgba(18, 24, 40, 0.74);
+}
+.llama-router-unload-warning__dismiss {
+  min-width: 112px;
+  padding: 10px 18px;
+  border: 1px solid rgba(248, 113, 113, 0.46);
+  border-radius: 999px;
+  background: linear-gradient(135deg, #fca5a5, #ef4444);
+  color: #450a0a;
+  font-size: 0.95rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
 .image-lightbox {
   position: fixed;
   inset: 0;
