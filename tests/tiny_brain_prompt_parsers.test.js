@@ -762,6 +762,30 @@ test('scheduled-event tool plan and execution parsers enforce exact direct-updat
         /unexpected direct child <purpose>/i
     );
 
+    const invalidChatLogEditPlan = planXml.replace(
+        '<otherTools/>',
+        '<otherTools><tool><name>editChatLogEntry</name>'
+        + '<argumentsJson>{"content":"Add a ledger line.","reason":"Scheduled event."}</argumentsJson>'
+        + '</tool></otherTools>'
+    );
+    assert.throws(
+        () => parseScheduledEventToolPlan(
+            invalidChatLogEditPlan,
+            event,
+            ['updateObjectFields', 'editChatLogEntry']
+        ),
+        /editChatLogEntry requires either a non-empty string "entry" or a zero-based non-negative integer "index"/
+    );
+    const validChatLogEditPlan = parseScheduledEventToolPlan(
+        invalidChatLogEditPlan.replace(
+            '{"content":"Add a ledger line.","reason":"Scheduled event."}',
+            '{"index":0,"content":"Add a ledger line.","reason":"Scheduled event."}'
+        ),
+        event,
+        ['updateObjectFields', 'editChatLogEntry']
+    ).value;
+    assert.equal(validChatLogEditPlan.otherTools[0].argumentsObject.index, 0);
+
     const wrongFieldPlan = planXml.replace(
         '<field>description</field>',
         '<field>unknownField</field>'

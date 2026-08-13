@@ -26,12 +26,9 @@ Plan the state changes needed for the event. You may make read-only lookup calls
   </otherTools>
 </toolPlan>
 
-Use self-closing <directUpdates/> or <otherTools/> when that list is empty. Every `updateObjectFields` call must be represented under <directUpdates>. Read-only lookup calls are allowed during planning and under <otherTools> when information will still be needed during execution; do not list a lookup that already completed during planning. List each remaining call once with the arguments it should receive.
+Use self-closing <directUpdates/> or <otherTools/> when that list is empty. Every `updateObjectFields` call must be represented under <directUpdates>. Read-only lookup calls are allowed during planning and under <otherTools> when information will still be needed during execution; do not list a lookup that already completed during planning. The server automatically records this event's lifecycle and hidden summary. If no supported game-state field or distinct consequential tool call is required, return both lists empty; do not invent a mutation merely to record, replay, or reschedule the current event, and use `scheduleEvent` only for a distinct future consequence. List each remaining call once with the arguments it should receive.
 
 {% llmparse('scheduled_event_tool_plan', scheduledEvent.event, scheduledEventToolNames) as scheduledEventToolPlan %}
-The server now executes every accepted call in the plan exactly as validated, in listed order, without asking you to repeat it.
-
-{% llmparse('scheduled_event_tool_execution', scheduledEvent.event, scheduledEventToolPlan) %}
 
 Return exactly one <summary>...</summary> block containing a concise hidden summary of what happened, adhering to the scheduled event and completed tool outcomes. Even when no state-changing tool was needed, summarize the event that occurred; do not answer N/A, none, or not applicable.
 

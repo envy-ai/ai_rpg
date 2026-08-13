@@ -1401,6 +1401,38 @@ function parseJsonObjectText(text, label) {
     return value;
 }
 
+function validateScheduledEventPlannedToolArguments(name, argumentsObject, label) {
+    if (name !== 'editChatLogEntry') {
+        return;
+    }
+
+    const hasEntry = Object.hasOwn(argumentsObject, 'entry');
+    const hasIndex = Object.hasOwn(argumentsObject, 'index');
+    const entryIsValid = hasEntry
+        && typeof argumentsObject.entry === 'string'
+        && Boolean(argumentsObject.entry.trim());
+    const indexIsValid = hasIndex
+        && Number.isInteger(argumentsObject.index)
+        && argumentsObject.index >= 0;
+    if (!entryIsValid && !indexIsValid) {
+        throw new Error(
+            `${label} editChatLogEntry requires either a non-empty string "entry" `
+            + 'or a zero-based non-negative integer "index".'
+        );
+    }
+    if (hasEntry && !entryIsValid) {
+        throw new Error(`${label} editChatLogEntry "entry" must be a non-empty string.`);
+    }
+    if (hasIndex && !indexIsValid) {
+        throw new Error(
+            `${label} editChatLogEntry "index" must be a zero-based non-negative integer.`
+        );
+    }
+    if (typeof argumentsObject.content !== 'string' || !argumentsObject.content.trim()) {
+        throw new Error(`${label} editChatLogEntry requires non-empty string "content".`);
+    }
+}
+
 function parseScheduledEventToolPlan(response, scheduledEventText, availableToolNames = []) {
     const authoritativeEvent = typeof scheduledEventText === 'string'
         ? scheduledEventText.trim()
@@ -1512,6 +1544,7 @@ function parseScheduledEventToolPlan(response, scheduledEventText, availableTool
         }
         const argumentsJson = requireSingleDirectChild(toolNode, 'argumentsJson', label).text;
         const argumentsObject = parseJsonObjectText(argumentsJson, `${label} <argumentsJson>`);
+        validateScheduledEventPlannedToolArguments(name, argumentsObject, label);
         const key = JSON.stringify([name, argumentsObject]);
         if (otherToolKeys.has(key)) {
             continue;

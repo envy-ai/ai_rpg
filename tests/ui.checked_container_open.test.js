@@ -13,6 +13,7 @@ test('checked containers use a dedicated open-attempt modal and API route', () =
     const viewSource = read('views/index.njk');
     const apiSource = read('api.js');
     const promptSource = read('prompts/_includes/player-action-open-container.njk');
+    const tinyBrainPromptSource = read('prompts/_includes/player-action-open-container.tinybrain.njk');
 
     assert.match(viewSource, /id="containerOpenCheckModal"/);
     assert.match(viewSource, /function requiresContainerOpenCheck\(thing\)/);
@@ -22,7 +23,7 @@ test('checked containers use a dedicated open-attempt modal and API route', () =
     assert.match(apiSource, /promptType: 'player-action-open-container'/);
     assert.match(apiSource, /const enabledChatTools = getChatToolDefinitions/);
     assert.match(apiSource, /toolName === 'resolveSkillCheck'\s*\|\| toolName === 'resolveOpposedSkillCheck'/);
-    assert.match(apiSource, /const isCheckToolCheckpoint = !stage\.isFinal\s*&& stage\.checkpoint\?\.index === 1/);
+    assert.match(apiSource, /const isCheckToolCheckpoint = !stage\.isFinal\s*&& stage\.checkpoint\?\.index === 0/);
     assert.match(apiSource, /isCheckToolCheckpoint \? enabledChatTools : \[\]/);
     assert.match(apiSource, /toolName === 'resolveSkillCheck'/);
     assert.match(apiSource, /toolName === 'resolveOpposedSkillCheck'/);
@@ -37,6 +38,10 @@ test('checked containers use a dedicated open-attempt modal and API route', () =
     assert.match(promptSource, /<timePassed>/);
     assert.match(promptSource, /<duration>/);
     assert.match(promptSource, /resolveSkillCheck/);
+    assert.match(tinyBrainPromptSource, /Choose and immediately make exactly one check tool call/i);
+    assert.equal((tinyBrainPromptSource.match(/llm_dummy_action/g) || []).length, 2);
+    assert.doesNotMatch(tinyBrainPromptSource, /Do not roll yet/i);
+    assert.doesNotMatch(tinyBrainPromptSource, /Now make exactly one chosen check tool call/i);
 });
 
 test('checked container cards show a red lock overlay on the container badge', () => {

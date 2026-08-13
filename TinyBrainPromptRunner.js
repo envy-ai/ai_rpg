@@ -42,11 +42,20 @@ function buildParseRetryInstruction(error) {
     const validationMessage = typeof error?.message === 'string' && error.message.trim()
         ? error.message.trim()
         : 'The response did not satisfy this checkpoint\'s parser.';
-    return [
+    const retryInstruction = [
         'Your previous response failed validation. Correct it and answer the same checkpoint again.',
-        `Validation feedback: ${validationMessage}`,
-        'Return only what the checkpoint requests. Do not repeat any successful tool calls whose results are already present in the conversation unless the validation feedback explicitly requires a corrective call.'
-    ].join('\n');
+        `Validation feedback: ${validationMessage}`
+    ];
+    if (error?.tinyBrainRetryCompletePlan === true) {
+        retryInstruction.push(
+            'Return a complete corrected plan. Include calls from the previous plan that are still required; the server cached successful executions and will reuse them without repeating their effects.'
+        );
+    } else {
+        retryInstruction.push(
+            'Return only what the checkpoint requests. Do not repeat any successful tool calls whose results are already present in the conversation unless the validation feedback explicitly requires a corrective call.'
+        );
+    }
+    return retryInstruction.join('\n');
 }
 
 function parseAcceptOrReject(response) {
@@ -327,6 +336,7 @@ class TinyBrainPromptRunner {
         parsers = {},
         resultBuilders = {},
         finalParser = null,
+        afterParse = null,
         onParseFailure = null,
         logPrompt = LLMClient.logPrompt.bind(LLMClient),
         metadataLabel = 'player_action_tinybrain',
@@ -358,6 +368,9 @@ class TinyBrainPromptRunner {
         }
         if (finalParser !== null && typeof finalParser !== 'function') {
             throw new Error('TinyBrainPromptRunner finalParser must be a function when provided.');
+        }
+        if (afterParse !== null && typeof afterParse !== 'function') {
+            throw new Error('TinyBrainPromptRunner afterParse must be a function when provided.');
         }
         if (onParseFailure !== null && typeof onParseFailure !== 'function') {
             throw new Error('TinyBrainPromptRunner onParseFailure must be a function when provided.');
@@ -416,6 +429,7 @@ class TinyBrainPromptRunner {
         };
         this.resultBuilders = { ...resultBuilders };
         this.finalParser = finalParser;
+        this.afterParse = afterParse;
         this.onParseFailure = onParseFailure;
         this.logPrompt = logPrompt;
         this.metadataLabel = metadataLabel.trim();
@@ -992,6 +1006,39 @@ class TinyBrainPromptRunner {
                 const parsed = rawParsed && typeof rawParsed === 'object' && !Array.isArray(rawParsed)
                     ? rawParsed
                     : { value: rawParsed };
+                let acceptedMessages = conversationMessages;
+                if (this.afterParse && !isFinal) {
+                    const afterParseResult = await this.afterParse({
+                        response: aiResponse,
+                        parsed,
+                        messages: conversationMessages.map(cloneMessage),
+                        checkpoint: { ...checkpoint },
+                        attempt,
+                        queueReservation,
+                        appendLogSection
+                    });
+                    if (afterParseResult !== null && afterParseResult !== undefined) {
+                        if (!afterParseResult || typeof afterParseResult !== 'object' || Array.isArray(afterParseResult)) {
+                            throw new Error('Tiny-brain afterParse must return an object, null, or undefined.');
+                        }
+                        if (!Array.isArray(afterParseResult.conversationMessages)) {
+                            throw new Error('Tiny-brain afterParse result requires conversationMessages.');
+                        }
+                        acceptedMessages = afterParseResult.conversationMessages.map(cloneMessage);
+                        const afterParseToolInvocations = Array.isArray(afterParseResult.toolInvocations)
+                            ? afterParseResult.toolInvocations.map(cloneToolInvocation)
+                            : [];
+                        const failedAfterParseToolMessage = getFailedToolInvocationMessage(
+                            afterParseToolInvocations
+                        );
+                        if (failedAfterParseToolMessage) {
+                            const error = new Error(failedAfterParseToolMessage);
+                            error.tinyBrainRetryCompletePlan = true;
+                            throw error;
+                        }
+                        toolInvocations.push(...afterParseToolInvocations);
+                    }
+                }
                 const acceptedResponse = typeof parsed.normalizedResponse === 'string'
                     && parsed.normalizedResponse.trim()
                     ? parsed.normalizedResponse.trim()
@@ -999,7 +1046,7 @@ class TinyBrainPromptRunner {
                 return {
                     aiResponse: acceptedResponse,
                     parsed,
-                    messages: conversationMessages,
+                    messages: acceptedMessages,
                     toolInvocations,
                     logFilePath: currentLogPath
                 };

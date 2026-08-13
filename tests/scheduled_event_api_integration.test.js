@@ -15,9 +15,13 @@ test('api wires scheduled event scheduling and due-event resolution hooks', () =
     assert.match(apiSource, /promptType:\s*'scheduled-event-resolution'/);
     assert.match(apiSource, /function getAllChatToolDefinitions/);
     assert.match(apiSource, /modExtensionRegistry\.getChatToolDefinitions\(\)/);
-    assert.match(apiSource, /const scheduledEventTools = getAllChatToolDefinitions\(\{\s*modExtensionRegistry\s*\}\)/);
-    assert.match(apiSource, /const isToolCheckpoint = !stage\.isFinal\s*&& stage\.checkpoint\?\.index === 2/);
+    assert.match(
+        apiSource,
+        /const scheduledEventTools = getAllChatToolDefinitions\(\{\s*modExtensionRegistry,\s*includeGenericPromptOnly:\s*false\s*\}\)/
+    );
     assert.match(apiSource, /const isPlanCheckpoint = !stage\.isFinal\s*&& stage\.checkpoint\?\.index === 1/);
+    assert.match(apiSource, /afterParse:\s*async stage => \{\s*if \(stage\.checkpoint\?\.parserName !== 'scheduled_event_tool_plan'\)/);
+    assert.doesNotMatch(apiSource, /const isToolCheckpoint = !stage\.isFinal/);
     assert.match(apiSource, /isNonMutatingScheduledEventToolName/);
     assert.match(apiSource, /scheduledEventTools\.filter\(definition/);
     assert.match(
@@ -28,7 +32,9 @@ test('api wires scheduled event scheduling and due-event resolution hooks', () =
     assert.match(apiSource, /scheduledEventDeterministicToolResultCache/);
     assert.match(apiSource, /const executePlannedToolCall = \(toolCall, executionOptions\)/);
     assert.match(apiSource, /chatToolMayLaunchPrompts\(toolCall\.functionName\)/);
+    assert.match(apiSource, /retryError\.tinyBrainRetryCompletePlan = true/);
     assert.match(apiSource, /title:\s*'server-executed scheduled-event tool plan'/);
+    assert.match(apiSource, /expectedSummary:\s*happened \? completed\[2\]\?\.value : ''/);
     assert.match(apiSource, /event:\s*scheduledEvent\.event\s*\|\|\s*''/);
     assert.match(apiSource, /event:\s*result\.event\s*\|\|\s*''/);
     assert.doesNotMatch(apiSource, /scheduledEventTools[\s\S]{0,240}\.filter\(toolDefinition => toolDefinition\?\.\function\?\.name !== 'requestUserInput'\)/);
@@ -59,12 +65,15 @@ test('scheduled resolution prompts treat player presence as visibility rather th
         assert.match(prompt, /Resolve feasible offscreen events/i);
     }
     assert.match(tinyBrainPrompt, /scheduled_event_tool_plan/);
-    assert.match(tinyBrainPrompt, /scheduled_event_tool_execution/);
-    assert.match(tinyBrainPrompt, /server now executes every accepted call/i);
+    assert.doesNotMatch(tinyBrainPrompt, /scheduled_event_tool_execution/);
+    assert.doesNotMatch(tinyBrainPrompt, /server now executes every accepted call/i);
     assert.doesNotMatch(tinyBrainPrompt, /Make each planned call once now/i);
     assert.doesNotMatch(tinyBrainPrompt, /stateChangeRequired/);
     assert.doesNotMatch(tinyBrainPrompt, /<purpose>/);
     assert.match(tinyBrainPrompt, /read-only lookup calls now/i);
+    assert.match(tinyBrainPrompt, /automatically records this event's lifecycle and hidden summary/i);
+    assert.match(tinyBrainPrompt, /return both lists empty; do not invent a mutation/i);
+    assert.match(tinyBrainPrompt, /scheduleEvent.*only for a distinct future consequence/i);
     assert.match(tinyBrainPrompt, /llmresult\('scheduled_event_result'\)/);
     assert.doesNotMatch(tinyBrainPrompt, /character-for-character/i);
     assert.doesNotMatch(tinyBrainPrompt, /grammatical subject/i);

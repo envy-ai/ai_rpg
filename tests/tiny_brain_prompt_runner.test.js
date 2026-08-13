@@ -384,6 +384,108 @@ test('tiny-brain runner retries failed tool invocations without replaying succes
     assert.equal(result.aiResponse, '<final>Done.</final>');
 });
 
+test('tiny-brain afterParse execution failures retry the same complete plan checkpoint', async () => {
+    const environment = createEnvironment([
+        "Plan the server calls. {% llmparse('server_plan') as plan %}",
+        'Write the final response.'
+    ].join(''));
+    const renderState = TinyBrainPromptRunner.createRenderState();
+    const templateContext = { __tinyBrainState: renderState };
+    const initialRenderedTemplate = environment.render('wrapper.xml.njk', templateContext);
+    const completionCalls = [];
+    const afterParseCalls = [];
+
+    const runner = new TinyBrainPromptRunner({
+        promptEnv: environment,
+        parseXMLTemplate: parseTemplate,
+        retryAttempts: 1,
+        parsers: {
+            server_plan(response) {
+                assert.match(response, /^plan attempt [12]$/);
+                return { value: response };
+            }
+        },
+        finalParser(response, parseContext) {
+            assert.equal(parseContext.toolInvocations.length, 2);
+            return { value: true };
+        },
+        logPrompt(options) {
+            return options.filePath || '/test/logs/tinybrain-after-parse-retry.log';
+        },
+        async afterParse({ parsed, messages, checkpoint, attempt }) {
+            afterParseCalls.push({ parsed, messages, checkpoint, attempt });
+            if (afterParseCalls.length === 1) {
+                return {
+                    conversationMessages: messages,
+                    toolInvocations: [
+                        { id: 'update_1', name: 'updateObjectFields', metadata: { status: 'success' } },
+                        {
+                            id: 'summary_1',
+                            name: 'rerunSceneSummary',
+                            metadata: {
+                                error: true,
+                                message: 'Scene summary 3 is out of range; stored scenes: 2.'
+                            }
+                        }
+                    ]
+                };
+            }
+            return {
+                conversationMessages: [
+                    ...messages,
+                    { role: 'tool', tool_call_id: 'update_1', content: 'Updated.' },
+                    { role: 'tool', tool_call_id: 'schedule_1', content: 'Scheduled.' }
+                ],
+                toolInvocations: [
+                    { id: 'update_1', name: 'updateObjectFields', metadata: { status: 'success' } },
+                    { id: 'schedule_1', name: 'scheduleEvent', metadata: { status: 'success' } }
+                ]
+            };
+        },
+        async complete({ messages, checkpoint, attempt, isFinal }) {
+            completionCalls.push({ messages, checkpoint, attempt, isFinal });
+            if (!isFinal) {
+                if (attempt === 1) {
+                    assert.match(messages.at(-1).content, /Return a complete corrected plan/i);
+                    assert.match(messages.at(-1).content, /cached successful executions/i);
+                    assert.doesNotMatch(messages.at(-1).content, /Do not repeat any successful tool calls/i);
+                }
+                const aiResponse = `plan attempt ${attempt + 1}`;
+                return {
+                    aiResponse,
+                    conversationMessages: [...messages, { role: 'assistant', content: aiResponse }],
+                    toolInvocations: []
+                };
+            }
+            assert.ok(messages.some(message => message.tool_call_id === 'update_1'));
+            assert.ok(messages.some(message => message.tool_call_id === 'schedule_1'));
+            const aiResponse = '<final>Done.</final>';
+            return {
+                aiResponse,
+                conversationMessages: [...messages, { role: 'assistant', content: aiResponse }],
+                toolInvocations: []
+            };
+        }
+    });
+
+    const result = await runner.run({
+        initialRenderedTemplate,
+        templateContext,
+        renderState,
+        programTemplateName: 'program.njk'
+    });
+
+    assert.equal(afterParseCalls.length, 2);
+    assert.equal(completionCalls.length, 3);
+    assert.equal(completionCalls[0].checkpoint.index, 0);
+    assert.equal(completionCalls[1].checkpoint.index, 0);
+    assert.equal(completionCalls[1].attempt, 1);
+    assert.deepEqual(result.toolInvocations.map(invocation => invocation.name), [
+        'updateObjectFields',
+        'scheduleEvent'
+    ]);
+});
+
 test('tiny-brain dummy checkpoints accept blank text after a successful tool call and finals return normalized responses', async () => {
     const environment = createEnvironment([
         'Use the lookup tool now. {% llm_dummy_action %}',

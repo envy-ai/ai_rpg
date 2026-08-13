@@ -3,11 +3,7 @@ Character: {{ characterName | default('The player', true) }}
 Container: {{ container.name }} — {{ container.description }}
 Attempt: {{ containerOpenAction }}
 
-Choose exactly one check tool and explain the attribute/skill choice briefly. Use resolveSkillCheck unless another character is directly and actively opposing the attempt, in which case use resolveOpposedSkillCheck. Do not roll yet.
-
-{% llm_dummy_action %}
-
-Now make exactly one chosen check tool call. After its result returns, summarize that result in one sentence. Do not call another check tool and do not reroll.
+Choose and immediately make exactly one check tool call. Use resolveSkillCheck unless another character is directly and actively opposing the attempt, in which case use resolveOpposedSkillCheck. After its result returns, summarize the attribute/skill choice and result in one sentence. Do not call another check tool and do not reroll.
 
 {% llm_dummy_action %}
 
