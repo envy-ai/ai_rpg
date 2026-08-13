@@ -5,31 +5,51 @@ Scheduled location: {{ scheduledEvent.locationName }}
 Player present: {{ scheduledEventPlayerPresent }}
 Current world time: {{ scheduledEventCurrentWorldTime.dateLabel }} {{ scheduledEventCurrentWorldTime.timeLabel }}
 
-Does this event still make sense now? Answer yes or no, followed by one brief reason.
+The base context above describes the scheduled location, even when the player is somewhere else. Player presence controls only whether player-facing prose is returned; it does not determine whether an event can occur. Judge applicability from the current state at the scheduled location. Do not answer no merely because the player is absent, the scheduled location differs from the player's location, or the affected entity is not in the player's inventory. Resolve feasible offscreen events with the available tools: when the required actors/objects and action still exist, answer yes and update that offscreen state. Answer no only when current scheduled-location state makes the event impossible, obsolete, contradicted, or already satisfied.
 
-{% llmparse('yes_no') as scheduledEventApplies %}
+Does this event still make sense now? Return exactly one XML block in this form, with no text outside it: <applicability><decision>yes or no</decision><reason>one brief reason</reason></applicability>
+
+{% llmparse('scheduled_event_applicability') as scheduledEventApplies %}
 {% if scheduledEventApplies %}
-List the exact state changes needed for the event and which tools implement them. Do not call tools yet. If no state change is needed, say N/A.
+Plan the state changes needed for the event. You may make read-only lookup calls now when current context is insufficient, but do not call state-changing tools during planning. After any lookup results, return exactly one XML block in this form:
+<toolPlan>
+  <stateChangeRequired>yes or no</stateChangeRequired>
+  <directUpdates>
+    <update>
+      <objectType>canonical updateObjectFields object type</objectType>
+      <objectId>exact id from game state, or empty only if unavailable</objectId>
+      <objectName>exact name from game state, or empty only if unavailable</objectName>
+      <field>allowlisted field name</field>
+      <valueJson>replacement value as valid JSON</valueJson>
+    </update>
+  </directUpdates>
+  <otherTools>
+    <tool><name>exact available tool name</name><argumentsJson>the exact JSON object to pass</argumentsJson><purpose>brief purpose</purpose></tool>
+  </otherTools>
+</toolPlan>
 
-{% llm_dummy_action %}
+Use self-closing <directUpdates/> or <otherTools/> when that list is empty. Every `updateObjectFields` call must be represented under <directUpdates>. Read-only lookup calls are allowed during planning and under <otherTools> when information will still be needed during execution; do not list a lookup that already completed during planning. Set <stateChangeRequired> according to whether the event requires a persistent mutation; read-only lookups do not count as state changes. List each remaining call once with the arguments it should receive.
 
-Make each required state-changing tool call exactly once now. Then summarize the completed tool outcomes. Do not repeat a call on later stages.
+{% llmparse('scheduled_event_tool_plan', scheduledEvent.event, scheduledEventToolNames) as scheduledEventToolPlan %}
+{% if scheduledEventToolPlan.otherTools.length == 0 %}
+Execute the accepted direct-update plan exactly through the server's validated tool executor, or make no call when <stateChangeRequired> is no. Do not ask the model to restate an executable call as text.
+{% else %}
+Follow the plan that you wrote above, calling each tool now in order. Calls are validated against the accepted plan, and every planned successful call is checked before this stage can finish. If validation rejects a call, make only the requested correction. Do not repeat a successful call.
+{% endif %}
 
-{% llm_dummy_action %}
+{% llmparse('scheduled_event_tool_execution', scheduledEvent.event, scheduledEventToolPlan) %}
 
-Write a concise hidden summary of what actually happened, adhering to tool outcomes.
+Return exactly one <summary>...</summary> block containing a concise hidden summary of what happened, adhering to the scheduled event and completed tool outcomes. Even when no state-changing tool was needed, summarize the event that occurred; do not answer N/A, none, or not applicable.
 
-{% llm_dummy_action %}
+{% llmparse('scheduled_event_summary') as scheduledEventSummary %}
 
-{% if scheduledEventPlayerPresent %}Draft Response: Write only what the player perceives of the resolved event. Do not expose hidden state or tool details.
+{% if scheduledEventPlayerPresent %}Draft Response: Write only what the player perceives of the resolved event. Keep the material event and completed tool outcomes in sync with the prose. Do not expose hidden state or tool details.
 
-{% llm_dummy_action %}
+{% llmparse('player_action_required_prose') %}
 
-{% set tinyBrainAuditFocus = 'Visible prose must match completed tool outcomes and player knowledge; hidden state and implementation details must remain out of player-facing prose.' %}
+{% set tinyBrainAuditFocus = 'Visible prose must remain in sync with the material scheduled event and completed tool outcomes, match player knowledge, and keep hidden state and implementation details out of player-facing prose.' %}
 {% include "_includes/tinybrain-prose-audit.njk" %}
 {% endif %}
 
-Return XML only: <scheduledEventResult><summary>the approved concise summary</summary>{% if scheduledEventPlayerPresent %}<proseForPlayer>polished player-facing prose</proseForPlayer>{% endif %}</scheduledEventResult>
-{% else %}
-Return exactly <scheduledEventResult/> with no other text.
 {% endif %}
+{% llmresult('scheduled_event_result') %}

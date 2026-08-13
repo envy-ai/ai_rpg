@@ -1,0 +1,7 @@
+{
+  "version": 1,
+  "name": "relationship-persistence-mechanics",
+  "description": "A REL-8-owned state-only profile for relationship, faction, disposition, and derived-hostility save/reload verification with every unrelated prompt family disabled.",
+  "extends": "isolated-base",
+  "values": {}
+}

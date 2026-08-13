@@ -1,0 +1,211 @@
+{
+  "version": 1,
+  "name": "random-scheduled-events",
+  "description": "Shared deterministic fixture for random-event categories, visible/offscreen scheduled resolution, long-action interruption, skipped events, tool failure, and save/reload idempotency.",
+  "createdAt": "2026-08-11T18:52:46.802Z",
+  "source": {
+    "setupCommand": "@@ QA FIXTURE SETUP ONLY. Create QA Bell Runner and QA Brass Bell at March Start Marker, create and expand connected QA Offscreen Depot with QA Depot Marker, schedule exact +2-minute visible and +3-minute offscreen events, and seed exact location/region random-event pools through updateObjectFields.",
+    "saveName": "2026-08-11T18-50-37-110Z_Monster_Girl_Life_2026-06b-Baato-March_Start_Marker-char_2-msp0mvg6",
+    "saveType": "saves",
+    "settingName": "Monster Girl Life 2026-06b",
+    "playerName": "Baato"
+  },
+  "configProfile": "random-scheduled-mechanics",
+  "requiredMods": [
+    "implants",
+    "modules",
+    "nsfw-boost",
+    "party-needs",
+    "scene-illustration"
+  ],
+  "worldTime": 663,
+  "entities": {
+    "playerId": "char_2",
+    "playerName": "Baato",
+    "courierId": "char_37",
+    "courierName": "QA Courier",
+    "companionId": "char_40",
+    "companionName": "QA Tired Companion",
+    "baselineLocationId": "loc_39",
+    "baselineLocationName": "March Start Marker",
+    "regionId": "region_1786438821952_m5baxvz2",
+    "regionName": "QA Frost March",
+    "depotLocationId": "loc_46",
+    "depotLocationName": "QA Offscreen Depot",
+    "isolationLocationId": "loc_45",
+    "isolationLocationName": "QA Long Rest Lodge",
+    "baselineToDepotExitId": "exit_87",
+    "depotToBaselineExitId": "exit_88",
+    "bellRunnerId": "char_47",
+    "bellRunnerName": "QA Bell Runner",
+    "bellRunnerAlias": "Bell",
+    "brassBellId": "thing_347",
+    "brassBellName": "QA Brass Bell",
+    "depotMarkerId": "thing_348",
+    "depotMarkerName": "QA Depot Marker",
+    "depotMarkerInitialDescription": "A plain numbered marker in its initial unchanged state for deterministic offscreen-event tests.",
+    "depotMarkerAlteredDescription": "The depot marker bears one fresh blue QA stripe.",
+    "locationRandomEvent": "QA Bell Runner rings QA Brass Bell exactly once; nobody and nothing moves.",
+    "regionRandomEvent": "A distant blue signal lamp flashes exactly once over the empty march; nobody and nothing moves.",
+    "visibleScheduledEventId": "sevent_1",
+    "visibleScheduledEventDescription": "QA Bell Runner rings QA Brass Bell exactly once; nobody and nothing moves.",
+    "visibleScheduledEventTargetWorldMinute": 665,
+    "offscreenScheduledEventId": "sevent_2",
+    "offscreenScheduledEventDescription": "Change QA Depot Marker's description to exactly: The depot marker bears one fresh blue QA stripe. Do not move any character or object.",
+    "offscreenScheduledEventTargetWorldMinute": 666
+  },
+  "invariants": [
+    {
+      "type": "equals",
+      "source": "after",
+      "path": "player.payload.player.locationId",
+      "equals": "loc_39"
+    },
+    {
+      "type": "equals",
+      "source": "after",
+      "path": "calendar.payload.worldTime.timeMinutes",
+      "equals": 663
+    },
+    {
+      "type": "equals",
+      "source": "after",
+      "path": "currentLocation.payload.location.randomEvents",
+      "equals": [
+        "QA Bell Runner rings QA Brass Bell exactly once; nobody and nothing moves."
+      ]
+    },
+    {
+      "type": "equals",
+      "source": "after",
+      "path": "currentLocation.payload.location.exits.qa_offscreen_depot.destination",
+      "equals": "loc_46"
+    },
+    {
+      "type": "entityField",
+      "source": "after",
+      "collection": "locations",
+      "id": "loc_46",
+      "path": "isStub",
+      "equals": false
+    },
+    {
+      "type": "entityField",
+      "source": "after",
+      "collection": "locations",
+      "id": "loc_46",
+      "path": "visited",
+      "equals": true
+    },
+    {
+      "type": "entityField",
+      "source": "after",
+      "collection": "players",
+      "id": "char_47",
+      "path": "name",
+      "equals": "QA Bell Runner"
+    },
+    {
+      "type": "entityField",
+      "source": "after",
+      "collection": "players",
+      "id": "char_47",
+      "path": "locationId",
+      "equals": "loc_39"
+    },
+    {
+      "type": "entityField",
+      "source": "after",
+      "collection": "things",
+      "id": "thing_347",
+      "path": "metadata.locationId",
+      "equals": "loc_39"
+    },
+    {
+      "type": "entityField",
+      "source": "after",
+      "collection": "things",
+      "id": "thing_347",
+      "path": "causeStatusEffect",
+      "equals": null
+    },
+    {
+      "type": "entityField",
+      "source": "after",
+      "collection": "things",
+      "id": "thing_348",
+      "path": "metadata.locationId",
+      "equals": "loc_46"
+    },
+    {
+      "type": "entityField",
+      "source": "after",
+      "collection": "things",
+      "id": "thing_348",
+      "path": "description",
+      "equals": "A plain numbered marker in its initial unchanged state for deterministic offscreen-event tests."
+    },
+    {
+      "type": "entityField",
+      "source": "after",
+      "collection": "things",
+      "id": "thing_348",
+      "path": "causeStatusEffect",
+      "equals": null
+    },
+    {
+      "type": "equals",
+      "source": "after",
+      "path": "scheduledEvents.payload.count",
+      "equals": 2
+    },
+    {
+      "type": "arrayObjectCount",
+      "source": "after",
+      "path": "scheduledEvents.payload.scheduledEvents",
+      "where": {
+        "id": "sevent_1",
+        "event": "QA Bell Runner rings QA Brass Bell exactly once; nobody and nothing moves.",
+        "regionId": "region_1786438821952_m5baxvz2",
+        "locationId": "loc_39",
+        "targetWorldMinute": 665,
+        "createdAtWorldMinute": 663,
+        "status": "pending",
+        "resolutionSummary": "",
+        "playerProse": "",
+        "resolvedAtWorldMinute": null,
+        "resolvedAtWorldTime": null
+      },
+      "equals": 1
+    },
+    {
+      "type": "arrayObjectCount",
+      "source": "after",
+      "path": "scheduledEvents.payload.scheduledEvents",
+      "where": {
+        "id": "sevent_2",
+        "event": "Change QA Depot Marker's description to exactly: The depot marker bears one fresh blue QA stripe. Do not move any character or object.",
+        "regionId": "region_1786438821952_m5baxvz2",
+        "locationId": "loc_46",
+        "targetWorldMinute": 666,
+        "createdAtWorldMinute": 663,
+        "status": "pending",
+        "resolutionSummary": "",
+        "playerProse": "",
+        "resolvedAtWorldMinute": null,
+        "resolvedAtWorldTime": null
+      },
+      "equals": 1
+    }
+  ],
+  "validation": {
+    "passed": true,
+    "scenario": "EVENT-fixture-validation",
+    "mode": "state-only",
+    "artifactDirectory": "tmp/followup-api-playtest/random-scheduled-events-setup/EVENT-fixture-validation/attempt-1",
+    "assertionsPassed": 22,
+    "assertionsFailed": 0,
+    "notes": "The source save passed all 22 state/API assertions. The persisted gameWorld.json was also checked directly because the region list/detail API intentionally omits randomEvents; it contains the exact one-entry QA Frost March seed pool. The setup run created all required entities through @@ tools and only its two bulk-snapshot randomEvents assertions failed because that compact capture omits the fields."
+  },
+  "integrity": "sha256:914d915312e1d79348b7560541d527f4a613e8af119b4c9b4a0a82c0a1e7200c"
+}

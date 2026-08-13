@@ -1,0 +1,358 @@
+{
+  "version": 1,
+  "scenario": "long-time",
+  "case": "TIME-6-wywa-age",
+  "description": "Return to the previously visited lodge just beyond the WYWA threshold, proving destination planning uses start-time absence plus the exact route duration and arrival bookkeeping uses the affirmative pre-arrival visit snapshot.",
+  "fixture": "long-time-rest-lodge",
+  "configProfile": "long-time-mechanics",
+  "trackedPaths": [
+    "player.payload.player.locationId",
+    "player.payload.player.needBars",
+    "player.payload.player.statusEffects",
+    "players.payload.players",
+    "locations.payload.locations",
+    "calendar.payload.worldTime",
+    "history.payload.history"
+  ],
+  "steps": [
+    {
+      "type": "loadFixture"
+    },
+    {
+      "type": "request",
+      "name": "remove_companion",
+      "method": "DELETE",
+      "route": "/api/player/party",
+      "body": {
+        "ownerId": "$fixture.playerId",
+        "memberId": "$fixture.companionId"
+      }
+    },
+    {
+      "type": "assert",
+      "assertions": [
+        {
+          "type": "httpStatus",
+          "equals": 200
+        },
+        {
+          "type": "responseOk",
+          "equals": true
+        },
+        {
+          "type": "equals",
+          "source": "responses.remove_companion",
+          "path": "payload.success",
+          "equals": true
+        }
+      ]
+    },
+    {
+      "type": "request",
+      "name": "relocate_former_companion",
+      "method": "POST",
+      "route": "/api/npcs/$fixture.companionId/teleport",
+      "body": {
+        "locationId": "$fixture.isolationLocationId",
+        "accountTravelTime": false
+      }
+    },
+    {
+      "type": "assert",
+      "assertions": [
+        {
+          "type": "httpStatus",
+          "equals": 200
+        },
+        {
+          "type": "responseOk",
+          "equals": true
+        },
+        {
+          "type": "equals",
+          "source": "responses.relocate_former_companion",
+          "path": "payload.success",
+          "equals": true
+        }
+      ]
+    },
+    {
+      "type": "request",
+      "name": "relocate_courier",
+      "method": "POST",
+      "route": "/api/npcs/$fixture.nonPartyNpcId/teleport",
+      "body": {
+        "locationId": "$fixture.isolationLocationId",
+        "accountTravelTime": false
+      }
+    },
+    {
+      "type": "assert",
+      "assertions": [
+        {
+          "type": "httpStatus",
+          "equals": 200
+        },
+        {
+          "type": "responseOk",
+          "equals": true
+        },
+        {
+          "type": "equals",
+          "source": "responses.relocate_courier",
+          "path": "payload.success",
+          "equals": true
+        }
+      ]
+    },
+    {
+      "type": "request",
+      "name": "age_destination_to_nineteen_minutes",
+      "method": "POST",
+      "route": "/api/slash-command",
+      "body": {
+        "command": "time",
+        "argsText": "+19 minutes"
+      }
+    },
+    {
+      "type": "request",
+      "name": "lodge_before_return",
+      "method": "GET",
+      "route": "/api/locations/$fixture.lodgeLocationId?expandStubs=false"
+    },
+    {
+      "type": "assert",
+      "assertions": [
+        {
+          "type": "httpStatus",
+          "equals": 200
+        },
+        {
+          "type": "responseOk",
+          "equals": true
+        },
+        {
+          "type": "equals",
+          "source": "after",
+          "path": "calendar.payload.worldTime.dayIndex",
+          "equals": 0
+        },
+        {
+          "type": "equals",
+          "source": "after",
+          "path": "calendar.payload.worldTime.timeMinutes",
+          "equals": 682
+        },
+        {
+          "type": "equals",
+          "source": "after",
+          "path": "player.payload.player.locationId",
+          "equals": "$fixture.baselineLocationId"
+        },
+        {
+          "type": "equals",
+          "source": "responses.lodge_before_return",
+          "path": "payload.location.visited",
+          "equals": true
+        },
+        {
+          "type": "equals",
+          "source": "responses.lodge_before_return",
+          "path": "payload.location.lastVisitedTime",
+          "equals": 663
+        }
+      ]
+    },
+    {
+      "type": "snapshot",
+      "name": "before_threshold_return"
+    },
+    {
+      "type": "chat",
+      "name": "return_to_lodge",
+      "text": "I leave March Start Marker alone, follow the known twelve-minute route to QA Long Rest Lodge, and arrive there. I do nothing else.",
+      "travel": true,
+      "travelMetadata": {
+        "mode": "event",
+        "eventDriven": true,
+        "exit": {
+          "exitId": "$fixture.baselineToLodgeExitId",
+          "originLocationId": "$fixture.baselineLocationId",
+          "direction": "qa_long_rest_lodge",
+          "destinationId": "$fixture.lodgeLocationId",
+          "destinationRegionId": "$fixture.regionId",
+          "destinationIsStub": false,
+          "destinationIsRegionEntryStub": false,
+          "isVehicle": false,
+          "vehicleType": null,
+          "destinationName": "$fixture.lodgeName",
+          "regionName": "$fixture.regionName"
+        }
+      },
+      "interactive": {
+        "roll": null,
+        "questAccepted": false,
+        "confirmed": false
+      }
+    },
+    {
+      "type": "assert",
+      "assertions": [
+        {
+          "type": "httpStatus",
+          "equals": 200
+        },
+        {
+          "type": "responseOk",
+          "equals": true
+        },
+        {
+          "type": "equals",
+          "source": "responses.return_to_lodge",
+          "path": "payload.authoritativeMovementType",
+          "equals": "destination"
+        },
+        {
+          "type": "exists",
+          "source": "responses.return_to_lodge",
+          "path": "payload.response"
+        },
+        {
+          "type": "equals",
+          "source": "after",
+          "path": "player.payload.player.locationId",
+          "equals": "$fixture.lodgeLocationId"
+        },
+        {
+          "type": "exactDelta",
+          "beforeSource": "snapshots.before_threshold_return",
+          "afterSource": "after",
+          "path": "calendar.payload.worldTime.timeMinutes",
+          "delta": 12
+        },
+        {
+          "type": "equals",
+          "source": "after",
+          "path": "calendar.payload.worldTime.dayIndex",
+          "equals": 0
+        },
+        {
+          "type": "equals",
+          "source": "after",
+          "path": "calendar.payload.worldTime.timeMinutes",
+          "equals": 694
+        },
+        {
+          "type": "entityField",
+          "source": "after",
+          "collection": "players",
+          "id": "$fixture.lodgeKeeperId",
+          "path": "locationId",
+          "equals": "$fixture.lodgeLocationId"
+        },
+        {
+          "type": "entityField",
+          "source": "after",
+          "collection": "players",
+          "id": "$fixture.companionId",
+          "path": "locationId",
+          "equals": "$fixture.isolationLocationId"
+        },
+        {
+          "type": "entityField",
+          "source": "after",
+          "collection": "players",
+          "id": "$fixture.companionId",
+          "path": "isInPlayerParty",
+          "equals": false
+        },
+        {
+          "type": "entityField",
+          "source": "after",
+          "collection": "players",
+          "id": "$fixture.nonPartyNpcId",
+          "path": "locationId",
+          "equals": "$fixture.isolationLocationId"
+        },
+        {
+          "type": "historyAddedTypeCount",
+          "beforeSource": "snapshots.before_threshold_return",
+          "afterSource": "after",
+          "entryType": "player-action",
+          "equals": 1
+        },
+        {
+          "type": "historyAddedTypeCount",
+          "beforeSource": "snapshots.before_threshold_return",
+          "afterSource": "after",
+          "entryType": "while-you-were-away",
+          "equals": 1
+        },
+        {
+          "type": "historyAddedTypeCount",
+          "beforeSource": "snapshots.before_threshold_return",
+          "afterSource": "after",
+          "entryType": "while-you-were-away-player",
+          "equals": 0
+        },
+        {
+          "type": "historyAddedSequence",
+          "beforeSource": "snapshots.before_threshold_return",
+          "afterSource": "after",
+          "entryTypes": [
+            "player-action",
+            "while-you-were-away",
+            "while-you-were-away-player"
+          ],
+          "expected": [
+            {
+              "type": "player-action",
+              "locationId": "$fixture.baselineLocationId",
+              "metadata": {
+                "traveledToLocationId": "$fixture.lodgeLocationId"
+              }
+            },
+            {
+              "type": "while-you-were-away",
+              "locationId": "$fixture.lodgeLocationId",
+              "metadata": {
+                "worldTime": {
+                  "dayIndex": 0,
+                  "timeMinutes": 694
+                }
+              }
+            }
+          ]
+        },
+        {
+          "type": "uniqueBy",
+          "source": "after",
+          "path": "players.payload.players",
+          "key": "id"
+        },
+        {
+          "type": "uniqueBy",
+          "source": "after",
+          "path": "locations.payload.locations",
+          "key": "id"
+        },
+        {
+          "type": "noRealtimeErrors"
+        },
+        {
+          "type": "noUnexpectedErrorLogs",
+          "allowedPrefixes": [
+            "ERROR_tool_call_failed_player_action_teleportCharacterToLocation_",
+            "ERROR_tool_call_failed_player_action_updateTracker_"
+          ]
+        }
+      ]
+    }
+  ],
+  "humanReview": [
+    "Inspect the player-action TinyBrain checkpoint log and confirm destination planning states exactly 31 minutes away at expected arrival (19 elapsed before departure plus the authoritative 12-minute route), lists Mio, QA Lodge Keeper, and Ruri as the visible destination NPCs, and never asks the model to estimate travel time.",
+    "Confirm the accepted player-facing action is one coherent solo journey ending at QA Long Rest Lodge and incorporates any accepted destination-change bullets without a duplicate visible WYWA reunion passage.",
+    "Inspect the WYWA TinyBrain log and hidden history entry to confirm bookkeeping ran for the affirmatively visited pre-arrival lodge snapshot after the arrival clock reached minute 694."
+  ]
+}

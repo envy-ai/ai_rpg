@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "name": "alternative-prompts-cancellation-roll-replay",
+  "description": "Strict no-provider replay profile for ALT-11's pending-roll cancellation.",
+  "extends": "alternative-prompts-cancellation-roll",
+  "values": {
+    "ai.local_startup_script_path": "",
+    "ai.unload_during_image_generation": false,
+    "router_preload_model": "",
+    "unload_model_on_switch": false
+  }
+}

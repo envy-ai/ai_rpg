@@ -1454,7 +1454,7 @@ const CHAT_TOOL_DEFINITIONS = Object.freeze([
         type: 'function',
         function: {
             name: 'alterThing',
-            description: 'Alter an existing thing by ID or name using the existing thing alteration prompt flow. Alters the whole resolved thing stack.',
+            description: 'Regenerate an existing thing after an open-ended transformation using the thing alteration prompt flow. Alters the whole resolved thing stack. For an exact update to an allowlisted field such as description, use updateObjectFields instead so unrelated fields remain unchanged.',
             parameters: {
                 type: 'object',
                 properties: {
@@ -1520,7 +1520,7 @@ const CHAT_TOOL_DEFINITIONS = Object.freeze([
         type: 'function',
         function: {
             name: 'updateObjectFields',
-            description: `Directly update allowed persisted fields on a specific object without running alter prompts. Identify by exact ID when possible; names and aliases are accepted where applicable, but ambiguous names return candidate JSON and must be retried by ID. Character updates are NPC-only. For locations, hasWeather accepts "yes", "no", "sheltered", or null; legacy "outside" is accepted as "sheltered". Allowed object types: ${UPDATE_OBJECT_TYPE_VALUES.join(', ')}.`,
+            description: `Directly update allowed persisted fields on a specific object without running alter prompts. Prefer this tool when exact replacement values are known, and include only the fields that should change so all unrelated state is preserved. Identify by exact ID when possible; names and aliases are accepted where applicable, but ambiguous names return candidate JSON and must be retried by ID. Character updates are NPC-only. For locations, hasWeather accepts "yes", "no", "sheltered", or null; legacy "outside" is accepted as "sheltered". Allowed object types: ${UPDATE_OBJECT_TYPE_VALUES.join(', ')}.`,
             parameters: {
                 type: 'object',
                 properties: {
@@ -7388,7 +7388,8 @@ const createChatToolRuntime = ({
                 ownerType: target.ownerType || null,
                 ownerId: target.ownerId || null,
                 ownerName: target.ownerName || null,
-                updatedFields
+                updatedFields,
+                updatedValues: JSON.parse(JSON.stringify(fields))
             }
         };
     };
@@ -7735,14 +7736,7 @@ const createChatToolRuntime = ({
         return true;
     };
 
-    const buildResolveAttackScopeInstruction = ({ attacker, defender }) => (
-        `Scope: this result authorizes exactly one resolved attack action by ${attacker} against ${defender}. `
-        + 'One attack action may include its setup or approach and one impact, miss, or damaging contact; after that, write only reactions, aftermath, withdrawal, or non-attacking posture. '
-        + `A second approach, lunge, charge, strike, bite, shot, impact, graze, or miss by ${attacker} against ${defender} is another attack and is not authorized by this result. `
-        + 'Do not portray any other character attacking, damaging, incapacitating, or defeating anyone unless that separate attack receives its own resolveAttack or resolveAreaAttack result.'
-    );
-
-    const buildResolveAttackHitContent = ({ resolved, damage, attacker, defender }) => {
+    const buildResolveAttackHitContent = ({ resolved, damage }) => {
         const application = resolved?.application && typeof resolved.application === 'object'
             ? resolved.application
             : {};
@@ -7830,8 +7824,7 @@ const createChatToolRuntime = ({
         return [
             `Damage: ${damagePercent}%`,
             `Remaining health: ${remainingHealthPercent}%`,
-            `Defeated by this attack: ${defeatedText}`,
-            buildResolveAttackScopeInstruction({ attacker, defender })
+            `Defeated by this attack: ${defeatedText}`
         ].join('\n');
     };
 
@@ -7946,10 +7939,7 @@ const createChatToolRuntime = ({
 
         if (!resolved.hit) {
             return {
-                content: [
-                    'Miss. The defender is not defeated by this attack.',
-                    buildResolveAttackScopeInstruction({ attacker: attackerName, defender: defenderName })
-                ].join('\n'),
+                content: 'Miss. The defender is not defeated by this attack.',
                 metadata: {
                     result: 'miss',
                     hit: false,
@@ -7979,9 +7969,7 @@ const createChatToolRuntime = ({
         return {
             content: buildResolveAttackHitContent({
                 resolved,
-                damage,
-                attacker: attackerName,
-                defender: defenderName
+                damage
             }),
             metadata: {
                 result: 'damage',
@@ -11396,6 +11384,7 @@ const createChatToolRuntime = ({
         streamEmitter = null,
         metadataLabel = 'chat',
         toolResultCache = null,
+        validateToolCall = null,
         onToolCallDebug = null,
         onToolCallEvent = null,
         defaultToolActor = null,
@@ -11405,7 +11394,8 @@ const createChatToolRuntime = ({
         dieRollOverride = null,
         requireExplicitSkillCheckActor = false,
         allowedSkillCheckActors = null,
-        promptLogFile = null
+        promptLogFile = null,
+        terminalResponseAfterToolCalls = null
     }) => {
         if (!requestOptions || typeof requestOptions !== 'object') {
             throw new Error('runChatCompletionWithToolLoop requires requestOptions.');
@@ -11418,6 +11408,9 @@ const createChatToolRuntime = ({
         }
         if (onToolCallEvent !== null && onToolCallEvent !== undefined && typeof onToolCallEvent !== 'function') {
             throw new Error('runChatCompletionWithToolLoop onToolCallEvent must be a function when provided.');
+        }
+        if (validateToolCall !== null && validateToolCall !== undefined && typeof validateToolCall !== 'function') {
+            throw new Error('runChatCompletionWithToolLoop validateToolCall must be a function when provided.');
         }
         if (forcedSkillCheckRoll !== null && forcedSkillCheckRoll !== undefined && typeof forcedSkillCheckRoll !== 'function') {
             throw new Error('runChatCompletionWithToolLoop forcedSkillCheckRoll must be a function when provided.');
@@ -11439,6 +11432,13 @@ const createChatToolRuntime = ({
         }
         if (promptLogFile !== null && promptLogFile !== undefined && typeof promptLogFile !== 'string') {
             throw new Error('runChatCompletionWithToolLoop promptLogFile must be a string when provided.');
+        }
+        if (
+            terminalResponseAfterToolCalls !== null
+            && terminalResponseAfterToolCalls !== undefined
+            && typeof terminalResponseAfterToolCalls !== 'function'
+        ) {
+            throw new Error('runChatCompletionWithToolLoop terminalResponseAfterToolCalls must be a function when provided.');
         }
 
         const config = getConfig();
@@ -11717,17 +11717,26 @@ const createChatToolRuntime = ({
 
                 let toolResult = null;
                 try {
-                    const executeTool = () => executeChatToolCall(toolCall, {
-                        resultCache,
-                        defaultActorName,
-                        requireExplicitSkillCheckActor,
-                        allowedSkillCheckActors: allowedSkillCheckActorNames,
-                        includeAllHistoryEntryTypes,
-                        requestUserInputHandler,
-                        forcedSkillCheckRoll,
-                        dieRollOverride,
-                        promptStream: streamEmitter
-                    });
+                    const executeTool = async () => {
+                        if (validateToolCall) {
+                            await validateToolCall({
+                                name: toolCall.functionName,
+                                functionName: toolCall.functionName,
+                                argumentsObject: JSON.parse(JSON.stringify(toolCall.argumentsObject || {}))
+                            });
+                        }
+                        return executeChatToolCall(toolCall, {
+                            resultCache,
+                            defaultActorName,
+                            requireExplicitSkillCheckActor,
+                            allowedSkillCheckActors: allowedSkillCheckActorNames,
+                            includeAllHistoryEntryTypes,
+                            requestUserInputHandler,
+                            forcedSkillCheckRoll,
+                            dieRollOverride,
+                            promptStream: streamEmitter
+                        });
+                    };
                     if (toolCallsExhausted) {
                         toolResult = buildToolCallAttemptsExhaustedResult(
                             toolCall.functionName,
@@ -11759,6 +11768,14 @@ const createChatToolRuntime = ({
                     }
                 } catch (error) {
                     if (isFatalToolExecutionError(error)) {
+                        await notifyToolCallLifecycle({
+                            ...debugBase,
+                            phase: 'error',
+                            error: {
+                                message: error?.message || String(error),
+                                code: toTrimmedString(error?.code) || 'fatal_tool_execution_error'
+                            }
+                        });
                         throw error;
                     }
                     toolResult = buildToolExecutionErrorResult(toolCall.functionName, error);
@@ -11798,6 +11815,7 @@ const createChatToolRuntime = ({
                     toolInvocations.push({
                         id: toolCall.id,
                         name: toolCall.functionName,
+                        argumentsObject: JSON.parse(JSON.stringify(toolCall.argumentsObject || {})),
                         metadata: toolResult.metadata || null
                     });
                     messages.push({
@@ -11829,6 +11847,20 @@ const createChatToolRuntime = ({
                         }
                     });
                     throw error;
+                }
+            }
+            if (typeof terminalResponseAfterToolCalls === 'function') {
+                const terminalResponse = await terminalResponseAfterToolCalls({
+                    toolInvocations: toolInvocations.map(invocation => JSON.parse(JSON.stringify(invocation))),
+                    messages: messages.map(message => JSON.parse(JSON.stringify(message)))
+                });
+                if (terminalResponse !== null && terminalResponse !== undefined) {
+                    if (typeof terminalResponse !== 'string' || !terminalResponse.trim()) {
+                        throw new Error('terminalResponseAfterToolCalls must return null or a non-empty string.');
+                    }
+                    aiResponse = terminalResponse.trim();
+                    lastAssistantMessage = { role: 'assistant', content: aiResponse };
+                    completed = true;
                 }
             }
         }
@@ -11866,6 +11898,8 @@ const createChatToolRuntime = ({
 
 module.exports = {
     CHAT_TOOL_DEFINITIONS,
+    UPDATE_OBJECT_FIELD_NAMES_BY_TYPE,
+    UPDATE_OBJECT_TYPE_VALUES,
     createChatToolRuntime,
     getChatToolDefinitions,
     requireExplicitSkillCheckActors

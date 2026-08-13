@@ -1,0 +1,107 @@
+{
+  "timestamp": "2026-08-12T07:25:29.090Z",
+  "playerName": "Baato",
+  "playerId": "char_2",
+  "playerLevel": 4,
+  "gameVersion": "1.0.0",
+  "chatHistoryLength": 330,
+  "totalPlayers": 38,
+  "totalThings": 288,
+  "totalLocations": 41,
+  "totalLocationExits": 81,
+  "totalRegions": 4,
+  "totalFactions": 7,
+  "totalMysteryBoxes": 0,
+  "totalMysteryThreads": 0,
+  "totalScheduledEvents": 0,
+  "totalTrackers": 3,
+  "totalGeneratedImages": 121,
+  "totalSkills": 26,
+  "currentSettingId": "setting_1782765587711_8ccb23b33de9",
+  "currentSettingName": "Monster Girl Life 2026-06b",
+  "enabledMods": [
+    "implants",
+    "modules",
+    "nsfw-boost",
+    "party-needs",
+    "scene-illustration"
+  ],
+  "idCounters": {
+    "char": 39,
+    "thing": 299,
+    "loc": 44,
+    "exit": 84,
+    "region": 1,
+    "faction": 7,
+    "tracker": 8,
+    "quest": 9,
+    "obj": 56,
+    "status": 185
+  },
+  "plotAnalysis": {
+    "raw": "<response>\n  <plotThreads>\n    <plotThread>\n      <description>Baato must deliver three letters to the northern ridge (Watch Post, Hermit's Cabin, Caravan Camp) to complete the Northern Ridge Delivery quest for Sora Fujimiya.</description>\n      <isCurrentFocus>true</isCurrentFocus>\n    </plotThread>\n    <plotThread>\n      <description>Baato is an apprentice at the Herbal Alchemy Shop and must sort a new shipment before opening tomorrow morning.</description>\n      <isCurrentFocus>false</isCurrentFocus>\n    </plotThread>\n    <plotThread>\n      <description>Mirei needs 50 bowls of broth by noon, creating a time-sensitive opportunity for Baato to earn money.</description>\n      <isCurrentFocus>false</isCurrentFocus>\n    </plotThread>\n  </plotThreads>\n  <currentPlotComplications>\n    <complication>\n      <description>Baato accepts the Northern Ridge Delivery quest from Sora, logging it under his name with Lina for debt tracking.</description>\n    </complication>\n    <complication>\n      <description>Baato travels from the Village Square to the Ember Hollow Outskirts, beginning the trek up the ridge path toward the first stop.</description>\n    </complication>\n  </currentPlotComplications>\n</response>",
+    "updatedAt": "2026-08-09T02:04:45.105Z",
+    "startedAt": "2026-08-09T02:03:08.339Z",
+    "completedAt": "2026-08-09T02:04:45.105Z",
+    "sourceRequestId": "followup-e02a1da3-65ce-4930-b7c4-35d710ebacb6",
+    "locationId": "loc_35",
+    "sequence": 2,
+    "plotThreads": [
+      {
+        "description": "Baato must deliver three letters to the northern ridge (Watch Post, Hermit's Cabin, Caravan Camp) to complete the Northern Ridge Delivery quest for Sora Fujimiya.",
+        "isCurrentFocus": true
+      },
+      {
+        "description": "Baato is an apprentice at the Herbal Alchemy Shop and must sort a new shipment before opening tomorrow morning.",
+        "isCurrentFocus": false
+      },
+      {
+        "description": "Mirei needs 50 bowls of broth by noon, creating a time-sensitive opportunity for Baato to earn money.",
+        "isCurrentFocus": false
+      }
+    ],
+    "currentPlotComplications": [
+      {
+        "description": "Baato accepts the Northern Ridge Delivery quest from Sora, logging it under his name with Lina for debt tracking."
+      },
+      {
+        "description": "Baato travels from the Village Square to the Ember Hollow Outskirts, beginning the trek up the ridge path toward the first stop."
+      }
+    ]
+  },
+  "saveName": "2026-08-12T07-25-28-930Z_Monster_Girl_Life_2026-06b-Baato-March_Start_Marker-char_2-msprlmua",
+  "npcAliasesGenerated": true,
+  "saveFileSaveVersion": 1.2,
+  "summaryStyle": "scene",
+  "plotSummaryTurnCounter": 0,
+  "plotExpanderTurnCounter": 0,
+  "improvementPromptTurnCounter": 0,
+  "tonalScaleEvaluationTurnCounter": 52,
+  "plotAnalysisTurnCounter": 0,
+  "mysteryBoxCleanupTurnCounter": 54,
+  "housekeepingTurnCounter": 40,
+  "questCheckTurnCounter": 5,
+  "lastHousekeepingTurnId": "followup-b099c845-0152-41ea-874f-cff17103903e",
+  "offscreenNpcActivityState": {
+    "dailyMentionedNpcNamesByWeek": {
+      "0": [
+        "rumi kagami",
+        "mirei hoshino",
+        "lina ashford",
+        "sora fujimiya",
+        "hana mizuki",
+        "mizuho",
+        "nuru",
+        "tsubaki morino",
+        "yuzu hoshizora"
+      ]
+    },
+    "turnsSinceDailyPrompt": 5,
+    "turnsSinceWeeklyPrompt": 45,
+    "lastDailyPromptWorldTime": null,
+    "lastWeeklyPromptWorldTime": null
+  },
+  "currentLocationId": "loc_39",
+  "currentLocationName": "March Start Marker",
+  "source": "saves"
+}

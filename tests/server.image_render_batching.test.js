@@ -189,6 +189,37 @@ test('qwen combo router enables prompt-list rendering with the new Krea 2 workfl
     );
 });
 
+test('qwen combo router sends player-visible prose families to the prose model', () => {
+    const config = yaml.load(fs.readFileSync(
+        path.join(__dirname, '..', 'config.yaml.qwen-combo-router'),
+        'utf8'
+    ));
+    const prosePrompts = config.ai_model_overrides.prose.prompts;
+
+    assert.deepEqual(
+        [
+            'player_action',
+            'creative_mode_action',
+            'npc_action',
+            'craft_player_action',
+            'location_modify_player_action',
+            'player_action_open_container',
+            'random_event',
+            'npc_plausibility',
+            'quest_reward_prose',
+            'while_you_were_away',
+            'generic_prompt',
+            'generic_prompt_nocontext',
+            'question',
+            'game_intro',
+            'scheduled_event_resolution',
+            'player_action_interruption_rewrite'
+        ].filter(label => !prosePrompts.includes(label)),
+        []
+    );
+    assert.equal(prosePrompts.includes('slop_remover'), false);
+});
+
 test('one Comfy submission maps ordered outputs back to distinct image jobs', async () => {
     const harness = loadBatchedGenerationHarness();
     const abortController = new AbortController();

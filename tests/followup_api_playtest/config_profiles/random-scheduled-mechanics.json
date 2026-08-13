@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "name": "random-scheduled-mechanics",
+  "description": "Runs deterministic random-event and scheduled-event mechanics without unrelated NPC, quest, background, or image-generation work.",
+  "extends": "long-time-mechanics",
+  "values": {
+    "random_event_frequency.enabled": true,
+    "random_event_frequency.common": 0,
+    "random_event_frequency.rare": 0,
+    "random_event_frequency.party": 0,
+    "random_event_frequency.regionSpecific": 0,
+    "random_event_frequency.locationSpecific": 100,
+    "random_event_frequency_multiplier": 1,
+    "ai.tinybrain_prompts.random_event": true
+  }
+}

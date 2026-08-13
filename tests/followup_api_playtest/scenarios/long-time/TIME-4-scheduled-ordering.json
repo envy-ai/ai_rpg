@@ -1,0 +1,453 @@
+{
+  "version": 1,
+  "scenario": "long-time",
+  "case": "TIME-4-scheduled-ordering",
+  "description": "Cross a visible +30-minute event and an offscreen +45-minute event in one time adjustment, proving canonical resolution/history order, visibility, exact timing, and no replay.",
+  "fixture": "long-time-scheduled-events",
+  "configProfile": "long-time-mechanics",
+  "trackedPaths": [
+    "player.payload.player.locationId",
+    "player.payload.player.needBars",
+    "player.payload.player.statusEffects",
+    "players.payload.players",
+    "locations.payload.locations",
+    "things.payload.things",
+    "scheduledEvents.payload.scheduledEvents",
+    "calendar.payload.calendarDefinition",
+    "calendar.payload.worldTime",
+    "history.payload.history"
+  ],
+  "steps": [
+    {
+      "type": "loadFixture"
+    },
+    {
+      "type": "request",
+      "name": "player_before_events",
+      "method": "GET",
+      "route": "/api/npcs/$fixture.playerId"
+    },
+    {
+      "type": "assert",
+      "assertions": [
+        {
+          "type": "httpStatus",
+          "equals": 200
+        },
+        {
+          "type": "responseOk",
+          "equals": true
+        },
+        {
+          "type": "equals",
+          "source": "responses.player_before_events",
+          "path": "payload.npc.elapsedTime",
+          "equals": 663
+        },
+        {
+          "type": "equals",
+          "source": "after",
+          "path": "scheduledEvents.payload.count",
+          "equals": 2
+        },
+        {
+          "type": "equals",
+          "source": "after",
+          "path": "scheduledEvents.payload.scheduledEvents.0.id",
+          "equals": "$fixture.currentEventId"
+        },
+        {
+          "type": "equals",
+          "source": "after",
+          "path": "scheduledEvents.payload.scheduledEvents.0.status",
+          "equals": "pending"
+        },
+        {
+          "type": "equals",
+          "source": "after",
+          "path": "scheduledEvents.payload.scheduledEvents.1.id",
+          "equals": "$fixture.lodgeEventId"
+        },
+        {
+          "type": "equals",
+          "source": "after",
+          "path": "scheduledEvents.payload.scheduledEvents.1.status",
+          "equals": "pending"
+        }
+      ]
+    },
+    {
+      "type": "snapshot",
+      "name": "before_due_sweep"
+    },
+    {
+      "type": "request",
+      "name": "cross_both_due_times",
+      "method": "POST",
+      "route": "/api/slash-command",
+      "body": {
+        "command": "time",
+        "argsText": "+60 minutes"
+      }
+    },
+    {
+      "type": "assert",
+      "assertions": [
+        {
+          "type": "httpStatus",
+          "equals": 200
+        },
+        {
+          "type": "responseOk",
+          "equals": true
+        },
+        {
+          "type": "equals",
+          "source": "after",
+          "path": "calendar.payload.worldTime.dayIndex",
+          "equals": 0
+        },
+        {
+          "type": "equals",
+          "source": "after",
+          "path": "calendar.payload.worldTime.timeMinutes",
+          "equals": 723
+        },
+        {
+          "type": "equals",
+          "source": "after",
+          "path": "calendar.payload.worldTime.timeLabel",
+          "equals": "12:03 PM"
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "after",
+          "path": "player.payload.player.needBars",
+          "where": {
+            "id": "food",
+            "value": 558
+          },
+          "equals": 1
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "after",
+          "path": "player.payload.player.needBars",
+          "where": {
+            "id": "rest",
+            "value": 365
+          },
+          "equals": 1
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "after",
+          "path": "player.payload.player.needBars",
+          "where": {
+            "id": "stamina",
+            "value": 1000
+          },
+          "equals": 1
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "after",
+          "path": "player.payload.player.needBars",
+          "where": {
+            "id": "mana",
+            "value": 1000
+          },
+          "equals": 1
+        },
+        {
+          "type": "stateUnchanged",
+          "beforeSource": "snapshots.before_due_sweep",
+          "afterSource": "after",
+          "paths": [
+            "player.payload.player.locationId",
+            "player.payload.player.statusEffects",
+            "locations.payload.locations",
+            "things.payload.things",
+            "calendar.payload.calendarDefinition"
+          ]
+        }
+      ]
+    },
+    {
+      "type": "request",
+      "name": "player_after_events",
+      "method": "GET",
+      "route": "/api/npcs/$fixture.playerId"
+    },
+    {
+      "type": "assert",
+      "assertions": [
+        {
+          "type": "httpStatus",
+          "equals": 200
+        },
+        {
+          "type": "responseOk",
+          "equals": true
+        },
+        {
+          "type": "exactDelta",
+          "beforeSource": "responses.player_before_events",
+          "afterSource": "responses.player_after_events",
+          "path": "payload.npc.elapsedTime",
+          "delta": 60
+        },
+        {
+          "type": "equals",
+          "source": "responses.player_after_events",
+          "path": "payload.npc.elapsedTime",
+          "equals": 723
+        },
+        {
+          "type": "equals",
+          "source": "after",
+          "path": "scheduledEvents.payload.count",
+          "equals": 2
+        },
+        {
+          "type": "equals",
+          "source": "after",
+          "path": "scheduledEvents.payload.scheduledEvents.0.id",
+          "equals": "$fixture.currentEventId"
+        },
+        {
+          "type": "equals",
+          "source": "after",
+          "path": "scheduledEvents.payload.scheduledEvents.0.event",
+          "equals": "$fixture.currentEventDescription"
+        },
+        {
+          "type": "equals",
+          "source": "after",
+          "path": "scheduledEvents.payload.scheduledEvents.0.targetWorldMinute",
+          "equals": "$fixture.currentEventTargetWorldMinute"
+        },
+        {
+          "type": "equals",
+          "source": "after",
+          "path": "scheduledEvents.payload.scheduledEvents.0.status",
+          "equals": "resolved"
+        },
+        {
+          "type": "notEquals",
+          "source": "after",
+          "path": "scheduledEvents.payload.scheduledEvents.0.resolutionSummary",
+          "equals": ""
+        },
+        {
+          "type": "notEquals",
+          "source": "after",
+          "path": "scheduledEvents.payload.scheduledEvents.0.playerProse",
+          "equals": ""
+        },
+        {
+          "type": "equals",
+          "source": "after",
+          "path": "scheduledEvents.payload.scheduledEvents.0.resolvedAtWorldMinute",
+          "equals": 723
+        },
+        {
+          "type": "equals",
+          "source": "after",
+          "path": "scheduledEvents.payload.scheduledEvents.0.resolvedAtWorldTime.dayIndex",
+          "equals": 0
+        },
+        {
+          "type": "equals",
+          "source": "after",
+          "path": "scheduledEvents.payload.scheduledEvents.0.resolvedAtWorldTime.timeMinutes",
+          "equals": 723
+        },
+        {
+          "type": "equals",
+          "source": "after",
+          "path": "scheduledEvents.payload.scheduledEvents.1.id",
+          "equals": "$fixture.lodgeEventId"
+        },
+        {
+          "type": "equals",
+          "source": "after",
+          "path": "scheduledEvents.payload.scheduledEvents.1.event",
+          "equals": "$fixture.lodgeEventDescription"
+        },
+        {
+          "type": "equals",
+          "source": "after",
+          "path": "scheduledEvents.payload.scheduledEvents.1.targetWorldMinute",
+          "equals": "$fixture.lodgeEventTargetWorldMinute"
+        },
+        {
+          "type": "equals",
+          "source": "after",
+          "path": "scheduledEvents.payload.scheduledEvents.1.status",
+          "equals": "resolved"
+        },
+        {
+          "type": "notEquals",
+          "source": "after",
+          "path": "scheduledEvents.payload.scheduledEvents.1.resolutionSummary",
+          "equals": ""
+        },
+        {
+          "type": "equals",
+          "source": "after",
+          "path": "scheduledEvents.payload.scheduledEvents.1.playerProse",
+          "equals": ""
+        },
+        {
+          "type": "equals",
+          "source": "after",
+          "path": "scheduledEvents.payload.scheduledEvents.1.resolvedAtWorldMinute",
+          "equals": 723
+        },
+        {
+          "type": "equals",
+          "source": "after",
+          "path": "scheduledEvents.payload.scheduledEvents.1.resolvedAtWorldTime.dayIndex",
+          "equals": 0
+        },
+        {
+          "type": "equals",
+          "source": "after",
+          "path": "scheduledEvents.payload.scheduledEvents.1.resolvedAtWorldTime.timeMinutes",
+          "equals": 723
+        },
+        {
+          "type": "historyAddedTypeCount",
+          "beforeSource": "snapshots.before_due_sweep",
+          "afterSource": "after",
+          "entryType": "scheduled-event",
+          "equals": 2
+        },
+        {
+          "type": "historyAddedTypeCount",
+          "beforeSource": "snapshots.before_due_sweep",
+          "afterSource": "after",
+          "entryType": "scheduled-event-prose",
+          "equals": 1
+        },
+        {
+          "type": "historyAddedSequence",
+          "beforeSource": "snapshots.before_due_sweep",
+          "afterSource": "after",
+          "entryTypes": [
+            "scheduled-event",
+            "scheduled-event-prose"
+          ],
+          "expected": [
+            {
+              "type": "scheduled-event",
+              "locationId": "$fixture.baselineLocationId",
+              "metadata": {
+                "scheduledEventId": "$fixture.currentEventId",
+                "playerPresent": true,
+                "source": "slash_command_time",
+                "visibleProseSuppressed": false,
+                "hiddenFromClient": true
+              }
+            },
+            {
+              "type": "scheduled-event-prose",
+              "locationId": "$fixture.baselineLocationId",
+              "metadata": {
+                "scheduledEventId": "$fixture.currentEventId",
+                "source": "slash_command_time"
+              }
+            },
+            {
+              "type": "scheduled-event",
+              "locationId": "$fixture.lodgeLocationId",
+              "metadata": {
+                "scheduledEventId": "$fixture.lodgeEventId",
+                "playerPresent": false,
+                "source": "slash_command_time",
+                "visibleProseSuppressed": false,
+                "hiddenFromClient": true
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "snapshot",
+      "name": "after_due_sweep"
+    },
+    {
+      "type": "request",
+      "name": "advance_after_resolution",
+      "method": "POST",
+      "route": "/api/slash-command",
+      "body": {
+        "command": "time",
+        "argsText": "+1 minute"
+      }
+    },
+    {
+      "type": "assert",
+      "assertions": [
+        {
+          "type": "httpStatus",
+          "equals": 200
+        },
+        {
+          "type": "responseOk",
+          "equals": true
+        },
+        {
+          "type": "exactDelta",
+          "beforeSource": "snapshots.after_due_sweep",
+          "afterSource": "after",
+          "path": "calendar.payload.worldTime.timeMinutes",
+          "delta": 1
+        },
+        {
+          "type": "stateUnchanged",
+          "beforeSource": "snapshots.after_due_sweep",
+          "afterSource": "after",
+          "paths": [
+            "player.payload.player.locationId",
+            "player.payload.player.statusEffects",
+            "locations.payload.locations",
+            "things.payload.things",
+            "scheduledEvents.payload.scheduledEvents",
+            "calendar.payload.calendarDefinition",
+            "history.payload.history"
+          ]
+        },
+        {
+          "type": "historyAddedTypeCount",
+          "beforeSource": "snapshots.after_due_sweep",
+          "afterSource": "after",
+          "entryType": "scheduled-event",
+          "equals": 0
+        },
+        {
+          "type": "historyAddedTypeCount",
+          "beforeSource": "snapshots.after_due_sweep",
+          "afterSource": "after",
+          "entryType": "scheduled-event-prose",
+          "equals": 0
+        },
+        {
+          "type": "noRealtimeErrors"
+        },
+        {
+          "type": "noUnexpectedErrorLogs",
+          "allowedPrefixes": [
+            "ERROR_chatCompletionError_scheduled_event_resolution_"
+          ]
+        }
+      ]
+    }
+  ],
+  "humanReview": [
+    "Confirm the sole visible scheduled-event prose is a concise observation of the QA March test bell and does not narrate the offscreen lodge ledger event.",
+    "Confirm the hidden summaries record the bell first and the lodge ledger second without inventing character/object movement."
+  ]
+}

@@ -1,0 +1,132 @@
+[
+  {
+    "name": "Farming",
+    "description": "Enables you to cultivate magical crops and maintain thriving fields with ease.",
+    "attribute": "constitution"
+  },
+  {
+    "name": "Foraging",
+    "description": "Allows you to spot and safely gather rare ingredients hidden in the forest.",
+    "attribute": "wisdom"
+  },
+  {
+    "name": "Alchemy",
+    "description": "Empowers you to brew potent potions and elixirs from natural and arcane components.",
+    "attribute": "intelligence"
+  },
+  {
+    "name": "Animal Care",
+    "description": "Helps you nurture and bond with magical creature companions for daily assistance.",
+    "attribute": "wisdom"
+  },
+  {
+    "name": "Carpentry",
+    "description": "Enables you to shape enchanted wood into sturdy furniture and structures.",
+    "attribute": "strength"
+  },
+  {
+    "name": "Cooking",
+    "description": "Allows you to prepare delicious meals that restore energy and boost morale.",
+    "attribute": "charisma"
+  },
+  {
+    "name": "Fishing",
+    "description": "Grants you the patience and technique to catch elusive magical fish.",
+    "attribute": "dexterity"
+  },
+  {
+    "name": "Mining",
+    "description": "Helps you extract rare ores and gems from deep, enchanted caverns.",
+    "attribute": "strength"
+  },
+  {
+    "name": "Herbalism",
+    "description": "Enables you to identify and harvest herbs with precise magical potency.",
+    "attribute": "intelligence"
+  },
+  {
+    "name": "Tailoring",
+    "description": "Allows you to craft stylish, enchanted garments that enhance appearance and comfort.",
+    "attribute": "dexterity"
+  },
+  {
+    "name": "Magic",
+    "description": "Empowers you to cast spells that simplify chores and solve everyday problems.",
+    "attribute": "intelligence"
+  },
+  {
+    "name": "Construction",
+    "description": "Enables you to build and maintain durable homes and community structures.",
+    "attribute": "strength"
+  },
+  {
+    "name": "Crafting",
+    "description": "Allows you to create useful tools and trinkets from a variety of materials.",
+    "attribute": "intelligence"
+  },
+  {
+    "name": "Brewing",
+    "description": "Grants you the skill to craft refreshing drinks and magical beverages.",
+    "attribute": "charisma"
+  },
+  {
+    "name": "Exploration",
+    "description": "Helps you navigate unfamiliar terrain and discover hidden sites with confidence.",
+    "attribute": "wisdom"
+  },
+  {
+    "name": "Melee Combat",
+    "description": "Enables you to defend yourself and others using close-quarters weapons.",
+    "attribute": "strength"
+  },
+  {
+    "name": "Ranged Combat",
+    "description": "Allows you to strike targets from a distance with accuracy and finesse.",
+    "attribute": "dexterity"
+  },
+  {
+    "name": "Stealth",
+    "description": "Grants you the ability to move quietly and avoid unwanted attention.",
+    "attribute": "dexterity"
+  },
+  {
+    "name": "Charm",
+    "description": "Enables you to win over monster girls and townsfolk with your natural appeal.",
+    "attribute": "charisma"
+  },
+  {
+    "name": "Bluff",
+    "description": "Allows you to deceive or distract others with convincing tales and mannerisms.",
+    "attribute": "intelligence"
+  },
+  {
+    "name": "Negotiation",
+    "description": "Helps you secure fair trades and favorable deals in village markets.",
+    "attribute": "charisma"
+  },
+  {
+    "name": "Engineering",
+    "description": "Empowers you to design and operate magical machinery and automated systems.",
+    "attribute": "intelligence"
+  },
+  {
+    "name": "Smithing",
+    "description": "Enables you to forge enchanted tools and weapons from refined metals.",
+    "attribute": "strength"
+  },
+  {
+    "name": "Perception",
+    "description": "Allows you to notice subtle details and hidden threats in your environment.",
+    "attribute": "wisdom"
+  },
+  {
+    "name": "Scavenging",
+    "description": "Helps you find valuable items and resources overlooked by others.",
+    "attribute": "luck"
+  },
+  {
+    "name": "Computers",
+    "description": "Grants you the ability to operate and troubleshoot modern, magically enhanced tech.",
+    "attribute": "intelligence"
+  }
+]

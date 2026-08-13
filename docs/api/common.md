@@ -39,7 +39,7 @@ Fields:
 - `severity`: string (`normal`, `important`, or `critical`)
 - `sourceType`: string | null (server/live event source such as `pick_up_item`, `harvest_gather`, `time_passed`, `need_bar_change`, `disposition_change`, `quest_received`, `completed_quest_objective`, `status_effect_change`, or `environmental_damage`)
 - `entityRefs`: array of `{ type, id, name }` references. `type` is a lowercase domain label such as `npc`, `thing`, `scenery`, `location`, `quest`, or `faction`; `id` and `name` may be null when unknown, but at least one is present.
-- `metadata`: object | null. Need rows include `metadata.needBarChange` with actor id/name, need id/name, configured need icon, signed delta text, optional max value, reason, and display text. For `all`/`fill` need-bar changes, `deltaText` is the signed need-bar maximum rather than the capped actual delta. Disposition rows include `metadata.dispositionChange` with `npcId`, `npcName`, `typeKey`, `typeLabel`, configured disposition `icon`, signed `delta`, previous/new values, reason, and display text. The client uses these metadata objects to group rows per character.
+- `metadata`: object | null. Need rows include `metadata.needBarChange` with actor id/name, need id/name, configured need icon, signed delta text, optional max value, reason, and display text. For `all`/`fill` need-bar changes, `deltaText` is the signed need-bar maximum rather than the capped actual delta. Disposition rows include `metadata.dispositionChange` with `npcId`, `npcName`, `typeKey`, `typeLabel`, configured disposition `icon`, signed `delta`, previous/new values, reason, and display text. Faction reputation rows include `metadata.factionReputationChange` with `factionId`, `factionName`, signed `amount`, `before`, `after`, reason, and display text. The client uses character metadata objects to group need/disposition rows, while the faction metadata also permits state/summary consistency checks without inspecting display prose.
 
 Legacy summaries may omit `severity`, `sourceType`, `entityRefs`, and `metadata`; the client treats them as normal-severity uncited rows and keeps legacy uncategorized event rows under `Other`.
 
@@ -139,7 +139,7 @@ Fields:
 - `isNPC`, `isPlayer`, `isHostile`, `isDead`
 - `hiddenFromPlayer` (boolean, effective only for living NPCs; hidden corpses serialize as visible)
 - `persistWhenDead`
-- `isInPlayerParty` (derived from the current player's `partyMembers` list), `wasEverInPlayerParty`, `isHostileToPlayer`
+- `isInPlayerParty` (derived from the current player's `partyMembers` list), `wasEverInPlayerParty`, `isHostileToPlayer` (derived from current configured disposition thresholds, not the persisted raw `isHostile` flag; barter and combat NPC-slot classification use the same shared classifier)
 - `locationId`
 - `last_seen_time` (absolute world-minute timestamp | null), `last_seen_location` (location id | null), `was_in_player_location_previous_round` (boolean)
 - `corpseCountdown`

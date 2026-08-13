@@ -1,0 +1,62 @@
+{
+  "version": 1,
+  "name": "quest-archive-lifecycle",
+  "description": "Copied accepted QA Record Retrieval fixture retained from the original QUEST audit.",
+  "createdAt": "2026-08-12T12:51:28.860Z",
+  "source": {
+    "setupCommand": "Historical QUEST setup: accepted QA Record Retrieval, QA Archivist, and loose QA Sealed Record.",
+    "saveName": "2026-08-08T16-03-52-927Z_Monster_Girl_Life_2026-06b-Baato-Ember_Hollow_Outskirts-char_2-mskkcw67",
+    "saveType": "saves",
+    "settingName": "Monster Girl Life 2026-06b",
+    "playerName": "Baato"
+  },
+  "configProfile": "vehicle-mechanics",
+  "requiredMods": [],
+  "worldTime": {
+    "dayIndex": 0,
+    "timeMinutes": 658
+  },
+  "entities": {
+    "playerId": "char_2",
+    "locationId": "loc_5",
+    "archivistId": "char_20",
+    "recordId": "thing_187",
+    "questId": "quest_10",
+    "pickupObjectiveId": "obj_57",
+    "giveObjectiveId": "obj_58",
+    "reportObjectiveId": "obj_59"
+  },
+  "invariants": [
+    {
+      "type": "entityField",
+      "source": "after",
+      "collection": "players",
+      "id": "char_20",
+      "path": "name",
+      "equals": "QA Archivist"
+    },
+    {
+      "type": "entityField",
+      "source": "after",
+      "collection": "things",
+      "id": "thing_187",
+      "path": "name",
+      "equals": "QA Sealed Record"
+    },
+    {
+      "type": "arrayObjectCount",
+      "source": "after",
+      "path": "player.payload.player.quests",
+      "where": {
+        "id": "quest_10",
+        "completed": false
+      },
+      "equals": 1
+    }
+  ],
+  "validation": {
+    "passed": true,
+    "evidence": "Retained live API artifacts under tmp/followup-api-playtest/quest."
+  },
+  "integrity": "sha256:ed95b246a002c471cd67f176ad1daea6562618050f71c8fe1cb3862588cfe53b"
+}

@@ -1,0 +1,70 @@
+{
+  "version": 1,
+  "name": "crafting-processing-lifecycle",
+  "description": "Copied crafting, processing, salvage, and harvest fixture retained from the original CRAFT audit.",
+  "createdAt": "2026-08-12T12:51:28.520Z",
+  "source": {
+    "setupCommand": "Historical CRAFT setup: Hand Mill, Workbench, Glowreed Patch, Broken Lantern, Grain Bundles, Wood, and Resin.",
+    "saveName": "2026-08-08T23-14-48-200Z_Monster_Girl_Life_2026-06b-Baato-Ember_Hollow_Outskirts-char_2-mskzr288",
+    "saveType": "saves",
+    "settingName": "Monster Girl Life 2026-06b",
+    "playerName": "Baato"
+  },
+  "configProfile": "isolated-base",
+  "requiredMods": [],
+  "worldTime": {
+    "dayIndex": 0,
+    "timeMinutes": 658
+  },
+  "entities": {
+    "playerId": "char_2",
+    "locationId": "loc_5",
+    "millId": "thing_202",
+    "workbenchId": "thing_203",
+    "patchId": "thing_204",
+    "lanternId": "thing_205",
+    "grainOneId": "thing_206",
+    "grainTwoId": "thing_207",
+    "woodId": "thing_208",
+    "resinId": "thing_209"
+  },
+  "invariants": [
+    {
+      "type": "entityField",
+      "source": "after",
+      "collection": "things",
+      "id": "thing_202",
+      "path": "isProcessingStation",
+      "equals": true
+    },
+    {
+      "type": "entityField",
+      "source": "after",
+      "collection": "things",
+      "id": "thing_203",
+      "path": "isCraftingStation",
+      "equals": true
+    },
+    {
+      "type": "entityField",
+      "source": "after",
+      "collection": "things",
+      "id": "thing_204",
+      "path": "isHarvestable",
+      "equals": true
+    },
+    {
+      "type": "entityField",
+      "source": "after",
+      "collection": "things",
+      "id": "thing_205",
+      "path": "metadata.ownerId",
+      "equals": "char_2"
+    }
+  ],
+  "validation": {
+    "passed": true,
+    "evidence": "Retained live API artifacts under tmp/followup-api-playtest/crafting."
+  },
+  "integrity": "sha256:4ae57766ed2e873c0d033ecb29153229c62eb67517c2ab0980bb2ce4a1157f08"
+}

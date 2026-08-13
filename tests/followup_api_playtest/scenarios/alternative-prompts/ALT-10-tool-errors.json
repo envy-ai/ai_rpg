@@ -1,0 +1,315 @@
+{
+  "version": 1,
+  "scenario": "alternative-prompts",
+  "case": "ALT-10-tool-errors",
+  "description": "Run one normal generic tool loop that deliberately receives two structured tool errors, verify diagnostic history and clean model recovery, and prove that no gameplay state changes or server crash occurs.",
+  "fixture": "relationships-factions",
+  "configProfile": "alternative-prompts-tool-errors",
+  "trackedPaths": [
+    "player.payload.player",
+    "players.payload.players",
+    "locations.payload.locations",
+    "regions.payload.regions",
+    "things.payload.things",
+    "factions.payload.factions",
+    "factions.payload.playerStandings",
+    "scheduledEvents.payload.scheduledEvents",
+    "calendar.payload.worldTime",
+    "history.payload.history"
+  ],
+  "steps": [
+    {
+      "type": "loadFixture"
+    },
+    {
+      "type": "snapshot",
+      "name": "before_tool_errors"
+    },
+    {
+      "type": "chat",
+      "name": "tool_errors",
+      "text": "@ Call moreInfo exactly once with name a and no type. After its too-broad tool error, call getFullScene exactly once with sceneNumber 999999. After that tool error, briefly report that neither lookup could be completed. Do not call any other tools and do not change game state.",
+      "interactive": {
+        "roll": null,
+        "questAccepted": false,
+        "confirmed": false
+      }
+    },
+    {
+      "type": "assert",
+      "assertions": [
+        {
+          "type": "equals",
+          "source": "responses.tool_errors",
+          "path": "status",
+          "equals": 200
+        },
+        {
+          "type": "responseOk",
+          "equals": true
+        },
+        {
+          "type": "exists",
+          "source": "responses.tool_errors",
+          "path": "payload.response"
+        },
+        {
+          "type": "equals",
+          "source": "responses.tool_errors",
+          "path": "payload.debug.usedGenericPromptAction",
+          "equals": true
+        },
+        {
+          "type": "equals",
+          "source": "responses.tool_errors",
+          "path": "payload.debug.genericPromptStorageMode",
+          "equals": "normal"
+        },
+        {
+          "type": "equals",
+          "source": "responses.tool_errors",
+          "path": "payload.debug.genericPromptTemplateMode",
+          "equals": "base_context"
+        },
+        {
+          "type": "equals",
+          "source": "responses.tool_errors",
+          "path": "payload.debug.genericPromptText",
+          "equals": "Call moreInfo exactly once with name a and no type. After its too-broad tool error, call getFullScene exactly once with sceneNumber 999999. After that tool error, briefly report that neither lookup could be completed. Do not call any other tools and do not change game state."
+        },
+        {
+          "type": "equals",
+          "source": "responses.tool_errors",
+          "path": "payload.debug.usedQuestionAction",
+          "equals": false
+        },
+        {
+          "type": "equals",
+          "source": "responses.tool_errors",
+          "path": "payload.debug.usedPlayerTemplate",
+          "equals": false
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "responses.tool_errors",
+          "path": "payload.debug.toolInvocations",
+          "where": {
+            "name": "moreInfo",
+            "metadata": {
+              "error": true,
+              "code": "tool_execution_error"
+            }
+          },
+          "equals": 1
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "responses.tool_errors",
+          "path": "payload.debug.toolInvocations",
+          "where": {
+            "name": "getFullScene",
+            "metadata": {
+              "error": true,
+              "code": "tool_execution_error"
+            }
+          },
+          "equals": 1
+        },
+        {
+          "type": "count",
+          "source": "responses.tool_errors",
+          "path": "payload.debug.toolInvocations",
+          "equals": 2
+        },
+        {
+          "type": "historyAddedSequence",
+          "beforeSource": "snapshots.before_tool_errors",
+          "afterSource": "after",
+          "entryTypes": [
+            "user-generic-prompt",
+            "tool-call-debug",
+            "generic-prompt-response"
+          ],
+          "expected": [
+            {
+              "type": "user-generic-prompt",
+              "role": "user",
+              "content": "Call moreInfo exactly once with name a and no type. After its too-broad tool error, call getFullScene exactly once with sceneNumber 999999. After that tool error, briefly report that neither lookup could be completed. Do not call any other tools and do not change game state."
+            },
+            {
+              "type": "tool-call-debug",
+              "role": "system",
+              "metadata": {
+                "excludeFromBaseContextHistory": true,
+                "debugToolCalls": true,
+                "promptLabel": "generic_prompt",
+                "toolCallCount": 2,
+                "completedToolCallCount": 0,
+                "erroredToolCallCount": 2
+              }
+            },
+            {
+              "type": "generic-prompt-response",
+              "role": "assistant"
+            }
+          ]
+        },
+        {
+          "type": "historyAddedNestedObjectCount",
+          "beforeSource": "snapshots.before_tool_errors",
+          "afterSource": "after",
+          "entryWhere": {
+            "type": "tool-call-debug"
+          },
+          "path": "toolCalls",
+          "where": {
+            "name": "moreInfo",
+            "status": "error",
+            "parameters": {
+              "name": "a"
+            },
+            "error": {
+              "code": "tool_execution_error"
+            }
+          },
+          "equals": 1
+        },
+        {
+          "type": "historyAddedNestedObjectCount",
+          "beforeSource": "snapshots.before_tool_errors",
+          "afterSource": "after",
+          "entryWhere": {
+            "type": "tool-call-debug"
+          },
+          "path": "toolCalls",
+          "where": {
+            "name": "getFullScene",
+            "status": "error",
+            "parameters": {
+              "sceneNumber": 999999
+            },
+            "error": {
+              "code": "tool_execution_error"
+            }
+          },
+          "equals": 1
+        },
+        {
+          "type": "historyAddedTypeCount",
+          "beforeSource": "snapshots.before_tool_errors",
+          "afterSource": "after",
+          "entryType": "user-generic-prompt",
+          "equals": 1
+        },
+        {
+          "type": "historyAddedTypeCount",
+          "beforeSource": "snapshots.before_tool_errors",
+          "afterSource": "after",
+          "entryType": "tool-call-debug",
+          "equals": 1
+        },
+        {
+          "type": "historyAddedTypeCount",
+          "beforeSource": "snapshots.before_tool_errors",
+          "afterSource": "after",
+          "entryType": "generic-prompt-response",
+          "equals": 1
+        },
+        {
+          "type": "historyAddedTypeCount",
+          "beforeSource": "snapshots.before_tool_errors",
+          "afterSource": "after",
+          "entryType": "player-action",
+          "equals": 0
+        },
+        {
+          "type": "historyAddedTypeCount",
+          "beforeSource": "snapshots.before_tool_errors",
+          "afterSource": "after",
+          "entryType": "event-summary",
+          "equals": 0
+        },
+        {
+          "type": "historyAddedTypeCount",
+          "beforeSource": "snapshots.before_tool_errors",
+          "afterSource": "after",
+          "entryType": "slop-remover",
+          "equals": 0
+        },
+        {
+          "type": "stateUnchanged",
+          "beforeSource": "snapshots.before_tool_errors",
+          "afterSource": "after",
+          "paths": [
+            "player.payload.player.id",
+            "player.payload.player.level",
+            "player.payload.player.health",
+            "player.payload.player.maxHealth",
+            "player.payload.player.locationId",
+            "player.payload.player.experience",
+            "player.payload.player.abilities",
+            "player.payload.player.attributes",
+            "player.payload.player.skills",
+            "player.payload.player.inventory",
+            "player.payload.player.currency",
+            "player.payload.player.statusEffects",
+            "player.payload.player.needBars",
+            "player.payload.player.quests",
+            "player.payload.player.completedQuests",
+            "locations.payload.locations",
+            "regions.payload.regions",
+            "things.payload.things",
+            "factions.payload.factions",
+            "factions.payload.playerStandings",
+            "scheduledEvents.payload.scheduledEvents",
+            "calendar.payload.worldTime"
+          ]
+        },
+        {
+          "type": "entityField",
+          "source": "after",
+          "collection": "players",
+          "id": "$fixture.lanternWitnessId",
+          "path": "locationId",
+          "equals": "$fixture.baselineLocationId"
+        },
+        {
+          "type": "entityArrayObjectCount",
+          "source": "after",
+          "collection": "players",
+          "id": "$fixture.lanternWitnessId",
+          "path": "inventory",
+          "where": {
+            "id": "thing_283",
+            "name": "Whistle of the Ridge",
+            "metadata": {
+              "ownerId": "$fixture.lanternWitnessId"
+            }
+          },
+          "equals": 1
+        },
+        {
+          "type": "entityField",
+          "source": "after",
+          "collection": "players",
+          "id": "$fixture.privateContactId",
+          "path": "locationId",
+          "equals": "$fixture.privateLocationId"
+        },
+        {
+          "type": "noRealtimeErrors"
+        },
+        {
+          "type": "noUnexpectedErrorLogs",
+          "allowedPrefixes": [
+            "ERROR_tool_call_failed_generic_prompt_moreInfo_",
+            "ERROR_tool_call_failed_generic_prompt_getFullScene_"
+          ]
+        }
+      ]
+    }
+  ],
+  "humanReview": [
+    "Confirm the response naturally acknowledges both failed lookups without claiming either succeeded. Treat wording variation as valid; if the prose contradicts the structured tool results, record the full example in tmp/prose_issues_log.md rather than adding a response-text matcher or prompt micro-rule."
+  ]
+}

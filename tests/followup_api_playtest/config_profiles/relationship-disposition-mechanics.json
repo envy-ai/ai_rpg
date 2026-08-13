@@ -1,0 +1,9 @@
+{
+  "version": 1,
+  "name": "relationship-disposition-mechanics",
+  "description": "Copies the isolated relationship/faction profile for disposition testing while deferring unrelated housekeeping relationship maintenance.",
+  "extends": "relationship-faction-mechanics",
+  "values": {
+    "housekeeping.interval": 1000000000
+  }
+}

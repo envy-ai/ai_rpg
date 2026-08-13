@@ -1,0 +1,114 @@
+{
+  "version": 1,
+  "name": "long-time-season-boundary",
+  "description": "Long-duration mechanics fixture positioned at 11:58 PM on Tuesday, February 28 with deterministic, distinct Winter and Spring region weather.",
+  "createdAt": "2026-08-11T16:46:38.390Z",
+  "source": {
+    "setupCommand": "Use the authoritative region API to install one deterministic 100000-minute weather type for Winter and another for Spring, then use the ordinary /time slash-command path to advance the validated long-time-rest-lodge fixture to the last two minutes of Winter.",
+    "saveName": "2026-08-11T16-45-20-420Z_Monster_Girl_Life_2026-06b-Baato-March_Start_Marker-char_2-msow5rj8",
+    "saveType": "saves",
+    "settingName": "Monster Girl Life 2026-06b",
+    "playerName": "Baato"
+  },
+  "configProfile": "long-time-mechanics",
+  "requiredMods": [
+    "implants",
+    "modules",
+    "nsfw-boost",
+    "party-needs",
+    "scene-illustration"
+  ],
+  "worldTime": 84958,
+  "entities": {
+    "playerId": "char_2",
+    "playerName": "Baato",
+    "baselineLocationId": "loc_39",
+    "baselineLocationName": "March Start Marker",
+    "regionId": "region_1786438821952_m5baxvz2",
+    "regionName": "QA Frost March",
+    "boundaryDayIndex": 58,
+    "boundaryTimeMinutes": 1438,
+    "boundaryDateLabel": "Tuesday, February 28, Common Era 1",
+    "winterWeatherName": "QA Winter Still",
+    "winterWeatherDescription": "Deterministic winter weather before the QA season boundary.",
+    "springWeatherName": "QA Spring Rain",
+    "springWeatherDescription": "Deterministic spring weather after the QA season boundary.",
+    "weatherDurationMinutes": 100000,
+    "winterWeatherNextChangeMinutes": 100663,
+    "springWeatherNextChangeMinutes": 184963
+  },
+  "invariants": [
+    {
+      "type": "equals",
+      "source": "after",
+      "path": "player.payload.player.locationId",
+      "equals": "loc_39"
+    },
+    {
+      "type": "equals",
+      "source": "after",
+      "path": "calendar.payload.worldTime.dayIndex",
+      "equals": 58
+    },
+    {
+      "type": "equals",
+      "source": "after",
+      "path": "calendar.payload.worldTime.timeMinutes",
+      "equals": 1438
+    },
+    {
+      "type": "equals",
+      "source": "after",
+      "path": "calendar.payload.worldTime.dateLabel",
+      "equals": "Tuesday, February 28, Common Era 1"
+    },
+    {
+      "type": "equals",
+      "source": "after",
+      "path": "calendar.payload.worldTime.season",
+      "equals": "Winter"
+    },
+    {
+      "type": "equals",
+      "source": "after",
+      "path": "calendar.payload.worldTime.lighting",
+      "equals": "Night returns with poor visibility."
+    },
+    {
+      "type": "equals",
+      "source": "after",
+      "path": "calendar.payload.worldTime.weatherName",
+      "equals": "QA Winter Still"
+    },
+    {
+      "type": "equals",
+      "source": "after",
+      "path": "calendar.payload.worldTime.weatherDescription",
+      "equals": "Deterministic winter weather before the QA season boundary."
+    },
+    {
+      "type": "equals",
+      "source": "after",
+      "path": "scheduledEvents.payload.count",
+      "equals": 0
+    },
+    {
+      "type": "entityField",
+      "source": "after",
+      "collection": "regions",
+      "id": "region_1786438821952_m5baxvz2",
+      "path": "name",
+      "equals": "QA Frost March"
+    }
+  ],
+  "validation": {
+    "passed": true,
+    "scenario": "TIME-fixture-season-boundary",
+    "mode": "state-only",
+    "artifactDirectory": "tmp/followup-api-playtest/long-time-setup/TIME-fixture-season-boundary/attempt-2",
+    "assertionsPassed": 66,
+    "assertionsFailed": 0,
+    "notes": "Normal region, time, and save APIs established the boundary. The world reached Tuesday, February 28 at 11:58 PM with Winter labels and the exact unchanged QA Winter Still state; elapsed time reached 84958, no prompt ran, and no realtime or changed error log appeared."
+  },
+  "integrity": "sha256:74ab6abd916310b0f85bfe10d4a8ebbc357e94268abbab181e1fedebeebfe11e"
+}

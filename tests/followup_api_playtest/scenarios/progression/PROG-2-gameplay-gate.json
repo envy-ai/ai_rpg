@@ -1,0 +1,240 @@
+{
+  "version": 1,
+  "scenario": "progression",
+  "case": "PROG-2-gameplay-gate",
+  "description": "On a disposable copy of the reusable level-4 pending fixture, prove chat and movement independently return documented 409 pending-selection responses before any gameplay mutation or model request.",
+  "fixture": "progression-level4-pending",
+  "configProfile": "progression-mechanics",
+  "trackedPaths": [
+    "player.payload.player",
+    "players.payload.players",
+    "locations.payload.locations",
+    "things.payload.things",
+    "factions.payload.factions",
+    "factions.payload.playerStandings",
+    "scheduledEvents.payload.scheduledEvents",
+    "calendar.payload.worldTime",
+    "history.payload.history"
+  ],
+  "steps": [
+    {
+      "type": "loadFixture"
+    },
+    {
+      "type": "request",
+      "name": "pending_before_gates",
+      "method": "GET",
+      "route": "/api/player/ability-selection?generateOptions=false"
+    },
+    {
+      "type": "assert",
+      "assertions": [
+        {
+          "type": "equals",
+          "source": "responses.pending_before_gates",
+          "path": "status",
+          "equals": 200
+        },
+        {
+          "type": "equals",
+          "source": "responses.pending_before_gates",
+          "path": "payload.pending",
+          "equals": true
+        },
+        {
+          "type": "equals",
+          "source": "responses.pending_before_gates",
+          "path": "payload.abilitySelection.selection",
+          "equals": {
+            "level": 4,
+            "requiredSelections": 3,
+            "optionsPerLevel": 6,
+            "optionsReady": false,
+            "optionsToGenerate": 6,
+            "options": [],
+            "preselectedAbilityNames": []
+          }
+        }
+      ]
+    },
+    {
+      "type": "snapshot",
+      "name": "before_gates"
+    },
+    {
+      "type": "request",
+      "name": "blocked_chat",
+      "method": "POST",
+      "route": "/api/chat",
+      "body": {
+        "messages": [
+          {
+            "role": "user",
+            "content": "Wait quietly for one minute."
+          }
+        ],
+        "travel": false
+      }
+    },
+    {
+      "type": "assert",
+      "assertions": [
+        {
+          "type": "equals",
+          "source": "responses.blocked_chat",
+          "path": "status",
+          "equals": 409
+        },
+        {
+          "type": "equals",
+          "source": "responses.blocked_chat",
+          "path": "payload.error",
+          "equals": "Player ability selection is required before continuing."
+        },
+        {
+          "type": "equals",
+          "source": "responses.blocked_chat",
+          "path": "payload.pendingAbilitySelection",
+          "equalsFrom": {
+            "source": "responses.pending_before_gates",
+            "path": "payload.abilitySelection"
+          }
+        },
+        {
+          "type": "equals",
+          "source": "responses.blocked_chat",
+          "path": "payload.player.level",
+          "equals": 4
+        }
+      ]
+    },
+    {
+      "type": "snapshot",
+      "name": "after_chat_gate"
+    },
+    {
+      "type": "assert",
+      "assertions": [
+        {
+          "type": "stateUnchanged",
+          "beforeSource": "snapshots.before_gates",
+          "afterSource": "snapshots.after_chat_gate",
+          "paths": [
+            "player.payload.player",
+            "players.payload.players",
+            "locations.payload.locations",
+            "things.payload.things",
+            "factions.payload.factions",
+            "factions.payload.playerStandings",
+            "scheduledEvents.payload.scheduledEvents",
+            "calendar.payload.worldTime",
+            "history.payload.history"
+          ]
+        },
+        {
+          "type": "historyAddedTypeCount",
+          "entryType": "player-action",
+          "equals": 0,
+          "beforeSource": "snapshots.before_gates",
+          "afterSource": "snapshots.after_chat_gate"
+        }
+      ]
+    },
+    {
+      "type": "request",
+      "name": "blocked_move",
+      "method": "POST",
+      "route": "/api/player/move",
+      "body": {
+        "destinationId": "$fixture.groveLocationId",
+        "expectedOriginLocationId": "$fixture.baselineLocationId",
+        "accompanyingCharacters": []
+      }
+    },
+    {
+      "type": "request",
+      "name": "pending_after_gates",
+      "method": "GET",
+      "route": "/api/player/ability-selection?generateOptions=false"
+    },
+    {
+      "type": "assert",
+      "assertions": [
+        {
+          "type": "equals",
+          "source": "responses.blocked_move",
+          "path": "status",
+          "equals": 409
+        },
+        {
+          "type": "equals",
+          "source": "responses.blocked_move",
+          "path": "payload.success",
+          "equals": false
+        },
+        {
+          "type": "equals",
+          "source": "responses.blocked_move",
+          "path": "payload.error",
+          "equals": "Player ability selection is required before moving."
+        },
+        {
+          "type": "equals",
+          "source": "responses.blocked_move",
+          "path": "payload.pendingAbilitySelection",
+          "equalsFrom": {
+            "source": "responses.pending_before_gates",
+            "path": "payload.abilitySelection"
+          }
+        },
+        {
+          "type": "equals",
+          "source": "responses.blocked_move",
+          "path": "payload.player.locationId",
+          "equals": "$fixture.baselineLocationId"
+        },
+        {
+          "type": "equals",
+          "source": "responses.pending_after_gates",
+          "path": "payload.abilitySelection",
+          "equalsFrom": {
+            "source": "responses.pending_before_gates",
+            "path": "payload.abilitySelection"
+          }
+        },
+        {
+          "type": "stateUnchanged",
+          "beforeSource": "snapshots.before_gates",
+          "afterSource": "after",
+          "paths": [
+            "player.payload.player",
+            "players.payload.players",
+            "locations.payload.locations",
+            "things.payload.things",
+            "factions.payload.factions",
+            "factions.payload.playerStandings",
+            "scheduledEvents.payload.scheduledEvents",
+            "calendar.payload.worldTime",
+            "history.payload.history"
+          ]
+        },
+        {
+          "type": "historyAddedTypeCount",
+          "entryType": "player-action",
+          "equals": 0,
+          "beforeSource": "snapshots.before_gates",
+          "afterSource": "after"
+        },
+        {
+          "type": "noRealtimeErrors"
+        },
+        {
+          "type": "noUnexpectedErrorLogs"
+        }
+      ]
+    }
+  ],
+  "humanReview": [
+    "This state-only case has no prose. Confirm neither rejected endpoint starts a prompt and the game remains on the exact pending draft for the later ability-selection cases."
+  ]
+}

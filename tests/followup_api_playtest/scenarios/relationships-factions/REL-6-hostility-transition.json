@@ -1,0 +1,306 @@
+{
+  "version": 1,
+  "scenario": "relationships-factions",
+  "case": "REL-6-hostility-transition",
+  "description": "From a fresh disposable copy of the immutable relationship fixture, move Lantern's platonic disposition to the exact configured hostile threshold and back to neutral while the legacy raw flag remains false; verify the client projection, barter gate, combat classifier contract, and restored state all use current dispositions.",
+  "fixture": "relationships-factions",
+  "configProfile": "hostility-transition-mechanics",
+  "trackedPaths": [
+    "player.payload.player.locationId",
+    "players.payload.players",
+    "factions.payload.factions",
+    "factions.payload.playerStandings",
+    "locations.payload.locations",
+    "things.payload.things",
+    "scheduledEvents.payload.scheduledEvents",
+    "calendar.payload.worldTime",
+    "history.payload.history"
+  ],
+  "steps": [
+    {
+      "type": "loadFixture"
+    },
+    {
+      "type": "request",
+      "name": "players_initial",
+      "method": "GET",
+      "route": "/api/players"
+    },
+    {
+      "type": "assert",
+      "assertions": [
+        {
+          "type": "entityField",
+          "source": "responses.players_initial",
+          "collection": "players",
+          "id": "$fixture.lanternWitnessId",
+          "path": "isHostile",
+          "equals": false
+        },
+        {
+          "type": "entityField",
+          "source": "responses.players_initial",
+          "collection": "players",
+          "id": "$fixture.lanternWitnessId",
+          "path": "isHostileToPlayer",
+          "equals": false
+        },
+        {
+          "type": "entityField",
+          "source": "responses.players_initial",
+          "collection": "players",
+          "id": "$fixture.lanternWitnessId",
+          "path": "dispositionsTowardPlayer.platonic",
+          "equals": 0
+        }
+      ]
+    },
+    {
+      "type": "snapshot",
+      "name": "before_hostility_transition"
+    },
+    {
+      "type": "request",
+      "name": "cross_hostile_threshold",
+      "method": "PUT",
+      "route": "/api/npcs/$fixture.lanternWitnessId/dispositions",
+      "body": {
+        "dispositions": [
+          {
+            "key": "platonic",
+            "value": -31
+          }
+        ]
+      }
+    },
+    {
+      "type": "request",
+      "name": "players_hostile",
+      "method": "GET",
+      "route": "/api/players"
+    },
+    {
+      "type": "assert",
+      "assertions": [
+        {
+          "type": "equals",
+          "source": "responses.cross_hostile_threshold",
+          "path": "status",
+          "equals": 200
+        },
+        {
+          "type": "equals",
+          "source": "responses.cross_hostile_threshold",
+          "path": "payload.applied.0.key",
+          "equals": "platonic"
+        },
+        {
+          "type": "equals",
+          "source": "responses.cross_hostile_threshold",
+          "path": "payload.applied.0.value",
+          "equals": -31
+        },
+        {
+          "type": "entityField",
+          "source": "responses.players_hostile",
+          "collection": "players",
+          "id": "$fixture.lanternWitnessId",
+          "path": "isHostile",
+          "equals": false
+        },
+        {
+          "type": "entityField",
+          "source": "responses.players_hostile",
+          "collection": "players",
+          "id": "$fixture.lanternWitnessId",
+          "path": "isHostileToPlayer",
+          "equals": true
+        },
+        {
+          "type": "entityField",
+          "source": "responses.players_hostile",
+          "collection": "players",
+          "id": "$fixture.lanternWitnessId",
+          "path": "dispositionsTowardPlayer.platonic",
+          "equals": -31
+        }
+      ]
+    },
+    {
+      "type": "request",
+      "name": "hostile_trade_attempt",
+      "method": "POST",
+      "route": "/api/npcs/$fixture.lanternWitnessId/trade/session",
+      "body": {}
+    },
+    {
+      "type": "assert",
+      "assertions": [
+        {
+          "type": "equals",
+          "source": "responses.hostile_trade_attempt",
+          "path": "status",
+          "equals": 409
+        },
+        {
+          "type": "equals",
+          "source": "responses.hostile_trade_attempt",
+          "path": "payload.success",
+          "equals": false
+        },
+        {
+          "type": "exists",
+          "source": "responses.hostile_trade_attempt",
+          "path": "payload.error"
+        }
+      ]
+    },
+    {
+      "type": "request",
+      "name": "return_to_neutral",
+      "method": "PUT",
+      "route": "/api/npcs/$fixture.lanternWitnessId/dispositions",
+      "body": {
+        "dispositions": [
+          {
+            "key": "platonic",
+            "value": 0
+          }
+        ]
+      }
+    },
+    {
+      "type": "request",
+      "name": "players_recovered",
+      "method": "GET",
+      "route": "/api/players"
+    },
+    {
+      "type": "assert",
+      "assertions": [
+        {
+          "type": "equals",
+          "source": "responses.return_to_neutral",
+          "path": "status",
+          "equals": 200
+        },
+        {
+          "type": "equals",
+          "source": "responses.return_to_neutral",
+          "path": "payload.applied.0.value",
+          "equals": 0
+        },
+        {
+          "type": "entityField",
+          "source": "responses.players_recovered",
+          "collection": "players",
+          "id": "$fixture.lanternWitnessId",
+          "path": "isHostile",
+          "equals": false
+        },
+        {
+          "type": "entityField",
+          "source": "responses.players_recovered",
+          "collection": "players",
+          "id": "$fixture.lanternWitnessId",
+          "path": "isHostileToPlayer",
+          "equals": false
+        },
+        {
+          "type": "entityField",
+          "source": "responses.players_recovered",
+          "collection": "players",
+          "id": "$fixture.lanternWitnessId",
+          "path": "dispositionsTowardPlayer.platonic",
+          "equals": 0
+        }
+      ]
+    },
+    {
+      "type": "assert",
+      "assertions": [
+        {
+          "type": "stateUnchanged",
+          "beforeSource": "snapshots.before_hostility_transition",
+          "afterSource": "after",
+          "paths": [
+            "player.payload.player.locationId",
+            "factions.payload.factions",
+            "factions.payload.playerStandings",
+            "locations.payload.locations",
+            "things.payload.things",
+            "scheduledEvents.payload.scheduledEvents",
+            "calendar.payload.worldTime",
+            "history.payload.history"
+          ]
+        },
+        {
+          "type": "entityField",
+          "source": "after",
+          "collection": "players",
+          "id": "$fixture.lanternWitnessId",
+          "path": "dispositionsTowardPlayer",
+          "equals": {
+            "platonic": 0,
+            "romantic": 0,
+            "lust": 0,
+            "respect": 0,
+            "comfort_fear": 0,
+            "trust": 0
+          }
+        },
+        {
+          "type": "entityField",
+          "source": "after",
+          "collection": "players",
+          "id": "$fixture.lanternWitnessId",
+          "path": "isHostile",
+          "equals": false
+        },
+        {
+          "type": "entityField",
+          "source": "after",
+          "collection": "players",
+          "id": "$fixture.lanternWitnessId",
+          "path": "isHostileToPlayer",
+          "equals": false
+        },
+        {
+          "type": "entityField",
+          "source": "after",
+          "collection": "players",
+          "id": "$fixture.lanternWitnessId",
+          "path": "relationships",
+          "equals": {}
+        },
+        {
+          "type": "entityField",
+          "source": "after",
+          "collection": "players",
+          "id": "$fixture.lanternWitnessId",
+          "path": "locationId",
+          "equals": "$fixture.baselineLocationId"
+        },
+        {
+          "type": "equals",
+          "source": "after",
+          "path": "players.payload.count",
+          "equalsFrom": {
+            "source": "snapshots.before_hostility_transition",
+            "path": "players.payload.count"
+          }
+        },
+        {
+          "type": "noRealtimeErrors"
+        },
+        {
+          "type": "noUnexpectedErrorLogs"
+        }
+      ]
+    }
+  ],
+  "humanReview": [
+    "This state-only case has no generated prose to review. Verify instead that the hostile client projection and 409 barter rejection occur while raw isHostile remains false, then that the projection returns to non-hostile when the exact disposition is restored.",
+    "The focused shared-classifier and API wiring regressions are the combat/recovered-trade eligibility evidence; do not add a generated-prose rule or an LLM turn to this exact-value mechanics case."
+  ]
+}

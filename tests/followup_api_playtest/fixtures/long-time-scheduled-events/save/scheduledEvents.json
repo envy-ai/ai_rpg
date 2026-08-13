@@ -1,0 +1,52 @@
+{
+  "sevent_1": {
+    "id": "sevent_1",
+    "event": "The QA March test bell rings exactly once; this is a deterministic observation and no character or object moves.",
+    "regionId": "region_1786438821952_m5baxvz2",
+    "regionName": "QA Frost March",
+    "locationId": "loc_39",
+    "locationName": "March Start Marker",
+    "targetWorldMinute": 693,
+    "targetWorldTime": {
+      "dayIndex": 0,
+      "timeMinutes": 693
+    },
+    "createdAtWorldMinute": 663,
+    "createdAtWorldTime": {
+      "dayIndex": 0,
+      "timeMinutes": 663
+    },
+    "status": "pending",
+    "resolutionSummary": "",
+    "playerProse": "",
+    "resolvedAtWorldMinute": null,
+    "resolvedAtWorldTime": null,
+    "createdAt": "2026-08-11T16:00:31.909Z",
+    "updatedAt": "2026-08-11T16:00:31.909Z"
+  },
+  "sevent_2": {
+    "id": "sevent_2",
+    "event": "QA Lodge Keeper writes exactly one dated line in the lodge guest ledger; this is a deterministic observation and no character or object moves.",
+    "regionId": "region_1786438821952_m5baxvz2",
+    "regionName": "QA Frost March",
+    "locationId": "loc_45",
+    "locationName": "QA Long Rest Lodge",
+    "targetWorldMinute": 708,
+    "targetWorldTime": {
+      "dayIndex": 0,
+      "timeMinutes": 708
+    },
+    "createdAtWorldMinute": 663,
+    "createdAtWorldTime": {
+      "dayIndex": 0,
+      "timeMinutes": 663
+    },
+    "status": "pending",
+    "resolutionSummary": "",
+    "playerProse": "",
+    "resolvedAtWorldMinute": null,
+    "resolvedAtWorldTime": null,
+    "createdAt": "2026-08-11T16:00:31.910Z",
+    "updatedAt": "2026-08-11T16:00:31.910Z"
+  }
+}

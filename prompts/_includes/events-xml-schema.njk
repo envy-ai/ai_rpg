@@ -234,7 +234,7 @@ Use this when a previously visible NPC or entity becomes hidden or invisible to 
 
 ### `drop_item`
 
-Use this when a character relinquishes possession of an inventory item by dropping, placing, or setting it down into the current scene. The item must cease being carried or owned by that character. Do not use this for temporary handling or placement that leaves the item under the character's control, such as luggage beside the owner's seat, a held item resting on a table while still in use, or ordinary travel/settling-in flavor. Do not use this for items being consumed, assembled into scenery, or used as ingredients in an event that should be represented by `consumeItem` or `alterItem`.
+Use this when a character drops, places, or sets down an inventory item into the current scene.
 
 ```xml
 <dropItem>
@@ -297,7 +297,7 @@ Use this when a character gathers resources from a natural or manufactured sourc
 
 ### `item_inflict`
 
-Use this when an item is used on a living target in a way that causes a status effect, such as applying a bandage, reading a cursed object, injecting something, or otherwise using an item without necessarily ingesting it. The `statusEffect` field should briefly describe the observed effect. If the item has no effect, emit no event. Do not target a dead actor; this event schema has no resurrection operation. If the same item-target pair is represented by `itemIngest`, do not also emit `itemInflict` for the ingestion.
+Use this when an item is used on a living target in a way that might cause a status effect, such as applying a bandage, reading a cursed object, injecting something, or otherwise using an item without necessarily ingesting it. The `statusEffect` field should briefly describe the observed effect. Do not target a dead actor; this event schema has no resurrection operation. If the same item-target pair is represented by `itemIngest`, do not also emit `itemInflict` for the ingestion.
 
 ```xml
 <itemInflict>
@@ -355,7 +355,7 @@ Use this for significant lasting changes to an animate entity, especially physic
 
 ### `status_effect_change`
 
-Use this when an animate entity gains or loses a temporary status effect that is not already represented as a permanent NPC alteration. Use `gained` only for a new effect the entity does not currently have, and use `lost` only when an existing listed status effect goes away. Do not give a new status effect to a dead actor; this event schema has no resurrection operation. Attack/check tool results may already have applied an item's target status before this event check runs; never report that status as gained again. Mentioning, displaying, or acting under an existing status is not a new gain and does not refresh it. If the effect came from an item use or ingestion, prefer `itemInflict` or `itemIngest` instead of duplicating the same change here. First aid may remove a listed wound or injury status when the treatment actually cures that condition. Stabilizing an unconscious or incapacitated character does not remove `Incapacitated`; emit its loss only when the character actually regains consciousness or otherwise becomes able to act. Note that a 'permanent' duration doesn't imply that it can't be removed; it just never expires on its own. Permanent status effects may be removed like any other status effects.
+Use this when an animate entity gains or loses a temporary status effect that is not already represented as a permanent NPC alteration. Do not give a new status effect to a dead actor; this event schema has no resurrection operation. First aid should remove an associated wound or injury status effect. Note that a 'permanent' duration doesn't imply that it can't be removed; it just never expires on its own. Permanent status effects may be removed like any other status effects.
 
 ```xml
 <statusEffectChange>
@@ -392,7 +392,7 @@ Use this when an animate entity leaves the scene for another destination. Includ
 
 ### `thing_arrival`
 
-Use this only when an existing, non-animate entity (specifically item or scenery) arrives at the current location from elsewhere as a scene entity. Do not use this for anything currently owned, carried in inventory, or contained inside another thing: carried and contained things retain that placement during travel unless a separate structured drop or transfer event changes possession. Do not use this for new items or scenery that appear in the scene for the first time; use `itemAppear` or `sceneryAppear` instead. Do not use this for animate entities; use `npcArrival` instead.
+Use this when an existing, non-animate entity (specifically item or scenery) arrives at the current location from elsewhere. Do not use this for new items or scenery that appear in the scene for the first time; use `itemAppear` or `sceneryAppear` instead. Do not use this for animate entities; use `npcArrival` instead.
 
 ```xml
 <thingArrival>
@@ -484,7 +484,7 @@ Use this when an animate entity takes damage or healing from the environment or 
 
 ### `heal_recover`
 
-Use this when a living character recovers health from rest, treatment, food, magic, medicine, regeneration, or another non-environmental healing source. Do not target a dead actor; this event schema has no resurrection operation. Use a larger magnitude for stronger or more complete recovery. If treatment explicitly restores health while merely stabilizing an unconscious or incapacitated character, emit this healing event without removing `Incapacitated`.
+Use this when a living character recovers health from rest, treatment, food, magic, medicine, regeneration, or another non-environmental healing source. Do not target a dead actor; this event schema has no resurrection operation. Use a larger magnitude for stronger or more complete recovery.
 
 ```xml
 <healRecover>

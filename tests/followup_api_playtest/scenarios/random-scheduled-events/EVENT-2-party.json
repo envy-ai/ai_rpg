@@ -1,0 +1,172 @@
+{
+  "version": 1,
+  "scenario": "random-scheduled-events",
+  "case": "EVENT-2-party",
+  "description": "Force the configured file-backed party random-event category from an isolated fixture restore and verify canonical party context plus mechanically scoped state.",
+  "fixture": "random-scheduled-events",
+  "configProfile": "random-scheduled-mechanics",
+  "trackedPaths": [
+    "player.payload.player.locationId",
+    "player.payload.player.partyMembers",
+    "players.payload.players",
+    "locations.payload.locations",
+    "regions.payload.regions",
+    "things.payload.things",
+    "scheduledEvents.payload.scheduledEvents",
+    "calendar.payload.worldTime",
+    "history.payload.history"
+  ],
+  "steps": [
+    {
+      "type": "loadFixture"
+    },
+    {
+      "type": "snapshot",
+      "name": "before_party"
+    },
+    {
+      "type": "request",
+      "name": "party_event",
+      "method": "POST",
+      "route": "/api/slash-command",
+      "body": {
+        "command": "random",
+        "argsText": "party"
+      }
+    },
+    {
+      "type": "snapshot",
+      "name": "after_party"
+    },
+    {
+      "type": "assert",
+      "assertions": [
+        {
+          "type": "httpStatus",
+          "equals": 200
+        },
+        {
+          "type": "responseOk",
+          "equals": true
+        },
+        {
+          "type": "equals",
+          "source": "responses.party_event",
+          "path": "payload.success",
+          "equals": true
+        },
+        {
+          "type": "count",
+          "source": "responses.party_event",
+          "path": "payload.replies",
+          "equals": 1
+        },
+        {
+          "type": "equals",
+          "source": "responses.party_event",
+          "path": "payload.replies.0.ephemeral",
+          "equals": false
+        },
+        {
+          "type": "historyAddedTypeCount",
+          "beforeSource": "snapshots.before_party",
+          "afterSource": "snapshots.after_party",
+          "entryType": "random-event",
+          "equals": 1
+        },
+        {
+          "type": "historyAddedSequence",
+          "beforeSource": "snapshots.before_party",
+          "afterSource": "snapshots.after_party",
+          "entryTypes": [
+            "random-event"
+          ],
+          "expected": [
+            {
+              "type": "random-event",
+              "actor": "Random Event",
+              "randomEvent": true,
+              "rarity": "party",
+              "locationId": "$fixture.baselineLocationId"
+            }
+          ]
+        },
+        {
+          "type": "equals",
+          "source": "snapshots.after_party",
+          "path": "calendar.payload.worldTime.timeMinutes",
+          "equals": 663
+        },
+        {
+          "type": "equals",
+          "source": "snapshots.after_party",
+          "path": "currentLocation.payload.location.randomEvents",
+          "equals": [
+            "$fixture.locationRandomEvent"
+          ]
+        },
+        {
+          "type": "equals",
+          "source": "snapshots.after_party",
+          "path": "scheduledEvents.payload.count",
+          "equals": 2
+        },
+        {
+          "type": "entityField",
+          "source": "snapshots.after_party",
+          "collection": "players",
+          "id": "$fixture.playerId",
+          "path": "locationId",
+          "equals": "$fixture.baselineLocationId"
+        },
+        {
+          "type": "entityField",
+          "source": "snapshots.after_party",
+          "collection": "players",
+          "id": "$fixture.playerId",
+          "path": "partyMembers.0.id",
+          "equals": "$fixture.companionId"
+        },
+        {
+          "type": "entityField",
+          "source": "snapshots.after_party",
+          "collection": "players",
+          "id": "$fixture.companionId",
+          "path": "isInPlayerParty",
+          "equals": true
+        },
+        {
+          "type": "entityField",
+          "source": "snapshots.after_party",
+          "collection": "players",
+          "id": "$fixture.companionId",
+          "path": "locationId",
+          "equals": null
+        },
+        {
+          "type": "stateUnchanged",
+          "beforeSource": "snapshots.before_party",
+          "afterSource": "snapshots.after_party",
+          "paths": [
+            "player.payload.player.locationId",
+            "locations.payload.locations",
+            "regions.payload.regions",
+            "things.payload.things",
+            "scheduledEvents.payload.scheduledEvents",
+            "calendar.payload.worldTime"
+          ]
+        },
+        {
+          "type": "noRealtimeErrors"
+        },
+        {
+          "type": "noUnexpectedErrorLogs"
+        }
+      ]
+    }
+  ],
+  "humanReview": [
+    "Confirm the random-event prose makes Baato and/or current party member QA Tired Companion the central participants required by the selected party seed; local non-party NPCs may react but must not replace the party participant.",
+    "Confirm the prose does not introduce an offscreen character, relocate anyone, consume an item, start combat, or contradict the selected party-event premise."
+  ]
+}

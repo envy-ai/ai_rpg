@@ -1,0 +1,400 @@
+{
+  "version": 2,
+  "strict": true,
+  "complete": true,
+  "description": "alternative-prompts/ALT-12-history-audit",
+  "recordedAt": "2026-08-12T11:31:26.760Z",
+  "entries": [
+    {
+      "ordinal": 1,
+      "metadataLabel": "generic_prompt",
+      "requestFingerprint": "sha256:71fc5e0b1d68cd0193c00e20787defe86500d0557f7b4aa52433d44dcde3d3c7",
+      "requestSummary": {
+        "messageRoles": [
+          "system",
+          "user",
+          "user",
+          "user",
+          "user",
+          "user",
+          "user",
+          "user",
+          "user",
+          "user",
+          "user"
+        ],
+        "messageCharacters": 83955,
+        "toolNames": [
+          "generateRandomInteger",
+          "moreInfo",
+          "getHistory",
+          "getFullScene",
+          "editChatLogEntry",
+          "rerunSceneSummary",
+          "editSceneSummary",
+          "requestUserInput",
+          "listMysteryBoxes",
+          "findMysteryBoxes",
+          "getMysteryBox",
+          "updateMysteryBoxFields",
+          "listMysteryThreads",
+          "getMysteryThread",
+          "updateMysteryThreadFields",
+          "teleportCharacterToLocation",
+          "teleportThingToLocation",
+          "moveThingFromLocationToCharacterInventory",
+          "createRegionStub",
+          "createLocationStub",
+          "createExit",
+          "listLocationEntities",
+          "getTravelTime",
+          "revealEntity",
+          "hideEntity",
+          "createThing",
+          "createNpc",
+          "deleteThing",
+          "setRelationship",
+          "addTracker",
+          "updateTracker",
+          "removeTracker",
+          "createQuest",
+          "scheduleEvent",
+          "alterThing",
+          "alterNpc",
+          "updateCharacterFields",
+          "updateObjectFields",
+          "upsertFactionFields",
+          "updatePartyMembers",
+          "alterLocation",
+          "resolveAttack",
+          "resolveAreaAttack",
+          "resolveSkillCheck",
+          "resolveOpposedSkillCheck",
+          "locateNpcs",
+          "locateThings",
+          "equipImplant",
+          "unequipImplant",
+          "installModule",
+          "removeModule"
+        ],
+        "model": "Qwen3.6-35B-A3B-uncensored-heretic-Native-MTP-Preserved-GGUF",
+        "backend": "openai_compatible"
+      },
+      "response": {
+        "object": "chat.completion",
+        "model": "Qwen3.6-27B-Fable-Fusion-711-Uncensored-Heretic-NM-DAU-NEO-MAX-MTP-GGUF",
+        "choices": [
+          {
+            "index": 0,
+            "finish_reason": "stop",
+            "message": {
+              "role": "assistant",
+              "content": "ALT12_EXCLUDED_HISTORY_RESPONSE_6291"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "ordinal": 2,
+      "metadataLabel": "generic_prompt_nocontext",
+      "requestFingerprint": "sha256:8287f91f95e4e1d168834c42f078b831d53560263c36518ec61219926acddb90",
+      "requestSummary": {
+        "messageRoles": [
+          "system",
+          "user"
+        ],
+        "messageCharacters": 6928,
+        "toolNames": [],
+        "model": "Qwen3.6-35B-A3B-uncensored-heretic-Native-MTP-Preserved-GGUF",
+        "backend": "openai_compatible"
+      },
+      "response": {
+        "object": "chat.completion",
+        "model": "Qwen3.6-35B-A3B-uncensored-heretic-Native-MTP-Preserved-GGUF",
+        "choices": [
+          {
+            "index": 0,
+            "finish_reason": "stop",
+            "message": {
+              "role": "assistant",
+              "content": "ALT12_NO_CONTEXT_RESPONSE_7354"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "ordinal": 3,
+      "metadataLabel": "generic_prompt",
+      "requestFingerprint": "sha256:52692015533d1cbcc6ffd2a8b17953f48862ae73bc423610cb109f50e3f11ac8",
+      "requestSummary": {
+        "messageRoles": [
+          "system",
+          "user",
+          "user",
+          "user",
+          "user",
+          "user",
+          "user",
+          "user",
+          "user",
+          "user",
+          "user"
+        ],
+        "messageCharacters": 84148,
+        "toolNames": [
+          "generateRandomInteger",
+          "moreInfo",
+          "getHistory",
+          "getFullScene",
+          "editChatLogEntry",
+          "rerunSceneSummary",
+          "editSceneSummary",
+          "requestUserInput",
+          "listMysteryBoxes",
+          "findMysteryBoxes",
+          "getMysteryBox",
+          "updateMysteryBoxFields",
+          "listMysteryThreads",
+          "getMysteryThread",
+          "updateMysteryThreadFields",
+          "teleportCharacterToLocation",
+          "teleportThingToLocation",
+          "moveThingFromLocationToCharacterInventory",
+          "createRegionStub",
+          "createLocationStub",
+          "createExit",
+          "listLocationEntities",
+          "getTravelTime",
+          "revealEntity",
+          "hideEntity",
+          "createThing",
+          "createNpc",
+          "deleteThing",
+          "setRelationship",
+          "addTracker",
+          "updateTracker",
+          "removeTracker",
+          "createQuest",
+          "scheduleEvent",
+          "alterThing",
+          "alterNpc",
+          "updateCharacterFields",
+          "updateObjectFields",
+          "upsertFactionFields",
+          "updatePartyMembers",
+          "alterLocation",
+          "resolveAttack",
+          "resolveAreaAttack",
+          "resolveSkillCheck",
+          "resolveOpposedSkillCheck",
+          "locateNpcs",
+          "locateThings",
+          "equipImplant",
+          "unequipImplant",
+          "installModule",
+          "removeModule"
+        ],
+        "model": "Qwen3.6-35B-A3B-uncensored-heretic-Native-MTP-Preserved-GGUF",
+        "backend": "openai_compatible"
+      },
+      "response": {
+        "object": "chat.completion",
+        "model": "Qwen3.6-27B-Fable-Fusion-711-Uncensored-Heretic-NM-DAU-NEO-MAX-MTP-GGUF",
+        "choices": [
+          {
+            "index": 0,
+            "finish_reason": "stop",
+            "message": {
+              "role": "assistant",
+              "content": "ALT12_NO_LOG_RESPONSE_8462"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "ordinal": 4,
+      "metadataLabel": "generic_prompt",
+      "requestFingerprint": "sha256:91ae7e1c22aa336d3f8bc1d09be1cb4fc2e708c27f04a0b6cacc10b7d0d41099",
+      "requestSummary": {
+        "messageRoles": [
+          "system",
+          "user",
+          "user",
+          "user",
+          "user",
+          "user",
+          "user",
+          "user",
+          "user",
+          "user",
+          "user"
+        ],
+        "messageCharacters": 84286,
+        "toolNames": [
+          "generateRandomInteger",
+          "moreInfo",
+          "getHistory",
+          "getFullScene",
+          "editChatLogEntry",
+          "rerunSceneSummary",
+          "editSceneSummary",
+          "requestUserInput",
+          "listMysteryBoxes",
+          "findMysteryBoxes",
+          "getMysteryBox",
+          "updateMysteryBoxFields",
+          "listMysteryThreads",
+          "getMysteryThread",
+          "updateMysteryThreadFields",
+          "teleportCharacterToLocation",
+          "teleportThingToLocation",
+          "moveThingFromLocationToCharacterInventory",
+          "createRegionStub",
+          "createLocationStub",
+          "createExit",
+          "listLocationEntities",
+          "getTravelTime",
+          "revealEntity",
+          "hideEntity",
+          "createThing",
+          "createNpc",
+          "deleteThing",
+          "setRelationship",
+          "addTracker",
+          "updateTracker",
+          "removeTracker",
+          "createQuest",
+          "scheduleEvent",
+          "alterThing",
+          "alterNpc",
+          "updateCharacterFields",
+          "updateObjectFields",
+          "upsertFactionFields",
+          "updatePartyMembers",
+          "alterLocation",
+          "resolveAttack",
+          "resolveAreaAttack",
+          "resolveSkillCheck",
+          "resolveOpposedSkillCheck",
+          "locateNpcs",
+          "locateThings",
+          "equipImplant",
+          "unequipImplant",
+          "installModule",
+          "removeModule"
+        ],
+        "model": "Qwen3.6-35B-A3B-uncensored-heretic-Native-MTP-Preserved-GGUF",
+        "backend": "openai_compatible"
+      },
+      "response": {
+        "object": "chat.completion",
+        "model": "Qwen3.6-27B-Fable-Fusion-711-Uncensored-Heretic-NM-DAU-NEO-MAX-MTP-GGUF",
+        "choices": [
+          {
+            "index": 0,
+            "finish_reason": "stop",
+            "message": {
+              "role": "assistant",
+              "content": "ALT12_NORMAL_GENERIC_RESPONSE_9513"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "ordinal": 5,
+      "metadataLabel": "question",
+      "requestFingerprint": "sha256:31493d661f984869f3783a28a73e8e5b57b476fdf0bde94de4166b9b6751fb06",
+      "requestSummary": {
+        "messageRoles": [
+          "system",
+          "user",
+          "user",
+          "user",
+          "user",
+          "user",
+          "user",
+          "user",
+          "user",
+          "user",
+          "user",
+          "user"
+        ],
+        "messageCharacters": 74163,
+        "toolNames": [
+          "generateRandomInteger",
+          "moreInfo",
+          "getHistory",
+          "getFullScene",
+          "editChatLogEntry",
+          "rerunSceneSummary",
+          "editSceneSummary",
+          "requestUserInput",
+          "listMysteryBoxes",
+          "findMysteryBoxes",
+          "getMysteryBox",
+          "updateMysteryBoxFields",
+          "listMysteryThreads",
+          "getMysteryThread",
+          "updateMysteryThreadFields",
+          "teleportCharacterToLocation",
+          "teleportThingToLocation",
+          "moveThingFromLocationToCharacterInventory",
+          "createRegionStub",
+          "createLocationStub",
+          "createExit",
+          "listLocationEntities",
+          "getTravelTime",
+          "revealEntity",
+          "hideEntity",
+          "createThing",
+          "createNpc",
+          "deleteThing",
+          "setRelationship",
+          "addTracker",
+          "updateTracker",
+          "removeTracker",
+          "createQuest",
+          "scheduleEvent",
+          "alterThing",
+          "alterNpc",
+          "updateCharacterFields",
+          "updateObjectFields",
+          "upsertFactionFields",
+          "updatePartyMembers",
+          "alterLocation",
+          "resolveAttack",
+          "resolveAreaAttack",
+          "resolveSkillCheck",
+          "resolveOpposedSkillCheck",
+          "locateNpcs",
+          "locateThings",
+          "equipImplant",
+          "unequipImplant",
+          "installModule",
+          "removeModule"
+        ],
+        "model": "Qwen3.6-35B-A3B-uncensored-heretic-Native-MTP-Preserved-GGUF",
+        "backend": "openai_compatible"
+      },
+      "response": {
+        "object": "chat.completion",
+        "model": "Qwen3.6-35B-A3B-uncensored-heretic-Native-MTP-Preserved-GGUF",
+        "choices": [
+          {
+            "index": 0,
+            "finish_reason": "stop",
+            "message": {
+              "role": "assistant",
+              "content": "ALT12_ORDINARY_QUESTION_RESPONSE_1738"
+            }
+          }
+        ]
+      }
+    }
+  ],
+  "completedAt": "2026-08-12T11:33:20.956Z"
+}

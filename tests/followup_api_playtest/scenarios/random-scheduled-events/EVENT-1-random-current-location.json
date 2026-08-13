@@ -1,0 +1,234 @@
+{
+  "version": 1,
+  "scenario": "random-scheduled-events",
+  "case": "EVENT-1-random-current-location",
+  "description": "Run one ordinary one-minute turn with a deterministic 100% location-specific random roll, proving one seed is consumed and exactly one random event is appended without same-turn redispatch or premature scheduled-event resolution.",
+  "fixture": "random-scheduled-events",
+  "configProfile": "random-scheduled-mechanics",
+  "trackedPaths": [
+    "player.payload.player.locationId",
+    "player.payload.player.needBars",
+    "player.payload.player.statusEffects",
+    "players.payload.players",
+    "locations.payload.locations",
+    "regions.payload.regions",
+    "things.payload.things",
+    "scheduledEvents.payload.scheduledEvents",
+    "calendar.payload.worldTime",
+    "history.payload.history"
+  ],
+  "steps": [
+    {
+      "type": "loadFixture"
+    },
+    {
+      "type": "request",
+      "name": "player_before_turn",
+      "method": "GET",
+      "route": "/api/npcs/$fixture.playerId"
+    },
+    {
+      "type": "snapshot",
+      "name": "before_turn"
+    },
+    {
+      "type": "chat",
+      "name": "ordinary_turn",
+      "text": "Baato remains at March Start Marker for exactly one minute, quietly checking the strap on his satchel. He does not move, attack, use an item, or interact with anyone.",
+      "travel": false,
+      "interactive": {
+        "roll": null,
+        "questAccepted": false,
+        "confirmed": false
+      }
+    },
+    {
+      "type": "assert",
+      "assertions": [
+        {
+          "type": "httpStatus",
+          "equals": 200
+        },
+        {
+          "type": "responseOk",
+          "equals": true
+        },
+        {
+          "type": "count",
+          "source": "responses.ordinary_turn",
+          "path": "payload.npcTurns",
+          "equals": 1
+        },
+        {
+          "type": "equals",
+          "source": "responses.ordinary_turn",
+          "path": "payload.npcTurns.0.type",
+          "equals": "random-event"
+        },
+        {
+          "type": "equals",
+          "source": "responses.ordinary_turn",
+          "path": "payload.npcTurns.0.randomEvent",
+          "equals": true
+        },
+        {
+          "type": "equals",
+          "source": "responses.ordinary_turn",
+          "path": "payload.npcTurns.0.rarity",
+          "equals": "location"
+        },
+        {
+          "type": "equals",
+          "source": "responses.ordinary_turn",
+          "path": "payload.npcTurns.0.seedText",
+          "equals": "$fixture.locationRandomEvent"
+        }
+      ]
+    },
+    {
+      "type": "request",
+      "name": "player_after_turn",
+      "method": "GET",
+      "route": "/api/npcs/$fixture.playerId"
+    },
+    {
+      "type": "assert",
+      "assertions": [
+        {
+          "type": "httpStatus",
+          "equals": 200
+        },
+        {
+          "type": "responseOk",
+          "equals": true
+        },
+        {
+          "type": "exactDelta",
+          "beforeSource": "snapshots.before_turn",
+          "afterSource": "after",
+          "path": "calendar.payload.worldTime.timeMinutes",
+          "delta": 1
+        },
+        {
+          "type": "exactDelta",
+          "beforeSource": "responses.player_before_turn",
+          "afterSource": "responses.player_after_turn",
+          "path": "payload.npc.elapsedTime",
+          "delta": 1
+        },
+        {
+          "type": "equals",
+          "source": "after",
+          "path": "calendar.payload.worldTime.timeMinutes",
+          "equals": 664
+        },
+        {
+          "type": "equals",
+          "source": "after",
+          "path": "player.payload.player.locationId",
+          "equals": "$fixture.baselineLocationId"
+        },
+        {
+          "type": "equals",
+          "source": "after",
+          "path": "currentLocation.payload.location.randomEvents",
+          "equals": []
+        },
+        {
+          "type": "equals",
+          "source": "after",
+          "path": "scheduledEvents.payload.count",
+          "equals": 2
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "after",
+          "path": "scheduledEvents.payload.scheduledEvents",
+          "where": {
+            "id": "$fixture.visibleScheduledEventId",
+            "status": "pending",
+            "resolutionSummary": "",
+            "playerProse": "",
+            "resolvedAtWorldMinute": null,
+            "resolvedAtWorldTime": null
+          },
+          "equals": 1
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "after",
+          "path": "scheduledEvents.payload.scheduledEvents",
+          "where": {
+            "id": "$fixture.offscreenScheduledEventId",
+            "status": "pending",
+            "resolutionSummary": "",
+            "playerProse": "",
+            "resolvedAtWorldMinute": null,
+            "resolvedAtWorldTime": null
+          },
+          "equals": 1
+        },
+        {
+          "type": "historyAddedTypeCount",
+          "beforeSource": "snapshots.before_turn",
+          "afterSource": "after",
+          "entryType": "random-event",
+          "equals": 1
+        },
+        {
+          "type": "historyAddedSequence",
+          "beforeSource": "snapshots.before_turn",
+          "afterSource": "after",
+          "entryTypes": [
+            "random-event"
+          ],
+          "expected": [
+            {
+              "type": "random-event",
+              "actor": "Random Event",
+              "randomEvent": true,
+              "rarity": "location",
+              "locationId": "$fixture.baselineLocationId"
+            }
+          ]
+        },
+        {
+          "type": "historyAddedTypeCount",
+          "beforeSource": "snapshots.before_turn",
+          "afterSource": "after",
+          "entryType": "scheduled-event",
+          "equals": 0
+        },
+        {
+          "type": "historyAddedTypeCount",
+          "beforeSource": "snapshots.before_turn",
+          "afterSource": "after",
+          "entryType": "scheduled-event-prose",
+          "equals": 0
+        },
+        {
+          "type": "stateUnchanged",
+          "beforeSource": "snapshots.before_turn",
+          "afterSource": "after",
+          "paths": [
+            "player.payload.player.locationId",
+            "player.payload.player.statusEffects",
+            "locations.payload.locations",
+            "regions.payload.regions",
+            "things.payload.things"
+          ]
+        },
+        {
+          "type": "noRealtimeErrors"
+        },
+        {
+          "type": "noUnexpectedErrorLogs"
+        }
+      ]
+    }
+  ],
+  "humanReview": [
+    "Confirm the sole random-event prose describes QA Bell Runner ringing QA Brass Bell exactly once, does not move any character/object, and does not repeat the player-action prose.",
+    "Confirm no second random event appears in the same turn and neither scheduled event is narrated prematurely."
+  ]
+}

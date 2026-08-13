@@ -1,0 +1,50 @@
+{
+  "version": 1,
+  "name": "quest-preoffer-baseline",
+  "description": "Copied pre-QA-quest baseline used by the original quest decline and acceptance checks.",
+  "createdAt": "2026-08-12T12:51:29.059Z",
+  "source": {
+    "setupCommand": "Historical baseline immediately before the QA Record Retrieval offer was generated.",
+    "saveName": "2026-08-08T10-11-40-521Z_Monster_Girl_Life_2026-06b-Baato-Ember_Hollow_Outskirts-char_2-msk7ryax",
+    "saveType": "saves",
+    "settingName": "Monster Girl Life 2026-06b",
+    "playerName": "Baato"
+  },
+  "configProfile": "vehicle-mechanics",
+  "requiredMods": [],
+  "worldTime": {
+    "dayIndex": 0,
+    "timeMinutes": 658
+  },
+  "entities": {
+    "playerId": "char_2",
+    "locationId": "loc_5",
+    "existingActiveQuestCount": 1,
+    "existingCompletedQuestCount": 8
+  },
+  "invariants": [
+    {
+      "type": "count",
+      "source": "after",
+      "path": "player.payload.player.quests",
+      "equals": 1
+    },
+    {
+      "type": "count",
+      "source": "after",
+      "path": "player.payload.player.completedQuests",
+      "equals": 8
+    },
+    {
+      "type": "equals",
+      "source": "after",
+      "path": "calendar.payload.worldTime.timeMinutes",
+      "equals": 658
+    }
+  ],
+  "validation": {
+    "passed": true,
+    "evidence": "Retained source save and original QUEST-1/QUEST-2 artifacts."
+  },
+  "integrity": "sha256:84f1c5ae7bdb55da0efaf11a51240eabe439bf99a351ff1f306ecd86a535ba5a"
+}

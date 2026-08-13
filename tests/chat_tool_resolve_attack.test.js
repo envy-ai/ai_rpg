@@ -4,7 +4,6 @@ const assert = require('node:assert/strict');
 const { CHAT_TOOL_DEFINITIONS, createChatToolRuntime } = require('../chat_tool_calls.js');
 
 const CACHED_CHECK_TOOL_CALL_NOTE = 'You already made this tool call. Do not re-run tool calls for the same checks that you made in earlier drafts.';
-const ATTACK_SCOPE_NOTE = "Scope: this result authorizes exactly one resolved attack action by player against Hollow Sentinel Valdrus. One attack action may include its setup or approach and one impact, miss, or damaging contact; after that, write only reactions, aftermath, withdrawal, or non-attacking posture. A second approach, lunge, charge, strike, bite, shot, impact, graze, or miss by player against Hollow Sentinel Valdrus is another attack and is not authorized by this result. Do not portray any other character attacking, damaging, incapacitating, or defeating anyone unless that separate attack receives its own resolveAttack or resolveAreaAttack result.";
 
 function findToolDefinition(name) {
     return CHAT_TOOL_DEFINITIONS.find(entry => entry?.function?.name === name)?.function || null;
@@ -210,7 +209,7 @@ test('resolveAttack returns applied damage health percentages and preserves atta
     const toolMessage = capturedMessagesByRound[1].find(message => message.role === 'tool');
     assert.equal(
         toolMessage.content,
-        `Damage: 14%\nRemaining health: 86%\nDefeated by this attack: NO — the target remains alive and is not incapacitated or defeated by this attack.\n${ATTACK_SCOPE_NOTE}`
+        'Damage: 14%\nRemaining health: 86%\nDefeated by this attack: NO — the target remains alive and is not incapacitated or defeated by this attack.'
     );
 });
 
@@ -264,7 +263,7 @@ test('resolveAttack reports a zero-damage hit from attack outcome health without
     const toolMessage = capturedMessagesByRound[1].find(message => message.role === 'tool');
     assert.equal(
         toolMessage.content,
-        `Damage: 0%\nRemaining health: 100%\nDefeated by this attack: NO — the target remains alive and is not incapacitated or defeated by this attack.\n${ATTACK_SCOPE_NOTE}`
+        'Damage: 0%\nRemaining health: 100%\nDefeated by this attack: NO — the target remains alive and is not incapacitated or defeated by this attack.'
     );
 });
 
@@ -380,7 +379,7 @@ test('resolveAttack marks zero remaining health as incapacitated or dead', async
     const toolMessage = capturedMessagesByRound[1].find(message => message.role === 'tool');
     assert.equal(
         toolMessage.content,
-        `Damage: 25%\nRemaining health: 0%\nDefeated by this attack: YES — portray the target as incapacitated or dead.\n${ATTACK_SCOPE_NOTE}`
+        'Damage: 25%\nRemaining health: 0%\nDefeated by this attack: YES — portray the target as incapacitated or dead.'
     );
 });
 
@@ -408,7 +407,7 @@ test('resolveAttack returns miss content when the attack misses', async () => {
     const toolMessage = capturedMessagesByRound[1].find(message => message.role === 'tool');
     assert.equal(
         toolMessage.content,
-        `Miss. The defender is not defeated by this attack.\n${ATTACK_SCOPE_NOTE}`
+        'Miss. The defender is not defeated by this attack.'
     );
 });
 
@@ -470,8 +469,8 @@ test('resolveAttack reuses cached results for repeated same-round attacks', asyn
     assert.equal(result.toolInvocations[0].metadata.cacheKey, result.toolInvocations[1].metadata.cacheKey);
     const toolMessages = capturedMessagesByRound[1].filter(message => message.role === 'tool');
     assert.deepEqual(toolMessages.map(message => message.content), [
-        `Damage: 14%\nRemaining health: 86%\nDefeated by this attack: NO — the target remains alive and is not incapacitated or defeated by this attack.\n${ATTACK_SCOPE_NOTE}`,
-        `Damage: 14%\nRemaining health: 86%\nDefeated by this attack: NO — the target remains alive and is not incapacitated or defeated by this attack.\n${ATTACK_SCOPE_NOTE}\n\n${CACHED_CHECK_TOOL_CALL_NOTE}`
+        'Damage: 14%\nRemaining health: 86%\nDefeated by this attack: NO — the target remains alive and is not incapacitated or defeated by this attack.',
+        `Damage: 14%\nRemaining health: 86%\nDefeated by this attack: NO — the target remains alive and is not incapacitated or defeated by this attack.\n\n${CACHED_CHECK_TOOL_CALL_NOTE}`
     ]);
     assert.equal(debugEvents.length, 4);
     assert.equal(debugEvents[1].phase, 'completed');

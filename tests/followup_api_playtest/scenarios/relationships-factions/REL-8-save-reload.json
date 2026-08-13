@@ -1,0 +1,523 @@
+{
+  "version": 1,
+  "scenario": "relationships-factions",
+  "case": "REL-8-save-reload",
+  "description": "On a fresh disposable copy of the immutable relationship fixture, establish meaningful directed relationships, faction memberships/standing, dispositions, and disposition-derived hostility through deterministic APIs; save, contradict every field, reload, and verify exact persisted semantics.",
+  "fixture": "relationships-factions",
+  "configProfile": "relationship-persistence-mechanics",
+  "trackedPaths": [
+    "player.payload.player.locationId",
+    "players.payload.players",
+    "factions.payload.factions",
+    "factions.payload.playerStandings",
+    "locations.payload.locations",
+    "things.payload.things",
+    "scheduledEvents.payload.scheduledEvents",
+    "calendar.payload.worldTime",
+    "history.payload.history"
+  ],
+  "steps": [
+    {
+      "type": "loadFixture"
+    },
+    {
+      "type": "request",
+      "name": "set_lantern_relationship",
+      "method": "PUT",
+      "route": "/api/npcs/$fixture.lanternWitnessId",
+      "body": {
+        "relationships": {
+          "char_38": "trusted rival"
+        }
+      }
+    },
+    {
+      "type": "request",
+      "name": "set_cinder_relationship",
+      "method": "PUT",
+      "route": "/api/npcs/$fixture.cinderWitnessId",
+      "body": {
+        "relationships": {
+          "char_37": "guarded ally"
+        }
+      }
+    },
+    {
+      "type": "request",
+      "name": "set_lantern_dispositions",
+      "method": "PUT",
+      "route": "/api/npcs/$fixture.lanternWitnessId/dispositions",
+      "body": {
+        "dispositions": [
+          {
+            "key": "platonic",
+            "value": -31
+          },
+          {
+            "key": "trust",
+            "value": 12
+          }
+        ]
+      }
+    },
+    {
+      "type": "request",
+      "name": "set_lantern_standing",
+      "method": "PUT",
+      "route": "/api/player/factions/$fixture.lanternFactionId/standing",
+      "body": {
+        "value": 7
+      }
+    },
+    {
+      "type": "request",
+      "name": "players_before_save",
+      "method": "GET",
+      "route": "/api/players"
+    },
+    {
+      "type": "request",
+      "name": "factions_before_save",
+      "method": "GET",
+      "route": "/api/factions"
+    },
+    {
+      "type": "assert",
+      "assertions": [
+        {
+          "type": "entityField",
+          "source": "responses.players_before_save",
+          "collection": "players",
+          "id": "$fixture.lanternWitnessId",
+          "path": "factionId",
+          "equals": "$fixture.lanternFactionId"
+        },
+        {
+          "type": "entityField",
+          "source": "responses.players_before_save",
+          "collection": "players",
+          "id": "$fixture.lanternWitnessId",
+          "path": "relationships.$fixture.cinderWitnessId",
+          "equals": "trusted rival"
+        },
+        {
+          "type": "entityField",
+          "source": "responses.players_before_save",
+          "collection": "players",
+          "id": "$fixture.lanternWitnessId",
+          "path": "dispositionsTowardPlayer.platonic",
+          "equals": -31
+        },
+        {
+          "type": "entityField",
+          "source": "responses.players_before_save",
+          "collection": "players",
+          "id": "$fixture.lanternWitnessId",
+          "path": "dispositionsTowardPlayer.trust",
+          "equals": 12
+        },
+        {
+          "type": "entityField",
+          "source": "responses.players_before_save",
+          "collection": "players",
+          "id": "$fixture.lanternWitnessId",
+          "path": "isHostile",
+          "equals": false
+        },
+        {
+          "type": "entityField",
+          "source": "responses.players_before_save",
+          "collection": "players",
+          "id": "$fixture.lanternWitnessId",
+          "path": "isHostileToPlayer",
+          "equals": true
+        },
+        {
+          "type": "entityField",
+          "source": "responses.players_before_save",
+          "collection": "players",
+          "id": "$fixture.cinderWitnessId",
+          "path": "factionId",
+          "equals": "$fixture.cinderFactionId"
+        },
+        {
+          "type": "entityField",
+          "source": "responses.players_before_save",
+          "collection": "players",
+          "id": "$fixture.cinderWitnessId",
+          "path": "relationships.$fixture.lanternWitnessId",
+          "equals": "guarded ally"
+        },
+        {
+          "type": "equals",
+          "source": "responses.factions_before_save",
+          "path": "payload.playerStandings.$fixture.lanternFactionId",
+          "equals": 7
+        }
+      ]
+    },
+    {
+      "type": "snapshot",
+      "name": "relationship_state_before_save"
+    },
+    {
+      "type": "save",
+      "name": "relationship_state_save"
+    },
+    {
+      "type": "assert",
+      "assertions": [
+        {
+          "type": "httpStatus",
+          "equals": 200
+        },
+        {
+          "type": "responseOk",
+          "equals": true
+        },
+        {
+          "type": "equals",
+          "source": "responses.relationship_state_save",
+          "path": "payload.success",
+          "equals": true
+        },
+        {
+          "type": "historyAddedTypeCount",
+          "entryType": "save-notice",
+          "equals": 1,
+          "beforeSource": "snapshots.relationship_state_before_save",
+          "afterSource": "after"
+        }
+      ]
+    },
+    {
+      "type": "snapshot",
+      "name": "saved_relationship_state"
+    },
+    {
+      "type": "request",
+      "name": "contradict_lantern_record",
+      "method": "PUT",
+      "route": "/api/npcs/$fixture.lanternWitnessId",
+      "body": {
+        "factionId": "$fixture.cinderFactionId",
+        "relationships": {}
+      }
+    },
+    {
+      "type": "request",
+      "name": "contradict_cinder_record",
+      "method": "PUT",
+      "route": "/api/npcs/$fixture.cinderWitnessId",
+      "body": {
+        "factionId": "$fixture.lanternFactionId",
+        "relationships": {
+          "char_37": "dismissed stranger"
+        }
+      }
+    },
+    {
+      "type": "request",
+      "name": "contradict_lantern_dispositions",
+      "method": "PUT",
+      "route": "/api/npcs/$fixture.lanternWitnessId/dispositions",
+      "body": {
+        "dispositions": [
+          {
+            "key": "platonic",
+            "value": 0
+          },
+          {
+            "key": "trust",
+            "value": 0
+          }
+        ]
+      }
+    },
+    {
+      "type": "request",
+      "name": "contradict_lantern_standing",
+      "method": "PUT",
+      "route": "/api/player/factions/$fixture.lanternFactionId/standing",
+      "body": {
+        "value": -9
+      }
+    },
+    {
+      "type": "request",
+      "name": "players_mutated",
+      "method": "GET",
+      "route": "/api/players"
+    },
+    {
+      "type": "request",
+      "name": "factions_mutated",
+      "method": "GET",
+      "route": "/api/factions"
+    },
+    {
+      "type": "assert",
+      "assertions": [
+        {
+          "type": "entityField",
+          "source": "responses.players_mutated",
+          "collection": "players",
+          "id": "$fixture.lanternWitnessId",
+          "path": "factionId",
+          "equals": "$fixture.cinderFactionId"
+        },
+        {
+          "type": "entityField",
+          "source": "responses.players_mutated",
+          "collection": "players",
+          "id": "$fixture.lanternWitnessId",
+          "path": "relationships",
+          "equals": {}
+        },
+        {
+          "type": "entityField",
+          "source": "responses.players_mutated",
+          "collection": "players",
+          "id": "$fixture.lanternWitnessId",
+          "path": "isHostileToPlayer",
+          "equals": false
+        },
+        {
+          "type": "entityField",
+          "source": "responses.players_mutated",
+          "collection": "players",
+          "id": "$fixture.cinderWitnessId",
+          "path": "factionId",
+          "equals": "$fixture.lanternFactionId"
+        },
+        {
+          "type": "entityField",
+          "source": "responses.players_mutated",
+          "collection": "players",
+          "id": "$fixture.cinderWitnessId",
+          "path": "relationships.$fixture.lanternWitnessId",
+          "equals": "dismissed stranger"
+        },
+        {
+          "type": "equals",
+          "source": "responses.factions_mutated",
+          "path": "payload.playerStandings.$fixture.lanternFactionId",
+          "equals": -9
+        }
+      ]
+    },
+    {
+      "type": "reload",
+      "name": "reload_relationship_state"
+    },
+    {
+      "type": "request",
+      "name": "players_reloaded",
+      "method": "GET",
+      "route": "/api/players"
+    },
+    {
+      "type": "request",
+      "name": "factions_reloaded",
+      "method": "GET",
+      "route": "/api/factions"
+    },
+    {
+      "type": "assert",
+      "assertions": [
+        {
+          "type": "equals",
+          "source": "responses.reload_relationship_state",
+          "path": "payload.success",
+          "equals": true
+        },
+        {
+          "type": "entityField",
+          "source": "responses.players_reloaded",
+          "collection": "players",
+          "id": "$fixture.lanternWitnessId",
+          "path": "factionId",
+          "equals": "$fixture.lanternFactionId"
+        },
+        {
+          "type": "entityField",
+          "source": "responses.players_reloaded",
+          "collection": "players",
+          "id": "$fixture.lanternWitnessId",
+          "path": "relationships.$fixture.cinderWitnessId",
+          "equals": "trusted rival"
+        },
+        {
+          "type": "entityField",
+          "source": "responses.players_reloaded",
+          "collection": "players",
+          "id": "$fixture.lanternWitnessId",
+          "path": "dispositionsTowardPlayer.platonic",
+          "equals": -31
+        },
+        {
+          "type": "entityField",
+          "source": "responses.players_reloaded",
+          "collection": "players",
+          "id": "$fixture.lanternWitnessId",
+          "path": "dispositionsTowardPlayer.trust",
+          "equals": 12
+        },
+        {
+          "type": "entityField",
+          "source": "responses.players_reloaded",
+          "collection": "players",
+          "id": "$fixture.lanternWitnessId",
+          "path": "isHostile",
+          "equals": false
+        },
+        {
+          "type": "entityField",
+          "source": "responses.players_reloaded",
+          "collection": "players",
+          "id": "$fixture.lanternWitnessId",
+          "path": "isHostileToPlayer",
+          "equals": true
+        },
+        {
+          "type": "entityField",
+          "source": "responses.players_reloaded",
+          "collection": "players",
+          "id": "$fixture.cinderWitnessId",
+          "path": "factionId",
+          "equals": "$fixture.cinderFactionId"
+        },
+        {
+          "type": "entityField",
+          "source": "responses.players_reloaded",
+          "collection": "players",
+          "id": "$fixture.cinderWitnessId",
+          "path": "relationships.$fixture.lanternWitnessId",
+          "equals": "guarded ally"
+        },
+        {
+          "type": "equals",
+          "source": "responses.factions_reloaded",
+          "path": "payload.playerStandings.$fixture.lanternFactionId",
+          "equals": 7
+        },
+        {
+          "type": "entityField",
+          "source": "after",
+          "collection": "factions",
+          "id": "$fixture.lanternFactionId",
+          "path": "name",
+          "equals": "$fixture.lanternFactionName"
+        },
+        {
+          "type": "entityField",
+          "source": "after",
+          "collection": "factions",
+          "id": "$fixture.cinderFactionId",
+          "path": "name",
+          "equals": "$fixture.cinderFactionName"
+        },
+        {
+          "type": "stateUnchanged",
+          "beforeSource": "snapshots.saved_relationship_state",
+          "afterSource": "after",
+          "paths": [
+            "player.payload.player.locationId",
+            "factions.payload.factions",
+            "factions.payload.playerStandings",
+            "locations.payload.locations",
+            "things.payload.things",
+            "scheduledEvents.payload.scheduledEvents",
+            "calendar.payload.worldTime",
+            "history.payload.history"
+          ]
+        },
+        {
+          "type": "entityField",
+          "source": "after",
+          "collection": "players",
+          "id": "$fixture.lanternWitnessId",
+          "path": "relationships",
+          "equals": {
+            "char_38": "trusted rival"
+          }
+        },
+        {
+          "type": "entityField",
+          "source": "after",
+          "collection": "players",
+          "id": "$fixture.lanternWitnessId",
+          "path": "dispositionsTowardPlayer",
+          "equals": {
+            "platonic": -31,
+            "romantic": 0,
+            "lust": 0,
+            "respect": 0,
+            "comfort_fear": 0,
+            "trust": 12
+          }
+        },
+        {
+          "type": "entityField",
+          "source": "after",
+          "collection": "players",
+          "id": "$fixture.lanternWitnessId",
+          "path": "locationId",
+          "equals": "$fixture.baselineLocationId"
+        },
+        {
+          "type": "entityField",
+          "source": "after",
+          "collection": "players",
+          "id": "$fixture.cinderWitnessId",
+          "path": "relationships",
+          "equals": {
+            "char_37": "guarded ally"
+          }
+        },
+        {
+          "type": "entityField",
+          "source": "after",
+          "collection": "players",
+          "id": "$fixture.cinderWitnessId",
+          "path": "dispositionsTowardPlayer",
+          "equals": {
+            "platonic": 0,
+            "romantic": 0,
+            "lust": 0,
+            "respect": 0,
+            "comfort_fear": 0,
+            "trust": 0
+          }
+        },
+        {
+          "type": "entityField",
+          "source": "after",
+          "collection": "players",
+          "id": "$fixture.cinderWitnessId",
+          "path": "locationId",
+          "equals": "$fixture.baselineLocationId"
+        },
+        {
+          "type": "equals",
+          "source": "after",
+          "path": "players.payload.count",
+          "equalsFrom": {
+            "source": "snapshots.saved_relationship_state",
+            "path": "players.payload.count"
+          }
+        },
+        {
+          "type": "noRealtimeErrors"
+        },
+        {
+          "type": "noUnexpectedErrorLogs"
+        }
+      ]
+    }
+  ],
+  "humanReview": [
+    "This state-only case has no prose. Verify the deliberate post-save contradictions prove that reload restores real persisted state rather than merely matching the base fixture.",
+    "The raw hostile flag must remain false before and after reload while the restored exact disposition produces derived isHostileToPlayer=true."
+  ]
+}

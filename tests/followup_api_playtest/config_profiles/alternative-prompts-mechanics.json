@@ -1,0 +1,7 @@
+{
+  "version": 1,
+  "name": "alternative-prompts-mechanics",
+  "description": "Isolates question, creative, forced-event, generic, no-context, roll, rejection, error, and cancellation dispatch behavior while preserving the normal prompt-mode contracts under test.",
+  "extends": "isolated-base",
+  "values": {}
+}

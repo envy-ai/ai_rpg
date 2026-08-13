@@ -12,9 +12,9 @@ const {
     parsePlayerActionDestination,
     parsePlayerActionVehicleDestination,
     parsePlayerActionDestinationChanges,
+    parsePlayerActionExplicitDuration,
     parsePlayerActionDuration,
     parsePlayerActionAccompanyingCharacters,
-    parsePlayerActionCheckedActionActors,
     parsePlayerActionHiddenNotes,
     parsePlayerActionMoreInfoOrNa,
     parsePlayerActionMovement,
@@ -24,8 +24,13 @@ const {
     parsePlayerActionVehicleDecision,
     parseQuestRewardResult,
     parseRevisionDecision,
+    parseScheduledEventApplicability,
     parseScheduledEventInterruptionRewrite,
+    parseScheduledEventToolPlan,
+    parseScheduledEventToolExecution,
+    parseScheduledEventSummary,
     parseScheduledEventStagedResult,
+    validateScheduledEventToolCallAgainstPlan,
     parseWhileAwayArrivalUpdates,
     parseWhileAwayCharacterUpdate,
     parseWhileYouWereAwayResult,
@@ -279,6 +284,17 @@ test('player-action non-XML parsers enforce compact branch-safe answers', () => 
         parsePlayerActionDuration('1 hour, 30 minutes', 1).value,
         { text: '1 hour, 30 minutes', minutes: 90 }
     );
+    assert.deepEqual(
+        parsePlayerActionExplicitDuration('5 minutes'),
+        {
+            value: { text: '5 minutes', minutes: 5 },
+            normalizedResponse: '5 minutes'
+        }
+    );
+    assert.deepEqual(
+        parsePlayerActionExplicitDuration('NONE'),
+        { value: null, normalizedResponse: 'NONE' }
+    );
     assert.throws(() => parsePlayerActionDuration('0 minutes', 1), /at least 1 minute/i);
     assert.throws(() => parsePlayerActionDuration('About 10 minutes', 1), /invalid/i);
 
@@ -317,23 +333,8 @@ test('player-action non-XML parsers enforce compact branch-safe answers', () => 
         ['Mira Vale']
     );
 
-    assert.deepEqual(
-        parsePlayerActionCheckedActionActors('player\nWhisper', [
-            { name: 'Baato', aliases: ['player'] },
-            { name: 'QA Veiled Scout', aliases: ['Whisper'] }
-        ]).value,
-        ['Baato', 'QA Veiled Scout']
-    );
-    assert.deepEqual(
-        parsePlayerActionCheckedActionActors('NONE', [{ name: 'Baato', aliases: ['player'] }]).value,
-        []
-    );
-    assert.throws(
-        () => parsePlayerActionCheckedActionActors('Unknown', [{ name: 'Baato', aliases: ['player'] }]),
-        /allowed exact character name/i
-    );
-
     assert.equal(parsePlayerActionRequiredProse('A door opens.').value, 'A door opens.');
+    assert.equal(parsePlayerActionRequiredProse('One count is less than < two.').value, 'One count is less than < two.');
     assert.equal(parsePlayerActionHiddenNotes('N/A').value, null);
     assert.equal(parsePlayerActionHiddenNotes('The key is newly bent.').value, 'The key is newly bent.');
     assert.equal(parsePlayerActionTimeReasoning('The conversation is brief.').value, 'The conversation is brief.');
@@ -345,13 +346,22 @@ test('player-action non-XML parsers enforce compact branch-safe answers', () => 
         () => parsePlayerActionRequiredProse('Visible.<hidden>Secret.</hidden>'),
         /must not contain/i
     );
+    assert.throws(
+        () => parsePlayerActionRequiredProse('<scheduledEventResult><proseForPlayer>No.</proseForPlayer></scheduledEventResult>'),
+        /prose only, without XML markup/i
+    );
+    assert.throws(
+        () => parsePlayerActionRequiredProse('<story>No wrapper is allowed.</story>'),
+        /prose only, without XML markup/i
+    );
 });
 
 test('player-action destination lookup requires N/A or a successful moreInfo call followed by READY', () => {
     assert.equal(parsePlayerActionMoreInfoOrNa('N/A').value, false);
     assert.equal(parsePlayerActionMoreInfoOrNa('**Answer: N/A.**').value, false);
+    assert.equal(parsePlayerActionMoreInfoOrNa('N/A. There is no useful lookup to make.').normalizedResponse, 'N/A');
     assert.equal(
-        parsePlayerActionMoreInfoOrNa('READY', {
+        parsePlayerActionMoreInfoOrNa('READY — the lookup result has what I need.', {
             currentToolInvocations: [{
                 id: 'lookup-1',
                 name: 'moreInfo',
@@ -363,7 +373,7 @@ test('player-action destination lookup requires N/A or a successful moreInfo cal
 
     assert.throws(
         () => parsePlayerActionMoreInfoOrNa('Baato walks into the square.'),
-        /must be exactly N\/A/i
+        /must begin with N\/A/i
     );
     assert.throws(
         () => parsePlayerActionMoreInfoOrNa('READY'),
@@ -630,6 +640,42 @@ test('while-away staged parser prevents final structured-state drift', () => {
 });
 
 test('scheduled-event parsers preserve approved summaries and interruption non-prose XML', () => {
+    assert.equal(
+        parseScheduledEventApplicability(
+            '<applicability><decision>yes</decision><reason>The bell remains due.</reason></applicability>'
+        ).value,
+        true
+    );
+    assert.equal(
+        parseScheduledEventApplicability(
+            '<applicability><decision>no</decision><reason>The bell was removed.</reason></applicability>'
+        ).value,
+        false
+    );
+    assert.throws(
+        () => parseScheduledEventApplicability(
+            '<applicability><decision>maybe</decision><reason>Unclear.</reason></applicability>'
+        ),
+        /exactly yes or no/i
+    );
+    assert.throws(
+        () => parseScheduledEventApplicability(
+            '<applicability><decision>yes</decision><reason>Due.</reason><decision>no</decision></applicability>'
+        ),
+        /exactly one direct <decision>/i
+    );
+    assert.equal(
+        parseScheduledEventSummary('<summary>The bell rang once.</summary>').value,
+        'The bell rang once.'
+    );
+    assert.throws(
+        () => parseScheduledEventSummary('<summary>N/A</summary>'),
+        /null sentinel/i
+    );
+    assert.throws(
+        () => parseScheduledEventSummary('<summary><detail>The bell rang.</detail></summary>'),
+        /text only/i
+    );
     const scheduledXml = '<scheduledEventResult><summary>The bell rang.</summary><proseForPlayer>A bell rings.</proseForPlayer></scheduledEventResult>';
     assert.equal(parseScheduledEventStagedResult(scheduledXml, {
         happened: true,
@@ -644,6 +690,17 @@ test('scheduled-event parsers preserve approved summaries and interruption non-p
         }),
         /exactly match/
     );
+    assert.equal(parseScheduledEventStagedResult('<scheduledEventResult/>', {
+        happened: false,
+        playerPresent: true
+    }).value, '<scheduledEventResult/>');
+    assert.throws(
+        () => parseScheduledEventStagedResult(
+            '<scheduledEventResult><summary>The bell somehow rang.</summary></scheduledEventResult>',
+            { happened: false, playerPresent: true }
+        ),
+        /skipped staged scheduled event must return an empty/i
+    );
 
     const original = '<turnResult><prose>Work continues.</prose><hidden>keep me</hidden>'
         + '<timePassed><duration>10 minutes</duration></timePassed></turnResult>';
@@ -655,5 +712,140 @@ test('scheduled-event parsers preserve approved summaries and interruption non-p
             original
         ),
         /changed a non-prose XML field/
+    );
+});
+
+test('scheduled-event tool plan and execution parsers enforce exact direct-update contracts', () => {
+    const event = 'Change QA Depot Marker description to exactly: The depot marker bears one fresh blue QA stripe.';
+    const planXml = '<toolPlan>'
+        + '<stateChangeRequired>yes</stateChangeRequired>'
+        + '<directUpdates><update>'
+        + '<objectType>thing</objectType><objectId>thing_348</objectId>'
+        + '<objectName>QA Depot Marker</objectName><field>description</field>'
+        + '<valueJson>"The depot marker bears one fresh blue QA stripe."</valueJson>'
+        + '</update></directUpdates><otherTools/>'
+        + '</toolPlan>';
+    const plan = parseScheduledEventToolPlan(
+        planXml,
+        event,
+        ['updateObjectFields', 'alterThing']
+    ).value;
+    assert.equal(plan.stateChangeRequired, true);
+    assert.equal(plan.directUpdates[0].field, 'description');
+
+    const readOnlyLookupPlan = planXml.replace(
+        '<otherTools/>',
+        '<otherTools><tool><name>locateThings</name>'
+        + '<argumentsJson>{"query":"QA Depot Marker"}</argumentsJson>'
+        + '<purpose>Find the marker id.</purpose></tool></otherTools>'
+    );
+    const planWithLookup = parseScheduledEventToolPlan(
+        readOnlyLookupPlan,
+        event,
+        ['updateObjectFields', 'locateThings']
+    ).value;
+    assert.equal(planWithLookup.otherTools[0].name, 'locateThings');
+
+    const wrongFieldPlan = planXml.replace(
+        '<field>description</field>',
+        '<field>unknownField</field>'
+    );
+    assert.throws(
+        () => parseScheduledEventToolPlan(
+            wrongFieldPlan,
+            event,
+            ['updateObjectFields', 'alterThing']
+        ),
+        /unsupported thing field "unknownField"/i
+    );
+
+    const duplicatePlan = parseScheduledEventToolPlan(
+        planXml.replace('</directUpdates>', planXml.match(/<update>[\s\S]*?<\/update>/)[0] + '</directUpdates>'),
+        event,
+        ['updateObjectFields']
+    ).value;
+    assert.equal(duplicatePlan.directUpdates.length, 1);
+
+    assert.throws(
+        () => parseScheduledEventToolExecution('Claimed completion.', event, plan, {
+            currentToolInvocations: []
+        }),
+        /requires at least one successful planned tool call/i
+    );
+
+    const wrongFieldCall = {
+        name: 'updateObjectFields',
+        argumentsObject: {
+            objectType: 'thing',
+            object: 'QA Depot Marker',
+            fields: {
+                shortDescription: 'The depot marker bears one fresh blue QA stripe.'
+            }
+        }
+    };
+    assert.throws(
+        () => validateScheduledEventToolCallAgainstPlan(wrongFieldCall, plan),
+        /not an exact match for the accepted tool plan/i
+    );
+
+    const wrongValueCall = {
+        name: 'updateObjectFields',
+        argumentsObject: {
+            objectType: 'thing',
+            object: 'QA Depot Marker',
+            fields: {
+                description: 'The depot marker bears one fresh blue stripe.'
+            }
+        }
+    };
+    assert.throws(
+        () => validateScheduledEventToolCallAgainstPlan(wrongValueCall, plan),
+        /not an exact match for the accepted tool plan/i
+    );
+
+    const completedInvocation = {
+        name: 'updateObjectFields',
+        argumentsObject: {
+            objectType: 'thing',
+            object: 'QA Depot Marker',
+            fields: {
+                description: 'The depot marker bears one fresh blue QA stripe.'
+            }
+        },
+        metadata: {
+            status: 'success',
+            objectType: 'thing',
+            objectId: 'thing_348',
+            objectName: 'QA Depot Marker',
+            updatedValues: {
+                description: 'The depot marker bears one fresh blue QA stripe.'
+            }
+        }
+    };
+    assert.equal(
+        validateScheduledEventToolCallAgainstPlan(completedInvocation, plan),
+        true
+    );
+    assert.equal(
+        parseScheduledEventToolExecution('Updated the marker.', event, plan, {
+            currentToolInvocations: [completedInvocation]
+        }).value,
+        'Updated the marker.'
+    );
+
+    const noChangeEvent = 'QA Bell Runner rings QA Brass Bell exactly once; nobody and nothing moves.';
+    const noChangePlanXml = '<toolPlan>'
+        + '<stateChangeRequired>no</stateChangeRequired><directUpdates/><otherTools/>'
+        + '</toolPlan>';
+    const noChangePlan = parseScheduledEventToolPlan(
+        noChangePlanXml,
+        noChangeEvent,
+        ['updateObjectFields']
+    ).value;
+    assert.equal(
+        parseScheduledEventToolExecution('No persistent update was needed.', noChangeEvent, noChangePlan, {
+            currentToolInvocations: []
+        }).value,
+        'No persistent update was needed.'
     );
 });

@@ -177,6 +177,54 @@ test('tool loop rejects a model-emitted tool that was not declared for the reque
     assert.match(toolMessage.content, /Use only these declared tools: moreInfo\./);
 });
 
+test('tool loop can finish locally once successful planned tool calls contain the needed result', async () => {
+    const capturedMessagesByRound = [];
+    const moreInfoTool = CHAT_TOOL_DEFINITIONS.find(
+        definition => definition?.function?.name === 'moreInfo'
+    );
+    const runtime = createMinimalRuntime({
+        capturedMessagesByRound,
+        llmResponses: [{
+            data: {
+                choices: [{
+                    message: {
+                        content: '',
+                        tool_calls: [{
+                            id: 'call-more-info-terminal',
+                            type: 'function',
+                            function: {
+                                name: 'moreInfo',
+                                arguments: JSON.stringify({ name: 'Missing Place', type: 'location' })
+                            }
+                        }]
+                    }
+                }]
+            }
+        }]
+    });
+    let callbackInput = null;
+
+    const result = await runtime.runChatCompletionWithToolLoop({
+        requestOptions: {
+            messages: [{ role: 'user', content: 'Look up the destination.' }],
+            additionalPayload: { tools: [moreInfoTool], tool_choice: 'auto' }
+        },
+        metadataLabel: 'local_terminal_tool_test',
+        terminalResponseAfterToolCalls(input) {
+            callbackInput = input;
+            return 'READY';
+        }
+    });
+
+    assert.equal(capturedMessagesByRound.length, 1);
+    assert.equal(result.aiResponse, 'READY');
+    assert.equal(result.rounds, 1);
+    assert.equal(result.toolInvocations.length, 1);
+    assert.equal(callbackInput.toolInvocations[0].name, 'moreInfo');
+    assert.ok(callbackInput.messages.some(message => message.role === 'tool'));
+    assert.equal(result.conversationMessages.at(-1).content, 'READY');
+});
+
 test('deleteThing tool definition requires only a thing identifier', () => {
     const definition = findToolDefinition('deleteThing');
 
@@ -1319,6 +1367,57 @@ test('runChatCompletionWithToolLoop reports tool-call debug lifecycle events', a
     assert.ok(toolMessage, 'Expected a tool response message in the second round.');
     assert.doesNotMatch(toolMessage.content, /<moreInfoResults>/);
     assert.equal(JSON.parse(toolMessage.content).totalMatches, 0);
+});
+
+test('runChatCompletionWithToolLoop terminates lifecycle records before propagating fatal tool errors', async () => {
+    const lifecycleEvents = [];
+    const fatalError = new Error('Prompt canceled by user.');
+    fatalError.code = 'user_input_cancelled';
+    fatalError.fatalToolExecution = true;
+
+    const runtime = createMinimalRuntime({
+        llmResponses: [{
+            data: {
+                choices: [{
+                    message: {
+                        content: '',
+                        tool_calls: [{
+                            id: 'call_cancelled_check',
+                            type: 'function',
+                            function: {
+                                name: 'moreInfo',
+                                arguments: JSON.stringify({ name: 'Cancellation target' })
+                            }
+                        }]
+                    }
+                }]
+            }
+        }]
+    });
+
+    await assert.rejects(
+        runtime.runChatCompletionWithToolLoop({
+            requestOptions: {
+                messages: [{ role: 'user', content: 'Inspect the target.' }]
+            },
+            metadataLabel: 'fatal_tool_lifecycle_test',
+            validateToolCall: async () => {
+                throw fatalError;
+            },
+            onToolCallEvent: event => lifecycleEvents.push(structuredClone(event))
+        }),
+        error => error === fatalError
+    );
+
+    assert.equal(lifecycleEvents.length, 2);
+    assert.equal(lifecycleEvents[0].phase, 'started');
+    assert.equal(lifecycleEvents[0].name, 'moreInfo');
+    assert.equal(lifecycleEvents[1].phase, 'error');
+    assert.equal(lifecycleEvents[1].sequence, lifecycleEvents[0].sequence);
+    assert.deepEqual(lifecycleEvents[1].error, {
+        message: 'Prompt canceled by user.',
+        code: 'user_input_cancelled'
+    });
 });
 
 test('moreInfo returns matched entities as direct toJSON payloads', async () => {

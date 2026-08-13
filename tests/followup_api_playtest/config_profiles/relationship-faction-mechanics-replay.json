@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "name": "relationship-faction-mechanics-replay",
+  "description": "Replays relationship and faction completion cassettes without starting, preloading, or contacting the local llama.cpp router.",
+  "extends": "relationship-faction-mechanics",
+  "values": {
+    "ai.local_startup_script_path": "",
+    "ai.unload_during_image_generation": false,
+    "router_preload_model": "",
+    "unload_model_on_switch": false
+  }
+}

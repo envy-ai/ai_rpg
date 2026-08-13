@@ -101,6 +101,7 @@ const HIDDEN_CHAT_PREFIX = `[${HIDDEN_CHAT_LABEL}]`;
 
 // Import Player class
 const Player = require('./Player.js');
+const { isActorDispositionHostile } = require('./DispositionHostility.js');
 
 // Import Location and LocationExit classes
 const Location = require('./Location.js');
@@ -5798,7 +5799,9 @@ function serializeNpcForClient(npc, options = {}) {
     const dispositionDefinitions = Player.dispositionDefinitions || {};
     const dispositionTypes = dispositionDefinitions.types || {};
     const dispositionsTowardPlayer = {};
-    let hostileToPlayer = false;
+    const hostileToPlayer = playerId && playerId !== npc.id
+        ? isActorDispositionHostile(npc, playerId, dispositionDefinitions)
+        : false;
     if (playerId && playerId !== npc.id) {
         for (const def of Object.values(dispositionTypes)) {
             if (!def) {
@@ -5811,12 +5814,6 @@ function serializeNpcForClient(npc, options = {}) {
             const value = npc.getDisposition(playerId, key);
             if (Number.isFinite(value)) {
                 dispositionsTowardPlayer[key] = value;
-                if (def.hostileThreshold !== null && def.hostileThreshold !== undefined) {
-                    const threshold = Number(def.hostileThreshold);
-                    if (Number.isFinite(threshold) && value <= threshold) {
-                        hostileToPlayer = true;
-                    }
-                }
             }
         }
     }
@@ -21462,7 +21459,9 @@ async function generatePlayerAbilityOptionsForLevel(character, {
         }
 
         const generated = [];
-        const maxAttempts = 3;
+        const maxAttempts = resolveConfiguredPromptMaxAttempts(config?.ai, {
+            fallbackMaxAttempts: 3
+        });
 
         for (let attempt = 1; attempt <= maxAttempts && generated.length < parsedCount; attempt += 1) {
             const remaining = parsedCount - generated.length;
@@ -21807,15 +21806,45 @@ async function applyPlayerAbilitySelection(character, {
     if (declinedAbilitiesToSave.length && typeof character.addDeclinedAbilities !== 'function') {
         throw new Error('Character is missing addDeclinedAbilities().');
     }
-    character.setAbilities(mergedAbilities);
-    if (declinedAbilitiesToSave.length) {
-        character.addDeclinedAbilities(declinedAbilitiesToSave);
+    if (typeof character.getDeclinedAbilities !== 'function'
+        || typeof character.setDeclinedAbilities !== 'function') {
+        throw new Error('Character is missing declined-ability snapshot methods.');
     }
-    character.clearPendingAbilityOptionsForLevel(parsedLevel);
 
-    return resolvePlayerAbilitySelectionState(character, {
-        ensureOptionsForNext: true
-    });
+    const mutationSnapshot = {
+        abilities: currentAbilities.map(ability => ({ ...ability })),
+        declinedAbilities: character.getDeclinedAbilities(),
+        pendingAbilityOptionsByLevel: character.getPendingAbilityOptionsByLevel()
+    };
+
+    try {
+        character.setAbilities(mergedAbilities);
+        if (declinedAbilitiesToSave.length) {
+            character.addDeclinedAbilities(declinedAbilitiesToSave);
+        }
+        character.clearPendingAbilityOptionsForLevel(parsedLevel);
+
+        return await resolvePlayerAbilitySelectionState(character, {
+            ensureOptionsForNext: true
+        });
+    } catch (error) {
+        try {
+            character.setAbilities(mutationSnapshot.abilities);
+            character.setDeclinedAbilities(mutationSnapshot.declinedAbilities);
+            character.clearPendingAbilityOptions();
+            for (const [pendingLevel, pendingAbilities] of Object.entries(
+                mutationSnapshot.pendingAbilityOptionsByLevel
+            )) {
+                character.setPendingAbilityOptionsForLevel(pendingLevel, pendingAbilities);
+            }
+        } catch (rollbackError) {
+            throw new Error(
+                `Player ability selection failed and rollback also failed: ${rollbackError?.message || rollbackError}`,
+                { cause: new AggregateError([error, rollbackError]) }
+            );
+        }
+        throw error;
+    }
 }
 
 async function generateLevelUpAbilitiesForCharacter(character, {
@@ -24263,14 +24292,36 @@ async function parseThingsXml(xmlContent, {
                     // Empty nodes are fine.
                     return null;
                 }
-                const effectName = getDirectChildText(nodeRef, 'name');
-                const effectDescription = getDirectChildText(nodeRef, 'description');
-                const effectDuration = getDirectChildText(nodeRef, 'duration');
+                const normalizeOptionalEffectText = (value) => {
+                    const trimmed = typeof value === 'string' ? value.trim() : '';
+                    const normalized = trimmed.toLowerCase().replace(/[.!?]+$/g, '');
+                    return new Set([
+                        '',
+                        'n/a',
+                        'na',
+                        'none',
+                        'null',
+                        'not applicable',
+                        'no effect',
+                        'no status effect'
+                    ]).has(normalized)
+                        ? ''
+                        : trimmed;
+                };
+                const effectName = normalizeOptionalEffectText(getDirectChildText(nodeRef, 'name'));
+                const effectDescription = normalizeOptionalEffectText(getDirectChildText(nodeRef, 'description'));
+                const effectDuration = normalizeOptionalEffectText(getDirectChildText(nodeRef, 'duration'));
                 const effectPayload = {};
                 if (effectName) effectPayload.name = effectName;
                 if (effectDescription) effectPayload.description = effectDescription;
-                if (effectDuration && effectDuration.toLowerCase() !== 'n/a') {
-                    effectPayload.duration = effectDuration;
+                if (effectDuration) {
+                    try {
+                        effectPayload.duration = StatusEffect.normalizeDuration(effectDuration);
+                    } catch (error) {
+                        throw new Error(
+                            `Thing "${entryName}" <${tagName}> has an invalid duration: ${error.message}`
+                        );
+                    }
                 }
 
                 const attributes = Array.from(nodeRef.getElementsByTagName('attribute')).map(attrNode => {

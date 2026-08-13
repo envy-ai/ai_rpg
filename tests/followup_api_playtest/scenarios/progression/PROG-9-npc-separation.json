@@ -1,0 +1,431 @@
+{
+  "version": 1,
+  "scenario": "progression",
+  "case": "PROG-9-npc-separation",
+  "description": "On a disposable copy of the immutable level-3 fast-travel fixture, level the existing QA Courier from 2 to 3 through /setlevel, wait for authoritative automatic NPC progression state, and prove generated NPC abilities and point allocations do not create player pending state.",
+  "fixture": "fast-travel-visited-favorites",
+  "configProfile": "progression-mechanics",
+  "trackedPaths": [
+    "player.payload.player",
+    "players.payload.players",
+    "locations.payload.locations",
+    "things.payload.things",
+    "factions.payload.factions",
+    "factions.payload.playerStandings",
+    "scheduledEvents.payload.scheduledEvents",
+    "calendar.payload.worldTime",
+    "history.payload.history"
+  ],
+  "steps": [
+    {
+      "type": "loadFixture"
+    },
+    {
+      "type": "request",
+      "name": "player_pending_before",
+      "method": "GET",
+      "route": "/api/player/ability-selection?generateOptions=false"
+    },
+    {
+      "type": "request",
+      "name": "courier_before",
+      "method": "GET",
+      "route": "/api/npcs/$fixture.courierId"
+    },
+    {
+      "type": "request",
+      "name": "mina_before",
+      "method": "GET",
+      "route": "/api/npcs/$fixture.groveNpcId"
+    },
+    {
+      "type": "snapshot",
+      "name": "before_npc_level_up"
+    },
+    {
+      "type": "assert",
+      "assertions": [
+        {
+          "type": "equals",
+          "source": "responses.player_pending_before",
+          "path": "status",
+          "equals": 200
+        },
+        {
+          "type": "equals",
+          "source": "responses.player_pending_before",
+          "path": "payload.pending",
+          "equals": false
+        },
+        {
+          "type": "equals",
+          "source": "responses.player_pending_before",
+          "path": "payload.abilitySelection.levelsMissing",
+          "equals": []
+        },
+        {
+          "type": "equals",
+          "source": "responses.courier_before",
+          "path": "status",
+          "equals": 200
+        },
+        {
+          "type": "equals",
+          "source": "responses.courier_before",
+          "path": "payload.npc.name",
+          "equals": "QA Courier"
+        },
+        {
+          "type": "equals",
+          "source": "responses.courier_before",
+          "path": "payload.npc.level",
+          "equals": 2
+        },
+        {
+          "type": "count",
+          "source": "responses.courier_before",
+          "path": "payload.npc.abilities",
+          "equals": 4
+        },
+        {
+          "type": "equals",
+          "source": "responses.courier_before",
+          "path": "payload.npc.unspentSkillPoints",
+          "equals": 0
+        },
+        {
+          "type": "equals",
+          "source": "responses.courier_before",
+          "path": "payload.npc.unspentAttributePoints",
+          "equals": 0
+        }
+      ]
+    },
+    {
+      "type": "request",
+      "name": "level_courier",
+      "method": "POST",
+      "route": "/api/slash-command",
+      "body": {
+        "command": "setlevel",
+        "args": {
+          "level": 3,
+          "character": "QA Courier"
+        }
+      }
+    },
+    {
+      "type": "assert",
+      "assertions": [
+        {
+          "type": "httpStatus",
+          "equals": 200
+        },
+        {
+          "type": "responseOk",
+          "equals": true
+        },
+        {
+          "type": "equals",
+          "source": "responses.level_courier",
+          "path": "payload.success",
+          "equals": true
+        },
+        {
+          "type": "count",
+          "source": "responses.level_courier",
+          "path": "payload.replies",
+          "equals": 1
+        },
+        {
+          "type": "equals",
+          "source": "responses.level_courier",
+          "path": "payload.replies.0.content",
+          "equals": "Set QA Courier from level 2 to level 3. XP was left unchanged."
+        }
+      ]
+    },
+    {
+      "type": "waitForRequest",
+      "name": "courier_after",
+      "method": "GET",
+      "route": "/api/npcs/$fixture.courierId",
+      "timeoutMs": 120000,
+      "pollIntervalMs": 100,
+      "until": [
+        {
+          "type": "equals",
+          "source": "response",
+          "path": "payload.npc.level",
+          "equals": 3
+        },
+        {
+          "type": "greaterThanOrEqual",
+          "source": "response",
+          "path": "payload.npc.abilities.length",
+          "value": 6
+        },
+        {
+          "type": "notEquals",
+          "source": "response",
+          "path": "payload.npc.attributes",
+          "equalsFrom": {
+            "source": "responses.courier_before",
+            "path": "payload.npc.attributes"
+          }
+        },
+        {
+          "type": "notEquals",
+          "source": "response",
+          "path": "payload.npc.skills",
+          "equalsFrom": {
+            "source": "responses.courier_before",
+            "path": "payload.npc.skills"
+          }
+        },
+        {
+          "type": "equals",
+          "source": "response",
+          "path": "payload.npc.unspentSkillPoints",
+          "equals": 0
+        },
+        {
+          "type": "equals",
+          "source": "response",
+          "path": "payload.npc.unspentAttributePoints",
+          "equals": 0
+        }
+      ]
+    },
+    {
+      "type": "waitForPromptIdle",
+      "labelIncludes": "levelup_abilities",
+      "requireActivity": true,
+      "timeoutMs": 600000,
+      "quietPeriodMs": 500,
+      "pollIntervalMs": 50
+    },
+    {
+      "type": "request",
+      "name": "player_pending_after",
+      "method": "GET",
+      "route": "/api/player/ability-selection?generateOptions=false"
+    },
+    {
+      "type": "request",
+      "name": "mina_after",
+      "method": "GET",
+      "route": "/api/npcs/$fixture.groveNpcId"
+    },
+    {
+      "type": "assert",
+      "assertions": [
+        {
+          "type": "equals",
+          "source": "responses.courier_after",
+          "path": "status",
+          "equals": 200
+        },
+        {
+          "type": "equals",
+          "source": "responses.courier_after",
+          "path": "payload.npc.level",
+          "equals": 3
+        },
+        {
+          "type": "equals",
+          "source": "responses.courier_after",
+          "path": "payload.npc.experience",
+          "equalsFrom": {
+            "source": "responses.courier_before",
+            "path": "payload.npc.experience"
+          }
+        },
+        {
+          "type": "greaterThanOrEqual",
+          "source": "responses.courier_after",
+          "path": "payload.npc.abilities.length",
+          "value": 6
+        },
+        {
+          "type": "lessThanOrEqual",
+          "source": "responses.courier_after",
+          "path": "payload.npc.abilities.length",
+          "value": 8
+        },
+        {
+          "type": "uniqueBy",
+          "source": "responses.courier_after",
+          "path": "payload.npc.abilities",
+          "key": "name"
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "responses.courier_after",
+          "path": "payload.npc.abilities",
+          "where": {
+            "level": 1
+          },
+          "equals": 3
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "responses.courier_after",
+          "path": "payload.npc.abilities",
+          "where": {
+            "level": 2
+          },
+          "equals": 1
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "responses.courier_after",
+          "path": "payload.npc.abilities",
+          "where": {
+            "name": "Windreader"
+          },
+          "equals": 1
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "responses.courier_after",
+          "path": "payload.npc.abilities",
+          "where": {
+            "name": "Marker Trust"
+          },
+          "equals": 1
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "responses.courier_after",
+          "path": "payload.npc.abilities",
+          "where": {
+            "name": "Short-Cut Glide"
+          },
+          "equals": 1
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "responses.courier_after",
+          "path": "payload.npc.abilities",
+          "where": {
+            "name": "Ice-Cold Nerves"
+          },
+          "equals": 1
+        },
+        {
+          "type": "notEquals",
+          "source": "responses.courier_after",
+          "path": "payload.npc.attributes",
+          "equalsFrom": {
+            "source": "responses.courier_before",
+            "path": "payload.npc.attributes"
+          }
+        },
+        {
+          "type": "notEquals",
+          "source": "responses.courier_after",
+          "path": "payload.npc.skills",
+          "equalsFrom": {
+            "source": "responses.courier_before",
+            "path": "payload.npc.skills"
+          }
+        },
+        {
+          "type": "equals",
+          "source": "responses.courier_after",
+          "path": "payload.npc.unspentSkillPoints",
+          "equals": 0
+        },
+        {
+          "type": "equals",
+          "source": "responses.courier_after",
+          "path": "payload.npc.unspentAttributePoints",
+          "equals": 0
+        },
+        {
+          "type": "equals",
+          "source": "responses.courier_after",
+          "path": "payload.npc.currentLocation",
+          "equalsFrom": {
+            "source": "responses.courier_before",
+            "path": "payload.npc.currentLocation"
+          }
+        },
+        {
+          "type": "equals",
+          "source": "responses.player_pending_after",
+          "path": "payload",
+          "equalsFrom": {
+            "source": "responses.player_pending_before",
+            "path": "payload"
+          }
+        },
+        {
+          "type": "equals",
+          "source": "responses.mina_after",
+          "path": "payload.npc",
+          "equalsFrom": {
+            "source": "responses.mina_before",
+            "path": "payload.npc"
+          }
+        },
+        {
+          "type": "stateUnchanged",
+          "beforeSource": "snapshots.before_npc_level_up",
+          "afterSource": "after",
+          "paths": [
+            "player.payload.player",
+            "locations.payload.locations",
+            "things.payload.things",
+            "factions.payload.factions",
+            "factions.payload.playerStandings",
+            "scheduledEvents.payload.scheduledEvents",
+            "calendar.payload.worldTime"
+          ]
+        },
+        {
+          "type": "historyAddedTypeCount",
+          "entryType": "level-up",
+          "equals": 1,
+          "beforeSource": "snapshots.before_npc_level_up",
+          "afterSource": "after"
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "after",
+          "path": "history.payload.history",
+          "where": {
+            "type": "level-up",
+            "metadata": {
+              "excludeFromBaseContextHistory": true,
+              "levelUp": {
+                "characterId": "char_37",
+                "previousLevel": 2,
+                "newLevel": 3
+              }
+            }
+          },
+          "equals": 1
+        },
+        {
+          "type": "historyAddedTypeCount",
+          "entryType": "player-action",
+          "equals": 0,
+          "beforeSource": "snapshots.before_npc_level_up",
+          "afterSource": "after"
+        },
+        {
+          "type": "noRealtimeErrors"
+        },
+        {
+          "type": "noUnexpectedErrorLogs"
+        }
+      ]
+    }
+  ],
+  "humanReview": [
+    "Review only the newly added level-3 QA Courier ability records for coherent names, descriptions, types, and short descriptions appropriate to the established courier; record semantic overlap or quality issues in tmp/prose_issues_log.md rather than adding one-response prompt restrictions.",
+    "Confirm the generated progression choices are broadly plausible for QA Courier. Exact skill or attribute choices are intentionally not prescribed."
+  ]
+}

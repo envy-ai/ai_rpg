@@ -1,0 +1,399 @@
+{
+  "version": 1,
+  "scenario": "random-scheduled-events-setup",
+  "case": "EVENT-fixture-random-scheduled",
+  "description": "Derive the shared random/scheduled-event fixture through documented @@ world-mutation tools, then normalize and verify the generated records before saving.",
+  "fixture": "long-time-rest-lodge",
+  "configProfile": "long-time-mechanics",
+  "trackedPaths": [
+    "player.payload.player.locationId",
+    "players.payload.players",
+    "locations.payload.locations",
+    "regions.payload.regions",
+    "things.payload.things",
+    "scheduledEvents.payload.scheduledEvents",
+    "calendar.payload.worldTime",
+    "history.payload.history"
+  ],
+  "steps": [
+    {
+      "type": "loadFixture"
+    },
+    {
+      "type": "snapshot",
+      "name": "before_setup"
+    },
+    {
+      "type": "chat",
+      "name": "create_depot",
+      "text": "@@ QA FIXTURE SETUP ONLY. You must call createLocationStub exactly once now. Create QA Offscreen Depot from March Start Marker in QA Frost March, with the description `A plain locked storage depot used only for deterministic offscreen-event tests.` and relativeLevel 0. Do not call any other tool and do not alter or move anything else. After the successful tool result, reply exactly: QA offscreen depot fixture ready.",
+      "travel": false,
+      "interactive": {
+        "roll": null,
+        "questAccepted": false,
+        "confirmed": false
+      }
+    },
+    {
+      "type": "assert",
+      "assertions": [
+        {
+          "type": "httpStatus",
+          "equals": 200
+        },
+        {
+          "type": "responseOk",
+          "equals": true
+        },
+        {
+          "type": "count",
+          "source": "responses.create_depot",
+          "path": "payload.toolInvocations",
+          "equals": 1
+        },
+        {
+          "type": "equals",
+          "source": "responses.create_depot",
+          "path": "payload.toolInvocations.0.name",
+          "equals": "createLocationStub"
+        },
+        {
+          "type": "equals",
+          "source": "responses.create_depot",
+          "path": "payload.toolInvocations.0.metadata.status",
+          "equals": "success"
+        },
+        {
+          "type": "equals",
+          "source": "responses.create_depot",
+          "path": "payload.toolInvocations.0.metadata.originLocationId",
+          "equals": "$fixture.baselineLocationId"
+        },
+        {
+          "type": "equals",
+          "source": "responses.create_depot",
+          "path": "payload.toolInvocations.0.metadata.regionId",
+          "equals": "$fixture.regionId"
+        }
+      ]
+    },
+    {
+      "type": "request",
+      "name": "visit_depot",
+      "method": "POST",
+      "route": "/api/npcs/$fixture.playerId/teleport",
+      "body": {
+        "locationId": "$response.create_depot.payload.toolInvocations.0.metadata.locationId",
+        "storyToolTeleport": true,
+        "accountTravelTime": false
+      }
+    },
+    {
+      "type": "request",
+      "name": "return_from_depot",
+      "method": "POST",
+      "route": "/api/npcs/$fixture.playerId/teleport",
+      "body": {
+        "locationId": "$fixture.baselineLocationId",
+        "storyToolTeleport": true,
+        "accountTravelTime": false
+      }
+    },
+    {
+      "type": "chat",
+      "name": "create_bell_runner",
+      "text": "@@ QA FIXTURE SETUP ONLY. You must call createNpc exactly once now to create one living non-hostile NPC named QA Bell Runner at March Start Marker. Use a concise courier description, class Courier, relativeLevel 0, and persist aiNotes saying this is the deterministic random-event fixture and the character must not move unless a test explicitly moves them. Do not call any other tools and do not move anyone. After the successful tool result, reply exactly: QA bell runner fixture ready.",
+      "travel": false,
+      "interactive": {
+        "roll": null,
+        "questAccepted": false,
+        "confirmed": false
+      }
+    },
+    {
+      "type": "request",
+      "name": "normalize_bell_runner",
+      "method": "PUT",
+      "route": "/api/npcs/$response.create_bell_runner.payload.toolInvocations.0.metadata.npcId",
+      "body": {
+        "name": "QA Bell Runner",
+        "description": "A careful courier assigned to ring the QA Brass Bell only when a deterministic test explicitly calls for it.",
+        "shortDescription": "Deterministic test courier and bell ringer.",
+        "class": "Courier",
+        "race": "Human",
+        "isDead": false,
+        "isHostile": false,
+        "personalityType": "Methodical courier",
+        "personalityTraits": "careful, punctual, restrained",
+        "personalityNotes": "Performs only the exact fixture action requested and does not invent movement.",
+        "aiNotes": "Deterministic random/scheduled-event fixture NPC. Remain at March Start Marker unless a test explicitly moves this character."
+      }
+    },
+    {
+      "type": "chat",
+      "name": "create_brass_bell",
+      "text": "@@ QA FIXTURE SETUP ONLY. You must call createThing exactly once now to create one portable item named QA Brass Bell at March Start Marker. Give it a concise brass handbell description and shortDescription, count 1, relativeLevel 0, and notes saying this is the deterministic random-event bell fixture. Do not call any other tools and do not create or alter anything else. After the successful tool result, reply exactly: QA brass bell fixture ready.",
+      "travel": false,
+      "interactive": {
+        "roll": null,
+        "questAccepted": false,
+        "confirmed": false
+      }
+    },
+    {
+      "type": "request",
+      "name": "normalize_brass_bell",
+      "method": "PUT",
+      "route": "/api/things/$response.create_brass_bell.payload.toolInvocations.0.metadata.thingId",
+      "body": {
+        "name": "QA Brass Bell",
+        "description": "A small brass handbell used to verify one deterministic visible random or scheduled event.",
+        "shortDescription": "Small deterministic QA handbell.",
+        "thingType": "item",
+        "itemTypeDetail": "tool",
+        "count": 1,
+        "isVehicle": false,
+        "isContainer": false
+      }
+    },
+    {
+      "type": "chat",
+      "name": "create_depot_marker",
+      "text": "@@ QA FIXTURE SETUP ONLY. You must call createThing exactly once now to create one portable item named QA Depot Marker at QA Offscreen Depot in QA Frost March. Give it a concise numbered-marker description and shortDescription, count 1, relativeLevel 0, and notes saying scheduled tests may alter this object's description but must not move it unless explicitly requested. Do not call any other tools and do not create or alter anything else. After the successful tool result, reply exactly: QA depot marker fixture ready.",
+      "travel": false,
+      "interactive": {
+        "roll": null,
+        "questAccepted": false,
+        "confirmed": false
+      }
+    },
+    {
+      "type": "request",
+      "name": "normalize_depot_marker",
+      "method": "PUT",
+      "route": "/api/things/$response.create_depot_marker.payload.toolInvocations.0.metadata.thingId",
+      "body": {
+        "name": "QA Depot Marker",
+        "description": "A plain numbered marker in its initial unchanged state for deterministic offscreen-event tests.",
+        "shortDescription": "Unchanged numbered QA depot marker.",
+        "thingType": "item",
+        "itemTypeDetail": "marker",
+        "count": 1,
+        "slot": null,
+        "attributeBonuses": [],
+        "causeStatusEffect": null,
+        "causeStatusEffectOnTarget": null,
+        "causeStatusEffectOnEquipper": null,
+        "statusEffects": [],
+        "isVehicle": false,
+        "isContainer": false
+      }
+    },
+    {
+      "type": "chat",
+      "name": "schedule_fixture_events",
+      "text": "@@ QA FIXTURE SETUP ONLY. You must call scheduleEvent exactly twice and no other tools. First schedule this exact event in 2 minutes at March Start Marker in QA Frost March: `QA Bell Runner rings QA Brass Bell exactly once; nobody and nothing moves.` Second schedule this exact event in 3 minutes at QA Offscreen Depot in QA Frost March: `Change QA Depot Marker's description to exactly: The depot marker bears one fresh blue QA stripe. Do not move any character or object.` After both successful tool results, reply exactly: QA random and scheduled events ready.",
+      "travel": false,
+      "interactive": {
+        "roll": null,
+        "questAccepted": false,
+        "confirmed": false
+      }
+    },
+    {
+      "type": "chat",
+      "name": "seed_random_pools",
+      "text": "@@ QA FIXTURE SETUP ONLY. You must call updateObjectFields exactly twice and no other tools. Set March Start Marker (loc_39) randomEvents to exactly [`QA Bell Runner rings QA Brass Bell exactly once; nobody and nothing moves.`]. Set QA Frost March (region_1786438821952_m5baxvz2) randomEvents to exactly [`A distant blue signal lamp flashes exactly once over the empty march; nobody and nothing moves.`]. Do not change any other field. After both successful tool results, reply exactly: QA random event pools seeded.",
+      "travel": false,
+      "interactive": {
+        "roll": null,
+        "questAccepted": false,
+        "confirmed": false
+      }
+    },
+    {
+      "type": "assert",
+      "assertions": [
+        {
+          "type": "httpStatus",
+          "equals": 200
+        },
+        {
+          "type": "responseOk",
+          "equals": true
+        },
+        {
+          "type": "exactDelta",
+          "beforeSource": "snapshots.before_setup",
+          "afterSource": "after",
+          "path": "calendar.payload.worldTime.timeMinutes",
+          "delta": 0
+        },
+        {
+          "type": "equals",
+          "source": "after",
+          "path": "player.payload.player.locationId",
+          "equals": "$fixture.baselineLocationId"
+        },
+        {
+          "type": "entityField",
+          "source": "after",
+          "collection": "players",
+          "id": "$response.create_bell_runner.payload.toolInvocations.0.metadata.npcId",
+          "path": "name",
+          "equals": "QA Bell Runner"
+        },
+        {
+          "type": "entityField",
+          "source": "after",
+          "collection": "players",
+          "id": "$response.create_bell_runner.payload.toolInvocations.0.metadata.npcId",
+          "path": "locationId",
+          "equals": "$fixture.baselineLocationId"
+        },
+        {
+          "type": "entityField",
+          "source": "after",
+          "collection": "things",
+          "id": "$response.create_brass_bell.payload.toolInvocations.0.metadata.thingId",
+          "path": "name",
+          "equals": "QA Brass Bell"
+        },
+        {
+          "type": "entityField",
+          "source": "after",
+          "collection": "things",
+          "id": "$response.create_brass_bell.payload.toolInvocations.0.metadata.thingId",
+          "path": "metadata.locationId",
+          "equals": "$fixture.baselineLocationId"
+        },
+        {
+          "type": "entityField",
+          "source": "after",
+          "collection": "things",
+          "id": "$response.create_depot_marker.payload.toolInvocations.0.metadata.thingId",
+          "path": "metadata.locationId",
+          "equals": "$response.create_depot.payload.toolInvocations.0.metadata.locationId"
+        },
+        {
+          "type": "equals",
+          "source": "after",
+          "path": "currentLocation.payload.location.randomEvents",
+          "equals": [
+            "QA Bell Runner rings QA Brass Bell exactly once; nobody and nothing moves."
+          ]
+        },
+        {
+          "type": "count",
+          "source": "responses.seed_random_pools",
+          "path": "payload.toolInvocations",
+          "equals": 2
+        },
+        {
+          "type": "equals",
+          "source": "responses.seed_random_pools",
+          "path": "payload.toolInvocations.0.metadata.objectId",
+          "equals": "$fixture.baselineLocationId"
+        },
+        {
+          "type": "equals",
+          "source": "responses.seed_random_pools",
+          "path": "payload.toolInvocations.0.metadata.updatedFields",
+          "equals": [
+            "randomEvents"
+          ]
+        },
+        {
+          "type": "equals",
+          "source": "responses.seed_random_pools",
+          "path": "payload.toolInvocations.1.metadata.objectId",
+          "equals": "$fixture.regionId"
+        },
+        {
+          "type": "equals",
+          "source": "responses.seed_random_pools",
+          "path": "payload.toolInvocations.1.metadata.updatedFields",
+          "equals": [
+            "randomEvents"
+          ]
+        },
+        {
+          "type": "equals",
+          "source": "after",
+          "path": "scheduledEvents.payload.count",
+          "equals": 2
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "after",
+          "path": "scheduledEvents.payload.scheduledEvents",
+          "where": {
+            "id": "$response.schedule_fixture_events.payload.toolInvocations.0.metadata.id",
+            "event": "QA Bell Runner rings QA Brass Bell exactly once; nobody and nothing moves.",
+            "regionId": "$fixture.regionId",
+            "locationId": "$fixture.baselineLocationId",
+            "targetWorldMinute": 665,
+            "createdAtWorldMinute": 663,
+            "status": "pending",
+            "resolutionSummary": "",
+            "playerProse": "",
+            "resolvedAtWorldMinute": null,
+            "resolvedAtWorldTime": null
+          },
+          "equals": 1
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "after",
+          "path": "scheduledEvents.payload.scheduledEvents",
+          "where": {
+            "id": "$response.schedule_fixture_events.payload.toolInvocations.1.metadata.id",
+            "event": "Change QA Depot Marker's description to exactly: The depot marker bears one fresh blue QA stripe. Do not move any character or object.",
+            "regionId": "$fixture.regionId",
+            "locationId": "$response.create_depot.payload.toolInvocations.0.metadata.locationId",
+            "targetWorldMinute": 666,
+            "createdAtWorldMinute": 663,
+            "status": "pending",
+            "resolutionSummary": "",
+            "playerProse": "",
+            "resolvedAtWorldMinute": null,
+            "resolvedAtWorldTime": null
+          },
+          "equals": 1
+        },
+        {
+          "type": "noRealtimeErrors"
+        },
+        {
+          "type": "noUnexpectedErrorLogs"
+        }
+      ]
+    },
+    {
+      "type": "save",
+      "name": "random_scheduled_fixture_save"
+    },
+    {
+      "type": "assert",
+      "assertions": [
+        {
+          "type": "httpStatus",
+          "equals": 200
+        },
+        {
+          "type": "responseOk",
+          "equals": true
+        },
+        {
+          "type": "equals",
+          "source": "responses.random_scheduled_fixture_save",
+          "path": "payload.success",
+          "equals": true
+        }
+      ]
+    }
+  ],
+  "humanReview": [
+    "Fixture setup only: confirm each @@ response acknowledges the requested mutations without narrating either future event as already happening."
+  ]
+}

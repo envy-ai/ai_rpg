@@ -165,12 +165,17 @@ test('default config prompt progress targets cover known prompt families', () =>
     assert.equal(LLMClient.resolvePromptProgressCharacterTarget('location_modify_player_action', config), 10000);
     assert.equal(LLMClient.resolvePromptProgressCharacterTarget('npc_generation_single', config), 10000);
     assert.equal(LLMClient.resolvePromptProgressCharacterTarget('player_action_tool_loop_round', config), 5000);
+    assert.equal(LLMClient.resolvePromptProgressCharacterTarget('creative_mode_action', config), 5000);
+    assert.equal(LLMClient.resolvePromptProgressCharacterTarget('creative_mode_action_tinybrain', config), 5000);
     assert.equal(LLMClient.resolvePromptProgressCharacterTarget('event_checks_tinybrain', config), 5000);
     assert.equal(LLMClient.resolvePromptProgressCharacterTarget('need_bar_event_checks', config), 5000);
     assert.equal(LLMClient.resolvePromptProgressCharacterTarget('need_bar_event_checks_tinybrain', config), 5000);
     assert.equal(LLMClient.resolvePromptProgressCharacterTarget('generic_prompt_tool_call_error', config), 5000);
     assert.equal(LLMClient.resolvePromptProgressCharacterTarget('inventory_generation_Barkeep', config), 5000);
     assert.equal(LLMClient.resolvePromptProgressCharacterTarget('scheduled_event_resolution', config), 5000);
+    assert.equal(LLMClient.resolvePromptProgressCharacterTarget('scheduled_event_resolution_tinybrain', config), 5000);
+    assert.equal(LLMClient.resolvePromptProgressCharacterTarget('scheduled_event_interruption_rewrite', config), 5000);
+    assert.equal(LLMClient.resolvePromptProgressCharacterTarget('scheduled_event_interruption_rewrite_tinybrain', config), 5000);
     assert.equal(LLMClient.resolvePromptProgressCharacterTarget('scene_illustration_prompt', config), 5000);
     assert.equal(LLMClient.resolvePromptProgressCharacterTarget('while_you_were_away', config), 5000);
     assert.equal(LLMClient.resolvePromptProgressCharacterTarget('while_you_were_away_tinybrain', config), 5000);

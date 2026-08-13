@@ -6,10 +6,9 @@ Plan a concrete opening using the current setting, location, present situation, 
 
 Draft Response: Write 2-4 short, engaging paragraphs. Ground the reader in specific sensory and situational details and end with room for player input. Output prose only.
 
-{% llm_dummy_action %}
+{% llmparse('player_action_required_prose') %}
 
 {% set tinyBrainAuditFocus = 'The opening must match current world state, avoid omniscient or meta claims, stay within 2-4 short paragraphs, and lead naturally into player agency.' %}
 {% include "_includes/tinybrain-prose-audit.njk" %}
 
-Return XML only, with no hidden or extra fields:
-<gameIntro><introProse>polished opening prose</introProse></gameIntro>
+{% llmresult('game_intro_result') %}

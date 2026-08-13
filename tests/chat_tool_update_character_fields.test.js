@@ -310,7 +310,8 @@ function makeRuntime({
     locations = null,
     regions = null,
     factions = [],
-    modExtensionRegistry = null
+    modExtensionRegistry = null,
+    onChatCompletionOptions = null
 }) {
     const locationList = locations || [makeLocation()];
     const regionList = regions || [makeRegion({ locationIds: locationList.map(location => location.id) })];
@@ -345,6 +346,7 @@ function makeRuntime({
         findRegionByLocationId: () => region,
         LLMClient: {
             async chatCompletion(options) {
+                onChatCompletionOptions?.(options);
                 const response = llmResponses.shift();
                 assert.ok(response, 'Expected a queued LLM response.');
                 options.onResponse?.(response);
@@ -406,6 +408,51 @@ test('updateObjectFields tool schema exists', () => {
     assert.equal(tool.parameters.properties.object.type, 'string');
     assert.equal(tool.parameters.properties.fields.type, 'object');
     assert.match(tool.description, /For locations, hasWeather accepts "yes", "no", "sheltered", or null/);
+});
+
+test('tool-loop validation rejects a tool call before it can mutate state', async () => {
+    const thing = makeThing({ description: 'Original description.', shortDescription: 'Original short.' });
+    const completionOptions = [];
+    const runtime = makeRuntime({
+        firstResponse: toolResponse({
+            objectType: 'thing',
+            object: thing.id,
+            fields: {
+                shortDescription: 'Unplanned short description.'
+            }
+        }, 'updateObjectFields'),
+        things: [thing],
+        onChatCompletionOptions: options => completionOptions.push({
+            tool_choice: options.tool_choice,
+            additionalPayload: options.additionalPayload
+                ? structuredClone(options.additionalPayload)
+                : undefined
+        })
+    });
+
+    const result = await runtime.runChatCompletionWithToolLoop({
+        requestOptions: { messages: [{ role: 'user', content: '@Update the thing.' }] },
+        metadataLabel: 'test_pre_execution_tool_validation',
+        validateToolCall: toolCall => {
+            assert.equal(toolCall.name, 'updateObjectFields');
+            assert.deepEqual(toolCall.argumentsObject.fields, {
+                shortDescription: 'Unplanned short description.'
+            });
+            throw new Error('The field is not in the accepted structured plan.');
+        }
+    });
+
+    assert.equal(thing.description, 'Original description.');
+    assert.equal(thing.shortDescription, 'Original short.');
+    assert.equal(result.toolInvocations.length, 1);
+    assert.equal(result.toolInvocations[0].metadata.error, true);
+    assert.match(result.toolInvocations[0].metadata.message, /accepted structured plan/i);
+    assert.deepEqual(result.toolInvocations[0].argumentsObject.fields, {
+        shortDescription: 'Unplanned short description.'
+    });
+    assert.equal(completionOptions[0].tool_choice, undefined);
+    assert.equal(completionOptions[0].additionalPayload, undefined);
+    assert.equal(completionOptions[1].tool_choice, undefined);
 });
 
 test('updateCharacterFields applies allowed scalar and map fields directly to an NPC', async () => {
@@ -612,6 +659,7 @@ test('updateObjectFields applies allowed thing, location, region, and faction fi
         assert.equal(result.toolInvocations[0].metadata.status, 'success');
         assert.equal(result.toolInvocations[0].metadata.objectType, objectType);
         assert.deepEqual(result.toolInvocations[0].metadata.updatedFields, Object.keys(fields));
+        assert.deepEqual(result.toolInvocations[0].metadata.updatedValues, fields);
     }
 });
 

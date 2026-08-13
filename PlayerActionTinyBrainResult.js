@@ -229,10 +229,25 @@ function resolvePlayerActionMovement({ assignments, templateContext, currentVehi
 
 function buildNormalTurnResult(assignments) {
     const prose = requireNonEmptyString(assignments.normalProse, 'Normal-turn prose');
-    const reasoning = requireNonEmptyString(assignments.timeReasoning, 'Normal-turn time reasoning');
-    const duration = normalizeDuration(assignments.timeDuration, 'Normal-turn duration', {
-        minimumMinutes: 1
-    });
+    const explicitDuration = assignments.explicitActionDuration
+        ? normalizeDuration(assignments.explicitActionDuration, 'Explicit normal-turn duration', {
+            minimumMinutes: 1
+        })
+        : null;
+    if (explicitDuration
+        && (assignments.timeReasoning !== undefined || assignments.timeDuration !== undefined)) {
+        throw new Error(
+            'Normal-turn time reasoning and parsed duration must be absent when an explicit action duration is authoritative.'
+        );
+    }
+    const reasoning = explicitDuration
+        ? `The player explicitly committed this action to ${explicitDuration.text}.`
+        : requireNonEmptyString(assignments.timeReasoning, 'Normal-turn time reasoning');
+    const duration = explicitDuration || normalizeDuration(
+        assignments.timeDuration,
+        'Normal-turn duration',
+        { minimumMinutes: 1 }
+    );
     const hiddenNotes = optionalTrimmedString(assignments.hiddenNotes);
     const lines = [
         '<turnResult>',
@@ -328,7 +343,10 @@ function buildMoveTurnResult({
     }
     const accompanyingCharacters = playerChangesLocation
         ? normalizePlayerActionAccompanyingCharacterSelection(
-            assignments.accompanyingCharacters,
+            assignments.accompanyingCharacters === undefined
+                && allowedAccompanyingCharacters.length === 0
+                ? []
+                : assignments.accompanyingCharacters,
             allowedAccompanyingCharacters
         )
         : [];
@@ -406,8 +424,15 @@ function buildPlayerActionTinyBrainResult({ assignments, templateContext } = {})
         currentVehicle,
         authoritativeDestination: authoritativePlayerDestination
     });
+    const vehicleIsUnderway = currentVehicle?.vehicleInfo?.isUnderway === true
+        || currentVehicle?.isUnderway === true;
     const vehicleDecision = currentVehicle
-        ? assignments.vehicleDecision
+        ? (assignments.vehicleDecision ?? (
+            movement === PLAYER_ACTION_MOVEMENT.INSIDE_VEHICLE
+            || (movement === PLAYER_ACTION_MOVEMENT.DISEMBARK && !vehicleIsUnderway)
+                ? PLAYER_ACTION_VEHICLE_DECISION.UNCHANGED
+                : undefined
+        ))
         : PLAYER_ACTION_VEHICLE_DECISION.UNCHANGED;
     validateMovementAndVehicle({ movement, vehicleDecision, currentVehicle });
 

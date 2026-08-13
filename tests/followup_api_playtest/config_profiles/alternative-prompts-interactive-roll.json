@@ -1,0 +1,9 @@
+{
+  "version": 1,
+  "name": "alternative-prompts-interactive-roll",
+  "description": "ALT-7-owned profile for an ordinary player-action skill check with WebSocket-supplied rolls while unrelated event, NPC, and image work remains isolated.",
+  "extends": "alternative-prompts-mechanics",
+  "values": {
+    "plausibility_checks.enabled": true
+  }
+}

@@ -1,0 +1,261 @@
+{
+  "version": 1,
+  "scenario": "relationships-factions",
+  "case": "REL-4-faction-reputation-witnessed",
+  "description": "From a fresh copy of the immutable relationship fixture, isolate the unrelated Cinder witness, establish Lantern's case-local prior guild assignment in the disposable runtime, and complete one meaningful verbal route-safety report with an authorized Lantern Guild witness present.",
+  "fixture": "relationships-factions",
+  "configProfile": "faction-reputation-mechanics",
+  "trackedPaths": [
+    "player.payload.player.locationId",
+    "players.payload.players",
+    "factions.payload.factions",
+    "factions.payload.playerStandings",
+    "locations.payload.locations",
+    "things.payload.things",
+    "scheduledEvents.payload.scheduledEvents",
+    "calendar.payload.worldTime",
+    "history.payload.history"
+  ],
+  "steps": [
+    {
+      "type": "loadFixture"
+    },
+    {
+      "type": "request",
+      "name": "isolate_cinder_runtime_copy",
+      "method": "POST",
+      "route": "/api/npcs/$fixture.cinderWitnessId/teleport",
+      "body": {
+        "locationId": "$fixture.privateLocationId",
+        "accountTravelTime": false,
+        "storyToolTeleport": true
+      }
+    },
+    {
+      "type": "request",
+      "name": "prepare_lantern_assignment",
+      "method": "PUT",
+      "route": "/api/npcs/$fixture.lanternWitnessId",
+      "body": {
+        "aiNotes": "REL-4 disposable runtime setup only: Before this turn, QA Lantern Witness, acting in her official Lantern Guild capacity, asked Baato to survey the exposed route beyond March Start Marker. She independently decided that a complete and accurate verbal report identifying the fresh washout and safest usable detour would complete a meaningful Lantern Guild safety task. She has her own readings with which to verify the report, remains present for the briefing, and will acknowledge and record completion if it matches. Choose her words and reactions naturally; Baato does not control her response."
+      }
+    },
+    {
+      "type": "request",
+      "name": "prepare_lantern_goals",
+      "method": "PUT",
+      "route": "/api/npcs/$fixture.lanternWitnessId/goals",
+      "body": {
+        "goals": [
+          "Verify Baato's completed route-safety survey against independent readings.",
+          "Record meaningful service completed for the Lantern Guild.",
+          "Warn travelers away from the fresh washout.",
+          "Remain at March Start Marker during the briefing."
+        ]
+      }
+    },
+    {
+      "type": "request",
+      "name": "lantern_initial",
+      "method": "GET",
+      "route": "/api/npcs/$fixture.lanternWitnessId"
+    },
+    {
+      "type": "request",
+      "name": "cinder_initial",
+      "method": "GET",
+      "route": "/api/npcs/$fixture.cinderWitnessId"
+    },
+    {
+      "type": "request",
+      "name": "contact_initial",
+      "method": "GET",
+      "route": "/api/npcs/$fixture.privateContactId"
+    },
+    {
+      "type": "snapshot",
+      "name": "before_service"
+    },
+    {
+      "type": "chat",
+      "name": "deliver_guild_safety_report",
+      "text": "I give QA Lantern Witness the complete, accurate verbal report from the route survey she assigned before this turn. I identify the fresh washout beyond March Start Marker, describe the safe detour around its stable side, and answer her verification questions from my observations. I leave her free to compare it with her own readings and decide how to respond. The briefing takes exactly five minutes; I stay at March Start Marker, exchange no physical items, and change nothing in the scene.",
+      "travel": false,
+      "interactive": {
+        "roll": null,
+        "questAccepted": false,
+        "confirmed": false
+      }
+    },
+    {
+      "type": "assert",
+      "assertions": [
+        {
+          "type": "httpStatus",
+          "equals": 200
+        },
+        {
+          "type": "responseOk",
+          "equals": true
+        },
+        {
+          "type": "exists",
+          "source": "responses.deliver_guild_safety_report",
+          "path": "payload.response"
+        }
+      ]
+    },
+    {
+      "type": "request",
+      "name": "lantern_after",
+      "method": "GET",
+      "route": "/api/npcs/$fixture.lanternWitnessId"
+    },
+    {
+      "type": "request",
+      "name": "cinder_after",
+      "method": "GET",
+      "route": "/api/npcs/$fixture.cinderWitnessId"
+    },
+    {
+      "type": "request",
+      "name": "contact_after",
+      "method": "GET",
+      "route": "/api/npcs/$fixture.privateContactId"
+    },
+    {
+      "type": "assert",
+      "assertions": [
+        {
+          "type": "factionReputationChangesMatchState",
+          "factionId": "$fixture.lanternFactionId",
+          "direction": "increase",
+          "onlyFaction": true,
+          "beforeSource": "snapshots.before_service",
+          "afterSource": "after"
+        },
+        {
+          "type": "equals",
+          "source": "responses.lantern_after",
+          "path": "payload.npc.relationships",
+          "equalsFrom": {
+            "source": "responses.lantern_initial",
+            "path": "payload.npc.relationships"
+          }
+        },
+        {
+          "type": "equals",
+          "source": "responses.lantern_after",
+          "path": "payload.npc.dispositions",
+          "equalsFrom": {
+            "source": "responses.lantern_initial",
+            "path": "payload.npc.dispositions"
+          }
+        },
+        {
+          "type": "equals",
+          "source": "responses.cinder_after",
+          "path": "payload.npc.relationships",
+          "equalsFrom": {
+            "source": "responses.cinder_initial",
+            "path": "payload.npc.relationships"
+          }
+        },
+        {
+          "type": "equals",
+          "source": "responses.cinder_after",
+          "path": "payload.npc.dispositions",
+          "equalsFrom": {
+            "source": "responses.cinder_initial",
+            "path": "payload.npc.dispositions"
+          }
+        },
+        {
+          "type": "equals",
+          "source": "responses.contact_after",
+          "path": "payload.npc.relationships",
+          "equalsFrom": {
+            "source": "responses.contact_initial",
+            "path": "payload.npc.relationships"
+          }
+        },
+        {
+          "type": "equals",
+          "source": "responses.contact_after",
+          "path": "payload.npc.dispositions",
+          "equalsFrom": {
+            "source": "responses.contact_initial",
+            "path": "payload.npc.dispositions"
+          }
+        },
+        {
+          "type": "equals",
+          "source": "after",
+          "path": "player.payload.player.locationId",
+          "equals": "$fixture.baselineLocationId"
+        },
+        {
+          "type": "entityField",
+          "source": "after",
+          "collection": "players",
+          "id": "$fixture.lanternWitnessId",
+          "path": "locationId",
+          "equals": "$fixture.baselineLocationId"
+        },
+        {
+          "type": "entityField",
+          "source": "after",
+          "collection": "players",
+          "id": "$fixture.cinderWitnessId",
+          "path": "locationId",
+          "equals": "$fixture.privateLocationId"
+        },
+        {
+          "type": "entityField",
+          "source": "after",
+          "collection": "players",
+          "id": "$fixture.privateContactId",
+          "path": "locationId",
+          "equals": "$fixture.privateLocationId"
+        },
+        {
+          "type": "stateUnchanged",
+          "beforeSource": "snapshots.before_service",
+          "afterSource": "after",
+          "paths": [
+            "factions.payload.factions",
+            "locations.payload.locations",
+            "things.payload.things",
+            "scheduledEvents.payload.scheduledEvents"
+          ]
+        },
+        {
+          "type": "historyAddedTypeCount",
+          "entryType": "player-action",
+          "equals": 1,
+          "beforeSource": "snapshots.before_service",
+          "afterSource": "after"
+        },
+        {
+          "type": "historyAddedTypeCount",
+          "entryType": "relationship-updates",
+          "equals": 0,
+          "beforeSource": "snapshots.before_service",
+          "afterSource": "after"
+        },
+        {
+          "type": "noRealtimeErrors"
+        },
+        {
+          "type": "noUnexpectedErrorLogs",
+          "allowRecoveredProviderRetries": true
+        }
+      ]
+    }
+  ],
+  "humanReview": [
+    "Confirm the prose flows naturally: Lantern evaluates the already-established report on her own authority, the completed guild service is clear, and Baato does not control her thoughts or dialogue.",
+    "Confirm the generated prose, applied positive Lantern Guild standing, and visible structured reputation summary describe the same service without inventing an item exchange, scene change, travel, or unrelated faction consequence.",
+    "Record merely imperfect prose with its lead-up in tmp/prose_issues_log.md instead of adding a case-specific prompt restriction."
+  ]
+}

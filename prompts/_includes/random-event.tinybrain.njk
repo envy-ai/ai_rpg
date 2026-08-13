@@ -10,17 +10,17 @@ Plan the event itself, which present characters can perceive it, and whether it 
 
 {% llmparse('narrative_scope') as randomEventScope %}
 
-Draft Response: Narrate the event itself rather than only reactions. Keep reactions in character and avoid making everyone check in. Output prose only.
+Draft Response: Narrate the event itself rather than only reactions. Use your judgment when adapting the seed to the current scene. Keep optional reactions in character and avoid making everyone check in. Output prose only.
 
-{% llm_dummy_action %}
+{% llmparse('player_action_required_prose') %}
 
-{% set tinyBrainAuditFocus = 'The seed event must visibly happen, reactions must respect character knowledge, and any travel split must preserve origin/destination continuity.' %}
+{% set tinyBrainAuditFocus = 'The seed event must remain recognizable, reactions must respect character knowledge, and any travel split must preserve origin/destination continuity.' %}
 {% include "_includes/tinybrain-prose-audit.njk" %}
 
-Return XML only.
 {% if randomEventScope.travel %}
+Return XML only.
 Use the exact movement schema below and place prose in the appropriate originProse, betweenProse, and destinationProse fields:
 {% include "_includes/travel-prose.njk" %}
 {% else %}
-Use exactly <turnResult><prose>polished prose</prose></turnResult>.
+{% llmresult('turn_result_from_approved_prose') %}
 {% endif %}

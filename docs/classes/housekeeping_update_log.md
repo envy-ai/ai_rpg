@@ -25,6 +25,8 @@ Formatted rows use the tracker name and value when available:
 
 The formatter consumes `setRelationship` invocation metadata. The tool records previous labels and reports `added`, `updated`, or `deleted` for the direct edge and for the reciprocal edge when supplied.
 
+`tests/rel7.housekeeping_relationship_lifecycle.test.js` covers the full deterministic REL-7 chain with a case-owned setup: parsed housekeeping XML adds, updates, and removes the same directed edge through the real batch relationship tool, the formatter emits all three visible actions, and the resulting `relationship-updates` entry is rejected by both ordinary and all-entry base-context history filters.
+
 Formatted rows use directed character names:
 
 ```text

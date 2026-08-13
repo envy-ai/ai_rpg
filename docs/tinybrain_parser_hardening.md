@@ -28,7 +28,7 @@ Presentation-only instructions should remain advisory or be normalized when thei
 
 9. **SKIP — prose-to-fact verification.** Do not add parser enforcement that attempts to prove quest-reward, crafting, location-modification, NPC-action, or game-intro prose contains every authoritative fact. Coverage/audit checkpoints and normal prompt review remain responsible for prose fidelity; brittle substring or heuristic prose validation would create false failures.
 
-10. **Scheduled-event tool-plan reconciliation.** The final parser preserves the approved summary and player-presence rules, but it does not prove that all planned state changes were implemented exactly once or that the hidden summary matches tool outcomes. Introduce a structured plan checkpoint and compare it with successful tool invocations inside the retryable final parser. Legitimate events requiring no mutation must remain valid.
+10. **IMPLEMENTED — scheduled-event tool-plan reconciliation.** The structured plan parser validates supported mutation targets and calls, collapses identical duplicates, rejects conflicting updates, and the execution parser proves that every accepted planned call completed successfully. Legitimate no-mutation events remain valid. Planning may use read-only lookups before committing the mutation plan, and the tool loop terminates locally once the accepted obligations are complete. Hidden-summary fidelity remains model/audit judgment rather than heuristic prose validation.
 
 ## Operational retry feedback
 

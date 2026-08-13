@@ -39,13 +39,13 @@
     </attributeBonus>
 </attributeBonuses>
 <causeStatusEffectOnTarget>
-    <!-- optional; only for uncommon or rarer items; never for scenery or items that cannot be equipped or consumed -->
+    <!-- optional; only for uncommon or rarer items; never for scenery or items that cannot be equipped or consumed. Leave this block empty when there is no target status effect; do not write N/A or another placeholder. -->
     <name><!--Name of the status effect (e.g., "Poisoned", "Blessed", etc.)--></name>
     <description><!--1-2 sentence description of the status effect--></description>
     <duration><!-- Duration for status effect timing. Use HH:MM, integer minutes, or explicit units like "2 hours", "45 minutes", "1 day, 2 hours". Use "1 minute" for instant effects and "permanent" only when truly indefinite. N/A if equippable. --></duration>
 </causeStatusEffectOnTarget>
 <causeStatusEffectOnEquipper>
-    <!-- optional; only for uncommon or rarer items; never for scenery or items that cannot be equipped -->
+    <!-- optional; only for uncommon or rarer items; never for scenery or items that cannot be equipped. Leave this block empty when there is no equipper status effect; do not write N/A or another placeholder. -->
     <name><!--Name of the status effect (e.g., "Poisoned", "Blessed", etc.)--></name>
     <description><!--1-2 sentence description of the status effect--></description>
 </causeStatusEffectOnEquipper>

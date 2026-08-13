@@ -4,6 +4,7 @@ const fs = require('fs');
 const vm = require('vm');
 const { DOMParser } = require('@xmldom/xmldom');
 const ProjectUtils = require('../Utils.js');
+const { buildWhileYouWereAwayResult } = require('../TinyBrainResultBuilders.js');
 
 function normalizemoveTurnResultDestinationField(value) {
     if (typeof value !== 'string') {
@@ -354,6 +355,7 @@ function loadWhileYouWereAwayHelpers({
         },
         appendEventSummariesToChat,
         applySlopRemoval,
+        buildWhileYouWereAwayResult,
         isTinyBrainPromptEnabled: () => useTinyBrainWhileAway,
         configureTinyBrainPromptContext: () => ({
             renderState: { completedCheckpoints: {} }

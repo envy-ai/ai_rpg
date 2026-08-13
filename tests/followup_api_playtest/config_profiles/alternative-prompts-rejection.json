@@ -1,0 +1,9 @@
+{
+  "version": 1,
+  "name": "alternative-prompts-rejection",
+  "description": "ALT-8-owned profile that enables plausibility rejection while preserving the otherwise isolated alternative-prompt test configuration.",
+  "extends": "alternative-prompts-mechanics",
+  "values": {
+    "plausibility_checks.enabled": true
+  }
+}

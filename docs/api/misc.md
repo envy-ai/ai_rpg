@@ -43,6 +43,17 @@ Response:
 - 200: `{ success: true, recording }`.
 - 409: `{ success: false, error, replay, recording }` when recording is not configured or cannot safely be completed.
 
+## POST /api/llm-completion-cassette/reset-incomplete-recording
+
+Atomically resets the configured version 2 recording destination to a fresh empty incomplete document. Optional body: `{ description?: string }`. This is a test-harness lifecycle operation for recovering after a failed live-record scenario in the same server process.
+
+The operation requires an idle cassette serialization queue and refuses completed recordings. Callers that need the partial trace must archive the incomplete document before resetting it; the follow-up scenario runner does this automatically in the failed attempt's artifact directory.
+
+Response:
+
+- 200: `{ success: true, recording, discardedTotal }`.
+- 409: `{ success: false, error, replay, recording }` when no recording is configured, cassette work is active/queued, the document is invalid, or the recording is complete.
+
 ## POST /api/test-config
 Test an AI backend configuration without saving it.
 

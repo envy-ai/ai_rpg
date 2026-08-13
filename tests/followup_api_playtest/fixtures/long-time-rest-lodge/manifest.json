@@ -1,0 +1,247 @@
+{
+  "version": 1,
+  "name": "long-time-rest-lodge",
+  "description": "Long-duration mechanics baseline with a visited twelve-minute lodge route, an exact normalized lodge keeper, and one player-owned ten-minute vigor tonic.",
+  "createdAt": "2026-08-11T15:58:52.438Z",
+  "source": {
+    "setupCommand": "@@ QA FIXTURE SETUP ONLY. Create living non-hostile QA Lodge Keeper at QA Long Rest Lodge and create portable QA Short Tonic at March Start Marker; normalize the keeper profile and the tonic's exact ten-minute QA Brief Vigor effect through authoritative APIs.",
+    "saveName": "2026-08-11T15-56-50-299Z_Monster_Girl_Life_2026-06b-Baato-March_Start_Marker-char_2-msoufe2j",
+    "saveType": "saves",
+    "settingName": "Monster Girl Life 2026-06b",
+    "playerName": "Baato"
+  },
+  "configProfile": "long-time-mechanics",
+  "requiredMods": [
+    "implants",
+    "modules",
+    "nsfw-boost",
+    "party-needs",
+    "scene-illustration"
+  ],
+  "worldTime": 663,
+  "entities": {
+    "playerId": "char_2",
+    "playerName": "Baato",
+    "baselineLocationId": "loc_39",
+    "baselineLocationName": "March Start Marker",
+    "isolationLocationId": "loc_30",
+    "isolationLocationName": "Stairwell",
+    "regionId": "region_1786438821952_m5baxvz2",
+    "regionName": "QA Frost March",
+    "lodgeLocationId": "loc_45",
+    "lodgeName": "QA Long Rest Lodge",
+    "baselineToLodgeExitId": "exit_85",
+    "lodgeToBaselineExitId": "exit_86",
+    "lodgeTravelMinutes": 12,
+    "lodgeKeeperId": "char_43",
+    "lodgeKeeperName": "QA Lodge Keeper",
+    "lodgeResidentIds": [
+      "char_41",
+      "char_42"
+    ],
+    "lodgeResidentNames": [
+      "Ruri",
+      "Mio"
+    ],
+    "tonicId": "thing_325",
+    "tonicName": "QA Short Tonic",
+    "tonicEffectName": "QA Brief Vigor",
+    "tonicDurationMinutes": 10,
+    "tonicEffectAttribute": "luck",
+    "tonicEffectAttributeModifier": 1,
+    "companionId": "char_40",
+    "companionName": "QA Tired Companion",
+    "nonPartyNpcId": "char_37",
+    "nonPartyNpcName": "QA Courier",
+    "nonPartyNpcAlias": "Quickstep",
+    "startingNeeds": {
+      "food": 600,
+      "rest": 401,
+      "stamina": 600,
+      "mana": 600
+    }
+  },
+  "invariants": [
+    {
+      "type": "equals",
+      "source": "after",
+      "path": "player.payload.player.locationId",
+      "equals": "loc_39"
+    },
+    {
+      "type": "equals",
+      "source": "after",
+      "path": "calendar.payload.worldTime.timeMinutes",
+      "equals": 663
+    },
+    {
+      "type": "entityField",
+      "source": "after",
+      "collection": "locations",
+      "id": "loc_45",
+      "path": "name",
+      "equals": "QA Long Rest Lodge"
+    },
+    {
+      "type": "entityField",
+      "source": "after",
+      "collection": "locations",
+      "id": "loc_45",
+      "path": "visited",
+      "equals": true
+    },
+    {
+      "type": "entityField",
+      "source": "after",
+      "collection": "locations",
+      "id": "loc_45",
+      "path": "isStub",
+      "equals": false
+    },
+    {
+      "type": "equals",
+      "source": "after",
+      "path": "currentLocation.payload.location.exits.qa_long_rest_lodge.id",
+      "equals": "exit_85"
+    },
+    {
+      "type": "equals",
+      "source": "after",
+      "path": "currentLocation.payload.location.exits.qa_long_rest_lodge.destination",
+      "equals": "loc_45"
+    },
+    {
+      "type": "equals",
+      "source": "after",
+      "path": "currentLocation.payload.location.exits.qa_long_rest_lodge.travelTimeMinutes",
+      "equals": 12
+    },
+    {
+      "type": "entityField",
+      "source": "after",
+      "collection": "players",
+      "id": "char_43",
+      "path": "name",
+      "equals": "QA Lodge Keeper"
+    },
+    {
+      "type": "entityField",
+      "source": "after",
+      "collection": "players",
+      "id": "char_43",
+      "path": "locationId",
+      "equals": "loc_45"
+    },
+    {
+      "type": "entityField",
+      "source": "after",
+      "collection": "players",
+      "id": "char_43",
+      "path": "class",
+      "equals": "Innkeeper"
+    },
+    {
+      "type": "entityField",
+      "source": "after",
+      "collection": "players",
+      "id": "char_43",
+      "path": "aiNotes",
+      "equals": "Deterministic long-time lodge fixture NPC. Remain at QA Long Rest Lodge unless a test explicitly moves this character."
+    },
+    {
+      "type": "entityField",
+      "source": "after",
+      "collection": "players",
+      "id": "char_43",
+      "path": "isDead",
+      "equals": false
+    },
+    {
+      "type": "entityField",
+      "source": "after",
+      "collection": "players",
+      "id": "char_41",
+      "path": "locationId",
+      "equals": "loc_45"
+    },
+    {
+      "type": "entityField",
+      "source": "after",
+      "collection": "players",
+      "id": "char_42",
+      "path": "locationId",
+      "equals": "loc_45"
+    },
+    {
+      "type": "entityField",
+      "source": "after",
+      "collection": "things",
+      "id": "thing_325",
+      "path": "name",
+      "equals": "QA Short Tonic"
+    },
+    {
+      "type": "entityField",
+      "source": "after",
+      "collection": "things",
+      "id": "thing_325",
+      "path": "metadata.ownerId",
+      "equals": "char_2"
+    },
+    {
+      "type": "entityField",
+      "source": "after",
+      "collection": "things",
+      "id": "thing_325",
+      "path": "causeStatusEffectOnTarget.name",
+      "equals": "QA Brief Vigor"
+    },
+    {
+      "type": "entityField",
+      "source": "after",
+      "collection": "things",
+      "id": "thing_325",
+      "path": "causeStatusEffectOnTarget.duration",
+      "equals": 10
+    },
+    {
+      "type": "entityArrayObjectCount",
+      "source": "after",
+      "collection": "things",
+      "id": "thing_325",
+      "path": "causeStatusEffectOnTarget.attributes",
+      "where": {
+        "attribute": "luck",
+        "modifier": 1
+      },
+      "equals": 1
+    },
+    {
+      "type": "arrayObjectCount",
+      "source": "after",
+      "path": "player.payload.player.inventory",
+      "where": {
+        "id": "thing_325",
+        "name": "QA Short Tonic",
+        "count": 1
+      },
+      "equals": 1
+    },
+    {
+      "type": "equals",
+      "source": "after",
+      "path": "scheduledEvents.payload.count",
+      "equals": 0
+    }
+  ],
+  "validation": {
+    "passed": true,
+    "scenario": "TIME-fixture-rest-lodge",
+    "mode": "live-verify",
+    "artifactDirectory": "tmp/followup-api-playtest/long-time-setup/TIME-fixture-rest-lodge/attempt-3",
+    "assertionsPassed": 53,
+    "assertionsFailed": 0,
+    "notes": "The live setup created both required entities through @@, normalized their exact deterministic mechanics through authoritative APIs, verified the visited twelve-minute lodge route and zero scheduled events, and emitted no realtime or changed error logs."
+  },
+  "integrity": "sha256:4b5a1bde3cccefc301da47fcccef21b19f3b9de7fe738f16c3fed9b0f25a93cc"
+}

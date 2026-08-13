@@ -70,14 +70,16 @@ test('attack-check parser accepts one mechanically complete attack', () => {
     assert.equal(result.attacks[0].damageEffectiveness, 3);
 });
 
-test('attack-check parser rejects multiple attack blocks instead of borrowing one result', () => {
+test('attack-check parser accepts multiple mechanically complete attack blocks', () => {
     const parse = loadAttackCheckParser();
+    const result = parse(`${validAttack()}\n${validAttack({ defender: 'QA Frost Beetle' })}`, {
+        expectedAttackerNames: ['QA Shieldhand']
+    });
 
-    assert.throws(
-        () => parse(`${validAttack()}\n${validAttack({ defender: 'QA Frost Beetle' })}`, {
-            expectedAttackerNames: ['QA Shieldhand']
-        }),
-        /exactly one <attack> block; received 2/
+    assert.equal(result.attacks.length, 2);
+    assert.deepEqual(
+        Array.from(result.attacks, attack => attack.defender),
+        ['QA Ash Beetle', 'QA Frost Beetle']
     );
 });
 
@@ -159,8 +161,8 @@ function loadRunAttackCheckPrompt({ responses, retryAttempts = 2 }) {
 }
 
 test('TinyBrain NPC attack check retries parser failures with corrective context', async () => {
-    const multiple = `${validAttack()}\n${validAttack({ defender: 'QA Frost Beetle' })}`;
-    const runtime = loadRunAttackCheckPrompt({ responses: [multiple, validAttack()] });
+    const wrongAttacker = validAttack({ attacker: 'QA Ash Beetle' });
+    const runtime = loadRunAttackCheckPrompt({ responses: [wrongAttacker, validAttack()] });
 
     const result = await runtime.runAttackCheckPrompt({
         actionText: 'QA Shieldhand attacks the beetles.',
@@ -178,8 +180,8 @@ test('TinyBrain NPC attack check retries parser failures with corrective context
 });
 
 test('TinyBrain NPC attack check fails explicitly after parser retries are exhausted', async () => {
-    const multiple = `${validAttack()}\n${validAttack({ defender: 'QA Frost Beetle' })}`;
-    const runtime = loadRunAttackCheckPrompt({ responses: [multiple], retryAttempts: 1 });
+    const wrongAttacker = validAttack({ attacker: 'QA Ash Beetle' });
+    const runtime = loadRunAttackCheckPrompt({ responses: [wrongAttacker], retryAttempts: 1 });
 
     await assert.rejects(
         runtime.runAttackCheckPrompt({

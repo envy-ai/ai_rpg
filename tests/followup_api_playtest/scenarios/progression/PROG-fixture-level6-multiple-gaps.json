@@ -1,0 +1,336 @@
+{
+  "version": 1,
+  "scenario": "progression-setup",
+  "case": "PROG-fixture-level6-multiple-gaps",
+  "description": "Create a PROG-7-owned level-6/multiple-gap starting point by loading a disposable copy of the immutable cached-level-4 fixture and applying two ordinary level-ups without generating new cards or changing the source fixture.",
+  "fixture": "progression-level4-options",
+  "configProfile": "progression-mechanics",
+  "trackedPaths": [
+    "player.payload.player",
+    "players.payload.players",
+    "locations.payload.locations",
+    "things.payload.things",
+    "factions.payload.factions",
+    "factions.payload.playerStandings",
+    "scheduledEvents.payload.scheduledEvents",
+    "calendar.payload.worldTime",
+    "history.payload.history"
+  ],
+  "steps": [
+    {
+      "type": "loadFixture"
+    },
+    {
+      "type": "request",
+      "name": "initial_pending",
+      "method": "GET",
+      "route": "/api/player/ability-selection?generateOptions=false"
+    },
+    {
+      "type": "snapshot",
+      "name": "before_setup"
+    },
+    {
+      "type": "request",
+      "name": "level_to_five",
+      "method": "POST",
+      "route": "/api/player/levelup",
+      "body": {}
+    },
+    {
+      "type": "request",
+      "name": "level_to_six",
+      "method": "POST",
+      "route": "/api/player/levelup",
+      "body": {}
+    },
+    {
+      "type": "request",
+      "name": "pending_state",
+      "method": "GET",
+      "route": "/api/player/ability-selection?generateOptions=false"
+    },
+    {
+      "type": "assert",
+      "assertions": [
+        {
+          "type": "equals",
+          "source": "responses.initial_pending",
+          "path": "status",
+          "equals": 200
+        },
+        {
+          "type": "equals",
+          "source": "responses.initial_pending",
+          "path": "payload.abilitySelection.levelsMissing",
+          "equals": [
+            4
+          ]
+        },
+        {
+          "type": "equals",
+          "source": "responses.initial_pending",
+          "path": "payload.abilitySelection.selection.optionsReady",
+          "equals": true
+        },
+        {
+          "type": "count",
+          "source": "responses.initial_pending",
+          "path": "payload.abilitySelection.selection.options",
+          "equals": 6
+        },
+        {
+          "type": "equals",
+          "source": "responses.level_to_five",
+          "path": "status",
+          "equals": 200
+        },
+        {
+          "type": "equals",
+          "source": "responses.level_to_five",
+          "path": "payload.player.level",
+          "equals": 5
+        },
+        {
+          "type": "equals",
+          "source": "responses.level_to_five",
+          "path": "payload.player.health",
+          "equalsFrom": {
+            "source": "responses.level_to_five",
+            "path": "payload.player.maxHealth"
+          }
+        },
+        {
+          "type": "equals",
+          "source": "responses.level_to_five",
+          "path": "payload.pendingAbilitySelection.levelsMissing",
+          "equals": [
+            4,
+            5
+          ]
+        },
+        {
+          "type": "equals",
+          "source": "responses.level_to_five",
+          "path": "payload.pendingAbilitySelection.selection.level",
+          "equals": 4
+        },
+        {
+          "type": "equals",
+          "source": "responses.level_to_five",
+          "path": "payload.pendingAbilitySelection.selection.options",
+          "equalsFrom": {
+            "source": "responses.initial_pending",
+            "path": "payload.abilitySelection.selection.options"
+          }
+        },
+        {
+          "type": "equals",
+          "source": "responses.level_to_six",
+          "path": "status",
+          "equals": 200
+        },
+        {
+          "type": "equals",
+          "source": "responses.level_to_six",
+          "path": "payload.player.level",
+          "equals": 6
+        },
+        {
+          "type": "equals",
+          "source": "responses.level_to_six",
+          "path": "payload.player.health",
+          "equalsFrom": {
+            "source": "responses.level_to_six",
+            "path": "payload.player.maxHealth"
+          }
+        },
+        {
+          "type": "equals",
+          "source": "responses.level_to_six",
+          "path": "payload.pendingAbilitySelection.levelsMissing",
+          "equals": [
+            4,
+            5,
+            6
+          ]
+        },
+        {
+          "type": "equals",
+          "source": "responses.level_to_six",
+          "path": "payload.pendingAbilitySelection.selection.level",
+          "equals": 4
+        },
+        {
+          "type": "equals",
+          "source": "responses.level_to_six",
+          "path": "payload.pendingAbilitySelection.selection.options",
+          "equalsFrom": {
+            "source": "responses.initial_pending",
+            "path": "payload.abilitySelection.selection.options"
+          }
+        },
+        {
+          "type": "equals",
+          "source": "responses.pending_state",
+          "path": "status",
+          "equals": 200
+        },
+        {
+          "type": "equals",
+          "source": "responses.pending_state",
+          "path": "payload.pending",
+          "equals": true
+        },
+        {
+          "type": "equals",
+          "source": "responses.pending_state",
+          "path": "payload.abilitySelection.currentLevel",
+          "equals": 6
+        },
+        {
+          "type": "equals",
+          "source": "responses.pending_state",
+          "path": "payload.abilitySelection.levelsMissing",
+          "equals": [
+            4,
+            5,
+            6
+          ]
+        },
+        {
+          "type": "equals",
+          "source": "responses.pending_state",
+          "path": "payload.abilitySelection.selection.level",
+          "equals": 4
+        },
+        {
+          "type": "equals",
+          "source": "responses.pending_state",
+          "path": "payload.abilitySelection.selection.options",
+          "equalsFrom": {
+            "source": "responses.initial_pending",
+            "path": "payload.abilitySelection.selection.options"
+          }
+        },
+        {
+          "type": "count",
+          "source": "responses.pending_state",
+          "path": "payload.player.abilities",
+          "equals": 9
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "responses.pending_state",
+          "path": "payload.player.abilities",
+          "where": {
+            "level": 1
+          },
+          "equals": 3
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "responses.pending_state",
+          "path": "payload.player.abilities",
+          "where": {
+            "level": 2
+          },
+          "equals": 3
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "responses.pending_state",
+          "path": "payload.player.abilities",
+          "where": {
+            "level": 3
+          },
+          "equals": 3
+        },
+        {
+          "type": "historyAddedSequence",
+          "entryTypes": [
+            "level-up",
+            "level-up"
+          ],
+          "expected": [
+            {
+              "type": "level-up",
+              "metadata": {
+                "excludeFromBaseContextHistory": true,
+                "levelUp": {
+                  "characterId": "$fixture.playerId",
+                  "previousLevel": 4,
+                  "newLevel": 5
+                }
+              }
+            },
+            {
+              "type": "level-up",
+              "metadata": {
+                "excludeFromBaseContextHistory": true,
+                "levelUp": {
+                  "characterId": "$fixture.playerId",
+                  "previousLevel": 5,
+                  "newLevel": 6
+                }
+              }
+            }
+          ],
+          "beforeSource": "snapshots.before_setup",
+          "afterSource": "after"
+        },
+        {
+          "type": "stateUnchanged",
+          "beforeSource": "snapshots.before_setup",
+          "afterSource": "after",
+          "paths": [
+            "player.payload.player.locationId",
+            "player.payload.player.experience",
+            "player.payload.player.inventory",
+            "player.payload.player.currency",
+            "player.payload.player.attributes",
+            "player.payload.player.skills",
+            "player.payload.player.statusEffects",
+            "player.payload.player.abilities",
+            "locations.payload.locations",
+            "things.payload.things",
+            "factions.payload.factions",
+            "factions.payload.playerStandings",
+            "scheduledEvents.payload.scheduledEvents",
+            "calendar.payload.worldTime"
+          ]
+        },
+        {
+          "type": "noRealtimeErrors"
+        },
+        {
+          "type": "noUnexpectedErrorLogs"
+        }
+      ]
+    },
+    {
+      "type": "save",
+      "name": "fixture_save"
+    },
+    {
+      "type": "assert",
+      "assertions": [
+        {
+          "type": "equals",
+          "source": "responses.fixture_save",
+          "path": "status",
+          "equals": 200
+        },
+        {
+          "type": "equals",
+          "source": "responses.fixture_save",
+          "path": "payload.success",
+          "equals": true
+        }
+      ]
+    }
+  ],
+  "humanReview": [
+    "This is a state-only derivative-fixture setup. Confirm the original cached level-4 fixture remains integrity-valid and no prompt ran while the disposable copy advanced from level 4 to level 6."
+  ]
+}

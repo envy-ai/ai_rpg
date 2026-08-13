@@ -212,6 +212,48 @@ test('version 2 replay rejects a changed prompt before transport and does not co
     });
 });
 
+test('LLMClient resets an idle incomplete recording before a new attempt without retaining old entries', { concurrency: false }, async () => {
+    await withCassetteGlobals(async ({ cassettePath }) => {
+        let responseText = 'First failed-attempt response.';
+        axios.post = async (_endpoint, payload) => normalResponse(payload, responseText);
+        process.env.LLM_RECORD_OUTPUTS_FILE = cassettePath;
+        const requestOptions = {
+            messages: [{ role: 'user', content: 'Record one logical completion.' }],
+            metadataLabel: 'player_action',
+            validateXML: false,
+            output: 'silent',
+            retryAttempts: 0
+        };
+
+        await LLMClient.chatCompletion(requestOptions);
+        assert.equal(LLMClient.getCompletionCassetteStatus().recording.total, 1);
+        const reset = LLMClient.resetIncompleteCompletionCassetteRecording({
+            description: 'Fresh retry.'
+        });
+        assert.equal(reset.discardedTotal, 1);
+        assert.equal(reset.total, 0);
+        const resetDocument = JSON.parse(fs.readFileSync(cassettePath, 'utf8'));
+        assert.equal(resetDocument.complete, false);
+        assert.equal(resetDocument.description, 'Fresh retry.');
+        assert.deepEqual(resetDocument.entries, []);
+
+        responseText = 'Second successful-attempt response.';
+        await LLMClient.chatCompletion(requestOptions);
+        const completed = LLMClient.completeCompletionCassetteRecording();
+        assert.equal(completed.total, 1);
+        const completedDocument = JSON.parse(fs.readFileSync(cassettePath, 'utf8'));
+        assert.equal(completedDocument.entries.length, 1);
+        assert.equal(
+            completedDocument.entries[0].response.choices[0].message.content,
+            'Second successful-attempt response.'
+        );
+        assert.throws(
+            () => LLMClient.resetIncompleteCompletionCassetteRecording(),
+            /Cannot reset a completed completion cassette/
+        );
+    }, 'completion-cassette-reset-');
+});
+
 test('version 2 cassette preserves ordered repeated labels and response-shaped tool calls', { concurrency: false }, async () => {
     await withCassetteGlobals(async ({ cassettePath }) => {
         let call = 0;
@@ -649,6 +691,57 @@ test('LLMCompletionCassette fingerprints data URLs without copying them into sum
             /does not allow concurrent logical completions/
         );
         LLMCompletionCassette.endRecording(first);
+    } finally {
+        LLMCompletionCassette.resetRuntimeState();
+        fs.rmSync(baseDir, { recursive: true, force: true });
+    }
+});
+
+test('LLMCompletionCassette may claim only a validated empty incomplete recording after process restart', { concurrency: false }, () => {
+    const { baseDir, cassettePath } = createTempContext('completion-cassette-empty-reset-');
+    try {
+        fs.writeFileSync(cassettePath, `${JSON.stringify({
+            version: 2,
+            strict: true,
+            complete: false,
+            description: 'failed attempt reset',
+            recordedAt: '2026-08-12T00:00:00.000Z',
+            entries: []
+        }, null, 2)}\n`, 'utf8');
+
+        LLMCompletionCassette.resetRuntimeState();
+        const lease = LLMCompletionCassette.beginRecording({
+            sourcePath: cassettePath,
+            baseDir,
+            description: 'replacement attempt'
+        });
+        assert.equal(lease.state.data.description, 'replacement attempt');
+        assert.deepEqual(lease.state.data.entries, []);
+        LLMCompletionCassette.endRecording(lease);
+
+        LLMCompletionCassette.resetRuntimeState();
+        fs.writeFileSync(cassettePath, `${JSON.stringify({
+            version: 2,
+            strict: true,
+            complete: false,
+            entries: [{ ordinal: 1 }]
+        }, null, 2)}\n`, 'utf8');
+        assert.throws(
+            () => LLMCompletionCassette.beginRecording({ sourcePath: cassettePath, baseDir }),
+            /destination already exists/
+        );
+
+        LLMCompletionCassette.resetRuntimeState();
+        fs.writeFileSync(cassettePath, `${JSON.stringify({
+            version: 2,
+            strict: true,
+            complete: true,
+            entries: []
+        }, null, 2)}\n`, 'utf8');
+        assert.throws(
+            () => LLMCompletionCassette.beginRecording({ sourcePath: cassettePath, baseDir }),
+            /destination already exists/
+        );
     } finally {
         LLMCompletionCassette.resetRuntimeState();
         fs.rmSync(baseDir, { recursive: true, force: true });

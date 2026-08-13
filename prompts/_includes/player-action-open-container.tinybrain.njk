@@ -17,17 +17,18 @@ State whether the result opens the container now, whether it permanently removes
 
 Draft Response: Write brief visible prose for the attempt and exact check outcome without numerical stats or contents on failure. Output prose only.
 
-{% llm_dummy_action %}
+{% llmparse('player_action_required_prose') %}
 
 {% set tinyBrainAuditFocus = 'Exactly one check result is authoritative; success/permanentlyOpened must agree with it; a failure must not reveal contents; no reroll or extra tool result may be substituted.' %}
 {% include "_includes/tinybrain-prose-audit.njk" %}
 
-Return XML only:
-<containerOpenResult>
-  <toolUsed>exact check tool name used</toolUsed>
-  <checkResult>concise exact result</checkResult>
-  <success>true or false</success>
-  <permanentlyOpened>true or false</permanentlyOpened>
-  <prose>polished visible prose</prose>
-  <timePassed><reasoning>brief timing breakdown</reasoning><duration>one exact duration rounded to the nearest minute</duration></timePassed>
-</containerOpenResult>
+Did the successful result permanently remove this container's future check requirement? Answer yes or no. A failure must answer no.
+{% llmparse('yes_no') as permanentlyOpened %}
+
+Briefly explain how much in-world time the attempt consumed. Do not include a duration in this explanation.
+{% llmparse('player_action_time_reasoning') as timeReasoning %}
+
+State the exact elapsed duration only, rounded to the nearest minute, with a 1 minute minimum.
+{% llmparse('player_action_duration', 1) as timeDuration %}
+
+{% llmresult('container_open_result') %}

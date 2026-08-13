@@ -181,6 +181,81 @@ test('base-context history all-entry mode excludes system and diagnostic entries
     );
 });
 
+test('alternative prompt modes follow their ordinary and all-entry base-context contracts', () => {
+    const ordinaryEntries = [
+        { label: 'comment', entry: { role: 'user', content: '# ordinary comment' } },
+        { label: 'question user', entry: { type: 'user-question', role: 'user', content: 'Question' } },
+        { label: 'question answer', entry: { type: 'storyteller-answer', role: 'assistant', content: 'Answer' } },
+        { label: 'creative user', entry: { role: 'user', content: '! Creative action' } },
+        { label: 'creative answer', entry: { type: 'player-action', role: 'assistant', content: 'Creative result' } },
+        { label: 'forced-event user', entry: { role: 'user', content: '!! Forced event' } },
+        { label: 'forced-event result', entry: { type: 'event-summary', role: 'assistant', content: 'Forced result' } },
+        { label: 'forced-roll user', entry: { role: 'user', content: 'Inspect the marker.' } },
+        { label: 'forced-roll answer', entry: { type: 'player-action', role: 'assistant', content: 'Inspection result' } },
+        { label: 'normal generic user', entry: { type: 'user-generic-prompt', role: 'user', content: 'Generic request' } },
+        { label: 'normal generic answer', entry: { type: 'generic-prompt-response', role: 'assistant', content: 'Generic response' } }
+    ];
+    for (const { label, entry } of ordinaryEntries) {
+        assert.equal(
+            shouldIncludeEntryInBaseContextHistory(entry, { hasRenderableContent: true }),
+            true,
+            `${label} should be present in ordinary base context`
+        );
+        assert.equal(
+            shouldIncludeEntryInBaseContextHistory(entry, {
+                includeAllEntryTypes: true,
+                hasRenderableContent: true
+            }),
+            true,
+            `${label} should be present in generic all-entry base context`
+        );
+    }
+
+    const ordinaryExcludedEntries = [
+        { label: '@@ user', entry: { type: 'user-generic-prompt', role: 'user', content: 'Hidden request' } },
+        { label: '@@ answer', entry: { type: 'generic-prompt-response', role: 'assistant', content: 'Hidden response' } },
+        { label: 'no-context user', entry: { type: 'user-generic-prompt', role: 'user', content: 'Isolated request' } },
+        { label: 'no-context answer', entry: { type: 'generic-prompt-response', role: 'assistant', content: 'Isolated response' } },
+        { label: 'rejected user', entry: { role: 'user', content: 'Rejected action' } },
+        { label: 'rejection answer', entry: { type: 'player-action', role: 'assistant', content: 'Rejected' } }
+    ].map(({ label, entry }) => ({
+        label,
+        entry: {
+            ...entry,
+            metadata: { excludeFromBaseContextHistory: true }
+        }
+    }));
+    for (const { label, entry } of ordinaryExcludedEntries) {
+        assert.equal(
+            shouldIncludeEntryInBaseContextHistory(entry, { hasRenderableContent: true }),
+            false,
+            `${label} should be absent from ordinary base context`
+        );
+        assert.equal(
+            shouldIncludeEntryInBaseContextHistory(entry, {
+                includeAllEntryTypes: true,
+                hasRenderableContent: true
+            }),
+            true,
+            `${label} should be present in generic all-entry base context`
+        );
+    }
+
+    for (const entry of [
+        { type: 'check-results', role: 'assistant', content: 'Checks for player_action' },
+        { type: 'tool-call-debug', role: 'system', content: 'Tool calls for player_action' }
+    ]) {
+        assert.equal(
+            shouldIncludeEntryInBaseContextHistory(entry, {
+                includeAllEntryTypes: true,
+                hasRenderableContent: true
+            }),
+            false,
+            `${entry.type} must stay out of every model history mode`
+        );
+    }
+});
+
 test('game improvement suggestions are excluded even in all-entry mode', () => {
     const entry = {
         type: 'game-improvement-suggestions',
@@ -260,6 +335,24 @@ test('generic prompt route requests full-entry-type base context while no-contex
     const source = fs.readFileSync(require.resolve('../api.js'), 'utf8');
     assert.match(
         source,
-        /prepareBasePromptContext\(\{\s*locationOverride:\s*location,\s*includeAllHistoryEntryTypes:\s*isGenericPromptAction\s*&&\s*!isNoContextPromptAction\s*\}\)/
+        /includeAllHistoryEntryTypes:\s*isGenericPromptAction\s*&&\s*!isNoContextPromptAction/
     );
+});
+
+test('no-log generic prompts suppress user, response, and diagnostic history rows', () => {
+    const source = fs.readFileSync(require.resolve('../api.js'), 'utf8');
+    assert.match(
+        source,
+        /suppressGenericPromptHistory\s*=\s*isGenericPromptAction\s*&&\s*genericPromptStorageMode\s*===\s*'no_log'/
+    );
+    assert.match(source, /shouldPersistUserEntry\s*=\s*!suppressGenericPromptHistory/);
+    assert.match(
+        source,
+        /Globals\.config\?\.debug_tool_calls\s*===\s*true\s*&&\s*!suppressGenericPromptHistory\s*\?\s*createToolCallDebugRecorder/
+    );
+    assert.match(
+        source,
+        /checkResultsRecorder\s*=\s*suppressGenericPromptHistory\s*\?\s*\{[\s\S]*?record\(\)\s*\{\}[\s\S]*?hasRecords\(\)\s*\{\s*return false;\s*\}/
+    );
+    assert.match(source, /shouldPersistGenericResponse\s*=\s*!suppressGenericPromptHistory/);
 });

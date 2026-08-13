@@ -1,0 +1,394 @@
+{
+  "version": 2,
+  "strict": true,
+  "complete": true,
+  "description": "alternative-prompts/ALT-5-elevated-generic",
+  "recordedAt": "2026-08-12T10:00:06.808Z",
+  "entries": [
+    {
+      "ordinal": 1,
+      "metadataLabel": "generic_prompt",
+      "requestFingerprint": "sha256:ee9256b5e367b75f1ad4b5f4467c653b7b0bbfd77142c8cdae2fcb1a037ec374",
+      "requestSummary": {
+        "messageRoles": [
+          "system",
+          "user",
+          "user",
+          "user",
+          "user",
+          "user",
+          "user",
+          "user",
+          "user",
+          "user",
+          "user"
+        ],
+        "messageCharacters": 84263,
+        "toolNames": [
+          "generateRandomInteger",
+          "moreInfo",
+          "getHistory",
+          "getFullScene",
+          "editChatLogEntry",
+          "rerunSceneSummary",
+          "editSceneSummary",
+          "requestUserInput",
+          "listMysteryBoxes",
+          "findMysteryBoxes",
+          "getMysteryBox",
+          "updateMysteryBoxFields",
+          "listMysteryThreads",
+          "getMysteryThread",
+          "updateMysteryThreadFields",
+          "teleportCharacterToLocation",
+          "teleportThingToLocation",
+          "moveThingFromLocationToCharacterInventory",
+          "createRegionStub",
+          "createLocationStub",
+          "createExit",
+          "listLocationEntities",
+          "getTravelTime",
+          "revealEntity",
+          "hideEntity",
+          "createThing",
+          "createNpc",
+          "deleteThing",
+          "setRelationship",
+          "addTracker",
+          "updateTracker",
+          "removeTracker",
+          "createQuest",
+          "scheduleEvent",
+          "alterThing",
+          "alterNpc",
+          "updateCharacterFields",
+          "updateObjectFields",
+          "upsertFactionFields",
+          "updatePartyMembers",
+          "alterLocation",
+          "resolveAttack",
+          "resolveAreaAttack",
+          "resolveSkillCheck",
+          "resolveOpposedSkillCheck",
+          "locateNpcs",
+          "locateThings",
+          "equipImplant",
+          "unequipImplant",
+          "installModule",
+          "removeModule"
+        ],
+        "model": "Qwen3.6-35B-A3B-uncensored-heretic-Native-MTP-Preserved-GGUF",
+        "backend": "openai_compatible"
+      },
+      "response": {
+        "object": "chat.completion",
+        "model": "Qwen3.6-27B-Fable-Fusion-711-Uncensored-Heretic-NM-DAU-NEO-MAX-MTP-GGUF",
+        "choices": [
+          {
+            "index": 0,
+            "finish_reason": "tool_calls",
+            "message": {
+              "role": "assistant",
+              "content": "",
+              "tool_calls": [
+                {
+                  "id": "n2LuQah9A11EIi5d8ASZJjcxmNbHU29H",
+                  "type": "function",
+                  "function": {
+                    "name": "updateObjectFields",
+                    "arguments": "{\"objectType\":\"thing\",\"object\":\"thing_283\",\"fields\":{\"shortDescription\": \"ALT-5 temporary whistle marker.\"}}"
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "ordinal": 2,
+      "metadataLabel": "generic_prompt",
+      "requestFingerprint": "sha256:678297494ef1dd170c7c5929c7a74a4e0eb37c408a8f76a69ed1e60314d52004",
+      "requestSummary": {
+        "messageRoles": [
+          "system",
+          "user",
+          "user",
+          "user",
+          "user",
+          "user",
+          "user",
+          "user",
+          "user",
+          "user",
+          "user",
+          "assistant",
+          "tool"
+        ],
+        "messageCharacters": 84650,
+        "toolNames": [
+          "generateRandomInteger",
+          "moreInfo",
+          "getHistory",
+          "getFullScene",
+          "editChatLogEntry",
+          "rerunSceneSummary",
+          "editSceneSummary",
+          "requestUserInput",
+          "listMysteryBoxes",
+          "findMysteryBoxes",
+          "getMysteryBox",
+          "updateMysteryBoxFields",
+          "listMysteryThreads",
+          "getMysteryThread",
+          "updateMysteryThreadFields",
+          "teleportCharacterToLocation",
+          "teleportThingToLocation",
+          "moveThingFromLocationToCharacterInventory",
+          "createRegionStub",
+          "createLocationStub",
+          "createExit",
+          "listLocationEntities",
+          "getTravelTime",
+          "revealEntity",
+          "hideEntity",
+          "createThing",
+          "createNpc",
+          "deleteThing",
+          "setRelationship",
+          "addTracker",
+          "updateTracker",
+          "removeTracker",
+          "createQuest",
+          "scheduleEvent",
+          "alterThing",
+          "alterNpc",
+          "updateCharacterFields",
+          "updateObjectFields",
+          "upsertFactionFields",
+          "updatePartyMembers",
+          "alterLocation",
+          "resolveAttack",
+          "resolveAreaAttack",
+          "resolveSkillCheck",
+          "resolveOpposedSkillCheck",
+          "locateNpcs",
+          "locateThings",
+          "equipImplant",
+          "unequipImplant",
+          "installModule",
+          "removeModule"
+        ],
+        "model": "Qwen3.6-35B-A3B-uncensored-heretic-Native-MTP-Preserved-GGUF",
+        "backend": "openai_compatible"
+      },
+      "response": {
+        "object": "chat.completion",
+        "model": "Qwen3.6-27B-Fable-Fusion-711-Uncensored-Heretic-NM-DAU-NEO-MAX-MTP-GGUF",
+        "choices": [
+          {
+            "index": 0,
+            "finish_reason": "stop",
+            "message": {
+              "role": "assistant",
+              "content": "thing_283 (Whistle of the Ridge) shortDescription is now exactly “ALT-5 temporary whistle marker.” No other fields changed."
+            }
+          }
+        ]
+      }
+    },
+    {
+      "ordinal": 3,
+      "metadataLabel": "generic_prompt",
+      "requestFingerprint": "sha256:3b80d4591566de778ba3dbae2584c24b5b682cf6c21aa5040da6a47923a3ce2b",
+      "requestSummary": {
+        "messageRoles": [
+          "system",
+          "user",
+          "user",
+          "user",
+          "user",
+          "user",
+          "user",
+          "user",
+          "user",
+          "user",
+          "user"
+        ],
+        "messageCharacters": 84756,
+        "toolNames": [
+          "generateRandomInteger",
+          "moreInfo",
+          "getHistory",
+          "getFullScene",
+          "editChatLogEntry",
+          "rerunSceneSummary",
+          "editSceneSummary",
+          "requestUserInput",
+          "listMysteryBoxes",
+          "findMysteryBoxes",
+          "getMysteryBox",
+          "updateMysteryBoxFields",
+          "listMysteryThreads",
+          "getMysteryThread",
+          "updateMysteryThreadFields",
+          "teleportCharacterToLocation",
+          "teleportThingToLocation",
+          "moveThingFromLocationToCharacterInventory",
+          "createRegionStub",
+          "createLocationStub",
+          "createExit",
+          "listLocationEntities",
+          "getTravelTime",
+          "revealEntity",
+          "hideEntity",
+          "createThing",
+          "createNpc",
+          "deleteThing",
+          "setRelationship",
+          "addTracker",
+          "updateTracker",
+          "removeTracker",
+          "createQuest",
+          "scheduleEvent",
+          "alterThing",
+          "alterNpc",
+          "updateCharacterFields",
+          "updateObjectFields",
+          "upsertFactionFields",
+          "updatePartyMembers",
+          "alterLocation",
+          "resolveAttack",
+          "resolveAreaAttack",
+          "resolveSkillCheck",
+          "resolveOpposedSkillCheck",
+          "locateNpcs",
+          "locateThings",
+          "equipImplant",
+          "unequipImplant",
+          "installModule",
+          "removeModule"
+        ],
+        "model": "Qwen3.6-35B-A3B-uncensored-heretic-Native-MTP-Preserved-GGUF",
+        "backend": "openai_compatible"
+      },
+      "response": {
+        "object": "chat.completion",
+        "model": "Qwen3.6-27B-Fable-Fusion-711-Uncensored-Heretic-NM-DAU-NEO-MAX-MTP-GGUF",
+        "choices": [
+          {
+            "index": 0,
+            "finish_reason": "tool_calls",
+            "message": {
+              "role": "assistant",
+              "content": "",
+              "tool_calls": [
+                {
+                  "id": "c3kbv4G7BSaegXRu5jLGz3WOaRMuAH9J",
+                  "type": "function",
+                  "function": {
+                    "name": "updateObjectFields",
+                    "arguments": "{\"objectType\":\"thing\",\"object\":\"thing_283\",\"fields\":{\"shortDescription\": \"Bone whistle for signaling location in whiteout conditions.\"}}"
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "ordinal": 4,
+      "metadataLabel": "generic_prompt",
+      "requestFingerprint": "sha256:ae3fcb909868f8cd442d73f1329b38439ce762e534aac9486d7eb68502316778",
+      "requestSummary": {
+        "messageRoles": [
+          "system",
+          "user",
+          "user",
+          "user",
+          "user",
+          "user",
+          "user",
+          "user",
+          "user",
+          "user",
+          "user",
+          "assistant",
+          "tool"
+        ],
+        "messageCharacters": 85143,
+        "toolNames": [
+          "generateRandomInteger",
+          "moreInfo",
+          "getHistory",
+          "getFullScene",
+          "editChatLogEntry",
+          "rerunSceneSummary",
+          "editSceneSummary",
+          "requestUserInput",
+          "listMysteryBoxes",
+          "findMysteryBoxes",
+          "getMysteryBox",
+          "updateMysteryBoxFields",
+          "listMysteryThreads",
+          "getMysteryThread",
+          "updateMysteryThreadFields",
+          "teleportCharacterToLocation",
+          "teleportThingToLocation",
+          "moveThingFromLocationToCharacterInventory",
+          "createRegionStub",
+          "createLocationStub",
+          "createExit",
+          "listLocationEntities",
+          "getTravelTime",
+          "revealEntity",
+          "hideEntity",
+          "createThing",
+          "createNpc",
+          "deleteThing",
+          "setRelationship",
+          "addTracker",
+          "updateTracker",
+          "removeTracker",
+          "createQuest",
+          "scheduleEvent",
+          "alterThing",
+          "alterNpc",
+          "updateCharacterFields",
+          "updateObjectFields",
+          "upsertFactionFields",
+          "updatePartyMembers",
+          "alterLocation",
+          "resolveAttack",
+          "resolveAreaAttack",
+          "resolveSkillCheck",
+          "resolveOpposedSkillCheck",
+          "locateNpcs",
+          "locateThings",
+          "equipImplant",
+          "unequipImplant",
+          "installModule",
+          "removeModule"
+        ],
+        "model": "Qwen3.6-35B-A3B-uncensored-heretic-Native-MTP-Preserved-GGUF",
+        "backend": "openai_compatible"
+      },
+      "response": {
+        "object": "chat.completion",
+        "model": "Qwen3.6-27B-Fable-Fusion-711-Uncensored-Heretic-NM-DAU-NEO-MAX-MTP-GGUF",
+        "choices": [
+          {
+            "index": 0,
+            "finish_reason": "stop",
+            "message": {
+              "role": "assistant",
+              "content": "thing_283 (Whistle of the Ridge) shortDescription restored to exactly “Bone whistle for signaling location in whiteout conditions.” No other fields changed."
+            }
+          }
+        ]
+      }
+    }
+  ],
+  "completedAt": "2026-08-12T10:01:26.566Z"
+}

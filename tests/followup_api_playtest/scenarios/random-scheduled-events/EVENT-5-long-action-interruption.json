@@ -1,0 +1,386 @@
+{
+  "version": 1,
+  "scenario": "random-scheduled-events",
+  "case": "EVENT-5-long-action-interruption",
+  "description": "A five-minute ordinary action crosses a local scheduled event at minute two, folds that interruption into the one player-action entry, and resolves the later offscreen event only as hidden bookkeeping.",
+  "fixture": "random-scheduled-events",
+  "configProfile": "scheduled-event-interruption-mechanics",
+  "trackedPaths": [
+    "player.payload.player.locationId",
+    "player.payload.player.needBars",
+    "player.payload.player.statusEffects",
+    "players.payload.players",
+    "locations.payload.locations",
+    "regions.payload.regions",
+    "things.payload.things",
+    "scheduledEvents.payload.scheduledEvents",
+    "calendar.payload.worldTime",
+    "history.payload.history"
+  ],
+  "steps": [
+    {
+      "type": "loadFixture"
+    },
+    {
+      "type": "request",
+      "name": "isolate_courier",
+      "method": "POST",
+      "route": "/api/npcs/$fixture.courierId/teleport",
+      "body": {
+        "locationId": "$fixture.isolationLocationId",
+        "accountTravelTime": false,
+        "storyToolTeleport": true
+      }
+    },
+    {
+      "type": "request",
+      "name": "isolate_companion",
+      "method": "POST",
+      "route": "/api/npcs/$fixture.companionId/teleport",
+      "body": {
+        "locationId": "$fixture.isolationLocationId",
+        "accountTravelTime": false,
+        "storyToolTeleport": true
+      }
+    },
+    {
+      "type": "assert",
+      "assertions": [
+        {
+          "type": "httpStatus",
+          "equals": 200
+        },
+        {
+          "type": "responseOk",
+          "equals": true
+        },
+        {
+          "type": "entityField",
+          "source": "after",
+          "collection": "players",
+          "id": "$fixture.courierId",
+          "path": "locationId",
+          "equals": "$fixture.isolationLocationId"
+        },
+        {
+          "type": "entityField",
+          "source": "after",
+          "collection": "players",
+          "id": "$fixture.companionId",
+          "path": "locationId",
+          "equals": "$fixture.isolationLocationId"
+        },
+        {
+          "type": "equals",
+          "source": "after",
+          "path": "calendar.payload.worldTime.timeMinutes",
+          "equals": 663
+        }
+      ]
+    },
+    {
+      "type": "request",
+      "name": "player_before_action",
+      "method": "GET",
+      "route": "/api/npcs/$fixture.playerId"
+    },
+    {
+      "type": "snapshot",
+      "name": "before_action"
+    },
+    {
+      "type": "chat",
+      "name": "five_minute_recitation",
+      "text": "I remain at March Start Marker and steadily recite consecutive whole numbers aloud for exactly five minutes as one continuous action. If a brief interruption occurs, I resume afterward, finish the full five minutes, and stop immediately when exactly five minutes have elapsed. I do not move, touch or move any object, use an item or ability, rest, eat, drink, fight, or ask anyone else to do anything.",
+      "travel": false,
+      "interactive": {
+        "roll": null,
+        "questAccepted": false,
+        "confirmed": false
+      }
+    },
+    {
+      "type": "request",
+      "name": "player_after_action",
+      "method": "GET",
+      "route": "/api/npcs/$fixture.playerId"
+    },
+    {
+      "type": "assert",
+      "assertions": [
+        {
+          "type": "httpStatus",
+          "equals": 200
+        },
+        {
+          "type": "responseOk",
+          "equals": true
+        },
+        {
+          "type": "equals",
+          "source": "responses.five_minute_recitation",
+          "path": "payload.timeProgress.source",
+          "equals": "player_action"
+        },
+        {
+          "type": "equals",
+          "source": "responses.five_minute_recitation",
+          "path": "payload.timeProgress.advancedMinutes",
+          "equals": 5
+        },
+        {
+          "type": "equals",
+          "source": "responses.five_minute_recitation",
+          "path": "payload.worldTime.timeMinutes",
+          "equals": 668
+        },
+        {
+          "type": "equals",
+          "source": "responses.five_minute_recitation",
+          "path": "payload.locationRefreshRequested",
+          "equals": true
+        },
+        {
+          "type": "exactDelta",
+          "beforeSource": "snapshots.before_action",
+          "afterSource": "after",
+          "path": "calendar.payload.worldTime.timeMinutes",
+          "delta": 5
+        },
+        {
+          "type": "equals",
+          "source": "after",
+          "path": "calendar.payload.worldTime.timeMinutes",
+          "equals": 668
+        },
+        {
+          "type": "exactDelta",
+          "beforeSource": "responses.player_before_action",
+          "afterSource": "responses.player_after_action",
+          "path": "payload.npc.elapsedTime",
+          "delta": 5
+        },
+        {
+          "type": "equals",
+          "source": "responses.player_after_action",
+          "path": "payload.npc.elapsedTime",
+          "equals": 668
+        },
+        {
+          "type": "equals",
+          "source": "after",
+          "path": "player.payload.player.locationId",
+          "equals": "$fixture.baselineLocationId"
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "after",
+          "path": "scheduledEvents.payload.scheduledEvents",
+          "where": {
+            "id": "$fixture.visibleScheduledEventId",
+            "event": "$fixture.visibleScheduledEventDescription",
+            "locationId": "$fixture.baselineLocationId",
+            "targetWorldMinute": "$fixture.visibleScheduledEventTargetWorldMinute",
+            "status": "resolved",
+            "resolvedAtWorldMinute": 665
+          },
+          "equals": 1
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "after",
+          "path": "scheduledEvents.payload.scheduledEvents",
+          "where": {
+            "id": "$fixture.visibleScheduledEventId",
+            "status": "resolved",
+            "playerProse": ""
+          },
+          "equals": 0
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "after",
+          "path": "scheduledEvents.payload.scheduledEvents",
+          "where": {
+            "id": "$fixture.visibleScheduledEventId",
+            "status": "resolved",
+            "resolutionSummary": ""
+          },
+          "equals": 0
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "after",
+          "path": "scheduledEvents.payload.scheduledEvents",
+          "where": {
+            "id": "$fixture.offscreenScheduledEventId",
+            "event": "$fixture.offscreenScheduledEventDescription",
+            "locationId": "$fixture.depotLocationId",
+            "targetWorldMinute": "$fixture.offscreenScheduledEventTargetWorldMinute",
+            "status": "resolved",
+            "playerProse": "",
+            "resolvedAtWorldMinute": 668
+          },
+          "equals": 1
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "after",
+          "path": "scheduledEvents.payload.scheduledEvents",
+          "where": {
+            "id": "$fixture.offscreenScheduledEventId",
+            "status": "resolved",
+            "resolutionSummary": ""
+          },
+          "equals": 0
+        },
+        {
+          "type": "entityField",
+          "source": "after",
+          "collection": "players",
+          "id": "$fixture.courierId",
+          "path": "locationId",
+          "equals": "$fixture.isolationLocationId"
+        },
+        {
+          "type": "entityField",
+          "source": "after",
+          "collection": "players",
+          "id": "$fixture.companionId",
+          "path": "locationId",
+          "equals": "$fixture.isolationLocationId"
+        },
+        {
+          "type": "entityField",
+          "source": "after",
+          "collection": "players",
+          "id": "$fixture.bellRunnerId",
+          "path": "locationId",
+          "equals": "$fixture.baselineLocationId"
+        },
+        {
+          "type": "entityField",
+          "source": "after",
+          "collection": "things",
+          "id": "$fixture.brassBellId",
+          "path": "metadata.locationId",
+          "equals": "$fixture.baselineLocationId"
+        },
+        {
+          "type": "entityField",
+          "source": "after",
+          "collection": "things",
+          "id": "$fixture.depotMarkerId",
+          "path": "description",
+          "equals": "$fixture.depotMarkerAlteredDescription"
+        },
+        {
+          "type": "entityField",
+          "source": "after",
+          "collection": "things",
+          "id": "$fixture.depotMarkerId",
+          "path": "shortDescription",
+          "equals": "Unchanged numbered QA depot marker."
+        },
+        {
+          "type": "entityField",
+          "source": "after",
+          "collection": "things",
+          "id": "$fixture.depotMarkerId",
+          "path": "metadata.locationId",
+          "equals": "$fixture.depotLocationId"
+        },
+        {
+          "type": "historyAddedTypeCount",
+          "beforeSource": "snapshots.before_action",
+          "afterSource": "after",
+          "entryType": "player-action",
+          "equals": 1
+        },
+        {
+          "type": "historyAddedTypeCount",
+          "beforeSource": "snapshots.before_action",
+          "afterSource": "after",
+          "entryType": "scheduled-event",
+          "equals": 2
+        },
+        {
+          "type": "historyAddedTypeCount",
+          "beforeSource": "snapshots.before_action",
+          "afterSource": "after",
+          "entryType": "scheduled-event-prose",
+          "equals": 0
+        },
+        {
+          "type": "historyAddedSequence",
+          "beforeSource": "snapshots.before_action",
+          "afterSource": "after",
+          "entryTypes": [
+            "scheduled-event",
+            "player-action"
+          ],
+          "expected": [
+            {
+              "type": "scheduled-event",
+              "locationId": "$fixture.baselineLocationId",
+              "metadata": {
+                "scheduledEventId": "$fixture.visibleScheduledEventId",
+                "playerPresent": true,
+                "source": "player_action_interruption",
+                "visibleProseSuppressed": true,
+                "hiddenFromClient": true
+              }
+            },
+            {
+              "type": "player-action",
+              "locationId": "$fixture.baselineLocationId"
+            },
+            {
+              "type": "scheduled-event",
+              "locationId": "$fixture.depotLocationId",
+              "metadata": {
+                "scheduledEventId": "$fixture.offscreenScheduledEventId",
+                "playerPresent": false,
+                "source": "chat_response",
+                "visibleProseSuppressed": false,
+                "hiddenFromClient": true
+              }
+            }
+          ]
+        },
+        {
+          "type": "historyAddedTypeCount",
+          "beforeSource": "snapshots.before_action",
+          "afterSource": "after",
+          "entryType": "random-event",
+          "equals": 0
+        },
+        {
+          "type": "stateUnchanged",
+          "beforeSource": "snapshots.before_action",
+          "afterSource": "after",
+          "paths": [
+            "player.payload.player.locationId",
+            "player.payload.player.statusEffects",
+            "locations.payload.locations",
+            "regions.payload.regions"
+          ]
+        },
+        {
+          "type": "noRealtimeErrors"
+        },
+        {
+          "type": "noUnexpectedErrorLogs",
+          "allowedPrefixes": [
+            "ERROR_chatCompletionError_scheduled_event_resolution_"
+          ]
+        }
+      ]
+    }
+  ],
+  "humanReview": [
+    "Confirm the one player-action prose begins the five-minute recitation, naturally incorporates QA Bell Runner ringing QA Brass Bell exactly once two minutes into it, and then resumes and completes the same five-minute action without a second or contradictory narration block.",
+    "Confirm the player-facing prose does not narrate the offscreen QA Depot Marker update, move Baato, QA Bell Runner, or either fixture object, invent another action, or include the isolated QA Courier or QA Tired Companion.",
+    "The parser unit regression, not prose inspection, is the authoritative check that the rewrite preserves turnResult time, hidden notes, movement/state XML, and every other non-prose node."
+  ]
+}

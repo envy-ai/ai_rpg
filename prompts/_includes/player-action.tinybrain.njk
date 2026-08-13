@@ -124,6 +124,11 @@ Respond now.
 {% llmparse('accept_or_reject') %} {# A reject at this point should end the prompt; llmparse() should return whether to continue or terminate the prompt #}
 
 {% endif %}
+Review only the text inside <playerAction>. Did the player explicitly commit this action to one exact elapsed duration? Answer exactly NONE if no exact duration is stated. Otherwise, answer with only that exact duration using one of: HH:MM, INTEGER minutes, INTEGER hours, or INTEGER hours, INTEGER minutes. Do not estimate a duration from the prose and do not treat a deadline, time of day, cooldown, status duration, or hypothetical duration as the action's committed elapsed duration.
+{% llmparse('player_action_explicit_duration') as explicitActionDuration %}
+{% if explicitActionDuration %}
+The player explicitly committed the action to {{ explicitActionDuration.text }}. For any non-travel result, this duration is authoritative: narrate through the full {{ explicitActionDuration.text }} unless there is a specific reason for an interruption. Do not shorten it to the amount of action shown in an excerpt, reading time, or the opening moments of the scene.
+{% endif %}
 In markdown format, list each of the 1-3 NPCs (or more, if specifically addressed) you picked to respond or act by name and 1-2 sentences about their current emotional or plot position, desires, and what they're grappling with, if anything.
 
 {% llm_dummy_action %}
@@ -153,7 +158,7 @@ Now, List the NPCs and their pressing needs in markdown format.
 
 {% llm_dummy_action %}
 
-NPCs should take initiative actions based on their desires, needs, and emotional state, and not just react to the player. If an NPC has a pressing need, they should act on it. If an NPC has a desire that fits with the current situation (even if it's not a need bar), they should take the initiative to pursue it. Which NPCs will act on their needs and how? Planning an NPC attack here does not resolve it and is not permission to narrate its outcome. Every attacking character needs a separate resolveAttack or resolveAreaAttack tool result during the first draft. Plan at most one attack action per intended single-target result, not a sequence, flurry, or assault containing several approaches or impacts. If you will not make that separate call, plan a non-attack reaction instead.
+NPCs should take initiative actions based on their desires, needs, and emotional state, and not just react to the player. If an NPC has a pressing need, they should act on it. If an NPC has a desire that fits with the current situation (even if it's not a need bar), they should take the initiative to pursue it. Which NPCs will act on their needs and how? Planning an NPC attack here does not resolve it and is not permission to narrate its outcome. Resolve every attack that actually occurs with resolveAttack or resolveAreaAttack during the first draft.
 
 List them in markdown format, with one sentence of explanation per NPC.
 
@@ -174,31 +179,10 @@ Do this now.
 {% if config.use_legacy_prompt_checks %}
 Draft Response: Generate a preliminary but full draft that continues the story based on the current context, strictly adhering to this degree of success/failure: "{{ success_or_failure }}" regardless of how hard the action is. This is just a first attempt. Use no more than {{ config.prose_length }}.
 {% else %}
-Before drafting, identify every character who will perform at least one meaningful, uncertain NON-ATTACK action that needs resolveSkillCheck or resolveOpposedSkillCheck in the draft. List each such character once. Do not list a character who merely observes, signals, speaks, reacts, or supplies the opposition to someone else's action. Attack actors do not belong in this list.
-{% if playerActionSkillCheckActors and playerActionSkillCheckActors.length %}
-Allowed exact character names and aliases:
-{% for character in playerActionSkillCheckActors %}
-- {{ character.name }}{% if character.aliases and character.aliases.length %} (accepted aliases: {{ character.aliases | join(', ') }}){% endif %}
-{% endfor %}
-Answer exactly NONE if no non-attack check will occur. Otherwise, answer with one exact allowed name or alias per line, without bullets, commas, explanations, or XML.
-{% else %}
-There are no eligible checked-action actors. Answer exactly: NONE
-{% endif %}
-{% llmparse('player_action_checked_action_actors', playerActionSkillCheckActors | default([], true)) as checkedActionActors %}
-
-{% if checkedActionActors and checkedActionActors.length %}
-The checked-action actors you selected are:
-{% for actorName in checkedActionActors %}- {{ actorName }}
-{% endfor %}
-Every skill-check tool call must resolve an action by one of those exact actors and must include that exact name in its actor field. A character who merely opposes the action belongs in opponent, not actor.
-{% else %}
-You selected no checked-action actors. Do not call resolveSkillCheck or resolveOpposedSkillCheck and do not narrate a meaningful uncertain non-attack action as resolved.
-{% endif %}
-
-Draft Response: Generate a preliminary but full draft that continues the story based on the current context{#, strictly adhering to this degree of success/failure: "{{ success_or_failure }}" regardless of how hard the action is#}. This is just a first attempt. Use no more than {{ config.prose_length }}. If a character is attacking another character, call the resolveAttack tool during your draft and then strictly adhere to the results in your writing, taking care to describe the attack according to the degree of damage and whether the defender is defeated. You may call this only during your first draft. Each resolveAttack result authorizes exactly one resolved attack action by its named attacker against its named target. One attack action may include its setup or approach and one impact, miss, or damaging contact; after that, write only reactions, aftermath, withdrawal, or non-attacking posture. A second approach, lunge, charge, strike, bite, shot, impact, graze, or miss is another attack and needs another result. Each attacking character requires a separate tool call, even when an ally follows up on the player's attack against the same target. One character's result never resolves another character's attack. Never use an unrolled follow-up attack by the same character or an ally to finish, incapacitate, or defeat a target that a tool result says remains alive. If you do not make the separate tool call, omit that attack and its effects from every draft. If the attack is a miss, it's not necessary to describe the attack in detail, but you should still acknowledge that the attack occurred. Whenever a character makes a meaningful non-attack action that isn't trivially easy, call the resolveSkillCheck or resolveOpposedSkillCheck tool (depending on whether the action is opposed by another character) during your draft and strictly adhere to the results in your writing. Every skill-check call must include the exact acting character in its actor field, even when the actor is the player; never infer or omit it. You must call the tool for every attack or check you write about in this draft, not just the ones specifically called for in the playerAction block. It's okay to interrupt your draft to call tools, as you will be given a chance to refine it later and you can fix any formatting issues that result from doing so. Examples of skill checks include: climbing a wall, searching for hidden exits, moving a large rock, etc. Examples of opposed skill checks include: arm wrestling, being stealthy or noticing someone being stealthy, haggling with a merchant, etc. The user may signal their intent to use a particular skill or ability by including it in [square brackets] in their playerAction text; if they don't, use your best judgement. You may also override it with something else if it makes no sense. Do not reference the same object, detail, or plot element in consecutive turns unless something about it has changed. If a detail was established in a previous turn, do not have characters reflect on it again unless new information emerges or a character is actively interacting with it. Characters must not repeat the same metaphor type, observation pattern, or speech tic multiple times in a scene. Variety in how characters express themselves is essential. Do NOT append "What do you do?" or any other text addressing the player directly.
+Draft Response: Generate a preliminary but full draft that continues the story based on the current context{#, strictly adhering to this degree of success/failure: "{{ success_or_failure }}" regardless of how hard the action is#}. This is just a first attempt. Use no more than {{ config.prose_length }}. Resolve every attack written into the draft with resolveAttack or resolveAreaAttack and adhere to its outcome, including who attacked whom and whether the defender was defeated. Whenever a character makes a meaningful non-attack action that is not trivially easy, call resolveSkillCheck or resolveOpposedSkillCheck as appropriate and adhere to its result. Call the tool for every attack or check written into the draft, including actions introduced by NPC initiative. It is okay to interrupt the draft to call tools; formatting can be repaired in the second draft. Examples of skill checks include climbing a wall, searching for hidden exits, and moving a large rock. Examples of opposed skill checks include arm wrestling, stealth versus detection, and haggling. The user may signal a preferred skill or ability in [square brackets]; otherwise use your best judgment, and override an unsuitable suggestion when needed. Do not reference the same object, detail, or plot element in consecutive turns unless something about it has changed. If a detail was established in a previous turn, do not have characters reflect on it again unless new information emerges or a character is actively interacting with it. Characters must not repeat the same metaphor type, observation pattern, or speech tic multiple times in a scene. Variety in how characters express themselves is essential. Do NOT append "What do you do?" or any other text addressing the player directly.
 {% endif %}
 Player agency boundary: Narrate only player speech, decisions, agreements, gestures, and actions that were explicitly committed in the <playerAction>. You may narrate their immediate consequences, but do not make the player answer an NPC, accept a request, nod or agree, choose a new task, or begin any follow-up action the player did not supply. When an NPC asks the player a question or requests another action, stop before the player's response so the player can choose it.
-Inventory continuity: Keep carried and equipped items in their current owner's possession unless the <playerAction> or a mechanical tool result explicitly commits an inventory change. Ordinary travel, sitting, resting, or settling in does not imply dropping, abandoning, transferring, or placing an inventory item into the scene. Do not narrate a carried item being set down, left beside furniture, handed over, or stowed outside its owner's inventory merely as travel flavor.
+Vehicle occupancy continuity: A vehicle moving or reaching its scheduled destination does not itself disembark the player or any other occupant. Honor explicit <playerAction> constraints that the player or other occupants remain aboard; an arrival, an open door, or a view of the platform outside is not permission to move anyone out of the vehicle.
 {% if isExterior %}
 IMPORTANT: This is an arrival at an EXTERIOR of a building, not the interior. Describe the exterior of the building and any relevant details about the surrounding area. If the player is moving to the interior of the building, do not describe that yet. Instead, defer any interior description until they actually enter the building. Instead, this is a time to talk about what the building and surrounding area look like from the outside, who might be outside the building, what might be going on outside the building, and so on.
 {% endif %}
@@ -210,7 +194,7 @@ Editing, pruning, and workshopping:
 
 Answer this question succinctly based on your draft response above. If it is not applicable, respond with 'N/A' (with no additional text).
 
-1. Railroading. This is a collaborative storytelling effort. The player needs a chance to act. If the draft portrays a significant plot development or a major change in the story state without player input, there's a good chance it's railroading. Any player speech, decision, agreement, nod, gesture, or follow-up action not expressly committed in the <playerAction> is also railroading even when it seems minor or obvious; list it so the second draft removes it. If you're doing this, you may need to aggressively pare off some of the end and get it to a reasonable length, even if it's really good. While railroading correlates with length, length isn't the determining factor. Use your judgement to determine whether the draft is giving the player enough of a chance to respond and act. The ideal length will depend on the situation. On the other hand, trust the player. If they made a decision and succeeded, narrate through the decision that they committed to. Doing that isn't railroading. Are you railroading the player in your draft? If so, where?
+1. Railroading. Audit the draft against the Player agency boundary above. Also consider whether a major plot development or story-state change has gone too far without giving the player a chance to act. Trust the player when they did commit to a decision: narrating its consequences is not railroading. Is the draft railroading the player? If so, where?
 
 {% llm_dummy_action %}
 
@@ -270,10 +254,10 @@ Answer this question succinctly based on your draft response above. If it is not
 {% endif %}
 {% endfor %}
 
-Write a second draft that fixes the above issues, using no more than {{ config.prose_length }}. Adhere to every skill-check, opposed skill-check, and attack outcome you received tool results for in your first draft. Each single-target attack result authorizes exactly one resolved attack action by its named attacker against its named target. One attack action has at most one approach and one impact, miss, or damaging contact. If an audit above identified an extra attack, delete the complete sentences or paragraph that describe it. Do not paraphrase it, relocate it, replace it with a different approach or impact, or preserve damage from it. After the authorized attack, write only reactions, aftermath, withdrawal, or non-attacking posture. Do not add a second, follow-up, or renewed attack by that attacker, or any attack, damaging action, incapacitation, or defeat that lacks its own applicable tool result. Remove every player response, agreement, gesture, decision, or follow-up action that was not expressly committed in the <playerAction>; when an NPC asks the player something, stop before answering for the player. Do not call tools again or add new nontrivial actions at this stage. Fix any formatting issues. Use <hidden>...</hidden> tags to make any notes to save to your context for later without revealing them to the reader. Hidden tags do not count toward the length limit. In <hidden>...</hidden> notes, only track items/plot details/etc that are NEW or have CHANGED since the previous turn. Do not include things that are already visible to you (the LLM) in the prompt context. Do not copy forward unchanged states (even if unchanged states have been copied forward in the past). If an item hasn't changed since last turn, omit it entirely from the hidden notes. The existing hidden note will still be visible in the context.
+Write a second draft that fixes the above issues, using no more than {{ config.prose_length }}. Adhere to every skill-check, opposed skill-check, and attack outcome received above. If you omitted a necessary check from the first draft, make it here and adjust the prose to its result. Fix any formatting issues. Use <hidden>...</hidden> tags to make any notes to save to your context for later without revealing them to the reader. Hidden tags do not count toward the length limit. In <hidden>...</hidden> notes, only track items, plot details, or other facts that are NEW or have CHANGED since the previous turn. Do not include things already visible in the prompt context or copy forward unchanged states.
 
 {% llm_dummy_action %}
-Analyze the second draft and make sure everything in it makes sense and is continuous with the story so far (the second draft should not reference things that were removed from the first draft, as important context will be missing, so make sure that context is present in the second draft itself!). Identify any issues to fix in the final prose. Compare every character who attacks, damages, incapacitates, or defeats someone in the second draft against the actual tool results above. A single-target result applies only to one attack action by its named attacker against its named target. Count a new approach, lunge, charge, strike, bite, shot, impact, graze, or miss after the first impact as another attack. Explicitly identify every unsupported combat action or outcome and instruct the final rewrite to delete its complete sentences or paragraph without paraphrasing, relocating, or substituting it. Also compare every player action, line of speech, decision, agreement, and gesture against the <playerAction>; explicitly identify anything the user did not commit so it can be removed. Don't add any additional things to the final prose beyond what was in the second draft, except for canonical destination facts and destination changes that the game may explicitly provide later. Keep track of any new or changed hidden notes so you can report them separately after writing the final prose.
+Analyze the second draft and make sure everything in it makes sense and is continuous with the story so far. Identify any issues to fix in the final prose. Check that all resolved attacks and uncertain actions agree with their tool results. Keep track of any new or changed hidden notes so you can report them separately after writing the final prose.
 
 Reason out loud about the second draft, identifying any inconsistencies, missing context, or areas that need clarification before writing the final prose.
 
@@ -299,7 +283,7 @@ The authoritative destination has been resolved in the game:
 - Canonical location: {{ playerDestinationContext.locationName }}
 - Canonical region: {{ playerDestinationContext.regionName | default('N/A', true) }}
 - Canonical description: {{ playerDestinationContext.description }}
-Use this canonical description when writing any destination prose.
+This description is available as destination context.
 {% endif %}
 {% else %}
 Decide what concrete movement actually occurs in the second draft. Mentioning travel in dialogue does not count. Ordinary combat positioning, approaching scenery, sitting down, and similar movement within the current scene count as NONE.
@@ -310,6 +294,7 @@ The player is currently aboard the vehicle "{{ currentVehicle.name }}". Answer w
 - INSIDE_VEHICLE: the player moves to a different location or distinct area inside the vehicle.
 - DISEMBARK: the player exits or transfers out of the vehicle.
 
+A vehicle moving or reaching its scheduled destination is not player movement. If the player remains aboard, answer NONE even when the vehicle arrives, its doors open, or destination scenery appears in the draft. Do not turn an unauthorized draft disembarkation into game state: respect explicit <playerAction> constraints and remove the mistaken departure from final prose.
 Do not answer DESTINATION while the player is aboard; leaving the vehicle is DISEMBARK.
 {% llmparse('player_action_movement', true) as movementKind %}
 {% else %}
@@ -332,12 +317,12 @@ Canonical vehicle state:
 {% endif %}
 
 {% if movementKind == 'inside_vehicle' %}
-Moving inside the vehicle does not change its route. Answer exactly: UNCHANGED
+{% set vehicleDecision = 'unchanged' %}
 {% elif movementKind == 'disembark' %}
 {% if currentVehicle.vehicleInfo.isUnderway %}
 Answer with exactly UNCHANGED if the vehicle continues on its route after the player exits, or STOP_FOR_EXIT if it has to stop specifically to let the player out. Do not redirect it.
 {% else %}
-The vehicle is not underway. Answer exactly: UNCHANGED
+{% set vehicleDecision = 'unchanged' %}
 {% endif %}
 {% elif currentVehicle.vehicleInfo.isUnderway %}
 Answer with exactly one keyword:
@@ -353,7 +338,7 @@ Answer with exactly one keyword:
 - UNCHANGED: it remains stopped and does not begin a trip.
 - DEPART: it begins a new trip.
 {% endif %}
-{% llmparse('player_action_vehicle_decision', movementKind, currentVehicle.vehicleInfo.isUnderway) as vehicleDecision %}
+{% if vehicleDecision != 'unchanged' %}{% llmparse('player_action_vehicle_decision', movementKind, currentVehicle.vehicleInfo.isUnderway) as vehicleDecision %}{% endif %}
 {% else %}
 {% set vehicleDecision = 'unchanged' %}
 {% endif %}
@@ -378,7 +363,7 @@ The destination has been resolved to an existing game location:
 - Canonical location: {{ playerDestinationContext.locationName }}
 - Canonical region: {{ playerDestinationContext.regionName | default('N/A', true) }}
 - Canonical description: {{ playerDestinationContext.description }}
-Use the canonical identity and description from now on.
+This existing location and description are available as destination context.
 {% endif %}
 {% endif %}
 {% endif %}
@@ -393,17 +378,17 @@ State the realistic player travel time as one exact duration with units and no e
 {% endif %}
 
 Which eligible characters actually accompany the player through this movement to the player's destination? Include current party members who continue with the player and non-party characters who deliberately travel with them. Exclude anyone who remains behind, leaves separately, or only appears after arrival.
-Treat only movement that actually occurs in the second draft as accompaniment. A request or invitation in the <playerAction> does not by itself prove that an NPC agreed; conversely, if the action and second draft establish that an eligible character deliberately travels with the player, report that character even when an alias was used.
+Use exact names or any listed aliases. Include eligible characters whose movement with the player is established explicitly or reasonably inferred from the action and draft.
 {% if playerActionAccompanyingCharacters and playerActionAccompanyingCharacters.length %}
 Allowed exact character names and aliases:
 {% for character in playerActionAccompanyingCharacters %}
 - {{ character.name }}{% if character.aliases and character.aliases.length %} (accepted aliases: {{ character.aliases | join(', ') }}){% endif %}
 {% endfor %}
 Answer exactly NONE if no character accompanies the player. Otherwise, answer with one exact allowed name or alias per line, without bullets, commas, explanations, or XML.
-{% else %}
-There are no eligible accompanying characters. Answer exactly: NONE
-{% endif %}
 {% llmparse('player_action_accompanying_characters', playerActionAccompanyingCharacters | default([], true)) as accompanyingCharacters %}
+{% else %}
+{% set accompanyingCharacters = [] %}
+{% endif %}
 {% endif %}
 
 {% if vehicleDecision == 'depart' or vehicleDecision == 'redirect' %}
@@ -442,15 +427,15 @@ Briefly list what, if anything, might have changed at this destination during th
 {% endif %}
 
 {% if proseScopes and ('origin' in proseScopes) %}
-Write only the final refined ORIGIN portion of the story now. Do not label it, wrap it in XML, or include hidden notes. Across all requested portions, use no more than {{ config.prose_length }}. Preserve continuity with the second draft and every tool outcome; do not add anything absent from the second draft. Narrate no more than one approach and one impact, miss, or damaging contact for each single-target attack result. If the analysis immediately above identified an unsupported combat action, delete its complete sentences or paragraph wholesale; do not paraphrase, relocate, substitute, or preserve its damage. After the authorized attack, use only reaction, aftermath, withdrawal, or non-attacking posture. Never let an unrolled NPC follow-up change a rolled target's outcome. Remove any player response, agreement, gesture, decision, or follow-up action not expressly committed in the <playerAction>.
+Write only the final refined ORIGIN portion of the story now. Do not label it, wrap it in XML, or include hidden notes. Across all requested portions, use no more than {{ config.prose_length }}. Preserve continuity and adhere to every tool outcome.
 {% llmparse('player_action_required_prose') as originProse %}
 {% endif %}
 {% if proseScopes and ('between' in proseScopes) %}
-Write only the final refined BETWEEN portion of the story now. Do not label it, wrap it in XML, or include hidden notes. Continue smoothly from any prior portion. Across all requested portions, use no more than {{ config.prose_length }}. Preserve every tool outcome and do not add anything absent from the second draft. Narrate no more than one approach and one impact, miss, or damaging contact for each single-target attack result. If the analysis immediately above identified an unsupported combat action, delete its complete sentences or paragraph wholesale; do not paraphrase, relocate, substitute, or preserve its damage. After the authorized attack, use only reaction, aftermath, withdrawal, or non-attacking posture. Never let an unrolled NPC follow-up change a rolled target's outcome. Remove any player response, agreement, gesture, decision, or follow-up action not expressly committed in the <playerAction>.
+Write only the final refined BETWEEN portion of the story now. Do not label it, wrap it in XML, or include hidden notes. Continue smoothly from any prior portion. Across all requested portions, use no more than {{ config.prose_length }}. Preserve continuity and adhere to every tool outcome.
 {% llmparse('player_action_required_prose') as betweenProse %}
 {% endif %}
 {% if proseScopes and ('destination' in proseScopes) %}
-Write only the final refined DESTINATION portion of the story now. Do not label it, wrap it in XML, or include hidden notes. Continue smoothly from any prior portion. Across all requested portions, use no more than {{ config.prose_length }}. Preserve every tool outcome. Narrate no more than one approach and one impact, miss, or damaging contact for each single-target attack result. If the analysis immediately above identified an unsupported combat action, delete its complete sentences or paragraph wholesale; do not paraphrase, relocate, substitute, or preserve its damage. After the authorized attack, use only reaction, aftermath, withdrawal, or non-attacking posture. Never let an unrolled NPC follow-up change a rolled target's outcome. Remove any player response, agreement, gesture, decision, or follow-up action not expressly committed in the <playerAction>. Do not add anything absent from the second draft except the canonical destination facts and accepted destination changes explicitly supplied below.
+Write only the final refined DESTINATION portion of the story now. Do not label it, wrap it in XML, or include hidden notes. Continue smoothly from any prior portion. Across all requested portions, use no more than {{ config.prose_length }}. Preserve continuity and adhere to every tool outcome. Use the destination context and accepted changes below where they help the arrival feel grounded.
 {% if playerDestinationContext and playerDestinationContext.resolved %}
 Canonical destination: {{ playerDestinationContext.locationName }}{% if playerDestinationContext.regionName %}, {{ playerDestinationContext.regionName }}{% endif %}
 Canonical destination description: {{ playerDestinationContext.description }}
@@ -467,17 +452,19 @@ The following destination changes were already accepted. Depict every one natura
 List only hidden notes that are NEW or CHANGED this turn, without XML tags. Do not copy forward unchanged notes or information already visible in the prompt. Answer exactly N/A if there are none.
 {% llmparse('player_action_hidden_notes') as hiddenNotes %}
 {% else %}
-Write the final refined story prose now, using no more than {{ config.prose_length }}. Do not label it, wrap it in XML, or include hidden notes. Use what you determined above, preserve continuity with the second draft, adhere to every skill-check, opposed skill-check, and attack outcome, and do not call tools again or add anything absent from the second draft. Narrate no more than one approach and one impact, miss, or damaging contact for each single-target attack result. If the analysis immediately above identified an unsupported combat action, delete its complete sentences or paragraph wholesale; do not paraphrase, relocate, substitute, or preserve its damage. After the authorized attack, use only reaction, aftermath, withdrawal, or non-attacking posture. Never let an unrolled NPC follow-up change a rolled target's outcome. Remove any player response, agreement, gesture, decision, or follow-up action not expressly committed in the <playerAction>; stop before answering a question or accepting a request for the player.
+Write the final refined story prose now, using no more than {{ config.prose_length }}. Do not label it, wrap it in XML, or include hidden notes. Use what you determined above, preserve continuity, and adhere to every skill-check, opposed skill-check, and attack outcome.{% if explicitActionDuration %} The player committed this non-travel action to exactly {{ explicitActionDuration.text }}; narrate through its full duration unless there is a specific reason for an interruption.{% endif %}
 {% llmparse('player_action_required_prose') as normalProse %}
 
 List only hidden notes that are NEW or CHANGED this turn, without XML tags. Do not copy forward unchanged notes or information already visible in the prompt. Answer exactly N/A if there are none.
 {% llmparse('player_action_hidden_notes') as hiddenNotes %}
 
+{% if not explicitActionDuration %}
 Briefly state how much in-world wall-clock time the concrete non-travel actions in the final prose realistically consumed. Estimate elapsed wall-clock time, not reading time and not the sum of parallel work. Do not include a duration on this step.
 {% llmparse('player_action_time_reasoning') as timeReasoning %}
 
 State the exact elapsed duration only, rounded to the nearest minute, with a 1 minute minimum. Do not give a range, uncertainty, or explanation. Use one of: HH:MM, INTEGER minutes, INTEGER hours, or INTEGER hours, INTEGER minutes.
 {% llmparse('player_action_duration', 1) as timeDuration %}
+{% endif %}
 {% endif %}
 
 {% llmresult('player_action_result') %}

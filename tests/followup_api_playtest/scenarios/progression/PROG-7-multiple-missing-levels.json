@@ -1,0 +1,781 @@
+{
+  "version": 1,
+  "scenario": "progression",
+  "case": "PROG-7-multiple-missing-levels",
+  "description": "On a PROG-7-owned level-6 fixture with sufficient levels 1-3 and gaps 4-6, reuse the cached level-4 draft, resolve every missing level lowest-first, prove play stays gated between selections, and prove ordinary movement is admitted only after the final gap clears.",
+  "fixture": "progression-level6-multiple-gaps",
+  "configProfile": "progression-mechanics",
+  "trackedPaths": [
+    "player.payload.player",
+    "players.payload.players",
+    "locations.payload.locations",
+    "things.payload.things",
+    "factions.payload.factions",
+    "factions.payload.playerStandings",
+    "scheduledEvents.payload.scheduledEvents",
+    "calendar.payload.worldTime",
+    "history.payload.history"
+  ],
+  "steps": [
+    {
+      "type": "loadFixture"
+    },
+    {
+      "type": "snapshot",
+      "name": "before_selection"
+    },
+    {
+      "type": "request",
+      "name": "initial_pending",
+      "method": "GET",
+      "route": "/api/player/ability-selection?generateOptions=false"
+    },
+    {
+      "type": "assert",
+      "assertions": [
+        {
+          "type": "equals",
+          "source": "responses.initial_pending",
+          "path": "status",
+          "equals": 200
+        },
+        {
+          "type": "equals",
+          "source": "responses.initial_pending",
+          "path": "payload.pending",
+          "equals": true
+        },
+        {
+          "type": "equals",
+          "source": "responses.initial_pending",
+          "path": "payload.abilitySelection.currentLevel",
+          "equals": 6
+        },
+        {
+          "type": "equals",
+          "source": "responses.initial_pending",
+          "path": "payload.abilitySelection.levelsMissing",
+          "equals": [
+            4,
+            5,
+            6
+          ]
+        },
+        {
+          "type": "equals",
+          "source": "responses.initial_pending",
+          "path": "payload.abilitySelection.selection.level",
+          "equals": 4
+        },
+        {
+          "type": "equals",
+          "source": "responses.initial_pending",
+          "path": "payload.abilitySelection.selection.requiredSelections",
+          "equals": 3
+        },
+        {
+          "type": "equals",
+          "source": "responses.initial_pending",
+          "path": "payload.abilitySelection.selection.optionsPerLevel",
+          "equals": 6
+        },
+        {
+          "type": "equals",
+          "source": "responses.initial_pending",
+          "path": "payload.abilitySelection.selection.optionsReady",
+          "equals": true
+        },
+        {
+          "type": "equals",
+          "source": "responses.initial_pending",
+          "path": "payload.abilitySelection.selection.optionsToGenerate",
+          "equals": 6
+        },
+        {
+          "type": "count",
+          "source": "responses.initial_pending",
+          "path": "payload.abilitySelection.selection.options",
+          "equals": 6
+        },
+        {
+          "type": "uniqueBy",
+          "source": "responses.initial_pending",
+          "path": "payload.abilitySelection.selection.options",
+          "key": "name"
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "responses.initial_pending",
+          "path": "payload.abilitySelection.selection.options",
+          "where": {
+            "level": 4
+          },
+          "equals": 6
+        },
+        {
+          "type": "count",
+          "source": "responses.initial_pending",
+          "path": "payload.abilitySelection.selection.preselectedAbilityNames",
+          "equals": 0
+        },
+        {
+          "type": "count",
+          "source": "responses.initial_pending",
+          "path": "payload.player.abilities",
+          "equals": 9
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "responses.initial_pending",
+          "path": "payload.player.abilities",
+          "where": {
+            "level": 1
+          },
+          "equals": 3
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "responses.initial_pending",
+          "path": "payload.player.abilities",
+          "where": {
+            "level": 2
+          },
+          "equals": 3
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "responses.initial_pending",
+          "path": "payload.player.abilities",
+          "where": {
+            "level": 3
+          },
+          "equals": 3
+        }
+      ]
+    },
+    {
+      "type": "request",
+      "name": "submit_level4",
+      "method": "POST",
+      "route": "/api/player/ability-selection/submit",
+      "body": {
+        "level": 4,
+        "selectedAbilityNames": [
+          "$response.initial_pending.payload.abilitySelection.selection.options.0.name",
+          "$response.initial_pending.payload.abilitySelection.selection.options.1.name",
+          "$response.initial_pending.payload.abilitySelection.selection.options.2.name"
+        ],
+        "declinedAbilityNames": [
+          "$response.initial_pending.payload.abilitySelection.selection.options.3.name",
+          "$response.initial_pending.payload.abilitySelection.selection.options.4.name",
+          "$response.initial_pending.payload.abilitySelection.selection.options.5.name"
+        ]
+      }
+    },
+    {
+      "type": "assert",
+      "assertions": [
+        {
+          "type": "equals",
+          "source": "responses.submit_level4",
+          "path": "status",
+          "equals": 200
+        },
+        {
+          "type": "equals",
+          "source": "responses.submit_level4",
+          "path": "payload.pending",
+          "equals": true
+        },
+        {
+          "type": "equals",
+          "source": "responses.submit_level4",
+          "path": "payload.gameIntroGenerated",
+          "equals": false
+        },
+        {
+          "type": "equals",
+          "source": "responses.submit_level4",
+          "path": "payload.abilitySelection.levelsMissing",
+          "equals": [
+            5,
+            6
+          ]
+        },
+        {
+          "type": "equals",
+          "source": "responses.submit_level4",
+          "path": "payload.abilitySelection.selection.level",
+          "equals": 5
+        },
+        {
+          "type": "equals",
+          "source": "responses.submit_level4",
+          "path": "payload.abilitySelection.selection.optionsReady",
+          "equals": true
+        },
+        {
+          "type": "equals",
+          "source": "responses.submit_level4",
+          "path": "payload.abilitySelection.selection.optionsToGenerate",
+          "equals": 6
+        },
+        {
+          "type": "count",
+          "source": "responses.submit_level4",
+          "path": "payload.abilitySelection.selection.options",
+          "equals": 6
+        },
+        {
+          "type": "uniqueBy",
+          "source": "responses.submit_level4",
+          "path": "payload.abilitySelection.selection.options",
+          "key": "name"
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "responses.submit_level4",
+          "path": "payload.abilitySelection.selection.options",
+          "where": {
+            "level": 5
+          },
+          "equals": 6
+        },
+        {
+          "type": "count",
+          "source": "responses.submit_level4",
+          "path": "payload.player.abilities",
+          "equals": 12
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "responses.submit_level4",
+          "path": "payload.player.abilities",
+          "where": {
+            "level": 4
+          },
+          "equals": 3
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "responses.submit_level4",
+          "path": "payload.player.abilities",
+          "where": {
+            "name": "$response.initial_pending.payload.abilitySelection.selection.options.0.name",
+            "level": 4
+          },
+          "equals": 1
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "responses.submit_level4",
+          "path": "payload.player.abilities",
+          "where": {
+            "name": "$response.initial_pending.payload.abilitySelection.selection.options.1.name",
+            "level": 4
+          },
+          "equals": 1
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "responses.submit_level4",
+          "path": "payload.player.abilities",
+          "where": {
+            "name": "$response.initial_pending.payload.abilitySelection.selection.options.2.name",
+            "level": 4
+          },
+          "equals": 1
+        }
+      ]
+    },
+    {
+      "type": "snapshot",
+      "name": "after_level4"
+    },
+    {
+      "type": "request",
+      "name": "blocked_move_after_level4",
+      "method": "POST",
+      "route": "/api/player/move",
+      "body": {
+        "destinationId": "$fixture.groveLocationId",
+        "expectedOriginLocationId": "$fixture.baselineLocationId",
+        "accompanyingCharacters": []
+      }
+    },
+    {
+      "type": "snapshot",
+      "name": "after_level4_gate"
+    },
+    {
+      "type": "assert",
+      "assertions": [
+        {
+          "type": "equals",
+          "source": "responses.blocked_move_after_level4",
+          "path": "status",
+          "equals": 409
+        },
+        {
+          "type": "equals",
+          "source": "responses.blocked_move_after_level4",
+          "path": "payload.error",
+          "equals": "Player ability selection is required before moving."
+        },
+        {
+          "type": "equals",
+          "source": "responses.blocked_move_after_level4",
+          "path": "payload.pendingAbilitySelection",
+          "equalsFrom": {
+            "source": "responses.submit_level4",
+            "path": "payload.abilitySelection"
+          }
+        },
+        {
+          "type": "stateUnchanged",
+          "beforeSource": "snapshots.after_level4",
+          "afterSource": "snapshots.after_level4_gate",
+          "paths": [
+            "player.payload.player",
+            "players.payload.players",
+            "locations.payload.locations",
+            "things.payload.things",
+            "factions.payload.factions",
+            "factions.payload.playerStandings",
+            "scheduledEvents.payload.scheduledEvents",
+            "calendar.payload.worldTime",
+            "history.payload.history"
+          ]
+        }
+      ]
+    },
+    {
+      "type": "request",
+      "name": "submit_level5",
+      "method": "POST",
+      "route": "/api/player/ability-selection/submit",
+      "body": {
+        "level": 5,
+        "selectedAbilityNames": [
+          "$response.submit_level4.payload.abilitySelection.selection.options.0.name",
+          "$response.submit_level4.payload.abilitySelection.selection.options.1.name",
+          "$response.submit_level4.payload.abilitySelection.selection.options.2.name"
+        ],
+        "declinedAbilityNames": [
+          "$response.submit_level4.payload.abilitySelection.selection.options.3.name",
+          "$response.submit_level4.payload.abilitySelection.selection.options.4.name",
+          "$response.submit_level4.payload.abilitySelection.selection.options.5.name"
+        ]
+      }
+    },
+    {
+      "type": "assert",
+      "assertions": [
+        {
+          "type": "equals",
+          "source": "responses.submit_level5",
+          "path": "status",
+          "equals": 200
+        },
+        {
+          "type": "equals",
+          "source": "responses.submit_level5",
+          "path": "payload.pending",
+          "equals": true
+        },
+        {
+          "type": "equals",
+          "source": "responses.submit_level5",
+          "path": "payload.gameIntroGenerated",
+          "equals": false
+        },
+        {
+          "type": "equals",
+          "source": "responses.submit_level5",
+          "path": "payload.abilitySelection.levelsMissing",
+          "equals": [
+            6
+          ]
+        },
+        {
+          "type": "equals",
+          "source": "responses.submit_level5",
+          "path": "payload.abilitySelection.selection.level",
+          "equals": 6
+        },
+        {
+          "type": "equals",
+          "source": "responses.submit_level5",
+          "path": "payload.abilitySelection.selection.optionsReady",
+          "equals": true
+        },
+        {
+          "type": "equals",
+          "source": "responses.submit_level5",
+          "path": "payload.abilitySelection.selection.optionsToGenerate",
+          "equals": 6
+        },
+        {
+          "type": "count",
+          "source": "responses.submit_level5",
+          "path": "payload.abilitySelection.selection.options",
+          "equals": 6
+        },
+        {
+          "type": "uniqueBy",
+          "source": "responses.submit_level5",
+          "path": "payload.abilitySelection.selection.options",
+          "key": "name"
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "responses.submit_level5",
+          "path": "payload.abilitySelection.selection.options",
+          "where": {
+            "level": 6
+          },
+          "equals": 6
+        },
+        {
+          "type": "count",
+          "source": "responses.submit_level5",
+          "path": "payload.player.abilities",
+          "equals": 15
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "responses.submit_level5",
+          "path": "payload.player.abilities",
+          "where": {
+            "level": 4
+          },
+          "equals": 3
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "responses.submit_level5",
+          "path": "payload.player.abilities",
+          "where": {
+            "level": 5
+          },
+          "equals": 3
+        }
+      ]
+    },
+    {
+      "type": "snapshot",
+      "name": "after_level5"
+    },
+    {
+      "type": "request",
+      "name": "blocked_chat_after_level5",
+      "method": "POST",
+      "route": "/api/chat",
+      "body": {
+        "messages": [
+          {
+            "role": "user",
+            "content": "Wait quietly for one minute."
+          }
+        ],
+        "travel": false
+      }
+    },
+    {
+      "type": "snapshot",
+      "name": "after_level5_gate"
+    },
+    {
+      "type": "assert",
+      "assertions": [
+        {
+          "type": "equals",
+          "source": "responses.blocked_chat_after_level5",
+          "path": "status",
+          "equals": 409
+        },
+        {
+          "type": "equals",
+          "source": "responses.blocked_chat_after_level5",
+          "path": "payload.error",
+          "equals": "Player ability selection is required before continuing."
+        },
+        {
+          "type": "equals",
+          "source": "responses.blocked_chat_after_level5",
+          "path": "payload.pendingAbilitySelection",
+          "equalsFrom": {
+            "source": "responses.submit_level5",
+            "path": "payload.abilitySelection"
+          }
+        },
+        {
+          "type": "stateUnchanged",
+          "beforeSource": "snapshots.after_level5",
+          "afterSource": "snapshots.after_level5_gate",
+          "paths": [
+            "player.payload.player",
+            "players.payload.players",
+            "locations.payload.locations",
+            "things.payload.things",
+            "factions.payload.factions",
+            "factions.payload.playerStandings",
+            "scheduledEvents.payload.scheduledEvents",
+            "calendar.payload.worldTime",
+            "history.payload.history"
+          ]
+        }
+      ]
+    },
+    {
+      "type": "request",
+      "name": "submit_level6",
+      "method": "POST",
+      "route": "/api/player/ability-selection/submit",
+      "body": {
+        "level": 6,
+        "selectedAbilityNames": [
+          "$response.submit_level5.payload.abilitySelection.selection.options.0.name",
+          "$response.submit_level5.payload.abilitySelection.selection.options.1.name",
+          "$response.submit_level5.payload.abilitySelection.selection.options.2.name"
+        ],
+        "declinedAbilityNames": [
+          "$response.submit_level5.payload.abilitySelection.selection.options.3.name",
+          "$response.submit_level5.payload.abilitySelection.selection.options.4.name",
+          "$response.submit_level5.payload.abilitySelection.selection.options.5.name"
+        ]
+      }
+    },
+    {
+      "type": "request",
+      "name": "final_pending",
+      "method": "GET",
+      "route": "/api/player/ability-selection?generateOptions=false"
+    },
+    {
+      "type": "assert",
+      "assertions": [
+        {
+          "type": "equals",
+          "source": "responses.submit_level6",
+          "path": "status",
+          "equals": 200
+        },
+        {
+          "type": "equals",
+          "source": "responses.submit_level6",
+          "path": "payload.pending",
+          "equals": false
+        },
+        {
+          "type": "equals",
+          "source": "responses.submit_level6",
+          "path": "payload.gameIntroGenerated",
+          "equals": false
+        },
+        {
+          "type": "equals",
+          "source": "responses.submit_level6",
+          "path": "payload.abilitySelection.levelsMissing",
+          "equals": []
+        },
+        {
+          "type": "count",
+          "source": "responses.submit_level6",
+          "path": "payload.player.abilities",
+          "equals": 18
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "responses.submit_level6",
+          "path": "payload.player.abilities",
+          "where": {
+            "level": 1
+          },
+          "equals": 3
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "responses.submit_level6",
+          "path": "payload.player.abilities",
+          "where": {
+            "level": 2
+          },
+          "equals": 3
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "responses.submit_level6",
+          "path": "payload.player.abilities",
+          "where": {
+            "level": 3
+          },
+          "equals": 3
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "responses.submit_level6",
+          "path": "payload.player.abilities",
+          "where": {
+            "level": 4
+          },
+          "equals": 3
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "responses.submit_level6",
+          "path": "payload.player.abilities",
+          "where": {
+            "level": 5
+          },
+          "equals": 3
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "responses.submit_level6",
+          "path": "payload.player.abilities",
+          "where": {
+            "level": 6
+          },
+          "equals": 3
+        },
+        {
+          "type": "equals",
+          "source": "responses.final_pending",
+          "path": "status",
+          "equals": 200
+        },
+        {
+          "type": "equals",
+          "source": "responses.final_pending",
+          "path": "payload.pending",
+          "equals": false
+        },
+        {
+          "type": "equals",
+          "source": "responses.final_pending",
+          "path": "payload.abilitySelection.levelsMissing",
+          "equals": []
+        },
+        {
+          "type": "equals",
+          "source": "responses.final_pending",
+          "path": "payload.player.abilities",
+          "equalsFrom": {
+            "source": "responses.submit_level6",
+            "path": "payload.player.abilities"
+          }
+        }
+      ]
+    },
+    {
+      "type": "snapshot",
+      "name": "after_all_selections"
+    },
+    {
+      "type": "assert",
+      "assertions": [
+        {
+          "type": "stateUnchanged",
+          "beforeSource": "snapshots.before_selection",
+          "afterSource": "snapshots.after_all_selections",
+          "paths": [
+            "player.payload.player.level",
+            "player.payload.player.health",
+            "player.payload.player.maxHealth",
+            "player.payload.player.locationId",
+            "player.payload.player.experience",
+            "player.payload.player.inventory",
+            "player.payload.player.currency",
+            "player.payload.player.attributes",
+            "player.payload.player.skills",
+            "player.payload.player.statusEffects",
+            "locations.payload.locations",
+            "things.payload.things",
+            "factions.payload.factions",
+            "factions.payload.playerStandings",
+            "scheduledEvents.payload.scheduledEvents",
+            "calendar.payload.worldTime",
+            "history.payload.history"
+          ]
+        },
+        {
+          "type": "entityField",
+          "source": "after",
+          "collection": "players",
+          "id": "$fixture.courierId",
+          "path": "name",
+          "equals": "$fixture.courierName"
+        },
+        {
+          "type": "entityField",
+          "source": "after",
+          "collection": "players",
+          "id": "$fixture.courierId",
+          "path": "level",
+          "equals": 2
+        },
+        {
+          "type": "historyAddedTypeCount",
+          "entryType": "player-action",
+          "equals": 0,
+          "beforeSource": "snapshots.before_selection",
+          "afterSource": "snapshots.after_all_selections"
+        }
+      ]
+    },
+    {
+      "type": "request",
+      "name": "allowed_move_after_level6",
+      "method": "POST",
+      "route": "/api/player/move",
+      "body": {
+        "destinationId": "$fixture.groveLocationId",
+        "expectedOriginLocationId": "$fixture.baselineLocationId",
+        "accompanyingCharacters": []
+      }
+    },
+    {
+      "type": "assert",
+      "assertions": [
+        {
+          "type": "equals",
+          "source": "responses.allowed_move_after_level6",
+          "path": "status",
+          "equals": 200
+        },
+        {
+          "type": "equals",
+          "source": "responses.allowed_move_after_level6",
+          "path": "payload.success",
+          "equals": true
+        },
+        {
+          "type": "equals",
+          "source": "responses.allowed_move_after_level6",
+          "path": "payload.player.locationId",
+          "equals": "$fixture.groveLocationId"
+        },
+        {
+          "type": "equals",
+          "source": "responses.allowed_move_after_level6",
+          "path": "payload.player.abilities",
+          "equalsFrom": {
+            "source": "responses.submit_level6",
+            "path": "payload.player.abilities"
+          }
+        },
+        {
+          "type": "noRealtimeErrors"
+        },
+        {
+          "type": "noUnexpectedErrorLogs"
+        }
+      ]
+    }
+  ],
+  "humanReview": [
+    "Review the fresh level-5 and level-6 card sets for coherent ability text and record any prose/semantic quality issue in tmp/prose_issues_log.md without turning it into a case-specific prompt rule or wording assertion.",
+    "This case contains no generated story prose. Confirm the only post-selection gameplay is the ordinary authoritative move admitted after every missing level has cleared."
+  ]
+}

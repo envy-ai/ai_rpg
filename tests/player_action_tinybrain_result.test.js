@@ -59,6 +59,25 @@ test('player-action TinyBrain result builder assembles a normal result safely', 
     assert.match(xml, /A short exchange &amp; inspection\./);
 });
 
+test('player-action TinyBrain result builder uses an explicit duration without a second duration answer', () => {
+    const xml = buildPlayerActionTinyBrainResult({
+        assignments: {
+            movementKind: 'none',
+            normalProse: 'Baato completes the five-minute recitation.',
+            hiddenNotes: null,
+            explicitActionDuration: { text: '5 minutes', minutes: 5 }
+        },
+        templateContext: { currentVehicle: null }
+    });
+    const root = parse(xml);
+
+    assert.equal(root.getElementsByTagName('duration')[0].textContent, '5 minutes');
+    assert.equal(
+        root.getElementsByTagName('reasoning')[0].textContent,
+        'The player explicitly committed this action to 5 minutes.'
+    );
+});
+
 test('player-action TinyBrain result builder uses authoritative player travel metadata', () => {
     const xml = buildPlayerActionTinyBrainResult({
         assignments: baseMoveAssignments({

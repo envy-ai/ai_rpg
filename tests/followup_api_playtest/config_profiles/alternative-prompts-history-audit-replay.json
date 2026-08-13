@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "name": "alternative-prompts-history-audit-replay",
+  "description": "Strict no-provider replay profile for ALT-12's prompt-history contract audit.",
+  "extends": "alternative-prompts-history-audit",
+  "values": {
+    "ai.local_startup_script_path": "",
+    "ai.unload_during_image_generation": false,
+    "router_preload_model": "",
+    "unload_model_on_switch": false
+  }
+}

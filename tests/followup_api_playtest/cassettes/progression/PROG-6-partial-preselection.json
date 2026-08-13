@@ -1,0 +1,101 @@
+{
+  "version": 2,
+  "strict": true,
+  "complete": true,
+  "description": "progression/PROG-6-partial-preselection",
+  "recordedAt": "2026-08-12T08:00:39.023Z",
+  "entries": [
+    {
+      "ordinal": 1,
+      "metadataLabel": "player_ability_options",
+      "requestFingerprint": "sha256:e1fc0fc93dcfcef8c31fb55df7fce670bccf7c41ef91ec46e70fd8cac877e426",
+      "requestSummary": {
+        "messageRoles": [
+          "system",
+          "user",
+          "user",
+          "user",
+          "user",
+          "user",
+          "user",
+          "user",
+          "user",
+          "user",
+          "user",
+          "user"
+        ],
+        "messageCharacters": 83313,
+        "toolNames": [
+          "generateRandomInteger",
+          "moreInfo",
+          "getHistory",
+          "getFullScene",
+          "editChatLogEntry",
+          "rerunSceneSummary",
+          "editSceneSummary",
+          "requestUserInput",
+          "listMysteryBoxes",
+          "findMysteryBoxes",
+          "getMysteryBox",
+          "updateMysteryBoxFields",
+          "listMysteryThreads",
+          "getMysteryThread",
+          "updateMysteryThreadFields",
+          "teleportCharacterToLocation",
+          "teleportThingToLocation",
+          "moveThingFromLocationToCharacterInventory",
+          "createRegionStub",
+          "createLocationStub",
+          "createExit",
+          "listLocationEntities",
+          "getTravelTime",
+          "revealEntity",
+          "hideEntity",
+          "createThing",
+          "createNpc",
+          "deleteThing",
+          "setRelationship",
+          "addTracker",
+          "updateTracker",
+          "removeTracker",
+          "createQuest",
+          "scheduleEvent",
+          "alterThing",
+          "alterNpc",
+          "updateCharacterFields",
+          "updateObjectFields",
+          "upsertFactionFields",
+          "updatePartyMembers",
+          "alterLocation",
+          "resolveAttack",
+          "resolveAreaAttack",
+          "resolveSkillCheck",
+          "resolveOpposedSkillCheck",
+          "locateNpcs",
+          "locateThings",
+          "equipImplant",
+          "unequipImplant",
+          "installModule",
+          "removeModule"
+        ],
+        "model": "Qwen3.6-35B-A3B-uncensored-heretic-Native-MTP-Preserved-GGUF",
+        "backend": "openai_compatible"
+      },
+      "response": {
+        "object": "chat.completion",
+        "model": "Qwen3.6-35B-A3B-uncensored-heretic-Native-MTP-Preserved-GGUF",
+        "choices": [
+          {
+            "index": 0,
+            "finish_reason": "stop",
+            "message": {
+              "role": "assistant",
+              "content": "Baato is a level 4 Human Alchemist. He has no active abilities yet, only the baseline human adaptability. His recent actions involve chopping onions, sorting herbs, and accepting a courier delivery job. He is physically active but relies on general skills rather than specific magical or combat techniques.\n\nHere are 10 potential abilities for Baato at level 4:\n\n1.  **Herbal Intuition**: Allows Baato to instantly identify basic medicinal properties of plants he touches. This complements his apprenticeship by reinforcing his herbal knowledge with a passive sense.\n2.  **Steady Hand**: Reduces the chance of ruining delicate alchemical ingredients during mixing. This directly supports his new role as Tsubaki’s apprentice by improving crafting success rates.\n3.  **Cold Tolerance**: Grants resistance to freezing temperatures and reduces stamina drain in snow. This fits his current activity of delivering letters on the frozen northern ridge.\n4.  **Keen Eyes**: Increases perception range, allowing Baato to spot hidden items or details in the environment. This aids his exploration and foraging efforts in the wild.\n5.  **Light Foot**: Reduces the noise Baato makes when walking, making it easier to move quietly. This supports stealthy exploration or avoiding unwanted encounters in the wilderness.\n6.  **Rapid Chopping**: Increases the speed and efficiency of food preparation tasks like cutting vegetables. This echoes his early task of chopping onions for Mirei’s broth quota.\n7.  **Iron Stomach**: Grants immunity to minor food poisoning and reduces the risk of illness from bad rations. This is a practical survival trait for a traveler eating on the go.\n8.  **Weighted Pack**: Increases inventory capacity by 10 slots without penalty. This helps him carry more letters, herbs, or supplies during his courier work and daily life.\n9.  **Resilient Bones**: Increases constitution and reduces damage from falls or minor physical impacts. This provides a defensive boost to his generally balanced human physique.\n10. **Sharp Tongue**: Improves persuasion and bluff checks when negotiating prices or talking to difficult NPCs. This aids his social interactions in the village and with merchants.\n\n**Selection of 5 abilities:**\nI will choose abilities that expand his utility as an adventurer and alchemist, rather than just doubling down on his current specific tasks (like cold tolerance or rapid chopping, which are too narrow). I want to give him tools for exploration, crafting, and survival.\n\n1.  **Herbal Intuition**: Essential for an alchemist apprentice to identify raw materials.\n2.  **Steady Hand**: Directly benefits his alchemy class progression.\n3.  **Keen Eyes**: General utility for exploration and foraging, fitting the life-sim/adventure tone.\n4.  **Weighted Pack**: Practical for a courier and explorer carrying goods.\n5.  **Sharp Tongue**: Adds social depth, allowing him to handle village dynamics and negotiations.\n\nThese are distinct from each other and from his baseline human traits.\n\n<npcs>\n  <npc>\n    <name>Baato</name>\n    <abilities>\n      <ability>\n        <name>Herbal Intuition</name>\n        <description>Baato can instantly identify the basic medicinal properties of any plant he touches, allowing him to recognize useful herbs at a glance.</description>\n        <type>Passive</type>\n        <level>4</level>\n        <shortDescription>Instantly identifies medicinal properties of touched plants.</shortDescription>\n      </ability>\n      <ability>\n        <name>Steady Hand</name>\n        <description>Baato’s hands are naturally steady, reducing the chance of ruining delicate ingredients during alchemical mixing and increasing crafting quality.</description>\n        <type>Passive</type>\n        <level>4</level>\n        <shortDescription>Reduces ingredient spoilage and improves alchemy quality.</shortDescription>\n      </ability>\n      <ability>\n        <name>Keen Eyes</name>\n        <description>Baato has heightened visual perception, allowing him to spot hidden items, tracks, or details in the environment from a greater distance.</description>\n        <type>Passive</type>\n        <level>4</level>\n        <shortDescription>Increases perception range for spotting hidden details.</shortDescription>\n      </ability>\n      <ability>\n        <name>Weighted Pack</name>\n        <description>Baato’s body is adapted to carry heavier loads, increasing his inventory capacity by 10 slots without affecting his movement speed.</description>\n        <type>Passive</type>\n        <level>4</level>\n        <shortDescription>Increases inventory capacity by 10 slots.</shortDescription>\n      </ability>\n      <ability>\n        <name>Sharp Tongue</name>\n        <description>Baato has a natural talent for persuasion and bluffing, making it easier to negotiate prices or talk his way out of minor trouble.</description>\n        <type>Passive</type>\n        <level>4</level>\n        <shortDescription>Improves persuasion and bluff checks for social interactions.</shortDescription>\n      </ability>\n    </abilities>\n  </npc>\n</npcs>"
+            }
+          }
+        ]
+      }
+    }
+  ],
+  "completedAt": "2026-08-12T08:01:00.061Z"
+}

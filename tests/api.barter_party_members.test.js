@@ -47,9 +47,33 @@ test('barter NPC resolver uses client-visible disposition hostility heuristic', 
         'function isNpcInCurrentPlayerParty'
     );
 
-    assert.match(helperBlock, /def\.hostileThreshold/);
-    assert.match(helperBlock, /npc\.getDisposition\(currentPlayer\.id, key\)/);
+    assert.match(helperBlock, /isActorDispositionHostile\(/);
+    assert.match(helperBlock, /Player\.dispositionDefinitions/);
     assert.doesNotMatch(helperBlock, /Boolean\(npc\.isHostile\)/);
+});
+
+test('combat NPC slot classification uses the same disposition hostility heuristic as barter', () => {
+    const apiSource = fs.readFileSync(path.join(rootDir, 'api.js'), 'utf8');
+    const block = extractBlock(
+        apiSource,
+        'const pruneNpcNamesToDispositionLimits',
+        'try {'
+    );
+
+    assert.match(block, /isNpcHostileToCurrentPlayer\(npc\)/);
+    assert.doesNotMatch(block, /if \(npc\.isHostile\)/);
+});
+
+test('serialized NPC hostility uses the shared disposition classifier', () => {
+    const serverSource = fs.readFileSync(path.join(rootDir, 'server.js'), 'utf8');
+    const block = extractBlock(
+        serverSource,
+        'function serializeNpcForClient',
+        'function buildNpcProfiles'
+    );
+
+    assert.match(block, /isActorDispositionHostile\(/);
+    assert.match(block, /isHostileToPlayer: hostileToPlayer/);
 });
 
 test('concluded barter sessions force the merchant through NPC turns', () => {

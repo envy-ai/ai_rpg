@@ -1,0 +1,515 @@
+{
+  "version": 1,
+  "scenario": "alternative-prompts",
+  "case": "ALT-6-highest-no-context",
+  "description": "Contrast the no-log base-context generic mode with the excluded-history no-context mode: prove canary visibility only in the rendered base context, reversible world-mutation tool scope only for @@@, no persisted @@@ rows, no tools or stale context for backslash, slop bypass, and unchanged semantic game state.",
+  "fixture": "relationships-factions",
+  "configProfile": "alternative-prompts-mechanics",
+  "trackedPaths": [
+    "player.payload.player",
+    "players.payload.players",
+    "locations.payload.locations",
+    "regions.payload.regions",
+    "things.payload.things",
+    "factions.payload.factions",
+    "factions.payload.playerStandings",
+    "scheduledEvents.payload.scheduledEvents",
+    "calendar.payload.worldTime",
+    "history.payload.history"
+  ],
+  "steps": [
+    {
+      "type": "loadFixture"
+    },
+    {
+      "type": "request",
+      "name": "whistle_before",
+      "method": "GET",
+      "route": "/api/things/thing_283"
+    },
+    {
+      "type": "snapshot",
+      "name": "before_canary"
+    },
+    {
+      "type": "chat",
+      "name": "seed_canary_comment",
+      "text": "# ALT6_CONTEXT_CANARY_KITE_9472",
+      "interactive": {
+        "roll": null,
+        "questAccepted": false,
+        "confirmed": false
+      }
+    },
+    {
+      "type": "snapshot",
+      "name": "canary_seeded"
+    },
+    {
+      "type": "assert",
+      "assertions": [
+        {
+          "type": "equals",
+          "source": "responses.seed_canary_comment",
+          "path": "status",
+          "equals": 200
+        },
+        {
+          "type": "equals",
+          "source": "responses.seed_canary_comment",
+          "path": "payload.commentLogged",
+          "equals": true
+        },
+        {
+          "type": "equals",
+          "source": "responses.seed_canary_comment",
+          "path": "payload.response",
+          "equals": ""
+        },
+        {
+          "type": "historyAddedTypeCount",
+          "beforeSource": "snapshots.before_canary",
+          "afterSource": "snapshots.canary_seeded",
+          "entryType": "unknown",
+          "equals": 1
+        }
+      ]
+    },
+    {
+      "type": "chat",
+      "name": "highest_generic",
+      "text": "@@@ Read the supplied history and remember the exact token beginning ALT6_CONTEXT_CANARY_. Use updateObjectFields exactly twice and no other tools. First set thing_283 shortDescription to exactly `ALT-6 temporary no-log marker.` Then restore it to exactly `Bone whistle for signaling location in whiteout conditions.` After both successful tool results, reply with only the exact context token.",
+      "interactive": {
+        "roll": null,
+        "questAccepted": false,
+        "confirmed": false
+      }
+    },
+    {
+      "type": "request",
+      "name": "whistle_after_highest",
+      "method": "GET",
+      "route": "/api/things/thing_283"
+    },
+    {
+      "type": "snapshot",
+      "name": "after_highest"
+    },
+    {
+      "type": "assert",
+      "assertions": [
+        {
+          "type": "equals",
+          "source": "responses.highest_generic",
+          "path": "status",
+          "equals": 200
+        },
+        {
+          "type": "responseOk",
+          "equals": true
+        },
+        {
+          "type": "equals",
+          "source": "responses.highest_generic",
+          "path": "payload.response",
+          "equals": "ALT6_CONTEXT_CANARY_KITE_9472"
+        },
+        {
+          "type": "equals",
+          "source": "responses.highest_generic",
+          "path": "payload.debug.usedGenericPromptAction",
+          "equals": true
+        },
+        {
+          "type": "equals",
+          "source": "responses.highest_generic",
+          "path": "payload.debug.usedGenericPromptNoContextTemplate",
+          "equals": false
+        },
+        {
+          "type": "equals",
+          "source": "responses.highest_generic",
+          "path": "payload.debug.genericPromptStorageMode",
+          "equals": "no_log"
+        },
+        {
+          "type": "equals",
+          "source": "responses.highest_generic",
+          "path": "payload.debug.genericPromptTemplateMode",
+          "equals": "base_context"
+        },
+        {
+          "type": "includes",
+          "source": "responses.highest_generic",
+          "path": "payload.debug.generationPrompt",
+          "value": "ALT6_CONTEXT_CANARY_KITE_9472"
+        },
+        {
+          "type": "count",
+          "source": "responses.highest_generic",
+          "path": "payload.debug.toolInvocations",
+          "equals": 2
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "responses.highest_generic",
+          "path": "payload.debug.toolInvocations",
+          "where": {
+            "name": "updateObjectFields",
+            "argumentsObject": {
+              "objectType": "thing",
+              "object": "thing_283",
+              "fields": {
+                "shortDescription": "ALT-6 temporary no-log marker."
+              }
+            },
+            "metadata": {
+              "status": "success",
+              "objectType": "thing",
+              "objectId": "thing_283",
+              "updatedFields": [
+                "shortDescription"
+              ],
+              "updatedValues": {
+                "shortDescription": "ALT-6 temporary no-log marker."
+              }
+            }
+          },
+          "equals": 1
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "responses.highest_generic",
+          "path": "payload.debug.toolInvocations",
+          "where": {
+            "name": "updateObjectFields",
+            "argumentsObject": {
+              "objectType": "thing",
+              "object": "thing_283",
+              "fields": {
+                "shortDescription": "Bone whistle for signaling location in whiteout conditions."
+              }
+            },
+            "metadata": {
+              "status": "success",
+              "objectType": "thing",
+              "objectId": "thing_283",
+              "updatedFields": [
+                "shortDescription"
+              ],
+              "updatedValues": {
+                "shortDescription": "Bone whistle for signaling location in whiteout conditions."
+              }
+            }
+          },
+          "equals": 1
+        },
+        {
+          "type": "equals",
+          "source": "responses.whistle_after_highest",
+          "path": "payload.thing.shortDescription",
+          "equals": "Bone whistle for signaling location in whiteout conditions."
+        },
+        {
+          "type": "stateUnchanged",
+          "beforeSource": "responses.whistle_before",
+          "afterSource": "responses.whistle_after_highest",
+          "paths": [
+            "payload.thing.id",
+            "payload.thing.name",
+            "payload.thing.description",
+            "payload.thing.shortDescription",
+            "payload.thing.thingType",
+            "payload.thing.imageId",
+            "payload.thing.imagePrompt",
+            "payload.thing.createdAt",
+            "payload.thing.rarity",
+            "payload.thing.itemTypeDetail",
+            "payload.thing.slot",
+            "payload.thing.attributeBonuses",
+            "payload.thing.causeStatusEffect",
+            "payload.thing.count",
+            "payload.thing.level",
+            "payload.thing.relativeLevel",
+            "payload.thing.isVehicle",
+            "payload.thing.isCraftingStation",
+            "payload.thing.isProcessingStation",
+            "payload.thing.isHarvestable",
+            "payload.thing.isSalvageable",
+            "payload.thing.isContainer",
+            "payload.thing.requiresCheckToOpen",
+            "payload.thing.containerContents",
+            "payload.thing.containedThingIds",
+            "payload.thing.moduleSlots",
+            "payload.thing.installedModuleIds",
+            "payload.thing.metadata",
+            "payload.thing.statusEffects"
+          ]
+        },
+        {
+          "type": "stateUnchanged",
+          "beforeSource": "snapshots.canary_seeded",
+          "afterSource": "snapshots.after_highest",
+          "paths": [
+            "history.payload.history"
+          ]
+        },
+        {
+          "type": "historyAddedTypeCount",
+          "beforeSource": "snapshots.canary_seeded",
+          "afterSource": "snapshots.after_highest",
+          "entryType": "user-generic-prompt",
+          "equals": 0
+        },
+        {
+          "type": "historyAddedTypeCount",
+          "beforeSource": "snapshots.canary_seeded",
+          "afterSource": "snapshots.after_highest",
+          "entryType": "tool-call-debug",
+          "equals": 0
+        },
+        {
+          "type": "historyAddedTypeCount",
+          "beforeSource": "snapshots.canary_seeded",
+          "afterSource": "snapshots.after_highest",
+          "entryType": "generic-prompt-response",
+          "equals": 0
+        },
+        {
+          "type": "stateUnchanged",
+          "beforeSource": "snapshots.canary_seeded",
+          "afterSource": "snapshots.after_highest",
+          "paths": [
+            "player.payload.player.id",
+            "player.payload.player.level",
+            "player.payload.player.health",
+            "player.payload.player.maxHealth",
+            "player.payload.player.locationId",
+            "player.payload.player.experience",
+            "player.payload.player.abilities",
+            "player.payload.player.attributes",
+            "player.payload.player.skills",
+            "player.payload.player.inventory",
+            "player.payload.player.currency",
+            "player.payload.player.statusEffects",
+            "player.payload.player.needBars",
+            "player.payload.player.quests",
+            "player.payload.player.completedQuests",
+            "locations.payload.locations",
+            "regions.payload.regions",
+            "factions.payload.factions",
+            "factions.payload.playerStandings",
+            "scheduledEvents.payload.scheduledEvents",
+            "calendar.payload.worldTime"
+          ]
+        },
+        {
+          "type": "noRealtimeErrors"
+        },
+        {
+          "type": "noUnexpectedErrorLogs"
+        }
+      ]
+    },
+    {
+      "type": "chat",
+      "name": "no_context_generic",
+      "text": "\\ Reply exactly NO_CONTEXT_READY. Do not infer or mention any game character, location, object, or chat-history content.",
+      "interactive": {
+        "roll": null,
+        "questAccepted": false,
+        "confirmed": false
+      }
+    },
+    {
+      "type": "assert",
+      "assertions": [
+        {
+          "type": "equals",
+          "source": "responses.no_context_generic",
+          "path": "status",
+          "equals": 200
+        },
+        {
+          "type": "responseOk",
+          "equals": true
+        },
+        {
+          "type": "equals",
+          "source": "responses.no_context_generic",
+          "path": "payload.response",
+          "equals": "NO_CONTEXT_READY"
+        },
+        {
+          "type": "equals",
+          "source": "responses.no_context_generic",
+          "path": "payload.debug.usedGenericPromptAction",
+          "equals": true
+        },
+        {
+          "type": "equals",
+          "source": "responses.no_context_generic",
+          "path": "payload.debug.usedGenericPromptNoContextTemplate",
+          "equals": true
+        },
+        {
+          "type": "equals",
+          "source": "responses.no_context_generic",
+          "path": "payload.debug.genericPromptStorageMode",
+          "equals": "hide_base_context"
+        },
+        {
+          "type": "equals",
+          "source": "responses.no_context_generic",
+          "path": "payload.debug.genericPromptTemplateMode",
+          "equals": "no_context"
+        },
+        {
+          "type": "equals",
+          "source": "responses.no_context_generic",
+          "path": "payload.debug.generationPrompt",
+          "equals": "Reply exactly NO_CONTEXT_READY. Do not infer or mention any game character, location, object, or chat-history content."
+        },
+        {
+          "type": "notIncludes",
+          "source": "responses.no_context_generic",
+          "path": "payload.debug.rawTemplate",
+          "value": "ALT6_CONTEXT_CANARY_KITE_9472"
+        },
+        {
+          "type": "notIncludes",
+          "source": "responses.no_context_generic",
+          "path": "payload.debug.rawTemplate",
+          "value": "Whistle of the Ridge"
+        },
+        {
+          "type": "notIncludes",
+          "source": "responses.no_context_generic",
+          "path": "payload.debug.rawTemplate",
+          "value": "QA Private Contact"
+        },
+        {
+          "type": "absent",
+          "source": "responses.no_context_generic",
+          "path": "payload.debug.toolInvocations"
+        },
+        {
+          "type": "historyAddedSequence",
+          "beforeSource": "snapshots.after_highest",
+          "afterSource": "after",
+          "entryTypes": [
+            "user-generic-prompt",
+            "generic-prompt-response"
+          ],
+          "expected": [
+            {
+              "type": "user-generic-prompt",
+              "role": "user",
+              "content": "Reply exactly NO_CONTEXT_READY. Do not infer or mention any game character, location, object, or chat-history content.",
+              "metadata": {
+                "excludeFromBaseContextHistory": true
+              }
+            },
+            {
+              "type": "generic-prompt-response",
+              "role": "assistant",
+              "content": "NO_CONTEXT_READY",
+              "metadata": {
+                "excludeFromBaseContextHistory": true
+              }
+            }
+          ]
+        },
+        {
+          "type": "historyAddedTypeCount",
+          "beforeSource": "snapshots.after_highest",
+          "afterSource": "after",
+          "entryType": "tool-call-debug",
+          "equals": 0
+        },
+        {
+          "type": "historyAddedTypeCount",
+          "beforeSource": "snapshots.before_canary",
+          "afterSource": "after",
+          "entryType": "unknown",
+          "equals": 1
+        },
+        {
+          "type": "historyAddedTypeCount",
+          "beforeSource": "snapshots.before_canary",
+          "afterSource": "after",
+          "entryType": "user-generic-prompt",
+          "equals": 1
+        },
+        {
+          "type": "historyAddedTypeCount",
+          "beforeSource": "snapshots.before_canary",
+          "afterSource": "after",
+          "entryType": "generic-prompt-response",
+          "equals": 1
+        },
+        {
+          "type": "historyAddedTypeCount",
+          "beforeSource": "snapshots.before_canary",
+          "afterSource": "after",
+          "entryType": "slop-remover",
+          "equals": 0
+        },
+        {
+          "type": "historyAddedTypeCount",
+          "beforeSource": "snapshots.before_canary",
+          "afterSource": "after",
+          "entryType": "player-action",
+          "equals": 0
+        },
+        {
+          "type": "historyAddedTypeCount",
+          "beforeSource": "snapshots.before_canary",
+          "afterSource": "after",
+          "entryType": "event-summary",
+          "equals": 0
+        },
+        {
+          "type": "stateUnchanged",
+          "beforeSource": "snapshots.after_highest",
+          "afterSource": "after",
+          "paths": [
+            "player.payload.player.id",
+            "player.payload.player.level",
+            "player.payload.player.health",
+            "player.payload.player.maxHealth",
+            "player.payload.player.locationId",
+            "player.payload.player.experience",
+            "player.payload.player.abilities",
+            "player.payload.player.attributes",
+            "player.payload.player.skills",
+            "player.payload.player.inventory",
+            "player.payload.player.currency",
+            "player.payload.player.statusEffects",
+            "player.payload.player.needBars",
+            "player.payload.player.quests",
+            "player.payload.player.completedQuests",
+            "locations.payload.locations",
+            "regions.payload.regions",
+            "things.payload.things",
+            "factions.payload.factions",
+            "factions.payload.playerStandings",
+            "scheduledEvents.payload.scheduledEvents",
+            "calendar.payload.worldTime"
+          ]
+        },
+        {
+          "type": "noRealtimeErrors"
+        },
+        {
+          "type": "noUnexpectedErrorLogs"
+        }
+      ]
+    }
+  ],
+  "humanReview": [
+    "Confirm the @@@ answer consists only of the canary supplied by context and that both reversible mutations succeeded without story narration. Confirm the backslash answer is only NO_CONTEXT_READY and shows no awareness of the canary or fixture entities.",
+    "The source cassette must show the @@@ generic_prompt request includes the full generic tool schema, including updateObjectFields, while generic_prompt_nocontext has an empty tool-name list. The strict request fingerprint preserves this schema contrast during replay.",
+    "The immutable relationships-factions fixture and ALT-1 through ALT-5 assets must remain unchanged; all shortDescription writes occur only in the harness-created disposable runtime and are semantically restored before the no-context request."
+  ]
+}

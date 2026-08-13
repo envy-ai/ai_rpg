@@ -1,0 +1,7 @@
+{
+  "version": 1,
+  "name": "alternative-prompts-tool-errors",
+  "description": "ALT-10-owned copy that isolates structured generic-tool error and recovery behavior while preserving the normal prompt-mode contract.",
+  "extends": "isolated-base",
+  "values": {}
+}

@@ -1,0 +1,57 @@
+{
+  "version": 1,
+  "name": "equipment-modules-lifecycle",
+  "description": "Copied equipment and module lifecycle fixture retained from the original EQUIP audit.",
+  "createdAt": "2026-08-12T12:51:28.228Z",
+  "source": {
+    "setupCommand": "Historical EQUIP setup: Bronze and Silver circlets, Padded Coat, and compatible Circlet Lens, all initially unequipped and player-owned.",
+    "saveName": "2026-08-08T21-59-07-812Z_Monster_Girl_Life_2026-06b-Baato-Ember_Hollow_Outskirts-char_2-mskx1quc",
+    "saveType": "saves",
+    "settingName": "Monster Girl Life 2026-06b",
+    "playerName": "Baato"
+  },
+  "configProfile": "isolated-base",
+  "requiredMods": [
+    "modules"
+  ],
+  "worldTime": {
+    "dayIndex": 0,
+    "timeMinutes": 658
+  },
+  "entities": {
+    "playerId": "char_2",
+    "locationId": "loc_5",
+    "bronzeId": "thing_191",
+    "silverId": "thing_192",
+    "coatId": "thing_193",
+    "lensId": "thing_194"
+  },
+  "invariants": [
+    {
+      "type": "entityField",
+      "source": "after",
+      "collection": "things",
+      "id": "thing_191",
+      "path": "slot",
+      "equals": "head"
+    },
+    {
+      "type": "entityField",
+      "source": "after",
+      "collection": "things",
+      "id": "thing_194",
+      "path": "itemTypeDetail",
+      "equals": "module"
+    },
+    {
+      "type": "nullish",
+      "source": "after",
+      "path": "currentPlayerDetail.payload.npc.gear.Head.itemId"
+    }
+  ],
+  "validation": {
+    "passed": true,
+    "evidence": "Retained live API artifacts under tmp/followup-api-playtest/equipment."
+  },
+  "integrity": "sha256:b7dace762d3fd1c7227986e27c450115d06ca1459c73f462260a25e7d3aeac69"
+}

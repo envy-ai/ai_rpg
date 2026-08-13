@@ -1,0 +1,231 @@
+{
+  "version": 1,
+  "scenario": "alternative-prompts",
+  "case": "ALT-7-interactive-roll-high",
+  "description": "From its own fresh fixture restore, submit the same ordinary unopposed skill action with <f>, answer the single WebSocket roll request with 20, and prove the marker is stripped while the exact roll is injected once into resolveSkillCheck.",
+  "fixture": "relationships-factions",
+  "configProfile": "alternative-prompts-interactive-roll",
+  "trackedPaths": [
+    "player.payload.player",
+    "players.payload.players",
+    "locations.payload.locations",
+    "regions.payload.regions",
+    "things.payload.things",
+    "factions.payload.factions",
+    "factions.payload.playerStandings",
+    "scheduledEvents.payload.scheduledEvents",
+    "calendar.payload.worldTime",
+    "history.payload.history"
+  ],
+  "steps": [
+    {
+      "type": "loadFixture"
+    },
+    {
+      "type": "snapshot",
+      "name": "before_skill_check"
+    },
+    {
+      "type": "chat",
+      "name": "skill_check",
+      "text": "<f> I carefully inspect the fixed face of March Start Marker for a subtle mason's alignment mark. This is one unopposed Perception check at Medium difficulty; I do not touch, alter, take, move, attack, or do anything else. Whether I notice a mark or not, this observation alone changes no game entity.",
+      "travel": false,
+      "interactive": {
+        "roll": 20,
+        "questAccepted": false,
+        "confirmed": false
+      }
+    },
+    {
+      "type": "assert",
+      "assertions": [
+        {
+          "type": "httpStatus",
+          "equals": 200
+        },
+        {
+          "type": "responseOk",
+          "equals": true
+        },
+        {
+          "type": "count",
+          "source": "responses.skill_check",
+          "path": "payload.toolInvocations",
+          "equals": 1
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "responses.skill_check",
+          "path": "payload.toolInvocations",
+          "where": {
+            "name": "resolveSkillCheck",
+            "metadata": {
+              "checkType": "unopposed",
+              "actionResolution": {
+                "success": true,
+                "roll": {
+                  "die": 20
+                },
+                "skill": "Perception",
+                "checkType": "unopposed"
+              }
+            }
+          },
+          "equals": 1
+        },
+        {
+          "type": "equals",
+          "source": "responses.skill_check",
+          "path": "payload.checkResultsRecorded",
+          "equals": true
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "responses.skill_check",
+          "path": "payload.messages",
+          "where": {
+            "role": "user",
+            "content": "I carefully inspect the fixed face of March Start Marker for a subtle mason's alignment mark. This is one unopposed Perception check at Medium difficulty; I do not touch, alter, take, move, attack, or do anything else. Whether I notice a mark or not, this observation alone changes no game entity."
+          },
+          "equals": 1
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "realtime",
+          "path": ".",
+          "where": {
+            "type": "player_input_request",
+            "mode": "integer"
+          },
+          "equals": 1
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "realtime",
+          "path": ".",
+          "where": {
+            "type": "harness_response",
+            "route": "/api/chat/user-input-response",
+            "body": {
+              "answer": "20"
+            },
+            "result": {
+              "status": 200,
+              "ok": true,
+              "payload": {
+                "success": true
+              }
+            }
+          },
+          "equals": 1
+        },
+        {
+          "type": "historyAddedTypeCount",
+          "beforeSource": "snapshots.before_skill_check",
+          "afterSource": "after",
+          "entryType": "check-results",
+          "equals": 1
+        },
+        {
+          "type": "historyAddedTypeCount",
+          "beforeSource": "snapshots.before_skill_check",
+          "afterSource": "after",
+          "entryType": "tool-call-debug",
+          "equals": 1
+        },
+        {
+          "type": "historyAddedTypeCount",
+          "beforeSource": "snapshots.before_skill_check",
+          "afterSource": "after",
+          "entryType": "player-action",
+          "equals": 1
+        },
+        {
+          "type": "historyAddedNestedObjectCount",
+          "beforeSource": "snapshots.before_skill_check",
+          "afterSource": "after",
+          "entryWhere": {
+            "type": "check-results"
+          },
+          "path": "checkResults",
+          "where": {
+            "kind": "skill",
+            "status": "completed",
+            "skillCheck": {
+              "success": true,
+              "roll": {
+                "die": 20
+              },
+              "skill": "Perception",
+              "checkType": "unopposed"
+            }
+          },
+          "equals": 1
+        },
+        {
+          "type": "historyAddedNestedObjectCount",
+          "beforeSource": "snapshots.before_skill_check",
+          "afterSource": "after",
+          "entryWhere": {
+            "type": "tool-call-debug"
+          },
+          "path": "toolCalls",
+          "where": {
+            "name": "resolveSkillCheck",
+            "status": "completed"
+          },
+          "equals": 1
+        },
+        {
+          "type": "stateUnchanged",
+          "beforeSource": "snapshots.before_skill_check",
+          "afterSource": "after",
+          "paths": [
+            "player.payload.player.id",
+            "player.payload.player.health",
+            "player.payload.player.maxHealth",
+            "player.payload.player.locationId",
+            "player.payload.player.experience",
+            "player.payload.player.abilities",
+            "player.payload.player.attributes",
+            "player.payload.player.skills",
+            "player.payload.player.inventory",
+            "player.payload.player.currency",
+            "player.payload.player.statusEffects",
+            "player.payload.player.quests",
+            "player.payload.player.completedQuests",
+            "locations.payload.locations",
+            "regions.payload.regions",
+            "things.payload.things",
+            "factions.payload.factions",
+            "factions.payload.playerStandings",
+            "scheduledEvents.payload.scheduledEvents"
+          ]
+        },
+        {
+          "type": "historyAddedTypeCount",
+          "beforeSource": "snapshots.before_skill_check",
+          "afterSource": "after",
+          "entryType": "random-event",
+          "equals": 0
+        },
+        {
+          "type": "historyAddedTypeCount",
+          "beforeSource": "snapshots.before_skill_check",
+          "afterSource": "after",
+          "entryType": "npc-action",
+          "equals": 0
+        },
+        {
+          "type": "noRealtimeErrors"
+        },
+        {
+          "type": "noUnexpectedErrorLogs"
+        }
+      ]
+    }
+  ],
+  "humanReview": [
+    "The prose should naturally reflect the one successful observation check without contradicting it or narrating a state-changing second action. Record prose concerns in tmp/prose_issues_log.md; do not add automated prose wording checks."
+  ]
+}

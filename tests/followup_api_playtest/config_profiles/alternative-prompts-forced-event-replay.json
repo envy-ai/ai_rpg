@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "name": "alternative-prompts-forced-event-replay",
+  "description": "Strict replay variant for the isolated forced-event dispatch case, with local startup and model handoff disabled.",
+  "extends": "alternative-prompts-forced-event",
+  "values": {
+    "ai.local_startup_script_path": "",
+    "router_preload_model": "",
+    "imagegen.unload_model_before_prompt": false
+  }
+}

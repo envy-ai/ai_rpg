@@ -1,0 +1,164 @@
+{
+  "version": 1,
+  "scenario": "progression-setup",
+  "case": "PROG-fixture-partial-preselection",
+  "description": "Validate the new case-owned copy of the pending progression save after adding exactly one deterministic level-4 ability and no pending option cards.",
+  "fixture": {
+    "saveName": "PROG6-partial-preselection-setup",
+    "saveType": "saves",
+    "entities": {
+      "playerId": "char_2",
+      "preselectedAbilityName": "Prepared Catalyst"
+    }
+  },
+  "configProfile": "progression-mechanics",
+  "trackedPaths": [
+    "player.payload.player",
+    "players.payload.players",
+    "locations.payload.locations",
+    "things.payload.things",
+    "factions.payload.factions",
+    "factions.payload.playerStandings",
+    "scheduledEvents.payload.scheduledEvents",
+    "calendar.payload.worldTime",
+    "history.payload.history"
+  ],
+  "steps": [
+    {
+      "type": "loadFixture"
+    },
+    {
+      "type": "snapshot",
+      "name": "before_read"
+    },
+    {
+      "type": "request",
+      "name": "partial_pending",
+      "method": "GET",
+      "route": "/api/player/ability-selection?generateOptions=false"
+    },
+    {
+      "type": "assert",
+      "assertions": [
+        {
+          "type": "equals",
+          "source": "responses.partial_pending",
+          "path": "status",
+          "equals": 200
+        },
+        {
+          "type": "equals",
+          "source": "responses.partial_pending",
+          "path": "payload.pending",
+          "equals": true
+        },
+        {
+          "type": "equals",
+          "source": "responses.partial_pending",
+          "path": "payload.abilitySelection.currentLevel",
+          "equals": 4
+        },
+        {
+          "type": "equals",
+          "source": "responses.partial_pending",
+          "path": "payload.abilitySelection.levelsMissing",
+          "equals": [
+            4
+          ]
+        },
+        {
+          "type": "equals",
+          "source": "responses.partial_pending",
+          "path": "payload.abilitySelection.selection.level",
+          "equals": 4
+        },
+        {
+          "type": "equals",
+          "source": "responses.partial_pending",
+          "path": "payload.abilitySelection.selection.requiredSelections",
+          "equals": 3
+        },
+        {
+          "type": "equals",
+          "source": "responses.partial_pending",
+          "path": "payload.abilitySelection.selection.optionsPerLevel",
+          "equals": 6
+        },
+        {
+          "type": "equals",
+          "source": "responses.partial_pending",
+          "path": "payload.abilitySelection.selection.optionsReady",
+          "equals": false
+        },
+        {
+          "type": "equals",
+          "source": "responses.partial_pending",
+          "path": "payload.abilitySelection.selection.optionsToGenerate",
+          "equals": 5
+        },
+        {
+          "type": "count",
+          "source": "responses.partial_pending",
+          "path": "payload.abilitySelection.selection.options",
+          "equals": 1
+        },
+        {
+          "type": "equals",
+          "source": "responses.partial_pending",
+          "path": "payload.abilitySelection.selection.options.0.name",
+          "equals": "$fixture.preselectedAbilityName"
+        },
+        {
+          "type": "equals",
+          "source": "responses.partial_pending",
+          "path": "payload.abilitySelection.selection.preselectedAbilityNames",
+          "equals": [
+            "$fixture.preselectedAbilityName"
+          ]
+        },
+        {
+          "type": "count",
+          "source": "responses.partial_pending",
+          "path": "payload.player.abilities",
+          "equals": 10
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "responses.partial_pending",
+          "path": "payload.player.abilities",
+          "where": {
+            "name": "$fixture.preselectedAbilityName",
+            "description": "Baato keeps one stable catalyst prepared for routine alchemical work.",
+            "shortDescription": "Keeps a stable catalyst ready for routine alchemy.",
+            "type": "Passive",
+            "level": 4
+          },
+          "equals": 1
+        },
+        {
+          "type": "stateUnchanged",
+          "beforeSource": "snapshots.before_read",
+          "afterSource": "after",
+          "paths": [
+            "player.payload.player",
+            "players.payload.players",
+            "locations.payload.locations",
+            "things.payload.things",
+            "factions.payload.factions",
+            "factions.payload.playerStandings",
+            "scheduledEvents.payload.scheduledEvents",
+            "calendar.payload.worldTime",
+            "history.payload.history"
+          ]
+        },
+        {
+          "type": "noRealtimeErrors"
+        },
+        {
+          "type": "noUnexpectedErrorLogs"
+        }
+      ]
+    }
+  ],
+  "humanReview": []
+}

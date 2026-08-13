@@ -3,6 +3,7 @@ const Utils = require("./Utils.js");
 const Thing = require("./Thing.js");
 const Globals = require("./Globals.js");
 const Player = require("./Player.js");
+const { isActorDispositionHostile } = require("./DispositionHostility.js");
 const Quest = require("./Quest.js");
 const Faction = require("./Faction.js");
 const LLMClient = require("./LLMClient.js");
@@ -27,6 +28,7 @@ const {
     parseNeedBarCharactersResult,
     parseQuestRewardResult,
 } = require("./TinyBrainPromptParsers.js");
+const { buildQuestRewardResult } = require("./TinyBrainResultBuilders.js");
 
 const BASE_TIMEOUT_MS = 120000;
 const DEFAULT_STATUS_DURATION = 3;
@@ -2257,6 +2259,105 @@ function collectItemTargetStatusEffects(item) {
     }
 
     return deduped;
+}
+
+function deriveMissingConsumedItemInflictEvents(eventsInstance, parsedMap) {
+    if (!parsedMap || !Array.isArray(parsedMap.consume_item) || parsedMap.consume_item.length !== 1) {
+        return;
+    }
+
+    const { findThingByName, findActorByName } = eventsInstance._deps;
+    if (typeof findThingByName !== "function" || typeof findActorByName !== "function") {
+        return;
+    }
+
+    const normalizeKey = (value) => normalizeString(value).toLowerCase();
+    const targetNames = new Map();
+    const addLivingTarget = (value) => {
+        const name = normalizeString(value);
+        const key = normalizeKey(name);
+        if (!key || targetNames.has(key)) {
+            return;
+        }
+        const actor = findActorByName(name);
+        if (!actor || actor.isDead === true) {
+            return;
+        }
+        targetNames.set(key, normalizeString(actor.name) || name);
+    };
+
+    if (Array.isArray(parsedMap.attack_damage)) {
+        parsedMap.attack_damage.forEach((entry) => addLivingTarget(entry?.target));
+    }
+    if (Array.isArray(parsedMap.heal_recover)) {
+        parsedMap.heal_recover.forEach((entry) => (
+            addLivingTarget(entry?.character || entry?.recipient)
+        ));
+    }
+
+    if (targetNames.size !== 1) {
+        return;
+    }
+
+    const targetName = targetNames.values().next().value;
+    const consumedItemName = normalizeString(
+        parsedMap.consume_item[0]?.item || parsedMap.consume_item[0]?.name
+    );
+    const consumedItemKey = normalizeKey(consumedItemName);
+    if (!consumedItemKey) {
+        return;
+    }
+
+    const hasMatchingGainedStatusSignal = (
+        Array.isArray(parsedMap.status_effect_change)
+            ? parsedMap.status_effect_change
+            : []
+    ).some((entry) => {
+        if (normalizeKey(entry?.entity) !== normalizeKey(targetName)) {
+            return false;
+        }
+        if (normalizeKey(entry?.action) !== "gained") {
+            return false;
+        }
+        const signalItemKey = normalizeKey(entry?.item);
+        if (signalItemKey && signalItemKey !== consumedItemKey) {
+            return false;
+        }
+        const signalSource = normalizeKey(entry?.source);
+        return !signalSource || signalSource === "item_inflict" || signalSource === "item_ingest";
+    });
+    if (!hasMatchingGainedStatusSignal) {
+        return;
+    }
+
+    const existingPairs = new Set();
+    for (const entry of [
+        ...(Array.isArray(parsedMap.item_inflict) ? parsedMap.item_inflict : []),
+        ...(Array.isArray(parsedMap.item_ingest) ? parsedMap.item_ingest : []),
+    ]) {
+        const pairKey = buildItemActorPairKey(entry?.item, entry?.target);
+        if (pairKey) {
+            existingPairs.add(pairKey);
+        }
+    }
+
+    const item = findThingByName(consumedItemName);
+    if (!item || !collectItemTargetStatusEffects(item).length) {
+        return;
+    }
+    const pairKey = buildItemActorPairKey(consumedItemName, targetName);
+    if (!pairKey || existingPairs.has(pairKey)) {
+        return;
+    }
+    if (!Array.isArray(parsedMap.item_inflict)) {
+        parsedMap.item_inflict = [];
+    }
+    parsedMap.item_inflict.push({
+        item: normalizeString(item.name) || consumedItemName,
+        target: targetName,
+        status: "Use the item's configured target effect.",
+        derivedFromConsumedItem: true,
+    });
 }
 
 async function applyItemTriggeredStatuses(eventsInstance, entries, context = {}, {
@@ -5492,6 +5593,9 @@ class Events {
                             templateContext: rewardTemplateContext,
                             tinyBrain,
                             metadataLabel: "quest_reward_prose",
+                            resultBuilders: {
+                                quest_reward_result: buildQuestRewardResult,
+                            },
                             finalParser: response => parseQuestRewardResult(
                                 response,
                                 rewardLines,
@@ -5513,6 +5617,9 @@ class Events {
                                 retryAttempts,
                                 metadataLabel: "quest_reward_prose",
                                 logPrefix: "quest_reward_prose_tinybrain",
+                                resultBuilders: {
+                                    quest_reward_result: buildQuestRewardResult,
+                                },
                                 finalParser: response => parseQuestRewardResult(
                                     response,
                                     rewardLines,
@@ -6205,6 +6312,7 @@ class Events {
             || null;
         const rawEventLists = {};
         const signatures = [];
+        const acceptedEventElements = [];
         const singletonTags = new Set([
             "inCombat",
             "anyQuestObjectivesCompleted",
@@ -6239,12 +6347,12 @@ class Events {
             }
 
             const signature = this._normalizeTinyBrainXmlEventSignature(node);
-            if (existingSignatures.has(signature) || signatures.includes(signature)) {
-                throw new Error(
-                    `Tiny-brain ${normalizedSectionKind}/${normalizedStageId} event stage repeated an already accepted <${tagName}> block.`,
-                );
+            if (
+                !normalizedRequiredTags.includes(tagName)
+                && (existingSignatures.has(signature) || signatures.includes(signature))
+            ) {
+                continue;
             }
-            signatures.push(signature);
 
             if (tagName === "trackerUpdates") {
                 const trackerUpdateNodes = this._getXmlElementChildren(node);
@@ -6279,6 +6387,8 @@ class Events {
                         this._formatXmlTrackerUpdateRawEntry(trackerUpdateNode),
                     );
                 }
+                signatures.push(signature);
+                acceptedEventElements.push(node);
                 continue;
             }
 
@@ -6307,9 +6417,7 @@ class Events {
                     || (canonicalName
                         && authoritativeMovementCompanionNameSet.has(canonicalName.toLowerCase()))
                 ) {
-                    throw new Error(
-                        `Tiny-brain ${normalizedSectionKind}/${normalizedStageId} must not emit <${tagName}> for authoritative player-movement companion "${canonicalName || emittedName}". Omit that event; the player movement endpoint moves this character exactly once.`,
-                    );
+                    continue;
                 }
             }
             if (tagName === "thingArrival") {
@@ -6337,17 +6445,71 @@ class Events {
                     })
                     : null;
                 if (currentPlacement?.type === "owner") {
-                    const ownerName = typeof currentPlacement.owner?.name === "string"
-                        ? currentPlacement.owner.name.trim()
-                        : "its current owner";
-                    throw new Error(
-                        `Tiny-brain ${normalizedSectionKind}/${normalizedStageId} must not emit <thingArrival> for owned thing "${arrivingThing.name || emittedName}" carried by "${ownerName}". Carried inventory remains owned during travel unless a separate structured drop or transfer event changes possession.`,
-                    );
+                    continue;
                 }
                 if (currentPlacement?.type === "container") {
+                    continue;
+                }
+                if (
+                    currentPlacement?.type === "location"
+                    && eventLocationId
+                    && this._thingLocationId(arrivingThing) === eventLocationId
+                ) {
+                    continue;
+                }
+            }
+            if (tagName === "statusEffectChange") {
+                const actorName = this._getXmlDirectChildText(node, "entityName");
+                const statusDetail = this._getXmlDirectChildText(node, "statusEffectName");
+                const action = this._getXmlDirectChildText(node, "action").toLowerCase();
+                const actor = typeof this._deps?.findActorByName === "function"
+                    ? this._deps.findActorByName(actorName)
+                    : null;
+                const statusName = normalizeStatusEffectDescription(statusDetail);
+                if (action === "gained" && actor?.isDead === true) {
                     throw new Error(
-                        `Tiny-brain ${normalizedSectionKind}/${normalizedStageId} must not emit <thingArrival> for contained thing "${arrivingThing.name || emittedName}". A contained item does not independently arrive in the scene.`,
+                        `Tiny-brain ${normalizedSectionKind}/${normalizedStageId} cannot gain status "${statusDetail}" for dead actor "${actorName}" because the event schema has no resurrection operation. Output no event for an ineffective attempt.`,
                     );
+                }
+                const duplicateItemApplication = action === "gained" && Array.isArray(
+                    acceptedItemStatusApplications,
+                )
+                    ? acceptedItemStatusApplications.some((application) => {
+                        const targetName = normalizeString(application?.targetName).toLowerCase();
+                        if (!targetName || targetName !== normalizeString(actorName).toLowerCase()) {
+                            return false;
+                        }
+                        const itemName = normalizeStatusEffectDescription(application?.itemName);
+                        const effectName = normalizeStatusEffectDescription(application?.effectName);
+                        const effectDescription = normalizeStatusEffectDescription(
+                            application?.effectDescription,
+                        );
+                        return Boolean(
+                            (effectName && (statusName === effectName || statusName.startsWith(effectName)))
+                            || (effectDescription && statusName === effectDescription)
+                            || (itemName && statusName.startsWith(itemName)),
+                        );
+                    })
+                    : false;
+                let currentEffects = [];
+                if (typeof actor?.getStatusEffects === "function") {
+                    currentEffects = actor.getStatusEffects();
+                } else if (Array.isArray(actor?.statusEffects)) {
+                    currentEffects = actor.statusEffects;
+                }
+                const hasStatus = Array.isArray(currentEffects) && currentEffects.some((effect) => {
+                    const effectName = normalizeStatusEffectDescription(effect?.name);
+                    const effectDescription = normalizeStatusEffectDescription(
+                        effect?.description || effect?.text,
+                    );
+                    return statusName === effectName || statusName === effectDescription;
+                });
+                if (
+                    duplicateItemApplication
+                    || (action === "gained" && hasStatus)
+                    || (action === "lost" && actor && !hasStatus)
+                ) {
+                    continue;
                 }
             }
             const { key, raw } = this._mapXmlEventNodeToLegacyRaw(node);
@@ -6358,6 +6520,8 @@ class Events {
                 );
             }
             this._appendXmlRawEvent(rawEventLists, key, normalizedRaw);
+            signatures.push(signature);
+            acceptedEventElements.push(node);
         }
 
         const missingRequiredTags = normalizedRequiredTags.filter(
@@ -6522,71 +6686,6 @@ class Events {
                     );
                 }
 
-                if (action === "gained") {
-                    const duplicateItemApplication = Array.isArray(
-                        acceptedItemStatusApplications,
-                    )
-                        ? acceptedItemStatusApplications.find((application) => {
-                            const targetName = normalizeActorName(
-                                application?.targetName,
-                            );
-                            if (!targetName || targetName !== normalizeActorName(actorName)) {
-                                return false;
-                            }
-                            const itemName = normalizeStatusEffectDescription(
-                                application?.itemName,
-                            );
-                            const effectName = normalizeStatusEffectDescription(
-                                application?.effectName,
-                            );
-                            const effectDescription = normalizeStatusEffectDescription(
-                                application?.effectDescription,
-                            );
-                            return Boolean(
-                                (effectName && (
-                                    statusName === effectName
-                                    || statusName.startsWith(effectName)
-                                ))
-                                || (effectDescription && statusName === effectDescription)
-                                || (itemName && statusName.startsWith(itemName)),
-                            );
-                        })
-                        : null;
-                    if (duplicateItemApplication) {
-                        throw new Error(
-                            `Tiny-brain ${normalizedSectionKind}/${normalizedStageId} cannot gain status "${statusChange.detail}" for "${actorName}" because accepted <${duplicateItemApplication.sourceTag}> for "${duplicateItemApplication.itemName}" already applies its authoritative configured status. Omit the item-caused duplicate; report only a separate independently caused status.`,
-                        );
-                    }
-                }
-
-                let currentEffects = [];
-                if (typeof actor.getStatusEffects === "function") {
-                    currentEffects = actor.getStatusEffects();
-                } else if (Array.isArray(actor.statusEffects)) {
-                    currentEffects = actor.statusEffects;
-                }
-                const hasStatus = Array.isArray(currentEffects) && currentEffects.some(
-                    (effect) => {
-                        const effectName = normalizeStatusEffectDescription(
-                            effect?.name,
-                        );
-                        const effectDescription = normalizeStatusEffectDescription(
-                            effect?.description || effect?.text,
-                        );
-                        return statusName === effectName || statusName === effectDescription;
-                    },
-                );
-
-                if (action === "gained" && hasStatus) {
-                    throw new Error(
-                        `Tiny-brain ${normalizedSectionKind}/${normalizedStageId} cannot gain status "${statusChange.detail}" for "${actorName}" because that actor already has it. Output only new status changes; an attack/item tool result may already have applied this effect.`,
-                    );
-                }
-                if (action === "lost" && !hasStatus) {
-                    throw new Error(
-                        `Tiny-brain ${normalizedSectionKind}/${normalizedStageId} cannot lose status "${statusChange.detail}" for "${actorName}" because that actor does not currently have it.`,
-                    );
-                }
             }
 
             for (const enemyName of defeatedEnemyNames) {
@@ -6609,7 +6708,7 @@ class Events {
 
         return {
             value: {
-                xml: eventElements.map((node) => node.toString()).join("\n"),
+                xml: acceptedEventElements.map((node) => node.toString()).join("\n"),
                 signatures,
                 deathOutcomeNames: currentDeathOutcomeNames,
             },
@@ -6882,25 +6981,67 @@ class Events {
                 if (relationshipNode.tagName !== "relationship") {
                     throw new Error("<relationships> may only contain <relationship> entries.");
                 }
+                const relationshipChildren = this._getXmlElementChildren(relationshipNode);
+                const allowedRelationshipTags = new Set([
+                    "action",
+                    "characterA",
+                    "characterB",
+                    "relationshipLabel",
+                    "reciprocalRelationship",
+                ]);
+                for (const child of relationshipChildren) {
+                    if (!allowedRelationshipTags.has(child.tagName)) {
+                        throw new Error(`Unknown <relationship> child <${child.tagName}>.`);
+                    }
+                    if (relationshipChildren.filter(candidate => candidate.tagName === child.tagName).length > 1) {
+                        throw new Error(`<relationship> may contain at most one <${child.tagName}> child.`);
+                    }
+                }
+
+                const requiredRelationshipText = (tagName) => {
+                    const text = this._getXmlDirectChildText(relationshipNode, tagName);
+                    if (!text) {
+                        throw new Error(`Housekeeping relationship requires non-empty <${tagName}>.`);
+                    }
+                    return text;
+                };
+                const validateRelationshipLabel = (label, tagName) => {
+                    const wordCount = label.split(/\s+/).filter(Boolean).length;
+                    if (wordCount > 6) {
+                        throw new Error(`Housekeeping <${tagName}> must be six words or fewer.`);
+                    }
+                    return label;
+                };
+
                 const rawAction = this._getXmlDirectChildText(relationshipNode, "action").toLowerCase();
                 const action = rawAction || "set";
                 if (!["add", "update", "set", "remove", "delete"].includes(action)) {
                     throw new Error("Housekeeping relationship action must be add, update, set, remove, or delete.");
                 }
                 const item = {
-                    characterA: this._getXmlDirectChildText(relationshipNode, "characterA"),
-                    characterB: this._getXmlDirectChildText(relationshipNode, "characterB"),
+                    characterA: requiredRelationshipText("characterA"),
+                    characterB: requiredRelationshipText("characterB"),
                 };
                 if (action === "remove" || action === "delete") {
+                    if (this._getXmlDirectChildNode(relationshipNode, "relationshipLabel")
+                        || this._getXmlDirectChildNode(relationshipNode, "reciprocalRelationship")) {
+                        throw new Error("Housekeeping relationship removal must not include relationship labels.");
+                    }
                     item.action = "remove";
                 } else {
-                    item.relationship = this._getXmlDirectChildText(relationshipNode, "relationshipLabel");
+                    item.relationship = validateRelationshipLabel(
+                        requiredRelationshipText("relationshipLabel"),
+                        "relationshipLabel",
+                    );
                     const reciprocalRelationship = this._getXmlDirectChildText(
                         relationshipNode,
                         "reciprocalRelationship",
                     );
                     if (reciprocalRelationship) {
-                        item.reciprocalRelationship = reciprocalRelationship;
+                        item.reciprocalRelationship = validateRelationshipLabel(
+                            reciprocalRelationship,
+                            "reciprocalRelationship",
+                        );
                     }
                 }
                 relationshipItems.push(item);
@@ -8355,6 +8496,8 @@ class Events {
         const executionOrder = EVENT_PROMPT_ORDER_FLAT.map((def) => def.key);
 
         const parsedMap = parsedEvents.parsed;
+
+        deriveMissingConsumedItemInflictEvents(this, parsedMap);
 
         const itemIngestPairKeys = new Set();
         if (Array.isArray(parsedMap.item_ingest)) {
@@ -15044,7 +15187,18 @@ class Events {
                         }
 
                         const npc = findActorByName(entry.name);
-                        if (!npc || npc.isHostile !== true) {
+                        if (!npc) {
+                            continue;
+                        }
+                        const currentPlayer = Player.getCurrentPlayer?.() || null;
+                        const dispositionHostile = currentPlayer
+                            ? isActorDispositionHostile(
+                                npc,
+                                currentPlayer,
+                                dispositionDefinitions,
+                            )
+                            : false;
+                        if (npc.isHostile !== true && !dispositionHostile) {
                             continue;
                         }
 
@@ -15116,18 +15270,24 @@ class Events {
                         const entityKey = normalizeString(
                             statusChange?.entity,
                         ).toLowerCase();
-                        const detailKey = normalizeStatusEffectDescription(
-                            statusChange?.description || statusChange?.detail,
-                        );
-                        if (!entityKey || !detailKey) {
+                        const detailKeys = [
+                            statusChange?.name,
+                            statusChange?.description,
+                            statusChange?.detail,
+                        ]
+                            .map(normalizeStatusEffectDescription)
+                            .filter(Boolean);
+                        if (!entityKey || !detailKeys.length) {
                             continue;
                         }
                         if (!itemInflictByEntity.has(entityKey)) {
                             itemInflictByEntity.set(entityKey, []);
                         }
                         const bucket = itemInflictByEntity.get(entityKey);
-                        if (!bucket.includes(detailKey)) {
-                            bucket.push(detailKey);
+                        for (const detailKey of detailKeys) {
+                            if (!bucket.includes(detailKey)) {
+                                bucket.push(detailKey);
+                            }
                         }
                     }
                 }

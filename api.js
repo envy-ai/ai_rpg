@@ -26,6 +26,7 @@ const MysteryThread = require('./MysteryThread.js');
 const ScheduledEvent = require('./ScheduledEvent.js');
 const Tracker = require('./Tracker.js');
 const FormulaEvaluator = require('./public/js/formula-evaluator.js');
+const { isActorDispositionHostile } = require('./DispositionHostility.js');
 const { resolvePointPoolFormulas } = require('./utils/point-pool-formulas.js');
 const {
     resolveCriticalThresholdFormulas,
@@ -33,8 +34,7 @@ const {
 } = require('./utils/critical-threshold-formulas.js');
 const {
     createChatToolRuntime,
-    getChatToolDefinitions,
-    requireExplicitSkillCheckActors
+    getChatToolDefinitions
 } = require('./chat_tool_calls.js');
 const {
     configureTinyBrainPromptContext,
@@ -42,13 +42,16 @@ const {
     runTinyBrainPromptProgram
 } = require('./TinyBrainPromptFamilies.js');
 const {
+    isNonMutatingScheduledEventToolName,
     parseContainerOpenNarrativeResult,
     parseCraftNarrativeResult,
     parseGameIntroResult,
     parseLocationModificationNarrativeResult,
     parseScheduledEventInterruptionRewrite,
     parseScheduledEventStagedResult,
+    parseScheduledEventToolExecution,
     parseTurnNarrativeResult,
+    validateScheduledEventToolCallAgainstPlan,
     parseWhileYouWereAwayResult,
     parseWhileYouWereAwayStagedResult
 } = require('./TinyBrainPromptParsers.js');
@@ -56,6 +59,17 @@ const {
     PLAYER_ACTION_MOVEMENT,
     buildPlayerActionTinyBrainResult
 } = require('./PlayerActionTinyBrainResult.js');
+const {
+    buildContainerOpenResult,
+    buildCraftResult,
+    buildGameIntroResult,
+    buildLocationModificationResult,
+    buildQuestRewardResult,
+    buildScheduledEventInterruptionResult,
+    buildScheduledEventResult,
+    buildTurnResultFromApprovedProse,
+    buildWhileYouWereAwayResult
+} = require('./TinyBrainResultBuilders.js');
 const {
     collectPlayerActionAccompanyingCharacters,
     movePlayerActionAccompanyingCharacters
@@ -77,6 +91,7 @@ const {
     buildHousekeepingTurnHistory
 } = require('./housekeeping_history.js');
 const {
+    executeDeterministicScheduledEventToolPlan,
     createScheduledEventScheduler,
     parseScheduledEventResultXml
 } = require('./scheduled_event_runtime.js');
@@ -3566,21 +3581,60 @@ module.exports = function registerApiRoutes(scope) {
                 })
                 : null;
 
-            const rawResponseResult = await pending.rawResponsePromise;
-            const responseError = unwrapHousekeepingDeferredError(rawResponseResult);
+            const initialRawResponseResult = await pending.rawResponsePromise;
+            const responseError = unwrapHousekeepingDeferredError(initialRawResponseResult);
             if (responseError) {
                 throw responseError;
             }
-            const rawResponse = rawResponseResult || '';
-            LLMClient.logPrompt({
-                prefix: 'housekeeping',
-                metadataLabel: 'housekeeping',
-                systemPrompt: pending.parsedTemplate.systemPrompt || '',
-                generationPrompt: pending.parsedTemplate.generationPrompt || '',
-                response: rawResponse,
-                model: pending.requestOptions.model,
-                endpoint: pending.requestOptions.endpoint
+
+            const promptAttempt = await runPromptWithParseRetries({
+                messages: pending.requestOptions.messages,
+                maxAttempts: resolveConfiguredPromptMaxAttempts(config?.ai, { fallbackMaxAttempts: 3 }),
+                complete: ({ attempt, messages }) => {
+                    if (attempt === 1) {
+                        return initialRawResponseResult || '';
+                    }
+                    return LLMClient.chatCompletion({
+                        ...pending.requestOptions,
+                        messages
+                    });
+                },
+                parse: response => Events._parseHousekeepingXmlResponse(response),
+                buildRetryInstruction: error => [
+                    `The previous housekeeping XML could not be accepted: ${error?.message || error}`,
+                    'Correct the structured response and return one complete, well-formed <housekeeping>...</housekeeping> block.'
+                ].join('\n'),
+                onAttempt: ({ attempt, maxAttempts, response, error, accepted }) => {
+                    LLMClient.logPrompt({
+                        prefix: 'housekeeping',
+                        metadataLabel: 'housekeeping',
+                        systemPrompt: pending.parsedTemplate.systemPrompt || '',
+                        generationPrompt: pending.parsedTemplate.generationPrompt || '',
+                        response,
+                        model: pending.requestOptions.model,
+                        endpoint: pending.requestOptions.endpoint,
+                        sections: [
+                            {
+                                title: 'Structured response attempt',
+                                content: `${attempt}/${maxAttempts}`
+                            },
+                            {
+                                title: 'Structured response validation',
+                                content: accepted
+                                    ? 'accepted'
+                                    : `rejected: ${error?.stack || error?.message || error}`
+                            }
+                        ]
+                    });
+                    if (!accepted) {
+                        console.warn(
+                            `Housekeeping response attempt ${attempt}/${maxAttempts} failed validation: `
+                            + `${error?.message || error}`
+                        );
+                    }
+                }
             });
+            const rawResponse = promptAttempt.response;
 
             const housekeepingXmlResult = await Events._applyHousekeepingXmlResponse(rawResponse, {
                 executeChatToolCall,
@@ -4016,23 +4070,11 @@ module.exports = function registerApiRoutes(scope) {
             if (!currentPlayer || !currentPlayer.id || currentPlayer.id === npc.id) {
                 return false;
             }
-            const dispositionDefinitions = Player.dispositionDefinitions || {};
-            const dispositionTypes = dispositionDefinitions.types || {};
-            for (const def of Object.values(dispositionTypes)) {
-                if (!def || def.hostileThreshold === null || def.hostileThreshold === undefined) {
-                    continue;
-                }
-                if (typeof npc.getDisposition !== 'function') {
-                    continue;
-                }
-                const key = def.key || def.label;
-                const value = npc.getDisposition(currentPlayer.id, key);
-                const threshold = Number(def.hostileThreshold);
-                if (Number.isFinite(value) && Number.isFinite(threshold) && value <= threshold) {
-                    return true;
-                }
-            }
-            return false;
+            return isActorDispositionHostile(
+                npc,
+                currentPlayer,
+                Player.dispositionDefinitions
+            );
         }
 
         function isNpcInCurrentPlayerParty(npc) {
@@ -5424,7 +5466,8 @@ module.exports = function registerApiRoutes(scope) {
             finalParser,
             parsers = {},
             requestOptions = {},
-            completeStage = null
+            completeStage = null,
+            resultBuilders = {}
         } = {}) => {
             if (!isTinyBrainPromptEnabled(Globals.config?.ai, family)) {
                 throw new Error(`Tiny-brain prompt family "${family}" is not enabled.`);
@@ -5455,6 +5498,7 @@ module.exports = function registerApiRoutes(scope) {
                     logPrefix,
                     parsers,
                     finalParser,
+                    resultBuilders,
                     complete: async (stage) => {
                         const stageRequestOptions = {
                             ...requestOptions,
@@ -8530,6 +8574,9 @@ module.exports = function registerApiRoutes(scope) {
                     tinyBrain,
                     metadataLabel: 'while_you_were_away',
                     finalParser,
+                    resultBuilders: {
+                        while_away_result: buildWhileYouWereAwayResult
+                    },
                     requestOptions
                 });
                 rawResponse = tinyBrainRun.result.aiResponse;
@@ -8871,6 +8918,11 @@ module.exports = function registerApiRoutes(scope) {
 
             const playerPresent = currentPlayer?.currentLocation === scheduledLocationId;
             const baseContext = await prepareBasePromptContext({ locationOverride: scheduledLocation });
+            const scheduledEventTools = getAllChatToolDefinitions({ modExtensionRegistry });
+            const scheduledEventToolNames = scheduledEventTools
+                .map(definition => definition?.function?.name)
+                .filter(name => typeof name === 'string' && name.trim())
+                .map(name => name.trim());
             const scheduledEventPromptContext = {
                 ...baseContext,
                 promptType: 'scheduled-event-resolution',
@@ -8878,7 +8930,8 @@ module.exports = function registerApiRoutes(scope) {
                     ? scheduledEvent.toJSON()
                     : scheduledEvent,
                 scheduledEventPlayerPresent: playerPresent,
-                scheduledEventCurrentWorldTime: Globals.getWorldTimeContext()
+                scheduledEventCurrentWorldTime: Globals.getWorldTimeContext(),
+                scheduledEventToolNames
             };
             const useTinyBrainScheduledEvent = isTinyBrainPromptEnabled(
                 Globals.config?.ai,
@@ -8899,7 +8952,6 @@ module.exports = function registerApiRoutes(scope) {
                 throw new Error('Scheduled event resolution prompt template is missing prompts.');
             }
 
-            const scheduledEventTools = getAllChatToolDefinitions({ modExtensionRegistry });
             const requestOptions = {
                 messages: [
                     { role: 'system', content: parsedTemplate.systemPrompt },
@@ -8928,17 +8980,41 @@ module.exports = function registerApiRoutes(scope) {
                 ].join(':'),
                 entries: new Map()
             };
-            const runScheduledEventToolLoop = stageRequestOptions => runChatCompletionWithToolLoop({
-                requestOptions: stageRequestOptions,
-                metadataLabel: 'scheduled_event_resolution',
-                toolResultCache: scheduledEventToolResultCache,
-                requestUserInput: scheduledEventInputStream
-                    ? createRequestUserInputHandler({
-                        stream: scheduledEventInputStream,
-                        promptLabel: 'scheduled_event_resolution'
-                    })
-                    : null
-            });
+            const scheduledEventDeterministicToolResultCache = new Map();
+            const runScheduledEventToolLoop = (
+                stageRequestOptions,
+                { toolPlan = null } = {}
+            ) => {
+                return runChatCompletionWithToolLoop({
+                    requestOptions: stageRequestOptions,
+                    metadataLabel: 'scheduled_event_resolution',
+                    toolResultCache: scheduledEventToolResultCache,
+                    validateToolCall: toolPlan
+                        ? toolCall => validateScheduledEventToolCallAgainstPlan(toolCall, toolPlan)
+                        : null,
+                    terminalResponseAfterToolCalls: toolPlan
+                        ? ({ toolInvocations }) => {
+                            try {
+                                parseScheduledEventToolExecution(
+                                    'Completed the accepted scheduled-event tool plan.',
+                                    scheduledEvent.event,
+                                    toolPlan,
+                                    { currentToolInvocations: toolInvocations }
+                                );
+                                return 'Completed the accepted scheduled-event tool plan.';
+                            } catch (_error) {
+                                return null;
+                            }
+                        }
+                        : null,
+                    requestUserInput: scheduledEventInputStream
+                        ? createRequestUserInputHandler({
+                            stream: scheduledEventInputStream,
+                            promptLabel: 'scheduled_event_resolution'
+                        })
+                        : null
+                });
+            };
             let rawResponse = '';
             let scheduledEventLiveDeslopInfo = null;
             if (useTinyBrainScheduledEvent) {
@@ -8948,6 +9024,9 @@ module.exports = function registerApiRoutes(scope) {
                     templateContext: scheduledEventPromptContext,
                     tinyBrain,
                     metadataLabel: 'scheduled_event_resolution',
+                    resultBuilders: {
+                        scheduled_event_result: buildScheduledEventResult
+                    },
                     finalParser: response => {
                         const completed = tinyBrain.renderState.completedCheckpoints || {};
                         const happened = completed[0]?.value === true;
@@ -8961,15 +9040,115 @@ module.exports = function registerApiRoutes(scope) {
                     },
                     requestOptions,
                     completeStage: async stage => {
+                        const isPlanCheckpoint = !stage.isFinal
+                            && stage.checkpoint?.index === 1;
                         const isToolCheckpoint = !stage.isFinal
                             && stage.checkpoint?.index === 2;
+                        const scheduledEventToolPlan = isToolCheckpoint
+                            ? stage.checkpoint?.parserArgs?.[1]
+                            : null;
+                        const plannedToolNames = new Set([
+                            ...(scheduledEventToolPlan?.directUpdates?.length
+                                ? ['updateObjectFields']
+                                : []),
+                            ...(scheduledEventToolPlan?.otherTools || []).map(tool => tool?.name)
+                        ].filter(Boolean));
+                        const stageToolDefinitions = isPlanCheckpoint
+                            ? scheduledEventTools.filter(definition => (
+                                isNonMutatingScheduledEventToolName(
+                                    definition?.function?.name
+                                )
+                            ))
+                            : (isToolCheckpoint && (
+                                scheduledEventToolPlan?.stateChangeRequired
+                                || scheduledEventToolPlan?.otherTools?.length
+                            )
+                                ? scheduledEventTools.filter(definition => (
+                                    plannedToolNames.has(definition?.function?.name)
+                                ))
+                                : []);
                         const stageRequestOptions = configureRequestChatTools(
                             stage.requestOptions,
-                            isToolCheckpoint ? scheduledEventTools : []
+                            stageToolDefinitions
                         );
-                        if (isToolCheckpoint) {
+                        if (isPlanCheckpoint) {
                             const toolLoopResult = await runScheduledEventToolLoop(
                                 stageRequestOptions
+                            );
+                            return {
+                                aiResponse: toolLoopResult.aiResponse,
+                                conversationMessages: toolLoopResult.conversationMessages,
+                                toolInvocations: toolLoopResult.toolInvocations
+                            };
+                        }
+                        if (isToolCheckpoint) {
+                            const canExecuteDeterministically = Array.isArray(scheduledEventToolPlan?.otherTools)
+                                && scheduledEventToolPlan.otherTools.length === 0;
+                            if (canExecuteDeterministically) {
+                                const execution = await executeDeterministicScheduledEventToolPlan(
+                                    scheduledEventToolPlan,
+                                    {
+                                        executeChatToolCall,
+                                        validateToolCall: toolCall => (
+                                            validateScheduledEventToolCallAgainstPlan(
+                                                toolCall,
+                                                scheduledEventToolPlan
+                                            )
+                                        ),
+                                        resultCache: scheduledEventDeterministicToolResultCache
+                                    }
+                                );
+                                const aiResponse = scheduledEventToolPlan.stateChangeRequired
+                                    ? 'Completed the accepted direct scheduled-event updates.'
+                                    : 'The accepted scheduled-event plan requires no state-changing tool calls.';
+                                const conversationMessages = stage.messages.map(message => ({ ...message }));
+                                if (execution.toolCalls.length) {
+                                    conversationMessages.push({
+                                        role: 'assistant',
+                                        content: '',
+                                        tool_calls: execution.toolCalls.map(toolCall => ({
+                                            id: toolCall.id,
+                                            type: 'function',
+                                            function: {
+                                                name: toolCall.functionName,
+                                                arguments: toolCall.argumentsText
+                                            }
+                                        }))
+                                    });
+                                    for (const invocation of execution.invocations) {
+                                        conversationMessages.push({
+                                            role: 'tool',
+                                            tool_call_id: invocation.id,
+                                            name: invocation.name,
+                                            content: invocation.content
+                                        });
+                                    }
+                                }
+                                conversationMessages.push({ role: 'assistant', content: aiResponse });
+                                stage.appendLogSection({
+                                    title: 'deterministic scheduled-event tool execution',
+                                    content: execution.invocations.length
+                                        ? execution.invocations.map(invocation => [
+                                            `Tool: ${invocation.name}`,
+                                            `Arguments: ${JSON.stringify(invocation.argumentsObject)}`,
+                                            `Result: ${invocation.content}`
+                                        ].join('\n')).join('\n\n')
+                                        : 'No state-changing tool calls were required by the accepted plan.'
+                                });
+                                return {
+                                    aiResponse,
+                                    conversationMessages,
+                                    toolInvocations: execution.invocations.map(invocation => ({
+                                        id: invocation.id,
+                                        name: invocation.name,
+                                        argumentsObject: invocation.argumentsObject,
+                                        metadata: invocation.metadata
+                                    }))
+                                };
+                            }
+                            const toolLoopResult = await runScheduledEventToolLoop(
+                                stageRequestOptions,
+                                { toolPlan: scheduledEventToolPlan }
                             );
                             return {
                                 aiResponse: toolLoopResult.aiResponse,
@@ -9014,6 +9193,7 @@ module.exports = function registerApiRoutes(scope) {
                 });
                 return {
                     scheduledEventId,
+                    event: scheduledEvent.event || '',
                     happened: false,
                     hiddenEntry: null,
                     visibleEntry: null,
@@ -9126,6 +9306,7 @@ module.exports = function registerApiRoutes(scope) {
 
             return {
                 scheduledEventId,
+                event: scheduledEvent.event || '',
                 happened: true,
                 hiddenEntry,
                 visibleEntry,
@@ -9202,6 +9383,7 @@ module.exports = function registerApiRoutes(scope) {
                 interruptionDuration,
                 scheduledEvents: happenedResults.map(result => ({
                     id: result.scheduledEventId || '',
+                    event: result.event || '',
                     summary: result.summary || '',
                     proseForPlayer: result.playerProse || ''
                 }))
@@ -9246,6 +9428,9 @@ module.exports = function registerApiRoutes(scope) {
                     templateContext: interruptionPromptContext,
                     tinyBrain,
                     metadataLabel: 'player_action_interruption_rewrite',
+                    resultBuilders: {
+                        scheduled_event_interruption_result: buildScheduledEventInterruptionResult
+                    },
                     finalParser: response => parseScheduledEventInterruptionRewrite(
                         response,
                         originalXml
@@ -9257,6 +9442,7 @@ module.exports = function registerApiRoutes(scope) {
                 if (!rewrittenXml) {
                     throw new Error('Scheduled event interruption rewrite response missing player action XML.');
                 }
+                parseScheduledEventInterruptionRewrite(rewrittenXml, originalXml);
                 return rewrittenXml;
             }
             try {
@@ -10797,6 +10983,9 @@ module.exports = function registerApiRoutes(scope) {
                     templateContext,
                     tinyBrain,
                     metadataLabel: 'game_intro',
+                    resultBuilders: {
+                        game_intro_result: buildGameIntroResult
+                    },
                     finalParser: response => {
                         const parsed = parseGameIntroResult(response);
                         parseGameIntroResponse(parsed.normalizedResponse);
@@ -15908,7 +16097,18 @@ module.exports = function registerApiRoutes(scope) {
                         category: 'faction_relationship',
                         severity: resolvedAmount < 0 ? 'important' : 'normal',
                         sourceType: 'faction_reputation_change',
-                        entityRefs: summaryEntityRef('faction', { id: entry.factionId || null, name: factionName })
+                        entityRefs: summaryEntityRef('faction', { id: entry.factionId || null, name: factionName }),
+                        metadata: {
+                            factionReputationChange: {
+                                factionId: entry.factionId || null,
+                                factionName,
+                                amount: resolvedAmount,
+                                before: Number.isFinite(beforeRaw) ? beforeRaw : null,
+                                after: Number.isFinite(afterRaw) ? afterRaw : null,
+                                reason: reason || null,
+                                text
+                            }
+                        }
                     });
                 });
                 shouldRefresh = true;
@@ -19157,6 +19357,9 @@ module.exports = function registerApiRoutes(scope) {
                         templateContext,
                         tinyBrain,
                         metadataLabel: 'random_event',
+                        resultBuilders: {
+                            turn_result_from_approved_prose: buildTurnResultFromApprovedProse
+                        },
                         finalParser: async response => {
                             const parsed = parseTurnNarrativeResult(response, { allowTravel: true });
                             await parsePlayerActionProseFromXml(parsed.normalizedResponse, {
@@ -19701,10 +19904,7 @@ module.exports = function registerApiRoutes(scope) {
                 if (normalized === 'n/a') {
                     return { attacks: [], hasAttack: false };
                 }
-                throw new Error('Attack check response must contain exactly one <attack> block.');
-            }
-            if (attackNodes.length !== 1) {
-                throw new Error(`Attack check response must contain exactly one <attack> block; received ${attackNodes.length}.`);
+                throw new Error('Attack check response must contain at least one <attack> block.');
             }
 
             const normalizedExpectedAttackers = new Set(
@@ -20073,7 +20273,7 @@ module.exports = function registerApiRoutes(scope) {
                             { role: 'assistant', content: attackResponse || '(empty response)' },
                             {
                                 role: 'user',
-                                content: `The preceding XML failed structured validation: ${parseError.message}\nReturn a corrected answer as exactly one <attack>...</attack> block and XML only.`
+                                content: `The preceding XML failed structured validation: ${parseError.message}\nReturn corrected <attack>...</attack> XML blocks only.`
                             }
                         ]);
                     }
@@ -21908,7 +22108,7 @@ module.exports = function registerApiRoutes(scope) {
                         continue;
                     }
 
-                    if (npc.isHostile) {
+                    if (isNpcHostileToCurrentPlayer(npc)) {
                         if (resolvedHostileLimit === null || hostileCount < resolvedHostileLimit) {
                             pruned.push(name);
                             hostileCount += 1;
@@ -23805,6 +24005,9 @@ module.exports = function registerApiRoutes(scope) {
                         templateContext: promptVariables,
                         tinyBrain,
                         metadataLabel: aiMetricsLabel,
+                        resultBuilders: {
+                            turn_result_from_approved_prose: buildTurnResultFromApprovedProse
+                        },
                         finalParser: async response => {
                             const parsed = parseTurnNarrativeResult(response, { allowTravel: false });
                             await parsePlayerActionProseFromXml(parsed.normalizedResponse, {
@@ -25548,6 +25751,7 @@ module.exports = function registerApiRoutes(scope) {
                 let isNoContextPromptAction = false;
                 let genericPromptText = null;
                 let genericPromptStorageMode = 'normal';
+                let suppressGenericPromptHistory = false;
                 let forceSkillCheckRolls = false;
                 currentUserMessage = userMessage;
                 if (userMessage && userMessage.role === 'user') {
@@ -25581,6 +25785,8 @@ module.exports = function registerApiRoutes(scope) {
                     genericPromptText = isGenericPromptAction
                         ? trimmedVisibleContent.slice(genericMarkerLength).replace(/^\s+/, '')
                         : null;
+                    suppressGenericPromptHistory = isGenericPromptAction
+                        && genericPromptStorageMode === 'no_log';
                     if (isGenericPromptAction) {
                         isQuestionAction = false;
                         questionActionText = null;
@@ -25654,7 +25860,7 @@ module.exports = function registerApiRoutes(scope) {
                     }
 
                     const playerChatLocationId = requireLocationId(currentPlayer?.currentLocation, 'player chat entry');
-                    const shouldPersistUserEntry = !(isGenericPromptAction && genericPromptStorageMode === 'no_log');
+                    const shouldPersistUserEntry = !suppressGenericPromptHistory;
                     if (shouldPersistUserEntry) {
                         const userEntryContentWithoutInlineRoll = extractInlineRollControls(
                             userMessage?.content
@@ -25973,7 +26179,11 @@ module.exports = function registerApiRoutes(scope) {
                             console.warn('Failed to execute plausibility check:', plausibilityError.message);
                             console.debug(plausibilityError);
                         }
-                    } else if (!isEmptyPlayerAction && !plausibilityChecksEnabled) {
+                    } else if (!isEmptyPlayerAction
+                        && !isCreativeModeAction
+                        && !isForcedEventAction
+                        && !isPromptOnlyAction
+                        && !plausibilityChecksEnabled) {
                         plausibilityInfo = {
                             raw: '',
                             structured: {
@@ -26338,19 +26548,6 @@ module.exports = function registerApiRoutes(scope) {
                                 location,
                                 players
                             });
-                            const currentPlayerName = typeof currentPlayer?.name === 'string'
-                                ? currentPlayer.name.trim()
-                                : '';
-                            if (!currentPlayerName) {
-                                throw new Error('Tiny-brain player-action skill-check actors require a named current player.');
-                            }
-                            const playerActionSkillCheckActors = [
-                                {
-                                    name: currentPlayerName,
-                                    aliases: ['player', 'the player', 'you']
-                                },
-                                ...playerActionAccompanyingCharacters
-                            ];
 
                             promptVariables = {
                                 ...baseContext,
@@ -26365,7 +26562,6 @@ module.exports = function registerApiRoutes(scope) {
                                 playerActionTravelDestination,
                                 playerActionTravelMovementKind,
                                 playerActionAccompanyingCharacters,
-                                playerActionSkillCheckActors,
                                 playerActionOriginLocationId: location?.id || currentPlayer?.currentLocation || null,
                                 playerActionWorldTimeMinutes: Globals.getTotalWorldMinutes()
                             };
@@ -26735,11 +26931,7 @@ module.exports = function registerApiRoutes(scope) {
                 const enabledChatTools = isNoContextPromptAction
                     ? []
                     : filterEnabledChatTools({ allowWorldMutationTools, modExtensionRegistry });
-                const hardenPlayerActionSkillCheckActors = promptType === 'player-action'
-                    && useTinyBrainPlayerAction;
-                const promptChatTools = hardenPlayerActionSkillCheckActors
-                    ? requireExplicitSkillCheckActors(enabledChatTools)
-                    : enabledChatTools;
+                const promptChatTools = enabledChatTools;
                 const tinyBrainPlayerActionDestinationLookupTools = promptChatTools.filter(
                     toolDefinition => {
                         const toolName = typeof toolDefinition?.function?.name === 'string'
@@ -26780,38 +26972,25 @@ module.exports = function registerApiRoutes(scope) {
                     roundKey: stream.requestId || `${promptMetadataLabel}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`,
                     entries: new Map()
                 };
-                const getSelectedTinyBrainSkillCheckActors = () => {
-                    if (!hardenPlayerActionSkillCheckActors || !tinyBrainPromptState) {
-                        return null;
-                    }
-                    const checkpoint = tinyBrainPromptState.checkpoints.find(candidate => (
-                        candidate?.parserName === 'player_action_checked_action_actors'
-                    ));
-                    if (!checkpoint) {
-                        throw new Error('Tiny-brain player-action prompt is missing its checked-action actor checkpoint.');
-                    }
-                    const completed = tinyBrainPromptState.completedCheckpoints?.[checkpoint.index];
-                    if (!completed) {
-                        return null;
-                    }
-                    if (!Array.isArray(completed.value)) {
-                        throw new Error('Tiny-brain checked-action actor checkpoint returned a non-array value.');
-                    }
-                    return completed.value.slice();
-                };
                 const toolCallDebugRecorder = Globals.config?.debug_tool_calls === true
+                    && !suppressGenericPromptHistory
                     ? createToolCallDebugRecorder({
                         promptLabel: promptMetadataLabel,
                         locationId: location?.id || currentPlayer?.currentLocation
                     })
                     : null;
-                const checkResultsRecorder = createCheckResultsRecorder({
-                    promptLabel: promptMetadataLabel,
-                    locationId: location?.id || currentPlayer?.currentLocation,
-                    stream,
-                    entryCollector: newChatEntries,
-                    requestId: stream.requestId || null
-                });
+                const checkResultsRecorder = suppressGenericPromptHistory
+                    ? {
+                        record() {},
+                        hasRecords() { return false; }
+                    }
+                    : createCheckResultsRecorder({
+                        promptLabel: promptMetadataLabel,
+                        locationId: location?.id || currentPlayer?.currentLocation,
+                        stream,
+                        entryCollector: newChatEntries,
+                        requestId: stream.requestId || null
+                    });
                 const requestOptions = {
                     messages: finalMessages,
                     metadataLabel: promptMetadataLabel,
@@ -26869,7 +27048,9 @@ module.exports = function registerApiRoutes(scope) {
                             logPrefix: `${promptMetadataLabel}_tinybrain`,
                             resultBuilders: promptType === 'player-action'
                                 ? { player_action_result: buildPlayerActionTinyBrainResult }
-                                : {},
+                                : (promptType === 'creative-mode-action'
+                                    ? { turn_result_from_approved_prose: buildTurnResultFromApprovedProse }
+                                    : {}),
                             finalParser: shouldUseRepetitionBusterXml
                                 ? async (response) => {
                                     let normalizedResponse = response;
@@ -26943,18 +27124,12 @@ module.exports = function registerApiRoutes(scope) {
                                     });
                                 })()
                                 : stageRequestOptions;
-                            const selectedSkillCheckActors = getSelectedTinyBrainSkillCheckActors();
-
                             if (Array.isArray(stageToolDefinitions) && stageToolDefinitions.length > 0) {
                                 const toolLoopResult = await runChatCompletionWithToolLoop({
                                     requestOptions: effectiveStageRequestOptions,
                                     streamEmitter: stream,
                                     metadataLabel: promptMetadataLabel,
                                     toolResultCache,
-                                    defaultToolActor: selectedSkillCheckActors?.length === 1
-                                        ? selectedSkillCheckActors[0]
-                                        : null,
-                                    allowedSkillCheckActors: selectedSkillCheckActors,
                                     includeAllHistoryEntryTypes: allowWorldMutationTools,
                                     requestUserInput: createRequestUserInputHandler({
                                         stream,
@@ -26966,12 +27141,26 @@ module.exports = function registerApiRoutes(scope) {
                                         promptLabel: promptMetadataLabel
                                     }),
                                     dieRollOverride: injectedDieRollOverride,
-                                    requireExplicitSkillCheckActor: hardenPlayerActionSkillCheckActors,
                                     onToolCallEvent: event => checkResultsRecorder.record(event),
                                     onToolCallDebug: toolCallDebugRecorder
                                         ? event => toolCallDebugRecorder.record(event)
                                         : null,
-                                    promptLogFile: logFilePath
+                                    promptLogFile: logFilePath,
+                                    terminalResponseAfterToolCalls: isDestinationLookupCheckpoint
+                                        ? ({ toolInvocations: currentInvocations }) => {
+                                            const successfulLookups = currentInvocations.filter(invocation => (
+                                                invocation?.name === 'moreInfo'
+                                                && invocation?.metadata?.error !== true
+                                            ));
+                                            const failedOrUnexpected = currentInvocations.some(invocation => (
+                                                invocation?.name !== 'moreInfo'
+                                                || invocation?.metadata?.error === true
+                                            ));
+                                            return successfulLookups.length && !failedOrUnexpected
+                                                ? 'READY'
+                                                : null;
+                                        }
+                                        : null
                                 });
                                 return {
                                     aiResponse: toolLoopResult.aiResponse,
@@ -27024,7 +27213,6 @@ module.exports = function registerApiRoutes(scope) {
                             promptLabel: promptMetadataLabel
                         }),
                         dieRollOverride: injectedDieRollOverride,
-                        requireExplicitSkillCheckActor: hardenPlayerActionSkillCheckActors,
                         onToolCallEvent: event => checkResultsRecorder.record(event),
                         onToolCallDebug: toolCallDebugRecorder
                             ? event => toolCallDebugRecorder.record(event)
@@ -27200,16 +27388,11 @@ module.exports = function registerApiRoutes(scope) {
                                     if (rerendered.temperature !== null) {
                                         rerunOptions.temperature = rerendered.temperature;
                                     }
-                                    const rerunSelectedSkillCheckActors = getSelectedTinyBrainSkillCheckActors();
                                     const rerunLoopResult = await runChatCompletionWithToolLoop({
                                         requestOptions: rerunOptions,
                                         streamEmitter: stream,
                                         metadataLabel: `${promptMetadataLabel}_rerun`,
                                         toolResultCache,
-                                        defaultToolActor: rerunSelectedSkillCheckActors?.length === 1
-                                            ? rerunSelectedSkillCheckActors[0]
-                                            : null,
-                                        allowedSkillCheckActors: rerunSelectedSkillCheckActors,
                                         includeAllHistoryEntryTypes: allowWorldMutationTools,
                                         requestUserInput: createRequestUserInputHandler({
                                             stream,
@@ -27221,7 +27404,6 @@ module.exports = function registerApiRoutes(scope) {
                                             promptLabel: `${promptMetadataLabel}_rerun`
                                         }),
                                         dieRollOverride: injectedDieRollOverride,
-                                        requireExplicitSkillCheckActor: hardenPlayerActionSkillCheckActors,
                                         onToolCallEvent: event => checkResultsRecorder.record(event),
                                         onToolCallDebug: toolCallDebugRecorder
                                             ? event => toolCallDebugRecorder.record(event)
@@ -27364,7 +27546,7 @@ module.exports = function registerApiRoutes(scope) {
                     const aiResponseEntryType = isQuestionAction
                         ? 'storyteller-answer'
                         : (isGenericPromptAction ? 'generic-prompt-response' : 'player-action');
-                    const shouldPersistGenericResponse = !(isGenericPromptAction && genericPromptStorageMode === 'no_log');
+                    const shouldPersistGenericResponse = !suppressGenericPromptHistory;
                     const responseEntryPayload = {
                         role: 'assistant',
                         content: aiResponse,
@@ -27537,7 +27719,7 @@ module.exports = function registerApiRoutes(scope) {
 
                     if (isPromptOnlyAction) {
                         responseData.worldTime = buildWorldTimePayload();
-                        if (isGenericPromptAction && genericPromptStorageMode === 'no_log') {
+                        if (suppressGenericPromptHistory) {
                             responseData.skipHistoryRefresh = true;
                         }
                         if (stream.requestId) {
@@ -28966,6 +29148,40 @@ module.exports = function registerApiRoutes(scope) {
             } catch (error) {
                 res.status(400).json({
                     error: error?.message || 'Failed to load chat history.'
+                });
+            }
+        });
+
+        app.get('/api/story-tools/scheduled-events', (req, res) => {
+            try {
+                const records = ScheduledEvent.getAll();
+                if (!Array.isArray(records)) {
+                    throw new Error('Scheduled event registry returned an invalid collection.');
+                }
+                const scheduledEvents = records
+                    .map((record) => {
+                        if (!record || typeof record.toJSON !== 'function') {
+                            throw new Error('Scheduled event registry contains an invalid record.');
+                        }
+                        return record.toJSON();
+                    })
+                    .sort((left, right) => {
+                        const minuteDelta = left.targetWorldMinute - right.targetWorldMinute;
+                        if (minuteDelta !== 0) {
+                            return minuteDelta;
+                        }
+                        return left.id.localeCompare(right.id);
+                    });
+                return res.json({
+                    success: true,
+                    scheduledEvents,
+                    count: scheduledEvents.length
+                });
+            } catch (error) {
+                console.error('Failed to list scheduled events for Story Tools:', error);
+                return res.status(500).json({
+                    success: false,
+                    error: error?.message || 'Failed to list scheduled events.'
                 });
             }
         });
@@ -32185,6 +32401,7 @@ module.exports = function registerApiRoutes(scope) {
                 const hasNeedBarApplicability = Object.prototype.hasOwnProperty.call(body, 'needBarApplicability');
                 const hasHiddenFromPlayer = Object.prototype.hasOwnProperty.call(body, 'hiddenFromPlayer');
                 const hasImagePrompt = Object.prototype.hasOwnProperty.call(body, 'imagePrompt');
+                const hasRelationships = Object.prototype.hasOwnProperty.call(body, 'relationships');
                 const {
                     name,
                     description,
@@ -32209,6 +32426,7 @@ module.exports = function registerApiRoutes(scope) {
                     statusEffects,
                     aliases,
                     imagePrompt,
+                    relationships,
                     needBarApplicability
                 } = body;
                 const hasResistances = Object.prototype.hasOwnProperty.call(body, 'resistances')
@@ -32274,6 +32492,23 @@ module.exports = function registerApiRoutes(scope) {
                     });
                 }
 
+                if (hasRelationships) {
+                    if (!relationships || typeof relationships !== 'object' || Array.isArray(relationships)) {
+                        return res.status(400).json({
+                            success: false,
+                            error: 'relationships must be an object map of target character ids to labels.'
+                        });
+                    }
+                    for (const targetId of Object.keys(relationships)) {
+                        if (!(players instanceof Map) || !players.has(targetId)) {
+                            return res.status(400).json({
+                                success: false,
+                                error: `Relationship target character '${targetId}' was not found.`
+                            });
+                        }
+                    }
+                }
+
                 if (typeof name === 'string' && name.trim()) {
                     npc.setName(name.trim());
                 }
@@ -32309,6 +32544,17 @@ module.exports = function registerApiRoutes(scope) {
                         return res.status(400).json({
                             success: false,
                             error: validationError?.message || 'Invalid faction value'
+                        });
+                    }
+                }
+
+                if (hasRelationships) {
+                    try {
+                        npc.setRelationships(relationships);
+                    } catch (relationshipError) {
+                        return res.status(400).json({
+                            success: false,
+                            error: relationshipError?.message || 'Failed to update relationships.'
                         });
                     }
                 }
@@ -40027,9 +40273,9 @@ module.exports = function registerApiRoutes(scope) {
                             }
 
                             try {
-                                member.setLocation(destinationLocation.id);
+                                member.setLocation(null);
                             } catch (memberError) {
-                                console.warn(`Failed to update location for party member ${member.name || member.id}:`, memberError.message);
+                                console.warn(`Failed to preserve off-location party ownership for ${member.name || member.id}:`, memberError.message);
                                 continue;
                             }
 
@@ -40837,6 +41083,13 @@ module.exports = function registerApiRoutes(scope) {
                     ? slotItems[0].thing
                     : null;
 
+                if (isHarvestAction && salvageTargetThing?.isHarvestable !== true) {
+                    return res.status(400).json({
+                        success: false,
+                        error: `${salvageTargetThing?.name || 'Selected target'} is not harvestable.`
+                    });
+                }
+
                 const craftingItemsForPrompt = slotItems.map(({ thing }) => ({
                     name: thing.name,
                     description: thing.description,
@@ -41454,6 +41707,9 @@ module.exports = function registerApiRoutes(scope) {
                                 templateContext: craftNarrativeContext,
                                 tinyBrain,
                                 metadataLabel: 'craft_player_action',
+                                resultBuilders: {
+                                    craft_result: buildCraftResult
+                                },
                                 finalParser: response => parseCraftNarrativeResult(response, {
                                     requireOtherEffect: Boolean(selectedResult.other),
                                     expectedDurationMinutes: appliedTimeTakenMinutes
@@ -42387,6 +42643,9 @@ module.exports = function registerApiRoutes(scope) {
                                 templateContext: locationModifyNarrativeContext,
                                 tinyBrain,
                                 metadataLabel: 'location_modify_player_action',
+                                resultBuilders: {
+                                    location_modification_result: buildLocationModificationResult
+                                },
                                 finalParser: response => parseLocationModificationNarrativeResult(
                                     response,
                                     { expectedDurationMinutes: appliedTimeTakenMinutes }
@@ -45550,6 +45809,9 @@ module.exports = function registerApiRoutes(scope) {
                         templateContext: containerPromptContext,
                         tinyBrain,
                         metadataLabel: 'player_action_open_container',
+                        resultBuilders: {
+                            container_open_result: buildContainerOpenResult
+                        },
                         finalParser: (response, parseContext = {}) => {
                             const checkToolInvocations = Array.isArray(parseContext.toolInvocations)
                                 ? parseContext.toolInvocations.filter(invocation => (
@@ -49331,6 +49593,7 @@ module.exports = function registerApiRoutes(scope) {
             currentPlayer = normalizedPlayer;
             scope.currentPlayer = normalizedPlayer;
             Globals.currentPlayer = normalizedPlayer;
+            Globals.setInCombat(Boolean(normalizedPlayer?.inCombat));
             return normalizedPlayer;
         };
 
@@ -52115,6 +52378,24 @@ module.exports = function registerApiRoutes(scope) {
                 return res.json({
                     success: true,
                     recording: LLMClient.completeCompletionCassetteRecording({ description })
+                });
+            } catch (error) {
+                return res.status(409).json({
+                    success: false,
+                    error: error.message,
+                    ...LLMClient.getCompletionCassetteStatus()
+                });
+            }
+        });
+
+        app.post('/api/llm-completion-cassette/reset-incomplete-recording', (req, res) => {
+            try {
+                const description = typeof req.body?.description === 'string'
+                    ? req.body.description
+                    : undefined;
+                return res.json({
+                    success: true,
+                    recording: LLMClient.resetIncompleteCompletionCassetteRecording({ description })
                 });
             } catch (error) {
                 return res.status(409).json({

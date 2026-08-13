@@ -155,5 +155,5 @@ test('while-you-were-away tiny-brain requires the canonical character update sch
     assert.match(rendered, /<needBarChanges>/);
     assert.match(rendered, /<travelDestination><location>exact location if they left<\/location>/);
     assert.match(rendered, /<update>Concise hidden summary/);
-    assert.match(rendered, /do not nest a second <characterUpdates> wrapper/);
+    assert.match(rendered, /do not nest a second <characterUpdates> wrapper/i);
 });

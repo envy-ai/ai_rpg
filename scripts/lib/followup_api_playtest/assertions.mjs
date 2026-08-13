@@ -101,13 +101,30 @@ function requireAssertionObject(assertion) {
 }
 
 function getCollectionPayload(state, collection) {
-    const wrapper = state?.[collection];
+    const wrapper = state?.[collection]
+        || (state?.payload && (
+            Array.isArray(state.payload)
+            || Array.isArray(state.payload?.[collection])
+            || Array.isArray(state.payload?.[collection.endsWith('s') ? collection.slice(0, -1) : collection])
+        ) ? state : null);
     const payload = wrapper?.payload;
     if (Array.isArray(payload)) return payload;
     if (Array.isArray(payload?.[collection])) return payload[collection];
     const singular = collection.endsWith('s') ? collection.slice(0, -1) : collection;
     if (Array.isArray(payload?.[singular])) return payload[singular];
     return [];
+}
+
+function getNpcDispositionsTowardPlayer(npc, playerId) {
+    const persisted = npc?.dispositions?.[playerId];
+    if (persisted && typeof persisted === 'object' && !Array.isArray(persisted)) {
+        return persisted;
+    }
+    const clientProjection = npc?.dispositionsTowardPlayer;
+    if (clientProjection && typeof clientProjection === 'object' && !Array.isArray(clientProjection)) {
+        return clientProjection;
+    }
+    return {};
 }
 
 export function normalizeAttackResults(invocations) {
@@ -194,6 +211,7 @@ export function evaluateAssertion(assertion, context) {
         }
         case 'exists':
         case 'absent':
+        case 'nullish':
         case 'equals':
         case 'notEquals':
         case 'count':
@@ -206,6 +224,14 @@ export function evaluateAssertion(assertion, context) {
             }
             if (assertion.type === 'absent') {
                 return result(assertion, !resolved.exists, `${assertion.path} ${resolved.exists ? 'exists unexpectedly' : 'is absent'}.`);
+            }
+            if (assertion.type === 'nullish') {
+                const passed = !resolved.exists || resolved.value === null || resolved.value === undefined;
+                return result(
+                    assertion,
+                    passed,
+                    `${assertion.path} ${resolved.exists ? `is ${describeValue(resolved.value)}` : 'is absent'}; expected absent or null.`
+                );
             }
             if (!resolved.exists) {
                 return result(assertion, false, `${assertion.path} is missing.`);
@@ -354,6 +380,28 @@ export function evaluateAssertion(assertion, context) {
                 { actual, expected, where: assertion.where }
             );
         }
+        case 'entityArrayUnique': {
+            const source = resolveSource(context, assertion.source || 'after');
+            const collection = getCollectionPayload(source, assertion.collection);
+            const entity = collection.find(entry => entry?.id === assertion.id);
+            if (!entity) {
+                return result(assertion, false, `Entity ${assertion.id} is missing from ${assertion.collection}.`);
+            }
+            const resolved = resolveObjectPath(entity, assertion.path);
+            if (!resolved.exists || !Array.isArray(resolved.value)) {
+                return result(assertion, false, `${assertion.collection}:${assertion.id}.${assertion.path} must be an array.`);
+            }
+            const serialized = resolved.value.map(value => JSON.stringify(value));
+            const duplicateCount = serialized.length - new Set(serialized).size;
+            return result(
+                assertion,
+                duplicateCount === 0,
+                duplicateCount
+                    ? `${assertion.collection}:${assertion.id}.${assertion.path} contains ${duplicateCount} duplicate value(s).`
+                    : `${assertion.collection}:${assertion.id}.${assertion.path} contains only unique values.`,
+                { duplicateCount }
+            );
+        }
         case 'arrayObjectCount': {
             const source = resolveSource(context, assertion.source);
             const resolved = resolveObjectPath(source, assertion.path);
@@ -370,6 +418,141 @@ export function evaluateAssertion(assertion, context) {
                 actual === expected,
                 `${assertion.path} matching object count=${actual}; expected ${expected}.`,
                 { actual, expected, where: assertion.where }
+            );
+        }
+        case 'arrayObjectField': {
+            const source = resolveSource(context, assertion.source);
+            const resolved = resolveObjectPath(source, assertion.path);
+            if (!resolved.exists || !Array.isArray(resolved.value)) {
+                return result(assertion, false, `${assertion.path} must be an array.`);
+            }
+            if (!assertion.where || typeof assertion.where !== 'object' || Array.isArray(assertion.where)) {
+                throw new Error('arrayObjectField requires a where object.');
+            }
+            const matches = resolved.value.filter(entry => objectContains(entry, assertion.where));
+            if (matches.length !== 1) {
+                return result(
+                    assertion,
+                    false,
+                    `${assertion.path} has ${matches.length} matching objects; expected exactly 1.`,
+                    { actual: matches.length, expected: 1, where: assertion.where }
+                );
+            }
+            const field = resolveObjectPath(matches[0], assertion.field);
+            if (!field.exists) {
+                return result(assertion, false, `${assertion.path} matching object's ${assertion.field} is missing.`);
+            }
+            let expected = assertion.equals;
+            if (assertion.equalsFrom) {
+                const expectedSource = resolveSource(context, assertion.equalsFrom.source);
+                const expectedResolved = resolveObjectPath(expectedSource, assertion.equalsFrom.path);
+                if (!expectedResolved.exists) {
+                    return result(assertion, false, `Comparison path ${assertion.equalsFrom.path} is missing.`);
+                }
+                expected = expectedResolved.value;
+            }
+            const passed = deepEqual(field.value, expected);
+            return result(
+                assertion,
+                passed,
+                `${assertion.path} matching object's ${assertion.field}=${describeValue(field.value)}; expected ${describeValue(expected)}.`,
+                { actual: field.value, expected, where: assertion.where }
+            );
+        }
+        case 'arrayObjectFieldCount': {
+            const source = resolveSource(context, assertion.source);
+            const resolved = resolveObjectPath(source, assertion.path);
+            if (!resolved.exists || !Array.isArray(resolved.value)) {
+                return result(assertion, false, `${assertion.path} must be an array.`);
+            }
+            if (!assertion.where || typeof assertion.where !== 'object' || Array.isArray(assertion.where)) {
+                throw new Error('arrayObjectFieldCount requires a where object.');
+            }
+            const matches = resolved.value.filter(entry => objectContains(entry, assertion.where));
+            if (matches.length !== 1) {
+                return result(
+                    assertion,
+                    false,
+                    `${assertion.path} has ${matches.length} matching objects; expected exactly 1.`,
+                    { actualMatches: matches.length, expectedMatches: 1, where: assertion.where }
+                );
+            }
+            const field = resolveObjectPath(matches[0], assertion.field);
+            if (!field.exists) {
+                return result(assertion, false, `${assertion.path} matching object's ${assertion.field} is missing.`);
+            }
+            const actual = Array.isArray(field.value) || typeof field.value === 'string'
+                ? field.value.length
+                : (field.value && typeof field.value === 'object' ? Object.keys(field.value).length : null);
+            const expected = Number(assertion.equals);
+            return result(
+                assertion,
+                actual === expected,
+                `${assertion.path} matching object's ${assertion.field} count=${actual}; expected ${expected}.`,
+                { actual, expected, where: assertion.where }
+            );
+        }
+        case 'arrayObjectCountAtLeast': {
+            const source = resolveSource(context, assertion.source);
+            const resolved = resolveObjectPath(source, assertion.path);
+            if (!resolved.exists || !Array.isArray(resolved.value)) {
+                return result(assertion, false, `${assertion.path} must be an array.`);
+            }
+            if (!assertion.where || typeof assertion.where !== 'object' || Array.isArray(assertion.where)) {
+                throw new Error('arrayObjectCountAtLeast requires a where object.');
+            }
+            const actual = resolved.value.filter(entry => objectContains(entry, assertion.where)).length;
+            const minimum = Number(assertion.minimum);
+            return result(
+                assertion,
+                actual >= minimum,
+                `${assertion.path} matching object count=${actual}; expected at least ${minimum}.`,
+                { actual, minimum, where: assertion.where }
+            );
+        }
+        case 'arrayObjectCountBetween': {
+            const source = resolveSource(context, assertion.source);
+            const resolved = resolveObjectPath(source, assertion.path);
+            if (!resolved.exists || !Array.isArray(resolved.value)) {
+                return result(assertion, false, `${assertion.path} must be an array.`);
+            }
+            if (!assertion.where || typeof assertion.where !== 'object' || Array.isArray(assertion.where)) {
+                throw new Error('arrayObjectCountBetween requires a where object.');
+            }
+            const actual = resolved.value.filter(entry => objectContains(entry, assertion.where)).length;
+            const minimum = Number(assertion.minimum);
+            const maximum = Number(assertion.maximum);
+            return result(
+                assertion,
+                actual >= minimum && actual <= maximum,
+                `${assertion.path} matching object count=${actual}; expected ${minimum} through ${maximum}.`,
+                { actual, minimum, maximum, where: assertion.where }
+            );
+        }
+        case 'arrayNumericFieldBounds': {
+            const source = resolveSource(context, assertion.source);
+            const resolved = resolveObjectPath(source, assertion.path);
+            if (!resolved.exists || !Array.isArray(resolved.value)) {
+                return result(assertion, false, `${assertion.path} must be an array.`);
+            }
+            const failures = [];
+            for (const [index, entry] of resolved.value.entries()) {
+                const field = resolveObjectPath(entry, assertion.field);
+                if (!field.exists || !Number.isFinite(field.value)
+                    || (assertion.minimum !== undefined && field.value < assertion.minimum)
+                    || (assertion.minimumExclusive !== undefined && field.value <= assertion.minimumExclusive)
+                    || (assertion.maximum !== undefined && field.value > assertion.maximum)
+                    || (assertion.maximumExclusive !== undefined && field.value >= assertion.maximumExclusive)) {
+                    failures.push({ index, value: field.value });
+                }
+            }
+            return result(
+                assertion,
+                failures.length === 0,
+                failures.length
+                    ? `${assertion.path} has ${failures.length} row(s) outside numeric bounds for ${assertion.field}.`
+                    : `${assertion.path} has ${resolved.value.length} row(s) within numeric bounds for ${assertion.field}.`,
+                { failures }
             );
         }
         case 'attackResultCount': {
@@ -532,19 +715,64 @@ export function evaluateAssertion(assertion, context) {
                 ? `${errors.length} realtime harness error(s) occurred.`
                 : 'No realtime harness errors occurred.', { errors });
         }
+        case 'realtimeEventCount': {
+            if (!assertion.where || typeof assertion.where !== 'object' || Array.isArray(assertion.where)) {
+                throw new Error('realtimeEventCount requires a where object.');
+            }
+            const matching = (context.realtime || []).filter(event => objectContains(event, assertion.where));
+            const expected = Number(assertion.equals);
+            return result(
+                assertion,
+                matching.length === expected,
+                `Realtime event matching object count=${matching.length}; expected ${expected}.`,
+                { actual: matching.length, expected, where: assertion.where }
+            );
+        }
+        case 'promptRunCount': {
+            if (typeof assertion.labelIncludes !== 'string' || !assertion.labelIncludes.trim()) {
+                throw new Error('promptRunCount requires a non-empty labelIncludes string.');
+            }
+            const needle = assertion.labelIncludes.trim().toLowerCase();
+            const prompts = summarizePromptTimeline(context.realtime).prompts
+                .filter(prompt => String(prompt.label || '').toLowerCase().includes(needle));
+            const expected = Number(assertion.equals);
+            return result(
+                assertion,
+                prompts.length === expected,
+                `Prompt runs with labels containing ${JSON.stringify(assertion.labelIncludes)}=${prompts.length}; expected ${expected}.`,
+                { actual: prompts.length, expected, prompts }
+            );
+        }
         case 'noUnexpectedErrorLogs': {
             const errorLogs = (context.changedLogs || []).filter(entry => /^ERROR_/i.test(path.basename(entry.name || '')));
             const allowed = new Set(Array.isArray(assertion.allowed) ? assertion.allowed : []);
             const allowedPrefixes = Array.isArray(assertion.allowedPrefixes)
                 ? assertion.allowedPrefixes
                 : [];
-            const unexpected = errorLogs.filter(entry => (
+            const isRecoveredProviderRetry = entry => (
+                assertion.allowRecoveredProviderRetries === true
+                && /^ERROR_chatCompletionError_/i.test(path.basename(entry.name || ''))
+                && entry.errorDetails?.willRetry === true
+                && Number.isInteger(entry.errorDetails?.attemptNumber)
+                && Number.isInteger(entry.errorDetails?.maxAttempts)
+                && entry.errorDetails.attemptNumber < entry.errorDetails.maxAttempts
+            );
+            const unacknowledged = errorLogs.filter(entry => (
                 !allowed.has(entry.name)
                 && !allowedPrefixes.some(prefix => entry.name.startsWith(prefix))
+                && !isRecoveredProviderRetry(entry)
             ));
-            return result(assertion, unexpected.length === 0, unexpected.length
-                ? `Unexpected error logs: ${unexpected.map(entry => entry.name).join(', ')}.`
-                : 'No unexpected error logs were created.', { unexpected });
+            const message = errorLogs.length
+                ? `${errorLogs.length} error log${errorLogs.length === 1 ? '' : 's'} recorded for diagnostic review; error logs do not affect pass/fail.`
+                : 'No error logs were created.';
+            return result(assertion, true, message, {
+                diagnosticOnly: true,
+                errorLogs,
+                unacknowledged,
+                // Retain the old detail key for report consumers that have not yet
+                // migrated. It is diagnostic data and never controls `passed`.
+                unexpected: unacknowledged
+            });
         }
         case 'historyAddedTypeCount': {
             if (typeof assertion.entryType !== 'string' || !assertion.entryType.trim()) {
@@ -559,6 +787,43 @@ export function evaluateAssertion(assertion, context) {
                 actual === expected,
                 `Added history type ${assertion.entryType.trim()} count=${actual}; expected ${expected}.`,
                 { actual, expected }
+            );
+        }
+        case 'historyAddedSequence': {
+            if (!Array.isArray(assertion.expected) || !assertion.expected.length) {
+                throw new Error('historyAddedSequence requires a non-empty expected array.');
+            }
+            const entryTypes = Array.isArray(assertion.entryTypes)
+                ? new Set(assertion.entryTypes.map(value => value.trim()))
+                : null;
+            const sources = sourcesForComparison(assertion, context);
+            const addedEntries = collectAddedHistoryEntries(sources.before, sources.after)
+                .filter(entry => !entryTypes || entryTypes.has(entry?.type));
+            const countMatches = addedEntries.length === assertion.expected.length;
+            const mismatches = [];
+            const comparedCount = Math.min(addedEntries.length, assertion.expected.length);
+            for (let index = 0; index < comparedCount; index += 1) {
+                if (!objectContains(addedEntries[index], assertion.expected[index])) {
+                    mismatches.push({
+                        index,
+                        actual: addedEntries[index],
+                        expected: assertion.expected[index]
+                    });
+                }
+            }
+            const passed = countMatches && mismatches.length === 0;
+            return result(
+                assertion,
+                passed,
+                passed
+                    ? `Added history sequence matched ${assertion.expected.length} expected entr${assertion.expected.length === 1 ? 'y' : 'ies'}.`
+                    : `Added history sequence had ${addedEntries.length} filtered entr${addedEntries.length === 1 ? 'y' : 'ies'}; expected ${assertion.expected.length}, with ${mismatches.length} positional mismatch(es).`,
+                {
+                    actualCount: addedEntries.length,
+                    expectedCount: assertion.expected.length,
+                    entryTypes: entryTypes ? [...entryTypes] : null,
+                    mismatches
+                }
             );
         }
         case 'historyAddedNestedObjectCount': {
@@ -601,6 +866,205 @@ export function evaluateAssertion(assertion, context) {
                     entryWhere: assertion.entryWhere,
                     where: assertion.where,
                     matchingEntryCount: addedEntries.length
+                }
+            );
+        }
+        case 'dispositionChangesMatchState': {
+            const sources = sourcesForComparison(assertion, context);
+            const beforeNpc = getCollectionPayload(sources.before, 'players')
+                .find(entry => entry?.id === assertion.npcId);
+            const afterNpc = getCollectionPayload(sources.after, 'players')
+                .find(entry => entry?.id === assertion.npcId);
+            if (!beforeNpc || !afterNpc) {
+                return result(
+                    assertion,
+                    false,
+                    `Could not compare dispositions for NPC ${assertion.npcId}; actor missing before or after.`,
+                    { beforeNpcFound: Boolean(beforeNpc), afterNpcFound: Boolean(afterNpc) }
+                );
+            }
+            const beforeMap = getNpcDispositionsTowardPlayer(beforeNpc, assertion.playerId);
+            const afterMap = getNpcDispositionsTowardPlayer(afterNpc, assertion.playerId);
+            const dispositionKeys = new Set([...Object.keys(beforeMap), ...Object.keys(afterMap)]);
+            const changes = [...dispositionKeys]
+                .map(typeKey => {
+                    const previousValue = Number(beforeMap[typeKey] ?? 0);
+                    const newValue = Number(afterMap[typeKey] ?? 0);
+                    return {
+                        typeKey,
+                        previousValue,
+                        newValue,
+                        delta: newValue - previousValue
+                    };
+                })
+                .filter(change => Number.isFinite(change.delta) && change.delta !== 0);
+            const direction = assertion.direction || 'either';
+            const directionMatches = direction === 'either'
+                || changes.every(change => direction === 'increase' ? change.delta > 0 : change.delta < 0);
+            const summaryItems = collectAddedHistoryEntries(sources.before, sources.after)
+                .flatMap(entry => Array.isArray(entry?.summaryItems) ? entry.summaryItems : [])
+                .filter(item => (
+                    item?.sourceType === 'disposition_change'
+                    && item?.metadata?.dispositionChange?.npcId === assertion.npcId
+                ));
+            const mismatches = [];
+            for (const change of changes) {
+                const matching = summaryItems.filter(item => (
+                    item?.metadata?.dispositionChange?.typeKey === change.typeKey
+                ));
+                if (matching.length !== 1) {
+                    mismatches.push({
+                        typeKey: change.typeKey,
+                        issue: `expected exactly one summary item; found ${matching.length}`
+                    });
+                    continue;
+                }
+                const metadata = matching[0].metadata.dispositionChange;
+                if (Number(metadata.previousValue) !== change.previousValue
+                    || Number(metadata.newValue) !== change.newValue
+                    || Number(metadata.delta) !== change.delta) {
+                    mismatches.push({
+                        typeKey: change.typeKey,
+                        issue: 'summary values do not match authoritative state delta',
+                        state: change,
+                        summary: metadata
+                    });
+                }
+                if (typeof metadata.reason !== 'string' || !metadata.reason.trim()) {
+                    mismatches.push({
+                        typeKey: change.typeKey,
+                        issue: 'summary reason is empty'
+                    });
+                }
+            }
+            const changedKeys = new Set(changes.map(change => change.typeKey));
+            const extraSummaries = summaryItems.filter(item => (
+                !changedKeys.has(item?.metadata?.dispositionChange?.typeKey)
+            ));
+            const passed = changes.length > 0
+                && directionMatches
+                && summaryItems.length === changes.length
+                && mismatches.length === 0
+                && extraSummaries.length === 0;
+            return result(
+                assertion,
+                passed,
+                passed
+                    ? `${changes.length} disposition state change(s) for ${assertion.npcId} each have one matching structured summary and nonempty reason.`
+                    : `Disposition state/summary consistency failed for ${assertion.npcId}: ${changes.length} state change(s), ${summaryItems.length} summary item(s), ${mismatches.length} mismatch(es), direction=${direction}.`,
+                {
+                    changes,
+                    summaryItems,
+                    mismatches,
+                    extraSummaries,
+                    direction,
+                    directionMatches
+                }
+            );
+        }
+        case 'factionReputationChangesMatchState': {
+            const sources = sourcesForComparison(assertion, context);
+            const beforeStandings = sources.before?.factions?.payload?.playerStandings;
+            const afterStandings = sources.after?.factions?.payload?.playerStandings;
+            if (!beforeStandings || typeof beforeStandings !== 'object' || Array.isArray(beforeStandings)
+                || !afterStandings || typeof afterStandings !== 'object' || Array.isArray(afterStandings)) {
+                return result(
+                    assertion,
+                    false,
+                    'Could not compare faction standings; factions.payload.playerStandings is missing before or after.'
+                );
+            }
+
+            const factionIds = new Set([
+                ...Object.keys(beforeStandings),
+                ...Object.keys(afterStandings)
+            ]);
+            const changes = [...factionIds]
+                .map(factionId => {
+                    const before = Number(beforeStandings[factionId] ?? 0);
+                    const after = Number(afterStandings[factionId] ?? 0);
+                    return {
+                        factionId,
+                        before,
+                        after,
+                        amount: after - before
+                    };
+                })
+                .filter(change => Number.isFinite(change.amount) && change.amount !== 0);
+            const targetChanges = changes.filter(change => change.factionId === assertion.factionId);
+            const direction = assertion.direction || 'either';
+            const directionMatches = targetChanges.every(change => (
+                direction === 'either'
+                || (direction === 'increase' ? change.amount > 0 : change.amount < 0)
+            ));
+            const summaryItems = collectAddedHistoryEntries(sources.before, sources.after)
+                .flatMap(entry => Array.isArray(entry?.summaryItems) ? entry.summaryItems : [])
+                .filter(item => item?.sourceType === 'faction_reputation_change');
+            const targetSummaries = summaryItems.filter(item => (
+                item?.metadata?.factionReputationChange?.factionId === assertion.factionId
+            ));
+            const mismatches = [];
+            if (targetChanges.length !== 1) {
+                mismatches.push({
+                    factionId: assertion.factionId,
+                    issue: `expected exactly one authoritative standing change; found ${targetChanges.length}`
+                });
+            }
+            if (targetSummaries.length !== 1) {
+                mismatches.push({
+                    factionId: assertion.factionId,
+                    issue: `expected exactly one structured summary item; found ${targetSummaries.length}`
+                });
+            }
+            if (targetChanges.length === 1 && targetSummaries.length === 1) {
+                const change = targetChanges[0];
+                const metadata = targetSummaries[0].metadata.factionReputationChange;
+                if (Number(metadata.before) !== change.before
+                    || Number(metadata.after) !== change.after
+                    || Number(metadata.amount) !== change.amount) {
+                    mismatches.push({
+                        factionId: assertion.factionId,
+                        issue: 'summary values do not match authoritative standing delta',
+                        state: change,
+                        summary: metadata
+                    });
+                }
+                if (typeof metadata.reason !== 'string' || !metadata.reason.trim()) {
+                    mismatches.push({
+                        factionId: assertion.factionId,
+                        issue: 'summary reason is empty'
+                    });
+                }
+            }
+
+            const unrelatedChanges = changes.filter(change => change.factionId !== assertion.factionId);
+            const unrelatedSummaries = summaryItems.filter(item => (
+                item?.metadata?.factionReputationChange?.factionId !== assertion.factionId
+            ));
+            const onlyFactionMatches = assertion.onlyFaction !== true
+                || (unrelatedChanges.length === 0 && unrelatedSummaries.length === 0);
+            const passed = targetChanges.length === 1
+                && targetSummaries.length === 1
+                && directionMatches
+                && onlyFactionMatches
+                && mismatches.length === 0;
+            return result(
+                assertion,
+                passed,
+                passed
+                    ? `Faction ${assertion.factionId} has one matching structured reputation summary and authoritative standing change.`
+                    : `Faction state/summary consistency failed for ${assertion.factionId}: ${targetChanges.length} state change(s), ${targetSummaries.length} summary item(s), ${mismatches.length} mismatch(es), direction=${direction}.`,
+                {
+                    changes,
+                    summaryItems,
+                    targetChanges,
+                    targetSummaries,
+                    unrelatedChanges,
+                    unrelatedSummaries,
+                    mismatches,
+                    direction,
+                    directionMatches,
+                    onlyFactionMatches
                 }
             );
         }

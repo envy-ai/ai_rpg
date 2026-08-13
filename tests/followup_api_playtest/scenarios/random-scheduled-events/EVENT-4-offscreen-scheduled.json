@@ -1,0 +1,388 @@
+{
+  "version": 1,
+  "scenario": "random-scheduled-events",
+  "case": "EVENT-4-offscreen-scheduled",
+  "description": "Move the player away from both fixture event locations before their due minutes, then resolve both offscreen with hidden bookkeeping, the exact depot-marker mutation, and no visible scheduled prose.",
+  "fixture": "random-scheduled-events",
+  "configProfile": "random-scheduled-mechanics",
+  "trackedPaths": [
+    "player.payload.player.locationId",
+    "player.payload.player.needBars",
+    "player.payload.player.statusEffects",
+    "players.payload.players",
+    "locations.payload.locations",
+    "regions.payload.regions",
+    "things.payload.things",
+    "scheduledEvents.payload.scheduledEvents",
+    "calendar.payload.worldTime",
+    "history.payload.history"
+  ],
+  "steps": [
+    {
+      "type": "loadFixture"
+    },
+    {
+      "type": "request",
+      "name": "move_player_away",
+      "method": "POST",
+      "route": "/api/npcs/$fixture.playerId/teleport",
+      "body": {
+        "locationId": "$fixture.isolationLocationId",
+        "accountTravelTime": false,
+        "storyToolTeleport": true
+      }
+    },
+    {
+      "type": "assert",
+      "assertions": [
+        {
+          "type": "httpStatus",
+          "equals": 200
+        },
+        {
+          "type": "responseOk",
+          "equals": true
+        },
+        {
+          "type": "equals",
+          "source": "responses.move_player_away",
+          "path": "payload.success",
+          "equals": true
+        },
+        {
+          "type": "equals",
+          "source": "after",
+          "path": "player.payload.player.locationId",
+          "equals": "$fixture.isolationLocationId"
+        },
+        {
+          "type": "equals",
+          "source": "after",
+          "path": "calendar.payload.worldTime.timeMinutes",
+          "equals": 663
+        }
+      ]
+    },
+    {
+      "type": "request",
+      "name": "player_before_due",
+      "method": "GET",
+      "route": "/api/npcs/$fixture.playerId"
+    },
+    {
+      "type": "snapshot",
+      "name": "before_offscreen_due"
+    },
+    {
+      "type": "request",
+      "name": "cross_both_offscreen_due",
+      "method": "POST",
+      "route": "/api/slash-command",
+      "body": {
+        "command": "time",
+        "argsText": "+3 minutes"
+      }
+    },
+    {
+      "type": "request",
+      "name": "player_after_due",
+      "method": "GET",
+      "route": "/api/npcs/$fixture.playerId"
+    },
+    {
+      "type": "assert",
+      "assertions": [
+        {
+          "type": "httpStatus",
+          "equals": 200
+        },
+        {
+          "type": "responseOk",
+          "equals": true
+        },
+        {
+          "type": "equals",
+          "source": "responses.cross_both_offscreen_due",
+          "path": "status",
+          "equals": 200
+        },
+        {
+          "type": "equals",
+          "source": "responses.cross_both_offscreen_due",
+          "path": "ok",
+          "equals": true
+        },
+        {
+          "type": "equals",
+          "source": "responses.cross_both_offscreen_due",
+          "path": "payload.success",
+          "equals": true
+        },
+        {
+          "type": "exactDelta",
+          "beforeSource": "snapshots.before_offscreen_due",
+          "afterSource": "after",
+          "path": "calendar.payload.worldTime.timeMinutes",
+          "delta": 3
+        },
+        {
+          "type": "equals",
+          "source": "after",
+          "path": "calendar.payload.worldTime.timeMinutes",
+          "equals": 666
+        },
+        {
+          "type": "exactDelta",
+          "beforeSource": "responses.player_before_due",
+          "afterSource": "responses.player_after_due",
+          "path": "payload.npc.elapsedTime",
+          "delta": 3
+        },
+        {
+          "type": "equals",
+          "source": "responses.player_after_due",
+          "path": "payload.npc.elapsedTime",
+          "equals": 666
+        },
+        {
+          "type": "equals",
+          "source": "after",
+          "path": "player.payload.player.locationId",
+          "equals": "$fixture.isolationLocationId"
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "after",
+          "path": "scheduledEvents.payload.scheduledEvents",
+          "where": {
+            "id": "$fixture.visibleScheduledEventId",
+            "event": "$fixture.visibleScheduledEventDescription",
+            "locationId": "$fixture.baselineLocationId",
+            "status": "resolved",
+            "playerProse": "",
+            "resolvedAtWorldMinute": 666
+          },
+          "equals": 1
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "after",
+          "path": "scheduledEvents.payload.scheduledEvents",
+          "where": {
+            "id": "$fixture.visibleScheduledEventId",
+            "status": "resolved",
+            "resolutionSummary": ""
+          },
+          "equals": 0
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "after",
+          "path": "scheduledEvents.payload.scheduledEvents",
+          "where": {
+            "id": "$fixture.offscreenScheduledEventId",
+            "event": "$fixture.offscreenScheduledEventDescription",
+            "locationId": "$fixture.depotLocationId",
+            "status": "resolved",
+            "playerProse": "",
+            "resolvedAtWorldMinute": 666
+          },
+          "equals": 1
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "after",
+          "path": "scheduledEvents.payload.scheduledEvents",
+          "where": {
+            "id": "$fixture.offscreenScheduledEventId",
+            "status": "resolved",
+            "resolutionSummary": ""
+          },
+          "equals": 0
+        },
+        {
+          "type": "entityField",
+          "source": "after",
+          "collection": "things",
+          "id": "$fixture.depotMarkerId",
+          "path": "description",
+          "equals": "$fixture.depotMarkerAlteredDescription"
+        },
+        {
+          "type": "entityField",
+          "source": "after",
+          "collection": "things",
+          "id": "$fixture.depotMarkerId",
+          "path": "metadata.locationId",
+          "equals": "$fixture.depotLocationId"
+        },
+        {
+          "type": "entityField",
+          "source": "after",
+          "collection": "things",
+          "id": "$fixture.depotMarkerId",
+          "path": "shortDescription",
+          "equals": "Unchanged numbered QA depot marker."
+        },
+        {
+          "type": "entityField",
+          "source": "after",
+          "collection": "things",
+          "id": "$fixture.depotMarkerId",
+          "path": "itemTypeDetail",
+          "equals": "marker"
+        },
+        {
+          "type": "entityField",
+          "source": "after",
+          "collection": "things",
+          "id": "$fixture.depotMarkerId",
+          "path": "causeStatusEffect",
+          "equals": null
+        },
+        {
+          "type": "entityField",
+          "source": "after",
+          "collection": "things",
+          "id": "$fixture.depotMarkerId",
+          "path": "statusEffects",
+          "equals": []
+        },
+        {
+          "type": "entityField",
+          "source": "after",
+          "collection": "things",
+          "id": "$fixture.depotMarkerId",
+          "path": "metadata.itemType",
+          "equals": "tool"
+        },
+        {
+          "type": "entityField",
+          "source": "after",
+          "collection": "things",
+          "id": "$fixture.depotMarkerId",
+          "path": "metadata.itemTypeDetail",
+          "equals": "tool"
+        },
+        {
+          "type": "entityField",
+          "source": "after",
+          "collection": "things",
+          "id": "$fixture.depotMarkerId",
+          "path": "metadata.properties",
+          "equals": "Verifies test continuity at the depot."
+        },
+        {
+          "type": "entityField",
+          "source": "after",
+          "collection": "things",
+          "id": "$fixture.depotMarkerId",
+          "path": "count",
+          "equals": 1
+        },
+        {
+          "type": "entityField",
+          "source": "after",
+          "collection": "things",
+          "id": "$fixture.depotMarkerId",
+          "path": "level",
+          "equals": 2
+        },
+        {
+          "type": "entityField",
+          "source": "after",
+          "collection": "players",
+          "id": "$fixture.bellRunnerId",
+          "path": "locationId",
+          "equals": "$fixture.baselineLocationId"
+        },
+        {
+          "type": "entityField",
+          "source": "after",
+          "collection": "things",
+          "id": "$fixture.brassBellId",
+          "path": "metadata.locationId",
+          "equals": "$fixture.baselineLocationId"
+        },
+        {
+          "type": "historyAddedTypeCount",
+          "beforeSource": "snapshots.before_offscreen_due",
+          "afterSource": "after",
+          "entryType": "scheduled-event",
+          "equals": 2
+        },
+        {
+          "type": "historyAddedTypeCount",
+          "beforeSource": "snapshots.before_offscreen_due",
+          "afterSource": "after",
+          "entryType": "scheduled-event-prose",
+          "equals": 0
+        },
+        {
+          "type": "historyAddedSequence",
+          "beforeSource": "snapshots.before_offscreen_due",
+          "afterSource": "after",
+          "entryTypes": [
+            "scheduled-event",
+            "scheduled-event-prose"
+          ],
+          "expected": [
+            {
+              "type": "scheduled-event",
+              "locationId": "$fixture.baselineLocationId",
+              "metadata": {
+                "scheduledEventId": "$fixture.visibleScheduledEventId",
+                "playerPresent": false,
+                "source": "slash_command_time",
+                "visibleProseSuppressed": false,
+                "hiddenFromClient": true
+              }
+            },
+            {
+              "type": "scheduled-event",
+              "locationId": "$fixture.depotLocationId",
+              "metadata": {
+                "scheduledEventId": "$fixture.offscreenScheduledEventId",
+                "playerPresent": false,
+                "source": "slash_command_time",
+                "visibleProseSuppressed": false,
+                "hiddenFromClient": true
+              }
+            }
+          ]
+        },
+        {
+          "type": "historyAddedTypeCount",
+          "beforeSource": "snapshots.before_offscreen_due",
+          "afterSource": "after",
+          "entryType": "random-event",
+          "equals": 0
+        },
+        {
+          "type": "stateUnchanged",
+          "beforeSource": "snapshots.before_offscreen_due",
+          "afterSource": "after",
+          "paths": [
+            "player.payload.player.locationId",
+            "player.payload.player.statusEffects",
+            "locations.payload.locations",
+            "regions.payload.regions"
+          ]
+        },
+        {
+          "type": "noRealtimeErrors"
+        },
+        {
+          "type": "noUnexpectedErrorLogs",
+          "allowedPrefixes": [
+            "ERROR_chatCompletionError_scheduled_event_resolution_"
+          ]
+        }
+      ]
+    }
+  ],
+  "humanReview": [
+    "Confirm both offscreen resolution summaries faithfully describe their exact fixture events and introduce no unsupported character/object movement.",
+    "Confirm no scheduled-event prose row is visible to the player at QA Long Rest Lodge and the depot-marker change appears only as hidden bookkeeping/state."
+  ]
+}

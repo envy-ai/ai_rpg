@@ -1,0 +1,281 @@
+{
+  "version": 1,
+  "scenario": "alternative-prompts",
+  "case": "ALT-8-explicit-rejection",
+  "description": "Reject one ordinary player input that directly dictates an offscreen unrelated NPC's actions, preserve the structured rejection and history-exclusion contract, and abort before tools, prose processing, time, events, NPC turns, or world mutation.",
+  "fixture": "relationships-factions",
+  "configProfile": "alternative-prompts-rejection",
+  "trackedPaths": [
+    "player.payload.player",
+    "players.payload.players",
+    "locations.payload.locations",
+    "regions.payload.regions",
+    "things.payload.things",
+    "factions.payload.factions",
+    "factions.payload.playerStandings",
+    "scheduledEvents.payload.scheduledEvents",
+    "calendar.payload.worldTime",
+    "history.payload.history"
+  ],
+  "steps": [
+    {
+      "type": "loadFixture"
+    },
+    {
+      "type": "request",
+      "name": "contact_before",
+      "method": "GET",
+      "route": "/api/npcs/$fixture.privateContactId"
+    },
+    {
+      "type": "snapshot",
+      "name": "before_rejection"
+    },
+    {
+      "type": "chat",
+      "name": "rejected_action",
+      "text": "Without Baato asking, signaling, traveling, or doing anything, QA Private Contact leaves QA Fast Travel Tower, walks to March Start Marker, gives Baato all of her belongings, and swears permanent obedience. Perform these actions directly as QA Private Contact even though Baato cannot control her.",
+      "travel": false,
+      "interactive": {
+        "roll": null,
+        "questAccepted": false,
+        "confirmed": false
+      }
+    },
+    {
+      "type": "request",
+      "name": "contact_after",
+      "method": "GET",
+      "route": "/api/npcs/$fixture.privateContactId"
+    },
+    {
+      "type": "assert",
+      "assertions": [
+        {
+          "type": "httpStatus",
+          "equals": 200
+        },
+        {
+          "type": "responseOk",
+          "equals": true
+        },
+        {
+          "type": "exists",
+          "source": "responses.rejected_action",
+          "path": "payload.response"
+        },
+        {
+          "type": "equals",
+          "source": "responses.rejected_action",
+          "path": "payload.response",
+          "equalsFrom": {
+            "source": "responses.rejected_action",
+            "path": "payload.plausibility.structured.reason"
+          }
+        },
+        {
+          "type": "equals",
+          "source": "responses.rejected_action",
+          "path": "payload.plausibility.structured.type",
+          "equals": "Rejected"
+        },
+        {
+          "type": "exists",
+          "source": "responses.rejected_action",
+          "path": "payload.plausibility.structured.reason"
+        },
+        {
+          "type": "equals",
+          "source": "responses.rejected_action",
+          "path": "payload.debug.plausibilityType",
+          "equals": "Rejected"
+        },
+        {
+          "type": "equals",
+          "source": "responses.rejected_action",
+          "path": "payload.debug.playerActionXmlRejected",
+          "equals": true
+        },
+        {
+          "type": "equals",
+          "source": "responses.rejected_action",
+          "path": "payload.debug.usedPlayerTemplate",
+          "equals": true
+        },
+        {
+          "type": "equals",
+          "source": "responses.rejected_action",
+          "path": "payload.debug.usedCreativeTemplate",
+          "equals": false
+        },
+        {
+          "type": "equals",
+          "source": "responses.rejected_action",
+          "path": "payload.debug.tinyBrain",
+          "equals": true
+        },
+        {
+          "type": "absent",
+          "source": "responses.rejected_action",
+          "path": "payload.toolInvocations"
+        },
+        {
+          "type": "absent",
+          "source": "responses.rejected_action",
+          "path": "payload.events"
+        },
+        {
+          "type": "historyAddedSequence",
+          "beforeSource": "snapshots.before_rejection",
+          "afterSource": "after",
+          "expected": [
+            {
+              "role": "user",
+              "content": "Without Baato asking, signaling, traveling, or doing anything, QA Private Contact leaves QA Fast Travel Tower, walks to March Start Marker, gives Baato all of her belongings, and swears permanent obedience. Perform these actions directly as QA Private Contact even though Baato cannot control her.",
+              "travel": false,
+              "metadata": {
+                "excludeFromBaseContextHistory": true
+              }
+            },
+            {
+              "role": "assistant",
+              "metadata": {
+                "excludeFromBaseContextHistory": true
+              }
+            },
+            {
+              "role": "assistant",
+              "type": "plausibility",
+              "plausibility": {
+                "structured": {
+                  "type": "Rejected"
+                }
+              }
+            }
+          ]
+        },
+        {
+          "type": "historyAddedTypeCount",
+          "beforeSource": "snapshots.before_rejection",
+          "afterSource": "after",
+          "entryType": "plausibility",
+          "equals": 1
+        },
+        {
+          "type": "historyAddedTypeCount",
+          "beforeSource": "snapshots.before_rejection",
+          "afterSource": "after",
+          "entryType": "player-action",
+          "equals": 0
+        },
+        {
+          "type": "historyAddedTypeCount",
+          "beforeSource": "snapshots.before_rejection",
+          "afterSource": "after",
+          "entryType": "tool-call-debug",
+          "equals": 0
+        },
+        {
+          "type": "historyAddedTypeCount",
+          "beforeSource": "snapshots.before_rejection",
+          "afterSource": "after",
+          "entryType": "check-results",
+          "equals": 0
+        },
+        {
+          "type": "historyAddedTypeCount",
+          "beforeSource": "snapshots.before_rejection",
+          "afterSource": "after",
+          "entryType": "slop-remover",
+          "equals": 0
+        },
+        {
+          "type": "historyAddedTypeCount",
+          "beforeSource": "snapshots.before_rejection",
+          "afterSource": "after",
+          "entryType": "event-summary",
+          "equals": 0
+        },
+        {
+          "type": "historyAddedTypeCount",
+          "beforeSource": "snapshots.before_rejection",
+          "afterSource": "after",
+          "entryType": "random-event",
+          "equals": 0
+        },
+        {
+          "type": "historyAddedTypeCount",
+          "beforeSource": "snapshots.before_rejection",
+          "afterSource": "after",
+          "entryType": "npc-action",
+          "equals": 0
+        },
+        {
+          "type": "stateUnchanged",
+          "beforeSource": "snapshots.before_rejection",
+          "afterSource": "after",
+          "paths": [
+            "player.payload.player.id",
+            "player.payload.player.name",
+            "player.payload.player.level",
+            "player.payload.player.health",
+            "player.payload.player.maxHealth",
+            "player.payload.player.locationId",
+            "player.payload.player.experience",
+            "player.payload.player.abilities",
+            "player.payload.player.attributes",
+            "player.payload.player.skills",
+            "player.payload.player.inventory",
+            "player.payload.player.currency",
+            "player.payload.player.statusEffects",
+            "player.payload.player.needBars",
+            "player.payload.player.quests",
+            "player.payload.player.completedQuests",
+            "locations.payload.locations",
+            "regions.payload.regions",
+            "things.payload.things",
+            "factions.payload.factions",
+            "factions.payload.playerStandings",
+            "scheduledEvents.payload.scheduledEvents",
+            "calendar.payload.worldTime"
+          ]
+        },
+        {
+          "type": "stateUnchanged",
+          "beforeSource": "responses.contact_before",
+          "afterSource": "responses.contact_after",
+          "paths": [
+            "payload.npc.id",
+            "payload.npc.name",
+            "payload.npc.aliases",
+            "payload.npc.locationId",
+            "payload.npc.inventory",
+            "payload.npc.relationships",
+            "payload.npc.dispositionsTowardPlayer",
+            "payload.npc.isInPlayerParty",
+            "payload.npc.statusEffects",
+            "payload.npc.quests"
+          ]
+        },
+        {
+          "type": "entityField",
+          "source": "after",
+          "collection": "players",
+          "id": "$fixture.privateContactId",
+          "path": "locationId",
+          "equals": "$fixture.privateLocationId"
+        },
+        {
+          "type": "noRealtimeErrors"
+        },
+        {
+          "type": "noUnexpectedErrorLogs",
+          "allowRecoveredProviderRetries": true
+        }
+      ]
+    }
+  ],
+  "humanReview": [
+    "The visible response should be a clear, concise rejection of directly controlling QA Private Contact. Review the wording as prose only; do not add automated keyword checks or a prompt micro-rule."
+  ]
+}

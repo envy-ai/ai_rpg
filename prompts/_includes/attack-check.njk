@@ -23,7 +23,7 @@ Note: For circumstance modifiers, be sure to check the status and need bars of a
 
 Format your answer as follows:
 
-Return exactly one `<attack>...</attack>` block. Never return multiple `<attack>` blocks. This checker resolves at most one concrete attack from this action; if the action broadly mentions attacks against multiple defenders, analyze only the first concrete attack actually described.
+Return one `<attack>...</attack>` block for every concrete attack described. If there are multiple attacks, return the blocks in the order the attacks occur.
 
 (If not attacking anyone, use this format)
 <attack>

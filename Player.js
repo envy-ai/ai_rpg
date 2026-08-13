@@ -6449,6 +6449,7 @@ class Player {
             hiddenFromPlayer: this.#hiddenFromPlayer,
             isHostile: this.#isHostile,
             isDead: this.#isDead,
+            inCombat: this.#inCombat,
             persistWhenDead: this.#persistWhenDead,
             factionId: this.#factionId,
             corpseCountdown: this.#corpseCountdown,
@@ -6596,6 +6597,7 @@ class Player {
                 ? data.modState
                 : {},
             isDead: data.isDead,
+            inCombat: data.inCombat,
             persistWhenDead: data.persistWhenDead === true,
             corpseCountdown: data.corpseCountdown,
             importantMemories: Array.isArray(data.importantMemories) ? data.importantMemories : [],

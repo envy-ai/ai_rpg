@@ -296,6 +296,7 @@ prompt_progress:
     codex_*: 5000
     config_test: 5000
     craft_*: 5000
+    creative_mode_action*: 5000
     disposition_check: 5000
     equip_best: 5000
     event_*: 5000
@@ -327,7 +328,7 @@ prompt_progress:
     question*: 5000
     random_event*: 5000
     run_prompts: 5000
-    scheduled_event_resolution: 5000
+    scheduled_event_*: 5000
     scene_illustration_prompt: 5000
     scene_summarize: 5000
     separate_thing: 5000

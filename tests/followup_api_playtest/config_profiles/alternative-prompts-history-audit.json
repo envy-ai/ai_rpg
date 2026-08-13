@@ -1,0 +1,9 @@
+{
+  "version": 1,
+  "name": "alternative-prompts-history-audit",
+  "description": "ALT-12-owned copy isolating ordinary, excluded-history, no-log, and no-context prompt-history contracts.",
+  "extends": "isolated-base",
+  "values": {
+    "ai.local_startup_script_path": ""
+  }
+}

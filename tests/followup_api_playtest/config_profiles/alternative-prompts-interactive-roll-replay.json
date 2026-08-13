@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "name": "alternative-prompts-interactive-roll-replay",
+  "description": "Strict no-provider replay profile for ALT-7's interactive-roll branches.",
+  "extends": "alternative-prompts-interactive-roll",
+  "values": {
+    "ai.local_startup_script_path": "",
+    "ai.unload_during_image_generation": false,
+    "router_preload_model": "",
+    "unload_model_on_switch": false
+  }
+}

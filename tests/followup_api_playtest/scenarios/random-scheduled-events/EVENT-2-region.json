@@ -1,0 +1,192 @@
+{
+  "version": 1,
+  "scenario": "random-scheduled-events",
+  "case": "EVENT-2-region",
+  "description": "Force the current-region random-event category from an isolated fixture restore, preserve the location pool, then prove the one-entry region pool cannot dispatch twice.",
+  "fixture": "random-scheduled-events",
+  "configProfile": "random-scheduled-mechanics",
+  "trackedPaths": [
+    "player.payload.player.locationId",
+    "players.payload.players",
+    "locations.payload.locations",
+    "regions.payload.regions",
+    "things.payload.things",
+    "scheduledEvents.payload.scheduledEvents",
+    "calendar.payload.worldTime",
+    "history.payload.history"
+  ],
+  "steps": [
+    {
+      "type": "loadFixture"
+    },
+    {
+      "type": "snapshot",
+      "name": "before_region"
+    },
+    {
+      "type": "request",
+      "name": "region_event",
+      "method": "POST",
+      "route": "/api/slash-command",
+      "body": {
+        "command": "random",
+        "argsText": "region"
+      }
+    },
+    {
+      "type": "snapshot",
+      "name": "after_region"
+    },
+    {
+      "type": "assert",
+      "assertions": [
+        {
+          "type": "equals",
+          "source": "responses.region_event",
+          "path": "status",
+          "equals": 200
+        },
+        {
+          "type": "equals",
+          "source": "responses.region_event",
+          "path": "ok",
+          "equals": true
+        },
+        {
+          "type": "equals",
+          "source": "responses.region_event",
+          "path": "payload.success",
+          "equals": true
+        },
+        {
+          "type": "count",
+          "source": "responses.region_event",
+          "path": "payload.replies",
+          "equals": 1
+        },
+        {
+          "type": "equals",
+          "source": "responses.region_event",
+          "path": "payload.replies.0.ephemeral",
+          "equals": false
+        },
+        {
+          "type": "historyAddedSequence",
+          "beforeSource": "snapshots.before_region",
+          "afterSource": "snapshots.after_region",
+          "entryTypes": [
+            "random-event"
+          ],
+          "expected": [
+            {
+              "type": "random-event",
+              "actor": "Random Event",
+              "randomEvent": true,
+              "rarity": "regional",
+              "locationId": "$fixture.baselineLocationId"
+            }
+          ]
+        },
+        {
+          "type": "equals",
+          "source": "snapshots.after_region",
+          "path": "currentLocation.payload.location.randomEvents",
+          "equals": [
+            "$fixture.locationRandomEvent"
+          ]
+        },
+        {
+          "type": "stateUnchanged",
+          "beforeSource": "snapshots.before_region",
+          "afterSource": "snapshots.after_region",
+          "paths": [
+            "player.payload.player.locationId",
+            "players.payload.players",
+            "locations.payload.locations",
+            "regions.payload.regions",
+            "things.payload.things",
+            "scheduledEvents.payload.scheduledEvents",
+            "calendar.payload.worldTime"
+          ]
+        }
+      ]
+    },
+    {
+      "type": "request",
+      "name": "region_empty",
+      "method": "POST",
+      "route": "/api/slash-command",
+      "body": {
+        "command": "random",
+        "argsText": "region"
+      }
+    },
+    {
+      "type": "snapshot",
+      "name": "after_region_empty"
+    },
+    {
+      "type": "assert",
+      "assertions": [
+        {
+          "type": "httpStatus",
+          "equals": 200
+        },
+        {
+          "type": "responseOk",
+          "equals": true
+        },
+        {
+          "type": "equals",
+          "source": "responses.region_empty",
+          "path": "payload.success",
+          "equals": true
+        },
+        {
+          "type": "count",
+          "source": "responses.region_empty",
+          "path": "payload.replies",
+          "equals": 1
+        },
+        {
+          "type": "equals",
+          "source": "responses.region_empty",
+          "path": "payload.replies.0.ephemeral",
+          "equals": true
+        },
+        {
+          "type": "historyAddedTypeCount",
+          "beforeSource": "snapshots.after_region",
+          "afterSource": "snapshots.after_region_empty",
+          "entryType": "random-event",
+          "equals": 0
+        },
+        {
+          "type": "stateUnchanged",
+          "beforeSource": "snapshots.after_region",
+          "afterSource": "snapshots.after_region_empty",
+          "paths": [
+            "player.payload.player.locationId",
+            "players.payload.players",
+            "locations.payload.locations",
+            "regions.payload.regions",
+            "things.payload.things",
+            "scheduledEvents.payload.scheduledEvents",
+            "calendar.payload.worldTime",
+            "history.payload.history"
+          ]
+        },
+        {
+          "type": "noRealtimeErrors"
+        },
+        {
+          "type": "noUnexpectedErrorLogs"
+        }
+      ]
+    }
+  ],
+  "humanReview": [
+    "Confirm the one visible regional event describes the exact distant blue signal-lamp seed in the current region and does not turn the distant signal into a local object interaction.",
+    "Confirm nobody and nothing moves and the empty-pool retry produces no second narration or history event."
+  ]
+}

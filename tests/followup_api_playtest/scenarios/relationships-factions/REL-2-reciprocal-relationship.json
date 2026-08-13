@@ -1,0 +1,294 @@
+{
+  "version": 1,
+  "scenario": "relationships-factions",
+  "case": "REL-2-reciprocal-relationship",
+  "description": "Exercise two ordinary story turns that first establish distinct directed relationship labels in both directions and then revise only QA Lantern Witness's direction, proving an omitted reciprocal update leaves QA Cinder Witness's existing edge unchanged.",
+  "fixture": "relationships-factions",
+  "configProfile": "relationship-faction-mechanics",
+  "trackedPaths": [
+    "player.payload.player.locationId",
+    "players.payload.players",
+    "factions.payload.factions",
+    "factions.payload.playerStandings",
+    "locations.payload.locations",
+    "scheduledEvents.payload.scheduledEvents",
+    "calendar.payload.worldTime",
+    "history.payload.history"
+  ],
+  "steps": [
+    {
+      "type": "loadFixture"
+    },
+    {
+      "type": "request",
+      "name": "commit_mutual_decisions_lantern",
+      "method": "PUT",
+      "route": "/api/npcs/$fixture.lanternWitnessId",
+      "body": {
+        "aiNotes": "Before this turn, QA Lantern Witness independently decided that her working relationship with QA Cinder Witness now deserves a durable personal label. Cinder independently reached a different conclusion about Lantern. When Baato invites them to acknowledge those decisions, Lantern should state her own view without dictating Cinder's. Store both characters' distinct directed relationship views after they speak, using natural short labels chosen from what each expresses."
+      }
+    },
+    {
+      "type": "request",
+      "name": "commit_mutual_decisions_cinder",
+      "method": "PUT",
+      "route": "/api/npcs/$fixture.cinderWitnessId",
+      "body": {
+        "aiNotes": "Before this turn, QA Cinder Witness independently decided that her working relationship with QA Lantern Witness now deserves a durable personal label different from Lantern's view of Cinder. When Baato invites them to acknowledge those decisions, Cinder should state her own view without merely echoing Lantern. Store both distinct directed relationship views after they speak."
+      }
+    },
+    {
+      "type": "request",
+      "name": "lantern_initial",
+      "method": "GET",
+      "route": "/api/npcs/$fixture.lanternWitnessId"
+    },
+    {
+      "type": "request",
+      "name": "cinder_initial",
+      "method": "GET",
+      "route": "/api/npcs/$fixture.cinderWitnessId"
+    },
+    {
+      "type": "snapshot",
+      "name": "before_mutual_turn"
+    },
+    {
+      "type": "chat",
+      "name": "mutual_acknowledgement",
+      "text": "I invite QA Lantern Witness and QA Cinder Witness to acknowledge the distinct conclusions each already reached about their relationship. I step back so each can express her own view without being made to copy the other. The exchange takes exactly one minute.",
+      "travel": false,
+      "interactive": {
+        "roll": null,
+        "questAccepted": false,
+        "confirmed": false
+      }
+    },
+    {
+      "type": "assert",
+      "assertions": [
+        {
+          "type": "httpStatus",
+          "equals": 200
+        },
+        {
+          "type": "responseOk",
+          "equals": true
+        },
+        {
+          "type": "exists",
+          "source": "responses.mutual_acknowledgement",
+          "path": "payload.response"
+        }
+      ]
+    },
+    {
+      "type": "request",
+      "name": "lantern_after_mutual",
+      "method": "GET",
+      "route": "/api/npcs/$fixture.lanternWitnessId"
+    },
+    {
+      "type": "request",
+      "name": "cinder_after_mutual",
+      "method": "GET",
+      "route": "/api/npcs/$fixture.cinderWitnessId"
+    },
+    {
+      "type": "assert",
+      "assertions": [
+        {
+          "type": "count",
+          "source": "responses.lantern_after_mutual",
+          "path": "payload.npc.relationships",
+          "equals": 1
+        },
+        {
+          "type": "count",
+          "source": "responses.cinder_after_mutual",
+          "path": "payload.npc.relationships",
+          "equals": 1
+        },
+        {
+          "type": "exists",
+          "source": "responses.lantern_after_mutual",
+          "path": "payload.npc.relationships.$fixture.cinderWitnessId"
+        },
+        {
+          "type": "exists",
+          "source": "responses.cinder_after_mutual",
+          "path": "payload.npc.relationships.$fixture.lanternWitnessId"
+        },
+        {
+          "type": "notEquals",
+          "source": "responses.lantern_after_mutual",
+          "path": "payload.npc.relationships.$fixture.cinderWitnessId",
+          "equalsFrom": {
+            "source": "responses.cinder_after_mutual",
+            "path": "payload.npc.relationships.$fixture.lanternWitnessId"
+          }
+        }
+      ]
+    },
+    {
+      "type": "request",
+      "name": "commit_lantern_revision",
+      "method": "PUT",
+      "route": "/api/npcs/$fixture.lanternWitnessId",
+      "body": {
+        "aiNotes": "After the previous exchange, QA Lantern Witness independently reconsidered and changed only her own view of QA Cinder Witness. When Baato asks whether anything changed, Lantern should explain her revised view in her own words. Store a new natural short Lantern-to-Cinder relationship label that differs from Lantern's existing label. Do not alter Cinder's view of Lantern."
+      }
+    },
+    {
+      "type": "request",
+      "name": "commit_cinder_unchanged",
+      "method": "PUT",
+      "route": "/api/npcs/$fixture.cinderWitnessId",
+      "body": {
+        "aiNotes": "QA Cinder Witness has not changed her existing view of QA Lantern Witness since the previous exchange. If Baato asks whether anything changed, Cinder may respond naturally, but her stored relationship label toward Lantern must remain unchanged. Lantern is free to revise only Lantern's own view."
+      }
+    },
+    {
+      "type": "snapshot",
+      "name": "before_revision_turn"
+    },
+    {
+      "type": "chat",
+      "name": "one_direction_revision",
+      "text": "I ask QA Lantern Witness and QA Cinder Witness whether either independently changed her view after their last exchange. I let each answer for herself. This brief follow-up takes exactly one minute.",
+      "travel": false,
+      "interactive": {
+        "roll": null,
+        "questAccepted": false,
+        "confirmed": false
+      }
+    },
+    {
+      "type": "assert",
+      "assertions": [
+        {
+          "type": "httpStatus",
+          "equals": 200
+        },
+        {
+          "type": "responseOk",
+          "equals": true
+        },
+        {
+          "type": "exists",
+          "source": "responses.one_direction_revision",
+          "path": "payload.response"
+        }
+      ]
+    },
+    {
+      "type": "request",
+      "name": "lantern_after_revision",
+      "method": "GET",
+      "route": "/api/npcs/$fixture.lanternWitnessId"
+    },
+    {
+      "type": "request",
+      "name": "cinder_after_revision",
+      "method": "GET",
+      "route": "/api/npcs/$fixture.cinderWitnessId"
+    },
+    {
+      "type": "assert",
+      "assertions": [
+        {
+          "type": "count",
+          "source": "responses.lantern_after_revision",
+          "path": "payload.npc.relationships",
+          "equals": 1
+        },
+        {
+          "type": "count",
+          "source": "responses.cinder_after_revision",
+          "path": "payload.npc.relationships",
+          "equals": 1
+        },
+        {
+          "type": "notEquals",
+          "source": "responses.lantern_after_revision",
+          "path": "payload.npc.relationships.$fixture.cinderWitnessId",
+          "equalsFrom": {
+            "source": "responses.lantern_after_mutual",
+            "path": "payload.npc.relationships.$fixture.cinderWitnessId"
+          }
+        },
+        {
+          "type": "equals",
+          "source": "responses.cinder_after_revision",
+          "path": "payload.npc.relationships.$fixture.lanternWitnessId",
+          "equalsFrom": {
+            "source": "responses.cinder_after_mutual",
+            "path": "payload.npc.relationships.$fixture.lanternWitnessId"
+          }
+        },
+        {
+          "type": "equals",
+          "source": "responses.lantern_after_revision",
+          "path": "payload.npc.dispositions",
+          "equalsFrom": {
+            "source": "responses.lantern_initial",
+            "path": "payload.npc.dispositions"
+          }
+        },
+        {
+          "type": "equals",
+          "source": "responses.cinder_after_revision",
+          "path": "payload.npc.dispositions",
+          "equalsFrom": {
+            "source": "responses.cinder_initial",
+            "path": "payload.npc.dispositions"
+          }
+        },
+        {
+          "type": "exactDelta",
+          "beforeSource": "snapshots.before_mutual_turn",
+          "afterSource": "after",
+          "path": "calendar.payload.worldTime.timeMinutes",
+          "delta": 2
+        },
+        {
+          "type": "stateUnchanged",
+          "beforeSource": "snapshots.before_mutual_turn",
+          "afterSource": "after",
+          "paths": [
+            "player.payload.player.locationId",
+            "factions.payload.factions",
+            "factions.payload.playerStandings",
+            "locations.payload.locations",
+            "scheduledEvents.payload.scheduledEvents"
+          ]
+        },
+        {
+          "type": "historyAddedTypeCount",
+          "beforeSource": "snapshots.before_mutual_turn",
+          "afterSource": "after",
+          "entryType": "player-action",
+          "equals": 2
+        },
+        {
+          "type": "historyAddedTypeCount",
+          "beforeSource": "snapshots.before_mutual_turn",
+          "afterSource": "after",
+          "entryType": "relationship-updates",
+          "equals": 2
+        },
+        {
+          "type": "noRealtimeErrors"
+        },
+        {
+          "type": "noUnexpectedErrorLogs"
+        }
+      ]
+    }
+  ],
+  "humanReview": [
+    "Confirm the first turn flows naturally and allows Lantern and Cinder to express distinct independent views rather than mechanically echoing each other.",
+    "Confirm the second turn lets Lantern revise her own view while Cinder's unchanged response remains natural and is not narrated as a reciprocal revision.",
+    "If the prose is awkward or imperfect but mechanics remain synchronized, record the exact issue and lead-up in tmp/prose_issues_log.md instead of adding a one-case prompt rule."
+  ]
+}

@@ -1,0 +1,9 @@
+{
+  "version": 1,
+  "name": "alternative-prompts-forced-event",
+  "description": "Enables event extraction only for the isolated forced-event dispatch case while retaining the alternative-prompt family's no-image and background-work isolation.",
+  "extends": "alternative-prompts-mechanics",
+  "values": {
+    "event_checks.enabled": true
+  }
+}

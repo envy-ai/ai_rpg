@@ -1,0 +1,205 @@
+{
+  "version": 1,
+  "scenario": "relationships-factions",
+  "case": "REL-1-directed-relationship",
+  "description": "Exercise one ordinary story turn in which QA Lantern Witness independently follows through on a prior commitment to trust QA Cinder Witness, proving one directed NPC relationship edge is stored without a reverse edge or unrelated social mutation.",
+  "fixture": "relationships-factions",
+  "configProfile": "relationship-faction-mechanics",
+  "trackedPaths": [
+    "player.payload.player.locationId",
+    "players.payload.players",
+    "factions.payload.factions",
+    "factions.payload.playerStandings",
+    "locations.payload.locations",
+    "scheduledEvents.payload.scheduledEvents",
+    "calendar.payload.worldTime",
+    "history.payload.history"
+  ],
+  "steps": [
+    {
+      "type": "loadFixture"
+    },
+    {
+      "type": "request",
+      "name": "commit_lantern_decision",
+      "method": "PUT",
+      "route": "/api/npcs/$fixture.lanternWitnessId",
+      "body": {
+        "aiNotes": "Before this turn, QA Lantern Witness independently decided to place personal trust in QA Cinder Witness when Baato gives their agreed signal and invites both witnesses to formalize their cooperation. This is Lantern's own decision, not Baato controlling Lantern. Cinder has made no reciprocal commitment. If Lantern follows through, store only the directed QA Lantern Witness to QA Cinder Witness relationship."
+      }
+    },
+    {
+      "type": "request",
+      "name": "commit_cinder_response",
+      "method": "PUT",
+      "route": "/api/npcs/$fixture.cinderWitnessId",
+      "body": {
+        "aiNotes": "Before this turn, QA Cinder Witness agreed to attend the brief cooperation ceremony and to accept QA Lantern Witness's independently chosen declaration of trust. Cinder has not chosen a reciprocal relationship label and should not gain one merely because Lantern speaks."
+      }
+    },
+    {
+      "type": "request",
+      "name": "lantern_before",
+      "method": "GET",
+      "route": "/api/npcs/$fixture.lanternWitnessId"
+    },
+    {
+      "type": "request",
+      "name": "cinder_before",
+      "method": "GET",
+      "route": "/api/npcs/$fixture.cinderWitnessId"
+    },
+    {
+      "type": "snapshot",
+      "name": "before_turn"
+    },
+    {
+      "type": "chat",
+      "name": "trust_ceremony",
+      "text": "I give QA Lantern Witness and QA Cinder Witness the agreed signal, then invite them to formalize the cooperation they already discussed. I step back and let each of them make and express their own decision. The brief exchange takes exactly one minute.",
+      "travel": false,
+      "interactive": {
+        "roll": null,
+        "questAccepted": false,
+        "confirmed": false
+      }
+    },
+    {
+      "type": "assert",
+      "assertions": [
+        {
+          "type": "httpStatus",
+          "equals": 200
+        },
+        {
+          "type": "responseOk",
+          "equals": true
+        },
+        {
+          "type": "exists",
+          "source": "responses.trust_ceremony",
+          "path": "payload.response"
+        }
+      ]
+    },
+    {
+      "type": "request",
+      "name": "lantern_after",
+      "method": "GET",
+      "route": "/api/npcs/$fixture.lanternWitnessId"
+    },
+    {
+      "type": "request",
+      "name": "cinder_after",
+      "method": "GET",
+      "route": "/api/npcs/$fixture.cinderWitnessId"
+    },
+    {
+      "type": "assert",
+      "assertions": [
+        {
+          "type": "httpStatus",
+          "equals": 200
+        },
+        {
+          "type": "responseOk",
+          "equals": true
+        },
+        {
+          "type": "count",
+          "source": "responses.lantern_after",
+          "path": "payload.npc.relationships",
+          "equals": 1
+        },
+        {
+          "type": "exists",
+          "source": "responses.lantern_after",
+          "path": "payload.npc.relationships.$fixture.cinderWitnessId"
+        },
+        {
+          "type": "count",
+          "source": "responses.cinder_after",
+          "path": "payload.npc.relationships",
+          "equals": 0
+        },
+        {
+          "type": "equals",
+          "source": "responses.lantern_after",
+          "path": "payload.npc.dispositions",
+          "equalsFrom": {
+            "source": "responses.lantern_before",
+            "path": "payload.npc.dispositions"
+          }
+        },
+        {
+          "type": "equals",
+          "source": "responses.cinder_after",
+          "path": "payload.npc.dispositions",
+          "equalsFrom": {
+            "source": "responses.cinder_before",
+            "path": "payload.npc.dispositions"
+          }
+        },
+        {
+          "type": "equals",
+          "source": "after",
+          "path": "player.payload.player.locationId",
+          "equals": "$fixture.baselineLocationId"
+        },
+        {
+          "type": "entityField",
+          "source": "after",
+          "collection": "players",
+          "id": "$fixture.lanternWitnessId",
+          "path": "locationId",
+          "equals": "$fixture.baselineLocationId"
+        },
+        {
+          "type": "entityField",
+          "source": "after",
+          "collection": "players",
+          "id": "$fixture.cinderWitnessId",
+          "path": "locationId",
+          "equals": "$fixture.baselineLocationId"
+        },
+        {
+          "type": "stateUnchanged",
+          "beforeSource": "snapshots.before_turn",
+          "afterSource": "after",
+          "paths": [
+            "player.payload.player.locationId",
+            "factions.payload.factions",
+            "factions.payload.playerStandings",
+            "locations.payload.locations",
+            "scheduledEvents.payload.scheduledEvents"
+          ]
+        },
+        {
+          "type": "historyAddedTypeCount",
+          "beforeSource": "snapshots.before_turn",
+          "afterSource": "after",
+          "entryType": "player-action",
+          "equals": 1
+        },
+        {
+          "type": "historyAddedTypeCount",
+          "beforeSource": "snapshots.before_turn",
+          "afterSource": "after",
+          "entryType": "relationship-updates",
+          "equals": 1
+        },
+        {
+          "type": "noRealtimeErrors"
+        },
+        {
+          "type": "noUnexpectedErrorLogs",
+          "allowRecoveredProviderRetries": true
+        }
+      ]
+    }
+  ],
+  "humanReview": [
+    "Confirm the prose flows naturally: Lantern independently follows through on the prior trust decision, Cinder is allowed to respond without being assigned a reciprocal relationship, and Baato does not control either NPC's internal choice.",
+    "If the prose is awkward or imperfect but mechanics remain synchronized, record the exact issue and lead-up in tmp/prose_issues_log.md instead of adding a one-case prompt rule."
+  ]
+}

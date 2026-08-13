@@ -1,0 +1,275 @@
+{
+  "version": 1,
+  "scenario": "progression",
+  "case": "PROG-8-skill-spend",
+  "description": "Reuse the immutable level-4 progression baseline through the harness disposable-copy path, spend one formula-derived skill point on Alchemy, and prove unknown-skill and overspending failures leave the successful state unchanged.",
+  "fixture": "progression-level4-pending",
+  "configProfile": "progression-mechanics",
+  "trackedPaths": [
+    "player.payload.player",
+    "players.payload.players",
+    "locations.payload.locations",
+    "things.payload.things",
+    "factions.payload.factions",
+    "factions.payload.playerStandings",
+    "scheduledEvents.payload.scheduledEvents",
+    "calendar.payload.worldTime",
+    "history.payload.history"
+  ],
+  "steps": [
+    {
+      "type": "loadFixture"
+    },
+    {
+      "type": "snapshot",
+      "name": "before_skill_spend"
+    },
+    {
+      "type": "assert",
+      "assertions": [
+        {
+          "type": "equals",
+          "source": "snapshots.before_skill_spend",
+          "path": "player.payload.player.id",
+          "equals": "char_2"
+        },
+        {
+          "type": "equals",
+          "source": "snapshots.before_skill_spend",
+          "path": "player.payload.player.level",
+          "equals": 4
+        },
+        {
+          "type": "equals",
+          "source": "snapshots.before_skill_spend",
+          "path": "player.payload.player.skills.Alchemy",
+          "equals": 5
+        },
+        {
+          "type": "equals",
+          "source": "snapshots.before_skill_spend",
+          "path": "player.payload.player.unspentSkillPoints",
+          "equals": 8
+        }
+      ]
+    },
+    {
+      "type": "request",
+      "name": "increase_alchemy",
+      "method": "POST",
+      "route": "/api/player/skills/Alchemy/increase",
+      "body": {
+        "amount": 1
+      }
+    },
+    {
+      "type": "assert",
+      "assertions": [
+        {
+          "type": "httpStatus",
+          "equals": 200
+        },
+        {
+          "type": "responseOk",
+          "equals": true
+        },
+        {
+          "type": "equals",
+          "source": "responses.increase_alchemy",
+          "path": "payload.success",
+          "equals": true
+        },
+        {
+          "type": "equals",
+          "source": "responses.increase_alchemy",
+          "path": "payload.skill.name",
+          "equals": "Alchemy"
+        },
+        {
+          "type": "equals",
+          "source": "responses.increase_alchemy",
+          "path": "payload.skill.rank",
+          "equals": 6
+        },
+        {
+          "type": "equals",
+          "source": "responses.increase_alchemy",
+          "path": "payload.amount",
+          "equals": 1
+        },
+        {
+          "type": "equals",
+          "source": "responses.increase_alchemy",
+          "path": "payload.player.skills.Alchemy",
+          "equals": 6
+        },
+        {
+          "type": "equals",
+          "source": "responses.increase_alchemy",
+          "path": "payload.player.unspentSkillPoints",
+          "equals": 7
+        },
+        {
+          "type": "exactDelta",
+          "beforeSource": "snapshots.before_skill_spend",
+          "afterSource": "after",
+          "path": "player.payload.player.skills.Alchemy",
+          "delta": 1
+        },
+        {
+          "type": "exactDelta",
+          "beforeSource": "snapshots.before_skill_spend",
+          "afterSource": "after",
+          "path": "player.payload.player.unspentSkillPoints",
+          "delta": -1
+        },
+        {
+          "type": "stateUnchanged",
+          "beforeSource": "snapshots.before_skill_spend",
+          "afterSource": "after",
+          "paths": [
+            "player.payload.player.level",
+            "player.payload.player.experience",
+            "player.payload.player.attributes",
+            "player.payload.player.abilities",
+            "player.payload.player.declinedAbilities",
+            "player.payload.player.pendingAbilityOptionsByLevel",
+            "player.payload.player.locationId",
+            "locations.payload.locations",
+            "things.payload.things",
+            "factions.payload.factions",
+            "factions.payload.playerStandings",
+            "scheduledEvents.payload.scheduledEvents",
+            "calendar.payload.worldTime",
+            "history.payload.history"
+          ]
+        }
+      ]
+    },
+    {
+      "type": "snapshot",
+      "name": "after_valid_increase"
+    },
+    {
+      "type": "request",
+      "name": "reject_unknown_skill",
+      "method": "POST",
+      "route": "/api/player/skills/QA%20Unknown%20Skill/increase",
+      "body": {
+        "amount": 1
+      }
+    },
+    {
+      "type": "assert",
+      "assertions": [
+        {
+          "type": "httpStatus",
+          "equals": 400
+        },
+        {
+          "type": "responseOk",
+          "equals": false
+        },
+        {
+          "type": "equals",
+          "source": "responses.reject_unknown_skill",
+          "path": "payload.success",
+          "equals": false
+        },
+        {
+          "type": "equals",
+          "source": "responses.reject_unknown_skill",
+          "path": "payload.error",
+          "equals": "Unknown skill: QA Unknown Skill"
+        },
+        {
+          "type": "stateUnchanged",
+          "beforeSource": "snapshots.after_valid_increase",
+          "afterSource": "after",
+          "paths": [
+            "player.payload.player",
+            "players.payload.players",
+            "locations.payload.locations",
+            "things.payload.things",
+            "factions.payload.factions",
+            "factions.payload.playerStandings",
+            "scheduledEvents.payload.scheduledEvents",
+            "calendar.payload.worldTime",
+            "history.payload.history"
+          ]
+        }
+      ]
+    },
+    {
+      "type": "request",
+      "name": "reject_overspend",
+      "method": "POST",
+      "route": "/api/player/skills/Alchemy/increase",
+      "body": {
+        "amount": 8
+      }
+    },
+    {
+      "type": "assert",
+      "assertions": [
+        {
+          "type": "httpStatus",
+          "equals": 400
+        },
+        {
+          "type": "responseOk",
+          "equals": false
+        },
+        {
+          "type": "equals",
+          "source": "responses.reject_overspend",
+          "path": "payload.success",
+          "equals": false
+        },
+        {
+          "type": "equals",
+          "source": "responses.reject_overspend",
+          "path": "payload.error",
+          "equals": "Not enough unspent skill points"
+        },
+        {
+          "type": "stateUnchanged",
+          "beforeSource": "snapshots.after_valid_increase",
+          "afterSource": "after",
+          "paths": [
+            "player.payload.player",
+            "players.payload.players",
+            "locations.payload.locations",
+            "things.payload.things",
+            "factions.payload.factions",
+            "factions.payload.playerStandings",
+            "scheduledEvents.payload.scheduledEvents",
+            "calendar.payload.worldTime",
+            "history.payload.history"
+          ]
+        },
+        {
+          "type": "historyAddedTypeCount",
+          "entryType": "player-action",
+          "equals": 0,
+          "beforeSource": "snapshots.before_skill_spend",
+          "afterSource": "after"
+        },
+        {
+          "type": "historyAddedTypeCount",
+          "entryType": "event-summary",
+          "equals": 0,
+          "beforeSource": "snapshots.before_skill_spend",
+          "afterSource": "after"
+        },
+        {
+          "type": "noRealtimeErrors"
+        },
+        {
+          "type": "noUnexpectedErrorLogs"
+        }
+      ]
+    }
+  ],
+  "humanReview": []
+}

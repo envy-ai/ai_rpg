@@ -1,0 +1,391 @@
+{
+  "version": 1,
+  "scenario": "progression",
+  "case": "PROG-4-submit",
+  "description": "Submit exactly three cached level-4 cards from a disposable copied options fixture, prove the pending gate clears, and inspect the new save to verify only unselected cards are persisted as declined even when selected names are also present in the decline list.",
+  "fixture": "progression-level4-options",
+  "configProfile": "progression-mechanics",
+  "trackedPaths": [
+    "player.payload.player",
+    "players.payload.players",
+    "locations.payload.locations",
+    "things.payload.things",
+    "factions.payload.factions",
+    "factions.payload.playerStandings",
+    "scheduledEvents.payload.scheduledEvents",
+    "calendar.payload.worldTime",
+    "history.payload.history"
+  ],
+  "steps": [
+    {
+      "type": "loadFixture"
+    },
+    {
+      "type": "snapshot",
+      "name": "before_submission"
+    },
+    {
+      "type": "request",
+      "name": "cached_level4",
+      "method": "GET",
+      "route": "/api/player/ability-selection?generateOptions=false"
+    },
+    {
+      "type": "assert",
+      "assertions": [
+        {
+          "type": "equals",
+          "source": "responses.cached_level4",
+          "path": "status",
+          "equals": 200
+        },
+        {
+          "type": "equals",
+          "source": "responses.cached_level4",
+          "path": "payload.pending",
+          "equals": true
+        },
+        {
+          "type": "equals",
+          "source": "responses.cached_level4",
+          "path": "payload.abilitySelection.selection.level",
+          "equals": 4
+        },
+        {
+          "type": "equals",
+          "source": "responses.cached_level4",
+          "path": "payload.abilitySelection.selection.requiredSelections",
+          "equals": 3
+        },
+        {
+          "type": "equals",
+          "source": "responses.cached_level4",
+          "path": "payload.abilitySelection.selection.optionsReady",
+          "equals": true
+        },
+        {
+          "type": "count",
+          "source": "responses.cached_level4",
+          "path": "payload.abilitySelection.selection.options",
+          "equals": 6
+        },
+        {
+          "type": "uniqueBy",
+          "source": "responses.cached_level4",
+          "path": "payload.abilitySelection.selection.options",
+          "key": "name"
+        },
+        {
+          "type": "equals",
+          "source": "responses.cached_level4",
+          "path": "payload.abilitySelection.selection.options.0.name",
+          "equals": "$fixture.generatedOptionNames.0"
+        },
+        {
+          "type": "equals",
+          "source": "responses.cached_level4",
+          "path": "payload.abilitySelection.selection.options.1.name",
+          "equals": "$fixture.generatedOptionNames.1"
+        },
+        {
+          "type": "equals",
+          "source": "responses.cached_level4",
+          "path": "payload.abilitySelection.selection.options.2.name",
+          "equals": "$fixture.generatedOptionNames.2"
+        },
+        {
+          "type": "equals",
+          "source": "responses.cached_level4",
+          "path": "payload.abilitySelection.selection.options.3.name",
+          "equals": "$fixture.generatedOptionNames.3"
+        },
+        {
+          "type": "equals",
+          "source": "responses.cached_level4",
+          "path": "payload.abilitySelection.selection.options.4.name",
+          "equals": "$fixture.generatedOptionNames.4"
+        },
+        {
+          "type": "equals",
+          "source": "responses.cached_level4",
+          "path": "payload.abilitySelection.selection.options.5.name",
+          "equals": "$fixture.generatedOptionNames.5"
+        }
+      ]
+    },
+    {
+      "type": "request",
+      "name": "submit_level4",
+      "method": "POST",
+      "route": "/api/player/ability-selection/submit",
+      "body": {
+        "level": 4,
+        "selectedAbilityNames": [
+          "$fixture.generatedOptionNames.0",
+          "$fixture.generatedOptionNames.1",
+          "$fixture.generatedOptionNames.2"
+        ],
+        "declinedAbilityNames": [
+          "$fixture.generatedOptionNames.0",
+          "$fixture.generatedOptionNames.1",
+          "$fixture.generatedOptionNames.2",
+          "$fixture.generatedOptionNames.3",
+          "$fixture.generatedOptionNames.4",
+          "$fixture.generatedOptionNames.5"
+        ]
+      }
+    },
+    {
+      "type": "assert",
+      "assertions": [
+        {
+          "type": "equals",
+          "source": "responses.submit_level4",
+          "path": "status",
+          "equals": 200
+        },
+        {
+          "type": "equals",
+          "source": "responses.submit_level4",
+          "path": "payload.pending",
+          "equals": false
+        },
+        {
+          "type": "equals",
+          "source": "responses.submit_level4",
+          "path": "payload.abilitySelection.pending",
+          "equals": false
+        },
+        {
+          "type": "equals",
+          "source": "responses.submit_level4",
+          "path": "payload.abilitySelection.currentLevel",
+          "equals": 4
+        },
+        {
+          "type": "count",
+          "source": "responses.submit_level4",
+          "path": "payload.abilitySelection.levelsMissing",
+          "equals": 0
+        },
+        {
+          "type": "equals",
+          "source": "responses.submit_level4",
+          "path": "payload.gameIntroGenerated",
+          "equals": false
+        },
+        {
+          "type": "count",
+          "source": "responses.submit_level4",
+          "path": "payload.player.abilities",
+          "equals": 12
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "responses.submit_level4",
+          "path": "payload.player.abilities",
+          "where": {
+            "level": 4
+          },
+          "equals": 3
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "responses.submit_level4",
+          "path": "payload.player.abilities",
+          "where": {
+            "name": "$fixture.generatedOptionNames.0",
+            "description": "$response.cached_level4.payload.abilitySelection.selection.options.0.description",
+            "shortDescription": "$response.cached_level4.payload.abilitySelection.selection.options.0.shortDescription",
+            "type": "$response.cached_level4.payload.abilitySelection.selection.options.0.type",
+            "level": 4
+          },
+          "equals": 1
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "responses.submit_level4",
+          "path": "payload.player.abilities",
+          "where": {
+            "name": "$fixture.generatedOptionNames.1",
+            "description": "$response.cached_level4.payload.abilitySelection.selection.options.1.description",
+            "shortDescription": "$response.cached_level4.payload.abilitySelection.selection.options.1.shortDescription",
+            "type": "$response.cached_level4.payload.abilitySelection.selection.options.1.type",
+            "level": 4
+          },
+          "equals": 1
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "responses.submit_level4",
+          "path": "payload.player.abilities",
+          "where": {
+            "name": "$fixture.generatedOptionNames.2",
+            "description": "$response.cached_level4.payload.abilitySelection.selection.options.2.description",
+            "shortDescription": "$response.cached_level4.payload.abilitySelection.selection.options.2.shortDescription",
+            "type": "$response.cached_level4.payload.abilitySelection.selection.options.2.type",
+            "level": 4
+          },
+          "equals": 1
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "responses.submit_level4",
+          "path": "payload.player.abilities",
+          "where": {
+            "name": "$fixture.generatedOptionNames.3"
+          },
+          "equals": 0
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "responses.submit_level4",
+          "path": "payload.player.abilities",
+          "where": {
+            "name": "$fixture.generatedOptionNames.4"
+          },
+          "equals": 0
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "responses.submit_level4",
+          "path": "payload.player.abilities",
+          "where": {
+            "name": "$fixture.generatedOptionNames.5"
+          },
+          "equals": 0
+        },
+        {
+          "type": "historyAddedTypeCount",
+          "entryType": "player-action",
+          "equals": 0,
+          "beforeSource": "snapshots.before_submission",
+          "afterSource": "after"
+        },
+        {
+          "type": "stateUnchanged",
+          "beforeSource": "snapshots.before_submission",
+          "afterSource": "after",
+          "paths": [
+            "player.payload.player.level",
+            "player.payload.player.health",
+            "player.payload.player.maxHealth",
+            "player.payload.player.locationId",
+            "player.payload.player.experience",
+            "player.payload.player.inventory",
+            "player.payload.player.currency",
+            "player.payload.player.attributes",
+            "player.payload.player.skills",
+            "player.payload.player.statusEffects",
+            "locations.payload.locations",
+            "things.payload.things",
+            "factions.payload.factions",
+            "factions.payload.playerStandings",
+            "scheduledEvents.payload.scheduledEvents",
+            "calendar.payload.worldTime",
+            "history.payload.history"
+          ]
+        }
+      ]
+    },
+    {
+      "type": "save",
+      "name": "completed_level4_save"
+    },
+    {
+      "type": "readSavedJson",
+      "name": "raw_players",
+      "fileName": "allPlayers.json"
+    },
+    {
+      "type": "assert",
+      "assertions": [
+        {
+          "type": "count",
+          "source": "responses.raw_players",
+          "path": "payload.char_2.declinedAbilities",
+          "equals": 3
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "responses.raw_players",
+          "path": "payload.char_2.declinedAbilities",
+          "where": {
+            "name": "$fixture.generatedOptionNames.0"
+          },
+          "equals": 0
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "responses.raw_players",
+          "path": "payload.char_2.declinedAbilities",
+          "where": {
+            "name": "$fixture.generatedOptionNames.1"
+          },
+          "equals": 0
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "responses.raw_players",
+          "path": "payload.char_2.declinedAbilities",
+          "where": {
+            "name": "$fixture.generatedOptionNames.2"
+          },
+          "equals": 0
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "responses.raw_players",
+          "path": "payload.char_2.declinedAbilities",
+          "where": {
+            "name": "$fixture.generatedOptionNames.3",
+            "description": "$response.cached_level4.payload.abilitySelection.selection.options.3.description",
+            "shortDescription": "$response.cached_level4.payload.abilitySelection.selection.options.3.shortDescription",
+            "type": "$response.cached_level4.payload.abilitySelection.selection.options.3.type",
+            "level": 4
+          },
+          "equals": 1
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "responses.raw_players",
+          "path": "payload.char_2.declinedAbilities",
+          "where": {
+            "name": "$fixture.generatedOptionNames.4",
+            "description": "$response.cached_level4.payload.abilitySelection.selection.options.4.description",
+            "shortDescription": "$response.cached_level4.payload.abilitySelection.selection.options.4.shortDescription",
+            "type": "$response.cached_level4.payload.abilitySelection.selection.options.4.type",
+            "level": 4
+          },
+          "equals": 1
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "responses.raw_players",
+          "path": "payload.char_2.declinedAbilities",
+          "where": {
+            "name": "$fixture.generatedOptionNames.5",
+            "description": "$response.cached_level4.payload.abilitySelection.selection.options.5.description",
+            "shortDescription": "$response.cached_level4.payload.abilitySelection.selection.options.5.shortDescription",
+            "type": "$response.cached_level4.payload.abilitySelection.selection.options.5.type",
+            "level": 4
+          },
+          "equals": 1
+        },
+        {
+          "type": "equals",
+          "source": "responses.raw_players",
+          "path": "payload.char_2.pendingAbilityOptionsByLevel",
+          "equals": {}
+        },
+        {
+          "type": "noRealtimeErrors"
+        },
+        {
+          "type": "noUnexpectedErrorLogs"
+        }
+      ]
+    }
+  ],
+  "humanReview": []
+}

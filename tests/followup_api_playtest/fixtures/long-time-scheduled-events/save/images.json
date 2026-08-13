@@ -1,0 +1,2368 @@
+{
+  "img_20260805_155727_k2jtm0h1": {
+    "id": "img_20260805_155727_k2jtm0h1",
+    "prompt": "anime digital painting, soft shading, soft lighting\n\nThe central square of Ember Hollow is paved with smooth river stones, worn flat by countless footsteps, and bordered by sturdy wooden benches and overflowing flower planters. At its heart stands a carved stone fountain, its water kept gently warm by a subtle enchantment that releases soft steam into the air. Nearby, a large communal hearth burns steadily day and night, casting a warm glow across the square. Market stalls are neatly folded away, leaving open space for evening dances, lessons, and relaxed conversation.\n\nSeveral paths radiate from the square, each marked by a small hand-painted signpost pointing toward the community kitchen, herbal alchemy shop, general store, and other parts of Ember Hollow. A notice board beside the fountain is filled with recipes, workshop schedules, and requests for help, fluttering slightly in the breeze. The air carries the comforting scent of fresh bread and, in colder seasons, roasting chestnuts. The scene is peaceful and inviting, with no signs of danger, only the quiet hum of daily life.\n\nTime: noon\nWeather outside: clear",
+    "negative_prompt": "blurry, low quality, modern elements, cars, technology, people, characters, portraits, indoor scenes only",
+    "width": 1920,
+    "height": 1080,
+    "seed": 927677,
+    "createdAt": "2026-08-05T15:58:55.479Z",
+    "comfyUIPromptId": "17080090-ca7b-4ea9-b4d7-246a8d55384f",
+    "images": [
+      {
+        "imageId": "img_20260805_155727_k2jtm0h1",
+        "filename": "img_20260805_155727_k2jtm0h1.webp",
+        "url": "/generated-images/img_20260805_155727_k2jtm0h1.webp",
+        "size": 232612
+      }
+    ]
+  },
+  "img_20260805_155855_7fdfj5dl": {
+    "id": "img_20260805_155855_7fdfj5dl",
+    "prompt": "anime digital painting, soft shading, soft lighting\n\nMirei Hoshino is a tall, curvaceous Kitsune woman with a voluptuous figure, warm amber eyes, and three thick, fluffy white fox tails that fan out behind her. Her long, silky hair is a gradient of deep crimson at the roots fading into bright orange and golden tips, styled in a loose, windswept ponytail that frames her sharp, expressive face. She wears a skimpy, revealing chef outfit consisting of a cropped, translucent white blouse that barely covers her chest, leaving much of her midriff and cleavage exposed, paired with ultra-short, frayed black shorts that show off her long, toned legs and curvy hips. A sturdy white apron embroidered with a flame-and-spoon crest is tied loosely around her waist, its deep pockets bulging with utensils, while a small, embroidered spice pouch hangs from her hip. She stands confidently in the Ember Hollow Village Square, one hand resting on her hip and the other holding a wooden spoon, with a mischievous, flirtatious smirk on her lips, surrounded by the warm glow of the communal hearth and the rustic charm of wooden benches and flower planters.",
+    "negative_prompt": "blurry, low quality, distorted, multiple faces, deformed, ugly, bad anatomy, bad proportions",
+    "width": 1200,
+    "height": 1600,
+    "seed": 356475,
+    "createdAt": "2026-08-05T15:59:11.521Z",
+    "comfyUIPromptId": "e2098f07-ebe9-4c42-a86d-c1d75652a7a5",
+    "images": [
+      {
+        "imageId": "img_20260805_155855_7fdfj5dl",
+        "filename": "img_20260805_155855_7fdfj5dl.webp",
+        "url": "/generated-images/img_20260805_155855_7fdfj5dl.webp",
+        "size": 130598
+      }
+    ]
+  },
+  "img_20260805_155911_2xt2fgnx": {
+    "id": "img_20260805_155911_2xt2fgnx",
+    "prompt": "anime digital painting, soft shading, soft lighting\n\nTsubaki Morino is a female Dryad herbalist with smooth skin carrying a faint green tint and thin bark-like patterns tracing her forearms and shoulders. Her hair is long and glossy, dark forest green at the roots fading into soft mossy highlights, with fine leaf-like strands woven near the temples and a few loose vines curling around her ears. She wears a tight, cropped leather bodice that leaves her midriff bare, paired with a short, open-front leather apron stained with herbs, oils, and faint alchemical residue, hanging low enough to show the curve of her hips and upper thighs. Her legs are bare and toned, and she stands with steady posture, one hand resting lightly on a woven field herb sampler strapped to her back, filled with dried herbs and fresh local samples. Her expression is calm and focused, eyes sharp and intelligent, as she stands in Ember Hollow Village Square beside a carved stone fountain with gently steaming water, with wooden benches, flower planters, and a large communal hearth glowing softly in the background, market stalls folded away and a notice board visible near the fountain.",
+    "negative_prompt": "blurry, low quality, distorted, multiple faces, deformed, ugly, bad anatomy, bad proportions",
+    "width": 1200,
+    "height": 1600,
+    "seed": 450555,
+    "createdAt": "2026-08-05T15:59:26.071Z",
+    "comfyUIPromptId": "a971347c-0df1-41d5-90f0-39c842acc260",
+    "images": [
+      {
+        "imageId": "img_20260805_155911_2xt2fgnx",
+        "filename": "img_20260805_155911_2xt2fgnx.webp",
+        "url": "/generated-images/img_20260805_155911_2xt2fgnx.webp",
+        "size": 170362
+      }
+    ]
+  },
+  "img_20260805_155926_zrzdijor": {
+    "id": "img_20260805_155926_zrzdijor",
+    "prompt": "anime digital painting, soft shading, soft lighting\n\nA translucent blue slime girl stands in the Ember Hollow Village Square, her gelatinous form shimmering with a soft, watery glow that reveals faint internal swirls of deeper azure. Her body is sleek and curvaceous, with a revealing, form-hugging shape that emphasizes her smooth, flexible physique. Her hair, if it can be called that, is a cascade of semi-liquid strands that flow like water, colored in gradients of light and dark blue with hints of silver reflecting the ambient light. She wears minimal clothing, consisting of a damp, thick cotton towel wrapped loosely around her waist, which clings slightly to her translucent form. Her hands are equipped with curved iron hooks that grip the handles of a heavy wooden crate she is lifting with ease. Her expression is one of mild annoyance, her eyes narrowed slightly as she complains about the cold weather making her sluggish. The background features the warm glow of the communal hearth and the soft light of the enchanted fountain, with market stalls and wooden benches visible in the distance.",
+    "negative_prompt": "blurry, low quality, distorted, multiple faces, deformed, ugly, bad anatomy, bad proportions",
+    "width": 1200,
+    "height": 1600,
+    "seed": 478382,
+    "createdAt": "2026-08-05T15:59:40.571Z",
+    "comfyUIPromptId": "b98ee89d-bb56-4344-bd72-c58a8ee68d74",
+    "images": [
+      {
+        "imageId": "img_20260805_155926_zrzdijor",
+        "filename": "img_20260805_155926_zrzdijor.webp",
+        "url": "/generated-images/img_20260805_155926_zrzdijor.webp",
+        "size": 123420
+      }
+    ]
+  },
+  "img_20260805_155940_yycgrvtp": {
+    "id": "img_20260805_155940_yycgrvtp",
+    "prompt": "anime digital painting, soft shading, soft lighting\n\nPortrait of Sora Fujimiya, a young female harpy courier standing on a stone fountain. She has wind-tangled brown hair with lighter sun-bleached highlights and feathered arms. Her outfit is a revealing, sexy courier uniform consisting of a short, wind-resistant crop top and a micro-mini skirt that shows off her legs. A thin, layered windproof travel cloak is draped loosely over her shoulders, leaving her midriff exposed. A lightweight leather satchel reinforced with soft feathers is strapped to her back. She holds a small package and smiles with a friendly, above-average charismatic expression. The background is the Ember Hollow Village Square with river stone paving, wooden benches, and a warm communal hearth. The lighting is soft and natural, highlighting her feathered wings and physical attributes.",
+    "negative_prompt": "blurry, low quality, distorted, multiple faces, deformed, ugly, bad anatomy, bad proportions",
+    "width": 1200,
+    "height": 1600,
+    "seed": 248906,
+    "createdAt": "2026-08-05T15:59:55.107Z",
+    "comfyUIPromptId": "e6602511-090b-47ec-94e8-28f320865a90",
+    "images": [
+      {
+        "imageId": "img_20260805_155940_yycgrvtp",
+        "filename": "img_20260805_155940_yycgrvtp.webp",
+        "url": "/generated-images/img_20260805_155940_yycgrvtp.webp",
+        "size": 173056
+      }
+    ]
+  },
+  "img_20260805_155955_oqsxn86w": {
+    "id": "img_20260805_155955_oqsxn86w",
+    "prompt": "anime digital painting, soft shading, soft lighting\n\nPortrait of Lina Ashford, a young female succubus bookkeeper standing in a village square. She has sharp crimson horns protruding from her head and long, silky black hair with deep red gradients and glossy highlights. A sharp pencil is tucked behind her ear. She wears a sexy, revealing bookkeeper outfit consisting of a cropped, low-cut blouse that exposes her cleavage and a short, tight pencil skirt that shows off her legs. A soft crimson woolen shawl is draped over her shoulders, partially open. A worn leather coin purse hangs at her waist. Her expression is intense and scrutinizing, looking directly at the viewer. The background shows the Ember Hollow Village Square with a stone fountain and market stalls. The focus is on her facial features, horns, and alluring physique.",
+    "negative_prompt": "blurry, low quality, distorted, multiple faces, deformed, ugly, bad anatomy, bad proportions",
+    "width": 1200,
+    "height": 1600,
+    "seed": 696609,
+    "createdAt": "2026-08-05T16:00:09.567Z",
+    "comfyUIPromptId": "8137fe2e-e95d-443d-b3f7-a5ba0da212a5",
+    "images": [
+      {
+        "imageId": "img_20260805_155955_oqsxn86w",
+        "filename": "img_20260805_155955_oqsxn86w.webp",
+        "url": "/generated-images/img_20260805_155955_oqsxn86w.webp",
+        "size": 136434
+      }
+    ]
+  },
+  "img_20260805_160009_bg37kf4m": {
+    "id": "img_20260805_160009_bg37kf4m",
+    "prompt": "anime digital painting, soft shading, soft lighting\n\nA weathered, rusted iron bracket sits isolated against a neutral grey background, its metal surface pitted and flaked with age. The piece is bent and warped, lacking its original fasteners, with jagged edges where bolts once held it firm. Its form is simple yet expressive, a quiet fragment of craftsmanship that once supported a hand-painted direction sign.\n\nBehind it, the Ember Hollow Village Square unfolds in soft focus: smooth river-stone paving, wooden benches, and flower planters ringed around a large communal hearth that glows with a steady, gentle flame. A carved stone fountain keeps its water warm with a faint shimmer of enchantment, while market stalls are folded away, leaving open space for evening gatherings. Small signposts mark paths radiating outward, and a notice board near the fountain displays recipes and workshop schedules.\n\nThe air feels warm and inviting, carrying hints of pine smoke, fresh herbs, and year-round bread. The scene is relaxed and lived-in, with the broken bracket serving as a small, unobtrusive detail of everyday wear within this cozy rural settlement.",
+    "negative_prompt": "blurry, low quality, people, characters, modern elements, cars, technology, indoor scenes, portraits",
+    "width": 1600,
+    "height": 1200,
+    "seed": 824998,
+    "createdAt": "2026-08-05T16:00:24.099Z",
+    "comfyUIPromptId": "b84a32e6-fe85-42d2-89f0-b489dc7b9277",
+    "images": [
+      {
+        "imageId": "img_20260805_160009_bg37kf4m",
+        "filename": "img_20260805_160009_bg37kf4m.webp",
+        "url": "/generated-images/img_20260805_160009_bg37kf4m.webp",
+        "size": 128524
+      }
+    ]
+  },
+  "img_20260805_160024_6zie033n": {
+    "id": "img_20260805_160024_6zie033n",
+    "prompt": "anime digital painting, soft shading, soft lighting\n\nA large, sturdy stone hearth rises from a smooth, light-grey pavement, its thick, rounded walls built from warm-toned river stones and fitted with iron bands at the corners. Inside, a perpetual, low flame of soft orange and amber light flickers gently, casting a cozy, steady glow without producing smoke or ash. The fire is contained and calm, its heat visually suggested by a subtle, shimmering warmth in the air around it. The hearth’s rim is broad and smooth, showing signs of regular use-lightly soot-stained in places, with a few small cooking implements like iron skewers and a copper pot resting nearby.\n\nSurrounding the hearth are low, curved wooden benches arranged in a welcoming circle, their surfaces worn smooth and slightly darkened by years of use. Small lanterns with frosted glass hang from short iron brackets on the stone walls, casting a warm, inviting light that blends with the fire’s glow. The ground around the hearth is clean and well-maintained, with a few scattered herbs and a small iron brazier placed at the edge, hinting at recent cooking or warmth-sharing. The entire scene is set against a simple grey background, emphasizing the hearth as a central, comforting landmark of gathering and daily life.",
+    "negative_prompt": "blurry, low quality, people, characters, modern elements, cars, technology, indoor scenes, portraits",
+    "width": 1600,
+    "height": 1200,
+    "seed": 66839,
+    "createdAt": "2026-08-05T16:00:40.138Z",
+    "comfyUIPromptId": "fb5f56e0-b4aa-4842-b132-e3f7f35f902d",
+    "images": [
+      {
+        "imageId": "img_20260805_160024_6zie033n",
+        "filename": "img_20260805_160024_6zie033n.webp",
+        "url": "/generated-images/img_20260805_160024_6zie033n.webp",
+        "size": 119636
+      }
+    ]
+  },
+  "img_20260805_160040_lggfwz39": {
+    "id": "img_20260805_160040_lggfwz39",
+    "prompt": "anime digital painting, soft shading, soft lighting\n\nA carved stone fountain stands as the centerpiece of a cozy rural village square, its smooth river-stone basin gently rippling with water kept comfortably warm by a subtle enchantment. Soft mist curls lazily from the surface, catching the warm glow of nearby lanterns and the ever-burning communal hearth beyond. Delicate carvings of leaves and small creatures trace the fountain’s edges, worn smooth by time and the gentle touch of monster girls who gather here to share stories and laughter.\n\nThe square around it is paved with polished stones and lined with wooden benches, flower planters overflowing with herbs and blossoms, and market stalls folded away for the evening. A carved signpost marks each path leading outward, while a nearby notice board displays recipes and workshop schedules in cheerful handwriting. Pine smoke and fresh bread drift on the air, wrapping the scene in a relaxed, welcoming atmosphere where magic and daily life blend seamlessly.",
+    "negative_prompt": "blurry, low quality, people, characters, modern elements, cars, technology, indoor scenes, portraits",
+    "width": 1600,
+    "height": 1200,
+    "seed": 367034,
+    "createdAt": "2026-08-05T16:00:54.659Z",
+    "comfyUIPromptId": "6c48ff06-efbf-4499-92ef-a09d2b584958",
+    "images": [
+      {
+        "imageId": "img_20260805_160040_lggfwz39",
+        "filename": "img_20260805_160040_lggfwz39.webp",
+        "url": "/generated-images/img_20260805_160040_lggfwz39.webp",
+        "size": 183576
+      }
+    ]
+  },
+  "img_20260805_160054_kovjg9qw": {
+    "id": "img_20260805_160054_kovjg9qw",
+    "prompt": "anime digital painting, soft shading, soft lighting\n\nA broad, sturdy wooden ring forms a circular planter, its planks darkened by weather and seasoned with use, bound together with iron brackets and wrapped with creeping vines. Inside, rich, dark soil cradles a vibrant mix of herbs and flowers-lavender, marigolds, rosemary, and small clusters of bluebells and snapdragons-blooming in lively hues of purple, orange, green, and gold. The plants are lush and well-tended, their leaves and petals carrying a visible sense of fragrance, as if the air itself is warmed by their scent.\n\nThe planter sits centered on a simple grey background that isolates it cleanly, allowing its textures and colors to stand out. A few wooden benches and smooth river stones can be glimpsed at the edges of the frame, hinting at the Ember Hollow Village Square beyond, while the soft glow of a nearby hearth and the faint silhouette of timber houses and market stalls suggest the cozy, lived-in atmosphere of the settlement. The overall mood is calm and inviting, fitting a relaxed fantasy life where nature and community blend seamlessly.",
+    "negative_prompt": "blurry, low quality, people, characters, modern elements, cars, technology, indoor scenes, portraits",
+    "width": 1600,
+    "height": 1200,
+    "seed": 296633,
+    "createdAt": "2026-08-05T16:01:09.211Z",
+    "comfyUIPromptId": "a9cc705d-cfbb-4da2-87f7-96aeed6ed614",
+    "images": [
+      {
+        "imageId": "img_20260805_160054_kovjg9qw",
+        "filename": "img_20260805_160054_kovjg9qw.webp",
+        "url": "/generated-images/img_20260805_160054_kovjg9qw.webp",
+        "size": 171498
+      }
+    ]
+  },
+  "img_20260805_160109_83tsetgz": {
+    "id": "img_20260805_160109_83tsetgz",
+    "prompt": "anime digital painting, soft shading, soft lighting\n\nGame item icon asset, simple grey background.\n\nClose-up product shot of a chipped clay bowl, made of rough-textured earthenware, sitting on a simple grey background. The bowl is a warm terracotta color with visible signs of wear, including a distinct chip on the rim and slight darkening from use. It is approximately six inches in diameter, with a slightly uneven shape suggesting it was handcrafted. The lighting highlights the matte finish and the natural imperfections in the clay. No other objects or characters are present.",
+    "negative_prompt": "blurry, low quality, people, characters, hands, multiple objects, cluttered background, modern elements",
+    "width": 1600,
+    "height": 1600,
+    "seed": 886616,
+    "createdAt": "2026-08-05T16:01:27.260Z",
+    "comfyUIPromptId": "9dbd0af7-b0b6-4ebb-98a3-a574ed28e3e8",
+    "images": [
+      {
+        "imageId": "img_20260805_160109_83tsetgz",
+        "filename": "img_20260805_160109_83tsetgz.webp",
+        "url": "/generated-images/img_20260805_160109_83tsetgz.webp",
+        "size": 54142
+      }
+    ]
+  },
+  "img_20260805_160127_al4popgu": {
+    "id": "img_20260805_160127_al4popgu",
+    "prompt": "anime digital painting, soft shading, soft lighting\n\nGame item icon asset, simple grey background.\n\nClose-up product shot of a stained recipe card, made of slightly rough paper, sitting on a simple grey background. The card is covered in flour and butter smears, with handwritten text for a chestnut bread recipe and a small sketch of a monster girl kneading dough. It is approximately four inches by six inches, with slightly worn edges. The lighting highlights the texture of the paper and the stains, giving it a well-used appearance. No other objects or characters are present.",
+    "negative_prompt": "blurry, low quality, people, characters, hands, multiple objects, cluttered background, modern elements",
+    "width": 1600,
+    "height": 1600,
+    "seed": 974806,
+    "createdAt": "2026-08-05T16:01:45.307Z",
+    "comfyUIPromptId": "b4871b3f-67ed-4633-a2b9-e213d917b2c3",
+    "images": [
+      {
+        "imageId": "img_20260805_160127_al4popgu",
+        "filename": "img_20260805_160127_al4popgu.webp",
+        "url": "/generated-images/img_20260805_160127_al4popgu.webp",
+        "size": 93558
+      }
+    ]
+  },
+  "img_20260805_160145_zv36bx7k": {
+    "id": "img_20260805_160145_zv36bx7k",
+    "prompt": "anime digital painting, soft shading, soft lighting\n\nGame item icon asset, simple grey background.\n\nA small brass whistle shaped like a fox head rests on a simple grey background, its polished surface catching soft, even light. The fox’s pointed ears and curved snout form the whistle’s mouthpiece, while fine engravings trace the outline of its fur and facial features. A short leather cord is looped through a tiny ring at the back of the neck, showing slight wear from frequent handling. The metal has a warm golden tone with minor scuffs along the edges, suggesting regular use by market vendors. Subtle soot marks near the whistle’s opening hint at many days spent calling out over bustling stalls.",
+    "negative_prompt": "blurry, low quality, people, characters, hands, multiple objects, cluttered background, modern elements",
+    "width": 1600,
+    "height": 1600,
+    "seed": 327521,
+    "createdAt": "2026-08-05T16:02:03.345Z",
+    "comfyUIPromptId": "f7e24ccd-d9e8-44e0-a460-2c5676c78ca9",
+    "images": [
+      {
+        "imageId": "img_20260805_160145_zv36bx7k",
+        "filename": "img_20260805_160145_zv36bx7k.webp",
+        "url": "/generated-images/img_20260805_160145_zv36bx7k.webp",
+        "size": 72878
+      }
+    ]
+  },
+  "img_20260805_160203_ili3o37h": {
+    "id": "img_20260805_160203_ili3o37h",
+    "prompt": "anime digital painting, soft shading, soft lighting\n\nGame item icon asset, simple grey background.\n\nA short wooden pin, roughly two inches long, rests against a simple grey background. Its shaft is smooth and slightly tapered, made from light-colored wood with subtle grain visible under soft lighting. The head is rounded and flat, showing faint traces of paint in a warm amber hue, suggesting it was once part of a set used on a public notice board. Small nicks and indentations mark the surface, evidence of repeated use in pinning flyers and recipe cards. The overall condition is clean but worn, with no magical glow or decorative engravings, reflecting its common and practical nature.",
+    "negative_prompt": "blurry, low quality, people, characters, hands, multiple objects, cluttered background, modern elements",
+    "width": 1600,
+    "height": 1600,
+    "seed": 245288,
+    "createdAt": "2026-08-05T16:02:21.385Z",
+    "comfyUIPromptId": "255604f8-1bf6-4072-b9a7-47bebe2c1ed7",
+    "images": [
+      {
+        "imageId": "img_20260805_160203_ili3o37h",
+        "filename": "img_20260805_160203_ili3o37h.webp",
+        "url": "/generated-images/img_20260805_160203_ili3o37h.webp",
+        "size": 31620
+      }
+    ]
+  },
+  "img_20260805_160221_dmpb1qvu": {
+    "id": "img_20260805_160221_dmpb1qvu",
+    "prompt": "anime digital painting, soft shading, soft lighting\n\nA young, fit human man with a confident, slightly arrogant smirk stands in the warm glow of the Ember Hollow Village Square, his broad shoulders and well-defined arms emphasized by a short-sleeved, open-collared linen shirt that is unbuttoned halfway down his chest, revealing tanned skin and a hint of pectoral muscle. His hair is a striking gradient of deep chestnut at the roots fading into sun-bleached amber tips, styled in a messy, windswept cut with thick, textured strands falling just above his eyebrows. He wears a heavy wool travel cloak draped loosely over one shoulder, leaving his other arm bare and displaying a worn leather bracer, while a sturdy leather alchemy satchel rests across his back with visible vials and herb pouches. A hand-whetted hunting knife is tucked into his belt at his hip, and a field herb journal is clipped to his belt loop. His expression is relaxed but self-assured, with sharp, intelligent eyes that catch the ambient light from the communal hearth behind him, where villagers gather around the enchanted fountain and wooden stalls.",
+    "negative_prompt": "blurry, low quality, distorted, multiple faces, deformed, ugly, bad anatomy, bad proportions",
+    "width": 1200,
+    "height": 1600,
+    "seed": 739509,
+    "createdAt": "2026-08-05T16:02:35.933Z",
+    "comfyUIPromptId": "cd3ef5a1-2c6e-435d-930c-74bff5a41b64",
+    "images": [
+      {
+        "imageId": "img_20260805_160221_dmpb1qvu",
+        "filename": "img_20260805_160221_dmpb1qvu.webp",
+        "url": "/generated-images/img_20260805_160221_dmpb1qvu.webp",
+        "size": 146502
+      }
+    ]
+  },
+  "img_20260805_160235_a3ehssmg": {
+    "id": "img_20260805_160235_a3ehssmg",
+    "prompt": "Change the image to reflect the following conditions:\nLighting: Cold daylight with clear visibility..\nWeather outside: Clear - Bright cold skies with crisp air.",
+    "negative_prompt": "new people, new characters, text, logos, signage, changed architecture, changed camera angle, distorted landmarks, low quality, blurry",
+    "width": 1920,
+    "height": 1080,
+    "seed": 775599,
+    "createdAt": "2026-08-05T16:03:40.397Z",
+    "comfyUIPromptId": "d31d5312-cbc9-4ba9-9c05-8d2e1e4ee129",
+    "images": [
+      {
+        "imageId": "img_20260805_160235_a3ehssmg",
+        "filename": "img_20260805_160235_a3ehssmg.png",
+        "url": "/generated-images/img_20260805_160235_a3ehssmg.png",
+        "size": 3223194
+      }
+    ],
+    "source": "location_weather_variant",
+    "locationId": "loc_1",
+    "sourceImageId": "img_20260805_155727_k2jtm0h1",
+    "variantKey": "img-20260805-155727-k2jtm0h1__cold-daylight-with-clear-visibility__clear",
+    "conditions": {
+      "sourceImageId": "img_20260805_155727_k2jtm0h1",
+      "variantKey": "img-20260805-155727-k2jtm0h1__cold-daylight-with-clear-visibility__clear",
+      "lightingKey": "cold-daylight-with-clear-visibility",
+      "lightingLabel": "Cold daylight with clear visibility.",
+      "weatherKey": "clear",
+      "weatherName": "Clear",
+      "weatherDescription": "Bright cold skies with crisp air",
+      "hasLocalWeather": true,
+      "weatherScope": "outside",
+      "hasWeatherOutside": true,
+      "segment": "day",
+      "timeLabel": "9:00 AM",
+      "dateLabel": "Sunday, January 1, Common Era 1",
+      "season": "Winter"
+    }
+  },
+  "img_20260805_162045_svqh7nkd": {
+    "id": "img_20260805_162045_svqh7nkd",
+    "prompt": "anime digital painting, soft shading, soft lighting\n\nGame item icon asset, simple grey background.\n\nA rustic wooden crate filled with golden-brown onions sits on a simple grey background. The crate is constructed from rough-hewn planks with visible grain and darkened corners from age. The onions inside are firm with papery outer skins, some showing slight soil residue and natural imperfections. Soft directional lighting highlights the texture of the wood and the layered surfaces of the onions without creating harsh shadows.",
+    "negative_prompt": "blurry, low quality, people, characters, hands, multiple objects, cluttered background, modern elements",
+    "width": 1600,
+    "height": 1600,
+    "seed": 218998,
+    "createdAt": "2026-08-05T16:21:03.427Z",
+    "comfyUIPromptId": "71a2b41a-e096-4bf0-ac26-b75f26c0f6b5",
+    "images": [
+      {
+        "imageId": "img_20260805_162045_svqh7nkd",
+        "filename": "img_20260805_162045_svqh7nkd.webp",
+        "url": "/generated-images/img_20260805_162045_svqh7nkd.webp",
+        "size": 90552
+      }
+    ]
+  },
+  "img_20260805_162103_rvcbcgxz": {
+    "id": "img_20260805_162103_rvcbcgxz",
+    "prompt": "anime digital painting, soft shading, soft lighting\n\nGame item icon asset, simple grey background.\n\nA small bundle of fresh herbs rests on a simple grey background, neatly gathered with a thin twine. The bundle contains jagged green nettle leaves, feathery mugwort fronds, and delicate white yarrow flowers. The herbs appear recently picked, with vibrant colors and natural moisture visible on the leaves. Soft lighting emphasizes the fine textures and subtle variations in leaf shapes and colors.",
+    "negative_prompt": "blurry, low quality, people, characters, hands, multiple objects, cluttered background, modern elements",
+    "width": 1600,
+    "height": 1600,
+    "seed": 718937,
+    "createdAt": "2026-08-05T16:21:21.470Z",
+    "comfyUIPromptId": "042214d1-1cb8-4afb-a746-28f6b560cdbb",
+    "images": [
+      {
+        "imageId": "img_20260805_162103_rvcbcgxz",
+        "filename": "img_20260805_162103_rvcbcgxz.webp",
+        "url": "/generated-images/img_20260805_162103_rvcbcgxz.webp",
+        "size": 100042
+      }
+    ]
+  },
+  "img_20260805_162212_yn2pn6ki": {
+    "id": "img_20260805_162212_yn2pn6ki",
+    "prompt": "anime digital painting, soft shading, soft lighting\n\nGame item icon asset, simple grey background.\n\nA sturdy leather alchemy satchel sits on a simple grey background, its dark brown hide worn smooth by frequent use and reinforced with thick stitching along the seams. Multiple external pockets are secured with small brass buckles, designed to hold vials, herbs, and tools securely during travel. A wide main compartment is closed by a heavy leather flap and a sturdy toggle clasp, while a padded shoulder strap shows signs of regular wear. Soft, even lighting highlights the texture of the leather and the functional design of the bag.",
+    "negative_prompt": "blurry, low quality, people, characters, hands, multiple objects, cluttered background, modern elements",
+    "width": 1600,
+    "height": 1600,
+    "seed": 705673,
+    "createdAt": "2026-08-05T16:22:30.740Z",
+    "comfyUIPromptId": "8dbc4d76-1e05-4a7e-bf49-bf275022d56b",
+    "images": [
+      {
+        "imageId": "img_20260805_162212_yn2pn6ki",
+        "filename": "img_20260805_162212_yn2pn6ki.webp",
+        "url": "/generated-images/img_20260805_162212_yn2pn6ki.webp",
+        "size": 103380
+      }
+    ]
+  },
+  "img_20260805_162230_povrnqsd": {
+    "id": "img_20260805_162230_povrnqsd",
+    "prompt": "anime digital painting, soft shading, soft lighting\n\nGame item icon asset, simple grey background.\n\nA compact brass mortar and pestle rests on a simple grey background, its polished surface reflecting soft, even lighting that highlights the fine craftsmanship. The mortar is roughly four inches in diameter with a sturdy, rounded base and a smooth interior bowl, while the pestle fits snugly inside with a slightly tapered grinding end. Subtle scratches and a light patina suggest regular use for crushing herbs and minerals, adding character without compromising its solid construction. The warm metallic tones contrast gently with the neutral backdrop.",
+    "negative_prompt": "blurry, low quality, people, characters, hands, multiple objects, cluttered background, modern elements",
+    "width": 1600,
+    "height": 1600,
+    "seed": 278714,
+    "createdAt": "2026-08-05T16:22:48.794Z",
+    "comfyUIPromptId": "6c92ec58-8d49-4fd3-b111-7baa8da67df8",
+    "images": [
+      {
+        "imageId": "img_20260805_162230_povrnqsd",
+        "filename": "img_20260805_162230_povrnqsd.webp",
+        "url": "/generated-images/img_20260805_162230_povrnqsd.webp",
+        "size": 67530
+      }
+    ]
+  },
+  "img_20260805_162248_sgg163bi": {
+    "id": "img_20260805_162248_sgg163bi",
+    "prompt": "anime digital painting, soft shading, soft lighting\n\nGame item icon asset, simple grey background.\n\nA thick wool travel cloak lies folded on a simple grey background, its deep charcoal fabric dense and textured for warmth and wind resistance. The cloak features a high collar and a single sturdy bronze toggle fastener near the neckline, with visible stitching along the edges reinforcing its durability. Soft lighting accentuates the natural fiber weave and the slight sheen of quality wool, while gentle creases suggest regular use without damage. The overall design is practical and unadorned, emphasizing function over ornamentation.",
+    "negative_prompt": "blurry, low quality, people, characters, hands, multiple objects, cluttered background, modern elements",
+    "width": 1600,
+    "height": 1600,
+    "seed": 41032,
+    "createdAt": "2026-08-05T16:23:06.838Z",
+    "comfyUIPromptId": "cc3c60ae-c073-40ae-bfde-e3f62eae2bb2",
+    "images": [
+      {
+        "imageId": "img_20260805_162248_sgg163bi",
+        "filename": "img_20260805_162248_sgg163bi.webp",
+        "url": "/generated-images/img_20260805_162248_sgg163bi.webp",
+        "size": 47614
+      }
+    ]
+  },
+  "img_20260805_162306_c5t2dzut": {
+    "id": "img_20260805_162306_c5t2dzut",
+    "prompt": "anime digital painting, soft shading, soft lighting\n\nGame item icon asset, simple grey background.\n\nA worn field herb journal lies open on a simple grey background, its leather cover faded and slightly scuffed from frequent handling. The pages are filled with detailed pencil sketches of plants, handwritten notes in neat script, and small diagrams of remedies, with some edges showing light staining from use. Soft, even lighting highlights the texture of the paper and the careful craftsmanship of the binding, which includes visible stitching along the spine. The journal’s compact size and practical layout suggest it is a trusted companion for fieldwork and study.",
+    "negative_prompt": "blurry, low quality, people, characters, hands, multiple objects, cluttered background, modern elements",
+    "width": 1600,
+    "height": 1600,
+    "seed": 36879,
+    "createdAt": "2026-08-05T16:23:24.883Z",
+    "comfyUIPromptId": "14d7c608-add2-4f5b-9ab7-03bc8122c012",
+    "images": [
+      {
+        "imageId": "img_20260805_162306_c5t2dzut",
+        "filename": "img_20260805_162306_c5t2dzut.webp",
+        "url": "/generated-images/img_20260805_162306_c5t2dzut.webp",
+        "size": 159116
+      }
+    ]
+  },
+  "img_20260805_162324_3vda0wv7": {
+    "id": "img_20260805_162324_3vda0wv7",
+    "prompt": "anime digital painting, soft shading, soft lighting\n\nGame item icon asset, simple grey background.\n\nA hand-whetted hunting knife rests on a simple grey background, its simple iron blade showing a fine, even edge and a matte finish with minor scratches from regular use. The worn leather handle is wrapped tightly around the tang, showing natural creases and a smooth patina from handling. Soft, direct lighting highlights the functional design of the blade and the secure grip of the handle, emphasizing its practicality for field work and camp tasks. The overall appearance is rugged yet well-maintained, with no ornamental details.",
+    "negative_prompt": "blurry, low quality, people, characters, hands, multiple objects, cluttered background, modern elements",
+    "width": 1600,
+    "height": 1600,
+    "seed": 795214,
+    "createdAt": "2026-08-05T16:23:42.926Z",
+    "comfyUIPromptId": "9cb36dd5-7f2b-4ef7-9275-18850d16d1f9",
+    "images": [
+      {
+        "imageId": "img_20260805_162324_3vda0wv7",
+        "filename": "img_20260805_162324_3vda0wv7.webp",
+        "url": "/generated-images/img_20260805_162324_3vda0wv7.webp",
+        "size": 39906
+      }
+    ]
+  },
+  "img_20260805_171407_i118djk0": {
+    "id": "img_20260805_171407_i118djk0",
+    "prompt": "anime digital painting, soft shading, soft lighting\n\nGame item icon asset, simple grey background.\n\nClose-up of a chipped clay bowl of broth, roughly four inches in diameter and two inches deep, resting on a simple grey background. The bowl is made of rough, hand-formed earthenware with an uneven, slightly warped rim and visible chips along the edge. Inside, hot savory broth fills the bowl, with gentle steam rising and small flecks of herbs and slow-cooked ingredients suspended in the surface. The clay has a warm, earthy brown color with subtle variations in tone and minor surface wear. Clean, professional lighting highlights the texture of the clay and the warmth of the broth without distracting background elements.",
+    "negative_prompt": "blurry, low quality, people, characters, hands, multiple objects, cluttered background, modern elements",
+    "width": 1600,
+    "height": 1600,
+    "seed": 632605,
+    "createdAt": "2026-08-05T17:14:25.970Z",
+    "comfyUIPromptId": "121b4f4a-7186-452a-840a-e154b99b18eb",
+    "images": [
+      {
+        "imageId": "img_20260805_171407_i118djk0",
+        "filename": "img_20260805_171407_i118djk0.webp",
+        "url": "/generated-images/img_20260805_171407_i118djk0.webp",
+        "size": 75044
+      }
+    ]
+  },
+  "img_20260806_003134_cjeuzufu": {
+    "id": "img_20260806_003134_cjeuzufu",
+    "prompt": "anime digital painting, soft shading, soft lighting\n\nA long, braided string of dried red chili peppers hangs from a simple grey background, simulating suspension from eaves. The peppers are a deep, vibrant red, shriveled and textured from the drying process, woven tightly together into a thick, decorative braid. The arrangement adds a pop of warm color, with the individual peppers linked by their dried stems, creating a rustic and aromatic visual element typical of a cozy rural kitchen exterior.",
+    "negative_prompt": "blurry, low quality, people, characters, modern elements, cars, technology, indoor scenes, portraits",
+    "width": 1600,
+    "height": 1200,
+    "seed": 557929,
+    "createdAt": "2026-08-06T00:31:48.243Z",
+    "comfyUIPromptId": "660066a5-9086-4fbc-b98b-caca54d83397",
+    "images": [
+      {
+        "imageId": "img_20260806_003134_cjeuzufu",
+        "filename": "img_20260806_003134_cjeuzufu.webp",
+        "url": "/generated-images/img_20260806_003134_cjeuzufu.webp",
+        "size": 81082
+      }
+    ]
+  },
+  "img_20260806_023151_93utzfuo": {
+    "id": "img_20260806_023151_93utzfuo",
+    "prompt": "anime digital painting, soft shading, soft lighting\n\nA wide wooden building stands with a red-tiled roof and a tall chimney exhaling a steady, fragrant plume that carries the scent of garlic and thyme through the air. Along the front porch, stacked crates overflow with fresh vegetables while braids of dried peppers hang in bright, curved garlands from the rafters. A wooden sign lists today’s shared meals in clear lettering, and beside it a chalkboard notes the day’s cook and the time of the next communal dinner. Warm golden light spills through the frosted glass panels of the double doors, casting a steady glow onto the stone path that leads up to the entrance.\n\nAlong the side wall, a small herb garden is neatly divided into labeled plots, each row tidy and thriving. The building’s walls are smooth and well-kept, with the wood richly toned and the roof tiles laid in even, orderly lines. No signs of wear mar the structure; it appears sturdy and welcoming, a calm and inviting space at the edge of Ember Hollow Village Square. From within, the faint sounds of chopping, stirring, and laughter suggest activity behind the doors, hinting at the bustling community kitchen interior just beyond.\n\nTime: noon\nWeather: clear",
+    "negative_prompt": "blurry, low quality, modern elements, cars, technology, people, characters, portraits, indoor scenes only",
+    "width": 1920,
+    "height": 1080,
+    "seed": 794815,
+    "createdAt": "2026-08-06T02:32:07.658Z",
+    "comfyUIPromptId": "86059cf1-6215-4fbe-8d57-b93391f9083a",
+    "images": [
+      {
+        "imageId": "img_20260806_023151_93utzfuo",
+        "filename": "img_20260806_023151_93utzfuo.webp",
+        "url": "/generated-images/img_20260806_023151_93utzfuo.webp",
+        "size": 174540
+      }
+    ]
+  },
+  "img_20260806_023207_mycygd51": {
+    "id": "img_20260806_023207_mycygd51",
+    "prompt": "anime digital painting, soft shading, soft lighting\n\nPortrait of Kuroha Inugami, a female wolf girl porter with thick grey and white fur dusted with frost. She has sharp amber eyes and a fluffy tail flicking behind her. She wears a revealing, tight-fitting black leather halter top that exposes her midriff and shoulders, paired with short denim shorts that show off her muscular legs. Her hands are covered in heavy brown wool gloves with frayed cuffs, and she carries a large, stained canvas produce satchel on her back. She stands on a wooden porch in front of a rustic kitchen with a red-tiled roof, surrounded by stacked vegetable crates and hanging dried peppers. Her expression is tired but determined, with a slight frown. The lighting is soft and natural, highlighting the texture of her fur and the frost on her coat.",
+    "negative_prompt": "blurry, low quality, distorted, multiple faces, deformed, ugly, bad anatomy, bad proportions",
+    "width": 1200,
+    "height": 1600,
+    "seed": 278666,
+    "createdAt": "2026-08-06T02:32:21.923Z",
+    "comfyUIPromptId": "4ee7facd-6398-4a5e-8559-3c0ff70ca1e3",
+    "images": [
+      {
+        "imageId": "img_20260806_023207_mycygd51",
+        "filename": "img_20260806_023207_mycygd51.webp",
+        "url": "/generated-images/img_20260806_023207_mycygd51.webp",
+        "size": 159026
+      }
+    ]
+  },
+  "img_20260806_023221_34g2frcy": {
+    "id": "img_20260806_023221_34g2frcy",
+    "prompt": "anime digital painting, soft shading, soft lighting\n\nPortrait of Aiko, a female golem girl porter with a body made of grey granite and rough stone textures. She has glowing blue cracks running through her stone skin and large, heavy joints. She wears a revealing outfit consisting of a loose, torn red bandana tied around her chest as a top, leaving her stone midriff and shoulders exposed, and a short, frayed leather skirt that shows her thick stone legs. Her hands are wrapped in thick, scuffed leather work gloves, and she grips a heavy iron hammer with a cracked stone head. She stands near a neat stack of firewood beside a wooden kitchen building with a large chimney. Her expression is stoic and blank, with a slight tilt of her head. The lighting is bright and clear, emphasizing the rugged texture of her stone body and the details of her tools.",
+    "negative_prompt": "blurry, low quality, distorted, multiple faces, deformed, ugly, bad anatomy, bad proportions",
+    "width": 1200,
+    "height": 1600,
+    "seed": 940048,
+    "createdAt": "2026-08-06T02:32:36.155Z",
+    "comfyUIPromptId": "95d4cc78-530b-43a4-b03a-4601acc86687",
+    "images": [
+      {
+        "imageId": "img_20260806_023221_34g2frcy",
+        "filename": "img_20260806_023221_34g2frcy.webp",
+        "url": "/generated-images/img_20260806_023221_34g2frcy.webp",
+        "size": 165062
+      }
+    ]
+  },
+  "img_20260806_023236_8ko411gk": {
+    "id": "img_20260806_023236_8ko411gk",
+    "prompt": "anime digital painting, soft shading, soft lighting\n\nA stack of sturdy wooden crates filled with fresh produce, including bright orange carrots, purple onions, and leafy greens, sits on a simple grey background. The crates are slightly weathered, with visible grain and texture, suggesting frequent use in a rural community setting. The vegetables appear freshly harvested, with dewdrops glistening on the leaves and earth still clinging to the roots.\n\nThe crates are arranged in a neat pile, with some leaning slightly against each other, giving a sense of casual organization. The lighting is soft and natural, casting gentle shadows that highlight the textures of the wood and the vibrant colors of the vegetables. The overall scene evokes a sense of self-sufficiency and communal effort, fitting the cozy and relaxed atmosphere of Ember Hollow Settlement.",
+    "negative_prompt": "blurry, low quality, people, characters, modern elements, cars, technology, indoor scenes, portraits",
+    "width": 1600,
+    "height": 1200,
+    "seed": 845479,
+    "createdAt": "2026-08-06T02:32:50.302Z",
+    "comfyUIPromptId": "1f3997ba-60fd-44ba-8ea3-5c11ce9cc7dd",
+    "images": [
+      {
+        "imageId": "img_20260806_023236_8ko411gk",
+        "filename": "img_20260806_023236_8ko411gk.webp",
+        "url": "/generated-images/img_20260806_023236_8ko411gk.webp",
+        "size": 159338
+      }
+    ]
+  },
+  "img_20260806_023250_aufp6xo9": {
+    "id": "img_20260806_023250_aufp6xo9",
+    "prompt": "anime digital painting, soft shading, soft lighting\n\nNeatly divided soil beds grow vibrant herbs, including rosemary, thyme, basil, and mint, each labeled with small wooden stakes. The soil is rich and dark, with visible texture and small stones scattered throughout. The herbs are lush and healthy, with rosemary's needle-like leaves, thyme's tiny green sprigs, basil's broad leaves, and mint's delicate foliage all clearly distinguishable.\n\nThe herb garden is set against a simple grey background, allowing the colors and details of the plants to stand out. The lighting is soft and natural, casting gentle shadows that enhance the depth and texture of the soil and leaves. The scene exudes a sense of care and attention, reflecting the communal and self-sufficient lifestyle of Ember Hollow Settlement, where every plant is tended with purpose and love.",
+    "negative_prompt": "blurry, low quality, people, characters, modern elements, cars, technology, indoor scenes, portraits",
+    "width": 1600,
+    "height": 1200,
+    "seed": 685507,
+    "createdAt": "2026-08-06T02:33:04.448Z",
+    "comfyUIPromptId": "f9bdfbc5-a220-4cce-b3b7-99cab66e741b",
+    "images": [
+      {
+        "imageId": "img_20260806_023250_aufp6xo9",
+        "filename": "img_20260806_023250_aufp6xo9.webp",
+        "url": "/generated-images/img_20260806_023250_aufp6xo9.webp",
+        "size": 219826
+      }
+    ]
+  },
+  "img_20260806_023304_6t91xx8w": {
+    "id": "img_20260806_023304_6t91xx8w",
+    "prompt": "anime digital painting, soft shading, soft lighting\n\nA large chalkboard on a wooden stand lists today's shared meals and the chef's name, set against a simple grey background. The chalkboard is framed with a rustic wooden border, showing signs of wear and use, with a few chalk marks smudged at the edges. The writing is clear and legible, written in neat, friendly handwriting, with today's menu items highlighted in different colors of chalk.\n\nThe wooden stand is sturdy and slightly weathered, with a natural finish that complements the chalkboard. The lighting is soft and even, ensuring that the text on the chalkboard is easily readable. The scene captures the warmth and community spirit of Ember Hollow Settlement, where meals are shared and everyone contributes to the communal kitchen. The overall aesthetic is cozy and inviting, reflecting the relaxed and welcoming tone of the settlement.",
+    "negative_prompt": "blurry, low quality, people, characters, modern elements, cars, technology, indoor scenes, portraits",
+    "width": 1600,
+    "height": 1200,
+    "seed": 697709,
+    "createdAt": "2026-08-06T02:33:18.675Z",
+    "comfyUIPromptId": "5f39d33a-d3c1-4161-b7c4-9a53c7089dcd",
+    "images": [
+      {
+        "imageId": "img_20260806_023304_6t91xx8w",
+        "filename": "img_20260806_023304_6t91xx8w.webp",
+        "url": "/generated-images/img_20260806_023304_6t91xx8w.webp",
+        "size": 115242
+      }
+    ]
+  },
+  "img_20260806_023318_iko9m4sb": {
+    "id": "img_20260806_023318_iko9m4sb",
+    "prompt": "anime digital painting, soft shading, soft lighting\n\nA simple, flat stone pathway set into the rich, dark earth leading from the frosted-glass double doors of the Community Kitchen toward the broader settlement roads. The stepping stones are worn smooth by constant foot traffic, their edges rounded and their surfaces catching the warm, golden light spilling from the kitchen interior. Each stone is spaced just far enough apart to feel intentional, guiding travelers gently across the soil without disrupting the natural ground.\n\nThe path is bordered by the red-tiled roofline of the kitchen on one side and a small, tidy herb garden on the other, where labeled plots of thyme, rosemary, and lavender grow in neat rows. Hanging braids of dried peppers sway slightly overhead near the porch, casting soft shadows across the stones. The air feels warm and fragrant with garlic and thyme, while the distant murmur of laughter and cooking drifts from inside the building, grounding the scene in the relaxed, communal rhythm of Ember Hollow.",
+    "negative_prompt": "blurry, low quality, people, characters, modern elements, cars, technology, indoor scenes, portraits",
+    "width": 1600,
+    "height": 1200,
+    "seed": 802326,
+    "createdAt": "2026-08-06T02:33:32.898Z",
+    "comfyUIPromptId": "d30fc6c0-3431-4208-9e27-a2f517c88d47",
+    "images": [
+      {
+        "imageId": "img_20260806_023318_iko9m4sb",
+        "filename": "img_20260806_023318_iko9m4sb.webp",
+        "url": "/generated-images/img_20260806_023318_iko9m4sb.webp",
+        "size": 142416
+      }
+    ]
+  },
+  "img_20260806_023332_ny7lxxev": {
+    "id": "img_20260806_023332_ny7lxxev",
+    "prompt": "anime digital painting, soft shading, soft lighting\n\nGame item icon asset, simple grey background.\n\nA close-up product shot of a dried pepper braid resting on a smooth, neutral grey background. The object consists of numerous slender crimson chili peppers strung together in a thick, coiled rope approximately twelve inches long. Each pepper displays a deep red hue with wrinkled, papery skin that catches the light to reveal a subtle matte texture. The stems are tied together with natural twine, forming a rustic loop at the top for hanging. Soft, professional lighting accentuates the dry, cured condition of the vegetables without casting harsh shadows.",
+    "negative_prompt": "blurry, low quality, people, characters, hands, multiple objects, cluttered background, modern elements",
+    "width": 1600,
+    "height": 1600,
+    "seed": 916254,
+    "createdAt": "2026-08-06T02:33:49.310Z",
+    "comfyUIPromptId": "7a5c0b4c-e57b-470e-b133-308fcdf16a11",
+    "images": [
+      {
+        "imageId": "img_20260806_023332_ny7lxxev",
+        "filename": "img_20260806_023332_ny7lxxev.webp",
+        "url": "/generated-images/img_20260806_023332_ny7lxxev.webp",
+        "size": 122154
+      }
+    ]
+  },
+  "img_20260806_023349_7t47c43c": {
+    "id": "img_20260806_023349_7t47c43c",
+    "prompt": "anime digital painting, soft shading, soft lighting\n\nGame item icon asset, simple grey background.\n\nA detailed still-life image of a broken wooden crate positioned on a plain grey background. The crate is constructed from rough-hewn pine slats, several of which are snapped or missing entirely, leaving jagged gaps in the structure. Rusty iron nails protrude at uneven angles from the fractured wood, indicating a violent separation. The wood surface appears weathered and splintered, with visible grain and rough edges where the planks have given way. Even, diffused lighting highlights the texture of the damaged timber and the metallic sheen of the loose hardware.",
+    "negative_prompt": "blurry, low quality, people, characters, hands, multiple objects, cluttered background, modern elements",
+    "width": 1600,
+    "height": 1600,
+    "seed": 574271,
+    "createdAt": "2026-08-06T02:34:05.754Z",
+    "comfyUIPromptId": "a61adc85-706b-4707-b0c5-cd4b461daf2a",
+    "images": [
+      {
+        "imageId": "img_20260806_023349_7t47c43c",
+        "filename": "img_20260806_023349_7t47c43c.webp",
+        "url": "/generated-images/img_20260806_023349_7t47c43c.webp",
+        "size": 105082
+      }
+    ]
+  },
+  "img_20260806_023405_t3ozwqt0": {
+    "id": "img_20260806_023405_t3ozwqt0",
+    "prompt": "anime digital painting, soft shading, soft lighting\n\nGame item icon asset, simple grey background.\n\nA small cluster of slender wooden stakes rests on a neutral grey background, each carved from smooth, light-toned timber and tapered at one end for easy insertion into soil. The visible faces bear neatly painted herb names in crisp, dark lettering, with slight variations in handwriting suggesting different hands contributed to the set. Subtle wear marks, faint scuffs, and minor paint chipping reveal regular outdoor use, while a thin, even coat of clear varnish protects the wood and preserves the painted text. Small, evenly drilled holes near the top of each stake hint at optional string or twine attachments for organization. The stakes are arranged casually yet clearly, allowing the viewer to read the labels and observe the simple, functional craftsmanship.",
+    "negative_prompt": "blurry, low quality, people, characters, hands, multiple objects, cluttered background, modern elements",
+    "width": 1600,
+    "height": 1600,
+    "seed": 342680,
+    "createdAt": "2026-08-06T02:34:22.167Z",
+    "comfyUIPromptId": "3d088d5b-d69f-49ef-93c1-01f3ad7a55e2",
+    "images": [
+      {
+        "imageId": "img_20260806_023405_t3ozwqt0",
+        "filename": "img_20260806_023405_t3ozwqt0.webp",
+        "url": "/generated-images/img_20260806_023405_t3ozwqt0.webp",
+        "size": 92248
+      }
+    ]
+  },
+  "img_20260806_023422_e7ltjup3": {
+    "id": "img_20260806_023422_e7ltjup3",
+    "prompt": "Change the image to reflect the following conditions:\nLighting: Cold daylight with clear visibility..\nWeather: Clear - Bright cold skies with crisp air.",
+    "negative_prompt": "new people, new characters, text, logos, signage, changed architecture, changed camera angle, distorted landmarks, low quality, blurry",
+    "width": 1920,
+    "height": 1080,
+    "seed": 104608,
+    "createdAt": "2026-08-06T02:34:32.230Z",
+    "comfyUIPromptId": "49d5a174-5796-40bd-9116-1b7d748d7873",
+    "images": [
+      {
+        "imageId": "img_20260806_023422_e7ltjup3",
+        "filename": "img_20260806_023422_e7ltjup3.png",
+        "url": "/generated-images/img_20260806_023422_e7ltjup3.png",
+        "size": 2792486
+      }
+    ],
+    "source": "location_weather_variant",
+    "locationId": "loc_2",
+    "sourceImageId": "img_20260806_023151_93utzfuo",
+    "variantKey": "img-20260806-023151-93utzfuo__cold-daylight-with-clear-visibility__clear",
+    "conditions": {
+      "sourceImageId": "img_20260806_023151_93utzfuo",
+      "variantKey": "img-20260806-023151-93utzfuo__cold-daylight-with-clear-visibility__clear",
+      "lightingKey": "cold-daylight-with-clear-visibility",
+      "lightingLabel": "Cold daylight with clear visibility.",
+      "weatherKey": "clear",
+      "weatherName": "Clear",
+      "weatherDescription": "Bright cold skies with crisp air",
+      "hasLocalWeather": true,
+      "weatherScope": "yes",
+      "hasWeatherSheltered": false,
+      "hasWeatherOutside": false,
+      "segment": "day",
+      "timeLabel": "9:15 AM",
+      "dateLabel": "Sunday, January 1, Common Era 1",
+      "season": "Winter"
+    }
+  },
+  "img_20260806_025951_v0m6aemx": {
+    "id": "img_20260806_025951_v0m6aemx",
+    "prompt": "anime digital painting, soft shading, soft lighting\n\nThe room centers on a long wooden table, its surface deeply scored and darkened by years of chopping and ladling, flanked by rough stools and a narrow wall bench stacked with chipped bowls and heavy ladles. Along the far wall, three bulky stoves feed a row of large iron cauldrons whose surfaces gleam with oil and soot; a copper kettle perched on the nearest burner whistles faintly as steam curls from its spout. Between shelves of jars and bundles of dried herbs, recipe cards and faded photographs are tacked to wooden boards with thumbtacks and lengths of twine, their edges curled and stained with flour and grease.\n\nNear the entrance, a chalkboard lists today’s meals and the names of those on duty in uneven, hurried script. The air is thick with the scent of garlic, onion, and wood smoke, and the swept floor bears only a few damp patches where recent spills have been mopped. An open doorway leads toward a prep and cutting area, another frames a pantry lined with spice racks, a third opens into a small dining nook, a recessed alcove reveals the mouth of an enchanted oven glowing with a faint blue fire, and a final door stands ajar to the exterior, where the cool light of the community square spills across the threshold.\n\nTime: noon\nWeather: clear",
+    "negative_prompt": "blurry, low quality, modern elements, cars, technology, people, characters, portraits, indoor scenes only",
+    "width": 1920,
+    "height": 1080,
+    "seed": 316866,
+    "createdAt": "2026-08-06T03:00:07.944Z",
+    "comfyUIPromptId": "7fc77415-9897-4fb2-a00c-efac8bb872a3",
+    "images": [
+      {
+        "imageId": "img_20260806_025951_v0m6aemx",
+        "filename": "img_20260806_025951_v0m6aemx.webp",
+        "url": "/generated-images/img_20260806_025951_v0m6aemx.webp",
+        "size": 163810
+      }
+    ]
+  },
+  "img_20260806_030007_uy9at7y5": {
+    "id": "img_20260806_030007_uy9at7y5",
+    "prompt": "anime digital painting, soft shading, soft lighting\n\nPortrait of Rumi Kagami, a young adult female Nekomimi with soft, fluffy ears atop her head and a long, swishing tail. Her hair is a rich chestnut brown with warm amber highlights, styled in a loose, slightly messy bun with strands framing her face. She has sharp, intelligent eyes and a focused, slightly annoyed expression. She wears a revealing, form-fitting sleeveless top made of thin, breathable fabric that shows off her toned arms and shoulders, paired with short, high-cut shorts that leave most of her legs exposed. A faded linen apron with deep pockets, stained with broth and oil, is tied around her waist. Her hands are busy scrubbing a large metal pot, her dexterity evident in her precise movements. The background is the Main Cooking Hall, with a long wooden table, heavy stoves, iron cauldrons, and a copper kettle. The air is filled with the scent of garlic and wood smoke, and the lighting is warm and inviting, highlighting the steam rising from the pots.",
+    "negative_prompt": "blurry, low quality, distorted, multiple faces, deformed, ugly, bad anatomy, bad proportions",
+    "width": 1200,
+    "height": 1600,
+    "seed": 184998,
+    "createdAt": "2026-08-06T03:00:22.403Z",
+    "comfyUIPromptId": "e1f1367f-e3fe-45ea-a527-14e85af07843",
+    "images": [
+      {
+        "imageId": "img_20260806_030007_uy9at7y5",
+        "filename": "img_20260806_030007_uy9at7y5.webp",
+        "url": "/generated-images/img_20260806_030007_uy9at7y5.webp",
+        "size": 128748
+      }
+    ]
+  },
+  "img_20260806_030022_av3eqqfm": {
+    "id": "img_20260806_030022_av3eqqfm",
+    "prompt": "anime digital painting, soft shading, soft lighting\n\nPortrait of Yumi Tanaka, a young adult human female with a quiet, intense presence. Her hair is a sleek, straight black with subtle blue highlights, pulled back into a tight, practical ponytail that emphasizes her sharp features and focused eyes. She wears a revealing, cropped tank top that shows her midriff and a pair of short, fitted shorts that highlight her agile build. A black canvas apron with deep pockets is tied around her waist, holding her stainless cook’s knife and other tools. Her hands are clad in thick, heat-resistant gloves as she moves swiftly and silently through the kitchen, her expression serious and concentrated. The background is the Main Cooking Hall, with a long wooden table, heavy stoves, iron cauldrons, and a chalkboard listing today’s meals. The lighting is bright and functional, casting sharp shadows and highlighting the steam and activity of the kitchen.",
+    "negative_prompt": "blurry, low quality, distorted, multiple faces, deformed, ugly, bad anatomy, bad proportions",
+    "width": 1200,
+    "height": 1600,
+    "seed": 614939,
+    "createdAt": "2026-08-06T03:00:36.787Z",
+    "comfyUIPromptId": "80ebf201-6fb2-45f2-a86b-5d4998d73b99",
+    "images": [
+      {
+        "imageId": "img_20260806_030022_av3eqqfm",
+        "filename": "img_20260806_030022_av3eqqfm.webp",
+        "url": "/generated-images/img_20260806_030022_av3eqqfm.webp",
+        "size": 128878
+      }
+    ]
+  },
+  "img_20260806_030036_jp5jerr1": {
+    "id": "img_20260806_030036_jp5jerr1",
+    "prompt": "anime digital painting, soft shading, soft lighting\n\nPortrait of Nao Shimizu, a young adult female Rat Girl with large, expressive ears and a long, slender tail. Her hair is a mix of dark gray and silver, styled in a messy, practical updo with loose strands framing her face. She has sharp, alert eyes and a determined, slightly irritated expression. She wears a revealing, sleeveless top that shows her toned arms and a pair of short, high-cut shorts that leave most of her legs exposed. A thick, stained work apron with oil stains and knife nicks is tied around her waist. Her hands are busy chopping vegetables with precise, rapid movements, her dexterity evident in her skilled handling of the knife. The background is the Main Cooking Hall, with a long wooden table, heavy stoves, iron cauldrons, and a copper kettle. The air is filled with the scent of garlic and wood smoke, and the lighting is warm and inviting, highlighting the steam rising from the pots.",
+    "negative_prompt": "blurry, low quality, distorted, multiple faces, deformed, ugly, bad anatomy, bad proportions",
+    "width": 1200,
+    "height": 1600,
+    "seed": 139677,
+    "createdAt": "2026-08-06T03:00:51.161Z",
+    "comfyUIPromptId": "2be39a84-32ad-46a5-b2ea-82fb003e6aa1",
+    "images": [
+      {
+        "imageId": "img_20260806_030036_jp5jerr1",
+        "filename": "img_20260806_030036_jp5jerr1.webp",
+        "url": "/generated-images/img_20260806_030036_jp5jerr1.webp",
+        "size": 129104
+      }
+    ]
+  },
+  "img_20260806_030051_q2gf27wy": {
+    "id": "img_20260806_030051_q2gf27wy",
+    "prompt": "anime digital painting, soft shading, soft lighting\n\nPortrait of Riko Amatsu, a young adult female Salamander Girl with a fiery, energetic presence. Her hair is a vibrant, fiery red with orange and yellow highlights, styled in a messy, slightly singed ponytail with a faded red ribbon tied around the back of her head. She has bright, curious eyes and a determined, slightly mischievous expression. Her skin has a subtle, warm glow, and she has small, scale-like patterns on her arms and legs. She wears a revealing, sleeveless top that shows her toned arms and a pair of short, high-cut shorts that leave most of her legs exposed. A charred apron with burn holes near the hem is tied around her waist. Her hands are clad in thick, heat-resistant oven mitts as she tends to the rune ovens, her expression focused and eager. The background is the Main Cooking Hall, with a long wooden table, heavy stoves, iron cauldrons, and a copper kettle. The air is filled with the scent of garlic and wood smoke, and the lighting is warm and intense, highlighting the heat and activity of the kitchen.",
+    "negative_prompt": "blurry, low quality, distorted, multiple faces, deformed, ugly, bad anatomy, bad proportions",
+    "width": 1200,
+    "height": 1600,
+    "seed": 537019,
+    "createdAt": "2026-08-06T03:01:05.580Z",
+    "comfyUIPromptId": "e603878c-7fcf-4480-9e0a-2a2d686ef869",
+    "images": [
+      {
+        "imageId": "img_20260806_030051_q2gf27wy",
+        "filename": "img_20260806_030051_q2gf27wy.webp",
+        "url": "/generated-images/img_20260806_030051_q2gf27wy.webp",
+        "size": 136290
+      }
+    ]
+  },
+  "img_20260806_030105_lvb360gu": {
+    "id": "img_20260806_030105_lvb360gu",
+    "prompt": "anime digital painting, soft shading, soft lighting\n\nA large corkboard mounted on a warm wooden wall in the Community Kitchen Interior, covered with a lively mosaic of recipe cards, doodles, and notes from various monster girls. Colorful index cards, some stained with oil and sauce, overlap in cheerful disorder, fastened with brass thumbtacks, wooden clothespins, and bits of twine tied in small bows. Handwritten instructions in different styles sit beside quick sketches of ingredients and whimsical monster-girl doodles-little horns, tails, wings, and paw prints peeking from the corners. A few notes are clipped with metal binder clips and held by wax seals, while others are pinned with decorative buttons and tiny charms.\n\nThe board is framed by rustic shelves packed with jars of spices, dried herbs, and preserved goods, their labels handwritten and slightly faded. Soft light from a hanging pendant lamp and enchanted ovens in the background casts a cozy glow over the scene, highlighting the textures of the cork, paper, and wood. A chalkboard nearby lists today’s meals in neat script, and a few recipe cards trail off the edge of the board, fluttering gently as if caught in a faint kitchen breeze.\n\nThe entire Community Recipe Wall is presented against a simple grey background, with no surrounding environment beyond the wall, shelves, and soft ambient lighting implied by the scene’s composition.",
+    "negative_prompt": "blurry, low quality, people, characters, modern elements, cars, technology, indoor scenes, portraits",
+    "width": 1600,
+    "height": 1200,
+    "seed": 802049,
+    "createdAt": "2026-08-06T03:01:20.045Z",
+    "comfyUIPromptId": "af647410-c3cd-4fe9-aa9d-e75d5800d905",
+    "images": [
+      {
+        "imageId": "img_20260806_030105_lvb360gu",
+        "filename": "img_20260806_030105_lvb360gu.webp",
+        "url": "/generated-images/img_20260806_030105_lvb360gu.webp",
+        "size": 195758
+      }
+    ]
+  },
+  "img_20260806_030120_9lzvu03p": {
+    "id": "img_20260806_030120_9lzvu03p",
+    "prompt": "anime digital painting, soft shading, soft lighting\n\nA massive enchanted stove known as the Soulfire Range stands as a central fixture within a rustic community kitchen interior, surrounded by long wooden tables and shelves stacked with preserved goods. The stove is constructed from heavy, dark iron and stone, featuring multiple burners and oven doors that show the patina of years of communal use. Inside the open hearth, a gentle, ever-present blue flame dances softly, casting a cool, magical glow that illuminates the warm wood of the kitchen without producing smoke or ash. The surrounding walls are adorned with pinned recipe cards and faded photographs, while the air feels thick with the cozy atmosphere of a shared meal in progress. The scene captures a relaxed fantasy life simulation aesthetic, blending modern comfort with ancient magical technology, where the perfect heat of the Soulfire Range ensures no food is ever scorched.",
+    "negative_prompt": "blurry, low quality, people, characters, modern elements, cars, technology, indoor scenes, portraits",
+    "width": 1600,
+    "height": 1200,
+    "seed": 826752,
+    "createdAt": "2026-08-06T03:01:34.302Z",
+    "comfyUIPromptId": "9487dc83-6eea-45e5-a1e1-8674c13377c4",
+    "images": [
+      {
+        "imageId": "img_20260806_030120_9lzvu03p",
+        "filename": "img_20260806_030120_9lzvu03p.webp",
+        "url": "/generated-images/img_20260806_030120_9lzvu03p.webp",
+        "size": 138510
+      }
+    ]
+  },
+  "img_20260806_030134_r8v6s7oz": {
+    "id": "img_20260806_030134_r8v6s7oz",
+    "prompt": "anime digital painting, soft shading, soft lighting\n\nA wooden spice rack named the Flavor-Sense Spice Rack is mounted on a wall within a bustling community kitchen, surrounded by hanging copper pots and jars of dried herbs. The rack is crafted from rich, polished timber with multiple tiers holding glass jars filled with vibrant powders and seeds, each labeled with neat handwriting. A faint, shimmering hum of magical energy seems to emanate from the wood, creating a subtle, ethereal glow around the jars that suggests an intuitive connection between the spices. The surrounding environment reflects a relaxed rural fantasy setting, with recipe cards and children's drawings pinned nearby on the wooden paneling, enhancing the sense of a shared, magical domestic life. The soft lighting highlights the textures of the wood and glass, emphasizing the gentle enchantment that guides cooks toward perfect flavor combinations.",
+    "negative_prompt": "blurry, low quality, people, characters, modern elements, cars, technology, indoor scenes, portraits",
+    "width": 1600,
+    "height": 1200,
+    "seed": 85725,
+    "createdAt": "2026-08-06T03:01:48.573Z",
+    "comfyUIPromptId": "2ae1cbb4-47e7-4b06-b630-c533c9e26bc1",
+    "images": [
+      {
+        "imageId": "img_20260806_030134_r8v6s7oz",
+        "filename": "img_20260806_030134_r8v6s7oz.webp",
+        "url": "/generated-images/img_20260806_030134_r8v6s7oz.webp",
+        "size": 165614
+      }
+    ]
+  },
+  "img_20260806_030148_ozwzh2df": {
+    "id": "img_20260806_030148_ozwzh2df",
+    "prompt": "anime digital painting, soft shading, soft lighting\n\nGame item icon asset, simple grey background.\n\nA close-up studio photograph of the Whisk of the Ever-Smooth Batter isolated on a solid light grey background. The tool features a polished silver metal construction with a sturdy cylindrical handle and a dense cluster of fine, tightly wound wire loops forming the whisk head. Subtle, faint blue magical runes are etched into the metal shaft, glowing with a soft, steady luminescence that indicates its active enchantment. Professional lighting highlights the reflective surface of the silver and the intricate geometry of the wire loops.",
+    "negative_prompt": "blurry, low quality, people, characters, hands, multiple objects, cluttered background, modern elements",
+    "width": 1600,
+    "height": 1600,
+    "seed": 773734,
+    "createdAt": "2026-08-06T03:02:05.053Z",
+    "comfyUIPromptId": "da3729d1-2ea6-4fc1-b076-8ef673ba4db3",
+    "images": [
+      {
+        "imageId": "img_20260806_030148_ozwzh2df",
+        "filename": "img_20260806_030148_ozwzh2df.webp",
+        "url": "/generated-images/img_20260806_030148_ozwzh2df.webp",
+        "size": 78756
+      }
+    ]
+  },
+  "img_20260806_030205_eh47y6x8": {
+    "id": "img_20260806_030205_eh47y6x8",
+    "prompt": "anime digital painting, soft shading, soft lighting\n\nGame item icon asset, simple grey background.\n\nA detailed product shot of the Chrono-Simmer Ladle displayed against a plain grey background with soft, diffused lighting. The ladle is crafted from dark, polished bronze with an ornate, curved handle that seamlessly integrates a small, transparent hourglass near the top. Inside the hourglass, glowing golden sand flows slowly, emitting a warm, ethereal light that illuminates the intricate filigree patterns carved into the metal handle. The deep bowl of the ladle is smooth and slightly tarnished, suggesting frequent use in a busy kitchen environment.",
+    "negative_prompt": "blurry, low quality, people, characters, hands, multiple objects, cluttered background, modern elements",
+    "width": 1600,
+    "height": 1600,
+    "seed": 733185,
+    "createdAt": "2026-08-06T03:02:21.567Z",
+    "comfyUIPromptId": "4f57a0ab-a075-4a0f-a94c-da89fe89c853",
+    "images": [
+      {
+        "imageId": "img_20260806_030205_eh47y6x8",
+        "filename": "img_20260806_030205_eh47y6x8.webp",
+        "url": "/generated-images/img_20260806_030205_eh47y6x8.webp",
+        "size": 61574
+      }
+    ]
+  },
+  "img_20260806_030221_iyfe6rdk": {
+    "id": "img_20260806_030221_iyfe6rdk",
+    "prompt": "anime digital painting, soft shading, soft lighting\n\nGame item icon asset, simple grey background.\n\nA sturdy, rectangular hardwood cutting board rests flat on a plain grey background, its surface worn smooth from frequent use with subtle knife marks and a few darkened areas from chopped vegetables. Thin, glowing herb runes are embedded along the edges and in a small central pattern, emitting a soft green light that hints at the board’s flavor-enhancing magic. The wood has a warm honey-brown tone with a light protective finish, and the corners are slightly rounded to prevent chipping. A small, shallow handle cutout sits at one end, showing gentle wear from repeated gripping. The board appears clean and ready for use, with faint traces of dried herbs clinging in the grain near the runes.",
+    "negative_prompt": "blurry, low quality, people, characters, hands, multiple objects, cluttered background, modern elements",
+    "width": 1600,
+    "height": 1600,
+    "seed": 635212,
+    "createdAt": "2026-08-06T03:02:38.083Z",
+    "comfyUIPromptId": "465e9357-11f3-46f5-8661-4dd18b3beeac",
+    "images": [
+      {
+        "imageId": "img_20260806_030221_iyfe6rdk",
+        "filename": "img_20260806_030221_iyfe6rdk.webp",
+        "url": "/generated-images/img_20260806_030221_iyfe6rdk.webp",
+        "size": 62348
+      }
+    ]
+  },
+  "img_20260806_030238_1mw9vhlc": {
+    "id": "img_20260806_030238_1mw9vhlc",
+    "prompt": "anime digital painting, soft shading, soft lighting\n\nGame item icon asset, simple grey background.\n\nTwo rough burlap sacks rest side by side on a plain grey background, each filled to capacity with freshly harvested carrots. The carrots are still damp with morning frost, their orange roots smooth and tapered, with short, neatly trimmed green tops protruding from the open tops of the sacks. The coarse fabric of the sacks shows subtle signs of use, with faint soil stains and minor fraying along the edges, while a faint scent of earth and root seems to linger in the air around them. The lighting is soft and even, highlighting the texture of the burlap and the natural sheen on the carrots’ surfaces.",
+    "negative_prompt": "blurry, low quality, people, characters, hands, multiple objects, cluttered background, modern elements",
+    "width": 1600,
+    "height": 1600,
+    "seed": 341091,
+    "createdAt": "2026-08-06T03:02:54.628Z",
+    "comfyUIPromptId": "37f5d433-4ac2-4d27-b7ec-207bfa8b0428",
+    "images": [
+      {
+        "imageId": "img_20260806_030238_1mw9vhlc",
+        "filename": "img_20260806_030238_1mw9vhlc.webp",
+        "url": "/generated-images/img_20260806_030238_1mw9vhlc.webp",
+        "size": 152338
+      }
+    ]
+  },
+  "img_20260806_030254_3sw60o6j": {
+    "id": "img_20260806_030254_3sw60o6j",
+    "prompt": "Change the image to reflect the following conditions:\nLighting: Cold daylight with clear visibility..\nWeather: Clear - Bright cold skies with crisp air.",
+    "negative_prompt": "new people, new characters, text, logos, signage, changed architecture, changed camera angle, distorted landmarks, low quality, blurry",
+    "width": 1920,
+    "height": 1080,
+    "seed": 847056,
+    "createdAt": "2026-08-06T03:03:04.677Z",
+    "comfyUIPromptId": "878062a6-e850-4c87-bfce-6491f78fb3c9",
+    "images": [
+      {
+        "imageId": "img_20260806_030254_3sw60o6j",
+        "filename": "img_20260806_030254_3sw60o6j.png",
+        "url": "/generated-images/img_20260806_030254_3sw60o6j.png",
+        "size": 2811023
+      }
+    ],
+    "source": "location_weather_variant",
+    "locationId": "loc_23",
+    "sourceImageId": "img_20260806_025951_v0m6aemx",
+    "variantKey": "img-20260806-025951-v0m6aemx__cold-daylight-with-clear-visibility__clear",
+    "conditions": {
+      "sourceImageId": "img_20260806_025951_v0m6aemx",
+      "variantKey": "img-20260806-025951-v0m6aemx__cold-daylight-with-clear-visibility__clear",
+      "lightingKey": "cold-daylight-with-clear-visibility",
+      "lightingLabel": "Cold daylight with clear visibility.",
+      "weatherKey": "clear",
+      "weatherName": "Clear",
+      "weatherDescription": "Bright cold skies with crisp air",
+      "hasLocalWeather": true,
+      "weatherScope": "yes",
+      "hasWeatherSheltered": false,
+      "hasWeatherOutside": false,
+      "segment": "day",
+      "timeLabel": "9:16 AM",
+      "dateLabel": "Sunday, January 1, Common Era 1",
+      "season": "Winter"
+    }
+  },
+  "img_20260806_034959_6xy3nj67": {
+    "id": "img_20260806_034959_6xy3nj67",
+    "prompt": "anime digital painting, soft shading, soft lighting\n\nA narrow, two-story structure stands weathered by time, its facade heavily draped in climbing vines that frame a small bell hanging above the entrance, which chimes softly in the gentle breeze. The ground-floor window offers a glimpse into the shop’s offerings, displaying neat rows of labeled jars filled with dried roots, berries, and crystallized powders. A small wooden sign hangs beside the door, bearing the inscription \"Simple Remedies, Honest Prices,\" while the air around the entrance carries a faint, refreshing minty scent that hints at the contents within.\n\nOn the upper floor, a modest balcony holds potted night-blooming flowers and a small wooden rack where fresh herbs are left to dry in the sun. A stone path winds around the side of the building to a back door, which opens onto a small, cultivated garden of medicinal plants. The scene is quiet and orderly, with the natural growth of the vines and the careful arrangement of the garden creating a harmonious, inviting atmosphere typical of a low-level, safe haven.\n\nTime: noon\nWeather: clear",
+    "negative_prompt": "blurry, low quality, modern elements, cars, technology, people, characters, portraits, indoor scenes only",
+    "width": 1920,
+    "height": 1080,
+    "seed": 405344,
+    "createdAt": "2026-08-06T03:50:15.621Z",
+    "comfyUIPromptId": "e1e4f637-c419-4b7c-b06d-0d4894b31bbf",
+    "images": [
+      {
+        "imageId": "img_20260806_034959_6xy3nj67",
+        "filename": "img_20260806_034959_6xy3nj67.webp",
+        "url": "/generated-images/img_20260806_034959_6xy3nj67.webp",
+        "size": 216848
+      }
+    ]
+  },
+  "img_20260806_035015_1xulu34r": {
+    "id": "img_20260806_035015_1xulu34r",
+    "prompt": "anime digital painting, soft shading, soft lighting\n\nMizuchi Sato is a young Lamita woman with a slender, human-like upper torso and a long, emerald-green serpentine lower body that coils neatly around the wooden bench outside the shop. Her skin is pale and smooth, contrasting with the vibrant, iridescent scales that cover her tail from the waist down, which shimmer with hints of teal and gold in the light. She has long, flowing hair with a gradient from deep black at the roots to a soft, silvery-white at the tips, cascading over her shoulders and down her back. Her face is delicate with sharp, intelligent features, large emerald eyes with vertical slit pupils, and a calm, mildly impatient expression. She wears a revealing, sleeveless white blouse that is unbuttoned at the top, exposing her collarbones and upper chest, paired with a short, tight-fitting skirt that sits high on her hips, leaving her legs mostly bare. A copper magnifying lens is held loosely in one hand, and a small leather satchel hangs from her shoulder, while a dented enamel tea tin is tucked into the waistband of her skirt.",
+    "negative_prompt": "blurry, low quality, distorted, multiple faces, deformed, ugly, bad anatomy, bad proportions",
+    "width": 1200,
+    "height": 1600,
+    "seed": 408158,
+    "createdAt": "2026-08-06T03:50:29.908Z",
+    "comfyUIPromptId": "fe7c6830-641c-4000-9f2c-acd9d098ba8d",
+    "images": [
+      {
+        "imageId": "img_20260806_035015_1xulu34r",
+        "filename": "img_20260806_035015_1xulu34r.webp",
+        "url": "/generated-images/img_20260806_035015_1xulu34r.webp",
+        "size": 111652
+      }
+    ]
+  },
+  "img_20260806_035029_sdi8dj4n": {
+    "id": "img_20260806_035029_sdi8dj4n",
+    "prompt": "anime digital painting, soft shading, soft lighting\n\nA winding stone pathway composed of irregular, moss-edged slabs worn smooth by years of foot traffic, set against a simple grey background. The stones are uneven in shape and size, with soft green moss creeping along their edges and filling the gaps between them. The path curves gently, leading from the main road toward the side door of a nearby herbal alchemy shop. The surrounding area includes a glimpse of the shop's exterior with climbing vines and a small wooden sign, but the focus remains on the textured, earthy surface of the pathway itself.",
+    "negative_prompt": "blurry, low quality, people, characters, modern elements, cars, technology, indoor scenes, portraits",
+    "width": 1600,
+    "height": 1200,
+    "seed": 239993,
+    "createdAt": "2026-08-06T03:50:43.993Z",
+    "comfyUIPromptId": "0b08799b-c7d2-49c3-b554-d88a9351526e",
+    "images": [
+      {
+        "imageId": "img_20260806_035029_sdi8dj4n",
+        "filename": "img_20260806_035029_sdi8dj4n.webp",
+        "url": "/generated-images/img_20260806_035029_sdi8dj4n.webp",
+        "size": 85726
+      }
+    ]
+  },
+  "img_20260806_035043_1b3szv0l": {
+    "id": "img_20260806_035043_1b3szv0l",
+    "prompt": "anime digital painting, soft shading, soft lighting\n\nA tall, rustic wooden post standing against a simple grey background, featuring a hand-painted Alchemist's Guidepost hanging from it. The sign depicts a mortar and pestle in fading ink, clearly indicating the shop's purpose. The wood of the post is weathered and rough-hewn, with a natural, uneven texture. The sign is attached with simple metal brackets, and the paint on the sign shows signs of age with slightly chipped edges. The background is plain grey, isolating the post and sign as the primary subject.",
+    "negative_prompt": "blurry, low quality, people, characters, modern elements, cars, technology, indoor scenes, portraits",
+    "width": 1600,
+    "height": 1200,
+    "seed": 500752,
+    "createdAt": "2026-08-06T03:50:58.051Z",
+    "comfyUIPromptId": "b9293dae-164d-4df1-8fa8-d4f24de17878",
+    "images": [
+      {
+        "imageId": "img_20260806_035043_1b3szv0l",
+        "filename": "img_20260806_035043_1b3szv0l.webp",
+        "url": "/generated-images/img_20260806_035043_1b3szv0l.webp",
+        "size": 51116
+      }
+    ]
+  },
+  "img_20260806_035058_43aj9wc1": {
+    "id": "img_20260806_035058_43aj9wc1",
+    "prompt": "anime digital painting, soft shading, soft lighting\n\nA wooden frame structure with multiple horizontal slats, holding bundles of sage, rosemary, and thyme hanging to dry, set against a simple grey background. The wooden frame is sturdy and rustic, with a natural finish. The herbs are tied in small bunches and hang loosely from the slats, their dried leaves and stems visible in detail. The background is a plain grey, ensuring the focus remains on the drying rack and the herbs.",
+    "negative_prompt": "blurry, low quality, people, characters, modern elements, cars, technology, indoor scenes, portraits",
+    "width": 1600,
+    "height": 1200,
+    "seed": 491187,
+    "createdAt": "2026-08-06T03:51:12.086Z",
+    "comfyUIPromptId": "7820af70-5c96-4b0e-b92e-0e75315a0407",
+    "images": [
+      {
+        "imageId": "img_20260806_035058_43aj9wc1",
+        "filename": "img_20260806_035058_43aj9wc1.webp",
+        "url": "/generated-images/img_20260806_035058_43aj9wc1.webp",
+        "size": 161214
+      }
+    ]
+  },
+  "img_20260806_035112_icw7yt3f": {
+    "id": "img_20260806_035112_icw7yt3f",
+    "prompt": "anime digital painting, soft shading, soft lighting\n\nGame item icon asset, simple grey background.\n\nA sturdy, hand-woven willow basket sits centered on a neutral grey background, showcasing its tight, interlaced weave of flexible, light-brown branches. The structure features a wide, open mouth with reinforced rim edges that curve slightly outward to prevent spillage, while the sides taper gently toward a flat, circular base. Natural variations in the wood grain are visible across the surface, indicating handcrafted construction without the use of uniform machinery. The finish is matte and unpolished, reflecting the item's practical design for carrying herbs or market goods rather than decorative display. Subtle shadows beneath the base ground the object, emphasizing its solid, three-dimensional form against the clean backdrop.",
+    "negative_prompt": "blurry, low quality, people, characters, hands, multiple objects, cluttered background, modern elements",
+    "width": 1600,
+    "height": 1600,
+    "seed": 195336,
+    "createdAt": "2026-08-06T03:51:28.505Z",
+    "comfyUIPromptId": "a4cfe3e1-0fa7-4cff-b014-65c97b6e9257",
+    "images": [
+      {
+        "imageId": "img_20260806_035112_icw7yt3f",
+        "filename": "img_20260806_035112_icw7yt3f.webp",
+        "url": "/generated-images/img_20260806_035112_icw7yt3f.webp",
+        "size": 138836
+      }
+    ]
+  },
+  "img_20260806_035128_86fdi2h7": {
+    "id": "img_20260806_035128_86fdi2h7",
+    "prompt": "anime digital painting, soft shading, soft lighting\n\nGame item icon asset, simple grey background.\n\nA close-up studio shot captures a simple, unglazed terracotta pot with a matte, earthy orange-brown finish, resting on a neutral grey background. A distinct hairline fracture runs vertically down the side of the cylindrical vessel, revealing the rough, porous texture of the fired clay. The pot exhibits a rustic, handmade quality with slightly uneven rims and subtle variations in surface color, indicating its use as a basic container for water or small plants. Professional lighting highlights the granular details of the terracotta material and the sharp edge of the crack without casting distracting shadows.",
+    "negative_prompt": "blurry, low quality, people, characters, hands, multiple objects, cluttered background, modern elements",
+    "width": 1600,
+    "height": 1600,
+    "seed": 319008,
+    "createdAt": "2026-08-06T03:51:44.917Z",
+    "comfyUIPromptId": "30c366b7-84cc-4a81-83e9-d57123aac60c",
+    "images": [
+      {
+        "imageId": "img_20260806_035128_86fdi2h7",
+        "filename": "img_20260806_035128_86fdi2h7.webp",
+        "url": "/generated-images/img_20260806_035128_86fdi2h7.webp",
+        "size": 85094
+      }
+    ]
+  },
+  "img_20260806_035144_vl1cwqfn": {
+    "id": "img_20260806_035144_vl1cwqfn",
+    "prompt": "anime digital painting, soft shading, soft lighting\n\nGame item icon asset, simple grey background.\n\nA small, coarse-weave cloth bag in a muted earthy brown sits centrally against a plain grey background, its fabric showing slight fraying along the stitched edges. The bag is tied closed with a simple hemp cord, leaving the top slightly puffed as it contains dried, silvery-green leaves of nerve herbs. Soft, diffused lighting highlights the texture of the woven material and the delicate, crinkled structure of the visible herb tips peeking from the opening. The item appears well-used but intact, with no tears or significant stains, reflecting a common, practical utility for everyday alchemical needs.",
+    "negative_prompt": "blurry, low quality, people, characters, hands, multiple objects, cluttered background, modern elements",
+    "width": 1600,
+    "height": 1600,
+    "seed": 550359,
+    "createdAt": "2026-08-06T03:52:01.306Z",
+    "comfyUIPromptId": "06573846-f2e0-4d54-860c-74ac622f5a5b",
+    "images": [
+      {
+        "imageId": "img_20260806_035144_vl1cwqfn",
+        "filename": "img_20260806_035144_vl1cwqfn.webp",
+        "url": "/generated-images/img_20260806_035144_vl1cwqfn.webp",
+        "size": 82338
+      }
+    ]
+  },
+  "img_20260806_035201_fza18gfy": {
+    "id": "img_20260806_035201_fza18gfy",
+    "prompt": "anime digital painting, soft shading, soft lighting\n\nGame item icon asset, simple grey background.\n\nA small, coarse-weave cloth bag in a faded earthy brown rests on a neutral grey surface, its top gathered and tied with a simple, fraying twine knot. The fabric shows signs of wear with slight discoloration and loose threads along the seams, suggesting frequent use for carrying rough materials. Visible through the semi-transparent cloth are several dried, shriveled herb stalks and leaf fragments in muted greens and browns, indicating the contents are dried plant matter unsuitable for raw consumption. The lighting is soft and even, highlighting the texture of the woven fabric and the delicate, brittle nature of the dried herbs within without casting harsh shadows.",
+    "negative_prompt": "blurry, low quality, people, characters, hands, multiple objects, cluttered background, modern elements",
+    "width": 1600,
+    "height": 1600,
+    "seed": 592383,
+    "createdAt": "2026-08-06T03:52:17.652Z",
+    "comfyUIPromptId": "487a2470-cb86-4a48-a987-46db585c13c1",
+    "images": [
+      {
+        "imageId": "img_20260806_035201_fza18gfy",
+        "filename": "img_20260806_035201_fza18gfy.webp",
+        "url": "/generated-images/img_20260806_035201_fza18gfy.webp",
+        "size": 120428
+      }
+    ]
+  },
+  "img_20260806_035217_9sqkrul5": {
+    "id": "img_20260806_035217_9sqkrul5",
+    "prompt": "Change the image to reflect the following conditions:\nLighting: Cold daylight with clear visibility..\nWeather: Clear - Bright cold skies with crisp air.",
+    "negative_prompt": "new people, new characters, text, logos, signage, changed architecture, changed camera angle, distorted landmarks, low quality, blurry",
+    "width": 1920,
+    "height": 1080,
+    "seed": 450177,
+    "createdAt": "2026-08-06T03:52:27.702Z",
+    "comfyUIPromptId": "1a550a96-8b7e-4e92-9077-d7c58aa2a4fd",
+    "images": [
+      {
+        "imageId": "img_20260806_035217_9sqkrul5",
+        "filename": "img_20260806_035217_9sqkrul5.png",
+        "url": "/generated-images/img_20260806_035217_9sqkrul5.png",
+        "size": 3154938
+      }
+    ],
+    "source": "location_weather_variant",
+    "locationId": "loc_3",
+    "sourceImageId": "img_20260806_034959_6xy3nj67",
+    "variantKey": "img-20260806-034959-6xy3nj67__cold-daylight-with-clear-visibility__clear",
+    "conditions": {
+      "sourceImageId": "img_20260806_034959_6xy3nj67",
+      "variantKey": "img-20260806-034959-6xy3nj67__cold-daylight-with-clear-visibility__clear",
+      "lightingKey": "cold-daylight-with-clear-visibility",
+      "lightingLabel": "Cold daylight with clear visibility.",
+      "weatherKey": "clear",
+      "weatherName": "Clear",
+      "weatherDescription": "Bright cold skies with crisp air",
+      "hasLocalWeather": true,
+      "weatherScope": "yes",
+      "hasWeatherSheltered": false,
+      "hasWeatherOutside": false,
+      "segment": "day",
+      "timeLabel": "9:35 AM",
+      "dateLabel": "Sunday, January 1, Common Era 1",
+      "season": "Winter"
+    }
+  },
+  "img_20260806_130242_v0q01j1r": {
+    "id": "img_20260806_130242_v0q01j1r",
+    "prompt": "anime digital painting, soft shading, soft lighting\n\nThe entrance opens directly onto a scarred wooden counter that runs the length of the front wall, its surface worn smooth by years of use. Behind the counter, Tsubaki stands ready to mix remedies or answer questions, positioned amidst shelves that rise from floor to ceiling. These towering shelves hold neat rows of glass jars filled with dried roots, powdered minerals, and crystallized herbs, creating a dense, textured backdrop of apothecary supplies. The air is dry and carries the distinct scent of mint and earth, grounding the space in a sense of natural utility.\n\nAbove the door, a small bell hangs in stillness, poised to chime when someone enters the shop. The lighting within the room is soft, filtering in from the exterior to illuminate the dust motes dancing in the air and highlighting the varied colors of the stored ingredients. The layout is efficient and compact, with the counter serving as the primary focal point that divides the customer space from the extensive storage area behind it. Every element, from the arrangement of the jars to the sturdy construction of the shelving, suggests a place of organized commerce and quiet industry.\n\nTime: noon\nWeather: clear",
+    "negative_prompt": "blurry, low quality, modern elements, cars, technology, people, characters, portraits, indoor scenes only",
+    "width": 1920,
+    "height": 1080,
+    "seed": 190049,
+    "createdAt": "2026-08-06T13:02:58.585Z",
+    "comfyUIPromptId": "3c9a787e-8ad4-40bd-9df9-1d97ba6d0dd5",
+    "images": [
+      {
+        "imageId": "img_20260806_130242_v0q01j1r",
+        "filename": "img_20260806_130242_v0q01j1r.webp",
+        "url": "/generated-images/img_20260806_130242_v0q01j1r.webp",
+        "size": 194072
+      }
+    ]
+  },
+  "img_20260806_130258_e1qe0q6k": {
+    "id": "img_20260806_130258_e1qe0q6k",
+    "prompt": "anime digital painting, soft shading, soft lighting\n\nA young female Dryad with pale, luminous green skin stands behind a scarred wooden counter, her body angled slightly forward in a casual, attentive pose. She has long, thick hair that resembles braided vines, colored in a gradient from deep forest green at the roots to bright lime green at the tips, with small white and pink flowers woven throughout the braids. Her outfit is a revealing leaf-printed apron made of sturdy canvas dyed in earthy greens; the apron is tied loosely at the waist, leaving her midriff and upper chest exposed, highlighting her slender frame and soft curves. The apron strings are reinforced with twine, and the fabric clings slightly to her skin. In her left hand, she holds a well-thumbed herbalism guidebook with a cracked spine, while her right hand rests near a woven wicker herb sorting basket attached to her waist by a leather strap. She wears a cheerful, bright expression with wide, sparkling eyes and a slight smile, her posture relaxed as if momentarily distracted by something off-camera. The background shows shelves filled with glass jars of dried herbs and minerals, bathed in warm, natural light that highlights the texture of her skin and the vibrant colors of her hair.",
+    "negative_prompt": "blurry, low quality, distorted, multiple faces, deformed, ugly, bad anatomy, bad proportions",
+    "width": 1200,
+    "height": 1600,
+    "seed": 242689,
+    "createdAt": "2026-08-06T13:03:14.670Z",
+    "comfyUIPromptId": "5e8f9c5e-55f6-4a2f-afa2-44a38cb71820",
+    "images": [
+      {
+        "imageId": "img_20260806_130258_e1qe0q6k",
+        "filename": "img_20260806_130258_e1qe0q6k.webp",
+        "url": "/generated-images/img_20260806_130258_e1qe0q6k.webp",
+        "size": 163138
+      }
+    ]
+  },
+  "img_20260806_130314_mhg2u1wu": {
+    "id": "img_20260806_130314_mhg2u1wu",
+    "prompt": "anime digital painting, soft shading, soft lighting\n\nNuru is a translucent, viscous blue slime girl with a soft, gelatinous texture that ripples gently, revealing a glowing, heart-shaped core within her chest that pulses with a warm light. She wears a tight, reinforced rubber apron around her midsection, which clings to her amorphous form and features deep pockets designed to hold liquid, leaving her upper body and lower gelatinous mass largely exposed to emphasize her fluid, curvy silhouette. A flexible, translucent hydration siphon tube is attached to her side, leading up to a small reservoir near her shoulder, while her amorphous arms stretch upward with dexterity as she holds a thick, leather-bound stock tally book in one hand. Her expression is focused and efficient, with subtle, shifting features forming a neutral look, set against the backdrop of a dusty, earthy shop floor with wooden counters and shelves of dried herbs.",
+    "negative_prompt": "blurry, low quality, distorted, multiple faces, deformed, ugly, bad anatomy, bad proportions",
+    "width": 1200,
+    "height": 1600,
+    "seed": 554566,
+    "createdAt": "2026-08-06T13:03:29.008Z",
+    "comfyUIPromptId": "066a149e-f4ed-48f3-bb8b-c168b79df371",
+    "images": [
+      {
+        "imageId": "img_20260806_130314_mhg2u1wu",
+        "filename": "img_20260806_130314_mhg2u1wu.webp",
+        "url": "/generated-images/img_20260806_130314_mhg2u1wu.webp",
+        "size": 103358
+      }
+    ]
+  },
+  "img_20260806_130329_x7dn08gs": {
+    "id": "img_20260806_130329_x7dn08gs",
+    "prompt": "anime digital painting, soft shading, soft lighting\n\nAn alchemical spirit lamp sits isolated against a simple, neutral grey background, showcasing its intricate design within a cozy herbal alchemy shop setting. The device features a sturdy, dark brass base with etched runic patterns that glow faintly, supporting a slender neck that widens into a bulbous, thick glass reservoir. Embedded directly into the center of the glass sphere is a small, hexagonal mana crystal pulsing with a soft, ethereal blue light. From the nozzle at the top, a cool, flameless blue aura rises, hovering steadily without flickering, casting a gentle, magical illumination on the surrounding scarred wooden workbench. The air around the lamp is still, emphasizing the clean, modern-yet-ancient aesthetic of the rural fantasy environment, with blurred shelves of dried herbs and glass jars visible in the periphery.",
+    "negative_prompt": "blurry, low quality, people, characters, modern elements, cars, technology, indoor scenes, portraits",
+    "width": 1600,
+    "height": 1200,
+    "seed": 386786,
+    "createdAt": "2026-08-06T13:03:43.384Z",
+    "comfyUIPromptId": "a468c5b3-1a54-47cc-b374-54a9aa0c588d",
+    "images": [
+      {
+        "imageId": "img_20260806_130329_x7dn08gs",
+        "filename": "img_20260806_130329_x7dn08gs.webp",
+        "url": "/generated-images/img_20260806_130329_x7dn08gs.webp",
+        "size": 78960
+      }
+    ]
+  },
+  "img_20260806_130343_bchzjjv6": {
+    "id": "img_20260806_130343_bchzjjv6",
+    "prompt": "anime digital painting, soft shading, soft lighting\n\nAn ancient drying rack stands tall and imposing on a simple grey background, capturing the rustic utility of a magical herbal alchemy shop. Constructed from dark, weathered wood, the multi-tiered structure features four horizontal shelves spaced evenly to allow airflow. Each shelf is lined with thin slats, currently holding bundles of dried lavender and mint tied with twine. The joints of the wooden frame are reinforced with polished brass hinges and brackets, adding a touch of durability and elegance to the utilitarian design. The rack’s vertical posts are slightly tapered, grounding the structure firmly, while the surrounding environment suggests a dry, mint-scented room filled with the quiet hum of alchemical preparation, with soft shadows cast by the overhead magical lighting.",
+    "negative_prompt": "blurry, low quality, people, characters, modern elements, cars, technology, indoor scenes, portraits",
+    "width": 1600,
+    "height": 1200,
+    "seed": 426367,
+    "createdAt": "2026-08-06T13:03:57.628Z",
+    "comfyUIPromptId": "6b52d434-5e93-4969-bd98-27d9d0a44b15",
+    "images": [
+      {
+        "imageId": "img_20260806_130343_bchzjjv6",
+        "filename": "img_20260806_130343_bchzjjv6.webp",
+        "url": "/generated-images/img_20260806_130343_bchzjjv6.webp",
+        "size": 135716
+      }
+    ]
+  },
+  "img_20260806_130357_x5ck7x75": {
+    "id": "img_20260806_130357_x5ck7x75",
+    "prompt": "anime digital painting, soft shading, soft lighting\n\nA long, heavy oak counter spans the foreground against a simple grey background, its surface scarred by years of use and reinforced with sturdy iron brackets at regular intervals. The wood grain is deep and rich, etched with faint, glowing preservation runes that pulse with a soft, amber light along the edges and corners. The counter’s top is worn smooth in patches but retains a rugged, tactile texture, suggesting a history of mixing potions and handling heavy ingredients.\n\nThe surrounding space hints at a cozy, rustic interior, with shelves rising floor-to-ceiling in the blurred background, holding rows of glass jars filled with dried roots and crystallized herbs. The air appears dry and still, carrying the subtle visual suggestion of mint and earth scents through the muted, warm lighting that bathes the scene. The aesthetic is relaxed and self-sufficient, blending modern comfort with ancient magical touches, creating a serene atmosphere of alchemical craftsmanship.",
+    "negative_prompt": "blurry, low quality, people, characters, modern elements, cars, technology, indoor scenes, portraits",
+    "width": 1600,
+    "height": 1200,
+    "seed": 712075,
+    "createdAt": "2026-08-06T13:04:11.955Z",
+    "comfyUIPromptId": "04bd2287-8249-46c0-a1d9-30adbc0b559b",
+    "images": [
+      {
+        "imageId": "img_20260806_130357_x5ck7x75",
+        "filename": "img_20260806_130357_x5ck7x75.webp",
+        "url": "/generated-images/img_20260806_130357_x5ck7x75.webp",
+        "size": 133358
+      }
+    ]
+  },
+  "img_20260806_130411_1fyphuq9": {
+    "id": "img_20260806_130411_1fyphuq9",
+    "prompt": "anime digital painting, soft shading, soft lighting\n\nGame item icon asset, simple grey background.\n\nA small, clear glass vial with a cork stopper contains a silvery liquid that swirls with its own internal luminescence. The vial is approximately three inches tall with a narrow neck and a wider cylindrical body. Faint, soft light emanates from within the liquid, creating a gentle glow around the edges of the glass. The surface of the glass is smooth and unblemished, reflecting the ambient light of the shop interior. The cork is tightly sealed, showing no signs of wear or leakage.",
+    "negative_prompt": "blurry, low quality, people, characters, hands, multiple objects, cluttered background, modern elements",
+    "width": 1600,
+    "height": 1600,
+    "seed": 377543,
+    "createdAt": "2026-08-06T13:04:28.475Z",
+    "comfyUIPromptId": "1bdb5ead-238a-461f-8a83-371bb1619632",
+    "images": [
+      {
+        "imageId": "img_20260806_130411_1fyphuq9",
+        "filename": "img_20260806_130411_1fyphuq9.webp",
+        "url": "/generated-images/img_20260806_130411_1fyphuq9.webp",
+        "size": 36694
+      }
+    ]
+  },
+  "img_20260806_130428_9qjnxk15": {
+    "id": "img_20260806_130428_9qjnxk15",
+    "prompt": "anime digital painting, soft shading, soft lighting\n\nGame item icon asset, simple grey background.\n\nA heavy, polished pestle carved from dense, dark ironwood rests on a neutral grey background, its surface smooth and lustrous from decades of use. The object features a sturdy, cylindrical handle that tapers slightly toward a thick, rounded grinding head with a textured interior designed for crushing ingredients. Subtle, fine scratches and minor dents mark the wood grain, indicating long-term wear without obscuring the material's rich, deep brown hue. Professional studio lighting highlights the contrast between the polished exterior and the weathered functional areas, emphasizing the tool's substantial mass and durable construction.",
+    "negative_prompt": "blurry, low quality, people, characters, hands, multiple objects, cluttered background, modern elements",
+    "width": 1600,
+    "height": 1600,
+    "seed": 368823,
+    "createdAt": "2026-08-06T13:04:44.993Z",
+    "comfyUIPromptId": "ce22c05d-b86a-45bf-893e-9cfe40017060",
+    "images": [
+      {
+        "imageId": "img_20260806_130428_9qjnxk15",
+        "filename": "img_20260806_130428_9qjnxk15.webp",
+        "url": "/generated-images/img_20260806_130428_9qjnxk15.webp",
+        "size": 75124
+      }
+    ]
+  },
+  "img_20260806_130444_1ngayh72": {
+    "id": "img_20260806_130444_1ngayh72",
+    "prompt": "Change the image to reflect the following conditions:\nLighting: Cold daylight with clear visibility..\nWeather: Clear - Bright cold skies with crisp air.",
+    "negative_prompt": "new people, new characters, text, logos, signage, changed architecture, changed camera angle, distorted landmarks, low quality, blurry",
+    "width": 1920,
+    "height": 1080,
+    "seed": 110288,
+    "createdAt": "2026-08-06T13:04:55.041Z",
+    "comfyUIPromptId": "fde138d9-c3d1-427c-b786-0210ae94d378",
+    "images": [
+      {
+        "imageId": "img_20260806_130444_1ngayh72",
+        "filename": "img_20260806_130444_1ngayh72.png",
+        "url": "/generated-images/img_20260806_130444_1ngayh72.png",
+        "size": 3040835
+      }
+    ],
+    "source": "location_weather_variant",
+    "locationId": "loc_29",
+    "sourceImageId": "img_20260806_130242_v0q01j1r",
+    "variantKey": "img-20260806-130242-v0q01j1r__cold-daylight-with-clear-visibility__clear",
+    "conditions": {
+      "sourceImageId": "img_20260806_130242_v0q01j1r",
+      "variantKey": "img-20260806-130242-v0q01j1r__cold-daylight-with-clear-visibility__clear",
+      "lightingKey": "cold-daylight-with-clear-visibility",
+      "lightingLabel": "Cold daylight with clear visibility.",
+      "weatherKey": "clear",
+      "weatherName": "Clear",
+      "weatherDescription": "Bright cold skies with crisp air",
+      "hasLocalWeather": true,
+      "weatherScope": "yes",
+      "hasWeatherSheltered": false,
+      "hasWeatherOutside": false,
+      "segment": "day",
+      "timeLabel": "9:36 AM",
+      "dateLabel": "Sunday, January 1, Common Era 1",
+      "season": "Winter"
+    }
+  },
+  "img_20260806_130749_q5wcks8j": {
+    "id": "img_20260806_130749_q5wcks8j",
+    "prompt": "anime digital painting, soft shading, soft lighting\n\nA translucent, azure-blue slime girl with a gelatinous, amorphous body stands behind a scarred wooden counter, her form shimmering with internal light. A distinct, pulsing heart-shaped core is clearly visible within her chest cavity, glowing with a soft white luminescence that contrasts against her blue exterior. She wears a cool-to-the-touch, slightly sticky black rubber apron tied around her midsection, which features deep pockets and reinforces her waist area. A flexible, translucent tube connects from a small reservoir near her shoulder down to her mouth, serving as a hydration siphon. Her face is smooth and featureless except for two large, expressive eyes and a small mouth, currently set in a neutral, attentive expression as she holds a thick, leather-bound stock tally book in one amorphous hand. The background reveals shelves stacked with glass jars of dried roots and crystallized herbs, emphasizing the shop setting.",
+    "negative_prompt": "blurry, low quality, distorted, multiple faces, deformed, ugly, bad anatomy, bad proportions",
+    "width": 1200,
+    "height": 1600,
+    "seed": 248258,
+    "createdAt": "2026-08-06T13:08:05.314Z",
+    "comfyUIPromptId": "60adac1a-5ddf-4db7-bccb-d41b3e4f3ca7",
+    "images": [
+      {
+        "imageId": "img_20260806_130749_q5wcks8j",
+        "filename": "img_20260806_130749_q5wcks8j.webp",
+        "url": "/generated-images/img_20260806_130749_q5wcks8j.webp",
+        "size": 145348
+      }
+    ]
+  },
+  "img_20260806_211228_g4ih7ovd": {
+    "id": "img_20260806_211228_g4ih7ovd",
+    "prompt": "anime digital painting, soft shading, soft lighting\n\nBeneath the Herbal Alchemy Shop, a cramped and dust-choked storage space presses inward with low ceilings and a utilitarian atmosphere. Shelves line the walls, groaning under the weight of cracked wooden crates, coarse burlap sacks, and numerous clay jars that fill the tight quarters. The air hangs dry and heavy, carrying the distinct scents of dried mint, earth, and old paper. In the center of the room, three large wooden chests stand as the primary focus, each clearly marked with Tsubaki’s precise handwriting indicating their contents: bleeding herbs, nerve tonics, and raw untreated specimens. A single bare bulb suspended from a frayed cord casts long, stark shadows across the cluttered floor, highlighting the disarray.\n\nTo the left, a small window admits a sliver of cold daylight, illuminating floating dust motes that dance in the stagnant air. A narrow ladder with rungs worn smooth by years of use leads upward to the Shop Floor, serving as the sole exit from this confined area. The room feels tight and functional, built for storage rather than comfort, with every inch of space utilized to hold the various components of the alchemist’s trade.\n\nTime: noon\nWeather: clear",
+    "negative_prompt": "blurry, low quality, modern elements, cars, technology, people, characters, portraits, indoor scenes only",
+    "width": 1920,
+    "height": 1080,
+    "seed": 125530,
+    "createdAt": "2026-08-06T21:14:03.318Z",
+    "comfyUIPromptId": "49aaa291-6495-4887-bea6-8bbe4bc6c499",
+    "images": [
+      {
+        "imageId": "img_20260806_211228_g4ih7ovd",
+        "filename": "img_20260806_211228_g4ih7ovd.webp",
+        "url": "/generated-images/img_20260806_211228_g4ih7ovd.webp",
+        "size": 163364
+      }
+    ]
+  },
+  "img_20260806_211403_6hb8jz0q": {
+    "id": "img_20260806_211403_6hb8jz0q",
+    "prompt": "anime digital painting, soft shading, soft lighting\n\nA brass alchemical spirit lamp sits centered on a simple, neutral grey background, its polished surface reflecting the ambient light. The lamp features a classic reservoir base with a slender neck and a wide, shallow bowl, topped with a glass chimney that encases a clean, steady blue flame. The metalwork is detailed with subtle engravings along the base, and a small wick adjustment knob is visible on the side. The blue flame burns brightly, casting a cool, ethereal glow that contrasts with the warm, tarnished tones of the brass. The object is isolated, highlighting its functional design and the quiet hum of magical energy implied by the flame's color.",
+    "negative_prompt": "blurry, low quality, people, characters, modern elements, cars, technology, indoor scenes, portraits",
+    "width": 1600,
+    "height": 1200,
+    "seed": 296918,
+    "createdAt": "2026-08-06T21:14:19.389Z",
+    "comfyUIPromptId": "4e361f8a-1508-441b-b1b4-65f8f94b601c",
+    "images": [
+      {
+        "imageId": "img_20260806_211403_6hb8jz0q",
+        "filename": "img_20260806_211403_6hb8jz0q.webp",
+        "url": "/generated-images/img_20260806_211403_6hb8jz0q.webp",
+        "size": 44254
+      }
+    ]
+  },
+  "img_20260806_211419_mqqacv3t": {
+    "id": "img_20260806_211419_mqqacv3t",
+    "prompt": "anime digital painting, soft shading, soft lighting\n\nA sturdy, oak chest labeled 'Raw Specimens' in Tsubaki’s precise handwriting sits isolated on a simple grey background. The chest is constructed from thick, dark oak planks, bound by heavy iron hinges and reinforced with riveted metal straps along the corners and lid. The wood grain is prominent and rough, showing signs of age and wear, with a matte finish that absorbs light. A small, iron latch secures the lid, and the label is painted in sharp, black ink on a small wooden plaque attached to the front. The chest looks heavy and utilitarian, designed for storage rather than display, with no ornate decorations, emphasizing its role in a cramped, functional stockroom.",
+    "negative_prompt": "blurry, low quality, people, characters, modern elements, cars, technology, indoor scenes, portraits",
+    "width": 1600,
+    "height": 1200,
+    "seed": 601457,
+    "createdAt": "2026-08-06T21:14:35.424Z",
+    "comfyUIPromptId": "d262e458-d4c8-44aa-b5b3-d1705006cc1a",
+    "images": [
+      {
+        "imageId": "img_20260806_211419_mqqacv3t",
+        "filename": "img_20260806_211419_mqqacv3t.webp",
+        "url": "/generated-images/img_20260806_211419_mqqacv3t.webp",
+        "size": 98998
+      }
+    ]
+  },
+  "img_20260806_211435_cco76iuh": {
+    "id": "img_20260806_211435_cco76iuh",
+    "prompt": "anime digital painting, soft shading, soft lighting\n\nA close-up view of dusty, uneven floorboards worn smooth by years of footsteps, isolated on a simple grey background. The wood planks are greyish-brown, with deep grooves and scuff marks running lengthwise along the grain. Scattered debris includes small bits of dried plant matter, loose nails, and fine dust particles that catch the light. The surface is textured and irregular, with some boards slightly raised or recessed, creating a sense of age and heavy use. Shadows are minimal, focusing attention on the tactile quality of the worn wood and the gritty accumulation of dirt in the crevices.",
+    "negative_prompt": "blurry, low quality, people, characters, modern elements, cars, technology, indoor scenes, portraits",
+    "width": 1600,
+    "height": 1200,
+    "seed": 34384,
+    "createdAt": "2026-08-06T21:14:51.459Z",
+    "comfyUIPromptId": "58740bcd-2d79-4ea3-89e0-76e40a1fb692",
+    "images": [
+      {
+        "imageId": "img_20260806_211435_cco76iuh",
+        "filename": "img_20260806_211435_cco76iuh.webp",
+        "url": "/generated-images/img_20260806_211435_cco76iuh.webp",
+        "size": 109156
+      }
+    ]
+  },
+  "img_20260806_211451_eaclr7hb": {
+    "id": "img_20260806_211451_eaclr7hb",
+    "prompt": "anime digital painting, soft shading, soft lighting\n\nA wooden shelf lined with bundles of various dried herbs sits isolated on a simple grey background. The shelf is made of rough-hewn timber, holding tightly bound bunches of pale green, brown, and grey herbs, each tied with twine. The herbs hang or rest in neat rows, their dried leaves and stems visible in detail, showing a brittle texture. Small clay jars and glass vials are tucked between the bundles, adding to the cluttered yet organized appearance. The lighting is soft and even, highlighting the earthy tones of the botanicals and the natural grain of the wood, evoking a sense of quiet, aromatic storage in a magical alchemy setting.",
+    "negative_prompt": "blurry, low quality, people, characters, modern elements, cars, technology, indoor scenes, portraits",
+    "width": 1600,
+    "height": 1200,
+    "seed": 580591,
+    "createdAt": "2026-08-06T21:15:07.491Z",
+    "comfyUIPromptId": "25b2c2e6-2403-477b-87d0-cbefc7a7d575",
+    "images": [
+      {
+        "imageId": "img_20260806_211451_eaclr7hb",
+        "filename": "img_20260806_211451_eaclr7hb.webp",
+        "url": "/generated-images/img_20260806_211451_eaclr7hb.webp",
+        "size": 255206
+      }
+    ]
+  },
+  "img_20260806_211507_rp6w7rti": {
+    "id": "img_20260806_211507_rp6w7rti",
+    "prompt": "anime digital painting, soft shading, soft lighting\n\nGame item icon asset, simple grey background.\n\nA delicate, clear glass vial with a narrow neck and rounded base sits centered against a plain grey background, filled with a viscous, amber-colored resin that glows with a faint, pulsing inner light. The resin appears to be a crystallized sap, exhibiting a smooth, glassy texture with subtle internal refractions that highlight its dense, liquid-like consistency. Soft, professional lighting emphasizes the transparency of the glass and the luminous quality of the amber substance within, while the edges of the vial show slight wear from handling. The object is presented in sharp focus, allowing for a detailed view of the resin’s surface tension and the gentle, rhythmic luminescence emanating from its core.",
+    "negative_prompt": "blurry, low quality, people, characters, hands, multiple objects, cluttered background, modern elements",
+    "width": 1600,
+    "height": 1600,
+    "seed": 518100,
+    "createdAt": "2026-08-06T21:15:25.524Z",
+    "comfyUIPromptId": "e826a6e9-4e13-4dd3-b060-637d76f9f778",
+    "images": [
+      {
+        "imageId": "img_20260806_211507_rp6w7rti",
+        "filename": "img_20260806_211507_rp6w7rti.webp",
+        "url": "/generated-images/img_20260806_211507_rp6w7rti.webp",
+        "size": 52966
+      }
+    ]
+  },
+  "img_20260806_211525_xb9g98nb": {
+    "id": "img_20260806_211525_xb9g98nb",
+    "prompt": "anime digital painting, soft shading, soft lighting\n\nGame item icon asset, simple grey background.\n\nA small, hand-held focusing lens rests on a neutral grey surface, featuring a clear glass element set within a polished silver frame that reflects the ambient light. The silver casing exhibits fine, deliberate engravings along its rim, suggesting precise craftsmanship typical of an alchemist's tools. The glass shows minor signs of use with faint smudges, indicating its frequent handling for inspecting microscopic structures. Professional lighting highlights the metallic sheen of the silver and the clarity of the lens, emphasizing its function as a diagnostic instrument. The object is presented in sharp detail against the simple background, showcasing its compact size and durable construction.",
+    "negative_prompt": "blurry, low quality, people, characters, hands, multiple objects, cluttered background, modern elements",
+    "width": 1600,
+    "height": 1600,
+    "seed": 727712,
+    "createdAt": "2026-08-06T21:15:43.558Z",
+    "comfyUIPromptId": "5167136d-51a7-48fb-8957-d43b1c4c0f1c",
+    "images": [
+      {
+        "imageId": "img_20260806_211525_xb9g98nb",
+        "filename": "img_20260806_211525_xb9g98nb.webp",
+        "url": "/generated-images/img_20260806_211525_xb9g98nb.webp",
+        "size": 70250
+      }
+    ]
+  },
+  "img_20260806_211543_kel540oh": {
+    "id": "img_20260806_211543_kel540oh",
+    "prompt": "anime digital painting, soft shading, soft lighting\n\nGame item icon asset, simple grey background.\n\nA close-up studio shot of a heavy ironwood pestle resting on a plain grey background. The pestle is made of dense, dark-brown wood with a smooth, polished grip that shows signs of extensive handling and wear. The grinding end is slightly rounded and matte, contrasting with the glossy handle. Professional lighting highlights the grain of the ironwood and the sturdy, utilitarian construction of the tool.",
+    "negative_prompt": "blurry, low quality, people, characters, hands, multiple objects, cluttered background, modern elements",
+    "width": 1600,
+    "height": 1600,
+    "seed": 546562,
+    "createdAt": "2026-08-06T21:16:01.589Z",
+    "comfyUIPromptId": "20402a28-44ae-4424-9926-4c21057f27b4",
+    "images": [
+      {
+        "imageId": "img_20260806_211543_kel540oh",
+        "filename": "img_20260806_211543_kel540oh.webp",
+        "url": "/generated-images/img_20260806_211543_kel540oh.webp",
+        "size": 54642
+      }
+    ]
+  },
+  "img_20260806_211601_9fwy427o": {
+    "id": "img_20260806_211601_9fwy427o",
+    "prompt": "anime digital painting, soft shading, soft lighting\n\nGame item icon asset, simple grey background.\n\nA detailed close-up of a simple brass key lying on a neutral grey background. The key is crafted from sturdy metal with a warm golden hue, featuring a worn bow that shows scratches and tarnish from frequent use. The shaft is straight and robust, ending in a bit with clear, defined teeth. Soft studio lighting emphasizes the metallic texture and the patina of age on the surface.",
+    "negative_prompt": "blurry, low quality, people, characters, hands, multiple objects, cluttered background, modern elements",
+    "width": 1600,
+    "height": 1600,
+    "seed": 942455,
+    "createdAt": "2026-08-06T21:16:19.624Z",
+    "comfyUIPromptId": "eb9c4f6f-4545-4475-a6be-6afd93c88759",
+    "images": [
+      {
+        "imageId": "img_20260806_211601_9fwy427o",
+        "filename": "img_20260806_211601_9fwy427o.webp",
+        "url": "/generated-images/img_20260806_211601_9fwy427o.webp",
+        "size": 66880
+      }
+    ]
+  },
+  "img_20260806_211619_nenif5e4": {
+    "id": "img_20260806_211619_nenif5e4",
+    "prompt": "anime digital painting, soft shading, soft lighting\n\nGame item icon asset, simple grey background.\n\nA high-resolution close-up of a small circular copper coin centered on a plain grey background. The coin displays a worn relief portrait of the first herbalist queen, with details softened by years of circulation. The metal has a reddish-brown patina with darker areas in the recesses of the engraving. Clear, even lighting reveals the texture of the worn surface and the metallic sheen of the copper.",
+    "negative_prompt": "blurry, low quality, people, characters, hands, multiple objects, cluttered background, modern elements",
+    "width": 1600,
+    "height": 1600,
+    "seed": 443699,
+    "createdAt": "2026-08-06T21:16:37.658Z",
+    "comfyUIPromptId": "baa9a2e6-9437-4491-9a07-632ec1038024",
+    "images": [
+      {
+        "imageId": "img_20260806_211619_nenif5e4",
+        "filename": "img_20260806_211619_nenif5e4.webp",
+        "url": "/generated-images/img_20260806_211619_nenif5e4.webp",
+        "size": 72376
+      }
+    ]
+  },
+  "img_20260806_211637_zmcl2d29": {
+    "id": "img_20260806_211637_zmcl2d29",
+    "prompt": "anime digital painting, soft shading, soft lighting\n\nGame item icon asset, simple grey background.\n\nA close-up view of an old glass tincture jar sitting on a grey background. The jar is filled with a murky, brownish liquid and features a thick glass rim and a slightly clouded surface. A fine layer of grey dust coats the exterior, and thin strands of cobweb are visible clinging to the sides and neck. The lighting highlights the transparency of the glass and the stagnant quality of the liquid inside.",
+    "negative_prompt": "blurry, low quality, people, characters, hands, multiple objects, cluttered background, modern elements",
+    "width": 1600,
+    "height": 1600,
+    "seed": 418103,
+    "createdAt": "2026-08-06T21:16:55.691Z",
+    "comfyUIPromptId": "a2126e82-87e8-4ac4-ae02-a04c68443109",
+    "images": [
+      {
+        "imageId": "img_20260806_211637_zmcl2d29",
+        "filename": "img_20260806_211637_zmcl2d29.webp",
+        "url": "/generated-images/img_20260806_211637_zmcl2d29.webp",
+        "size": 67204
+      }
+    ]
+  },
+  "img_20260806_211655_7mr9b0ga": {
+    "id": "img_20260806_211655_7mr9b0ga",
+    "prompt": "anime digital painting, soft shading, soft lighting\n\nGame item icon asset, simple grey background.\n\nA small, unglazed earthenware pot rests centrally against a neutral grey background, its surface exhibiting a matte, dusty texture typical of aged storage containers. A prominent, jagged fissure runs vertically down the left side of the vessel, exposing the rough, porous interior clay beneath the outer layer. The pot’s rim is slightly uneven and chipped, indicating significant wear from long-term use in a utilitarian storage environment. Soft, directional lighting highlights the coarse grain of the clay and the depth of the crack, emphasizing the object's fragile and discarded condition.",
+    "negative_prompt": "blurry, low quality, people, characters, hands, multiple objects, cluttered background, modern elements",
+    "width": 1600,
+    "height": 1600,
+    "seed": 783370,
+    "createdAt": "2026-08-06T21:17:13.723Z",
+    "comfyUIPromptId": "6182522a-b7ca-48fb-ade2-6868dc2a5c2b",
+    "images": [
+      {
+        "imageId": "img_20260806_211655_7mr9b0ga",
+        "filename": "img_20260806_211655_7mr9b0ga.webp",
+        "url": "/generated-images/img_20260806_211655_7mr9b0ga.webp",
+        "size": 99970
+      }
+    ]
+  },
+  "img_20260806_212857_l5sclyit": {
+    "id": "img_20260806_212857_l5sclyit",
+    "prompt": "Change the image to reflect the following conditions:\nLighting: Cold daylight with clear visibility..\nWeather: Clear - Bright cold skies with crisp air.",
+    "negative_prompt": "new people, new characters, text, logos, signage, changed architecture, changed camera angle, distorted landmarks, low quality, blurry",
+    "width": 1920,
+    "height": 1080,
+    "seed": 482975,
+    "createdAt": "2026-08-06T21:29:07.661Z",
+    "comfyUIPromptId": "c70f1713-2a41-4d8a-a5bd-5e1c9ce23ad8",
+    "images": [
+      {
+        "imageId": "img_20260806_212857_l5sclyit",
+        "filename": "img_20260806_212857_l5sclyit.png",
+        "url": "/generated-images/img_20260806_212857_l5sclyit.png",
+        "size": 2795221
+      }
+    ],
+    "source": "location_weather_variant",
+    "locationId": "loc_32",
+    "sourceImageId": "img_20260806_211228_g4ih7ovd",
+    "variantKey": "img-20260806-211228-g4ih7ovd__cold-daylight-with-clear-visibility__clear",
+    "conditions": {
+      "sourceImageId": "img_20260806_211228_g4ih7ovd",
+      "variantKey": "img-20260806-211228-g4ih7ovd__cold-daylight-with-clear-visibility__clear",
+      "lightingKey": "cold-daylight-with-clear-visibility",
+      "lightingLabel": "Cold daylight with clear visibility.",
+      "weatherKey": "clear",
+      "weatherName": "Clear",
+      "weatherDescription": "Bright cold skies with crisp air",
+      "hasLocalWeather": true,
+      "weatherScope": "yes",
+      "hasWeatherSheltered": false,
+      "hasWeatherOutside": false,
+      "segment": "day",
+      "timeLabel": "9:45 AM",
+      "dateLabel": "Sunday, January 1, Common Era 1",
+      "season": "Winter"
+    }
+  },
+  "img_20260806_213244_yo9nbyru": {
+    "id": "img_20260806_213244_yo9nbyru",
+    "prompt": "anime digital painting, soft shading, soft lighting\n\nGame item icon asset, simple grey background.\n\nA close-up studio shot of a single worn copper coin resting on a plain grey background. The coin features the face of the first settler, which has been smoothed into a flat, featureless oval shape by decades of handling. The metal surface is a dull, dark bronze color with soft highlights reflecting the professional lighting. The edges of the coin are slightly rounded and uneven, indicating significant circulation wear. The overall appearance is that of an old, heavily used piece of currency with no sharp details remaining.",
+    "negative_prompt": "blurry, low quality, people, characters, hands, multiple objects, cluttered background, modern elements",
+    "width": 1600,
+    "height": 1600,
+    "seed": 505065,
+    "createdAt": "2026-08-06T21:33:02.716Z",
+    "comfyUIPromptId": "f2ce7788-d617-4fcd-bb36-ccf18d24d978",
+    "images": [
+      {
+        "imageId": "img_20260806_213244_yo9nbyru",
+        "filename": "img_20260806_213244_yo9nbyru.webp",
+        "url": "/generated-images/img_20260806_213244_yo9nbyru.webp",
+        "size": 72992
+      }
+    ]
+  },
+  "img_20260806_213302_u5xf7njv": {
+    "id": "img_20260806_213302_u5xf7njv",
+    "prompt": "anime digital painting, soft shading, soft lighting\n\nGame item icon asset, simple grey background.\n\nA detailed close-up of a flat wooden disc token lying on a neutral grey surface. The wood is light brown with visible grain patterns and a slightly rough texture. Stamped into the center of the disc is a simple, deep engraving of a steaming bowl symbol. The edges of the wood are clean-cut but show minor splintering from the stamping process. The lighting is even, highlighting the depth of the carved symbol and the natural color variations in the wood.",
+    "negative_prompt": "blurry, low quality, people, characters, hands, multiple objects, cluttered background, modern elements",
+    "width": 1600,
+    "height": 1600,
+    "seed": 89373,
+    "createdAt": "2026-08-06T21:33:20.767Z",
+    "comfyUIPromptId": "062f3f0e-99c9-4f64-9a37-35db98858d12",
+    "images": [
+      {
+        "imageId": "img_20260806_213302_u5xf7njv",
+        "filename": "img_20260806_213302_u5xf7njv.webp",
+        "url": "/generated-images/img_20260806_213302_u5xf7njv.webp",
+        "size": 59696
+      }
+    ]
+  },
+  "img_20260806_213320_xaw00cuc": {
+    "id": "img_20260806_213320_xaw00cuc",
+    "prompt": "anime digital painting, soft shading, soft lighting\n\nGame item icon asset, simple grey background.\n\nA close-up view of a worn copper coin positioned on a simple grey background. One side of the coin displays a stamped village grain symbol, which is slightly raised but softened by wear. The copper surface has a warm, reddish-brown patina with darker areas of oxidation in the crevices. The edges of the coin are rough and irregular, showing signs of frequent circulation. Professional lighting emphasizes the metallic texture and the subtle variations in the coin's surface color.",
+    "negative_prompt": "blurry, low quality, people, characters, hands, multiple objects, cluttered background, modern elements",
+    "width": 1600,
+    "height": 1600,
+    "seed": 260501,
+    "createdAt": "2026-08-06T21:33:38.800Z",
+    "comfyUIPromptId": "d1e1ad12-c4d8-4fae-bb0d-b2ed59b94f39",
+    "images": [
+      {
+        "imageId": "img_20260806_213320_xaw00cuc",
+        "filename": "img_20260806_213320_xaw00cuc.webp",
+        "url": "/generated-images/img_20260806_213320_xaw00cuc.webp",
+        "size": 78992
+      }
+    ]
+  },
+  "img_20260806_213338_qnzzrjp5": {
+    "id": "img_20260806_213338_qnzzrjp5",
+    "prompt": "anime digital painting, soft shading, soft lighting\n\nGame item icon asset, simple grey background.\n\nA detailed close-up of a small, tarnished brass key resting on a plain grey background. The bow of the key is shaped like a dryad leaf and is slightly bent to one side. The shaft of the key is worn smooth with a matte finish, contrasting with the jagged, intact teeth at the end. The brass has a dull, greenish-brown tarnish covering most of the surface. Studio lighting highlights the metallic texture and the specific shape of the leaf-like bow.",
+    "negative_prompt": "blurry, low quality, people, characters, hands, multiple objects, cluttered background, modern elements",
+    "width": 1600,
+    "height": 1600,
+    "seed": 926127,
+    "createdAt": "2026-08-06T21:33:56.832Z",
+    "comfyUIPromptId": "fa1f8b88-1c01-4f35-b5a9-544049f21e36",
+    "images": [
+      {
+        "imageId": "img_20260806_213338_qnzzrjp5",
+        "filename": "img_20260806_213338_qnzzrjp5.webp",
+        "url": "/generated-images/img_20260806_213338_qnzzrjp5.webp",
+        "size": 53702
+      }
+    ]
+  },
+  "img_20260806_213356_6v24eqne": {
+    "id": "img_20260806_213356_6v24eqne",
+    "prompt": "anime digital painting, soft shading, soft lighting\n\nGame item icon asset, simple grey background.\n\nA close-up image of a small bundle of dried herbs tied together with a thin piece of twine, placed on a neutral grey background. The herbs are a mix of muted greens and browns, with crinkled, brittle leaves visible. The bundle is compact and roughly cylindrical in shape. The twine is knotted tightly at the center, securing the dried plant matter. The lighting is soft and even, clearly showing the texture of the dried leaves and the fibrous nature of the binding twine.",
+    "negative_prompt": "blurry, low quality, people, characters, hands, multiple objects, cluttered background, modern elements",
+    "width": 1600,
+    "height": 1600,
+    "seed": 376159,
+    "createdAt": "2026-08-06T21:34:14.865Z",
+    "comfyUIPromptId": "90d9afff-03ff-4a97-bb78-2e583af6f5a6",
+    "images": [
+      {
+        "imageId": "img_20260806_213356_6v24eqne",
+        "filename": "img_20260806_213356_6v24eqne.webp",
+        "url": "/generated-images/img_20260806_213356_6v24eqne.webp",
+        "size": 106794
+      }
+    ]
+  },
+  "img_20260806_213414_5qzxi5kx": {
+    "id": "img_20260806_213414_5qzxi5kx",
+    "prompt": "anime digital painting, soft shading, soft lighting\n\nGame item icon asset, simple grey background.\n\nA detailed close-up of a worn copper coin resting on a simple grey background. One face of the coin features a stamped grain symbol that is clearly defined but shows signs of wear. The copper surface is dark and oxidized, with a rough, uneven texture around the edges. The rim of the coin is jagged and irregular, indicating years of circulation. Professional lighting casts subtle shadows that emphasize the depth of the stamping and the roughness of the metal edges.",
+    "negative_prompt": "blurry, low quality, people, characters, hands, multiple objects, cluttered background, modern elements",
+    "width": 1600,
+    "height": 1600,
+    "seed": 27565,
+    "createdAt": "2026-08-06T21:34:32.896Z",
+    "comfyUIPromptId": "0ae0a552-2df1-4f8d-b237-886a7adc30ed",
+    "images": [
+      {
+        "imageId": "img_20260806_213414_5qzxi5kx",
+        "filename": "img_20260806_213414_5qzxi5kx.webp",
+        "url": "/generated-images/img_20260806_213414_5qzxi5kx.webp",
+        "size": 82682
+      }
+    ]
+  },
+  "img_20260806_213432_bi6yhuod": {
+    "id": "img_20260806_213432_bi6yhuod",
+    "prompt": "anime digital painting, soft shading, soft lighting\n\nGame item icon asset, simple grey background.\n\nA close-up view of a single worn copper coin resting on a plain grey background. The coin displays a dull metallic sheen with visible surface scratches and minor tarnishing that indicate age and circulation. Centered on the face is a stamped engraving of a stylized grain symbol, rendered in relief with slightly softened edges due to wear. The object is circular with a diameter of approximately two centimeters, illuminated by professional studio lighting that highlights the texture of the metal and the depth of the stamp without creating harsh shadows.",
+    "negative_prompt": "blurry, low quality, people, characters, hands, multiple objects, cluttered background, modern elements",
+    "width": 1600,
+    "height": 1600,
+    "seed": 307419,
+    "createdAt": "2026-08-06T21:34:50.934Z",
+    "comfyUIPromptId": "7d27ed2c-b3c3-4697-bfd8-e31800121fe1",
+    "images": [
+      {
+        "imageId": "img_20260806_213432_bi6yhuod",
+        "filename": "img_20260806_213432_bi6yhuod.webp",
+        "url": "/generated-images/img_20260806_213432_bi6yhuod.webp",
+        "size": 72400
+      }
+    ]
+  },
+  "img_20260806_213450_t664lten": {
+    "id": "img_20260806_213450_t664lten",
+    "prompt": "anime digital painting, soft shading, soft lighting\n\nGame item icon asset, simple grey background.\n\nA detailed close-up of a small bundle of prime dried yarrow leaves tied together, set against a simple grey background. The leaves retain a vibrant green hue, indicating they were harvested at peak strength and dried properly, with no signs of brittleness or gray discoloration. The bundle consists of numerous slender, flat leaflets attached to thin stems, bound tightly at the base with a natural fiber string. Professional lighting accentuates the matte texture of the dried foliage and the slight curling of the leaf edges, presenting the herb in a fresh, potent condition.",
+    "negative_prompt": "blurry, low quality, people, characters, hands, multiple objects, cluttered background, modern elements",
+    "width": 1600,
+    "height": 1600,
+    "seed": 441530,
+    "createdAt": "2026-08-06T21:35:08.969Z",
+    "comfyUIPromptId": "b482a4f7-c796-4a32-8ae6-740d41850f0e",
+    "images": [
+      {
+        "imageId": "img_20260806_213450_t664lten",
+        "filename": "img_20260806_213450_t664lten.webp",
+        "url": "/generated-images/img_20260806_213450_t664lten.webp",
+        "size": 107624
+      }
+    ]
+  },
+  "img_20260806_213508_nvyra20p": {
+    "id": "img_20260806_213508_nvyra20p",
+    "prompt": "anime digital painting, soft shading, soft lighting\n\nGame item icon asset, simple grey background.\n\nA close-up image of a bundle of prime dried mugwort stalks and leaves lying on a neutral grey background. The stalks are intact and rigid, supporting leaves that are deeply colored in a rich, dark green with hints of silvery undertones typical of dried mugwort. The leaves are carefully dried, showing a slightly crinkled texture but remaining flexible rather than brittle. A simple twine binds the base of the bundle, holding the stems together in a neat, cylindrical arrangement that highlights the aromatic quality of the preserved herb.",
+    "negative_prompt": "blurry, low quality, people, characters, hands, multiple objects, cluttered background, modern elements",
+    "width": 1600,
+    "height": 1600,
+    "seed": 317455,
+    "createdAt": "2026-08-06T21:35:27.023Z",
+    "comfyUIPromptId": "7e36d818-4622-4e74-8162-1605605c7642",
+    "images": [
+      {
+        "imageId": "img_20260806_213508_nvyra20p",
+        "filename": "img_20260806_213508_nvyra20p.webp",
+        "url": "/generated-images/img_20260806_213508_nvyra20p.webp",
+        "size": 111714
+      }
+    ]
+  },
+  "img_20260806_213527_qjh37qh2": {
+    "id": "img_20260806_213527_qjh37qh2",
+    "prompt": "anime digital painting, soft shading, soft lighting\n\nGame item icon asset, simple grey background.\n\nA detailed close-up of a sprig of prime dried lavender resting on a plain grey surface. The dried flower heads are a vibrant purple, densely packed along the upper portion of the stems, which remain flexible rather than brittle. The stems are slender and woody, transitioning from a pale green at the base to a brownish hue near the flowers. Professional lighting highlights the fine, fuzzy texture of the dried petals and the natural curvature of the plant, showcasing the herb in a fully aromatic and well-cured state.",
+    "negative_prompt": "blurry, low quality, people, characters, hands, multiple objects, cluttered background, modern elements",
+    "width": 1600,
+    "height": 1600,
+    "seed": 275907,
+    "createdAt": "2026-08-06T21:35:45.053Z",
+    "comfyUIPromptId": "3f51263c-4dd7-4ad0-93d3-2fe77b9aa2e0",
+    "images": [
+      {
+        "imageId": "img_20260806_213527_qjh37qh2",
+        "filename": "img_20260806_213527_qjh37qh2.webp",
+        "url": "/generated-images/img_20260806_213527_qjh37qh2.webp",
+        "size": 157156
+      }
+    ]
+  },
+  "img_20260807_005250_2bolbnbr": {
+    "id": "img_20260807_005250_2bolbnbr",
+    "prompt": "anime digital painting, soft shading, soft lighting\n\nSunlight filters through a single, dusty circular window, illuminating a small, quiet attic space that sits directly above the bustling shop below. The room is sparse, dominated by a few stacked crates and a worn wooden stool positioned near the eaves, offering a peaceful vantage point. The air is still and warm, filled with the faint scent of old paper and dry wood, while the silence here is profound, broken only by the distant, muffled sounds of commerce from the floor beneath.\n\nThe floorboards are solid and well-maintained, leading to a simple wooden door that opens onto the stairwell. There are no signs of neglect or structural danger; the space feels secure and serene, a calm refuge from the activity below. The walls are lined with neat rows of forgotten items, but the area remains open and airy, allowing for a clear view through the small window without any sense of confinement or threat.\n\nTime: noon\nWeather: clear",
+    "negative_prompt": "blurry, low quality, modern elements, cars, technology, people, characters, portraits, indoor scenes only",
+    "width": 1920,
+    "height": 1080,
+    "seed": 20233,
+    "createdAt": "2026-08-07T00:52:50.266Z",
+    "comfyUIPromptId": "b4fe84ee-0b75-4f09-a627-05f8cbdbf7ec",
+    "images": [
+      {
+        "imageId": "img_20260807_005250_2bolbnbr",
+        "filename": "img_20260807_005250_2bolbnbr.webp",
+        "url": "/generated-images/img_20260807_005250_2bolbnbr.webp",
+        "size": 127702
+      }
+    ]
+  },
+  "img_20260807_005312_1tkagso3": {
+    "id": "img_20260807_005312_1tkagso3",
+    "prompt": "anime digital painting, soft shading, soft lighting\n\nOn a simple grey background, a wrought-iron spiral staircase with wooden treads is presented in isolation. The central pole is crafted from dark, matte-finished metal, featuring elegant, sweeping curves that guide the eye upward. The handrail follows the spiral's contour, polished to a subtle sheen, while the individual wooden treads are sturdy and smooth, displaying a warm, natural grain that contrasts with the industrial feel of the iron. The structure is clean and intact, showcasing its functional design for ascending to a quiet attic loft.",
+    "negative_prompt": "blurry, low quality, people, characters, modern elements, cars, technology, indoor scenes, portraits",
+    "width": 1600,
+    "height": 1200,
+    "seed": 873593,
+    "createdAt": "2026-08-07T00:53:12.320Z",
+    "comfyUIPromptId": "580ea063-94b6-4dc0-b577-9b1310472883",
+    "images": [
+      {
+        "imageId": "img_20260807_005312_1tkagso3",
+        "filename": "img_20260807_005312_1tkagso3.webp",
+        "url": "/generated-images/img_20260807_005312_1tkagso3.webp",
+        "size": 48422
+      }
+    ]
+  },
+  "img_20260807_005312_k7biuf0d": {
+    "id": "img_20260807_005312_k7biuf0d",
+    "prompt": "anime digital painting, soft shading, soft lighting\n\nOn a simple grey background, a single worn floorboard is isolated for clear viewing. The wood is aged and weathered, with a rough, uneven surface where the finish has long since worn away. One edge is significantly lifted and splintered, creating a jagged gap that reveals the darker subfloor beneath. The grain of the timber is prominent and dry, with visible knots and minor surface scratches, emphasizing its loose and precarious state near the entrance of the shop.",
+    "negative_prompt": "blurry, low quality, people, characters, modern elements, cars, technology, indoor scenes, portraits",
+    "width": 1600,
+    "height": 1200,
+    "seed": 469052,
+    "createdAt": "2026-08-07T00:53:12.321Z",
+    "comfyUIPromptId": "580ea063-94b6-4dc0-b577-9b1310472883",
+    "images": [
+      {
+        "imageId": "img_20260807_005312_k7biuf0d",
+        "filename": "img_20260807_005312_k7biuf0d.webp",
+        "url": "/generated-images/img_20260807_005312_k7biuf0d.webp",
+        "size": 57778
+      }
+    ]
+  },
+  "img_20260807_005340_5rwbmfpp": {
+    "id": "img_20260807_005340_5rwbmfpp",
+    "prompt": "anime digital painting, soft shading, soft lighting\n\nGame item icon asset, simple grey background.\n\nA close-up studio shot of a small, stoppered crystal bottle filled with a shimmering pale blue liquid that emits a faint, soft glow. The crystal container features smooth, polished facets and a simple cork stopper, resting on a plain grey surface under professional lighting. The pale blue liquid inside swirls gently, highlighting its magical properties and translucent quality. The glass is clear and clean, allowing the luminescent essence to be the central focus against the neutral background.",
+    "negative_prompt": "blurry, low quality, people, characters, hands, multiple objects, cluttered background, modern elements",
+    "width": 1600,
+    "height": 1600,
+    "seed": 20265,
+    "createdAt": "2026-08-07T00:53:40.372Z",
+    "comfyUIPromptId": "e547c65a-1d95-4a1c-a70b-68e7eb881df1",
+    "images": [
+      {
+        "imageId": "img_20260807_005340_5rwbmfpp",
+        "filename": "img_20260807_005340_5rwbmfpp.webp",
+        "url": "/generated-images/img_20260807_005340_5rwbmfpp.webp",
+        "size": 42778
+      }
+    ]
+  },
+  "img_20260807_005340_ok71uzab": {
+    "id": "img_20260807_005340_ok71uzab",
+    "prompt": "anime digital painting, soft shading, soft lighting\n\nGame item icon asset, simple grey background.\n\nA detailed close-up of a hand-woven willow basket shaped like a miniature teapot, designed for steeping herbal tea. The light brown willow strips are tightly interwoven to form a sturdy, rounded body with a short spout and a small handle. The object sits on a simple grey background, showcasing the natural texture of the dried wood and the intricate craftsmanship of the weave. The lighting highlights the organic grain of the willow and the functional design of this common household tool.",
+    "negative_prompt": "blurry, low quality, people, characters, hands, multiple objects, cluttered background, modern elements",
+    "width": 1600,
+    "height": 1600,
+    "seed": 607985,
+    "createdAt": "2026-08-07T00:53:40.374Z",
+    "comfyUIPromptId": "e547c65a-1d95-4a1c-a70b-68e7eb881df1",
+    "images": [
+      {
+        "imageId": "img_20260807_005340_ok71uzab",
+        "filename": "img_20260807_005340_ok71uzab.webp",
+        "url": "/generated-images/img_20260807_005340_ok71uzab.webp",
+        "size": 134410
+      }
+    ]
+  },
+  "img_20260807_005340_x4gojim2": {
+    "id": "img_20260807_005340_x4gojim2",
+    "prompt": "Change the image to reflect the following conditions:\nLighting: Cold daylight with clear visibility..\nWeather: Clear - Bright cold skies with crisp air.",
+    "negative_prompt": "new people, new characters, text, logos, signage, changed architecture, changed camera angle, distorted landmarks, low quality, blurry",
+    "width": 1920,
+    "height": 1080,
+    "seed": 14719,
+    "createdAt": "2026-08-07T00:54:04.853Z",
+    "comfyUIPromptId": "8367ea42-104b-4e30-8b26-8a57d90bd479",
+    "images": [
+      {
+        "imageId": "img_20260807_005340_x4gojim2",
+        "filename": "img_20260807_005340_x4gojim2.png",
+        "url": "/generated-images/img_20260807_005340_x4gojim2.png",
+        "size": 2726951
+      }
+    ],
+    "source": "location_weather_variant",
+    "locationId": "loc_33",
+    "sourceImageId": "img_20260807_005250_2bolbnbr",
+    "variantKey": "img-20260807-005250-2bolbnbr__cold-daylight-with-clear-visibility__clear",
+    "conditions": {
+      "sourceImageId": "img_20260807_005250_2bolbnbr",
+      "variantKey": "img-20260807-005250-2bolbnbr__cold-daylight-with-clear-visibility__clear",
+      "lightingKey": "cold-daylight-with-clear-visibility",
+      "lightingLabel": "Cold daylight with clear visibility.",
+      "weatherKey": "clear",
+      "weatherName": "Clear",
+      "weatherDescription": "Bright cold skies with crisp air",
+      "hasLocalWeather": true,
+      "weatherScope": "yes",
+      "hasWeatherSheltered": false,
+      "hasWeatherOutside": false,
+      "segment": "day",
+      "timeLabel": "10:02 AM",
+      "dateLabel": "Sunday, January 1, Common Era 1",
+      "season": "Winter"
+    }
+  },
+  "img_20260807_032658_plsp9v6i": {
+    "id": "img_20260807_032658_plsp9v6i",
+    "prompt": "anime digital painting, soft shading, soft lighting\n\nA narrow wooden staircase ascends to the second floor, its steps worn smooth and polished by years of constant use. The walls lining the ascent are densely packed with reference books and hand-drawn botanical sketches, creating a textured backdrop of knowledge. A small window allows dim light to filter into the space, illuminating dust motes that dance gently in the stagnant air.\n\nThe stairs creak slightly underfoot, suggesting age and fragility in the structure. This level serves as a transitional space, offering exits to the shop floor below, the upper lab ahead, and the loft to the side. The atmosphere is quiet and scholarly, marked by the subtle interplay of light and shadow among the scattered papers and volumes.\n\nTime: noon\nWeather: clear",
+    "negative_prompt": "blurry, low quality, modern elements, cars, technology, people, characters, portraits, indoor scenes only",
+    "width": 1920,
+    "height": 1080,
+    "seed": 424164,
+    "createdAt": "2026-08-07T03:26:58.291Z",
+    "comfyUIPromptId": "aad32769-e63d-4512-a46b-c2db55c1ee08",
+    "images": [
+      {
+        "imageId": "img_20260807_032658_plsp9v6i",
+        "filename": "img_20260807_032658_plsp9v6i.webp",
+        "url": "/generated-images/img_20260807_032658_plsp9v6i.webp",
+        "size": 154650
+      }
+    ]
+  },
+  "img_20260807_032720_d4sstw6s": {
+    "id": "img_20260807_032720_d4sstw6s",
+    "prompt": "anime digital painting, soft shading, soft lighting\n\nPresented on a simple grey background, a loose wooden floorboard sits near the edge of a cluttered alchemy workbench within a cozy, anime-style herbal shop. The board is warped slightly upward, revealing the dark gap beneath, and is coated in a thick layer of fine, dried herb dust that catches the dim light from a nearby small window. Surrounding the board, the floor is scattered with faint traces of green powder, while the background softly blurs into shelves of glass bottles and hanging botanical sketches, emphasizing the relaxed, rustic atmosphere of the magical rural setting.",
+    "negative_prompt": "blurry, low quality, people, characters, modern elements, cars, technology, indoor scenes, portraits",
+    "width": 1600,
+    "height": 1200,
+    "seed": 696417,
+    "createdAt": "2026-08-07T03:27:20.505Z",
+    "comfyUIPromptId": "b2959747-4714-4e6d-90c8-73c4e42ba2ca",
+    "images": [
+      {
+        "imageId": "img_20260807_032720_d4sstw6s",
+        "filename": "img_20260807_032720_d4sstw6s.webp",
+        "url": "/generated-images/img_20260807_032720_d4sstw6s.webp",
+        "size": 122944
+      }
+    ]
+  },
+  "img_20260807_032720_qfe8ojhd": {
+    "id": "img_20260807_032720_qfe8ojhd",
+    "prompt": "anime digital painting, soft shading, soft lighting\n\nDisplayed against a simple grey background, a sturdy wooden shelf is mounted on the wall of a warm, herbal alchemy shop, holding several bundles of dried herbs hanging upside down. The herbs, ranging from deep greens to earthy browns, are tied with simple twine and sway gently in the stagnant air, their leaves brittle and curled from the drying process. The surrounding environment suggests a cozy, lived-in space with soft lighting illuminating the texture of the wood and the delicate details of the herb bundles, fitting the relaxed aesthetic of a magical rural community.",
+    "negative_prompt": "blurry, low quality, people, characters, modern elements, cars, technology, indoor scenes, portraits",
+    "width": 1600,
+    "height": 1200,
+    "seed": 800967,
+    "createdAt": "2026-08-07T03:27:20.506Z",
+    "comfyUIPromptId": "b2959747-4714-4e6d-90c8-73c4e42ba2ca",
+    "images": [
+      {
+        "imageId": "img_20260807_032720_qfe8ojhd",
+        "filename": "img_20260807_032720_qfe8ojhd.webp",
+        "url": "/generated-images/img_20260807_032720_qfe8ojhd.webp",
+        "size": 153458
+      }
+    ]
+  },
+  "img_20260807_032808_3cbno3d5": {
+    "id": "img_20260807_032808_3cbno3d5",
+    "prompt": "anime digital painting, soft shading, soft lighting\n\nGame item icon asset, simple grey background.\n\nClose-up studio shot of a polished moonstone mortar resting on a neutral grey background. The object is crafted from smooth white ceramic with a subtle pearlescent sheen that catches the professional lighting. Its surface is flawless and rounded, designed for grinding delicate herbs. The lighting highlights the gentle curves and the clean, unblemished texture of the material.",
+    "negative_prompt": "blurry, low quality, people, characters, hands, multiple objects, cluttered background, modern elements",
+    "width": 1600,
+    "height": 1600,
+    "seed": 649804,
+    "createdAt": "2026-08-07T03:28:08.578Z",
+    "comfyUIPromptId": "c462a8da-8e83-4a15-aba3-f17a00eb4a31",
+    "images": [
+      {
+        "imageId": "img_20260807_032808_3cbno3d5",
+        "filename": "img_20260807_032808_3cbno3d5.webp",
+        "url": "/generated-images/img_20260807_032808_3cbno3d5.webp",
+        "size": 38312
+      }
+    ]
+  },
+  "img_20260807_032808_ajn7bfj6": {
+    "id": "img_20260807_032808_ajn7bfj6",
+    "prompt": "anime digital painting, soft shading, soft lighting\n\nGame item icon asset, simple grey background.\n\nClose-up detailed view of a sturdy canvas tote bag placed on a simple grey background. The exterior is made of thick, durable beige canvas with visible reinforced stitching along the seams. The wide opening reveals a lining of soft, dark green velvet designed to protect fragile contents. Professional lighting accentuates the texture of the canvas and the plush nature of the velvet interior.",
+    "negative_prompt": "blurry, low quality, people, characters, hands, multiple objects, cluttered background, modern elements",
+    "width": 1600,
+    "height": 1600,
+    "seed": 619158,
+    "createdAt": "2026-08-07T03:28:08.579Z",
+    "comfyUIPromptId": "c462a8da-8e83-4a15-aba3-f17a00eb4a31",
+    "images": [
+      {
+        "imageId": "img_20260807_032808_ajn7bfj6",
+        "filename": "img_20260807_032808_ajn7bfj6.webp",
+        "url": "/generated-images/img_20260807_032808_ajn7bfj6.webp",
+        "size": 100340
+      }
+    ]
+  },
+  "img_20260807_032808_x7e7vpy2": {
+    "id": "img_20260807_032808_x7e7vpy2",
+    "prompt": "anime digital painting, soft shading, soft lighting\n\nGame item icon asset, simple grey background.\n\nClose-up shot of a hand-drawn parchment map lying flat on a neutral grey background. The paper is aged and yellowed, with edges that are slightly worn and frayed. Distinct brown tea stains are visible across the surface of the parchment. Hand-drawn lines and handwritten notes indicate local wild herb patches in a rustic style. The lighting is even, clearly showing the texture of the paper and the discoloration from age and liquid.",
+    "negative_prompt": "blurry, low quality, people, characters, hands, multiple objects, cluttered background, modern elements",
+    "width": 1600,
+    "height": 1600,
+    "seed": 81241,
+    "createdAt": "2026-08-07T03:28:08.580Z",
+    "comfyUIPromptId": "c462a8da-8e83-4a15-aba3-f17a00eb4a31",
+    "images": [
+      {
+        "imageId": "img_20260807_032808_x7e7vpy2",
+        "filename": "img_20260807_032808_x7e7vpy2.webp",
+        "url": "/generated-images/img_20260807_032808_x7e7vpy2.webp",
+        "size": 96376
+      }
+    ]
+  },
+  "img_20260807_032808_t61rkhk6": {
+    "id": "img_20260807_032808_t61rkhk6",
+    "prompt": "anime digital painting, soft shading, soft lighting\n\nGame item icon asset, simple grey background.\n\nA simple three-legged wooden stool sits centered against a plain grey background, its rough-hewn seat displaying a natural, uneven surface texture. The wood is a weathered brown with visible grain patterns and minor scuffs indicating heavy daily use. One of the sturdy legs features a distinct, jagged chip where a small piece of timber is missing, revealing the lighter inner wood. Professional lighting highlights the coarse craftsmanship and the worn edges of the seat, emphasizing the object's rustic and utilitarian nature without any distracting elements.",
+    "negative_prompt": "blurry, low quality, people, characters, hands, multiple objects, cluttered background, modern elements",
+    "width": 1600,
+    "height": 1600,
+    "seed": 321949,
+    "createdAt": "2026-08-07T03:28:08.581Z",
+    "comfyUIPromptId": "c462a8da-8e83-4a15-aba3-f17a00eb4a31",
+    "images": [
+      {
+        "imageId": "img_20260807_032808_t61rkhk6",
+        "filename": "img_20260807_032808_t61rkhk6.webp",
+        "url": "/generated-images/img_20260807_032808_t61rkhk6.webp",
+        "size": 51054
+      }
+    ]
+  },
+  "img_20260807_032808_v2gd2r4c": {
+    "id": "img_20260807_032808_v2gd2r4c",
+    "prompt": "Change the image to reflect the following conditions:\nLighting: Cold daylight with clear visibility..\nWeather: Clear - Bright cold skies with crisp air.",
+    "negative_prompt": "new people, new characters, text, logos, signage, changed architecture, changed camera angle, distorted landmarks, low quality, blurry",
+    "width": 1920,
+    "height": 1080,
+    "seed": 98233,
+    "createdAt": "2026-08-07T03:28:19.087Z",
+    "comfyUIPromptId": "7f35609f-00c5-4a32-acc8-f934e5d5c1b3",
+    "images": [
+      {
+        "imageId": "img_20260807_032808_v2gd2r4c",
+        "filename": "img_20260807_032808_v2gd2r4c.png",
+        "url": "/generated-images/img_20260807_032808_v2gd2r4c.png",
+        "size": 2733662
+      }
+    ],
+    "source": "location_weather_variant",
+    "locationId": "loc_30",
+    "sourceImageId": "img_20260807_032658_plsp9v6i",
+    "variantKey": "img-20260807-032658-plsp9v6i__cold-daylight-with-clear-visibility__clear",
+    "conditions": {
+      "sourceImageId": "img_20260807_032658_plsp9v6i",
+      "variantKey": "img-20260807-032658-plsp9v6i__cold-daylight-with-clear-visibility__clear",
+      "lightingKey": "cold-daylight-with-clear-visibility",
+      "lightingLabel": "Cold daylight with clear visibility.",
+      "weatherKey": "clear",
+      "weatherName": "Clear",
+      "weatherDescription": "Bright cold skies with crisp air",
+      "hasLocalWeather": true,
+      "weatherScope": "yes",
+      "hasWeatherSheltered": false,
+      "hasWeatherOutside": false,
+      "segment": "day",
+      "timeLabel": "10:15 AM",
+      "dateLabel": "Sunday, January 1, Common Era 1",
+      "season": "Winter"
+    }
+  },
+  "img_20260807_050221_iylmxbjm": {
+    "id": "img_20260807_050221_iylmxbjm",
+    "prompt": "anime digital painting, soft shading, soft lighting\n\nGame item icon asset, simple grey background.\n\nA close-up view of a flat, rectangular piece of light-colored birch wood with a smooth, sanded surface. One corner features a cleanly punched hole through which a rough, tan leather string is threaded and tied in a simple knot. The center of the wood displays a stamped emblem of a stylized leaf, representing the Herbal Alchemy Shop's seal, with slightly darker wood grain visible within the impression. The item rests on a plain grey background under professional lighting that highlights the natural texture of the wood and the coarse weave of the leather string.",
+    "negative_prompt": "blurry, low quality, people, characters, hands, multiple objects, cluttered background, modern elements",
+    "width": 1600,
+    "height": 1600,
+    "seed": 685006,
+    "createdAt": "2026-08-07T05:02:21.661Z",
+    "comfyUIPromptId": "a01ccb2d-e9f5-4dba-9466-e2f69e874fbf",
+    "images": [
+      {
+        "imageId": "img_20260807_050221_iylmxbjm",
+        "filename": "img_20260807_050221_iylmxbjm.webp",
+        "url": "/generated-images/img_20260807_050221_iylmxbjm.webp",
+        "size": 80966
+      }
+    ]
+  },
+  "img_20260807_050221_4179tnoz": {
+    "id": "img_20260807_050221_4179tnoz",
+    "prompt": "anime digital painting, soft shading, soft lighting\n\nGame item icon asset, simple grey background.\n\nA neatly folded stack of thick, heavy wool blankets resting on a neutral grey surface. The fabric is a deep, muted color, possibly dark grey or navy, featuring faded geometric patterns in contrasting earth tones like beige and rust. The wool fibers are dense and slightly fuzzy, indicating warmth and softness, with visible stitching along the edges securing the folds. Professional lighting casts soft shadows that emphasize the thickness and texture of the woven material without any magical glow or distortion.",
+    "negative_prompt": "blurry, low quality, people, characters, hands, multiple objects, cluttered background, modern elements",
+    "width": 1600,
+    "height": 1600,
+    "seed": 24684,
+    "createdAt": "2026-08-07T05:02:21.732Z",
+    "comfyUIPromptId": "a01ccb2d-e9f5-4dba-9466-e2f69e874fbf",
+    "images": [
+      {
+        "imageId": "img_20260807_050221_4179tnoz",
+        "filename": "img_20260807_050221_4179tnoz.webp",
+        "url": "/generated-images/img_20260807_050221_4179tnoz.webp",
+        "size": 93218
+      }
+    ]
+  },
+  "img_20260807_050221_dvr2an9g": {
+    "id": "img_20260807_050221_dvr2an9g",
+    "prompt": "anime digital painting, soft shading, soft lighting\n\nGame item icon asset, simple grey background.\n\nA bundle of dried chamomile flowers tied together, displaying pale yellow centers and delicate, white, petal-like ray florets that have curled slightly from the drying process. The stems are thin, brittle, and brownish-green, gathered tightly at the base. The flowers appear crisp and well-preserved, retaining their natural structure and color vibrancy. The bundle is positioned centrally on a simple grey background, illuminated by bright, even lighting that highlights the intricate details of the dried petals and the texture of the stems.",
+    "negative_prompt": "blurry, low quality, people, characters, hands, multiple objects, cluttered background, modern elements",
+    "width": 1600,
+    "height": 1600,
+    "seed": 292838,
+    "createdAt": "2026-08-07T05:02:21.733Z",
+    "comfyUIPromptId": "a01ccb2d-e9f5-4dba-9466-e2f69e874fbf",
+    "images": [
+      {
+        "imageId": "img_20260807_050221_dvr2an9g",
+        "filename": "img_20260807_050221_dvr2an9g.webp",
+        "url": "/generated-images/img_20260807_050221_dvr2an9g.webp",
+        "size": 135058
+      }
+    ]
+  },
+  "img_20260807_050221_2g44vxpv": {
+    "id": "img_20260807_050221_2g44vxpv",
+    "prompt": "anime digital painting, soft shading, soft lighting\n\nGame item icon asset, simple grey background.\n\nA tight bundle of dried thyme stems, characterized by small, narrow, grey-green leaves that are densely packed along woody, brownish stems. The leaves appear crisp and slightly shriveled, typical of properly dried herbs, with a matte finish. The bundle is bound at the bottom, likely with twine, though the binding is minimal. The overall shape is cylindrical and rustic. It sits on a plain grey background, lit to show the fine texture of the dried foliage and the roughness of the stems.",
+    "negative_prompt": "blurry, low quality, people, characters, hands, multiple objects, cluttered background, modern elements",
+    "width": 1600,
+    "height": 1600,
+    "seed": 354155,
+    "createdAt": "2026-08-07T05:02:21.734Z",
+    "comfyUIPromptId": "a01ccb2d-e9f5-4dba-9466-e2f69e874fbf",
+    "images": [
+      {
+        "imageId": "img_20260807_050221_2g44vxpv",
+        "filename": "img_20260807_050221_2g44vxpv.webp",
+        "url": "/generated-images/img_20260807_050221_2g44vxpv.webp",
+        "size": 144926
+      }
+    ]
+  },
+  "img_20260807_050221_7emsln2l": {
+    "id": "img_20260807_050221_7emsln2l",
+    "prompt": "anime digital painting, soft shading, soft lighting\n\nGame item icon asset, simple grey background.\n\nA single sprig of dried mint, featuring elongated, pointed leaves with serrated edges that have turned a muted olive-green color. The leaves are attached to a thin, fibrous stem that shows signs of drying, with a slightly rough texture. The sprig is isolated against a clean grey background, allowing for a clear view of the leaf structure and the natural veining on the dried plant matter. Professional lighting accentuates the crispness of the dried leaves and the subtle variations in the green hue.",
+    "negative_prompt": "blurry, low quality, people, characters, hands, multiple objects, cluttered background, modern elements",
+    "width": 1600,
+    "height": 1600,
+    "seed": 497035,
+    "createdAt": "2026-08-07T05:02:21.735Z",
+    "comfyUIPromptId": "a01ccb2d-e9f5-4dba-9466-e2f69e874fbf",
+    "images": [
+      {
+        "imageId": "img_20260807_050221_7emsln2l",
+        "filename": "img_20260807_050221_7emsln2l.webp",
+        "url": "/generated-images/img_20260807_050221_7emsln2l.webp",
+        "size": 49094
+      }
+    ]
+  },
+  "img_20260807_050331_fpwh5aj6": {
+    "id": "img_20260807_050331_fpwh5aj6",
+    "prompt": "anime digital painting, soft shading, soft lighting\n\nGame item icon asset, simple grey background.\n\nA sturdy, tan canvas tote bag sits upright on a neutral grey surface, featuring reinforced stitching along its seams and a wide, soft black velvet lining visible at the open top. The exterior fabric shows slight signs of wear with minor discoloration near the base, indicating frequent use, while the interior velvet remains plush and intact to protect its contents. A small, brass clasp secures the front flap, and subtle magical runes are embossed in silver along the bottom edge, glowing faintly with a soft blue hue. The bag’s proportions are rectangular and spacious, designed for carrying delicate glass vials and loose herbs, with no characters or additional objects present in the frame. Professional lighting highlights the texture of the canvas weave and the sheen of the velvet, emphasizing the item’s practical yet carefully crafted nature.",
+    "negative_prompt": "blurry, low quality, people, characters, hands, multiple objects, cluttered background, modern elements",
+    "width": 1600,
+    "height": 1600,
+    "seed": 729553,
+    "createdAt": "2026-08-07T05:03:31.225Z",
+    "comfyUIPromptId": "1872d898-86e8-4d2d-b045-6f5ed85a4c49",
+    "images": [
+      {
+        "imageId": "img_20260807_050331_fpwh5aj6",
+        "filename": "img_20260807_050331_fpwh5aj6.webp",
+        "url": "/generated-images/img_20260807_050331_fpwh5aj6.webp",
+        "size": 74892
+      }
+    ]
+  },
+  "img_20260807_050331_l8l99wvz": {
+    "id": "img_20260807_050331_l8l99wvz",
+    "prompt": "anime digital painting, soft shading, soft lighting\n\nGame item icon asset, simple grey background.\n\nA heavy canvas satchel rests on a neutral grey background, its durable fabric reinforced with thick, stitched leather straps that run along the edges and sides. The main compartment is wide and deep, revealing a soft, plush velvet lining in a contrasting dark hue designed to cushion glass vials during transport. Two smaller side pockets are visible on the exterior, offering additional storage space while maintaining the bag's structured, utilitarian shape. Professional lighting highlights the texture of the worn canvas and the smooth sheen of the interior velvet, emphasizing the item's practical craftsmanship and common rarity.",
+    "negative_prompt": "blurry, low quality, people, characters, hands, multiple objects, cluttered background, modern elements",
+    "width": 1600,
+    "height": 1600,
+    "seed": 631857,
+    "createdAt": "2026-08-07T05:03:31.226Z",
+    "comfyUIPromptId": "1872d898-86e8-4d2d-b045-6f5ed85a4c49",
+    "images": [
+      {
+        "imageId": "img_20260807_050331_l8l99wvz",
+        "filename": "img_20260807_050331_l8l99wvz.webp",
+        "url": "/generated-images/img_20260807_050331_l8l99wvz.webp",
+        "size": 85940
+      }
+    ]
+  },
+  "img_20260807_054915_ctd7zm8c": {
+    "id": "img_20260807_054915_ctd7zm8c",
+    "prompt": "anime digital painting, soft shading, soft lighting\n\nThe upper floor serves as a chaotic yet functional laboratory, dominated by a massive central table laden with stacks of yellowed papers and surrounded by worn wooden stools. The air is thick with the sharp, earthy scent of dried herbs and volatile chemicals, illuminated by the soft, amber glow of numerous low-burning spirit lamps that cast long, flickering shadows against the walls. Glassware of various shapes and sizes-flasks, beakers, and retorts-clutters every available surface, while heavy stone pestles rest near open jars of powders and roots, suggesting recent or ongoing alchemical work.\n\nTucked into the rear corner of the room, a heavy fabric curtain partitions off Tsubaki’s living quarters, offering a glimpse of domesticity amidst the scientific clutter. The warmth radiating from the lamps creates a cozy, intimate atmosphere despite the surrounding disarray, highlighting the dust motes dancing in the light. To the side, a sturdy stairwell provides the only exit from this elevated workspace, leading down to the levels below while leaving the upper chamber isolated in its fragrant, cluttered solitude.\n\nTime: noon\nWeather: clear",
+    "negative_prompt": "blurry, low quality, modern elements, cars, technology, people, characters, portraits, indoor scenes only",
+    "width": 1920,
+    "height": 1080,
+    "seed": 394479,
+    "createdAt": "2026-08-07T05:49:15.068Z",
+    "comfyUIPromptId": "1934a854-ef36-4d63-88e5-490fded24d2b",
+    "images": [
+      {
+        "imageId": "img_20260807_054915_ctd7zm8c",
+        "filename": "img_20260807_054915_ctd7zm8c.webp",
+        "url": "/generated-images/img_20260807_054915_ctd7zm8c.webp",
+        "size": 184258
+      }
+    ]
+  },
+  "img_20260807_054931_1cwa8jns": {
+    "id": "img_20260807_054931_1cwa8jns",
+    "prompt": "anime digital painting, soft shading, soft lighting\n\nA young female Kappa stands in a cluttered, warm-lit laboratory, her skin a vibrant, textured teal with subtle green gradients along her arms and neck. She wears a revealing, sleeveless white apron tied loosely at the waist, which slips off one shoulder to expose her collarbone and upper breast, while her lower body is clad in tight, high-cut black shorts that accentuate her thighs. A prominent, hand-painted porcelain bowl filled with clear water rests on her head, its rim reinforced with brass. Her long, dark hair cascades down her back in loose, wet-looking waves with silver highlights, partially tucked behind her pointed ears. She holds a long-handled brass measuring spoon in one hand and a sharp volcanic glass cleaning blade in the other, her expression focused and slightly distracted, eyes wide and bright as she gazes toward a stack of shimmering glassware. Her posture is slightly hunched, emphasizing her slender frame and the delicate nature of her work, with water droplets visible on her skin and the bowl.",
+    "negative_prompt": "blurry, low quality, distorted, multiple faces, deformed, ugly, bad anatomy, bad proportions",
+    "width": 1200,
+    "height": 1600,
+    "seed": 334887,
+    "createdAt": "2026-08-07T05:49:31.113Z",
+    "comfyUIPromptId": "e082db13-7e1d-441d-9990-314b19cc7d46",
+    "images": [
+      {
+        "imageId": "img_20260807_054931_1cwa8jns",
+        "filename": "img_20260807_054931_1cwa8jns.webp",
+        "url": "/generated-images/img_20260807_054931_1cwa8jns.webp",
+        "size": 142932
+      }
+    ]
+  },
+  "img_20260807_055001_1yjogdlp": {
+    "id": "img_20260807_055001_1yjogdlp",
+    "prompt": "anime digital painting, soft shading, soft lighting\n\nOn a simple grey background, an Iron-Framed Apothecary Cabinet stands as a sturdy, floor-standing unit designed for the secure storage of delicate glassware and volatile alchemical ingredients. The cabinet features reinforced iron corners that add structural integrity and a rugged aesthetic to its wooden frame. Its front is dominated by glass-fronted doors, framed in dark metal, offering a clear view of the organized interior shelves where various bottles and jars are neatly arranged. The ironwork is detailed with rivets and hinges, suggesting durability and resistance to magical corrosion. The wood appears aged but well-maintained, with a matte finish that contrasts with the sheen of the glass and metal. The overall design blends practical utility with a touch of industrial fantasy style, fitting seamlessly into a modern-alchemical setting.",
+    "negative_prompt": "blurry, low quality, people, characters, modern elements, cars, technology, indoor scenes, portraits",
+    "width": 1600,
+    "height": 1200,
+    "seed": 292769,
+    "createdAt": "2026-08-07T05:50:01.159Z",
+    "comfyUIPromptId": "c52b94fe-67db-4dc6-a4d4-e14bb849682b",
+    "images": [
+      {
+        "imageId": "img_20260807_055001_1yjogdlp",
+        "filename": "img_20260807_055001_1yjogdlp.webp",
+        "url": "/generated-images/img_20260807_055001_1yjogdlp.webp",
+        "size": 105288
+      }
+    ]
+  },
+  "img_20260807_055001_22mnwa4t": {
+    "id": "img_20260807_055001_22mnwa4t",
+    "prompt": "anime digital painting, soft shading, soft lighting\n\nDisplayed against a simple grey background, a Velvet-Cushioned Reading Nook offers a cozy retreat for study and relaxation. This elevated corner nook is upholstered in plush velvet cushions that invite comfort, featuring deep, soft seating areas arranged in a semi-circle. A small, round side table sits adjacent to the cushions, holding a few open books and a pair of reading glasses. The nook is positioned near the warm glow of spirit lamps, suggesting a source of ambient light and heat for late-night reading sessions. The velvet is rich in texture, likely in a deep, calming hue that contrasts with the brighter tones of the surrounding alchemical workspace. The structure is compact yet inviting, providing a dedicated space for rest within the cluttered upper lab environment.",
+    "negative_prompt": "blurry, low quality, people, characters, modern elements, cars, technology, indoor scenes, portraits",
+    "width": 1600,
+    "height": 1200,
+    "seed": 318263,
+    "createdAt": "2026-08-07T05:50:01.161Z",
+    "comfyUIPromptId": "c52b94fe-67db-4dc6-a4d4-e14bb849682b",
+    "images": [
+      {
+        "imageId": "img_20260807_055001_22mnwa4t",
+        "filename": "img_20260807_055001_22mnwa4t.webp",
+        "url": "/generated-images/img_20260807_055001_22mnwa4t.webp",
+        "size": 93106
+      }
+    ]
+  },
+  "img_20260807_055001_p2liagpo": {
+    "id": "img_20260807_055001_p2liagpo",
+    "prompt": "anime digital painting, soft shading, soft lighting\n\nSet against a simple grey background, an Oak Workbench serves as the central surface for alchemical tasks in the upper lab. The table is constructed from solid, heavy oak, its surface showing signs of rigorous use through minor scorch marks and persistent ink stains scattered across the wood grain. The workbench is large and sturdy, providing ample space for grinding herbs and mixing potions. Its edges are thick and reinforced, supporting the weight of various tools and ingredients. The wood has a natural, slightly weathered finish, highlighting the texture and durability of the material. This primary workspace is functional and robust, designed to withstand the daily demands of potion crafting and herbal preparation.",
+    "negative_prompt": "blurry, low quality, people, characters, modern elements, cars, technology, indoor scenes, portraits",
+    "width": 1600,
+    "height": 1200,
+    "seed": 860968,
+    "createdAt": "2026-08-07T05:50:01.162Z",
+    "comfyUIPromptId": "c52b94fe-67db-4dc6-a4d4-e14bb849682b",
+    "images": [
+      {
+        "imageId": "img_20260807_055001_p2liagpo",
+        "filename": "img_20260807_055001_p2liagpo.webp",
+        "url": "/generated-images/img_20260807_055001_p2liagpo.webp",
+        "size": 91534
+      }
+    ]
+  },
+  "img_20260807_055029_sgmu89xi": {
+    "id": "img_20260807_055029_sgmu89xi",
+    "prompt": "anime digital painting, soft shading, soft lighting\n\nGame item icon asset, simple grey background.\n\nA close-up studio shot displays a tarnished copper and glass alembic distillation apparatus resting on a neutral grey surface. The device features a bulbous glass boiler connected to a spiraling copper condenser coil that gleams faintly against the oxidized metal joints. Hardened amber resin seals the connections between the glassware and the copper fittings, showing clear signs of age and use. Professional lighting highlights the texture of the patina on the copper and the transparency of the glass, emphasizing the item's functional craftsmanship without any surrounding context.",
+    "negative_prompt": "blurry, low quality, people, characters, hands, multiple objects, cluttered background, modern elements",
+    "width": 1600,
+    "height": 1600,
+    "seed": 813534,
+    "createdAt": "2026-08-07T05:50:29.203Z",
+    "comfyUIPromptId": "5b612598-55f3-47ac-a18e-633740ab166e",
+    "images": [
+      {
+        "imageId": "img_20260807_055029_sgmu89xi",
+        "filename": "img_20260807_055029_sgmu89xi.webp",
+        "url": "/generated-images/img_20260807_055029_sgmu89xi.webp",
+        "size": 86662
+      }
+    ]
+  },
+  "img_20260807_055029_1o648qdv": {
+    "id": "img_20260807_055029_1o648qdv",
+    "prompt": "anime digital painting, soft shading, soft lighting\n\nGame item icon asset, simple grey background.\n\nA tightly woven rectangular mat constructed from dried, tan-colored bamboo strips lies flat on a neutral grey surface, showcasing a consistent crisscross pattern that emphasizes its durability and texture. The bamboo fibers exhibit a smooth, polished finish with subtle variations in hue ranging from pale gold to light brown, indicating natural material sources. Minor scuff marks and faint discoloration are visible along the edges and weave intersections, suggesting regular use for protecting workbenches from heat and spills. The object is presented in a close-up view with professional lighting that highlights the intricate weaving technique and the slight sheen of the dried plant material. No other objects or characters are present, focusing entirely on the craftsmanship and current condition of the tool.",
+    "negative_prompt": "blurry, low quality, people, characters, hands, multiple objects, cluttered background, modern elements",
+    "width": 1600,
+    "height": 1600,
+    "seed": 625694,
+    "createdAt": "2026-08-07T05:50:29.204Z",
+    "comfyUIPromptId": "5b612598-55f3-47ac-a18e-633740ab166e",
+    "images": [
+      {
+        "imageId": "img_20260807_055029_1o648qdv",
+        "filename": "img_20260807_055029_1o648qdv.webp",
+        "url": "/generated-images/img_20260807_055029_1o648qdv.webp",
+        "size": 170406
+      }
+    ]
+  },
+  "img_20260807_055029_7t9hbmfn": {
+    "id": "img_20260807_055029_7t9hbmfn",
+    "prompt": "Change the image to reflect the following conditions:\nLighting: Cold daylight with clear visibility..\nWeather: Clear - Bright cold skies with crisp air.",
+    "negative_prompt": "new people, new characters, text, logos, signage, changed architecture, changed camera angle, distorted landmarks, low quality, blurry",
+    "width": 1920,
+    "height": 1080,
+    "seed": 659839,
+    "createdAt": "2026-08-07T05:50:39.636Z",
+    "comfyUIPromptId": "96e63664-e9fc-41ee-ba76-ce2d7a7a2579",
+    "images": [
+      {
+        "imageId": "img_20260807_055029_7t9hbmfn",
+        "filename": "img_20260807_055029_7t9hbmfn.png",
+        "url": "/generated-images/img_20260807_055029_7t9hbmfn.png",
+        "size": 3148671
+      }
+    ],
+    "source": "location_weather_variant",
+    "locationId": "loc_31",
+    "sourceImageId": "img_20260807_054915_ctd7zm8c",
+    "variantKey": "img-20260807-054915-ctd7zm8c__cold-daylight-with-clear-visibility__clear",
+    "conditions": {
+      "sourceImageId": "img_20260807_054915_ctd7zm8c",
+      "variantKey": "img-20260807-054915-ctd7zm8c__cold-daylight-with-clear-visibility__clear",
+      "lightingKey": "cold-daylight-with-clear-visibility",
+      "lightingLabel": "Cold daylight with clear visibility.",
+      "weatherKey": "clear",
+      "weatherName": "Clear",
+      "weatherDescription": "Bright cold skies with crisp air",
+      "hasLocalWeather": true,
+      "weatherScope": "yes",
+      "hasWeatherSheltered": false,
+      "hasWeatherOutside": false,
+      "segment": "day",
+      "timeLabel": "10:19 AM",
+      "dateLabel": "Sunday, January 1, Common Era 1",
+      "season": "Winter"
+    }
+  }
+}

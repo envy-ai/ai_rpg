@@ -35,7 +35,7 @@ Update character profile and state fields by id. The route accepts player record
 
 Request:
 - Path: `id`
-- Body supports: `name`, `description`, `shortDescription`, `race`, `class`, `factionId`, `level`, `health`, `healthAttribute`, `attributes`, `skills`, `abilities`, `currency`, `experience`, `isDead`, `hiddenFromPlayer`, `personalityType`, `personalityTraits`, `personalityNotes`, `aiNotes`, `statusEffects`, `aliases`, `resistances`, `vulnerabilities`, `needBarApplicability`, `willingToTrade` (also accepts singular aliases `resistance` and `vulnerability`)
+- Body supports: `name`, `description`, `shortDescription`, `race`, `class`, `factionId`, `relationships`, `level`, `health`, `healthAttribute`, `attributes`, `skills`, `abilities`, `currency`, `experience`, `isDead`, `hiddenFromPlayer`, `personalityType`, `personalityTraits`, `personalityNotes`, `aiNotes`, `statusEffects`, `aliases`, `resistances`, `vulnerabilities`, `needBarApplicability`, `willingToTrade` (also accepts singular aliases `resistance` and `vulnerability`)
 - Rejects `unspentSkillPoints` (400) because pools are formula-derived at read time.
 
 Response:
@@ -46,6 +46,7 @@ Notes:
 - Unknown skills may trigger skill generation; canonical names are normalized before assignment.
 - `factionId` must reference an existing faction id or be `null` to clear membership.
 - If provided, `aliases` must be an array of strings.
+- If provided, `relationships` must be a complete object map of existing target character ids to valid six-word-or-fewer labels. The map replaces the NPC's current directed relationships; missing targets, self-targets, blank labels, and invalid labels return `400` without applying that map.
 - If provided, `needBarApplicability` must be an object and is only accepted for NPCs; unchecked bars are removed from that actor and re-enabled bars come back at `100`.
 - If provided, `willingToTrade` must be a boolean and sets whether the NPC can open barter sessions. Setting it to `false` stamps a temporary refusal expiry using `barter.refusal_duration_minutes`; setting it to `true` clears the refusal expiry.
 - If provided, `hiddenFromPlayer` must be a boolean. Dead NPCs/corpses remain visible because the `Player` model normalizes hidden state to `false` while dead.

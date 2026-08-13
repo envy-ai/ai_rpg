@@ -1,0 +1,35 @@
+{
+  "version": 1,
+  "name": "followup-backend-model-benchmark",
+  "description": "Discovers every declarative behavioral scenario and accounts independently for all 148 logical backend cases.",
+  "scenarioRoots": [
+    "tests/followup_api_playtest/scenarios"
+  ],
+  "scenarioModules": [
+    "tests/followup_api_playtest/model_benchmark_legacy_scenarios.mjs"
+  ],
+  "expectedFamilies": [
+    { "prefix": "VEH", "from": 1, "to": 10 },
+    { "prefix": "REG", "from": 1, "to": 6 },
+    { "prefix": "FAST", "from": 1, "to": 7 },
+    { "prefix": "CONT", "from": 1, "to": 8 },
+    { "prefix": "INV", "from": 1, "to": 7 },
+    { "prefix": "EQUIP", "from": 1, "to": 5 },
+    { "prefix": "TRADE", "from": 1, "to": 9 },
+    { "prefix": "CRAFT", "from": 1, "to": 8 },
+    { "prefix": "COMBAT", "from": 1, "to": 10 },
+    { "prefix": "PARTY", "from": 1, "to": 8 },
+    { "prefix": "QUEST", "from": 1, "to": 9 },
+    { "prefix": "NEED", "from": 1, "to": 8 },
+    { "prefix": "HIDE", "from": 1, "to": 8 },
+    { "prefix": "TIME", "from": 1, "to": 7 },
+    { "prefix": "EVENT", "from": 1, "to": 8 },
+    { "prefix": "REL", "from": 1, "to": 8 },
+    { "prefix": "PROG", "from": 1, "to": 11, "exclude": [10] },
+    { "prefix": "ALT", "from": 1, "to": 12 }
+  ],
+  "knownAuditedModelFailures": {
+    "EVENT-6": "The prior audit retained repeated false scheduled-event resolution rather than adding an alignment-breaking exact-entity rule.",
+    "REL-4": "The prior audit retained missed witnessed faction bookkeeping rather than tuning production prompts to the fixture."
+  }
+}

@@ -1,0 +1,908 @@
+{
+  "version": 1,
+  "metadata": {
+    "version": 1,
+    "updatedAt": "2026-08-08T09:44:19.280Z",
+    "lastSummarizedRange": {
+      "start": 1,
+      "end": 88
+    }
+  },
+  "scenes": [
+    {
+      "startIndex": 1,
+      "endIndex": 33,
+      "startEntryId": "21df9750-3d71-4a6a-bfc1-d433ce4d15da",
+      "endEntryId": "req-msgyvrm6-0b14vunx7ep",
+      "summary": "Baato arrives in Ember Hollow on New Year’s Day and is immediately put to the test by the village elders. Mirei Hoshino demands he chop onions for her broth quota, while Tsubaki Morino quizzes him on herbal knowledge. Baato struggles initially with his knife work and guesses incorrectly on the herbs, but he listens to corrections, improves his chopping, and answers the second round of questions correctly. He also manages a promise to Hana Mizuki, moving her crates after finishing his onions. Through this series of tasks, Baato proves his reliability and earns the respect of Mirei and Tsubaki, establishing his reputation as a hardworking newcomer.\n\n- Mirei needs 50 bowls of broth by noon.\n- Tsubaki tests Baato on Nettle, Mugwort, and Yarrow.\n- Baato failed the first herb guess but passed the second.\n- Hana Mizuki is a slime who freezes in the cold.\n- Baato earned 5 paws from Mirei for the onion work.\n\n\nMirei Hoshino\n\nYou listened. That’s rare here.\n\n\n\nTsubaki Morino\n\nCorrect. All three. Follow me to the shop. We'll do the sorting drill now.",
+      "details": [
+        "Mirei needs 50 bowls of broth by noon.",
+        "Tsubaki tests Baato on Nettle, Mugwort, and Yarrow.",
+        "Baato failed the first herb guess but passed the second.",
+        "Hana Mizuki is a slime who freezes in the cold.",
+        "Baato earned 5 paws from Mirei for the onion work."
+      ],
+      "quotes": [
+        {
+          "character": "Mirei Hoshino",
+          "text": "You listened. That’s rare here."
+        },
+        {
+          "character": "Tsubaki Morino",
+          "text": "Correct. All three. Follow me to the shop. We'll do the sorting drill now."
+        }
+      ]
+    },
+    {
+      "startIndex": 34,
+      "endIndex": 88,
+      "startEntryId": "ef7aa776-654f-4018-b1ab-a667420e21e4",
+      "endEntryId": "368ce028-f106-4b5d-a7c4-e3f7b39c06c2",
+      "summary": "Baato follows Tsubaki to the Herbal Alchemy Shop, where he undergoes a practical sorting drill to confirm his herbal knowledge. He passes, earning the respect of Tsubaki and the attention of Mizuchi, a snake-like alchemist waiting for a moonbloom recipe. Baato is then tasked with sorting stock in the back room, where he is identified as Tsubaki’s new apprentice. He receives the key to the loft above the shop, confirming his accommodation and status. During this time, he also meets Yuzu, who shows him his new living quarters and identifies a harmless moonvine plant growing in the stairwell.\n\n- Baato is officially Tsubaki's apprentice.\n- He received the brass key to the Stock Room and the loft.\n- Mizuchi received her moonbloom recipe packet.\n- Yuzu identified the stairwell plant as harmless moonvine.\n- The loft is small, dry, and has an east-facing window.\n- Baato must sort the next shipment before opening tomorrow.\n\n\nTsubaki Morino\n\nYou passed the tests. You took the key. That’s how apprenticeships start here.\n\n\n\nBaato\n\nWhen did I end up as your apprentice, exactly?",
+      "details": [
+        "Baato is officially Tsubaki's apprentice.",
+        "He received the brass key to the Stock Room and the loft.",
+        "Mizuchi received her moonbloom recipe packet.",
+        "Yuzu identified the stairwell plant as harmless moonvine.",
+        "The loft is small, dry, and has an east-facing window.",
+        "Baato must sort the next shipment before opening tomorrow."
+      ],
+      "quotes": [
+        {
+          "character": "Tsubaki Morino",
+          "text": "You passed the tests. You took the key. That’s how apprenticeships start here."
+        },
+        {
+          "character": "Baato",
+          "text": "When did I end up as your apprentice, exactly?"
+        }
+      ]
+    }
+  ],
+  "entryIndexMap": [
+    {
+      "entryId": "21df9750-3d71-4a6a-bfc1-d433ce4d15da",
+      "index": 1,
+      "npcNames": [
+        "Hana Mizuki",
+        "Lina Ashford",
+        "Mirei Hoshino",
+        "Sora Fujimiya",
+        "Tsubaki Morino"
+      ]
+    },
+    {
+      "entryId": "req-msgafd6n-kqy87k8xjde",
+      "index": 2,
+      "npcNames": [
+        "Hana Mizuki",
+        "Lina Ashford",
+        "Mirei Hoshino",
+        "Sora Fujimiya",
+        "Tsubaki Morino"
+      ]
+    },
+    {
+      "entryId": "f511411a-f850-4774-9d78-39ef530b0755",
+      "index": 3,
+      "npcNames": [
+        "Hana Mizuki",
+        "Lina Ashford",
+        "Mirei Hoshino",
+        "Sora Fujimiya",
+        "Tsubaki Morino"
+      ]
+    },
+    {
+      "entryId": "req-msgal49v-d0jcigwknvp",
+      "index": 4,
+      "npcNames": [
+        "Hana Mizuki",
+        "Lina Ashford",
+        "Mirei Hoshino",
+        "Sora Fujimiya",
+        "Tsubaki Morino"
+      ]
+    },
+    {
+      "entryId": "da5e1bcf-86ba-4be4-8c27-d7e586919302",
+      "index": 5,
+      "npcNames": [
+        "Hana Mizuki",
+        "Lina Ashford",
+        "Mirei Hoshino",
+        "Sora Fujimiya",
+        "Tsubaki Morino"
+      ]
+    },
+    {
+      "entryId": "req-msgarse5-n5qyl78yxqs",
+      "index": 6,
+      "npcNames": [
+        "Hana Mizuki",
+        "Lina Ashford",
+        "Mirei Hoshino",
+        "Sora Fujimiya",
+        "Tsubaki Morino"
+      ]
+    },
+    {
+      "entryId": "0104e99e-b0cd-4c9f-94d7-422b394b943a",
+      "index": 7,
+      "npcNames": [
+        "Hana Mizuki",
+        "Lina Ashford",
+        "Mirei Hoshino",
+        "Sora Fujimiya",
+        "Tsubaki Morino"
+      ]
+    },
+    {
+      "entryId": "req-msgav3ml-hjsor0hz0bt",
+      "index": 8,
+      "npcNames": [
+        "Hana Mizuki",
+        "Lina Ashford",
+        "Mirei Hoshino",
+        "Sora Fujimiya",
+        "Tsubaki Morino"
+      ]
+    },
+    {
+      "entryId": "f1733b1c-43e7-47a4-be1d-d0e22aa6752c",
+      "index": 9,
+      "npcNames": [
+        "Hana Mizuki",
+        "Lina Ashford",
+        "Mirei Hoshino",
+        "Sora Fujimiya",
+        "Tsubaki Morino"
+      ]
+    },
+    {
+      "entryId": "req-msgc6z1r-gy7n069etj4",
+      "index": 10,
+      "npcNames": [
+        "Hana Mizuki",
+        "Lina Ashford",
+        "Mirei Hoshino",
+        "Sora Fujimiya",
+        "Tsubaki Morino"
+      ]
+    },
+    {
+      "entryId": "9c39665f-a60a-442e-b9f3-c8c53c076465",
+      "index": 11,
+      "npcNames": [
+        "Hana Mizuki",
+        "Lina Ashford",
+        "Mirei Hoshino",
+        "Sora Fujimiya",
+        "Tsubaki Morino"
+      ]
+    },
+    {
+      "entryId": "req-msgcaktg-vdk3xj7jr9i",
+      "index": 12,
+      "npcNames": [
+        "Hana Mizuki",
+        "Lina Ashford",
+        "Mirei Hoshino",
+        "Sora Fujimiya",
+        "Tsubaki Morino"
+      ]
+    },
+    {
+      "entryId": "edaad5ad-6b36-4ee1-8758-a201907a5669",
+      "index": 13,
+      "npcNames": [
+        "Hana Mizuki",
+        "Lina Ashford",
+        "Mirei Hoshino",
+        "Sora Fujimiya",
+        "Tsubaki Morino"
+      ]
+    },
+    {
+      "entryId": "dd4d6406-9122-4ce8-8e04-5fc2fc478f13",
+      "index": 14,
+      "npcNames": [
+        "Hana Mizuki",
+        "Lina Ashford",
+        "Mirei Hoshino",
+        "Sora Fujimiya",
+        "Tsubaki Morino"
+      ]
+    },
+    {
+      "entryId": "req-msgcg8eo-ghu74vmx5t4",
+      "index": 15,
+      "npcNames": [
+        "Hana Mizuki",
+        "Lina Ashford",
+        "Mirei Hoshino",
+        "Sora Fujimiya",
+        "Tsubaki Morino"
+      ]
+    },
+    {
+      "entryId": "3a4ed9a9-1f61-415a-8b71-5afd7522d584",
+      "index": 16,
+      "npcNames": [
+        "Hana Mizuki",
+        "Lina Ashford",
+        "Mirei Hoshino",
+        "Sora Fujimiya",
+        "Tsubaki Morino"
+      ]
+    },
+    {
+      "entryId": "req-msgw0uoo-dm2v1dplb34",
+      "index": 17
+    },
+    {
+      "entryId": "af69c191-d179-4475-9581-5b0bcce077e5",
+      "index": 18,
+      "npcNames": [
+        "Hana Mizuki",
+        "Lina Ashford",
+        "Mirei Hoshino",
+        "Sora Fujimiya",
+        "Tsubaki Morino"
+      ]
+    },
+    {
+      "entryId": "req-msgwp8mh-rcghvk3u7vd",
+      "index": 19
+    },
+    {
+      "entryId": "9282192a-6209-4126-93ab-51082e2764b4",
+      "index": 20,
+      "npcNames": [
+        "Aiko",
+        "Kuroha Inugami"
+      ]
+    },
+    {
+      "entryId": "req-msgxst7x-2yngfapkuu3",
+      "index": 21,
+      "npcNames": [
+        "Kuroha Inugami",
+        "Mirei Hoshino",
+        "Nao Shimizu",
+        "Riko Amatsu",
+        "Rumi Kagami",
+        "Yumi Tanaka"
+      ]
+    },
+    {
+      "entryId": "ce42778e-7bb4-415b-88b3-a63dedb35773",
+      "index": 22,
+      "npcNames": [
+        "Kuroha Inugami",
+        "Mirei Hoshino",
+        "Nao Shimizu",
+        "Riko Amatsu",
+        "Rumi Kagami",
+        "Yumi Tanaka"
+      ]
+    },
+    {
+      "entryId": "req-msgxxe59-4f0cs1g02id",
+      "index": 23,
+      "npcNames": [
+        "Kuroha Inugami",
+        "Mirei Hoshino",
+        "Nao Shimizu",
+        "Riko Amatsu",
+        "Rumi Kagami",
+        "Yumi Tanaka"
+      ]
+    },
+    {
+      "entryId": "f9195148-b8a9-4c50-9d99-d95dddd42fcb",
+      "index": 24,
+      "npcNames": [
+        "Kuroha Inugami",
+        "Mirei Hoshino",
+        "Nao Shimizu",
+        "Riko Amatsu",
+        "Rumi Kagami",
+        "Yumi Tanaka"
+      ]
+    },
+    {
+      "entryId": "d77babb3-9a7d-4685-a1a1-e6e4acd37032",
+      "index": 25,
+      "npcNames": [
+        "Mirei Hoshino",
+        "Nao Shimizu",
+        "Riko Amatsu",
+        "Rumi Kagami",
+        "Yumi Tanaka"
+      ]
+    },
+    {
+      "entryId": "req-msgyg7p0-rytc9ak7d8",
+      "index": 26,
+      "npcNames": [
+        "Mirei Hoshino",
+        "Nao Shimizu",
+        "Riko Amatsu",
+        "Rumi Kagami",
+        "Yumi Tanaka"
+      ]
+    },
+    {
+      "entryId": "6955b307-2b18-4561-80c7-3b54e57f381d",
+      "index": 27,
+      "npcNames": [
+        "Mirei Hoshino",
+        "Nao Shimizu",
+        "Riko Amatsu",
+        "Rumi Kagami",
+        "Yumi Tanaka"
+      ]
+    },
+    {
+      "entryId": "req-msgyn2lv-zqygsipc6z",
+      "index": 28
+    },
+    {
+      "entryId": "req-msgynpz5-2i7uhm11vi7",
+      "index": 29,
+      "npcNames": [
+        "Hana Mizuki",
+        "Kuroha Inugami",
+        "Lina Ashford",
+        "Sora Fujimiya",
+        "Tsubaki Morino"
+      ]
+    },
+    {
+      "entryId": "e997b1bc-a709-44f5-b02f-29708d7cc70d",
+      "index": 30,
+      "npcNames": [
+        "Hana Mizuki",
+        "Kuroha Inugami",
+        "Lina Ashford",
+        "Sora Fujimiya",
+        "Tsubaki Morino"
+      ]
+    },
+    {
+      "entryId": "req-msgyrpcq-09idngipgadn",
+      "index": 31,
+      "npcNames": [
+        "Hana Mizuki",
+        "Kuroha Inugami",
+        "Lina Ashford",
+        "Sora Fujimiya",
+        "Tsubaki Morino"
+      ]
+    },
+    {
+      "entryId": "1652b17f-c24b-46d9-8acb-6eb03a6b0abe",
+      "index": 32,
+      "npcNames": [
+        "Hana Mizuki",
+        "Kuroha Inugami",
+        "Lina Ashford",
+        "Sora Fujimiya",
+        "Tsubaki Morino"
+      ]
+    },
+    {
+      "entryId": "req-msgyvrm6-0b14vunx7ep",
+      "index": 33,
+      "npcNames": [
+        "Hana Mizuki",
+        "Kuroha Inugami",
+        "Lina Ashford",
+        "Sora Fujimiya",
+        "Tsubaki Morino"
+      ]
+    },
+    {
+      "entryId": "ef7aa776-654f-4018-b1ab-a667420e21e4",
+      "index": 34,
+      "npcNames": [
+        "Hana Mizuki",
+        "Kuroha Inugami",
+        "Lina Ashford",
+        "Sora Fujimiya",
+        "Tsubaki Morino"
+      ]
+    },
+    {
+      "entryId": "req-msgz2ih2-8m5k4wo3v5v",
+      "index": 35
+    },
+    {
+      "entryId": "efc0917b-9390-4017-aad2-f36fa1877d82",
+      "index": 36,
+      "npcNames": [
+        "Hana Mizuki",
+        "Kuroha Inugami",
+        "Lina Ashford",
+        "Sora Fujimiya",
+        "Tsubaki Morino"
+      ]
+    },
+    {
+      "entryId": "1095eea6-91fc-4779-ad86-3a15fa5bff7b",
+      "index": 37,
+      "npcNames": [
+        "Hana Mizuki",
+        "Kuroha Inugami",
+        "Lina Ashford",
+        "Sora Fujimiya"
+      ]
+    },
+    {
+      "entryId": "req-mshiq4fp-rby6my6wvi8",
+      "index": 38
+    },
+    {
+      "entryId": "cbf76f41-b177-474a-a5ee-21cf0943d268",
+      "index": 39,
+      "npcNames": [
+        "Mizuchi Sato"
+      ]
+    },
+    {
+      "entryId": "req-mshk03ne-jk5fl8pu75",
+      "index": 40,
+      "npcNames": [
+        "Mizuchi Sato",
+        "Nuru",
+        "Tsubaki Morino",
+        "Yuzu Hoshizora"
+      ]
+    },
+    {
+      "entryId": "af5cf5a5-eff3-41ea-abd4-cfe97b6a8a04",
+      "index": 41,
+      "npcNames": [
+        "Mizuchi Sato",
+        "Nuru",
+        "Tsubaki Morino",
+        "Yuzu Hoshizora"
+      ]
+    },
+    {
+      "entryId": "2bd2c01c-9077-4bf7-90e9-05fa2e872ed4",
+      "index": 42,
+      "npcNames": [
+        "Mizuchi Sato",
+        "Nuru",
+        "Tsubaki Morino",
+        "Yuzu Hoshizora"
+      ]
+    },
+    {
+      "entryId": "82a258a7-05df-4d2a-b9d1-e69ce0491501",
+      "index": 43,
+      "npcNames": [
+        "Mizuchi Sato",
+        "Nuru",
+        "Tsubaki Morino",
+        "Yuzu Hoshizora"
+      ]
+    },
+    {
+      "entryId": "req-msi07w1x-3ut7q1kunfq",
+      "index": 44,
+      "npcNames": [
+        "Mizuchi Sato",
+        "Nuru",
+        "Tsubaki Morino",
+        "Yuzu Hoshizora"
+      ]
+    },
+    {
+      "entryId": "82ff303a-72a9-49e2-ab83-c40472c42041",
+      "index": 45,
+      "npcNames": [
+        "Mizuchi Sato",
+        "Nuru",
+        "Tsubaki Morino",
+        "Yuzu Hoshizora"
+      ]
+    },
+    {
+      "entryId": "1dfd280b-05e1-457a-accd-c3124eb3e467",
+      "index": 46,
+      "npcNames": [
+        "Mizuchi Sato",
+        "Nuru",
+        "Tsubaki Morino",
+        "Yuzu Hoshizora"
+      ]
+    },
+    {
+      "entryId": "req-msi0e397-ai10f7q82h9",
+      "index": 47
+    },
+    {
+      "entryId": "350f8295-b43e-4ad9-9ea6-e87b26be4669",
+      "index": 48,
+      "npcNames": [
+        "Mizuchi Sato",
+        "Nuru",
+        "Tsubaki Morino",
+        "Yuzu Hoshizora"
+      ]
+    },
+    {
+      "entryId": "req-msi0zh2e-mdfgzlptsm",
+      "index": 49
+    },
+    {
+      "entryId": "b8af6bfd-427b-4703-b8b7-ed19ab6da04a",
+      "index": 50
+    },
+    {
+      "entryId": "e2913785-9719-4fe3-aa54-9163c3903361",
+      "index": 51
+    },
+    {
+      "entryId": "req-msi17d86-l2zfcgvh6",
+      "index": 52
+    },
+    {
+      "entryId": "req-msi1g7fm-9153mncdc7r",
+      "index": 53,
+      "npcNames": [
+        "Mizuchi Sato",
+        "Nuru",
+        "Tsubaki Morino",
+        "Yuzu Hoshizora"
+      ]
+    },
+    {
+      "entryId": "17e0fded-b7f6-4682-b9d2-ca42385adedf",
+      "index": 54,
+      "npcNames": [
+        "Mizuchi Sato",
+        "Nuru",
+        "Tsubaki Morino",
+        "Yuzu Hoshizora"
+      ]
+    },
+    {
+      "entryId": "req-msi1pzod-31sfssrcz6g",
+      "index": 55,
+      "npcNames": [
+        "Mizuchi Sato",
+        "Nuru",
+        "Tsubaki Morino",
+        "Yuzu Hoshizora"
+      ]
+    },
+    {
+      "entryId": "d60f1545-77ba-468d-a494-e4d3919ff795",
+      "index": 56,
+      "npcNames": [
+        "Mizuchi Sato",
+        "Nuru",
+        "Tsubaki Morino",
+        "Yuzu Hoshizora"
+      ]
+    },
+    {
+      "entryId": "req-msi3xw2i-aul2hw3tuf",
+      "index": 57,
+      "npcNames": [
+        "Mizuchi Sato",
+        "Nuru",
+        "Tsubaki Morino",
+        "Yuzu Hoshizora"
+      ]
+    },
+    {
+      "entryId": "d146c674-178b-4124-aa0e-deb56310d61f",
+      "index": 58,
+      "npcNames": [
+        "Mizuchi Sato",
+        "Nuru",
+        "Tsubaki Morino",
+        "Yuzu Hoshizora"
+      ]
+    },
+    {
+      "entryId": "req-msi85cuk-tkfg575z84f",
+      "index": 59,
+      "npcNames": [
+        "Mizuchi Sato",
+        "Nuru",
+        "Tsubaki Morino",
+        "Yuzu Hoshizora"
+      ]
+    },
+    {
+      "entryId": "e08414f0-8959-461c-bf50-9e4a84a63893",
+      "index": 60,
+      "npcNames": [
+        "Mizuchi Sato",
+        "Nuru",
+        "Tsubaki Morino",
+        "Yuzu Hoshizora"
+      ]
+    },
+    {
+      "entryId": "req-msi8lhdo-oct589g2vg",
+      "index": 61,
+      "npcNames": [
+        "Yuzu Hoshizora"
+      ]
+    },
+    {
+      "entryId": "7c5ea727-3821-4b37-a243-2ed598705beb",
+      "index": 62,
+      "npcNames": [
+        "Yuzu Hoshizora"
+      ]
+    },
+    {
+      "entryId": "req-msi9v13r-35coa2mh3w7",
+      "index": 63,
+      "npcNames": [
+        "Yuzu Hoshizora"
+      ]
+    },
+    {
+      "entryId": "e9944452-8f26-4df2-9e23-46350515b42e",
+      "index": 64,
+      "npcNames": [
+        "Yuzu Hoshizora"
+      ]
+    },
+    {
+      "entryId": "req-msids5as-rajwrxq9fr",
+      "index": 65
+    },
+    {
+      "entryId": "bb02eb4f-cdc7-4d1a-b509-c6a026784927",
+      "index": 66
+    },
+    {
+      "entryId": "req-msig3zd6-qqkc0eby7qi",
+      "index": 67
+    },
+    {
+      "entryId": "fb711173-c622-49ad-8cc8-5bde82bb049a",
+      "index": 68
+    },
+    {
+      "entryId": "2ab3641b-6c9f-4616-a609-e2221203890c",
+      "index": 69
+    },
+    {
+      "entryId": "req-msiitwuw-sbai6fwkyjc",
+      "index": 70
+    },
+    {
+      "entryId": "375979b3-9fc7-41c0-b9c1-ae109408c351",
+      "index": 71
+    },
+    {
+      "entryId": "req-msikz2ed-yacoy97b6mc",
+      "index": 72,
+      "npcNames": [
+        "Mizuho"
+      ]
+    },
+    {
+      "entryId": "d89475b4-0761-43ff-a299-1bba88cffb7c",
+      "index": 73,
+      "npcNames": [
+        "Mizuho"
+      ]
+    },
+    {
+      "entryId": "req-msil1ums-tstk3ri6ark",
+      "index": 74,
+      "npcNames": [
+        "Mizuho"
+      ]
+    },
+    {
+      "entryId": "be882061-6fef-414f-9c19-cc2795e6b0a4",
+      "index": 75,
+      "npcNames": [
+        "Mizuho"
+      ]
+    },
+    {
+      "entryId": "req-msil51zo-ota0wy3ja9c",
+      "index": 76,
+      "npcNames": [
+        "Mizuho"
+      ]
+    },
+    {
+      "entryId": "5f7faea6-ed92-4f0a-8ac3-9b582d253320",
+      "index": 77,
+      "npcNames": [
+        "Mizuho"
+      ]
+    },
+    {
+      "entryId": "req-msil90eq-l6507asstd",
+      "index": 78,
+      "npcNames": [
+        "Mizuho"
+      ]
+    },
+    {
+      "entryId": "4edefb1c-8f91-438a-8a97-99d6fe07c74d",
+      "index": 79,
+      "npcNames": [
+        "Mizuho"
+      ]
+    },
+    {
+      "entryId": "req-msilct7y-tg1nn6i6vz",
+      "index": 80,
+      "npcNames": [
+        "Mizuho"
+      ]
+    },
+    {
+      "entryId": "be797979-5f9b-40aa-a11d-f2881d0c2cdd",
+      "index": 81,
+      "npcNames": [
+        "Mizuho"
+      ]
+    },
+    {
+      "entryId": "codex-live-downstairs-20260807-2",
+      "index": 82,
+      "npcNames": [
+        "Mizuho"
+      ]
+    },
+    {
+      "entryId": "5d4d1e5e-13dc-4d17-8f75-6e6c2b438e21",
+      "index": 83,
+      "npcNames": [
+        "Mizuho"
+      ]
+    },
+    {
+      "entryId": "5877eac2-4030-448b-af79-9d3c680509a9",
+      "index": 84,
+      "npcNames": [
+        "Nuru",
+        "Tsubaki Morino",
+        "Yuzu Hoshizora"
+      ]
+    },
+    {
+      "entryId": "req-msirvxsr-c7iqnrznvym",
+      "index": 85,
+      "npcNames": [
+        "Nuru",
+        "Tsubaki Morino",
+        "Yuzu Hoshizora"
+      ]
+    },
+    {
+      "entryId": "d8cf8b01-5eb7-46d9-854e-54b0478b0898",
+      "index": 86,
+      "npcNames": [
+        "Nuru",
+        "Tsubaki Morino",
+        "Yuzu Hoshizora"
+      ]
+    },
+    {
+      "entryId": "04b5f238-513f-42da-b42b-5873f1a2957f",
+      "index": 87,
+      "npcNames": [
+        "Nuru",
+        "Tsubaki Morino",
+        "Yuzu Hoshizora"
+      ]
+    },
+    {
+      "entryId": "368ce028-f106-4b5d-a7c4-e3f7b39c06c2",
+      "index": 88,
+      "npcNames": [
+        "Nuru",
+        "Tsubaki Morino",
+        "Yuzu Hoshizora"
+      ]
+    },
+    {
+      "entryId": "req-msis8a71-ixdjeadx7xo",
+      "index": 89,
+      "npcNames": [
+        "Nuru",
+        "Tsubaki Morino",
+        "Yuzu Hoshizora"
+      ]
+    },
+    {
+      "entryId": "f4ce821b-d5b1-4b4a-be04-ac93830211f3",
+      "index": 90,
+      "npcNames": [
+        "Nuru",
+        "Tsubaki Morino",
+        "Yuzu Hoshizora"
+      ]
+    },
+    {
+      "entryId": "req-msj57108-ozc20haowt",
+      "index": 91
+    },
+    {
+      "entryId": "2f5494a5-ea3c-4f76-b604-2977d058cd82",
+      "index": 92,
+      "npcNames": [
+        "Mizuchi Sato"
+      ]
+    },
+    {
+      "entryId": "332832ae-b1ff-4cdd-93e0-c48b6f4ce4ca",
+      "index": 93,
+      "npcNames": [
+        "Mizuchi Sato"
+      ]
+    },
+    {
+      "entryId": "req-msj966w6-0a05rosrgwqf",
+      "index": 94,
+      "npcNames": [
+        "Mizuchi Sato"
+      ]
+    },
+    {
+      "entryId": "a12ffd5c-b3d2-408e-9dfd-7713bd0ae41c",
+      "index": 95,
+      "npcNames": [
+        "Mizuchi Sato"
+      ]
+    },
+    {
+      "entryId": "eda171d9-087c-4a25-81aa-10450bc72f91",
+      "index": 96,
+      "npcNames": [
+        "Lina Ashford",
+        "Sora Fujimiya"
+      ]
+    },
+    {
+      "entryId": "49b8c4f1-b73c-42f6-b561-ebca53c63672",
+      "index": 97,
+      "npcNames": [
+        "Lina Ashford",
+        "Sora Fujimiya"
+      ]
+    },
+    {
+      "entryId": "3e97b149-5690-41e5-b52d-51f98c35336a",
+      "index": 98,
+      "npcNames": [
+        "Mizuchi Sato"
+      ]
+    },
+    {
+      "entryId": "req-msk6npek-sxetg0ltmr",
+      "index": 99,
+      "npcNames": [
+        "Lina Ashford",
+        "Sora Fujimiya"
+      ]
+    },
+    {
+      "entryId": "93315240-4d0d-499b-af78-958da362cb31",
+      "index": 100,
+      "npcNames": [
+        "Lina Ashford",
+        "Sora Fujimiya"
+      ]
+    }
+  ]
+}

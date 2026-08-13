@@ -26,6 +26,7 @@ This is the high-level index for the project's HTTP API documentation. Most `/ap
 - `docs/api/quests.md` - quest edits/confirmations
 - `docs/api/regions.md` - region CRUD and generation
 - `docs/api/scene-summaries.md` - Story Tools scene-summary editor routes
+- `docs/api/scheduled-events.md` - read-only Story Tools scheduled-event inspection
 - `docs/api/settings.md` - setting CRUD, AI fill-missing, faction defaults, and world-profile calendar drafts
 - `docs/api/things.md` - items/scenery CRUD and inventory transfers
 - `docs/api/trackers.md` - browser-facing tracker CRUD routes

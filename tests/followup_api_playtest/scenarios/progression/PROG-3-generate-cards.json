@@ -1,0 +1,599 @@
+{
+  "version": 1,
+  "scenario": "progression",
+  "case": "PROG-3-generate-cards",
+  "description": "Generate and cache the configured six level-4 ability cards on a disposable pending fixture, save that reusable derivative, then select/decline the cards and generate level 5 to prove both current and declined names are excluded.",
+  "fixture": "progression-level4-pending",
+  "configProfile": "progression-mechanics",
+  "trackedPaths": [
+    "player.payload.player",
+    "players.payload.players",
+    "locations.payload.locations",
+    "things.payload.things",
+    "factions.payload.factions",
+    "factions.payload.playerStandings",
+    "scheduledEvents.payload.scheduledEvents",
+    "calendar.payload.worldTime",
+    "history.payload.history"
+  ],
+  "steps": [
+    {
+      "type": "loadFixture"
+    },
+    {
+      "type": "snapshot",
+      "name": "before_generation"
+    },
+    {
+      "type": "request",
+      "name": "generate_level4",
+      "method": "GET",
+      "route": "/api/player/ability-selection"
+    },
+    {
+      "type": "assert",
+      "assertions": [
+        {
+          "type": "equals",
+          "source": "responses.generate_level4",
+          "path": "status",
+          "equals": 200
+        },
+        {
+          "type": "equals",
+          "source": "responses.generate_level4",
+          "path": "payload.pending",
+          "equals": true
+        },
+        {
+          "type": "equals",
+          "source": "responses.generate_level4",
+          "path": "payload.abilitySelection.selection.level",
+          "equals": 4
+        },
+        {
+          "type": "equals",
+          "source": "responses.generate_level4",
+          "path": "payload.abilitySelection.selection.requiredSelections",
+          "equals": 3
+        },
+        {
+          "type": "equals",
+          "source": "responses.generate_level4",
+          "path": "payload.abilitySelection.selection.optionsPerLevel",
+          "equals": 6
+        },
+        {
+          "type": "equals",
+          "source": "responses.generate_level4",
+          "path": "payload.abilitySelection.selection.optionsReady",
+          "equals": true
+        },
+        {
+          "type": "equals",
+          "source": "responses.generate_level4",
+          "path": "payload.abilitySelection.selection.optionsToGenerate",
+          "equals": 6
+        },
+        {
+          "type": "count",
+          "source": "responses.generate_level4",
+          "path": "payload.abilitySelection.selection.options",
+          "equals": 6
+        },
+        {
+          "type": "uniqueBy",
+          "source": "responses.generate_level4",
+          "path": "payload.abilitySelection.selection.options",
+          "key": "name"
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "responses.generate_level4",
+          "path": "payload.abilitySelection.selection.options",
+          "where": {
+            "level": 4
+          },
+          "equals": 6
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "responses.generate_level4",
+          "path": "payload.abilitySelection.selection.options",
+          "where": {
+            "name": "Herb Sense"
+          },
+          "equals": 0
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "responses.generate_level4",
+          "path": "payload.abilitySelection.selection.options",
+          "where": {
+            "name": "Smoke Signal"
+          },
+          "equals": 0
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "responses.generate_level4",
+          "path": "payload.abilitySelection.selection.options",
+          "where": {
+            "name": "Steady Mix"
+          },
+          "equals": 0
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "responses.generate_level4",
+          "path": "payload.abilitySelection.selection.options",
+          "where": {
+            "name": "Cold Brew"
+          },
+          "equals": 0
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "responses.generate_level4",
+          "path": "payload.abilitySelection.selection.options",
+          "where": {
+            "name": "Glass Lens"
+          },
+          "equals": 0
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "responses.generate_level4",
+          "path": "payload.abilitySelection.selection.options",
+          "where": {
+            "name": "Sticky Resin"
+          },
+          "equals": 0
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "responses.generate_level4",
+          "path": "payload.abilitySelection.selection.options",
+          "where": {
+            "name": "Acid Etch"
+          },
+          "equals": 0
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "responses.generate_level4",
+          "path": "payload.abilitySelection.selection.options",
+          "where": {
+            "name": "Flash Distill"
+          },
+          "equals": 0
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "responses.generate_level4",
+          "path": "payload.abilitySelection.selection.options",
+          "where": {
+            "name": "Resin Bond"
+          },
+          "equals": 0
+        },
+        {
+          "type": "equals",
+          "source": "responses.generate_level4",
+          "path": "payload.player.abilities",
+          "equalsFrom": {
+            "source": "snapshots.before_generation",
+            "path": "player.payload.player.abilities"
+          }
+        },
+        {
+          "type": "historyAddedTypeCount",
+          "entryType": "player-action",
+          "equals": 0,
+          "beforeSource": "snapshots.before_generation",
+          "afterSource": "after"
+        }
+      ]
+    },
+    {
+      "type": "request",
+      "name": "read_cached_level4",
+      "method": "GET",
+      "route": "/api/player/ability-selection"
+    },
+    {
+      "type": "assert",
+      "assertions": [
+        {
+          "type": "equals",
+          "source": "responses.read_cached_level4",
+          "path": "status",
+          "equals": 200
+        },
+        {
+          "type": "equals",
+          "source": "responses.read_cached_level4",
+          "path": "payload.abilitySelection",
+          "equalsFrom": {
+            "source": "responses.generate_level4",
+            "path": "payload.abilitySelection"
+          }
+        },
+        {
+          "type": "equals",
+          "source": "responses.read_cached_level4",
+          "path": "payload.player.abilities",
+          "equalsFrom": {
+            "source": "snapshots.before_generation",
+            "path": "player.payload.player.abilities"
+          }
+        }
+      ]
+    },
+    {
+      "type": "save",
+      "name": "generated_options_fixture_save"
+    },
+    {
+      "type": "request",
+      "name": "submit_level4",
+      "method": "POST",
+      "route": "/api/player/ability-selection/submit",
+      "body": {
+        "level": 4,
+        "selectedAbilityNames": [
+          "$response.generate_level4.payload.abilitySelection.selection.options.0.name",
+          "$response.generate_level4.payload.abilitySelection.selection.options.1.name",
+          "$response.generate_level4.payload.abilitySelection.selection.options.2.name"
+        ],
+        "declinedAbilityNames": [
+          "$response.generate_level4.payload.abilitySelection.selection.options.3.name",
+          "$response.generate_level4.payload.abilitySelection.selection.options.4.name",
+          "$response.generate_level4.payload.abilitySelection.selection.options.5.name"
+        ]
+      }
+    },
+    {
+      "type": "assert",
+      "assertions": [
+        {
+          "type": "equals",
+          "source": "responses.submit_level4",
+          "path": "status",
+          "equals": 200
+        },
+        {
+          "type": "equals",
+          "source": "responses.submit_level4",
+          "path": "payload.pending",
+          "equals": false
+        },
+        {
+          "type": "count",
+          "source": "responses.submit_level4",
+          "path": "payload.player.abilities",
+          "equals": 12
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "responses.submit_level4",
+          "path": "payload.player.abilities",
+          "where": {
+            "level": 4
+          },
+          "equals": 3
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "responses.submit_level4",
+          "path": "payload.player.abilities",
+          "where": {
+            "name": "$response.generate_level4.payload.abilitySelection.selection.options.0.name",
+            "level": 4
+          },
+          "equals": 1
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "responses.submit_level4",
+          "path": "payload.player.abilities",
+          "where": {
+            "name": "$response.generate_level4.payload.abilitySelection.selection.options.1.name",
+            "level": 4
+          },
+          "equals": 1
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "responses.submit_level4",
+          "path": "payload.player.abilities",
+          "where": {
+            "name": "$response.generate_level4.payload.abilitySelection.selection.options.2.name",
+            "level": 4
+          },
+          "equals": 1
+        }
+      ]
+    },
+    {
+      "type": "request",
+      "name": "level_to_five",
+      "method": "POST",
+      "route": "/api/player/levelup",
+      "body": {}
+    },
+    {
+      "type": "assert",
+      "assertions": [
+        {
+          "type": "equals",
+          "source": "responses.level_to_five",
+          "path": "status",
+          "equals": 200
+        },
+        {
+          "type": "equals",
+          "source": "responses.level_to_five",
+          "path": "payload.player.level",
+          "equals": 5
+        },
+        {
+          "type": "equals",
+          "source": "responses.level_to_five",
+          "path": "payload.pendingAbilitySelection.selection.level",
+          "equals": 5
+        },
+        {
+          "type": "equals",
+          "source": "responses.level_to_five",
+          "path": "payload.pendingAbilitySelection.selection.optionsReady",
+          "equals": false
+        }
+      ]
+    },
+    {
+      "type": "request",
+      "name": "generate_level5",
+      "method": "GET",
+      "route": "/api/player/ability-selection"
+    },
+    {
+      "type": "assert",
+      "assertions": [
+        {
+          "type": "equals",
+          "source": "responses.generate_level5",
+          "path": "status",
+          "equals": 200
+        },
+        {
+          "type": "equals",
+          "source": "responses.generate_level5",
+          "path": "payload.pending",
+          "equals": true
+        },
+        {
+          "type": "equals",
+          "source": "responses.generate_level5",
+          "path": "payload.abilitySelection.selection.level",
+          "equals": 5
+        },
+        {
+          "type": "equals",
+          "source": "responses.generate_level5",
+          "path": "payload.abilitySelection.selection.optionsReady",
+          "equals": true
+        },
+        {
+          "type": "count",
+          "source": "responses.generate_level5",
+          "path": "payload.abilitySelection.selection.options",
+          "equals": 6
+        },
+        {
+          "type": "uniqueBy",
+          "source": "responses.generate_level5",
+          "path": "payload.abilitySelection.selection.options",
+          "key": "name"
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "responses.generate_level5",
+          "path": "payload.abilitySelection.selection.options",
+          "where": {
+            "level": 5
+          },
+          "equals": 6
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "responses.generate_level5",
+          "path": "payload.abilitySelection.selection.options",
+          "where": {
+            "name": "Herb Sense"
+          },
+          "equals": 0
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "responses.generate_level5",
+          "path": "payload.abilitySelection.selection.options",
+          "where": {
+            "name": "Smoke Signal"
+          },
+          "equals": 0
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "responses.generate_level5",
+          "path": "payload.abilitySelection.selection.options",
+          "where": {
+            "name": "Steady Mix"
+          },
+          "equals": 0
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "responses.generate_level5",
+          "path": "payload.abilitySelection.selection.options",
+          "where": {
+            "name": "Cold Brew"
+          },
+          "equals": 0
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "responses.generate_level5",
+          "path": "payload.abilitySelection.selection.options",
+          "where": {
+            "name": "Glass Lens"
+          },
+          "equals": 0
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "responses.generate_level5",
+          "path": "payload.abilitySelection.selection.options",
+          "where": {
+            "name": "Sticky Resin"
+          },
+          "equals": 0
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "responses.generate_level5",
+          "path": "payload.abilitySelection.selection.options",
+          "where": {
+            "name": "Acid Etch"
+          },
+          "equals": 0
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "responses.generate_level5",
+          "path": "payload.abilitySelection.selection.options",
+          "where": {
+            "name": "Flash Distill"
+          },
+          "equals": 0
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "responses.generate_level5",
+          "path": "payload.abilitySelection.selection.options",
+          "where": {
+            "name": "Resin Bond"
+          },
+          "equals": 0
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "responses.generate_level5",
+          "path": "payload.abilitySelection.selection.options",
+          "where": {
+            "name": "$response.generate_level4.payload.abilitySelection.selection.options.0.name"
+          },
+          "equals": 0
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "responses.generate_level5",
+          "path": "payload.abilitySelection.selection.options",
+          "where": {
+            "name": "$response.generate_level4.payload.abilitySelection.selection.options.1.name"
+          },
+          "equals": 0
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "responses.generate_level5",
+          "path": "payload.abilitySelection.selection.options",
+          "where": {
+            "name": "$response.generate_level4.payload.abilitySelection.selection.options.2.name"
+          },
+          "equals": 0
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "responses.generate_level5",
+          "path": "payload.abilitySelection.selection.options",
+          "where": {
+            "name": "$response.generate_level4.payload.abilitySelection.selection.options.3.name"
+          },
+          "equals": 0
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "responses.generate_level5",
+          "path": "payload.abilitySelection.selection.options",
+          "where": {
+            "name": "$response.generate_level4.payload.abilitySelection.selection.options.4.name"
+          },
+          "equals": 0
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "responses.generate_level5",
+          "path": "payload.abilitySelection.selection.options",
+          "where": {
+            "name": "$response.generate_level4.payload.abilitySelection.selection.options.5.name"
+          },
+          "equals": 0
+        },
+        {
+          "type": "count",
+          "source": "responses.generate_level5",
+          "path": "payload.player.abilities",
+          "equals": 12
+        },
+        {
+          "type": "historyAddedTypeCount",
+          "entryType": "level-up",
+          "equals": 1,
+          "beforeSource": "snapshots.before_generation",
+          "afterSource": "after"
+        },
+        {
+          "type": "historyAddedTypeCount",
+          "entryType": "player-action",
+          "equals": 0,
+          "beforeSource": "snapshots.before_generation",
+          "afterSource": "after"
+        },
+        {
+          "type": "stateUnchanged",
+          "beforeSource": "snapshots.before_generation",
+          "afterSource": "after",
+          "paths": [
+            "player.payload.player.locationId",
+            "player.payload.player.experience",
+            "player.payload.player.inventory",
+            "player.payload.player.currency",
+            "player.payload.player.attributes",
+            "player.payload.player.skills",
+            "player.payload.player.statusEffects",
+            "locations.payload.locations",
+            "things.payload.things",
+            "factions.payload.factions",
+            "factions.payload.playerStandings",
+            "scheduledEvents.payload.scheduledEvents",
+            "calendar.payload.worldTime"
+          ]
+        },
+        {
+          "type": "noRealtimeErrors"
+        },
+        {
+          "type": "noUnexpectedErrorLogs",
+          "allowedPrefixes": [
+            "ERROR_chatCompletionError_player_ability_options_"
+          ]
+        }
+      ]
+    }
+  ],
+  "humanReview": [
+    "Review all twelve generated ability cards for coherent, setting-compatible Alchemist abilities with meaningful descriptions; stylistic preferences are prose issues, while duplicates, malformed cards, wrong levels, or current/declined-name reuse are structured failures.",
+    "Confirm the second GET returned cached level-4 cards without another prompt and that the saved derivative occurs before any level-4 submission."
+  ]
+}

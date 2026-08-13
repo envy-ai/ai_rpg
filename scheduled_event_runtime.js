@@ -362,7 +362,116 @@ function parseScheduledEventResultXml(input) {
   };
 }
 
+function cloneJsonValue(value) {
+  return JSON.parse(JSON.stringify(value));
+}
+
+function requireDeterministicScheduledEventToolPlan(toolPlan) {
+  if (!toolPlan || typeof toolPlan !== 'object' || Array.isArray(toolPlan)) {
+    throw new Error('Deterministic scheduled event execution requires a parsed tool plan.');
+  }
+  if (typeof toolPlan.stateChangeRequired !== 'boolean') {
+    throw new Error('Deterministic scheduled event tool plan is missing stateChangeRequired.');
+  }
+  if (!Array.isArray(toolPlan.directUpdates) || !Array.isArray(toolPlan.otherTools)) {
+    throw new Error('Deterministic scheduled event tool plan has malformed planned calls.');
+  }
+  if (toolPlan.otherTools.length) {
+    throw new Error(
+      'Deterministic scheduled event execution only supports direct updateObjectFields plans.'
+    );
+  }
+  if (!toolPlan.stateChangeRequired && toolPlan.directUpdates.length) {
+    throw new Error('A no-change scheduled event tool plan cannot contain direct updates.');
+  }
+  if (toolPlan.stateChangeRequired && !toolPlan.directUpdates.length) {
+    throw new Error('A state-changing scheduled event tool plan requires direct updates.');
+  }
+  return toolPlan;
+}
+
+function buildDeterministicScheduledEventToolCalls(toolPlan) {
+  const plan = requireDeterministicScheduledEventToolPlan(toolPlan);
+  return plan.directUpdates.map((update, index) => {
+    if (!update || typeof update !== 'object' || Array.isArray(update)) {
+      throw new Error(`Scheduled event direct update ${index + 1} is malformed.`);
+    }
+    const objectType = normalizeText(update.objectType);
+    const object = normalizeText(update.objectId) || normalizeText(update.objectName);
+    const field = normalizeText(update.field);
+    if (!objectType || !object || !field || !Object.hasOwn(update, 'value')) {
+      throw new Error(
+        `Scheduled event direct update ${index + 1} requires objectType, object reference, field, and value.`
+      );
+    }
+    const argumentsObject = {
+      objectType,
+      object,
+      fields: {
+        [field]: cloneJsonValue(update.value)
+      }
+    };
+    return {
+      id: `scheduled_event_plan_${index + 1}`,
+      functionName: 'updateObjectFields',
+      argumentsObject,
+      argumentsText: JSON.stringify(argumentsObject)
+    };
+  });
+}
+
+async function executeDeterministicScheduledEventToolPlan(toolPlan, {
+  executeChatToolCall,
+  validateToolCall,
+  resultCache = new Map(),
+  executionOptions = {}
+} = {}) {
+  ensureFunction(executeChatToolCall, 'executeChatToolCall');
+  ensureFunction(validateToolCall, 'validateToolCall');
+  if (!(resultCache instanceof Map)) {
+    throw new Error('Deterministic scheduled event execution resultCache must be a Map.');
+  }
+  if (!executionOptions || typeof executionOptions !== 'object' || Array.isArray(executionOptions)) {
+    throw new Error('Deterministic scheduled event executionOptions must be an object.');
+  }
+
+  const toolCalls = buildDeterministicScheduledEventToolCalls(toolPlan);
+  const invocations = [];
+  for (const toolCall of toolCalls) {
+    await validateToolCall({
+      name: toolCall.functionName,
+      functionName: toolCall.functionName,
+      argumentsObject: cloneJsonValue(toolCall.argumentsObject)
+    });
+    const cacheKey = JSON.stringify([toolCall.functionName, toolCall.argumentsObject]);
+    let toolResult = resultCache.has(cacheKey)
+      ? cloneJsonValue(resultCache.get(cacheKey))
+      : await executeChatToolCall(toolCall, executionOptions);
+    if (!toolResult || typeof toolResult.content !== 'string' || !toolResult.content.trim()) {
+      throw new Error(`Scheduled event tool "${toolCall.functionName}" returned empty content.`);
+    }
+    if (resultCache.has(cacheKey)) {
+      toolResult.metadata = {
+        ...(toolResult.metadata || {}),
+        cached: true
+      };
+    } else if (toolResult.metadata?.error !== true) {
+      resultCache.set(cacheKey, cloneJsonValue(toolResult));
+    }
+    invocations.push({
+      id: toolCall.id,
+      name: toolCall.functionName,
+      argumentsObject: cloneJsonValue(toolCall.argumentsObject),
+      metadata: toolResult.metadata ? cloneJsonValue(toolResult.metadata) : null,
+      content: toolResult.content
+    });
+  }
+  return { toolCalls, invocations };
+}
+
 module.exports = {
+  buildDeterministicScheduledEventToolCalls,
   createScheduledEventScheduler,
+  executeDeterministicScheduledEventToolPlan,
   parseScheduledEventResultXml
 };

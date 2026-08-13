@@ -1,0 +1,9 @@
+{
+  "version": 1,
+  "name": "alternative-prompts-impossible-check",
+  "description": "ALT-9-owned profile for an impossible player-action attempt with a WebSocket-supplied roll while unrelated event, NPC, and image work remains isolated.",
+  "extends": "alternative-prompts-mechanics",
+  "values": {
+    "plausibility_checks.enabled": true
+  }
+}

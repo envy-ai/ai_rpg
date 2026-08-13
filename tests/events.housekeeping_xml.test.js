@@ -95,6 +95,53 @@ Analysis text should be ignored.
     ]);
 });
 
+test('housekeeping XML parser rejects malformed and semantically invalid relationship entries before mutation', () => {
+    assert.throws(
+        () => Events._parseHousekeepingXmlResponse(`
+<housekeeping>
+  <relationships>
+    <relationship>
+      <action>add</action>
+      <characterA>Lantern</characterA>
+      <characterB>Cinder</characterA>
+      <relationshipLabel>trusted partner</relationshipLabel>
+    </relationship>
+  </relationships>
+</housekeeping>`),
+        /opening and ending tag mismatch/i
+    );
+
+    assert.throws(
+        () => Events._parseHousekeepingXmlResponse(`
+<housekeeping>
+  <relationships>
+    <relationship>
+      <action>add</action>
+      <characterA>Lantern</characterA>
+      <characterB>Cinder</characterB>
+      <relationshipLabel>sharp contact I respect at a distance</relationshipLabel>
+    </relationship>
+  </relationships>
+</housekeeping>`),
+        /relationshipLabel.*six words or fewer/i
+    );
+
+    assert.throws(
+        () => Events._parseHousekeepingXmlResponse(`
+<housekeeping>
+  <relationships>
+    <relationship>
+      <action>remove</action>
+      <characterA>Lantern</characterA>
+      <characterB>Cinder</characterB>
+      <relationshipLabel>former ally</relationshipLabel>
+    </relationship>
+  </relationships>
+</housekeeping>`),
+        /removal must not include relationship labels/i
+    );
+});
+
 test('housekeeping XML executor records debug lifecycle and continues after tool errors', async () => {
     assert.equal(typeof Events._applyHousekeepingXmlResponse, 'function');
 

@@ -1,0 +1,598 @@
+{
+  "version": 1,
+  "scenario": "long-time",
+  "case": "TIME-2-midnight",
+  "description": "Advance a normalized player from 11:03 AM to 11:58 PM, cross midnight by five minutes, and prove canonical day/date, holiday, lighting, weather, player elapsed time, need ticks, and history coherence.",
+  "fixture": "long-time-rest-lodge",
+  "configProfile": "long-time-mechanics",
+  "trackedPaths": [
+    "player.payload.player.locationId",
+    "player.payload.player.needBars",
+    "player.payload.player.statusEffects",
+    "regions.payload.regions",
+    "scheduledEvents.payload.scheduledEvents",
+    "calendar.payload.calendarDefinition",
+    "calendar.payload.worldTime",
+    "history.payload.history"
+  ],
+  "steps": [
+    {
+      "type": "loadFixture"
+    },
+    {
+      "type": "request",
+      "name": "normalize_player_needs",
+      "method": "PUT",
+      "route": "/api/player/needs",
+      "body": {
+        "needs": [
+          {
+            "id": "food",
+            "value": 1000
+          },
+          {
+            "id": "rest",
+            "value": 1000
+          },
+          {
+            "id": "stamina",
+            "value": 1000
+          },
+          {
+            "id": "mana",
+            "value": 1000
+          }
+        ]
+      }
+    },
+    {
+      "type": "assert",
+      "assertions": [
+        {
+          "type": "httpStatus",
+          "equals": 200
+        },
+        {
+          "type": "responseOk",
+          "equals": true
+        },
+        {
+          "type": "count",
+          "source": "responses.normalize_player_needs",
+          "path": "payload.applied",
+          "equals": 4
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "after",
+          "path": "player.payload.player.needBars",
+          "where": {
+            "id": "food",
+            "value": 1000
+          },
+          "equals": 1
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "after",
+          "path": "player.payload.player.needBars",
+          "where": {
+            "id": "rest",
+            "value": 1000
+          },
+          "equals": 1
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "after",
+          "path": "player.payload.player.needBars",
+          "where": {
+            "id": "stamina",
+            "value": 1000
+          },
+          "equals": 1
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "after",
+          "path": "player.payload.player.needBars",
+          "where": {
+            "id": "mana",
+            "value": 1000
+          },
+          "equals": 1
+        }
+      ]
+    },
+    {
+      "type": "request",
+      "name": "player_status_at_start",
+      "method": "GET",
+      "route": "/api/npcs/$fixture.playerId"
+    },
+    {
+      "type": "assert",
+      "assertions": [
+        {
+          "type": "httpStatus",
+          "equals": 200
+        },
+        {
+          "type": "responseOk",
+          "equals": true
+        },
+        {
+          "type": "equals",
+          "source": "responses.player_status_at_start",
+          "path": "payload.npc.elapsedTime",
+          "equals": 663
+        }
+      ]
+    },
+    {
+      "type": "snapshot",
+      "name": "normalized_start"
+    },
+    {
+      "type": "request",
+      "name": "advance_to_2358",
+      "method": "POST",
+      "route": "/api/slash-command",
+      "body": {
+        "command": "time",
+        "argsText": "+775 minutes"
+      }
+    },
+    {
+      "type": "assert",
+      "assertions": [
+        {
+          "type": "httpStatus",
+          "equals": 200
+        },
+        {
+          "type": "responseOk",
+          "equals": true
+        },
+        {
+          "type": "equals",
+          "source": "after",
+          "path": "calendar.payload.worldTime.dayIndex",
+          "equals": 0
+        },
+        {
+          "type": "equals",
+          "source": "after",
+          "path": "calendar.payload.worldTime.timeMinutes",
+          "equals": 1438
+        },
+        {
+          "type": "equals",
+          "source": "after",
+          "path": "calendar.payload.worldTime.segment",
+          "equals": "night"
+        },
+        {
+          "type": "equals",
+          "source": "after",
+          "path": "calendar.payload.worldTime.timeLabel",
+          "equals": "11:58 PM"
+        },
+        {
+          "type": "equals",
+          "source": "after",
+          "path": "calendar.payload.worldTime.dateLabel",
+          "equals": "Sunday, January 1, Common Era 1"
+        },
+        {
+          "type": "equals",
+          "source": "after",
+          "path": "calendar.payload.worldTime.lighting",
+          "equals": "Night returns with poor visibility."
+        },
+        {
+          "type": "equals",
+          "source": "after",
+          "path": "calendar.payload.worldTime.holidayName",
+          "equals": "New Year's Day"
+        },
+        {
+          "type": "equals",
+          "source": "after",
+          "path": "calendar.payload.worldTime.date.weekday",
+          "equals": "Sunday"
+        },
+        {
+          "type": "equals",
+          "source": "after",
+          "path": "calendar.payload.worldTime.date.monthName",
+          "equals": "January"
+        },
+        {
+          "type": "equals",
+          "source": "after",
+          "path": "calendar.payload.worldTime.date.dayOfMonth",
+          "equals": 1
+        },
+        {
+          "type": "equals",
+          "source": "after",
+          "path": "calendar.payload.worldTime.season",
+          "equals": "Winter"
+        },
+        {
+          "type": "equals",
+          "source": "after",
+          "path": "calendar.payload.worldTime.weatherName",
+          "equals": "Clear"
+        },
+        {
+          "type": "equals",
+          "source": "after",
+          "path": "calendar.payload.worldTime.weatherDescription",
+          "equals": "Bright cold skies with crisp air"
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "after",
+          "path": "player.payload.player.needBars",
+          "where": {
+            "id": "food",
+            "value": 457.5
+          },
+          "equals": 1
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "after",
+          "path": "player.payload.player.needBars",
+          "where": {
+            "id": "rest",
+            "value": 535
+          },
+          "equals": 1
+        },
+        {
+          "type": "stateUnchanged",
+          "beforeSource": "snapshots.normalized_start",
+          "afterSource": "after",
+          "paths": [
+            "player.payload.player.locationId",
+            "player.payload.player.statusEffects",
+            "scheduledEvents.payload.scheduledEvents",
+            "calendar.payload.calendarDefinition",
+            "history.payload.history"
+          ]
+        }
+      ]
+    },
+    {
+      "type": "request",
+      "name": "player_status_before_midnight",
+      "method": "GET",
+      "route": "/api/npcs/$fixture.playerId"
+    },
+    {
+      "type": "assert",
+      "assertions": [
+        {
+          "type": "httpStatus",
+          "equals": 200
+        },
+        {
+          "type": "responseOk",
+          "equals": true
+        },
+        {
+          "type": "exactDelta",
+          "beforeSource": "responses.player_status_at_start",
+          "afterSource": "responses.player_status_before_midnight",
+          "path": "payload.npc.elapsedTime",
+          "delta": 775
+        },
+        {
+          "type": "equals",
+          "source": "responses.player_status_before_midnight",
+          "path": "payload.npc.elapsedTime",
+          "equals": 1438
+        }
+      ]
+    },
+    {
+      "type": "request",
+      "name": "region_before_midnight",
+      "method": "GET",
+      "route": "/api/regions/$fixture.regionId"
+    },
+    {
+      "type": "assert",
+      "assertions": [
+        {
+          "type": "httpStatus",
+          "equals": 200
+        },
+        {
+          "type": "responseOk",
+          "equals": true
+        },
+        {
+          "type": "equals",
+          "source": "responses.region_before_midnight",
+          "path": "payload.region.weatherState.seasonName",
+          "equals": "Winter"
+        },
+        {
+          "type": "equals",
+          "source": "responses.region_before_midnight",
+          "path": "payload.region.weatherState.name",
+          "equals": "Clear"
+        },
+        {
+          "type": "equals",
+          "source": "responses.region_before_midnight",
+          "path": "payload.region.weatherState.nextChangeMinutes",
+          "equals": 2081
+        },
+        {
+          "type": "equals",
+          "source": "responses.region_before_midnight",
+          "path": "payload.region.weatherState.durationMinutes",
+          "equals": 1423
+        }
+      ]
+    },
+    {
+      "type": "snapshot",
+      "name": "before_midnight"
+    },
+    {
+      "type": "request",
+      "name": "cross_midnight",
+      "method": "POST",
+      "route": "/api/slash-command",
+      "body": {
+        "command": "time",
+        "argsText": "+5 minutes"
+      }
+    },
+    {
+      "type": "assert",
+      "assertions": [
+        {
+          "type": "httpStatus",
+          "equals": 200
+        },
+        {
+          "type": "responseOk",
+          "equals": true
+        },
+        {
+          "type": "equals",
+          "source": "after",
+          "path": "calendar.payload.worldTime.dayIndex",
+          "equals": 1
+        },
+        {
+          "type": "equals",
+          "source": "after",
+          "path": "calendar.payload.worldTime.timeMinutes",
+          "equals": 3
+        },
+        {
+          "type": "equals",
+          "source": "after",
+          "path": "calendar.payload.worldTime.segment",
+          "equals": "night"
+        },
+        {
+          "type": "equals",
+          "source": "after",
+          "path": "calendar.payload.worldTime.timeLabel",
+          "equals": "12:03 AM"
+        },
+        {
+          "type": "equals",
+          "source": "after",
+          "path": "calendar.payload.worldTime.dateLabel",
+          "equals": "Monday, January 2, Common Era 1"
+        },
+        {
+          "type": "equals",
+          "source": "after",
+          "path": "calendar.payload.worldTime.lighting",
+          "equals": "Deep night with minimal natural light."
+        },
+        {
+          "type": "equals",
+          "source": "after",
+          "path": "calendar.payload.worldTime.holiday",
+          "equals": null
+        },
+        {
+          "type": "equals",
+          "source": "after",
+          "path": "calendar.payload.worldTime.holidayName",
+          "equals": null
+        },
+        {
+          "type": "equals",
+          "source": "after",
+          "path": "calendar.payload.worldTime.date.weekday",
+          "equals": "Monday"
+        },
+        {
+          "type": "equals",
+          "source": "after",
+          "path": "calendar.payload.worldTime.date.monthName",
+          "equals": "January"
+        },
+        {
+          "type": "equals",
+          "source": "after",
+          "path": "calendar.payload.worldTime.date.dayOfMonth",
+          "equals": 2
+        },
+        {
+          "type": "equals",
+          "source": "after",
+          "path": "calendar.payload.worldTime.date.year",
+          "equals": 1
+        },
+        {
+          "type": "equals",
+          "source": "after",
+          "path": "calendar.payload.worldTime.season",
+          "equals": "Winter"
+        },
+        {
+          "type": "equals",
+          "source": "after",
+          "path": "calendar.payload.worldTime.weatherName",
+          "equals": "Clear"
+        },
+        {
+          "type": "equals",
+          "source": "after",
+          "path": "calendar.payload.worldTime.weatherDescription",
+          "equals": "Bright cold skies with crisp air"
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "after",
+          "path": "player.payload.player.needBars",
+          "where": {
+            "id": "food",
+            "value": 454
+          },
+          "equals": 1
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "after",
+          "path": "player.payload.player.needBars",
+          "where": {
+            "id": "rest",
+            "value": 532
+          },
+          "equals": 1
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "after",
+          "path": "player.payload.player.needBars",
+          "where": {
+            "id": "stamina",
+            "value": 1000
+          },
+          "equals": 1
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "after",
+          "path": "player.payload.player.needBars",
+          "where": {
+            "id": "mana",
+            "value": 1000
+          },
+          "equals": 1
+        },
+        {
+          "type": "stateUnchanged",
+          "beforeSource": "snapshots.before_midnight",
+          "afterSource": "after",
+          "paths": [
+            "player.payload.player.locationId",
+            "player.payload.player.statusEffects",
+            "scheduledEvents.payload.scheduledEvents",
+            "calendar.payload.calendarDefinition",
+            "history.payload.history"
+          ]
+        }
+      ]
+    },
+    {
+      "type": "request",
+      "name": "player_status_after_midnight",
+      "method": "GET",
+      "route": "/api/npcs/$fixture.playerId"
+    },
+    {
+      "type": "assert",
+      "assertions": [
+        {
+          "type": "httpStatus",
+          "equals": 200
+        },
+        {
+          "type": "responseOk",
+          "equals": true
+        },
+        {
+          "type": "exactDelta",
+          "beforeSource": "responses.player_status_before_midnight",
+          "afterSource": "responses.player_status_after_midnight",
+          "path": "payload.npc.elapsedTime",
+          "delta": 5
+        },
+        {
+          "type": "equals",
+          "source": "responses.player_status_after_midnight",
+          "path": "payload.npc.elapsedTime",
+          "equals": 1443
+        }
+      ]
+    },
+    {
+      "type": "request",
+      "name": "region_after_midnight",
+      "method": "GET",
+      "route": "/api/regions/$fixture.regionId"
+    },
+    {
+      "type": "assert",
+      "assertions": [
+        {
+          "type": "httpStatus",
+          "equals": 200
+        },
+        {
+          "type": "responseOk",
+          "equals": true
+        },
+        {
+          "type": "equals",
+          "source": "responses.region_after_midnight",
+          "path": "payload.region.weatherState",
+          "equalsFrom": {
+            "source": "responses.region_before_midnight",
+            "path": "payload.region.weatherState"
+          }
+        },
+        {
+          "type": "equals",
+          "source": "after",
+          "path": "calendar.payload.worldTime.dayIndex",
+          "equals": 1
+        },
+        {
+          "type": "equals",
+          "source": "after",
+          "path": "calendar.payload.worldTime.timeMinutes",
+          "equals": 3
+        },
+        {
+          "type": "equals",
+          "source": "after",
+          "path": "scheduledEvents.payload.count",
+          "equals": 0
+        },
+        {
+          "type": "noRealtimeErrors"
+        },
+        {
+          "type": "noUnexpectedErrorLogs"
+        }
+      ]
+    }
+  ]
+}

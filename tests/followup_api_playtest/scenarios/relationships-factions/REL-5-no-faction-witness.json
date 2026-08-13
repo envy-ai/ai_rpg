@@ -1,0 +1,258 @@
+{
+  "version": 1,
+  "scenario": "relationships-factions",
+  "case": "REL-5-no-faction-witness",
+  "description": "From a fresh copy of the immutable relationship fixture, move every Lantern Guild actor away only in the disposable runtime, complete the same core route-safety report privately, and prove that neither sparse standing nor a reputation summary changes without a player, party, or local Lantern witness.",
+  "fixture": "relationships-factions",
+  "configProfile": "faction-reputation-mechanics",
+  "trackedPaths": [
+    "player.payload.player.locationId",
+    "players.payload.players",
+    "factions.payload.factions",
+    "factions.payload.playerStandings",
+    "locations.payload.locations",
+    "things.payload.things",
+    "scheduledEvents.payload.scheduledEvents",
+    "calendar.payload.worldTime",
+    "history.payload.history"
+  ],
+  "steps": [
+    {
+      "type": "loadFixture"
+    },
+    {
+      "type": "request",
+      "name": "move_lantern_witness_from_runtime_copy",
+      "method": "POST",
+      "route": "/api/npcs/$fixture.lanternWitnessId/teleport",
+      "body": {
+        "locationId": "$fixture.privateLocationId",
+        "accountTravelTime": false,
+        "storyToolTeleport": true
+      }
+    },
+    {
+      "type": "request",
+      "name": "lantern_away_initial",
+      "method": "GET",
+      "route": "/api/npcs/$fixture.lanternWitnessId"
+    },
+    {
+      "type": "request",
+      "name": "cinder_initial",
+      "method": "GET",
+      "route": "/api/npcs/$fixture.cinderWitnessId"
+    },
+    {
+      "type": "request",
+      "name": "contact_away_initial",
+      "method": "GET",
+      "route": "/api/npcs/$fixture.privateContactId"
+    },
+    {
+      "type": "snapshot",
+      "name": "before_private_report"
+    },
+    {
+      "type": "chat",
+      "name": "complete_private_safety_report",
+      "text": "With no QA Lantern Guild member or representative present, I privately complete the same core route-safety report: I organize my accurate observations of the fresh washout beyond March Start Marker, identify the safe detour around its stable side, and finish my own field notes. No one witnesses, receives, or learns of the report during this turn. The work takes exactly five minutes; I stay at March Start Marker, exchange no physical items, and change nothing in the scene.",
+      "travel": false,
+      "interactive": {
+        "roll": null,
+        "questAccepted": false,
+        "confirmed": false
+      }
+    },
+    {
+      "type": "assert",
+      "assertions": [
+        {
+          "type": "httpStatus",
+          "equals": 200
+        },
+        {
+          "type": "responseOk",
+          "equals": true
+        },
+        {
+          "type": "exists",
+          "source": "responses.complete_private_safety_report",
+          "path": "payload.response"
+        }
+      ]
+    },
+    {
+      "type": "request",
+      "name": "lantern_away_after",
+      "method": "GET",
+      "route": "/api/npcs/$fixture.lanternWitnessId"
+    },
+    {
+      "type": "request",
+      "name": "cinder_after",
+      "method": "GET",
+      "route": "/api/npcs/$fixture.cinderWitnessId"
+    },
+    {
+      "type": "request",
+      "name": "contact_away_after",
+      "method": "GET",
+      "route": "/api/npcs/$fixture.privateContactId"
+    },
+    {
+      "type": "assert",
+      "assertions": [
+        {
+          "type": "equals",
+          "source": "after",
+          "path": "factions.payload.playerStandings",
+          "equalsFrom": {
+            "source": "snapshots.before_private_report",
+            "path": "factions.payload.playerStandings"
+          }
+        },
+        {
+          "type": "historyAddedNestedObjectCount",
+          "entryWhere": {
+            "type": "event-summary"
+          },
+          "path": "summaryItems",
+          "where": {
+            "sourceType": "faction_reputation_change"
+          },
+          "equals": 0,
+          "beforeSource": "snapshots.before_private_report",
+          "afterSource": "after"
+        },
+        {
+          "type": "equals",
+          "source": "responses.lantern_away_after",
+          "path": "payload.npc.relationships",
+          "equalsFrom": {
+            "source": "responses.lantern_away_initial",
+            "path": "payload.npc.relationships"
+          }
+        },
+        {
+          "type": "equals",
+          "source": "responses.lantern_away_after",
+          "path": "payload.npc.dispositions",
+          "equalsFrom": {
+            "source": "responses.lantern_away_initial",
+            "path": "payload.npc.dispositions"
+          }
+        },
+        {
+          "type": "equals",
+          "source": "responses.cinder_after",
+          "path": "payload.npc.relationships",
+          "equalsFrom": {
+            "source": "responses.cinder_initial",
+            "path": "payload.npc.relationships"
+          }
+        },
+        {
+          "type": "equals",
+          "source": "responses.cinder_after",
+          "path": "payload.npc.dispositions",
+          "equalsFrom": {
+            "source": "responses.cinder_initial",
+            "path": "payload.npc.dispositions"
+          }
+        },
+        {
+          "type": "equals",
+          "source": "responses.contact_away_after",
+          "path": "payload.npc.relationships",
+          "equalsFrom": {
+            "source": "responses.contact_away_initial",
+            "path": "payload.npc.relationships"
+          }
+        },
+        {
+          "type": "equals",
+          "source": "responses.contact_away_after",
+          "path": "payload.npc.dispositions",
+          "equalsFrom": {
+            "source": "responses.contact_away_initial",
+            "path": "payload.npc.dispositions"
+          }
+        },
+        {
+          "type": "equals",
+          "source": "after",
+          "path": "player.payload.player.locationId",
+          "equals": "$fixture.baselineLocationId"
+        },
+        {
+          "type": "entityField",
+          "source": "after",
+          "collection": "players",
+          "id": "$fixture.lanternWitnessId",
+          "path": "locationId",
+          "equals": "$fixture.privateLocationId"
+        },
+        {
+          "type": "entityField",
+          "source": "after",
+          "collection": "players",
+          "id": "$fixture.cinderWitnessId",
+          "path": "locationId",
+          "equals": "$fixture.baselineLocationId"
+        },
+        {
+          "type": "entityField",
+          "source": "after",
+          "collection": "players",
+          "id": "$fixture.privateContactId",
+          "path": "locationId",
+          "equals": "$fixture.privateLocationId"
+        },
+        {
+          "type": "exactDelta",
+          "path": "calendar.payload.worldTime.timeMinutes",
+          "delta": 5,
+          "beforeSource": "snapshots.before_private_report",
+          "afterSource": "after"
+        },
+        {
+          "type": "stateUnchanged",
+          "beforeSource": "snapshots.before_private_report",
+          "afterSource": "after",
+          "paths": [
+            "factions.payload.factions",
+            "locations.payload.locations",
+            "things.payload.things",
+            "scheduledEvents.payload.scheduledEvents"
+          ]
+        },
+        {
+          "type": "historyAddedTypeCount",
+          "entryType": "player-action",
+          "equals": 1,
+          "beforeSource": "snapshots.before_private_report",
+          "afterSource": "after"
+        },
+        {
+          "type": "historyAddedTypeCount",
+          "entryType": "relationship-updates",
+          "equals": 0,
+          "beforeSource": "snapshots.before_private_report",
+          "afterSource": "after"
+        },
+        {
+          "type": "noRealtimeErrors"
+        },
+        {
+          "type": "noUnexpectedErrorLogs"
+        }
+      ]
+    }
+  ],
+  "humanReview": [
+    "Confirm the prose naturally presents the same core route-safety reporting work as a private task, without placing or remotely involving any Lantern Guild actor in the scene.",
+    "Confirm the prose and bookkeeping agree that no faction member witnesses, receives, or learns of the report during this turn, and that no faction reward is narrated or applied.",
+    "Record merely imperfect prose with its lead-up in tmp/prose_issues_log.md instead of adding a case-specific prompt restriction."
+  ]
+}

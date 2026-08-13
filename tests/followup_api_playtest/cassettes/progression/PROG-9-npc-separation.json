@@ -1,0 +1,101 @@
+{
+  "version": 2,
+  "strict": true,
+  "complete": true,
+  "description": "progression/PROG-9-npc-separation",
+  "recordedAt": "2026-08-12T08:45:26.138Z",
+  "entries": [
+    {
+      "ordinal": 1,
+      "metadataLabel": "levelup_abilities",
+      "requestFingerprint": "sha256:16afdd109314cc7b8e422c027c96f9527f29fc7083f9eeee0cf829828377f51e",
+      "requestSummary": {
+        "messageRoles": [
+          "system",
+          "user",
+          "user",
+          "user",
+          "user",
+          "user",
+          "user",
+          "user",
+          "user",
+          "user",
+          "user",
+          "user"
+        ],
+        "messageCharacters": 89358,
+        "toolNames": [
+          "generateRandomInteger",
+          "moreInfo",
+          "getHistory",
+          "getFullScene",
+          "editChatLogEntry",
+          "rerunSceneSummary",
+          "editSceneSummary",
+          "requestUserInput",
+          "listMysteryBoxes",
+          "findMysteryBoxes",
+          "getMysteryBox",
+          "updateMysteryBoxFields",
+          "listMysteryThreads",
+          "getMysteryThread",
+          "updateMysteryThreadFields",
+          "teleportCharacterToLocation",
+          "teleportThingToLocation",
+          "moveThingFromLocationToCharacterInventory",
+          "createRegionStub",
+          "createLocationStub",
+          "createExit",
+          "listLocationEntities",
+          "getTravelTime",
+          "revealEntity",
+          "hideEntity",
+          "createThing",
+          "createNpc",
+          "deleteThing",
+          "setRelationship",
+          "addTracker",
+          "updateTracker",
+          "removeTracker",
+          "createQuest",
+          "scheduleEvent",
+          "alterThing",
+          "alterNpc",
+          "updateCharacterFields",
+          "updateObjectFields",
+          "upsertFactionFields",
+          "updatePartyMembers",
+          "alterLocation",
+          "resolveAttack",
+          "resolveAreaAttack",
+          "resolveSkillCheck",
+          "resolveOpposedSkillCheck",
+          "locateNpcs",
+          "locateThings",
+          "equipImplant",
+          "unequipImplant",
+          "installModule",
+          "removeModule"
+        ],
+        "model": "Qwen3.6-35B-A3B-uncensored-heretic-Native-MTP-Preserved-GGUF",
+        "backend": "openai_compatible"
+      },
+      "response": {
+        "object": "chat.completion",
+        "model": "Qwen3.6-35B-A3B-uncensored-heretic-Native-MTP-Preserved-GGUF",
+        "choices": [
+          {
+            "index": 0,
+            "finish_reason": "stop",
+            "message": {
+              "role": "assistant",
+              "content": "<npcs>\n  <npc>\n    <name>QA Courier</name>\n    <skills>\n      <skill>\n        <name>Exploration</name>\n        <points>2</points>\n      </skill>\n      <skill>\n        <name>Perception</name>\n        <points>2</points>\n      </skill>\n      <skill>\n        <name>Stealth</name>\n        <points>1</points>\n      </skill>\n    </skills>\n    <attributes>\n      <attribute>\n        <name>dexterity</name>\n        <points>2</points>\n      </attribute>\n      <attribute>\n        <name>constitution</name>\n        <points>1</points>\n      </attribute>\n      <attribute>\n        <name>luck</name>\n        <points>1</points>\n      </attribute>\n    </attributes>\n    <abilities>\n      <ability>\n        <name>Stormrunner</name>\n        <description>When moving through heavy wind or snow, the courier’s speed increases by 20% and fatigue accumulates more slowly.</description>\n        <type>Passive</type>\n        <level>3</level>\n        <shortDescription>Speed boost and fatigue reduction in harsh wind and snow.</shortDescription>\n      </ability>\n      <ability>\n        <name>Blind Spot</name>\n        <description>Once per patrol, the courier can vanish into a wind gust or snow bank for 10 seconds, becoming undetectable by normal means.</description>\n        <type>Triggered</type>\n        <level>3</level>\n        <shortDescription>Short-duration invisibility using wind and snow cover.</shortDescription>\n      </ability>\n    </abilities>\n  </npc>\n</npcs>"
+            }
+          }
+        ]
+      }
+    }
+  ],
+  "completedAt": "2026-08-12T08:45:31.148Z"
+}

@@ -27,10 +27,10 @@ Guidelines:
 - Upgrades should generally move negative attribute bonuses toward zero.
 - Significant upgrades will increase rarity and/or relativeLevel; significant downgrades will decrease it.
 - Edit any fields that you deem appropriate based on the alteration. In rare cases, an item may even become scenery, or vice versa.
-- If the alteration doesn't logically affect certain fields, you can leave them unchanged.
+- Preserve every existing field that the alteration does not explicitly or logically affect. Do not invent status effects, attribute bonuses, properties, type changes, or other mechanics merely to make the returned definition feel more complete.
+- If there is no target or equipper status effect, leave that optional XML block empty. Do not put N/A, none, or placeholder text inside it.
 
 Return the item in the following format:
 {% include "_includes/item.njk" %}
 
 Note that bonuses will be normalized to the rarity after alteration, so use the full range of bonuses (-4 to +4) as needed.
-

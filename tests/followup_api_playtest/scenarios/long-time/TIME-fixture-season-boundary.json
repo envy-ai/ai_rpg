@@ -1,0 +1,378 @@
+{
+  "version": 1,
+  "scenario": "long-time-setup",
+  "case": "TIME-fixture-season-boundary",
+  "description": "Derive an immutable fixture at 11:58 PM on the final Winter day with deterministic, distinct Winter and Spring weather definitions.",
+  "fixture": "long-time-rest-lodge",
+  "configProfile": "long-time-mechanics",
+  "trackedPaths": [
+    "player.payload.player.locationId",
+    "regions.payload.regions",
+    "scheduledEvents.payload.scheduledEvents",
+    "calendar.payload.calendarDefinition",
+    "calendar.payload.worldTime",
+    "history.payload.history"
+  ],
+  "steps": [
+    {
+      "type": "loadFixture"
+    },
+    {
+      "type": "request",
+      "name": "original_region",
+      "method": "GET",
+      "route": "/api/regions/$fixture.regionId"
+    },
+    {
+      "type": "assert",
+      "assertions": [
+        {
+          "type": "httpStatus",
+          "equals": 200
+        },
+        {
+          "type": "responseOk",
+          "equals": true
+        },
+        {
+          "type": "equals",
+          "source": "responses.original_region",
+          "path": "payload.region.id",
+          "equals": "$fixture.regionId"
+        }
+      ]
+    },
+    {
+      "type": "snapshot",
+      "name": "before_setup"
+    },
+    {
+      "type": "request",
+      "name": "install_boundary_weather",
+      "method": "PUT",
+      "route": "/api/regions/$fixture.regionId",
+      "body": {
+        "name": "$response.original_region.payload.region.name",
+        "description": "$response.original_region.payload.region.description",
+        "weather": {
+          "hasDynamicWeather": true,
+          "seasonWeather": [
+            {
+              "seasonName": "Winter",
+              "weatherTypes": [
+                {
+                  "name": "QA Winter Still",
+                  "description": "Deterministic winter weather before the QA season boundary.",
+                  "relativeFrequency": 1,
+                  "durationRange": {
+                    "minMinutes": 100000,
+                    "maxMinutes": 100000
+                  }
+                }
+              ]
+            },
+            {
+              "seasonName": "Spring",
+              "weatherTypes": [
+                {
+                  "name": "QA Spring Rain",
+                  "description": "Deterministic spring weather after the QA season boundary.",
+                  "relativeFrequency": 1,
+                  "durationRange": {
+                    "minMinutes": 100000,
+                    "maxMinutes": 100000
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "type": "assert",
+      "assertions": [
+        {
+          "type": "httpStatus",
+          "equals": 200
+        },
+        {
+          "type": "responseOk",
+          "equals": true
+        },
+        {
+          "type": "equals",
+          "source": "responses.install_boundary_weather",
+          "path": "payload.region.weather.hasDynamicWeather",
+          "equals": true
+        },
+        {
+          "type": "count",
+          "source": "responses.install_boundary_weather",
+          "path": "payload.region.weather.seasonWeather",
+          "equals": 2
+        },
+        {
+          "type": "equals",
+          "source": "responses.install_boundary_weather",
+          "path": "payload.worldTime.season",
+          "equals": "Winter"
+        },
+        {
+          "type": "equals",
+          "source": "responses.install_boundary_weather",
+          "path": "payload.worldTime.weatherName",
+          "equals": "QA Winter Still"
+        },
+        {
+          "type": "equals",
+          "source": "responses.install_boundary_weather",
+          "path": "payload.worldTime.weatherDescription",
+          "equals": "Deterministic winter weather before the QA season boundary."
+        }
+      ]
+    },
+    {
+      "type": "request",
+      "name": "region_after_weather_install",
+      "method": "GET",
+      "route": "/api/regions/$fixture.regionId"
+    },
+    {
+      "type": "assert",
+      "assertions": [
+        {
+          "type": "httpStatus",
+          "equals": 200
+        },
+        {
+          "type": "responseOk",
+          "equals": true
+        },
+        {
+          "type": "equals",
+          "source": "responses.region_after_weather_install",
+          "path": "payload.region.weatherState.seasonName",
+          "equals": "Winter"
+        },
+        {
+          "type": "equals",
+          "source": "responses.region_after_weather_install",
+          "path": "payload.region.weatherState.name",
+          "equals": "QA Winter Still"
+        },
+        {
+          "type": "equals",
+          "source": "responses.region_after_weather_install",
+          "path": "payload.region.weatherState.description",
+          "equals": "Deterministic winter weather before the QA season boundary."
+        },
+        {
+          "type": "equals",
+          "source": "responses.region_after_weather_install",
+          "path": "payload.region.weatherState.durationMinutes",
+          "equals": 100000
+        },
+        {
+          "type": "equals",
+          "source": "responses.region_after_weather_install",
+          "path": "payload.region.weatherState.nextChangeMinutes",
+          "equals": 100663
+        }
+      ]
+    },
+    {
+      "type": "request",
+      "name": "advance_to_winter_end",
+      "method": "POST",
+      "route": "/api/slash-command",
+      "body": {
+        "command": "time",
+        "argsText": "+84295 minutes"
+      }
+    },
+    {
+      "type": "assert",
+      "assertions": [
+        {
+          "type": "httpStatus",
+          "equals": 200
+        },
+        {
+          "type": "responseOk",
+          "equals": true
+        },
+        {
+          "type": "equals",
+          "source": "after",
+          "path": "calendar.payload.worldTime.dayIndex",
+          "equals": 58
+        },
+        {
+          "type": "equals",
+          "source": "after",
+          "path": "calendar.payload.worldTime.timeMinutes",
+          "equals": 1438
+        },
+        {
+          "type": "equals",
+          "source": "after",
+          "path": "calendar.payload.worldTime.timeLabel",
+          "equals": "11:58 PM"
+        },
+        {
+          "type": "equals",
+          "source": "after",
+          "path": "calendar.payload.worldTime.dateLabel",
+          "equals": "Tuesday, February 28, Common Era 1"
+        },
+        {
+          "type": "equals",
+          "source": "after",
+          "path": "calendar.payload.worldTime.date.weekday",
+          "equals": "Tuesday"
+        },
+        {
+          "type": "equals",
+          "source": "after",
+          "path": "calendar.payload.worldTime.date.monthName",
+          "equals": "February"
+        },
+        {
+          "type": "equals",
+          "source": "after",
+          "path": "calendar.payload.worldTime.date.dayOfMonth",
+          "equals": 28
+        },
+        {
+          "type": "equals",
+          "source": "after",
+          "path": "calendar.payload.worldTime.season",
+          "equals": "Winter"
+        },
+        {
+          "type": "equals",
+          "source": "after",
+          "path": "calendar.payload.worldTime.seasonDescription",
+          "equals": "Cold weather, long nights, and quieter roads as people stay close to shelter and heat."
+        },
+        {
+          "type": "equals",
+          "source": "after",
+          "path": "calendar.payload.worldTime.lighting",
+          "equals": "Night returns with poor visibility."
+        },
+        {
+          "type": "equals",
+          "source": "after",
+          "path": "calendar.payload.worldTime.holiday",
+          "equals": null
+        },
+        {
+          "type": "equals",
+          "source": "after",
+          "path": "calendar.payload.worldTime.weatherName",
+          "equals": "QA Winter Still"
+        },
+        {
+          "type": "equals",
+          "source": "after",
+          "path": "calendar.payload.worldTime.weatherDescription",
+          "equals": "Deterministic winter weather before the QA season boundary."
+        },
+        {
+          "type": "stateUnchanged",
+          "beforeSource": "snapshots.before_setup",
+          "afterSource": "after",
+          "paths": [
+            "player.payload.player.locationId",
+            "scheduledEvents.payload.scheduledEvents",
+            "calendar.payload.calendarDefinition",
+            "history.payload.history"
+          ]
+        }
+      ]
+    },
+    {
+      "type": "request",
+      "name": "player_status_at_boundary",
+      "method": "GET",
+      "route": "/api/npcs/$fixture.playerId"
+    },
+    {
+      "type": "request",
+      "name": "region_at_boundary",
+      "method": "GET",
+      "route": "/api/regions/$fixture.regionId"
+    },
+    {
+      "type": "assert",
+      "assertions": [
+        {
+          "type": "httpStatus",
+          "equals": 200
+        },
+        {
+          "type": "responseOk",
+          "equals": true
+        },
+        {
+          "type": "equals",
+          "source": "responses.player_status_at_boundary",
+          "path": "status",
+          "equals": 200
+        },
+        {
+          "type": "equals",
+          "source": "responses.player_status_at_boundary",
+          "path": "payload.npc.elapsedTime",
+          "equals": 84958
+        },
+        {
+          "type": "equals",
+          "source": "responses.region_at_boundary",
+          "path": "payload.region.weatherState",
+          "equalsFrom": {
+            "source": "responses.region_after_weather_install",
+            "path": "payload.region.weatherState"
+          }
+        },
+        {
+          "type": "equals",
+          "source": "after",
+          "path": "scheduledEvents.payload.count",
+          "equals": 0
+        },
+        {
+          "type": "noRealtimeErrors"
+        },
+        {
+          "type": "noUnexpectedErrorLogs"
+        }
+      ]
+    },
+    {
+      "type": "save",
+      "name": "season_boundary_fixture_save"
+    },
+    {
+      "type": "assert",
+      "assertions": [
+        {
+          "type": "httpStatus",
+          "equals": 200
+        },
+        {
+          "type": "responseOk",
+          "equals": true
+        },
+        {
+          "type": "equals",
+          "source": "responses.season_boundary_fixture_save",
+          "path": "payload.success",
+          "equals": true
+        }
+      ]
+    }
+  ]
+}

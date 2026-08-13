@@ -1,0 +1,643 @@
+{
+  "version": 1,
+  "scenario": "alternative-prompts",
+  "case": "ALT-5-elevated-generic",
+  "description": "Run two elevated hidden-history generic prompts that temporarily update one existing fixture prop and then restore it, verifying both full tool loops, tool-call-debug records, hidden-history contracts, exact mutation, exact restoration, and otherwise unchanged game state.",
+  "fixture": "relationships-factions",
+  "configProfile": "alternative-prompts-mechanics",
+  "trackedPaths": [
+    "player.payload.player",
+    "players.payload.players",
+    "locations.payload.locations",
+    "regions.payload.regions",
+    "things.payload.things",
+    "factions.payload.factions",
+    "factions.payload.playerStandings",
+    "scheduledEvents.payload.scheduledEvents",
+    "calendar.payload.worldTime",
+    "history.payload.history"
+  ],
+  "steps": [
+    {
+      "type": "loadFixture"
+    },
+    {
+      "type": "request",
+      "name": "whistle_before",
+      "method": "GET",
+      "route": "/api/things/thing_283"
+    },
+    {
+      "type": "snapshot",
+      "name": "before_mutation"
+    },
+    {
+      "type": "chat",
+      "name": "mutate_whistle",
+      "text": "@@ Use updateObjectFields exactly once and no other tools. Update thing thing_283 by setting only shortDescription to exactly `ALT-5 temporary whistle marker.` Do not change any other field or game state. After the successful tool result, briefly confirm the temporary change.",
+      "interactive": {
+        "roll": null,
+        "questAccepted": false,
+        "confirmed": false
+      }
+    },
+    {
+      "type": "request",
+      "name": "whistle_mutated",
+      "method": "GET",
+      "route": "/api/things/thing_283"
+    },
+    {
+      "type": "snapshot",
+      "name": "after_mutation"
+    },
+    {
+      "type": "assert",
+      "assertions": [
+        {
+          "type": "equals",
+          "source": "responses.mutate_whistle",
+          "path": "status",
+          "equals": 200
+        },
+        {
+          "type": "responseOk",
+          "equals": true
+        },
+        {
+          "type": "exists",
+          "source": "responses.mutate_whistle",
+          "path": "payload.response"
+        },
+        {
+          "type": "equals",
+          "source": "responses.mutate_whistle",
+          "path": "payload.debug.usedGenericPromptAction",
+          "equals": true
+        },
+        {
+          "type": "equals",
+          "source": "responses.mutate_whistle",
+          "path": "payload.debug.genericPromptStorageMode",
+          "equals": "hide_base_context"
+        },
+        {
+          "type": "equals",
+          "source": "responses.mutate_whistle",
+          "path": "payload.debug.genericPromptTemplateMode",
+          "equals": "base_context"
+        },
+        {
+          "type": "equals",
+          "source": "responses.mutate_whistle",
+          "path": "payload.debug.genericPromptText",
+          "equals": "Use updateObjectFields exactly once and no other tools. Update thing thing_283 by setting only shortDescription to exactly `ALT-5 temporary whistle marker.` Do not change any other field or game state. After the successful tool result, briefly confirm the temporary change."
+        },
+        {
+          "type": "count",
+          "source": "responses.mutate_whistle",
+          "path": "payload.debug.toolInvocations",
+          "equals": 1
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "responses.mutate_whistle",
+          "path": "payload.debug.toolInvocations",
+          "where": {
+            "name": "updateObjectFields",
+            "metadata": {
+              "status": "success",
+              "objectType": "thing",
+              "objectId": "thing_283",
+              "objectName": "Whistle of the Ridge",
+              "ownerType": null,
+              "ownerId": null,
+              "ownerName": null,
+              "updatedFields": [
+                "shortDescription"
+              ],
+              "updatedValues": {
+                "shortDescription": "ALT-5 temporary whistle marker."
+              }
+            }
+          },
+          "equals": 1
+        },
+        {
+          "type": "equals",
+          "source": "responses.whistle_mutated",
+          "path": "status",
+          "equals": 200
+        },
+        {
+          "type": "equals",
+          "source": "responses.whistle_mutated",
+          "path": "payload.thing.shortDescription",
+          "equals": "ALT-5 temporary whistle marker."
+        },
+        {
+          "type": "stateUnchanged",
+          "beforeSource": "responses.whistle_before",
+          "afterSource": "responses.whistle_mutated",
+          "paths": [
+            "payload.thing.id",
+            "payload.thing.name",
+            "payload.thing.description",
+            "payload.thing.thingType",
+            "payload.thing.imageId",
+            "payload.thing.imagePrompt",
+            "payload.thing.createdAt",
+            "payload.thing.rarity",
+            "payload.thing.itemTypeDetail",
+            "payload.thing.slot",
+            "payload.thing.attributeBonuses",
+            "payload.thing.causeStatusEffect",
+            "payload.thing.count",
+            "payload.thing.level",
+            "payload.thing.relativeLevel",
+            "payload.thing.isVehicle",
+            "payload.thing.isCraftingStation",
+            "payload.thing.isProcessingStation",
+            "payload.thing.isHarvestable",
+            "payload.thing.isSalvageable",
+            "payload.thing.isContainer",
+            "payload.thing.requiresCheckToOpen",
+            "payload.thing.containerContents",
+            "payload.thing.containedThingIds",
+            "payload.thing.moduleSlots",
+            "payload.thing.installedModuleIds",
+            "payload.thing.metadata",
+            "payload.thing.statusEffects"
+          ]
+        },
+        {
+          "type": "historyAddedSequence",
+          "beforeSource": "snapshots.before_mutation",
+          "afterSource": "snapshots.after_mutation",
+          "entryTypes": [
+            "user-generic-prompt",
+            "tool-call-debug",
+            "generic-prompt-response"
+          ],
+          "expected": [
+            {
+              "type": "user-generic-prompt",
+              "role": "user",
+              "content": "Use updateObjectFields exactly once and no other tools. Update thing thing_283 by setting only shortDescription to exactly `ALT-5 temporary whistle marker.` Do not change any other field or game state. After the successful tool result, briefly confirm the temporary change.",
+              "metadata": {
+                "excludeFromBaseContextHistory": true
+              }
+            },
+            {
+              "type": "tool-call-debug",
+              "role": "system",
+              "metadata": {
+                "excludeFromBaseContextHistory": true,
+                "debugToolCalls": true,
+                "promptLabel": "generic_prompt",
+                "toolCallCount": 1,
+                "completedToolCallCount": 1,
+                "erroredToolCallCount": 0
+              }
+            },
+            {
+              "type": "generic-prompt-response",
+              "role": "assistant",
+              "metadata": {
+                "excludeFromBaseContextHistory": true
+              }
+            }
+          ]
+        },
+        {
+          "type": "historyAddedNestedObjectCount",
+          "beforeSource": "snapshots.before_mutation",
+          "afterSource": "snapshots.after_mutation",
+          "entryWhere": {
+            "type": "tool-call-debug"
+          },
+          "path": "toolCalls",
+          "where": {
+            "name": "updateObjectFields",
+            "status": "completed",
+            "parameters": {
+              "objectType": "thing",
+              "object": "thing_283",
+              "fields": {
+                "shortDescription": "ALT-5 temporary whistle marker."
+              }
+            }
+          },
+          "equals": 1
+        },
+        {
+          "type": "exactDelta",
+          "beforeSource": "snapshots.before_mutation",
+          "afterSource": "snapshots.after_mutation",
+          "path": "things.payload.things.length",
+          "delta": 0
+        },
+        {
+          "type": "stateUnchanged",
+          "beforeSource": "snapshots.before_mutation",
+          "afterSource": "snapshots.after_mutation",
+          "paths": [
+            "player.payload.player.id",
+            "player.payload.player.level",
+            "player.payload.player.health",
+            "player.payload.player.maxHealth",
+            "player.payload.player.locationId",
+            "player.payload.player.experience",
+            "player.payload.player.abilities",
+            "player.payload.player.attributes",
+            "player.payload.player.skills",
+            "player.payload.player.inventory",
+            "player.payload.player.currency",
+            "player.payload.player.statusEffects",
+            "player.payload.player.needBars",
+            "player.payload.player.quests",
+            "player.payload.player.completedQuests",
+            "locations.payload.locations",
+            "regions.payload.regions",
+            "factions.payload.factions",
+            "factions.payload.playerStandings",
+            "scheduledEvents.payload.scheduledEvents",
+            "calendar.payload.worldTime"
+          ]
+        },
+        {
+          "type": "historyAddedTypeCount",
+          "beforeSource": "snapshots.before_mutation",
+          "afterSource": "snapshots.after_mutation",
+          "entryType": "player-action",
+          "equals": 0
+        },
+        {
+          "type": "historyAddedTypeCount",
+          "beforeSource": "snapshots.before_mutation",
+          "afterSource": "snapshots.after_mutation",
+          "entryType": "event-summary",
+          "equals": 0
+        },
+        {
+          "type": "historyAddedTypeCount",
+          "beforeSource": "snapshots.before_mutation",
+          "afterSource": "snapshots.after_mutation",
+          "entryType": "random-event",
+          "equals": 0
+        },
+        {
+          "type": "historyAddedTypeCount",
+          "beforeSource": "snapshots.before_mutation",
+          "afterSource": "snapshots.after_mutation",
+          "entryType": "npc-turn",
+          "equals": 0
+        },
+        {
+          "type": "historyAddedTypeCount",
+          "beforeSource": "snapshots.before_mutation",
+          "afterSource": "snapshots.after_mutation",
+          "entryType": "slop-remover",
+          "equals": 0
+        },
+        {
+          "type": "noRealtimeErrors"
+        },
+        {
+          "type": "noUnexpectedErrorLogs"
+        }
+      ]
+    },
+    {
+      "type": "chat",
+      "name": "restore_whistle",
+      "text": "@@ Use updateObjectFields exactly once and no other tools. Restore thing thing_283 by setting only shortDescription to exactly `Bone whistle for signaling location in whiteout conditions.` Do not change any other field or game state. After the successful tool result, briefly confirm the restoration.",
+      "interactive": {
+        "roll": null,
+        "questAccepted": false,
+        "confirmed": false
+      }
+    },
+    {
+      "type": "request",
+      "name": "whistle_restored",
+      "method": "GET",
+      "route": "/api/things/thing_283"
+    },
+    {
+      "type": "assert",
+      "assertions": [
+        {
+          "type": "equals",
+          "source": "responses.restore_whistle",
+          "path": "status",
+          "equals": 200
+        },
+        {
+          "type": "responseOk",
+          "equals": true
+        },
+        {
+          "type": "exists",
+          "source": "responses.restore_whistle",
+          "path": "payload.response"
+        },
+        {
+          "type": "equals",
+          "source": "responses.restore_whistle",
+          "path": "payload.debug.usedGenericPromptAction",
+          "equals": true
+        },
+        {
+          "type": "equals",
+          "source": "responses.restore_whistle",
+          "path": "payload.debug.genericPromptStorageMode",
+          "equals": "hide_base_context"
+        },
+        {
+          "type": "equals",
+          "source": "responses.restore_whistle",
+          "path": "payload.debug.genericPromptTemplateMode",
+          "equals": "base_context"
+        },
+        {
+          "type": "equals",
+          "source": "responses.restore_whistle",
+          "path": "payload.debug.genericPromptText",
+          "equals": "Use updateObjectFields exactly once and no other tools. Restore thing thing_283 by setting only shortDescription to exactly `Bone whistle for signaling location in whiteout conditions.` Do not change any other field or game state. After the successful tool result, briefly confirm the restoration."
+        },
+        {
+          "type": "count",
+          "source": "responses.restore_whistle",
+          "path": "payload.debug.toolInvocations",
+          "equals": 1
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "responses.restore_whistle",
+          "path": "payload.debug.toolInvocations",
+          "where": {
+            "name": "updateObjectFields",
+            "metadata": {
+              "status": "success",
+              "objectType": "thing",
+              "objectId": "thing_283",
+              "objectName": "Whistle of the Ridge",
+              "ownerType": null,
+              "ownerId": null,
+              "ownerName": null,
+              "updatedFields": [
+                "shortDescription"
+              ],
+              "updatedValues": {
+                "shortDescription": "Bone whistle for signaling location in whiteout conditions."
+              }
+            }
+          },
+          "equals": 1
+        },
+        {
+          "type": "equals",
+          "source": "responses.whistle_restored",
+          "path": "status",
+          "equals": 200
+        },
+        {
+          "type": "equals",
+          "source": "responses.whistle_restored",
+          "path": "payload.thing.shortDescription",
+          "equals": "Bone whistle for signaling location in whiteout conditions."
+        },
+        {
+          "type": "stateUnchanged",
+          "beforeSource": "responses.whistle_before",
+          "afterSource": "responses.whistle_restored",
+          "paths": [
+            "payload.thing.id",
+            "payload.thing.name",
+            "payload.thing.description",
+            "payload.thing.shortDescription",
+            "payload.thing.thingType",
+            "payload.thing.imageId",
+            "payload.thing.imagePrompt",
+            "payload.thing.createdAt",
+            "payload.thing.rarity",
+            "payload.thing.itemTypeDetail",
+            "payload.thing.slot",
+            "payload.thing.attributeBonuses",
+            "payload.thing.causeStatusEffect",
+            "payload.thing.count",
+            "payload.thing.level",
+            "payload.thing.relativeLevel",
+            "payload.thing.isVehicle",
+            "payload.thing.isCraftingStation",
+            "payload.thing.isProcessingStation",
+            "payload.thing.isHarvestable",
+            "payload.thing.isSalvageable",
+            "payload.thing.isContainer",
+            "payload.thing.requiresCheckToOpen",
+            "payload.thing.containerContents",
+            "payload.thing.containedThingIds",
+            "payload.thing.moduleSlots",
+            "payload.thing.installedModuleIds",
+            "payload.thing.metadata",
+            "payload.thing.statusEffects"
+          ]
+        },
+        {
+          "type": "historyAddedSequence",
+          "beforeSource": "snapshots.after_mutation",
+          "afterSource": "after",
+          "entryTypes": [
+            "user-generic-prompt",
+            "tool-call-debug",
+            "generic-prompt-response"
+          ],
+          "expected": [
+            {
+              "type": "user-generic-prompt",
+              "role": "user",
+              "content": "Use updateObjectFields exactly once and no other tools. Restore thing thing_283 by setting only shortDescription to exactly `Bone whistle for signaling location in whiteout conditions.` Do not change any other field or game state. After the successful tool result, briefly confirm the restoration.",
+              "metadata": {
+                "excludeFromBaseContextHistory": true
+              }
+            },
+            {
+              "type": "tool-call-debug",
+              "role": "system",
+              "metadata": {
+                "excludeFromBaseContextHistory": true,
+                "debugToolCalls": true,
+                "promptLabel": "generic_prompt",
+                "toolCallCount": 1,
+                "completedToolCallCount": 1,
+                "erroredToolCallCount": 0
+              }
+            },
+            {
+              "type": "generic-prompt-response",
+              "role": "assistant",
+              "metadata": {
+                "excludeFromBaseContextHistory": true
+              }
+            }
+          ]
+        },
+        {
+          "type": "historyAddedNestedObjectCount",
+          "beforeSource": "snapshots.after_mutation",
+          "afterSource": "after",
+          "entryWhere": {
+            "type": "tool-call-debug"
+          },
+          "path": "toolCalls",
+          "where": {
+            "name": "updateObjectFields",
+            "status": "completed",
+            "parameters": {
+              "objectType": "thing",
+              "object": "thing_283",
+              "fields": {
+                "shortDescription": "Bone whistle for signaling location in whiteout conditions."
+              }
+            }
+          },
+          "equals": 1
+        },
+        {
+          "type": "exactDelta",
+          "beforeSource": "snapshots.before_mutation",
+          "afterSource": "after",
+          "path": "things.payload.things.length",
+          "delta": 0
+        },
+        {
+          "type": "stateUnchanged",
+          "beforeSource": "snapshots.before_mutation",
+          "afterSource": "after",
+          "paths": [
+            "player.payload.player.id",
+            "player.payload.player.level",
+            "player.payload.player.health",
+            "player.payload.player.maxHealth",
+            "player.payload.player.locationId",
+            "player.payload.player.experience",
+            "player.payload.player.abilities",
+            "player.payload.player.attributes",
+            "player.payload.player.skills",
+            "player.payload.player.inventory",
+            "player.payload.player.currency",
+            "player.payload.player.statusEffects",
+            "player.payload.player.needBars",
+            "player.payload.player.quests",
+            "player.payload.player.completedQuests",
+            "locations.payload.locations",
+            "regions.payload.regions",
+            "factions.payload.factions",
+            "factions.payload.playerStandings",
+            "scheduledEvents.payload.scheduledEvents",
+            "calendar.payload.worldTime"
+          ]
+        },
+        {
+          "type": "historyAddedTypeCount",
+          "beforeSource": "snapshots.before_mutation",
+          "afterSource": "after",
+          "entryType": "user-generic-prompt",
+          "equals": 2
+        },
+        {
+          "type": "historyAddedTypeCount",
+          "beforeSource": "snapshots.before_mutation",
+          "afterSource": "after",
+          "entryType": "tool-call-debug",
+          "equals": 2
+        },
+        {
+          "type": "historyAddedTypeCount",
+          "beforeSource": "snapshots.before_mutation",
+          "afterSource": "after",
+          "entryType": "generic-prompt-response",
+          "equals": 2
+        },
+        {
+          "type": "historyAddedTypeCount",
+          "beforeSource": "snapshots.before_mutation",
+          "afterSource": "after",
+          "entryType": "player-action",
+          "equals": 0
+        },
+        {
+          "type": "historyAddedTypeCount",
+          "beforeSource": "snapshots.before_mutation",
+          "afterSource": "after",
+          "entryType": "event-summary",
+          "equals": 0
+        },
+        {
+          "type": "historyAddedTypeCount",
+          "beforeSource": "snapshots.before_mutation",
+          "afterSource": "after",
+          "entryType": "random-event",
+          "equals": 0
+        },
+        {
+          "type": "historyAddedTypeCount",
+          "beforeSource": "snapshots.before_mutation",
+          "afterSource": "after",
+          "entryType": "npc-turn",
+          "equals": 0
+        },
+        {
+          "type": "historyAddedTypeCount",
+          "beforeSource": "snapshots.before_mutation",
+          "afterSource": "after",
+          "entryType": "slop-remover",
+          "equals": 0
+        },
+        {
+          "type": "entityField",
+          "source": "after",
+          "collection": "players",
+          "id": "$fixture.lanternWitnessId",
+          "path": "locationId",
+          "equals": "$fixture.baselineLocationId"
+        },
+        {
+          "type": "entityField",
+          "source": "after",
+          "collection": "players",
+          "id": "$fixture.lanternWitnessId",
+          "path": "relationships",
+          "equals": {}
+        },
+        {
+          "type": "entityArrayObjectCount",
+          "source": "after",
+          "collection": "players",
+          "id": "$fixture.lanternWitnessId",
+          "path": "inventory",
+          "where": {
+            "id": "thing_283",
+            "name": "Whistle of the Ridge",
+            "shortDescription": "Bone whistle for signaling location in whiteout conditions.",
+            "metadata": {
+              "ownerId": "$fixture.lanternWitnessId"
+            }
+          },
+          "equals": 1
+        },
+        {
+          "type": "noRealtimeErrors"
+        },
+        {
+          "type": "noUnexpectedErrorLogs"
+        }
+      ]
+    }
+  ],
+  "humanReview": [
+    "Confirm both elevated generic responses briefly acknowledge the actual tool result and do not narrate unrelated story events. Wording variation is valid; if prose contradicts the tool result, record the full example in tmp/prose_issues_log.md rather than adding a response-text matcher or prompt micro-rule.",
+    "The case must restore every semantic thing_283 field exactly; only its normal lastUpdated mutation timestamp may differ. It must never modify the immutable relationships-factions source fixture because all mutation and restoration occur only in the harness-created disposable runtime save."
+  ]
+}

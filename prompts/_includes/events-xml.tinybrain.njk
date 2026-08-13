@@ -9,19 +9,11 @@ At every checkpoint:
 - Return exactly one `<events>...</events>` XML block containing all qualifying events for that category. When there are none, return exactly `<events><done/></events>`.
 - Use only the explicitly allowed top-level tags. Follow their full schema above exactly.
 - A tag is required only when the current checkpoint explicitly lists it under "Required top-level tags." In particular, do not emit `<inCombat>` or `<anyQuestObjectivesCompleted>` before that checkpoint.
-- Do not repeat an event accepted at an earlier checkpoint.
 - Output no commentary and no markdown fences.
 </task>
 
-{% if tinyBrainAuthoritativeMovementCompanionNames and tinyBrainAuthoritativeMovementCompanionNames.length %}
-The following characters are authoritative player-movement companions for this turn:
-{% for companionName in tinyBrainAuthoritativeMovementCompanionNames %}- {{ companionName }}
-{% endfor %}
-Do not emit `<npcArrival>`, `<npcDeparture>`, or `<npcArrivalDeparture>` for these characters in any section. The authoritative player movement endpoint moves them exactly once.
-{% endif %}
-
 {% if tinyBrainAcceptedEventXml %}
-The following event XML was already accepted from earlier prose sections in this same turn. Use it as context for this section. Do not repeat ordinary action events from it. Still emit every checkpoint-required state tag for the current section, even when an earlier section emitted the same state tag:
+The following event XML was already accepted from earlier prose sections in this same turn. Use it as context for this section. Still emit every checkpoint-required state tag for the current section, even when an earlier section emitted the same state tag:
 <acceptedSectionEvents>
 {{ tinyBrainAcceptedEventXml }}
 </acceptedSectionEvents>

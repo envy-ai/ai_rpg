@@ -1,4 +1,9 @@
 const Utils = require('./Utils.js');
+const { isDeepStrictEqual } = require('node:util');
+const {
+    UPDATE_OBJECT_FIELD_NAMES_BY_TYPE,
+    UPDATE_OBJECT_TYPE_VALUES
+} = require('./chat_tool_calls.js');
 const {
     PLAYER_ACTION_MOVEMENT,
     PLAYER_ACTION_PROSE_SCOPE,
@@ -7,6 +12,27 @@ const {
 const {
     normalizePlayerActionAccompanyingCharacterSelection
 } = require('./PlayerActionCompanions.js');
+
+const NON_MUTATING_SCHEDULED_EVENT_TOOL_NAMES = new Set([
+    'moreInfo',
+    'getHistory',
+    'getFullScene',
+    'requestUserInput',
+    'listMysteryBoxes',
+    'findMysteryBoxes',
+    'getMysteryBox',
+    'listMysteryThreads',
+    'getMysteryThread',
+    'listLocationEntities',
+    'getTravelTime',
+    'locateNpcs',
+    'locateThings'
+]);
+
+function isNonMutatingScheduledEventToolName(name) {
+    return typeof name === 'string'
+        && NON_MUTATING_SCHEDULED_EVENT_TOOL_NAMES.has(name.trim());
+}
 
 function requireResponseText(response, label) {
     if (typeof response !== 'string' || !response.trim()) {
@@ -140,28 +166,31 @@ function parsePlayerActionMoreInfoOrNa(response, parseContext = {}) {
         invocation?.name === 'moreInfo'
         && invocation?.metadata?.error !== true
     ));
-    const normalized = normalizeCompactChoiceResponse(
-        response,
-        'player-action destination lookup'
-    ).toUpperCase();
-    if (normalized === 'N/A' || normalized === 'NA') {
+    const normalized = normalizePlainResponse(response, 'player-action destination lookup')
+        .replace(/^[*_`~]+/, '')
+        .replace(/^answer\s*:\s*/i, '')
+        .trim();
+    const choice = normalized.match(/^(READY|N\s*\/?\s*A)(?=$|\s|[.,;:!?])/i)?.[1]
+        ?.replace(/\s+/g, '')
+        .toUpperCase();
+    if (choice === 'N/A' || choice === 'NA') {
         if (successfulMoreInfoInvocations.length) {
             throw new Error(
                 'Player-action destination lookup must answer READY after a successful moreInfo call.'
             );
         }
-        return { value: false };
+        return { value: false, normalizedResponse: 'N/A' };
     }
-    if (normalized === 'READY') {
+    if (choice === 'READY') {
         if (!successfulMoreInfoInvocations.length) {
             throw new Error(
                 'Player-action destination lookup cannot answer READY without a successful moreInfo call.'
             );
         }
-        return { value: true };
+        return { value: true, normalizedResponse: 'READY' };
     }
     throw new Error(
-        'Player-action destination lookup must be exactly N/A, or READY after calling moreInfo.'
+        'Player-action destination lookup must begin with N/A, or READY after calling moreInfo.'
     );
 }
 
@@ -473,6 +502,19 @@ function parsePlayerActionDestinationChanges(response) {
     };
 }
 
+function parsePlayerActionExplicitDuration(response) {
+    const normalized = normalizePlainResponse(response, 'player-action explicit duration');
+    rejectPlayerActionResultMarkup(normalized, 'Player-action explicit duration');
+    if (/^none$/i.test(normalized)) {
+        return { value: null, normalizedResponse: 'NONE' };
+    }
+    const parsed = parsePlayerActionDuration(normalized, 1);
+    return {
+        value: parsed.value,
+        normalizedResponse: parsed.value.text
+    };
+}
+
 function parsePlayerActionDuration(response, minimumMinutes = 1) {
     const normalized = normalizePlainResponse(response, 'player-action duration');
     if (!Number.isInteger(minimumMinutes) || minimumMinutes < 0) {
@@ -534,17 +576,12 @@ function parsePlayerActionAccompanyingCharacters(response, allowedCharacters = [
     );
 }
 
-function parsePlayerActionCheckedActionActors(response, allowedCharacters = []) {
-    return parsePlayerActionCharacterNameSelection(
-        response,
-        allowedCharacters,
-        'Player-action checked-action actors'
-    );
-}
-
 function parsePlayerActionRequiredProse(response) {
     const normalized = normalizePlainResponse(response, 'player-action prose');
     rejectPlayerActionResultMarkup(normalized, 'Player-action prose', { rejectHidden: true });
+    if (/<(?:\/?[A-Za-z_][A-Za-z0-9_.:-]*(?:\s[^<>]*?)?\/?>|!\[CDATA\[|\?xml\b)/i.test(normalized)) {
+        throw new Error('Player-action prose must contain prose only, without XML markup.');
+    }
     return { value: normalized };
 }
 
@@ -1329,6 +1366,361 @@ function parseScheduledEventNarrativeResult(response) {
     return { value: xml, normalizedResponse: xml };
 }
 
+function parseScheduledEventApplicability(response) {
+    const { root } = parseStrictXml(response, 'scheduled event applicability');
+    if (normalizedTagName(root) !== 'applicability') {
+        throw new Error('Scheduled event applicability must use <applicability> as its document root.');
+    }
+    rejectUnexpectedDirectChildren(root, ['decision', 'reason'], 'Scheduled event applicability');
+    const decision = requireSingleDirectChild(
+        root,
+        'decision',
+        'Scheduled event applicability'
+    ).text.toLowerCase();
+    requireSingleDirectChild(root, 'reason', 'Scheduled event applicability');
+    if (decision !== 'yes' && decision !== 'no') {
+        throw new Error('Scheduled event <decision> must be exactly yes or no.');
+    }
+    return { value: decision === 'yes' };
+}
+
+function normalizeScheduledEventContractText(value) {
+    return String(value || '').trim().toLowerCase().replace(/\s+/g, ' ');
+}
+
+function parseJsonObjectText(text, label) {
+    let value;
+    try {
+        value = JSON.parse(text);
+    } catch (error) {
+        throw new Error(`${label} must contain valid JSON: ${error.message}`);
+    }
+    if (!value || typeof value !== 'object' || Array.isArray(value)) {
+        throw new Error(`${label} must decode to a JSON object.`);
+    }
+    return value;
+}
+
+function parseScheduledEventToolPlan(response, scheduledEventText, availableToolNames = []) {
+    const authoritativeEvent = typeof scheduledEventText === 'string'
+        ? scheduledEventText.trim()
+        : '';
+    if (!authoritativeEvent) {
+        throw new Error('Scheduled event tool plan requires the authoritative event text.');
+    }
+    if (
+        !Array.isArray(availableToolNames)
+        || availableToolNames.some(name => typeof name !== 'string' || !name.trim())
+    ) {
+        throw new TypeError('Scheduled event tool plan requires an array of available tool names.');
+    }
+
+    const { xml, root } = parseStrictXml(response, 'scheduled event tool plan');
+    if (normalizedTagName(root) !== 'toolplan') {
+        throw new Error('Scheduled event tool plan must use <toolPlan> as its document root.');
+    }
+    rejectUnexpectedDirectChildren(
+        root,
+        ['stateChangeRequired', 'directUpdates', 'otherTools'],
+        'Scheduled event tool plan'
+    );
+    const stateChangeRequired = parseBooleanText(
+        requireSingleDirectChild(root, 'stateChangeRequired', 'Scheduled event tool plan').text,
+        'Scheduled event tool plan <stateChangeRequired>'
+    );
+    const directUpdatesNode = requireSingleDirectChild(
+        root,
+        'directUpdates',
+        'Scheduled event tool plan',
+        { allowEmpty: true }
+    ).node;
+    rejectUnexpectedDirectChildren(
+        directUpdatesNode,
+        ['update'],
+        'Scheduled event tool plan <directUpdates>'
+    );
+    const directUpdates = [];
+    const directUpdateKeys = new Set();
+    for (const [index, updateNode] of directChildrenByTagName(directUpdatesNode, 'update').entries()) {
+        const label = `Scheduled event direct update ${index + 1}`;
+        rejectUnexpectedDirectChildren(
+            updateNode,
+            ['objectType', 'objectId', 'objectName', 'field', 'valueJson'],
+            label
+        );
+        const objectType = requireSingleDirectChild(updateNode, 'objectType', label).text;
+        if (!UPDATE_OBJECT_TYPE_VALUES.includes(objectType)) {
+            throw new Error(`${label} contains unsupported object type "${objectType}".`);
+        }
+        const objectId = requireSingleDirectChild(
+            updateNode,
+            'objectId',
+            label,
+            { allowEmpty: true }
+        ).text;
+        const objectName = requireSingleDirectChild(
+            updateNode,
+            'objectName',
+            label,
+            { allowEmpty: true }
+        ).text;
+        if (!objectId && !objectName) {
+            throw new Error(`${label} requires an object id or object name.`);
+        }
+        const field = requireSingleDirectChild(updateNode, 'field', label).text;
+        const allowedFields = UPDATE_OBJECT_FIELD_NAMES_BY_TYPE[objectType] || [];
+        if (!allowedFields.includes(field)) {
+            throw new Error(`${label} contains unsupported ${objectType} field "${field}".`);
+        }
+        const valueJson = requireSingleDirectChild(updateNode, 'valueJson', label).text;
+        let value;
+        try {
+            value = JSON.parse(valueJson);
+        } catch (error) {
+            throw new Error(`${label} <valueJson> must contain valid JSON: ${error.message}`);
+        }
+        const key = JSON.stringify([
+            objectType,
+            objectId.toLowerCase(),
+            objectName.toLowerCase(),
+            field
+        ]);
+        if (directUpdateKeys.has(key)) {
+            const existing = directUpdates.find(update => JSON.stringify([
+                update.objectType,
+                update.objectId.toLowerCase(),
+                update.objectName.toLowerCase(),
+                update.field
+            ]) === key);
+            if (existing && isDeepStrictEqual(existing.value, value)) {
+                continue;
+            }
+            throw new Error(`${label} conflicts with an earlier direct update for the same field.`);
+        }
+        directUpdateKeys.add(key);
+        directUpdates.push({
+            objectType,
+            objectId,
+            objectName,
+            field,
+            value
+        });
+    }
+
+    const otherToolsNode = requireSingleDirectChild(
+        root,
+        'otherTools',
+        'Scheduled event tool plan',
+        { allowEmpty: true }
+    ).node;
+    rejectUnexpectedDirectChildren(otherToolsNode, ['tool'], 'Scheduled event tool plan <otherTools>');
+    const availableToolNameSet = new Set(availableToolNames.map(name => name.trim()));
+    const otherTools = [];
+    const otherToolKeys = new Set();
+    for (const [index, toolNode] of directChildrenByTagName(otherToolsNode, 'tool').entries()) {
+        const label = `Scheduled event planned tool ${index + 1}`;
+        rejectUnexpectedDirectChildren(toolNode, ['name', 'argumentsJson', 'purpose'], label);
+        const name = requireSingleDirectChild(toolNode, 'name', label).text;
+        if (name === 'updateObjectFields') {
+            throw new Error('Scheduled event updateObjectFields calls must be represented in <directUpdates>.');
+        }
+        if (!availableToolNameSet.has(name)) {
+            throw new Error(`${label} names unavailable tool "${name}".`);
+        }
+        const argumentsJson = requireSingleDirectChild(toolNode, 'argumentsJson', label).text;
+        const argumentsObject = parseJsonObjectText(argumentsJson, `${label} <argumentsJson>`);
+        const purpose = requireSingleDirectChild(toolNode, 'purpose', label).text;
+        const key = JSON.stringify([name, argumentsObject]);
+        if (otherToolKeys.has(key)) {
+            continue;
+        }
+        otherToolKeys.add(key);
+        otherTools.push({ name, argumentsObject, purpose });
+    }
+
+    const mutatingOtherTools = otherTools.filter(tool => (
+        !NON_MUTATING_SCHEDULED_EVENT_TOOL_NAMES.has(tool.name)
+    ));
+    if (!stateChangeRequired && (directUpdates.length || mutatingOtherTools.length)) {
+        throw new Error('Scheduled event tool plan cannot include state-changing calls when no state change is required.');
+    }
+    if (stateChangeRequired && !directUpdates.length && !mutatingOtherTools.length) {
+        throw new Error('Scheduled event tool plan requires at least one planned state-changing call.');
+    }
+    return {
+        value: {
+            event: authoritativeEvent,
+            stateChangeRequired,
+            directUpdates,
+            otherTools
+        },
+        normalizedResponse: xml
+    };
+}
+
+function requireScheduledEventToolPlan(toolPlan, authoritativeEvent) {
+    if (!toolPlan || typeof toolPlan !== 'object' || Array.isArray(toolPlan)) {
+        throw new Error('Scheduled event tool execution requires its parsed tool plan.');
+    }
+    if (toolPlan.event !== authoritativeEvent) {
+        throw new Error('Scheduled event tool execution plan does not match the authoritative event.');
+    }
+    if (typeof toolPlan.stateChangeRequired !== 'boolean') {
+        throw new Error('Scheduled event tool execution plan is missing stateChangeRequired.');
+    }
+    if (!Array.isArray(toolPlan.directUpdates) || !Array.isArray(toolPlan.otherTools)) {
+        throw new Error('Scheduled event tool execution plan has malformed planned calls.');
+    }
+    return toolPlan;
+}
+
+function scheduledEventObjectReferenceMatches(value, plannedUpdate) {
+    const normalized = normalizeScheduledEventContractText(value);
+    return Boolean(normalized) && [plannedUpdate.objectId, plannedUpdate.objectName]
+        .some(reference => normalizeScheduledEventContractText(reference) === normalized);
+}
+
+function validateScheduledEventToolCallAgainstPlan(toolCall, toolPlan) {
+    const authoritativeEvent = typeof toolPlan?.event === 'string' ? toolPlan.event : '';
+    const plan = requireScheduledEventToolPlan(toolPlan, authoritativeEvent);
+    const name = typeof toolCall?.name === 'string'
+        ? toolCall.name.trim()
+        : (typeof toolCall?.functionName === 'string' ? toolCall.functionName.trim() : '');
+    const argumentsObject = toolCall?.argumentsObject;
+    if (!name || !argumentsObject || typeof argumentsObject !== 'object' || Array.isArray(argumentsObject)) {
+        throw new Error('Scheduled event tool call validation requires a named call with structured arguments.');
+    }
+    if (!plan.stateChangeRequired && name === 'updateObjectFields') {
+        throw new Error('The accepted scheduled event tool plan requires no state-changing tool calls.');
+    }
+
+    if (name === 'updateObjectFields') {
+        const objectType = typeof argumentsObject.objectType === 'string'
+            ? argumentsObject.objectType.trim()
+            : '';
+        const object = typeof argumentsObject.object === 'string'
+            ? argumentsObject.object.trim()
+            : '';
+        const fields = argumentsObject.fields;
+        if (!objectType || !object || !fields || typeof fields !== 'object' || Array.isArray(fields)) {
+            throw new Error('Scheduled event updateObjectFields call must provide objectType, object, and fields.');
+        }
+        const entries = Object.entries(fields);
+        if (!entries.length) {
+            throw new Error('Scheduled event updateObjectFields call must include at least one planned field.');
+        }
+        for (const [field, value] of entries) {
+            const matchingUpdate = plan.directUpdates.find(update => (
+                update.objectType === objectType
+                && scheduledEventObjectReferenceMatches(object, update)
+                && update.field === field
+                && isDeepStrictEqual(update.value, value)
+            ));
+            if (!matchingUpdate) {
+                throw new Error(
+                    `Scheduled event updateObjectFields field "${field}" is not an exact match for the accepted `
+                    + 'tool plan. Use only the planned target, field, and value.'
+                );
+            }
+        }
+        return true;
+    }
+
+    const matchingTool = plan.otherTools.find(tool => (
+        tool.name === name && isDeepStrictEqual(tool.argumentsObject, argumentsObject)
+    ));
+    if (!matchingTool) {
+        throw new Error(
+            `Scheduled event tool call "${name}" is not an exact match for the accepted tool plan.`
+        );
+    }
+    if (!plan.stateChangeRequired && !NON_MUTATING_SCHEDULED_EVENT_TOOL_NAMES.has(name)) {
+        throw new Error('The accepted scheduled event tool plan requires no state-changing tool calls.');
+    }
+    return true;
+}
+
+function parseScheduledEventToolExecution(response, scheduledEventText, toolPlan, parseContext = {}) {
+    const normalizedResponse = requireResponseText(response, 'scheduled event tool execution');
+    const authoritativeEvent = typeof scheduledEventText === 'string'
+        ? scheduledEventText.trim()
+        : '';
+    if (!authoritativeEvent) {
+        throw new Error('Scheduled event tool execution requires the authoritative event text.');
+    }
+    const plan = requireScheduledEventToolPlan(toolPlan, authoritativeEvent);
+
+    const invocations = Array.isArray(parseContext.currentToolInvocations)
+        ? parseContext.currentToolInvocations
+        : [];
+    const plannedCallCount = plan.directUpdates.length + plan.otherTools.length;
+    if (plannedCallCount > 0 && !invocations.length) {
+        throw new Error(
+            'Scheduled event tool execution requires at least one successful planned tool call before completion.'
+        );
+    }
+    for (const invocation of invocations) {
+        validateScheduledEventToolCallAgainstPlan(invocation, plan);
+    }
+
+    for (const update of plan.directUpdates) {
+        const completed = invocations.some(invocation => {
+            if (invocation?.name !== 'updateObjectFields' || invocation?.metadata?.error === true) {
+                return false;
+            }
+            const metadata = invocation.metadata || {};
+            const updatedValues = metadata.updatedValues || invocation.argumentsObject?.fields;
+            return metadata.objectType === update.objectType
+                && (
+                    scheduledEventObjectReferenceMatches(metadata.objectId, update)
+                    || scheduledEventObjectReferenceMatches(metadata.objectName, update)
+                )
+                && updatedValues
+                && Object.hasOwn(updatedValues, update.field)
+                && isDeepStrictEqual(updatedValues[update.field], update.value);
+        });
+        if (!completed) {
+            throw new Error(
+                `Scheduled event direct update for ${update.objectType} "${update.objectName || update.objectId}" `
+                + `field "${update.field}" has not completed with the exact planned value. Make that planned call now.`
+            );
+        }
+    }
+    for (const plannedTool of plan.otherTools) {
+        const completed = invocations.some(invocation => (
+            invocation?.name === plannedTool.name
+            && invocation?.metadata?.error !== true
+            && isDeepStrictEqual(invocation.argumentsObject, plannedTool.argumentsObject)
+        ));
+        if (!completed) {
+            throw new Error(
+                `Scheduled event planned tool "${plannedTool.name}" has not completed with its exact planned arguments.`
+            );
+        }
+    }
+
+    return { value: normalizedResponse };
+}
+
+function parseScheduledEventSummary(response) {
+    const { root } = parseStrictXml(response, 'scheduled event summary');
+    if (normalizedTagName(root) !== 'summary') {
+        throw new Error('Scheduled event summary must use <summary> as its document root.');
+    }
+    if (directChildElements(root).length) {
+        throw new Error('Scheduled event <summary> must contain text only.');
+    }
+    const summary = String(root.textContent || '').trim();
+    if (!summary) {
+        throw new Error('Scheduled event <summary> must not be empty.');
+    }
+    const nullSentinel = summary.toLowerCase();
+    if (new Set(['n/a', 'n.a.', 'n-a', 'na', 'none', 'not applicable', 'nothing']).has(nullSentinel)) {
+        throw new Error('Scheduled event <summary> must describe what happened; a null sentinel is not a summary.');
+    }
+    return { value: summary };
+}
+
 function parseScheduledEventStagedResult(response, {
     happened,
     expectedSummary = '',
@@ -1406,6 +1798,7 @@ function parseScheduledEventInterruptionRewrite(response, originalXml) {
 }
 
 module.exports = {
+    isNonMutatingScheduledEventToolName,
     parseAllowedCharacterSelection,
     parseContainerOpenNarrativeResult,
     parseCraftNarrativeResult,
@@ -1418,9 +1811,9 @@ module.exports = {
     parsePlayerActionDestination,
     parsePlayerActionVehicleDestination,
     parsePlayerActionDestinationChanges,
+    parsePlayerActionExplicitDuration,
     parsePlayerActionDuration,
     parsePlayerActionAccompanyingCharacters,
-    parsePlayerActionCheckedActionActors,
     parsePlayerActionHiddenNotes,
     parsePlayerActionMoreInfoOrNa,
     parsePlayerActionMovement,
@@ -1430,7 +1823,12 @@ module.exports = {
     parsePlayerActionVehicleDecision,
     parseQuestRewardResult,
     parseRevisionDecision,
+    parseScheduledEventApplicability,
     parseScheduledEventNarrativeResult,
+    parseScheduledEventToolPlan,
+    parseScheduledEventToolExecution,
+    validateScheduledEventToolCallAgainstPlan,
+    parseScheduledEventSummary,
     parseScheduledEventInterruptionRewrite,
     parseScheduledEventStagedResult,
     parseTurnNarrativeResult,

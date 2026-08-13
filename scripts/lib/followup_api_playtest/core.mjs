@@ -107,9 +107,11 @@ export class FollowupApiClient {
             || null;
         const routes = [
             ['/api/players', 'players'],
+            ['/api/factions', 'factions'],
             ['/api/locations', 'locations'],
             ['/api/regions', 'regions'],
             ['/api/things', 'things'],
+            ['/api/story-tools/scheduled-events', 'scheduledEvents'],
             ['/api/chat/history?includeAllEntries=true', 'history'],
             ['/api/calendar', 'calendar']
         ];
@@ -134,7 +136,48 @@ export async function getLogManifest(root) {
     const entries = await Promise.all(names.map(async (name) => {
         const filename = path.join(logsDir, name);
         const stat = await fs.stat(filename);
-        return { name, mtimeMs: stat.mtimeMs, size: stat.size };
+        const entry = { name, mtimeMs: stat.mtimeMs, size: stat.size };
+        if (/^ERROR_chatCompletionError_/i.test(name)) {
+            const handle = await fs.open(filename, 'r');
+            const chunks = [];
+            let position = 0;
+            let newlineCount = 0;
+            try {
+                while (position < stat.size && newlineCount < 2) {
+                    const buffer = Buffer.alloc(Math.min(16 * 1024, stat.size - position));
+                    const { bytesRead } = await handle.read(buffer, 0, buffer.length, position);
+                    if (!bytesRead) break;
+                    const content = buffer.subarray(0, bytesRead);
+                    let consumed = bytesRead;
+                    for (let index = 0; index < content.length; index += 1) {
+                        if (content[index] !== 0x0a) continue;
+                        newlineCount += 1;
+                        if (newlineCount === 2) {
+                            consumed = index + 1;
+                            break;
+                        }
+                    }
+                    chunks.push(content.subarray(0, consumed));
+                    position += bytesRead;
+                }
+            } finally {
+                await handle.close();
+            }
+            const detailsLine = Buffer.concat(chunks).toString('utf8').split(/\r?\n/, 2)[1];
+            if (detailsLine) {
+                try {
+                    const parsed = JSON.parse(detailsLine);
+                    entry.errorDetails = {
+                        attemptNumber: parsed?.attemptNumber,
+                        maxAttempts: parsed?.maxAttempts,
+                        willRetry: parsed?.willRetry
+                    };
+                } catch {
+                    // A malformed error log remains unexpected; its filename is still reported.
+                }
+            }
+        }
+        return entry;
     }));
     return entries.sort((a, b) => a.name.localeCompare(b.name));
 }
@@ -164,7 +207,8 @@ function normalizeInteractivePolicy(policy = {}) {
         confirmed: parseBooleanChoice(policy.confirmed, false),
         answer: typeof policy.answer === 'string' && policy.answer.trim()
             ? policy.answer.trim()
-            : null
+            : null,
+        deferPlayerInput: policy.deferPlayerInput === true
     };
 }
 
@@ -231,6 +275,70 @@ export class RealtimeSession {
         ));
     }
 
+    async waitForPromptIdle({
+        labelIncludes,
+        sinceEventIndex = 0,
+        requireActivity = true,
+        timeoutMs = 300_000,
+        quietPeriodMs = 500,
+        pollIntervalMs = 50
+    } = {}) {
+        const normalizedLabel = requireText(labelIncludes, 'labelIncludes');
+        if (!Number.isInteger(sinceEventIndex) || sinceEventIndex < 0) {
+            throw new Error('sinceEventIndex must be a non-negative integer.');
+        }
+        if (typeof requireActivity !== 'boolean') {
+            throw new Error('requireActivity must be a boolean.');
+        }
+        for (const [name, value, allowZero] of [
+            ['timeoutMs', timeoutMs, false],
+            ['quietPeriodMs', quietPeriodMs, true],
+            ['pollIntervalMs', pollIntervalMs, false]
+        ]) {
+            if (!Number.isFinite(value) || value < (allowZero ? 0 : 1)) {
+                throw new Error(`${name} must be a finite ${allowZero ? 'non-negative' : 'positive'} number.`);
+            }
+        }
+
+        const startedAt = Date.now();
+        let sawActivity = false;
+        let idleSince = null;
+        while (true) {
+            const promptEvents = this.events
+                .slice(sinceEventIndex)
+                .filter(event => event?.type === 'prompt_progress' && Array.isArray(event.entries));
+            for (const event of promptEvents) {
+                if (event.entries.some(entry => String(entry?.label || '').includes(normalizedLabel))) {
+                    sawActivity = true;
+                }
+            }
+            const latest = promptEvents.at(-1) || null;
+            const matchingActive = latest
+                ? latest.entries.filter(entry => String(entry?.label || '').includes(normalizedLabel))
+                : [];
+            if (matchingActive.length) {
+                idleSince = null;
+            } else if (sawActivity || !requireActivity) {
+                idleSince ??= Date.now();
+                if (Date.now() - idleSince >= quietPeriodMs) {
+                    return {
+                        labelIncludes: normalizedLabel,
+                        sawActivity,
+                        sinceEventIndex,
+                        observedEventCount: this.events.length - sinceEventIndex
+                    };
+                }
+            }
+            if (Date.now() - startedAt >= timeoutMs) {
+                throw new Error(
+                    `Timed out after ${timeoutMs}ms waiting for prompt label containing "${normalizedLabel}" `
+                    + `to become idle (sawActivity=${sawActivity}).`
+                );
+            }
+            await new Promise(resolve => setTimeout(resolve, pollIntervalMs));
+        }
+    }
+
     async #respond(route, body) {
         const result = await this.apiClient.fetchJson('POST', route, body);
         this.events.push({
@@ -281,6 +389,9 @@ export class RealtimeSession {
             return;
         }
         const { requestId, policy } = this.#resolvePolicy(event);
+        if (policy.deferPlayerInput) {
+            return;
+        }
         const responseBody = {
             inputRequestId: event.inputRequestId,
             clientId: this.clientId,

@@ -1,0 +1,379 @@
+{
+  "version": 1,
+  "scenario": "relationships-factions",
+  "case": "REL-3-player-disposition",
+  "description": "From a fresh immutable relationship fixture restore, isolate Cinder in the disposable runtime, let Baato perform one concrete modest favor witnessed by Lantern, then leave by the exact existing route so Lantern's ordinary NPC-memory pass applies exactly one positive player-facing disposition change with structured reason metadata.",
+  "fixture": "relationships-factions",
+  "configProfile": "relationship-disposition-mechanics",
+  "trackedPaths": [
+    "player.payload.player.locationId",
+    "players.payload.players",
+    "factions.payload.factions",
+    "factions.payload.playerStandings",
+    "locations.payload.locations",
+    "scheduledEvents.payload.scheduledEvents",
+    "calendar.payload.worldTime",
+    "history.payload.history"
+  ],
+  "steps": [
+    {
+      "type": "loadFixture"
+    },
+    {
+      "type": "request",
+      "name": "isolate_cinder_runtime_copy",
+      "method": "POST",
+      "route": "/api/npcs/$fixture.cinderWitnessId/teleport",
+      "body": {
+        "locationId": "$fixture.privateLocationId",
+        "accountTravelTime": false,
+        "storyToolTeleport": true
+      }
+    },
+    {
+      "type": "request",
+      "name": "prepare_lantern_favor",
+      "method": "PUT",
+      "route": "/api/npcs/$fixture.lanternWitnessId",
+      "body": {
+        "aiNotes": "REL-3 disposable runtime setup only: QA Lantern Witness is trying to retie the secure, undamaged strap on her existing Wind-Checked Satchel in strong wind. She accepts practical help holding the satchel steady if Baato offers it. Judge any later disposition change from what actually happens in the prose; do not invent prior favors or feelings. Remain at March Start Marker when Baato leaves."
+      }
+    },
+    {
+      "type": "request",
+      "name": "prepare_lantern_goals",
+      "method": "PUT",
+      "route": "/api/npcs/$fixture.lanternWitnessId/goals",
+      "body": {
+        "goals": [
+          "Observe the condition of the March Start Marker.",
+          "Keep the Wind-Checked Satchel secure in strong weather.",
+          "Complete the current Lantern Guild observation shift.",
+          "Report useful route conditions to the Lantern Guild."
+        ]
+      }
+    },
+    {
+      "type": "request",
+      "name": "lantern_initial",
+      "method": "GET",
+      "route": "/api/npcs/$fixture.lanternWitnessId"
+    },
+    {
+      "type": "request",
+      "name": "cinder_isolated",
+      "method": "GET",
+      "route": "/api/npcs/$fixture.cinderWitnessId"
+    },
+    {
+      "type": "request",
+      "name": "contact_initial",
+      "method": "GET",
+      "route": "/api/npcs/$fixture.privateContactId"
+    },
+    {
+      "type": "snapshot",
+      "name": "before_help"
+    },
+    {
+      "type": "chat",
+      "name": "concrete_help",
+      "text": "I notice QA Lantern Witness struggling to retie the secure strap on her existing Wind-Checked Satchel in the strong wind. With her agreement, I hold the undamaged satchel steady and shield it from the gusts while she tightens the working strap herself, then hand it back unchanged. This modest concrete help takes exactly one minute; I do not flirt, make a grand gesture, or ask for a reward.",
+      "travel": false,
+      "interactive": {
+        "roll": null,
+        "questAccepted": false,
+        "confirmed": false
+      }
+    },
+    {
+      "type": "assert",
+      "assertions": [
+        {
+          "type": "httpStatus",
+          "equals": 200
+        },
+        {
+          "type": "responseOk",
+          "equals": true
+        },
+        {
+          "type": "exists",
+          "source": "responses.concrete_help",
+          "path": "payload.response"
+        }
+      ]
+    },
+    {
+      "type": "request",
+      "name": "lantern_after_help",
+      "method": "GET",
+      "route": "/api/npcs/$fixture.lanternWitnessId"
+    },
+    {
+      "type": "assert",
+      "assertions": [
+        {
+          "type": "equals",
+          "source": "responses.lantern_after_help",
+          "path": "payload.npc.dispositions",
+          "equalsFrom": {
+            "source": "responses.lantern_initial",
+            "path": "payload.npc.dispositions"
+          }
+        },
+        {
+          "type": "count",
+          "source": "responses.lantern_after_help",
+          "path": "payload.npc.relationships",
+          "equals": 0
+        }
+      ]
+    },
+    {
+      "type": "snapshot",
+      "name": "after_help_before_departure"
+    },
+    {
+      "type": "chat",
+      "name": "leave_lantern_to_reflect",
+      "text": "I say goodbye to QA Lantern Witness and leave her at March Start Marker. I follow the exact known QA Fast Travel Tower exit and arrive at the existing QA Fast Travel Tower after the nine-minute walk, traveling without a companion. Lantern does not accompany me.",
+      "travel": true,
+      "travelMetadata": {
+        "mode": "direct",
+        "eventDriven": false,
+        "exit": {
+          "exitId": "exit_83",
+          "originLocationId": "$fixture.baselineLocationId",
+          "direction": "qa_fast_travel_tower",
+          "destinationId": "$fixture.privateLocationId",
+          "destinationRegionId": "region_1786438821952_m5baxvz2",
+          "destinationIsStub": false,
+          "destinationIsRegionEntryStub": false,
+          "isVehicle": false,
+          "vehicleType": null,
+          "destinationName": "$fixture.privateLocationName",
+          "regionName": "QA Frost March"
+        }
+      },
+      "interactive": {
+        "roll": null,
+        "questAccepted": false,
+        "confirmed": false
+      }
+    },
+    {
+      "type": "assert",
+      "assertions": [
+        {
+          "type": "httpStatus",
+          "equals": 200
+        },
+        {
+          "type": "responseOk",
+          "equals": true
+        },
+        {
+          "type": "exists",
+          "source": "responses.leave_lantern_to_reflect",
+          "path": "payload.response"
+        },
+        {
+          "type": "equals",
+          "source": "responses.leave_lantern_to_reflect",
+          "path": "payload.authoritativeMovementType",
+          "equals": "destination"
+        },
+        {
+          "type": "count",
+          "source": "responses.leave_lantern_to_reflect",
+          "path": "payload.accompanyingCharacters",
+          "equals": 0
+        }
+      ]
+    },
+    {
+      "type": "request",
+      "name": "apply_authoritative_departure",
+      "method": "POST",
+      "route": "/api/player/move",
+      "body": {
+        "destinationId": "$fixture.privateLocationId",
+        "expectedOriginLocationId": "$fixture.baselineLocationId",
+        "accompanyingCharacters": []
+      },
+      "interactive": {
+        "roll": null,
+        "questAccepted": false,
+        "confirmed": false
+      }
+    },
+    {
+      "type": "assert",
+      "assertions": [
+        {
+          "type": "httpStatus",
+          "equals": 200
+        },
+        {
+          "type": "responseOk",
+          "equals": true
+        },
+        {
+          "type": "equals",
+          "source": "responses.apply_authoritative_departure",
+          "path": "payload.success",
+          "equals": true
+        },
+        {
+          "type": "equals",
+          "source": "responses.apply_authoritative_departure",
+          "path": "payload.location.id",
+          "equals": "$fixture.privateLocationId"
+        }
+      ]
+    },
+    {
+      "type": "waitForPromptIdle",
+      "labelIncludes": "npc_memories_QA_Lantern_Witness",
+      "requireActivity": true,
+      "timeoutMs": 600000,
+      "quietPeriodMs": 500,
+      "pollIntervalMs": 50
+    },
+    {
+      "type": "waitForRequest",
+      "name": "lantern_after_reflection",
+      "method": "GET",
+      "route": "/api/npcs/$fixture.lanternWitnessId",
+      "timeoutMs": 60000,
+      "pollIntervalMs": 100,
+      "until": [
+        {
+          "type": "notEquals",
+          "source": "response",
+          "path": "payload.npc.dispositions",
+          "equalsFrom": {
+            "source": "responses.lantern_initial",
+            "path": "payload.npc.dispositions"
+          }
+        }
+      ]
+    },
+    {
+      "type": "request",
+      "name": "cinder_after",
+      "method": "GET",
+      "route": "/api/npcs/$fixture.cinderWitnessId"
+    },
+    {
+      "type": "request",
+      "name": "contact_after",
+      "method": "GET",
+      "route": "/api/npcs/$fixture.privateContactId"
+    },
+    {
+      "type": "assert",
+      "assertions": [
+        {
+          "type": "dispositionChangesMatchState",
+          "npcId": "$fixture.lanternWitnessId",
+          "playerId": "$fixture.playerId",
+          "direction": "increase",
+          "beforeSource": "snapshots.before_help",
+          "afterSource": "after"
+        },
+        {
+          "type": "count",
+          "source": "responses.lantern_after_reflection",
+          "path": "payload.npc.relationships",
+          "equals": 0
+        },
+        {
+          "type": "equals",
+          "source": "responses.cinder_after",
+          "path": "payload.npc.dispositions",
+          "equalsFrom": {
+            "source": "responses.cinder_isolated",
+            "path": "payload.npc.dispositions"
+          }
+        },
+        {
+          "type": "equals",
+          "source": "responses.contact_after",
+          "path": "payload.npc.dispositions",
+          "equalsFrom": {
+            "source": "responses.contact_initial",
+            "path": "payload.npc.dispositions"
+          }
+        },
+        {
+          "type": "equals",
+          "source": "after",
+          "path": "player.payload.player.locationId",
+          "equals": "$fixture.privateLocationId"
+        },
+        {
+          "type": "entityField",
+          "source": "after",
+          "collection": "players",
+          "id": "$fixture.lanternWitnessId",
+          "path": "locationId",
+          "equals": "$fixture.baselineLocationId"
+        },
+        {
+          "type": "entityField",
+          "source": "after",
+          "collection": "players",
+          "id": "$fixture.cinderWitnessId",
+          "path": "locationId",
+          "equals": "$fixture.privateLocationId"
+        },
+        {
+          "type": "entityField",
+          "source": "after",
+          "collection": "players",
+          "id": "$fixture.privateContactId",
+          "path": "locationId",
+          "equals": "$fixture.privateLocationId"
+        },
+        {
+          "type": "exactDelta",
+          "path": "calendar.payload.worldTime.timeMinutes",
+          "delta": 10,
+          "beforeSource": "snapshots.before_help",
+          "afterSource": "after"
+        },
+        {
+          "type": "stateUnchanged",
+          "paths": [
+            "factions.payload.factions",
+            "factions.payload.playerStandings",
+            "scheduledEvents.payload.scheduledEvents"
+          ],
+          "beforeSource": "snapshots.after_help_before_departure",
+          "afterSource": "after"
+        },
+        {
+          "type": "historyAddedTypeCount",
+          "entryType": "relationship-updates",
+          "equals": 0,
+          "beforeSource": "snapshots.before_help",
+          "afterSource": "after"
+        },
+        {
+          "type": "noRealtimeErrors"
+        },
+        {
+          "type": "noUnexpectedErrorLogs",
+          "allowRecoveredProviderRetries": true
+        }
+      ]
+    }
+  ],
+  "humanReview": [
+    "Confirm the first turn presents a natural, modest, concrete favor that Lantern witnesses and accepts without turning it into romance, a grand reward, or player control of her feelings.",
+    "Confirm the departure leaves Lantern behind and reaches QA Fast Travel Tower without a traveling companion or any contradiction with authoritative movement and actor placement.",
+    "Inspect the structured disposition summary: every selected disposition type, magnitude, and nonempty reason must make sense for the actual modest satchel-holding favor. Multiple distinct, justified dimensions are valid; record merely imperfect phrasing in tmp/prose_issues_log.md rather than adding a one-case prompt rule."
+  ]
+}

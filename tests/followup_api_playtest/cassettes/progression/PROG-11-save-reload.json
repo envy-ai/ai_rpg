@@ -1,0 +1,101 @@
+{
+  "version": 2,
+  "strict": true,
+  "complete": true,
+  "description": "progression/PROG-11-save-reload",
+  "recordedAt": "2026-08-12T08:59:04.998Z",
+  "entries": [
+    {
+      "ordinal": 1,
+      "metadataLabel": "player_ability_options",
+      "requestFingerprint": "sha256:69c6f610a83de67c2abb3789501dda8cd2fd1e9e08e3ad588762fb938056ac00",
+      "requestSummary": {
+        "messageRoles": [
+          "system",
+          "user",
+          "user",
+          "user",
+          "user",
+          "user",
+          "user",
+          "user",
+          "user",
+          "user",
+          "user",
+          "user"
+        ],
+        "messageCharacters": 83961,
+        "toolNames": [
+          "generateRandomInteger",
+          "moreInfo",
+          "getHistory",
+          "getFullScene",
+          "editChatLogEntry",
+          "rerunSceneSummary",
+          "editSceneSummary",
+          "requestUserInput",
+          "listMysteryBoxes",
+          "findMysteryBoxes",
+          "getMysteryBox",
+          "updateMysteryBoxFields",
+          "listMysteryThreads",
+          "getMysteryThread",
+          "updateMysteryThreadFields",
+          "teleportCharacterToLocation",
+          "teleportThingToLocation",
+          "moveThingFromLocationToCharacterInventory",
+          "createRegionStub",
+          "createLocationStub",
+          "createExit",
+          "listLocationEntities",
+          "getTravelTime",
+          "revealEntity",
+          "hideEntity",
+          "createThing",
+          "createNpc",
+          "deleteThing",
+          "setRelationship",
+          "addTracker",
+          "updateTracker",
+          "removeTracker",
+          "createQuest",
+          "scheduleEvent",
+          "alterThing",
+          "alterNpc",
+          "updateCharacterFields",
+          "updateObjectFields",
+          "upsertFactionFields",
+          "updatePartyMembers",
+          "alterLocation",
+          "resolveAttack",
+          "resolveAreaAttack",
+          "resolveSkillCheck",
+          "resolveOpposedSkillCheck",
+          "locateNpcs",
+          "locateThings",
+          "equipImplant",
+          "unequipImplant",
+          "installModule",
+          "removeModule"
+        ],
+        "model": "Qwen3.6-35B-A3B-uncensored-heretic-Native-MTP-Preserved-GGUF",
+        "backend": "openai_compatible"
+      },
+      "response": {
+        "object": "chat.completion",
+        "model": "Qwen3.6-35B-A3B-uncensored-heretic-Native-MTP-Preserved-GGUF",
+        "choices": [
+          {
+            "index": 0,
+            "finish_reason": "stop",
+            "message": {
+              "role": "assistant",
+              "content": "Baato’s level-up from 4 to 5 marks a shift from raw labor to specialized utility. As a human alchemist apprentice, his new abilities should reflect his growing competence in the field, his need to survive the northern route, and his transition from a novice to a capable worker. The declined options (Swift Step, Resilient Constitution, Potion Stability) suggest a focus on physical speed, raw durability, and basic chemical safety, so the granted abilities should lean into sensory perception, environmental adaptation, and specific alchemical or survival applications.\n\n**12 Potential Abilities:**\n\n1.  **Frostbite Resistance:** Passive. Reduces damage from cold exposure by 20%. (Similar to Cold Tolerance but more specific to the current northern environment.)\n2.  **Herb Sense:** Passive. Allows identification of common medicinal plants at a glance. (Excluded by prompt, but fits the alchemist theme perfectly.)\n3.  **Windreader:** Passive. Improves balance and perception in high winds. (Similar to the QA Courier’s ability, useful for the ridge route.)\n4.  **Apprentice’s Eye:** Passive. Slightly increases the quality of ingredients gathered from the wild. (Excluded by prompt, but fits the apprentice status.)\n5.  **Iron Stomach:** Passive. Reduces chance of sickness from bad food or water. (Contrasts with Resilient Constitution by focusing on digestion rather than general health.)\n6.  **Stone Sense:** Passive. Improves awareness of unstable ground or hidden traps. (Contrasts with Swift Step by focusing on caution rather than speed.)\n7.  **Heat Retention:** Passive. Slows the rate of body heat loss in cold weather. (Similar to Cold Tolerance but focuses on insulation rather than hardiness.)\n8.  **Scent Tracking:** Passive. Enhances the ability to follow faint trails by smell. (Contrasts with Herb Sense by applying sensory skills to movement rather than plants.)\n9.  **Quick Bind:** Active. Allows for faster application of basic bandages or salves. (Contrasts with Potion Stability by focusing on external application rather than internal mixture stability.)\n10. **Weighted Step:** Passive. Reduces noise when walking on snow or soft ground. (Contrasts with Swift Step by focusing on stealth rather than speed.)\n11. **Alchemical Intuition:** Passive. Increases the chance of success when mixing basic potions without a recipe. (Contrasts with Potion Stability by focusing on creativity rather than safety.)\n12. **Endurance:** Passive. Reduces fatigue accumulation during long walks or labor. (Contrasts with Resilient Constitution by focusing on stamina rather than health points.)\n\n**Selected Abilities:**\n\n1.  **Frostbite Resistance:** Essential for the current northern ridge delivery and winter survival.\n2.  **Windreader:** Directly useful for the immediate quest context (northern ridge, blizzard building).\n3.  **Iron Stomach:** Practical for an adventurer who might eat ration food or uncertain supplies.\n4.  **Stone Sense:** Useful for navigation and avoiding hazards in the wild.\n5.  **Weighted Step:** Adds a stealth/utility dimension to his movement, contrasting with his previous focus on speed/stamina.\n6.  **Alchemical Intuition:** Reinforces his class identity as an alchemist, allowing for some improvisation.\n\n<npcs>\n  <npc>\n    <name>Baato</name>\n    <abilities>\n      <ability>\n        <name>Frostbite Resistance</name>\n        <description>Passive. Reduces damage from cold exposure by 20%, helping the body maintain core temperature in freezing conditions.</description>\n        <type>Passive</type>\n        <level>5</level>\n        <shortDescription>Reduces cold exposure damage by 20 percent.</shortDescription>\n      </ability>\n      <ability>\n        <name>Windreader</name>\n        <description>Passive. Improves balance and perception in high winds, allowing for better awareness of shifting weather patterns.</description>\n        <type>Passive</type>\n        <level>5</level>\n        <shortDescription>Improves balance and perception in high winds.</shortDescription>\n      </ability>\n      <ability>\n        <name>Iron Stomach</name>\n        <description>Passive. Reduces the chance of sickness from consuming bad food, dirty water, or unfamiliar rations.</description>\n        <type>Passive</type>\n        <level>5</level>\n        <shortDescription>Reduces sickness chance from bad food or water.</shortDescription>\n      </ability>\n      <ability>\n        <name>Stone Sense</name>\n        <description>Passive. Enhances awareness of unstable ground, hidden cracks, or subtle environmental traps.</description>\n        <type>Passive</type>\n        <level>5</level>\n        <shortDescription>Enhances awareness of unstable ground and traps.</shortDescription>\n      </ability>\n      <ability>\n        <name>Weighted Step</name>\n        <description>Passive. Reduces noise when walking on snow or soft ground, making movement quieter and less detectable.</description>\n        <type>Passive</type>\n        <level>5</level>\n        <shortDescription>Reduces noise when walking on snow or soft ground.</shortDescription>\n      </ability>\n      <ability>\n        <name>Alchemical Intuition</name>\n        <description>Passive. Increases the chance of success when mixing basic potions without a precise recipe, allowing for improvisation.</description>\n        <type>Passive</type>\n        <level>5</level>\n        <shortDescription>Increases success chance for mixing potions without recipes.</shortDescription>\n      </ability>\n    </abilities>\n  </npc>\n</npcs>"
+            }
+          }
+        ]
+      }
+    }
+  ],
+  "completedAt": "2026-08-12T08:59:30.600Z"
+}

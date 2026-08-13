@@ -1,0 +1,61 @@
+{
+  "version": 1,
+  "name": "vehicle-platform-ready",
+  "description": "Copied pre-departure fixed-route tram fixture retained from the original VEH-1 through VEH-3 audit.",
+  "createdAt": "2026-08-12T12:51:27.660Z",
+  "source": {
+    "setupCommand": "Historical VEH setup: QA West Platform, QA Clockwork Tram, QA East Platform, operator, carrier, and QA Brass Travel Case.",
+    "saveName": "2026-08-09T00-51-40-301Z_Monster_Girl_Life_2026-06b-Baato-Ember_Hollow_Outskirts-char_2-msl37mvh",
+    "saveType": "saves",
+    "settingName": "Monster Girl Life 2026-06b",
+    "playerName": "Baato"
+  },
+  "configProfile": "vehicle-mechanics",
+  "requiredMods": [],
+  "worldTime": {
+    "dayIndex": 0,
+    "timeMinutes": 658
+  },
+  "entities": {
+    "playerId": "char_2",
+    "originId": "loc_5",
+    "westPlatformId": "loc_34",
+    "tramId": "loc_35",
+    "eastPlatformId": "loc_36",
+    "boardingExitId": "exit_64",
+    "vehicleExitId": "exit_65",
+    "carrierId": "char_21",
+    "carrierAlias": "Rika",
+    "operatorId": "char_27",
+    "travelCaseId": "thing_202"
+  },
+  "invariants": [
+    {
+      "type": "equals",
+      "source": "after",
+      "path": "player.payload.player.locationId",
+      "equals": "loc_5"
+    },
+    {
+      "type": "entityField",
+      "source": "after",
+      "collection": "locations",
+      "id": "loc_35",
+      "path": "name",
+      "equals": "QA Clockwork Tram"
+    },
+    {
+      "type": "entityField",
+      "source": "after",
+      "collection": "things",
+      "id": "thing_202",
+      "path": "name",
+      "equals": "QA Brass Travel Case"
+    }
+  ],
+  "validation": {
+    "passed": true,
+    "evidence": "Retained live API artifacts under tmp/followup-api-playtest/vehicle."
+  },
+  "integrity": "sha256:13c2c263e6115d085209c9d68e52650e4b26fd5b1a80805e2041fe21556c5ade"
+}

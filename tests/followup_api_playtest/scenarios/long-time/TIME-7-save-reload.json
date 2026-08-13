@@ -1,0 +1,813 @@
+{
+  "version": 1,
+  "scenario": "long-time",
+  "case": "TIME-7-save-reload",
+  "description": "Manual saves on both sides of one scheduled-event minute preserve absolute actor/world time, timed-status duration and appliedAt, scheduled resolution state, and exact player visit timestamps.",
+  "fixture": "long-time-scheduled-events",
+  "configProfile": "long-time-mechanics",
+  "trackedPaths": [
+    "player.payload.player.locationId",
+    "player.payload.player.needBars",
+    "player.payload.player.statusEffects",
+    "players.payload.players",
+    "locations.payload.locations",
+    "scheduledEvents.payload.scheduledEvents",
+    "calendar.payload.worldTime",
+    "history.payload.history"
+  ],
+  "steps": [
+    {
+      "type": "loadFixture"
+    },
+    {
+      "type": "request",
+      "name": "install_boundary_status",
+      "method": "PUT",
+      "route": "/api/player/status",
+      "body": {
+        "statusEffects": [
+          {
+            "id": "status_204",
+            "name": "QA Boundary Vigor",
+            "description": "Deterministic thirty-five-minute persistence marker.",
+            "attributes": [
+              {
+                "attribute": "luck",
+                "modifier": 1
+              }
+            ],
+            "skills": [],
+            "needBars": [],
+            "duration": 35,
+            "appliedAt": 663
+          }
+        ]
+      }
+    },
+    {
+      "type": "request",
+      "name": "advance_to_pre_boundary_minute",
+      "method": "POST",
+      "route": "/api/slash-command",
+      "body": {
+        "command": "time",
+        "argsText": "+29 minutes"
+      }
+    },
+    {
+      "type": "request",
+      "name": "visit_lodge_at_pre_boundary_minute",
+      "method": "POST",
+      "route": "/api/npcs/$fixture.playerId/teleport",
+      "body": {
+        "locationId": "$fixture.lodgeLocationId",
+        "accountTravelTime": false,
+        "storyToolTeleport": true
+      }
+    },
+    {
+      "type": "request",
+      "name": "return_to_marker_at_pre_boundary_minute",
+      "method": "POST",
+      "route": "/api/npcs/$fixture.playerId/teleport",
+      "body": {
+        "locationId": "$fixture.baselineLocationId",
+        "accountTravelTime": false,
+        "storyToolTeleport": true
+      }
+    },
+    {
+      "type": "request",
+      "name": "pre_boundary_player",
+      "method": "GET",
+      "route": "/api/npcs/$fixture.playerId"
+    },
+    {
+      "type": "request",
+      "name": "pre_boundary_marker",
+      "method": "GET",
+      "route": "/api/locations/$fixture.baselineLocationId?expandStubs=false"
+    },
+    {
+      "type": "request",
+      "name": "pre_boundary_lodge",
+      "method": "GET",
+      "route": "/api/locations/$fixture.lodgeLocationId?expandStubs=false"
+    },
+    {
+      "type": "assert",
+      "assertions": [
+        {
+          "type": "httpStatus",
+          "equals": 200
+        },
+        {
+          "type": "responseOk",
+          "equals": true
+        },
+        {
+          "type": "equals",
+          "source": "after",
+          "path": "calendar.payload.worldTime.timeMinutes",
+          "equals": 692
+        },
+        {
+          "type": "equals",
+          "source": "responses.pre_boundary_player",
+          "path": "payload.npc.elapsedTime",
+          "equals": 692
+        },
+        {
+          "type": "equals",
+          "source": "after",
+          "path": "player.payload.player.locationId",
+          "equals": "$fixture.baselineLocationId"
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "after",
+          "path": "player.payload.player.statusEffects",
+          "where": {
+            "id": "status_204",
+            "name": "QA Boundary Vigor",
+            "duration": 6,
+            "appliedAt": 692
+          },
+          "equals": 1
+        },
+        {
+          "type": "equals",
+          "source": "responses.pre_boundary_marker",
+          "path": "payload.location.visited",
+          "equals": true
+        },
+        {
+          "type": "equals",
+          "source": "responses.pre_boundary_marker",
+          "path": "payload.location.lastVisitedTime",
+          "equals": 692
+        },
+        {
+          "type": "equals",
+          "source": "responses.pre_boundary_lodge",
+          "path": "payload.location.visited",
+          "equals": true
+        },
+        {
+          "type": "equals",
+          "source": "responses.pre_boundary_lodge",
+          "path": "payload.location.lastVisitedTime",
+          "equals": 692
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "after",
+          "path": "scheduledEvents.payload.scheduledEvents",
+          "where": {
+            "id": "$fixture.currentEventId",
+            "targetWorldMinute": 693,
+            "status": "pending",
+            "resolutionSummary": "",
+            "playerProse": "",
+            "resolvedAtWorldMinute": null,
+            "resolvedAtWorldTime": null
+          },
+          "equals": 1
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "after",
+          "path": "scheduledEvents.payload.scheduledEvents",
+          "where": {
+            "id": "$fixture.lodgeEventId",
+            "targetWorldMinute": 708,
+            "status": "pending",
+            "resolutionSummary": "",
+            "playerProse": "",
+            "resolvedAtWorldMinute": null,
+            "resolvedAtWorldTime": null
+          },
+          "equals": 1
+        }
+      ]
+    },
+    {
+      "type": "snapshot",
+      "name": "pre_boundary_before_save"
+    },
+    {
+      "type": "save",
+      "name": "pre_boundary_save"
+    },
+    {
+      "type": "assert",
+      "assertions": [
+        {
+          "type": "httpStatus",
+          "equals": 200
+        },
+        {
+          "type": "responseOk",
+          "equals": true
+        },
+        {
+          "type": "equals",
+          "source": "responses.pre_boundary_save",
+          "path": "payload.success",
+          "equals": true
+        },
+        {
+          "type": "stateUnchanged",
+          "beforeSource": "snapshots.pre_boundary_before_save",
+          "afterSource": "after",
+          "paths": [
+            "player.payload.player.locationId",
+            "player.payload.player.needBars",
+            "player.payload.player.statusEffects",
+            "scheduledEvents.payload.scheduledEvents",
+            "calendar.payload.worldTime"
+          ]
+        },
+        {
+          "type": "historyAddedTypeCount",
+          "entryType": "save-notice",
+          "equals": 1,
+          "beforeSource": "snapshots.pre_boundary_before_save",
+          "afterSource": "after"
+        }
+      ]
+    },
+    {
+      "type": "snapshot",
+      "name": "pre_boundary_saved"
+    },
+    {
+      "type": "request",
+      "name": "cross_scheduled_boundary",
+      "method": "POST",
+      "route": "/api/slash-command",
+      "body": {
+        "command": "time",
+        "argsText": "+1 minute"
+      }
+    },
+    {
+      "type": "request",
+      "name": "post_boundary_player",
+      "method": "GET",
+      "route": "/api/npcs/$fixture.playerId"
+    },
+    {
+      "type": "request",
+      "name": "post_boundary_marker",
+      "method": "GET",
+      "route": "/api/locations/$fixture.baselineLocationId?expandStubs=false"
+    },
+    {
+      "type": "request",
+      "name": "post_boundary_lodge",
+      "method": "GET",
+      "route": "/api/locations/$fixture.lodgeLocationId?expandStubs=false"
+    },
+    {
+      "type": "assert",
+      "assertions": [
+        {
+          "type": "httpStatus",
+          "equals": 200
+        },
+        {
+          "type": "responseOk",
+          "equals": true
+        },
+        {
+          "type": "exactDelta",
+          "beforeSource": "snapshots.pre_boundary_saved",
+          "afterSource": "after",
+          "path": "calendar.payload.worldTime.timeMinutes",
+          "delta": 1
+        },
+        {
+          "type": "equals",
+          "source": "after",
+          "path": "calendar.payload.worldTime.timeMinutes",
+          "equals": 693
+        },
+        {
+          "type": "equals",
+          "source": "responses.post_boundary_player",
+          "path": "payload.npc.elapsedTime",
+          "equals": 693
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "after",
+          "path": "player.payload.player.statusEffects",
+          "where": {
+            "id": "status_204",
+            "name": "QA Boundary Vigor",
+            "duration": 5,
+            "appliedAt": 693
+          },
+          "equals": 1
+        },
+        {
+          "type": "equals",
+          "source": "responses.post_boundary_marker",
+          "path": "payload.location.lastVisitedTime",
+          "equals": 692
+        },
+        {
+          "type": "equals",
+          "source": "responses.post_boundary_lodge",
+          "path": "payload.location.lastVisitedTime",
+          "equals": 692
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "after",
+          "path": "scheduledEvents.payload.scheduledEvents",
+          "where": {
+            "id": "$fixture.currentEventId",
+            "targetWorldMinute": 693,
+            "status": "resolved",
+            "resolvedAtWorldMinute": 693,
+            "resolvedAtWorldTime": {
+              "dayIndex": 0,
+              "timeMinutes": 693
+            }
+          },
+          "equals": 1
+        },
+        {
+          "type": "notEquals",
+          "source": "after",
+          "path": "scheduledEvents.payload.scheduledEvents.0.resolutionSummary",
+          "equals": ""
+        },
+        {
+          "type": "notEquals",
+          "source": "after",
+          "path": "scheduledEvents.payload.scheduledEvents.0.playerProse",
+          "equals": ""
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "after",
+          "path": "scheduledEvents.payload.scheduledEvents",
+          "where": {
+            "id": "$fixture.lodgeEventId",
+            "targetWorldMinute": 708,
+            "status": "pending",
+            "resolutionSummary": "",
+            "playerProse": "",
+            "resolvedAtWorldMinute": null,
+            "resolvedAtWorldTime": null
+          },
+          "equals": 1
+        },
+        {
+          "type": "historyAddedSequence",
+          "beforeSource": "snapshots.pre_boundary_saved",
+          "afterSource": "after",
+          "entryTypes": [
+            "scheduled-event",
+            "scheduled-event-prose"
+          ],
+          "expected": [
+            {
+              "type": "scheduled-event",
+              "locationId": "$fixture.baselineLocationId",
+              "metadata": {
+                "scheduledEventId": "$fixture.currentEventId",
+                "playerPresent": true,
+                "source": "slash_command_time",
+                "visibleProseSuppressed": false,
+                "hiddenFromClient": true
+              }
+            },
+            {
+              "type": "scheduled-event-prose",
+              "locationId": "$fixture.baselineLocationId",
+              "metadata": {
+                "scheduledEventId": "$fixture.currentEventId",
+                "source": "slash_command_time"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "snapshot",
+      "name": "post_boundary_before_save"
+    },
+    {
+      "type": "save",
+      "name": "post_boundary_save"
+    },
+    {
+      "type": "assert",
+      "assertions": [
+        {
+          "type": "httpStatus",
+          "equals": 200
+        },
+        {
+          "type": "responseOk",
+          "equals": true
+        },
+        {
+          "type": "equals",
+          "source": "responses.post_boundary_save",
+          "path": "payload.success",
+          "equals": true
+        },
+        {
+          "type": "stateUnchanged",
+          "beforeSource": "snapshots.post_boundary_before_save",
+          "afterSource": "after",
+          "paths": [
+            "player.payload.player.locationId",
+            "player.payload.player.needBars",
+            "player.payload.player.statusEffects",
+            "scheduledEvents.payload.scheduledEvents",
+            "calendar.payload.worldTime"
+          ]
+        },
+        {
+          "type": "historyAddedTypeCount",
+          "entryType": "save-notice",
+          "equals": 1,
+          "beforeSource": "snapshots.post_boundary_before_save",
+          "afterSource": "after"
+        }
+      ]
+    },
+    {
+      "type": "snapshot",
+      "name": "post_boundary_saved"
+    },
+    {
+      "type": "request",
+      "name": "clear_status_after_saves",
+      "method": "PUT",
+      "route": "/api/player/status",
+      "body": {
+        "statusEffects": null
+      }
+    },
+    {
+      "type": "request",
+      "name": "mutate_lodge_visit_after_saves",
+      "method": "POST",
+      "route": "/api/npcs/$fixture.playerId/teleport",
+      "body": {
+        "locationId": "$fixture.lodgeLocationId",
+        "accountTravelTime": false,
+        "storyToolTeleport": true
+      }
+    },
+    {
+      "type": "request",
+      "name": "mutate_absolute_time_after_saves",
+      "method": "POST",
+      "route": "/api/slash-command",
+      "body": {
+        "command": "time",
+        "argsText": "+1 minute"
+      }
+    },
+    {
+      "type": "request",
+      "name": "mutated_lodge",
+      "method": "GET",
+      "route": "/api/locations/$fixture.lodgeLocationId?expandStubs=false"
+    },
+    {
+      "type": "assert",
+      "assertions": [
+        {
+          "type": "httpStatus",
+          "equals": 200
+        },
+        {
+          "type": "responseOk",
+          "equals": true
+        },
+        {
+          "type": "equals",
+          "source": "after",
+          "path": "calendar.payload.worldTime.timeMinutes",
+          "equals": 694
+        },
+        {
+          "type": "equals",
+          "source": "after",
+          "path": "player.payload.player.locationId",
+          "equals": "$fixture.lodgeLocationId"
+        },
+        {
+          "type": "count",
+          "source": "after",
+          "path": "player.payload.player.statusEffects",
+          "equals": 0
+        },
+        {
+          "type": "equals",
+          "source": "responses.mutated_lodge",
+          "path": "payload.location.lastVisitedTime",
+          "equals": 693
+        }
+      ]
+    },
+    {
+      "type": "reload",
+      "name": "reload_pre_boundary",
+      "saveName": "$response.pre_boundary_save.payload.saveName"
+    },
+    {
+      "type": "request",
+      "name": "reloaded_pre_boundary_player",
+      "method": "GET",
+      "route": "/api/npcs/$fixture.playerId"
+    },
+    {
+      "type": "request",
+      "name": "reloaded_pre_boundary_marker",
+      "method": "GET",
+      "route": "/api/locations/$fixture.baselineLocationId?expandStubs=false"
+    },
+    {
+      "type": "request",
+      "name": "reloaded_pre_boundary_lodge",
+      "method": "GET",
+      "route": "/api/locations/$fixture.lodgeLocationId?expandStubs=false"
+    },
+    {
+      "type": "assert",
+      "assertions": [
+        {
+          "type": "httpStatus",
+          "equals": 200
+        },
+        {
+          "type": "responseOk",
+          "equals": true
+        },
+        {
+          "type": "equals",
+          "source": "responses.reload_pre_boundary",
+          "path": "payload.success",
+          "equals": true
+        },
+        {
+          "type": "equals",
+          "source": "after",
+          "path": "calendar.payload.worldTime.timeMinutes",
+          "equals": 692
+        },
+        {
+          "type": "equals",
+          "source": "responses.reloaded_pre_boundary_player",
+          "path": "payload.npc.elapsedTime",
+          "equals": 692
+        },
+        {
+          "type": "equals",
+          "source": "after",
+          "path": "player.payload.player.locationId",
+          "equals": "$fixture.baselineLocationId"
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "after",
+          "path": "player.payload.player.statusEffects",
+          "where": {
+            "id": "status_204",
+            "name": "QA Boundary Vigor",
+            "duration": 6,
+            "appliedAt": 692
+          },
+          "equals": 1
+        },
+        {
+          "type": "equals",
+          "source": "responses.reloaded_pre_boundary_marker",
+          "path": "payload.location.lastVisitedTime",
+          "equals": 692
+        },
+        {
+          "type": "equals",
+          "source": "responses.reloaded_pre_boundary_lodge",
+          "path": "payload.location.lastVisitedTime",
+          "equals": 692
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "after",
+          "path": "scheduledEvents.payload.scheduledEvents",
+          "where": {
+            "id": "$fixture.currentEventId",
+            "status": "pending",
+            "resolutionSummary": "",
+            "playerProse": "",
+            "resolvedAtWorldMinute": null,
+            "resolvedAtWorldTime": null
+          },
+          "equals": 1
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "after",
+          "path": "scheduledEvents.payload.scheduledEvents",
+          "where": {
+            "id": "$fixture.lodgeEventId",
+            "status": "pending",
+            "resolutionSummary": "",
+            "playerProse": "",
+            "resolvedAtWorldMinute": null,
+            "resolvedAtWorldTime": null
+          },
+          "equals": 1
+        },
+        {
+          "type": "stateUnchanged",
+          "beforeSource": "snapshots.pre_boundary_saved",
+          "afterSource": "after",
+          "paths": [
+            "player.payload.player.locationId",
+            "player.payload.player.needBars",
+            "player.payload.player.statusEffects",
+            "scheduledEvents.payload.scheduledEvents",
+            "calendar.payload.worldTime",
+            "history.payload.history"
+          ]
+        }
+      ]
+    },
+    {
+      "type": "reload",
+      "name": "reload_post_boundary",
+      "saveName": "$response.post_boundary_save.payload.saveName"
+    },
+    {
+      "type": "request",
+      "name": "reloaded_post_boundary_player",
+      "method": "GET",
+      "route": "/api/npcs/$fixture.playerId"
+    },
+    {
+      "type": "request",
+      "name": "reloaded_post_boundary_marker",
+      "method": "GET",
+      "route": "/api/locations/$fixture.baselineLocationId?expandStubs=false"
+    },
+    {
+      "type": "request",
+      "name": "reloaded_post_boundary_lodge",
+      "method": "GET",
+      "route": "/api/locations/$fixture.lodgeLocationId?expandStubs=false"
+    },
+    {
+      "type": "assert",
+      "assertions": [
+        {
+          "type": "httpStatus",
+          "equals": 200
+        },
+        {
+          "type": "responseOk",
+          "equals": true
+        },
+        {
+          "type": "equals",
+          "source": "responses.reload_post_boundary",
+          "path": "payload.success",
+          "equals": true
+        },
+        {
+          "type": "equals",
+          "source": "after",
+          "path": "calendar.payload.worldTime.timeMinutes",
+          "equals": 693
+        },
+        {
+          "type": "equals",
+          "source": "responses.reloaded_post_boundary_player",
+          "path": "payload.npc.elapsedTime",
+          "equals": 693
+        },
+        {
+          "type": "equals",
+          "source": "after",
+          "path": "player.payload.player.locationId",
+          "equals": "$fixture.baselineLocationId"
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "after",
+          "path": "player.payload.player.statusEffects",
+          "where": {
+            "id": "status_204",
+            "name": "QA Boundary Vigor",
+            "duration": 5,
+            "appliedAt": 693
+          },
+          "equals": 1
+        },
+        {
+          "type": "equals",
+          "source": "responses.reloaded_post_boundary_marker",
+          "path": "payload.location.lastVisitedTime",
+          "equals": 692
+        },
+        {
+          "type": "equals",
+          "source": "responses.reloaded_post_boundary_lodge",
+          "path": "payload.location.lastVisitedTime",
+          "equals": 692
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "after",
+          "path": "scheduledEvents.payload.scheduledEvents",
+          "where": {
+            "id": "$fixture.currentEventId",
+            "status": "resolved",
+            "resolvedAtWorldMinute": 693,
+            "resolvedAtWorldTime": {
+              "dayIndex": 0,
+              "timeMinutes": 693
+            }
+          },
+          "equals": 1
+        },
+        {
+          "type": "notEquals",
+          "source": "after",
+          "path": "scheduledEvents.payload.scheduledEvents.0.resolutionSummary",
+          "equals": ""
+        },
+        {
+          "type": "notEquals",
+          "source": "after",
+          "path": "scheduledEvents.payload.scheduledEvents.0.playerProse",
+          "equals": ""
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "after",
+          "path": "scheduledEvents.payload.scheduledEvents",
+          "where": {
+            "id": "$fixture.lodgeEventId",
+            "status": "pending",
+            "resolutionSummary": "",
+            "playerProse": "",
+            "resolvedAtWorldMinute": null,
+            "resolvedAtWorldTime": null
+          },
+          "equals": 1
+        },
+        {
+          "type": "stateUnchanged",
+          "beforeSource": "snapshots.post_boundary_saved",
+          "afterSource": "after",
+          "paths": [
+            "player.payload.player.locationId",
+            "player.payload.player.needBars",
+            "player.payload.player.statusEffects",
+            "scheduledEvents.payload.scheduledEvents",
+            "calendar.payload.worldTime",
+            "history.payload.history"
+          ]
+        },
+        {
+          "type": "uniqueBy",
+          "source": "after",
+          "path": "players.payload.players",
+          "key": "id"
+        },
+        {
+          "type": "uniqueBy",
+          "source": "after",
+          "path": "locations.payload.locations",
+          "key": "id"
+        },
+        {
+          "type": "noRealtimeErrors"
+        },
+        {
+          "type": "noUnexpectedErrorLogs",
+          "allowedPrefixes": [
+            "ERROR_chatCompletionError_scheduled_event_resolution_"
+          ]
+        }
+      ]
+    }
+  ],
+  "humanReview": [
+    "Inspect the sole scheduled-event resolution prompt and accepted visible prose. Confirm it describes exactly one QA March test bell ringing at the marker, without moving a character or object and without resolving the later lodge-ledger event.",
+    "Confirm both reloads are hydration-only: they restore their saved absolute minute, timed-status duration/appliedAt, scheduled-event state, visit timestamps, and history without rerunning the due event or adding generated prose."
+  ]
+}

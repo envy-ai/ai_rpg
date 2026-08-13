@@ -885,6 +885,8 @@ test('real tiny-brain player-action template renders conditional parser branches
             let aiResponse = 'Done.';
             if (checkpoint.parserName === 'accept_or_reject') {
                 aiResponse = '<accepted></accepted>';
+            } else if (checkpoint.parserName === 'player_action_explicit_duration') {
+                aiResponse = 'NONE';
             } else if (checkpoint.parserName === 'player_action_more_info_or_na') {
                 aiResponse = 'N/A';
             } else if (checkpoint.parserName === 'player_action_movement') {
@@ -948,34 +950,20 @@ test('real tiny-brain player-action template renders conditional parser branches
     assert.ok(completionPrompts.some(prompt => /State the player's destination using exactly two lines/i.test(prompt)));
     assert.ok(completionPrompts.some(prompt => /Mira Vale/.test(prompt) && /accompany the player/i.test(prompt)));
     assert.ok(completionPrompts.some(prompt => (
+        /Resolve every attack written into the draft with resolveAttack or resolveAreaAttack/i.test(prompt)
+        && /Call the tool for every attack or check written into the draft/i.test(prompt)
+    )));
+    assert.ok(!completionPrompts.some(prompt => (
         /Each resolveAttack result authorizes exactly one resolved attack action/i.test(prompt)
-        && /A second approach, lunge, charge, strike, bite, shot, impact, graze, or miss/i.test(prompt)
+        || /A second approach, lunge, charge, strike, bite, shot, impact, graze, or miss/i.test(prompt)
+        || /delete its complete sentences or paragraph wholesale/i.test(prompt)
     )));
     assert.ok(completionPrompts.some(prompt => (
-        /Each attacking character requires a separate tool call/i.test(prompt)
-        && /Never use an unrolled follow-up attack by the same character or an ally/i.test(prompt)
+        /Player agency boundary: Narrate only player speech, decisions, agreements, gestures, and actions/i.test(prompt)
+        && /explicitly committed in the <playerAction>/i.test(prompt)
     )));
-    assert.ok(completionPrompts.some(prompt => (
-        /Compare every character who attacks, damages, incapacitates, or defeats someone/i.test(prompt)
-        && /Count a new approach, lunge, charge, strike, bite, shot, impact, graze, or miss/i.test(prompt)
-    )));
-    assert.ok(completionPrompts.some(prompt => (
-        /delete its complete sentences or paragraph wholesale/i.test(prompt)
-        && /do not paraphrase, relocate, substitute, or preserve its damage/i.test(prompt)
-    )));
-    assert.ok(completionPrompts.some(prompt => /Never let an unrolled NPC follow-up change a rolled target's outcome/i.test(prompt)));
-    assert.ok(completionPrompts.some(prompt => (
-        /Any player speech, decision, agreement, nod, gesture, or follow-up action/i.test(prompt)
-        && /is also railroading/i.test(prompt)
-    )));
-    assert.ok(completionPrompts.some(prompt => (
-        /compare every player action, line of speech, decision, agreement, and gesture/i.test(prompt)
-        && /against the <playerAction>/i.test(prompt)
-    )));
-    assert.ok(completionPrompts.some(prompt => (
-        /Remove any player response, agreement, gesture, decision, or follow-up action/i.test(prompt)
-        && /not expressly committed in the <playerAction>/i.test(prompt)
-    )));
+    assert.ok(completionPrompts.some(prompt => /Audit the draft against the Player agency boundary above/i.test(prompt)));
+    assert.ok(!completionPrompts.some(prompt => /Remove any player response, agreement, gesture, decision, or follow-up action/i.test(prompt)));
     assert.ok(!completionPrompts.some(prompt => /inside the moveTurnResult tags/i.test(prompt)));
     assert.match(result.aiResponse, /<moveTurnResult>/);
     assert.match(result.aiResponse, /<location>Beyond the Archway<\/location>/);
@@ -1059,6 +1047,8 @@ test('real TinyBrain player-action resolves revisit context and skips a programm
             let aiResponse = 'Done.';
             if (checkpoint.parserName === 'accept_or_reject') {
                 aiResponse = '<accepted></accepted>';
+            } else if (checkpoint.parserName === 'player_action_explicit_duration') {
+                aiResponse = 'NONE';
             } else if (checkpoint.parserName === 'player_action_more_info_or_na') {
                 aiResponse = 'N/A';
             } else if (checkpoint.parserName === 'player_action_movement') {
@@ -1174,6 +1164,8 @@ test('real player-action template passes committed travel movement to terminal r
             let aiResponse = 'Done.';
             if (checkpoint.parserName === 'accept_or_reject') {
                 aiResponse = '<accepted></accepted>';
+            } else if (checkpoint.parserName === 'player_action_explicit_duration') {
+                aiResponse = 'NONE';
             } else if (checkpoint.parserName === 'player_action_more_info_or_na') {
                 aiResponse = 'N/A';
             } else if (checkpoint.parserName === 'player_action_accompanying_characters') {
@@ -1284,6 +1276,8 @@ test('real player-action template preserves underway vehicle normal and redirect
                 let aiResponse = 'Done.';
                 if (checkpoint.parserName === 'accept_or_reject') {
                     aiResponse = '<accepted></accepted>';
+                } else if (checkpoint.parserName === 'player_action_explicit_duration') {
+                    aiResponse = 'NONE';
                 } else if (checkpoint.parserName === 'player_action_more_info_or_na') {
                     aiResponse = 'N/A';
                 } else if (checkpoint.parserName === 'player_action_movement') {
@@ -1324,6 +1318,11 @@ test('real player-action template preserves underway vehicle normal and redirect
         assert.equal(finalCompletionCount, 0);
         assert.match(result.aiResponse, new RegExp(`<${expectedRoot}>`));
         assert.ok(prompts.some(prompt => /Night Train/.test(prompt) && /20 minutes/.test(prompt)));
+        assert.ok(prompts.some(prompt => (
+            /A vehicle moving or reaching its scheduled destination is not player movement/i.test(prompt)
+            && /answer NONE even when the vehicle arrives/i.test(prompt)
+            && /Do not turn an unauthorized draft disembarkation into game state/i.test(prompt)
+        )));
         assert.ok(prompts.some(prompt => /Ordinary riding, waiting, or talking aboard is UNCHANGED/i.test(prompt)));
         assert.ok(prompts.some(prompt => /mechanical outcome that actually occurs in the second draft/i.test(prompt)));
         assert.ok(prompts.some(prompt => /conditional offer or request still awaiting approval is UNCHANGED/i.test(prompt)));

@@ -26,6 +26,10 @@ function loadInstantiateThingFromBlueprint() {
         normalizeAttributeBonusesForItem: (value) => value,
         scaleAttributeBonusesForItem: () => [],
         sanitizeMetadataObject: (value) => value,
+        extractRegisteredThingBlueprintFields: () => ({
+            shouldClearSlot: false,
+            values: {}
+        }),
         Thing: MockThing
     };
 

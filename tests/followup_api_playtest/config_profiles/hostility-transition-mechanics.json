@@ -1,0 +1,7 @@
+{
+  "version": 1,
+  "name": "hostility-transition-mechanics",
+  "description": "A case-owned state-only profile for disposition-threshold hostility transitions, with image generation and every unrelated prompt family disabled.",
+  "extends": "isolated-base",
+  "values": {}
+}

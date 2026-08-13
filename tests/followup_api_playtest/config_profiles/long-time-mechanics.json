@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "name": "long-time-mechanics",
+  "description": "Runs player-action time, need/status ticking, scheduled-event resolution/interruption, and while-away processing without unrelated NPC, quest, random-event, background, or image-generation work.",
+  "extends": "need-bars-mechanics",
+  "values": {
+    "ai.tinybrain_prompts.while_you_were_away": true,
+    "ai.tinybrain_prompts.scheduled_event_resolution": true,
+    "ai.tinybrain_prompts.scheduled_event_interruption_rewrite": true
+  }
+}

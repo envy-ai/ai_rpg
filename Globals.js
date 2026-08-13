@@ -1186,7 +1186,12 @@ class Globals {
 
   static setInCombat(value) {
     //console.log(`Globals.setInCombat(${value}) called.`);
-    Globals.inCombat = value;
+    const normalized = Boolean(value);
+    Globals.inCombat = normalized;
+    const currentPlayer = Globals.currentPlayer;
+    if (currentPlayer && currentPlayer.inCombat !== normalized) {
+      currentPlayer.inCombat = normalized;
+    }
   }
 
   static isInCombat() {

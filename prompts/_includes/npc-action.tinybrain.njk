@@ -13,10 +13,9 @@ If context needed to narrate the action is missing, make only information-gather
 
 Draft Response: Write concise visible prose that exactly follows the supplied outcome. Do not move the player, decide their response, or narrate an attack retaliation not already resolved. Output prose only.
 
-{% llm_dummy_action %}
+{% llmparse('player_action_required_prose') %}
 
 {% set tinyBrainAuditFocus = 'The NPC action must follow its resolved degree/attack outcome, preserve player agency, avoid travel output, and stop before any unresolved response or retaliation.' %}
 {% include "_includes/tinybrain-prose-audit.njk" %}
 
-Return XML only:
-<turnResult><prose>polished NPC-action prose</prose></turnResult>
+{% llmresult('turn_result_from_approved_prose') %}

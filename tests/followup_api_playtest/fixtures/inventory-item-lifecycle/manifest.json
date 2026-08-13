@@ -1,0 +1,59 @@
+{
+  "version": 1,
+  "name": "inventory-item-lifecycle",
+  "description": "Copied inventory lifecycle fixture retained from the original INV audit.",
+  "createdAt": "2026-08-12T12:51:28.070Z",
+  "source": {
+    "setupCommand": "Historical INV setup: QA Quartermaster, four QA Copper Tokens, QA Field Satchel, and QA Focus Draught, with portable items owned by Baato.",
+    "saveName": "2026-08-08T17-30-13-421Z_Monster_Girl_Life_2026-06b-Baato-Ember_Hollow_Outskirts-char_2-msknfxgt",
+    "saveType": "saves",
+    "settingName": "Monster Girl Life 2026-06b",
+    "playerName": "Baato"
+  },
+  "configProfile": "isolated-base",
+  "requiredMods": [],
+  "worldTime": {
+    "dayIndex": 0,
+    "timeMinutes": 658
+  },
+  "entities": {
+    "playerId": "char_2",
+    "locationId": "loc_5",
+    "quartermasterId": "char_9",
+    "tokenId": "thing_188",
+    "satchelId": "thing_189",
+    "draughtId": "thing_190",
+    "effectName": "QA Focused"
+  },
+  "invariants": [
+    {
+      "type": "entityField",
+      "source": "after",
+      "collection": "things",
+      "id": "thing_188",
+      "path": "count",
+      "equals": 4
+    },
+    {
+      "type": "entityField",
+      "source": "after",
+      "collection": "things",
+      "id": "thing_188",
+      "path": "metadata.ownerId",
+      "equals": "char_2"
+    },
+    {
+      "type": "entityField",
+      "source": "after",
+      "collection": "players",
+      "id": "char_9",
+      "path": "name",
+      "equals": "QA Quartermaster"
+    }
+  ],
+  "validation": {
+    "passed": true,
+    "evidence": "Retained live API artifacts under tmp/followup-api-playtest/inventory."
+  },
+  "integrity": "sha256:a1812d213ba511360c8208615b04c842f8e77fe9f5abe72434536f8219ee744a"
+}

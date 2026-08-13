@@ -1,0 +1,458 @@
+{
+  "version": 1,
+  "scenario": "long-time",
+  "case": "TIME-5-vehicle-arrival",
+  "description": "An ordinary player action crosses an underway vehicle ETA, then response finalization exposes and records the completed arrival exactly once.",
+  "fixture": "vehicle-underway-eastbound",
+  "configProfile": "long-time-mechanics",
+  "trackedPaths": [
+    "player.payload.player.locationId",
+    "player.payload.player.needBars",
+    "players.payload.players",
+    "currentLocation.payload.location.vehicleInfo",
+    "currentLocation.payload.location.exits",
+    "things.payload.things",
+    "scheduledEvents.payload.scheduledEvents",
+    "calendar.payload.worldTime",
+    "history.payload.history"
+  ],
+  "steps": [
+    {
+      "type": "loadFixture"
+    },
+    {
+      "type": "request",
+      "name": "advance_to_one_minute_before_eta",
+      "method": "POST",
+      "route": "/api/slash-command",
+      "body": {
+        "command": "time",
+        "argsText": "+9 minutes"
+      }
+    },
+    {
+      "type": "request",
+      "name": "player_before_arrival_turn",
+      "method": "GET",
+      "route": "/api/npcs/$fixture.playerId"
+    },
+    {
+      "type": "assert",
+      "assertions": [
+        {
+          "type": "httpStatus",
+          "equals": 200
+        },
+        {
+          "type": "responseOk",
+          "equals": true
+        },
+        {
+          "type": "equals",
+          "source": "responses.player_before_arrival_turn",
+          "path": "payload.npc.elapsedTime",
+          "equals": 668
+        },
+        {
+          "type": "equals",
+          "source": "after",
+          "path": "player.payload.player.locationId",
+          "equals": "$fixture.tramId"
+        },
+        {
+          "type": "equals",
+          "source": "after",
+          "path": "calendar.payload.worldTime.timeMinutes",
+          "equals": 668
+        },
+        {
+          "type": "equals",
+          "source": "after",
+          "path": "currentLocation.payload.location.vehicleInfo.pendingDestination.locationId",
+          "equals": "$fixture.eastPlatformId"
+        },
+        {
+          "type": "equals",
+          "source": "after",
+          "path": "currentLocation.payload.location.vehicleInfo.ETA",
+          "equals": 669
+        },
+        {
+          "type": "equals",
+          "source": "after",
+          "path": "currentLocation.payload.location.vehicleInfo.departureTime",
+          "equals": 659
+        },
+        {
+          "type": "equals",
+          "source": "after",
+          "path": "currentLocation.payload.location.vehicleInfo.isUnderway",
+          "equals": true
+        },
+        {
+          "type": "count",
+          "source": "after",
+          "path": "currentLocation.payload.location.exits",
+          "equals": 0
+        },
+        {
+          "type": "equals",
+          "source": "after",
+          "path": "scheduledEvents.payload.count",
+          "equals": 0
+        }
+      ]
+    },
+    {
+      "type": "snapshot",
+      "name": "before_arrival_turn"
+    },
+    {
+      "type": "chat",
+      "name": "wait_through_eta",
+      "text": "I remain aboard QA Clockwork Tram and wait quietly for exactly one minute, until its already-scheduled arrival at QA East Platform. No one disembarks; every current occupant, including Mizore and Rika, remains physically aboard after arrival. I do not redirect or stop the tram, start another trip, move inside it, use an item, rest or sleep, or interact with anyone.",
+      "travel": false,
+      "interactive": {
+        "roll": null,
+        "questAccepted": false,
+        "confirmed": false
+      }
+    },
+    {
+      "type": "assert",
+      "assertions": [
+        {
+          "type": "httpStatus",
+          "equals": 200
+        },
+        {
+          "type": "responseOk",
+          "equals": true
+        },
+        {
+          "type": "equals",
+          "source": "responses.wait_through_eta",
+          "path": "payload.timeProgress.source",
+          "equals": "player_action"
+        },
+        {
+          "type": "equals",
+          "source": "responses.wait_through_eta",
+          "path": "payload.timeProgress.advancedMinutes",
+          "equals": 1
+        },
+        {
+          "type": "equals",
+          "source": "responses.wait_through_eta",
+          "path": "payload.worldTime.timeMinutes",
+          "equals": 669
+        },
+        {
+          "type": "equals",
+          "source": "responses.wait_through_eta",
+          "path": "payload.locationRefreshRequested",
+          "equals": true
+        },
+        {
+          "type": "exactDelta",
+          "beforeSource": "snapshots.before_arrival_turn",
+          "afterSource": "after",
+          "path": "calendar.payload.worldTime.timeMinutes",
+          "delta": 1
+        },
+        {
+          "type": "equals",
+          "source": "after",
+          "path": "player.payload.player.locationId",
+          "equals": "$fixture.tramId"
+        },
+        {
+          "type": "equals",
+          "source": "after",
+          "path": "currentLocation.payload.location.vehicleInfo.currentDestination",
+          "equals": "$fixture.eastPlatformId"
+        },
+        {
+          "type": "equals",
+          "source": "after",
+          "path": "currentLocation.payload.location.vehicleInfo.pendingDestination",
+          "equals": null
+        },
+        {
+          "type": "equals",
+          "source": "after",
+          "path": "currentLocation.payload.location.vehicleInfo.ETA",
+          "equals": null
+        },
+        {
+          "type": "equals",
+          "source": "after",
+          "path": "currentLocation.payload.location.vehicleInfo.departureTime",
+          "equals": null
+        },
+        {
+          "type": "equals",
+          "source": "after",
+          "path": "currentLocation.payload.location.vehicleInfo.isUnderway",
+          "equals": false
+        },
+        {
+          "type": "count",
+          "source": "after",
+          "path": "currentLocation.payload.location.exits",
+          "equals": 1
+        },
+        {
+          "type": "equals",
+          "source": "after",
+        "path": "currentLocation.payload.location.exits.qa_west_platform.id",
+          "equals": "$fixture.vehicleExitId"
+        },
+        {
+          "type": "equals",
+          "source": "after",
+        "path": "currentLocation.payload.location.exits.qa_west_platform.destination",
+          "equals": "$fixture.eastPlatformId"
+        },
+        {
+          "type": "entityField",
+          "source": "after",
+          "collection": "players",
+          "id": "$fixture.operatorId",
+          "path": "locationId",
+          "equals": "$fixture.tramId"
+        },
+        {
+          "type": "entityField",
+          "source": "after",
+          "collection": "players",
+          "id": "$fixture.carrierId",
+          "path": "locationId",
+          "equals": "$fixture.tramId"
+        },
+        {
+          "type": "entityField",
+          "source": "after",
+          "collection": "things",
+          "id": "$fixture.travelCaseId",
+          "path": "metadata.ownerId",
+          "equals": "$fixture.carrierId"
+        },
+        {
+          "type": "equals",
+          "source": "after",
+          "path": "scheduledEvents.payload.count",
+          "equals": 0
+        },
+        {
+          "type": "historyAddedTypeCount",
+          "entryType": "player-action",
+          "equals": 1,
+          "beforeSource": "snapshots.before_arrival_turn",
+          "afterSource": "after"
+        },
+        {
+          "type": "historyAddedTypeCount",
+          "entryType": "event-summary",
+          "equals": 2,
+          "beforeSource": "snapshots.before_arrival_turn",
+          "afterSource": "after"
+        },
+        {
+          "type": "historyAddedSequence",
+          "entryTypes": [
+            "event-summary"
+          ],
+          "expected": [
+            {
+              "type": "event-summary",
+              "summaryTitle": "📋 Events – Player Turn",
+              "locationId": "$fixture.tramId"
+            },
+            {
+              "type": "event-summary",
+              "summaryTitle": "📋 Events – Vehicle Movement",
+              "locationId": "$fixture.tramId"
+            }
+          ],
+          "beforeSource": "snapshots.before_arrival_turn",
+          "afterSource": "after"
+        },
+        {
+          "type": "historyAddedNestedObjectCount",
+          "entryWhere": {
+            "type": "event-summary"
+          },
+          "path": "summaryItems",
+          "where": {
+            "sourceType": "time_passed"
+          },
+          "equals": 1,
+          "beforeSource": "snapshots.before_arrival_turn",
+          "afterSource": "after"
+        },
+        {
+          "type": "historyAddedNestedObjectCount",
+          "entryWhere": {
+            "type": "event-summary",
+            "summaryTitle": "📋 Events – Vehicle Movement"
+          },
+          "path": "summaryItems",
+          "where": {
+            "category": "travel"
+          },
+          "equals": 1,
+          "beforeSource": "snapshots.before_arrival_turn",
+          "afterSource": "after"
+        }
+      ]
+    },
+    {
+      "type": "request",
+      "name": "player_after_arrival_turn",
+      "method": "GET",
+      "route": "/api/npcs/$fixture.playerId"
+    },
+    {
+      "type": "request",
+      "name": "tram_after_arrival_turn",
+      "method": "GET",
+      "route": "/api/locations/$fixture.tramId"
+    },
+    {
+      "type": "assert",
+      "assertions": [
+        {
+          "type": "httpStatus",
+          "equals": 200
+        },
+        {
+          "type": "responseOk",
+          "equals": true
+        },
+        {
+          "type": "exactDelta",
+          "beforeSource": "responses.player_before_arrival_turn",
+          "afterSource": "responses.player_after_arrival_turn",
+          "path": "payload.npc.elapsedTime",
+          "delta": 1
+        },
+        {
+          "type": "equals",
+          "source": "responses.player_after_arrival_turn",
+          "path": "payload.npc.elapsedTime",
+          "equals": 669
+        },
+        {
+          "type": "equals",
+          "source": "responses.tram_after_arrival_turn",
+          "path": "payload.location.vehicleInfo.currentDestination",
+          "equals": "$fixture.eastPlatformId"
+        },
+        {
+          "type": "equals",
+          "source": "responses.tram_after_arrival_turn",
+          "path": "payload.location.vehicleInfo.pendingDestination",
+          "equals": null
+        },
+        {
+          "type": "equals",
+          "source": "responses.tram_after_arrival_turn",
+          "path": "payload.location.vehicleInfo.ETA",
+          "equals": null
+        },
+        {
+          "type": "equals",
+          "source": "responses.tram_after_arrival_turn",
+          "path": "payload.location.vehicleInfo.departureTime",
+          "equals": null
+        },
+        {
+          "type": "equals",
+          "source": "responses.tram_after_arrival_turn",
+          "path": "payload.location.vehicleInfo.isUnderway",
+          "equals": false
+        },
+        {
+          "type": "equals",
+          "source": "responses.tram_after_arrival_turn",
+          "path": "payload.location.vehicleInfo.vehicleExitId",
+          "equals": "$fixture.vehicleExitId"
+        },
+        {
+          "type": "equals",
+          "source": "responses.tram_after_arrival_turn",
+          "path": "payload.location.vehicleInfo.destinations",
+          "equals": [
+            "$fixture.westPlatformId",
+            "$fixture.eastPlatformId"
+          ]
+        }
+      ]
+    },
+    {
+      "type": "snapshot",
+      "name": "after_arrival_turn"
+    },
+    {
+      "type": "request",
+      "name": "post_arrival_minute",
+      "method": "POST",
+      "route": "/api/slash-command",
+      "body": {
+        "command": "time",
+        "argsText": "+1 minute"
+      }
+    },
+    {
+      "type": "assert",
+      "assertions": [
+        {
+          "type": "httpStatus",
+          "equals": 200
+        },
+        {
+          "type": "responseOk",
+          "equals": true
+        },
+        {
+          "type": "exactDelta",
+          "beforeSource": "snapshots.after_arrival_turn",
+          "afterSource": "after",
+          "path": "calendar.payload.worldTime.timeMinutes",
+          "delta": 1
+        },
+        {
+          "type": "stateUnchanged",
+          "beforeSource": "snapshots.after_arrival_turn",
+          "afterSource": "after",
+          "paths": [
+            "player.payload.player.locationId",
+            "currentLocation.payload.location.vehicleInfo",
+            "currentLocation.payload.location.exits",
+            "history.payload.history"
+          ]
+        },
+        {
+          "type": "notIncludes",
+          "source": "responses.post_arrival_minute",
+          "path": "payload.replies.0.content",
+          "value": "Processed"
+        },
+        {
+          "type": "noRealtimeErrors"
+        },
+        {
+        "type": "noUnexpectedErrorLogs",
+        "allowedPrefixes": [
+          "ERROR_tool_call_failed_player_action_teleportCharacterToLocation_"
+        ]
+        }
+      ]
+    }
+  ],
+  "humanReview": [
+    "Confirm the player-facing prose depicts one quiet one-minute wait aboard the already-underway QA Clockwork Tram and does not disembark, redirect, stop, or start another trip.",
+    "Confirm the structured event summaries put the one-minute player-turn result before one QA Clockwork Tram movement to QA East Platform, with no duplicate arrival."
+  ]
+}

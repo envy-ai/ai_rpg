@@ -1,0 +1,335 @@
+{
+  "version": 1,
+  "scenario": "random-scheduled-events",
+  "case": "EVENT-6-skipped-event",
+  "description": "Delete both named entities required by the minute-665 bell event before it is due, then prove validated negative applicability marks only that event skipped without mutation, prose, or history.",
+  "fixture": "random-scheduled-events",
+  "configProfile": "scheduled-event-interruption-mechanics",
+  "trackedPaths": [
+    "player.payload.player.locationId",
+    "players.payload.players",
+    "locations.payload.locations",
+    "regions.payload.regions",
+    "things.payload.things",
+    "scheduledEvents.payload.scheduledEvents",
+    "calendar.payload.worldTime",
+    "history.payload.history"
+  ],
+  "steps": [
+    {
+      "type": "loadFixture"
+    },
+    {
+      "type": "request",
+      "name": "delete_required_actor",
+      "method": "DELETE",
+      "route": "/api/npcs/$fixture.bellRunnerId"
+    },
+    {
+      "type": "assert",
+      "assertions": [
+        {
+          "type": "httpStatus",
+          "equals": 200
+        },
+        {
+          "type": "responseOk",
+          "equals": true
+        },
+        {
+          "type": "equals",
+          "source": "responses.delete_required_actor",
+          "path": "payload.success",
+          "equals": true
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "after",
+          "path": "players.payload.players",
+          "where": {
+            "id": "$fixture.bellRunnerId"
+          },
+          "equals": 0
+        },
+        {
+          "type": "equals",
+          "source": "after",
+          "path": "calendar.payload.worldTime.timeMinutes",
+          "equals": 663
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "after",
+          "path": "scheduledEvents.payload.scheduledEvents",
+          "where": {
+            "id": "$fixture.visibleScheduledEventId",
+            "status": "pending",
+            "resolvedAtWorldMinute": null
+          },
+          "equals": 1
+        }
+      ]
+    },
+    {
+      "type": "request",
+      "name": "delete_required_object",
+      "method": "DELETE",
+      "route": "/api/things/$fixture.brassBellId"
+    },
+    {
+      "type": "assert",
+      "assertions": [
+        {
+          "type": "httpStatus",
+          "equals": 200
+        },
+        {
+          "type": "responseOk",
+          "equals": true
+        },
+        {
+          "type": "equals",
+          "source": "responses.delete_required_object",
+          "path": "payload.success",
+          "equals": true
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "after",
+          "path": "things.payload.things",
+          "where": {
+            "id": "$fixture.brassBellId"
+          },
+          "equals": 0
+        },
+        {
+          "type": "equals",
+          "source": "after",
+          "path": "calendar.payload.worldTime.timeMinutes",
+          "equals": 663
+        }
+      ]
+    },
+    {
+      "type": "request",
+      "name": "player_before_due",
+      "method": "GET",
+      "route": "/api/npcs/$fixture.playerId"
+    },
+    {
+      "type": "snapshot",
+      "name": "before_skipped_due"
+    },
+    {
+      "type": "request",
+      "name": "cross_skipped_due",
+      "method": "POST",
+      "route": "/api/slash-command",
+      "body": {
+        "command": "time",
+        "argsText": "+2 minutes"
+      }
+    },
+    {
+      "type": "request",
+      "name": "player_after_due",
+      "method": "GET",
+      "route": "/api/npcs/$fixture.playerId"
+    },
+    {
+      "type": "assert",
+      "assertions": [
+        {
+          "type": "httpStatus",
+          "equals": 200
+        },
+        {
+          "type": "responseOk",
+          "equals": true
+        },
+        {
+          "type": "equals",
+          "source": "responses.cross_skipped_due",
+          "path": "status",
+          "equals": 200
+        },
+        {
+          "type": "equals",
+          "source": "responses.cross_skipped_due",
+          "path": "ok",
+          "equals": true
+        },
+        {
+          "type": "equals",
+          "source": "responses.cross_skipped_due",
+          "path": "payload.success",
+          "equals": true
+        },
+        {
+          "type": "exactDelta",
+          "beforeSource": "snapshots.before_skipped_due",
+          "afterSource": "after",
+          "path": "calendar.payload.worldTime.timeMinutes",
+          "delta": 2
+        },
+        {
+          "type": "equals",
+          "source": "after",
+          "path": "calendar.payload.worldTime.timeMinutes",
+          "equals": 665
+        },
+        {
+          "type": "exactDelta",
+          "beforeSource": "responses.player_before_due",
+          "afterSource": "responses.player_after_due",
+          "path": "payload.npc.elapsedTime",
+          "delta": 2
+        },
+        {
+          "type": "equals",
+          "source": "responses.player_after_due",
+          "path": "payload.npc.elapsedTime",
+          "equals": 665
+        },
+        {
+          "type": "equals",
+          "source": "after",
+          "path": "player.payload.player.locationId",
+          "equals": "$fixture.baselineLocationId"
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "after",
+          "path": "players.payload.players",
+          "where": {
+            "id": "$fixture.bellRunnerId"
+          },
+          "equals": 0
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "after",
+          "path": "scheduledEvents.payload.scheduledEvents",
+          "where": {
+            "id": "$fixture.visibleScheduledEventId",
+            "event": "$fixture.visibleScheduledEventDescription",
+            "locationId": "$fixture.baselineLocationId",
+            "targetWorldMinute": 665,
+            "status": "skipped",
+            "resolutionSummary": "",
+            "playerProse": "",
+            "resolvedAtWorldMinute": 665
+          },
+          "equals": 1
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "after",
+          "path": "scheduledEvents.payload.scheduledEvents",
+          "where": {
+            "id": "$fixture.visibleScheduledEventId",
+            "status": "resolved"
+          },
+          "equals": 0
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "after",
+          "path": "scheduledEvents.payload.scheduledEvents",
+          "where": {
+            "id": "$fixture.visibleScheduledEventId",
+            "status": "pending"
+          },
+          "equals": 0
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "after",
+          "path": "scheduledEvents.payload.scheduledEvents",
+          "where": {
+            "id": "$fixture.offscreenScheduledEventId",
+            "event": "$fixture.offscreenScheduledEventDescription",
+            "locationId": "$fixture.depotLocationId",
+            "status": "pending",
+            "resolutionSummary": "",
+            "playerProse": "",
+            "resolvedAtWorldMinute": null,
+            "resolvedAtWorldTime": null
+          },
+          "equals": 1
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "after",
+          "path": "things.payload.things",
+          "where": {
+            "id": "$fixture.brassBellId"
+          },
+          "equals": 0
+        },
+        {
+          "type": "entityField",
+          "source": "after",
+          "collection": "things",
+          "id": "$fixture.depotMarkerId",
+          "path": "description",
+          "equals": "$fixture.depotMarkerInitialDescription"
+        },
+        {
+          "type": "entityField",
+          "source": "after",
+          "collection": "things",
+          "id": "$fixture.depotMarkerId",
+          "path": "metadata.locationId",
+          "equals": "$fixture.depotLocationId"
+        },
+        {
+          "type": "historyAddedTypeCount",
+          "beforeSource": "snapshots.before_skipped_due",
+          "afterSource": "after",
+          "entryType": "scheduled-event",
+          "equals": 0
+        },
+        {
+          "type": "historyAddedTypeCount",
+          "beforeSource": "snapshots.before_skipped_due",
+          "afterSource": "after",
+          "entryType": "scheduled-event-prose",
+          "equals": 0
+        },
+        {
+          "type": "historyAddedTypeCount",
+          "beforeSource": "snapshots.before_skipped_due",
+          "afterSource": "after",
+          "entryType": "random-event",
+          "equals": 0
+        },
+        {
+          "type": "stateUnchanged",
+          "beforeSource": "snapshots.before_skipped_due",
+          "afterSource": "after",
+          "paths": [
+            "player.payload.player.locationId",
+            "locations.payload.locations",
+            "regions.payload.regions",
+            "things.payload.things",
+            "history.payload.history"
+          ]
+        },
+        {
+          "type": "noRealtimeErrors"
+        },
+        {
+          "type": "noUnexpectedErrorLogs",
+          "allowedPrefixes": [
+            "ERROR_chatCompletionError_scheduled_event_resolution_"
+          ]
+        }
+      ]
+    }
+  ],
+  "humanReview": [
+    "Confirm the single applicability response says the event cannot occur because QA Bell Runner and QA Brass Bell no longer exist, rather than because of player presence or inventory ownership.",
+    "Confirm the TinyBrain run stops after validated negative applicability and does not ask for a tool plan, hidden summary, or player-facing prose."
+  ]
+}

@@ -1,0 +1,698 @@
+{
+  "version": 1,
+  "scenario": "stealth-hidden",
+  "case": "HIDE-8-save-reload",
+  "description": "Hidden visibility, visible-only sighting data, location membership, and the client-facing hidden marker survive normal save hydration after deliberately contradictory runtime mutations.",
+  "fixture": "stealth-hidden-npcs",
+  "configProfile": "stealth-hidden-mechanics",
+  "trackedPaths": [
+    "player.payload.player.locationId",
+    "players.payload.players",
+    "currentLocation.payload.location.npcIds",
+    "currentLocation.payload.location.npcs",
+    "history.payload",
+    "calendar.payload.worldTime.timeMinutes"
+  ],
+  "steps": [
+    {
+      "type": "loadFixture"
+    },
+    {
+      "type": "request",
+      "name": "make_perception_certain_to_fail",
+      "method": "PUT",
+      "route": "/api/npcs/$fixture.playerId",
+      "body": {
+        "attributes": {
+          "wisdom": 1
+        },
+        "skills": {
+          "Perception": 0
+        }
+      }
+    },
+    {
+      "type": "request",
+      "name": "separate_player_without_arrival_processing",
+      "method": "POST",
+      "route": "/api/npcs/$fixture.playerId/teleport",
+      "body": {
+        "locationId": "$fixture.isolationLocationId",
+        "accountTravelTime": false,
+        "storyToolTeleport": true
+      }
+    },
+    {
+      "type": "request",
+      "name": "establish_visible_only_sightings",
+      "method": "POST",
+      "route": "/api/npcs/$fixture.playerId/teleport",
+      "body": {
+        "locationId": "$fixture.baselineLocationId",
+        "accountTravelTime": false,
+        "storyToolTeleport": false,
+        "accompanyingCharacters": []
+      }
+    },
+    {
+      "type": "assert",
+      "assertions": [
+        {
+          "type": "httpStatus",
+          "equals": 200
+        },
+        {
+          "type": "responseOk",
+          "equals": true
+        },
+        {
+          "type": "equals",
+          "source": "responses.establish_visible_only_sightings",
+          "path": "payload.arrivalProcessingError",
+          "equals": null
+        },
+        {
+          "type": "equals",
+          "source": "after",
+          "path": "player.payload.player.locationId",
+          "equals": "$fixture.baselineLocationId"
+        },
+        {
+          "type": "equals",
+          "source": "after",
+          "path": "calendar.payload.worldTime.timeMinutes",
+          "equals": 663
+        },
+        {
+          "type": "entityField",
+          "source": "after",
+          "collection": "players",
+          "id": "$fixture.scoutId",
+          "path": "hiddenFromPlayer",
+          "equals": true
+        },
+        {
+          "type": "entityField",
+          "source": "after",
+          "collection": "players",
+          "id": "$fixture.scoutId",
+          "path": "locationId",
+          "equals": "$fixture.baselineLocationId"
+        },
+        {
+          "type": "entityField",
+          "source": "after",
+          "collection": "players",
+          "id": "$fixture.scoutId",
+          "path": "last_seen_time",
+          "equals": null
+        },
+        {
+          "type": "entityField",
+          "source": "after",
+          "collection": "players",
+          "id": "$fixture.scoutId",
+          "path": "last_seen_location",
+          "equals": null
+        },
+        {
+          "type": "entityField",
+          "source": "after",
+          "collection": "players",
+          "id": "$fixture.scoutId",
+          "path": "was_in_player_location_previous_round",
+          "equals": false
+        },
+        {
+          "type": "entityField",
+          "source": "after",
+          "collection": "players",
+          "id": "$fixture.decoyId",
+          "path": "hiddenFromPlayer",
+          "equals": false
+        },
+        {
+          "type": "entityField",
+          "source": "after",
+          "collection": "players",
+          "id": "$fixture.decoyId",
+          "path": "locationId",
+          "equals": "$fixture.baselineLocationId"
+        },
+        {
+          "type": "entityField",
+          "source": "after",
+          "collection": "players",
+          "id": "$fixture.decoyId",
+          "path": "last_seen_time",
+          "equals": 663
+        },
+        {
+          "type": "entityField",
+          "source": "after",
+          "collection": "players",
+          "id": "$fixture.decoyId",
+          "path": "last_seen_location",
+          "equals": "$fixture.baselineLocationId"
+        },
+        {
+          "type": "entityField",
+          "source": "after",
+          "collection": "players",
+          "id": "$fixture.decoyId",
+          "path": "was_in_player_location_previous_round",
+          "equals": false
+        },
+        {
+          "type": "includes",
+          "source": "after",
+          "path": "currentLocation.payload.location.npcIds",
+          "value": "$fixture.scoutId"
+        },
+        {
+          "type": "includes",
+          "source": "after",
+          "path": "currentLocation.payload.location.npcIds",
+          "value": "$fixture.decoyId"
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "after",
+          "path": "currentLocation.payload.location.npcs",
+          "where": {
+            "id": "$fixture.scoutId",
+            "name": "$fixture.scoutName",
+            "hiddenFromPlayer": true,
+            "isDead": false,
+            "locationId": "$fixture.baselineLocationId",
+            "last_seen_time": null,
+            "last_seen_location": null
+          },
+          "equals": 1
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "after",
+          "path": "currentLocation.payload.location.npcs",
+          "where": {
+            "id": "$fixture.decoyId",
+            "name": "$fixture.decoyName",
+            "hiddenFromPlayer": false,
+            "isDead": false,
+            "locationId": "$fixture.baselineLocationId",
+            "last_seen_time": 663,
+            "last_seen_location": "$fixture.baselineLocationId"
+          },
+          "equals": 1
+        }
+      ]
+    },
+    {
+      "type": "snapshot",
+      "name": "hidden_state_before_save"
+    },
+    {
+      "type": "save",
+      "name": "hidden_state_save"
+    },
+    {
+      "type": "assert",
+      "assertions": [
+        {
+          "type": "httpStatus",
+          "equals": 200
+        },
+        {
+          "type": "responseOk",
+          "equals": true
+        },
+        {
+          "type": "equals",
+          "source": "responses.hidden_state_save",
+          "path": "payload.success",
+          "equals": true
+        },
+        {
+          "type": "stateUnchanged",
+          "beforeSource": "snapshots.hidden_state_before_save",
+          "afterSource": "after",
+          "paths": [
+            "player.payload.player.locationId",
+            "players.payload.players",
+            "currentLocation.payload.location.npcIds",
+            "currentLocation.payload.location.npcs",
+            "calendar.payload.worldTime.timeMinutes"
+          ]
+        },
+        {
+          "type": "historyAddedTypeCount",
+          "entryType": "save-notice",
+          "equals": 1,
+          "beforeSource": "snapshots.hidden_state_before_save",
+          "afterSource": "after"
+        }
+      ]
+    },
+    {
+      "type": "snapshot",
+      "name": "saved_with_notice"
+    },
+    {
+      "type": "request",
+      "name": "reveal_scout_after_save",
+      "method": "PUT",
+      "route": "/api/npcs/$fixture.scoutId",
+      "body": {
+        "hiddenFromPlayer": false
+      }
+    },
+    {
+      "type": "request",
+      "name": "move_scout_after_save",
+      "method": "POST",
+      "route": "/api/npcs/$fixture.scoutId/teleport",
+      "body": {
+        "locationId": "$fixture.isolationLocationId",
+        "accountTravelTime": false
+      }
+    },
+    {
+      "type": "request",
+      "name": "move_decoy_after_save",
+      "method": "POST",
+      "route": "/api/npcs/$fixture.decoyId/teleport",
+      "body": {
+        "locationId": "$fixture.isolationLocationId",
+        "accountTravelTime": false
+      }
+    },
+    {
+      "type": "request",
+      "name": "advance_mutated_state",
+      "method": "POST",
+      "route": "/api/slash-command",
+      "body": {
+        "command": "time",
+        "argsText": "+5 minutes"
+      }
+    },
+    {
+      "type": "request",
+      "name": "move_player_into_mutated_state",
+      "method": "POST",
+      "route": "/api/npcs/$fixture.playerId/teleport",
+      "body": {
+        "locationId": "$fixture.isolationLocationId",
+        "accountTravelTime": false,
+        "storyToolTeleport": false,
+        "accompanyingCharacters": []
+      }
+    },
+    {
+      "type": "assert",
+      "assertions": [
+        {
+          "type": "httpStatus",
+          "equals": 200
+        },
+        {
+          "type": "responseOk",
+          "equals": true
+        },
+        {
+          "type": "equals",
+          "source": "responses.move_player_into_mutated_state",
+          "path": "payload.arrivalProcessingError",
+          "equals": null
+        },
+        {
+          "type": "equals",
+          "source": "after",
+          "path": "player.payload.player.locationId",
+          "equals": "$fixture.isolationLocationId"
+        },
+        {
+          "type": "exactDelta",
+          "beforeSource": "snapshots.hidden_state_before_save",
+          "afterSource": "after",
+          "path": "calendar.payload.worldTime.timeMinutes",
+          "delta": 5
+        },
+        {
+          "type": "entityField",
+          "source": "after",
+          "collection": "players",
+          "id": "$fixture.scoutId",
+          "path": "hiddenFromPlayer",
+          "equals": false
+        },
+        {
+          "type": "entityField",
+          "source": "after",
+          "collection": "players",
+          "id": "$fixture.scoutId",
+          "path": "locationId",
+          "equals": "$fixture.isolationLocationId"
+        },
+        {
+          "type": "entityField",
+          "source": "after",
+          "collection": "players",
+          "id": "$fixture.scoutId",
+          "path": "last_seen_time",
+          "equals": 668
+        },
+        {
+          "type": "entityField",
+          "source": "after",
+          "collection": "players",
+          "id": "$fixture.scoutId",
+          "path": "last_seen_location",
+          "equals": "$fixture.isolationLocationId"
+        },
+        {
+          "type": "entityField",
+          "source": "after",
+          "collection": "players",
+          "id": "$fixture.decoyId",
+          "path": "locationId",
+          "equals": "$fixture.isolationLocationId"
+        },
+        {
+          "type": "entityField",
+          "source": "after",
+          "collection": "players",
+          "id": "$fixture.decoyId",
+          "path": "last_seen_time",
+          "equals": 668
+        },
+        {
+          "type": "entityField",
+          "source": "after",
+          "collection": "players",
+          "id": "$fixture.decoyId",
+          "path": "last_seen_location",
+          "equals": "$fixture.isolationLocationId"
+        },
+        {
+          "type": "includes",
+          "source": "after",
+          "path": "currentLocation.payload.location.npcIds",
+          "value": "$fixture.scoutId"
+        },
+        {
+          "type": "includes",
+          "source": "after",
+          "path": "currentLocation.payload.location.npcIds",
+          "value": "$fixture.decoyId"
+        }
+      ]
+    },
+    {
+      "type": "reload",
+      "name": "reload_hidden_state"
+    },
+    {
+      "type": "request",
+      "name": "read_hydrated_scout",
+      "method": "GET",
+      "route": "/api/npcs/$fixture.scoutId"
+    },
+    {
+      "type": "request",
+      "name": "read_hydrated_decoy",
+      "method": "GET",
+      "route": "/api/npcs/$fixture.decoyId"
+    },
+    {
+      "type": "request",
+      "name": "read_hydrated_baseline_location",
+      "method": "GET",
+      "route": "/api/locations/$fixture.baselineLocationId?expandStubs=false"
+    },
+    {
+      "type": "request",
+      "name": "read_hydrated_isolation_location",
+      "method": "GET",
+      "route": "/api/locations/$fixture.isolationLocationId?expandStubs=false"
+    },
+    {
+      "type": "assert",
+      "assertions": [
+        {
+          "type": "httpStatus",
+          "equals": 200
+        },
+        {
+          "type": "responseOk",
+          "equals": true
+        },
+        {
+          "type": "equals",
+          "source": "responses.reload_hidden_state",
+          "path": "payload.success",
+          "equals": true
+        },
+        {
+          "type": "equals",
+          "source": "after",
+          "path": "player.payload.player.locationId",
+          "equals": "$fixture.baselineLocationId"
+        },
+        {
+          "type": "equals",
+          "source": "after",
+          "path": "calendar.payload.worldTime.timeMinutes",
+          "equals": 663
+        },
+        {
+          "type": "stateUnchanged",
+          "beforeSource": "snapshots.saved_with_notice",
+          "afterSource": "after",
+          "paths": [
+            "history.payload.history"
+          ]
+        },
+        {
+          "type": "entityField",
+          "source": "after",
+          "collection": "players",
+          "id": "$fixture.scoutId",
+          "path": "hiddenFromPlayer",
+          "equals": true
+        },
+        {
+          "type": "entityField",
+          "source": "after",
+          "collection": "players",
+          "id": "$fixture.scoutId",
+          "path": "locationId",
+          "equals": "$fixture.baselineLocationId"
+        },
+        {
+          "type": "entityField",
+          "source": "after",
+          "collection": "players",
+          "id": "$fixture.scoutId",
+          "path": "last_seen_time",
+          "equals": null
+        },
+        {
+          "type": "entityField",
+          "source": "after",
+          "collection": "players",
+          "id": "$fixture.scoutId",
+          "path": "last_seen_location",
+          "equals": null
+        },
+        {
+          "type": "entityField",
+          "source": "after",
+          "collection": "players",
+          "id": "$fixture.scoutId",
+          "path": "was_in_player_location_previous_round",
+          "equals": false
+        },
+        {
+          "type": "entityField",
+          "source": "after",
+          "collection": "players",
+          "id": "$fixture.scoutId",
+          "path": "aliases",
+          "equals": [
+            "$fixture.scoutAlias"
+          ]
+        },
+        {
+          "type": "entityField",
+          "source": "after",
+          "collection": "players",
+          "id": "$fixture.decoyId",
+          "path": "hiddenFromPlayer",
+          "equals": false
+        },
+        {
+          "type": "entityField",
+          "source": "after",
+          "collection": "players",
+          "id": "$fixture.decoyId",
+          "path": "locationId",
+          "equals": "$fixture.baselineLocationId"
+        },
+        {
+          "type": "entityField",
+          "source": "after",
+          "collection": "players",
+          "id": "$fixture.decoyId",
+          "path": "last_seen_time",
+          "equals": 663
+        },
+        {
+          "type": "entityField",
+          "source": "after",
+          "collection": "players",
+          "id": "$fixture.decoyId",
+          "path": "last_seen_location",
+          "equals": "$fixture.baselineLocationId"
+        },
+        {
+          "type": "entityField",
+          "source": "after",
+          "collection": "players",
+          "id": "$fixture.decoyId",
+          "path": "was_in_player_location_previous_round",
+          "equals": false
+        },
+        {
+          "type": "equals",
+          "source": "responses.read_hydrated_scout",
+          "path": "payload.npc.hiddenFromPlayer",
+          "equals": true
+        },
+        {
+          "type": "equals",
+          "source": "responses.read_hydrated_scout",
+          "path": "payload.npc.currentLocation",
+          "equals": "$fixture.baselineLocationId"
+        },
+        {
+          "type": "equals",
+          "source": "responses.read_hydrated_scout",
+          "path": "payload.npc.last_seen_time",
+          "equals": null
+        },
+        {
+          "type": "equals",
+          "source": "responses.read_hydrated_scout",
+          "path": "payload.npc.last_seen_location",
+          "equals": null
+        },
+        {
+          "type": "equals",
+          "source": "responses.read_hydrated_decoy",
+          "path": "payload.npc.hiddenFromPlayer",
+          "equals": false
+        },
+        {
+          "type": "equals",
+          "source": "responses.read_hydrated_decoy",
+          "path": "payload.npc.currentLocation",
+          "equals": "$fixture.baselineLocationId"
+        },
+        {
+          "type": "equals",
+          "source": "responses.read_hydrated_decoy",
+          "path": "payload.npc.last_seen_time",
+          "equals": 663
+        },
+        {
+          "type": "equals",
+          "source": "responses.read_hydrated_decoy",
+          "path": "payload.npc.last_seen_location",
+          "equals": "$fixture.baselineLocationId"
+        },
+        {
+          "type": "includes",
+          "source": "responses.read_hydrated_baseline_location",
+          "path": "payload.location.npcIds",
+          "value": "$fixture.scoutId"
+        },
+        {
+          "type": "includes",
+          "source": "responses.read_hydrated_baseline_location",
+          "path": "payload.location.npcIds",
+          "value": "$fixture.decoyId"
+        },
+        {
+          "type": "notIncludes",
+          "source": "responses.read_hydrated_isolation_location",
+          "path": "payload.location.npcIds",
+          "value": "$fixture.scoutId"
+        },
+        {
+          "type": "notIncludes",
+          "source": "responses.read_hydrated_isolation_location",
+          "path": "payload.location.npcIds",
+          "value": "$fixture.decoyId"
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "responses.read_hydrated_baseline_location",
+          "path": "payload.location.npcs",
+          "where": {
+            "id": "$fixture.scoutId",
+            "name": "$fixture.scoutName",
+            "hiddenFromPlayer": true,
+            "isDead": false,
+            "locationId": "$fixture.baselineLocationId",
+            "last_seen_time": null,
+            "last_seen_location": null
+          },
+          "equals": 1
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "responses.read_hydrated_baseline_location",
+          "path": "payload.location.npcs",
+          "where": {
+            "id": "$fixture.decoyId",
+            "name": "$fixture.decoyName",
+            "hiddenFromPlayer": false,
+            "isDead": false,
+            "locationId": "$fixture.baselineLocationId",
+            "last_seen_time": 663,
+            "last_seen_location": "$fixture.baselineLocationId"
+          },
+          "equals": 1
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "responses.read_hydrated_isolation_location",
+          "path": "payload.location.npcs",
+          "where": {
+            "id": "$fixture.scoutId"
+          },
+          "equals": 0
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "responses.read_hydrated_isolation_location",
+          "path": "payload.location.npcs",
+          "where": {
+            "id": "$fixture.decoyId"
+          },
+          "equals": 0
+        },
+        {
+          "type": "noRealtimeErrors"
+        },
+        {
+          "type": "noUnexpectedErrorLogs"
+        }
+      ]
+    }
+  ],
+  "humanReview": [
+    "Backend-only client-filter contract: the hydrated current-location payload intentionally includes the living Scout exactly once with hiddenFromPlayer=true and the visible Decoy exactly once with hiddenFromPlayer=false; the existing Adventure UI filter consumes that marker and hides only the living Scout by default."
+  ]
+}

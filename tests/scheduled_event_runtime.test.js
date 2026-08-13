@@ -5,7 +5,9 @@ const IdGenerator = require('../IdGenerator.js');
 const ScheduledEvent = require('../ScheduledEvent.js');
 const Utils = require('../Utils.js');
 const {
+    buildDeterministicScheduledEventToolCalls,
     createScheduledEventScheduler,
+    executeDeterministicScheduledEventToolPlan,
     parseScheduledEventResultXml
 } = require('../scheduled_event_runtime.js');
 
@@ -176,4 +178,185 @@ test('parseScheduledEventResultXml handles happened and empty scheduled event re
             proseForPlayer: 'The crane alarm starts ringing overhead.'
         }
     );
+});
+
+test('deterministic scheduled event execution runs exact direct updates and caches successful retries', async () => {
+    const plan = {
+        event: 'Change QA Marker description exactly.',
+        stateChangeRequired: true,
+        directUpdates: [{
+            objectType: 'thing',
+            objectId: 'thing-qa-marker',
+            objectName: 'QA Marker',
+            field: 'description',
+            value: 'The exact replacement.',
+            eventValue: 'The exact replacement.'
+        }],
+        otherTools: []
+    };
+    assert.deepEqual(buildDeterministicScheduledEventToolCalls(plan), [{
+        id: 'scheduled_event_plan_1',
+        functionName: 'updateObjectFields',
+        argumentsObject: {
+            objectType: 'thing',
+            object: 'thing-qa-marker',
+            fields: { description: 'The exact replacement.' }
+        },
+        argumentsText: '{"objectType":"thing","object":"thing-qa-marker","fields":{"description":"The exact replacement."}}'
+    }]);
+
+    const cache = new Map();
+    const calls = [];
+    const validateToolCall = toolCall => {
+        assert.equal(toolCall.name, 'updateObjectFields');
+        assert.deepEqual(toolCall.argumentsObject.fields, { description: 'The exact replacement.' });
+    };
+    const executeChatToolCall = async toolCall => {
+        calls.push(toolCall);
+        return {
+            content: '<updateObjectFieldsResult><status>success</status></updateObjectFieldsResult>',
+            metadata: {
+                status: 'success',
+                objectType: 'thing',
+                objectId: 'thing-qa-marker',
+                objectName: 'QA Marker',
+                updatedFields: ['description'],
+                updatedValues: { description: 'The exact replacement.' }
+            }
+        };
+    };
+
+    const first = await executeDeterministicScheduledEventToolPlan(plan, {
+        executeChatToolCall,
+        validateToolCall,
+        resultCache: cache
+    });
+    const retry = await executeDeterministicScheduledEventToolPlan(plan, {
+        executeChatToolCall,
+        validateToolCall,
+        resultCache: cache
+    });
+
+    assert.equal(calls.length, 1);
+    assert.equal(first.invocations[0].metadata.cached, undefined);
+    assert.equal(retry.invocations[0].metadata.cached, true);
+    assert.deepEqual(retry.invocations[0].argumentsObject.fields, {
+        description: 'The exact replacement.'
+    });
+});
+
+test('deterministic scheduled event execution handles no-change plans and rejects richer tools', async () => {
+    const noChange = await executeDeterministicScheduledEventToolPlan({
+        event: 'The bell rings once.',
+        stateChangeRequired: false,
+        directUpdates: [],
+        otherTools: []
+    }, {
+        executeChatToolCall: async () => {
+            throw new Error('No tool should run.');
+        },
+        validateToolCall: () => {
+            throw new Error('No tool should be validated.');
+        }
+    });
+    assert.deepEqual(noChange, { toolCalls: [], invocations: [] });
+
+    await assert.rejects(
+        () => executeDeterministicScheduledEventToolPlan({
+            event: 'Create an NPC.',
+            stateChangeRequired: true,
+            directUpdates: [],
+            otherTools: [{
+                name: 'createNpc',
+                argumentsObject: { name: 'Someone' },
+                purpose: 'Create the scheduled arrival.'
+            }]
+        }, {
+            executeChatToolCall: async () => ({ content: 'unused' }),
+            validateToolCall: () => true
+        }),
+        /only supports direct updateObjectFields plans/
+    );
+});
+
+test('deterministic scheduled event execution retries failed calls without repeating successful mutations', async () => {
+    const plan = {
+        event: 'Update the surviving marker and the missing marker.',
+        stateChangeRequired: true,
+        directUpdates: [
+            {
+                objectType: 'thing',
+                objectId: 'thing-surviving-marker',
+                objectName: 'QA Surviving Marker',
+                field: 'description',
+                value: 'Updated exactly once.'
+            },
+            {
+                objectType: 'thing',
+                objectId: 'thing-missing-marker',
+                objectName: 'QA Missing Marker',
+                field: 'description',
+                value: 'This update cannot be applied.'
+            }
+        ],
+        otherTools: []
+    };
+    const executionCounts = new Map();
+    const executeChatToolCall = async toolCall => {
+        const objectId = toolCall.argumentsObject.object;
+        executionCounts.set(objectId, (executionCounts.get(objectId) || 0) + 1);
+        if (objectId === 'thing-missing-marker') {
+            return {
+                content: [
+                    '<toolError>',
+                    '  <function>updateObjectFields</function>',
+                    '  <code>target_not_found</code>',
+                    '  <message>No thing matches the requested target.</message>',
+                    '  <candidates count="0"></candidates>',
+                    '</toolError>'
+                ].join('\n'),
+                metadata: {
+                    error: true,
+                    functionName: 'updateObjectFields',
+                    code: 'target_not_found',
+                    message: 'No thing matches the requested target.',
+                    candidates: []
+                }
+            };
+        }
+        return {
+            content: '<updateObjectFieldsResult><status>success</status></updateObjectFieldsResult>',
+            metadata: {
+                status: 'success',
+                objectType: 'thing',
+                objectId,
+                objectName: 'QA Surviving Marker',
+                updatedFields: ['description'],
+                updatedValues: { description: 'Updated exactly once.' }
+            }
+        };
+    };
+    const validateToolCall = () => true;
+    const cache = new Map();
+
+    const first = await executeDeterministicScheduledEventToolPlan(plan, {
+        executeChatToolCall,
+        validateToolCall,
+        resultCache: cache
+    });
+    const retry = await executeDeterministicScheduledEventToolPlan(plan, {
+        executeChatToolCall,
+        validateToolCall,
+        resultCache: cache
+    });
+
+    assert.equal(executionCounts.get('thing-surviving-marker'), 1);
+    assert.equal(executionCounts.get('thing-missing-marker'), 2);
+    assert.equal(first.invocations[0].metadata.cached, undefined);
+    assert.equal(retry.invocations[0].metadata.cached, true);
+    assert.equal(first.invocations[1].metadata.error, true);
+    assert.equal(first.invocations[1].metadata.code, 'target_not_found');
+    assert.equal(retry.invocations[1].metadata.error, true);
+    assert.equal(retry.invocations[1].metadata.cached, undefined);
+    assert.equal(cache.size, 1);
 });

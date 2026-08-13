@@ -73,7 +73,9 @@ test('event housekeeping prompt is silent, logged, and mutation-capable', () => 
     assert.match(apiSource, /const \{\s*collectHistoryMatches,\s*runChatCompletionWithToolLoop,\s*executeChatToolCall\s*\} = createChatToolRuntime\(\{/);
     assert.match(source, /const rawResponsePromise = LLMClient\.chatCompletion\(requestOptions\)/);
     assert.match(source, /async function finishHousekeepingPrompt\(pendingHousekeepingPrompt,/);
-    assert.match(source, /const rawResponseResult = await pending\.rawResponsePromise;/);
+    assert.match(source, /const initialRawResponseResult = await pending\.rawResponsePromise;/);
+    assert.match(source, /runPromptWithParseRetries\(\{[\s\S]*?parse:\s*response\s*=>\s*Events\._parseHousekeepingXmlResponse\(response\)/);
+    assert.match(source, /Housekeeping response attempt \$\{attempt\}\/\$\{maxAttempts\} failed validation/);
     assert.doesNotMatch(source, /getAllChatToolDefinitions/);
     assert.doesNotMatch(source, /housekeepingTools/);
     assert.doesNotMatch(source, /tool_choice/);

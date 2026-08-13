@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "name": "scheduled-event-interruption-mechanics",
+  "description": "Runs player-action scheduled-event resolution and interruption rewriting without unrelated event checks, need-bar prompts, random events, NPC turns, background work, or image generation.",
+  "extends": "isolated-base",
+  "values": {
+    "ai.tinybrain_prompts.scheduled_event_resolution": true,
+    "ai.tinybrain_prompts.scheduled_event_interruption_rewrite": true
+  }
+}

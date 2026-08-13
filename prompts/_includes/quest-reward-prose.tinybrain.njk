@@ -14,13 +14,9 @@ Create a compact coverage plan. For every indexed reward, state how it will appe
 
 Draft Response: Write the complete player-facing reward prose. Include every listed reward exactly once as a reward. For an item, make its appearance and physical qualities concrete; for currency, state the exact amount and type. Output prose only.
 
-{% llm_dummy_action %}
+{% llmparse('player_action_required_prose') %}
 
 {% set tinyBrainAuditFocus = 'Every indexed reward must be received; exact currency amounts and types must be preserved; no unlisted reward may be invented; maximum two paragraphs.' %}
 {% include "_includes/tinybrain-prose-audit.njk" %}
 
-Return XML only. Copy the polished draft into <prose>. Add exactly one <rewardCoverage> per indexed reward, in the original order, and copy that reward text exactly into <included>.
-<questRewardResult>
-  <prose>player-facing prose</prose>
-{% for reward in questRewards %}  <rewardCoverage><index>{{ loop.index }}</index><included>{{ reward }}</included></rewardCoverage>
-{% endfor %}</questRewardResult>
+{% llmresult('quest_reward_result') %}

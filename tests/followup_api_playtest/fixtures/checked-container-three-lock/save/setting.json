@@ -1,0 +1,384 @@
+{
+  "id": "setting_1782765587711_8ccb23b33de9",
+  "name": "Monster Girl Life 2026-06b",
+  "description": "An anime life/adventure/sandbox sim where all the characters are sexy monster girls.",
+  "theme": "Rural community, self-sufficiency, and magical creature companionship. Anime-themed character names and appearances.",
+  "genre": "Fantasy life simulation",
+  "startingLocationType": "",
+  "magicLevel": "Moderate - magic is integrated into daily life and alchemy",
+  "techLevel": "Modern, with magical enhancements and ancient technology",
+  "tone": "Relaxed.",
+  "difficulty": "Normal",
+  "currencyName": "Paw",
+  "currencyNamePlural": "Paws",
+  "currencyValueNotes": "1: A loaf of bread or simple vegetable seed packet\n5: A basic potion ingredient or tool repair\n20: A quality farming tool or piece of furniture\n50: A rare alchemical ingredient or small livestock\n100: A land expansion permit or major building material\n500: A rare magical seed or advanced alchemy equipment",
+  "writingStyleNotes": "Writing style: Simple and straightforward, masculine writing style appropriate for ecchi harem shounen and seinen anime and JRPGs. Minimal use of metaphor. Despite this, characters can have complicated emotions and growth arcs. In short, sexy harem, not animal friends fairy tale. Don't use extreme hyperbole when describing emotions (\"profoundly grateful\", etc).\n\nLocation generation: Be sure to include enemies in appropriate places.\n\nOther notes: \n* Monster girls have human skin and faces.\n* Avoid anthropomorphizing inanimate objects (\"the forge is singing\", etc)",
+  "baseContextPreamble": "[Title: Settling in Monster Girl Town; Tags: literature, romance, action, adventure; Genre: ecchi harem fantasy anime]",
+  "characterGenInstructions": "Here is a ridiculously complete list of monster girl races that you should pick from or use as inspiration.\n\nAbaddon Girl\nAdramelech Girl\nAevis Girl\nAgaliarept Girl\nAgrave Girl\nAkaname Girl\nAlplants Girl\nAlra Arum Girl\nAlra Parasol Girl\nAlra Priestess Girl\nAlra Prison Girl\nAlra Rooty Girl\nAlra Shroom Girl\nAlra Vore Girl\nAlraune Girl\nAmabie Girl\nAme No Hazuchi Girl\nAmor Doll Girl\nAmphil Girl\nAmphisbaena Girl\nAncient Dragon Girl\nAncient Scylla Girl\nAngel Ghoul Girl\nAnglerfish Girl\nAnt Girl\nAnteater Girl\nAntlion Girl\nApoptosis Girl\nApsara Girl\nArachne Girl\nArachne Lord Girl\nAradia Girl\nArchaeopteryx Girl\nArch Jelly Girl\nArcubus Girl\nAshura Girl\nAsmodeus Girl\nAssassinroid Girl\nAstaroth Girl\nAthena Girl\nAtlach-Nacha Girl\nAutomata Girl\nAzazel Girl\nAzi Dahaka Girl\nBaal Zebub Girl\nBakedanuki Girl\nBandersnatch Girl\nBanshee Girl\nBaphomet Girl\nBasilisk Girl\nBee Girl\nBeelzebub Girl\nBehemoth Girl\nBelial Girl\nBlack Golem Girl\nBlack Mamba Girl\nBlack Tanuki Girl\nBlob Girl\nBloody Dragon Girl\nBlue Slime Girl\nBomb Slime Girl\nBoxed Girl\nBrom Girl\nBrownie Girl\nBunny Slime Girl\nButterfly Girl\nCactus Girl\nCait Sith Girl\nCanceroid Girl\nCandle Girl\nCarbuncle Girl\nCarmilla Girl\nCaterpillar Girl\nCatfish Girl\nCatoblepas Girl\nCentaur Girl\nCentipede Girl\nCerberus Girl\nChimera Beast Girl\nChimera Bug Girl\nChimera Chariot Girl\nChimera Dryad Girl\nChimera Homunculus Girl\nChimera Medullahan Girl\nChimera Plant Girl\nChimera Slug Girl\nChimera Tentacle Girl\nChimera Tongue Girl\nCobra Girl\nCockroach Girl\nCoral Girl\nCrab Girl\nCthulhu Girl\nCursed Doll Girl\nDagon Girl\nDaji Girl\nDark Dryad Girl\nDark Elf Fencer Girl\nDark Elf Mage Girl\nDark Phoenix Girl\nDeath Rabbit Girl\nDemi-Nightmare Girl\nDemon Girl\nDemon Lamia Girl\nDemon Monk Girl\nDemon Scylla Girl\nDesert Scylla Girl\nDevil Fighter Girl\nDimensional Eroder Girl\nDodomeki Girl\nDog Girl\nDoppelganger Girl\nDouble Undead Girl\nDragon Girl\nDragon Head Girl\nDragon Pup Girl\nDrain Plant Girl\nDrainroid Girl\nDryad Girl\nDullahan Girl\nEarthworm Girl\nEater Girl\nEchidna Girl\nElder Scylla Girl\nElder Succubus Girl\nElder Vampire Girl\nElf Amazoness Girl\nElf Archer Girl\nElf Girl\nElite Mermaid Pirate Girl\nEnenra Girl\nEX-Kyubi Girl\nExecutioner Girl\nFairy Girl\nFake Jelly Girl\nFenrir Girl\nFeral Kitsune Girl\nFiend Girl\nFlower Mantis Girl\nForest Alraune Girl\nForest Dryad Girl\nForsaken Spawn Girl\nFrog Girl\nFusuma Girl\nFutakuchi Girl\nGal Fox Girl\nGarchimacera Girl\nGargoyle Girl\nGaruda Girl\nGazer Girl\nGelatinous Cube Girl\nGenitauros Girl\nGhatanothoa Girl\nGhost Girl\nGhoul Girl\nGiga Dryad Girl\nGiga Slime Girl\nGigamander Girl\nGigantic Girl\nGnome Girl\nGoblin Girl\nGoddess Girl\nGolem Girl\nGrand Arachne Girl\nGrand Centaur Girl\nGreat Orc Girl\nGreen Slime Girl\nGrizzly Bear Girl\nHainuwele Girl\nHakutenko Girl\nHarpy Girl\nHarpy Knight Girl\nHasshaku-sama Girl\nHigh Baphomet Girl\nHigh Minotauros Girl\nHigh Slug Girl\nHigh Tanuki Girl\nHimiko Girl\nHiruko Girl\nHitodama Girl\nHivemind Girl\nHoney Pot Girl\nHornet Girl\nIce Witch Girl\nIdun Girl\nIka Musume Girl\nImp Girl\nIndra Girl\nIron Maiden Girl\nIzanami Girl\nJack O Lantern Girl\nJakotsu-Onna Girl\nJelly Girl\nJellyfish Girl\nJormungandr Girl\nJunior Tanuki Girl\nJunk Doll Girl\nJura Aevis Girl\nKaiko Kitsune Girl\nKappa Girl\nKejourou Girl\nKentauros Girl\nKirin Girl\nKitsune Girl\nKnightroid Girl\nKraken Girl\nKudan Girl\nKunoichi Arachne Girl\nKunoichi Elf Girl\nKunoichi Harpy Girl\nKunoichi Scylla Girl\nKunoichi Succubus Girl\nKyoryuu Girl\nLamia Girl\nLamiaroid Girl\nLamp Genie Girl\nLampas Girl\nLancubus Girl\nLava Girl\nLeech Girl\nLeecubus Girl\nLencubus Girl\nLescubus Girl\nLeviathan Girl\nLilith Girl\nLiqueur Slime Girl\nLittle Bug Girl\nLizard Boss Girl\nLizard Thief Girl\nLoa Girl\nLoccubus Girl\nLorelei Girl\nMaccubus Girl\nMagatsu-Karura Girl\nMagatsu-Omikami Girl\nMaidcubus Girl\nMalboro Girl\nMandragora Girl\nManeater Girl\nManta Girl\nMantis Girl\nMarchosias Girl\nMastema Girl\nMatango Girl\nMedusa Girl\nMedusa Lord Girl\nMegiddryad Girl\nMelty Bat Girl\nMelty Moth Girl\nMelty Rose Girl\nMephisto Girl\nMerkabah Girl\nMermaid Girl\nMermaid General Girl\nMermaid Knight Girl\nMermaid Merchant Girl\nMermaid Pirate Girl\nMiko Arachne Girl\nMiko Lamia Girl\nMimic Girl\nMincubus Girl\nMini Crab Girl\nMinotauros Girl\nMinouta Girl\nMirage Girl\nMisstauros Girl\nMomen Girl\nMoray Girl\nMorrigan Girl\nMosquito Girl\nMoth Girl\nMud Golem Girl\nMummy Girl\nMushroom Girl\nMyconid Girl\nNaccubus Girl\nNancubus Girl\nNarwhal Girl\nNefertiti Lamia Girl\nNekogami Girl\nNekomata Girl\nNeo Iron Maiden Girl\nNependeath Girl\nNight Dragonfly Girl\nNightmare Girl\nNightmare Lamia Girl\nNovistador Girl\nNull Kin Girl\nNure-Onna Girl\nOkiku-Mushi Girl\nOnahole Girl\nOni Girl\nOogumo Girl\nOrc Girl\nOstrich Girl\nOuter Jelly Girl\nOuter Worm Girl\nPabilsag Girl\nPaintgeist Girl\nPaizuri Doll Girl\nPazuzu Girl\nPersephone Girl\nPhoenix Girl\nPitcher Plant Girl\nPlantwin Girl\nPolar Bear Girl\nPoseidoness Girl\nPurple Slime Girl\nQueen Alraune Girl\nQueen Ant Girl\nQueen Bee Girl\nQuetzalcoatl Girl\nRabbit Girl\nRafflesia Girl\nRantengu Girl\nRat Girl\nReaper Girl\nRed Slime Girl\nReplicant Girl\nRogue Elf Girl\nRoper Girl\nSables Girl\nSaccubus Girl\nSalamander Girl\nSamael Girl\nSamurai Elf Girl\nSamyaza Girl\nSandworm Girl\nSarlacc Girl\nSatanachia Girl\nScorpion Girl\nScylla Girl\nScylla Maid Girl\nScylla Servant Girl\nSea Anemone Girl\nSea Cucumber Girl\nSea Dragon Girl\nSea Slug Marine Girl\nSeahorse Marine Girl\nSeaweed Girl\nServiceborne Girl\nShadow Assassin Girl\nShadow Girl\nSheep Girl\nShellfish Girl\nShinobitanuki Girl\nShirohebi Girl\nShiva Girl\nSigrdrifa Girl\nSilkworm Girl\nSilver Oni Girl\nSiren Girl\nSister Lamia Girl\nSlime Girl\nSlimy Kin Girl\nSlug Girl\nSlug Nun Girl\nSparrow Girl\nSpeed Roach Girl\nSphinx Girl\nSpider Girl\nSpirit Fox Girl\nSpirit Girl\nStar Eater Girl\nStarfish Girl\nSuccubus Girl\nSuck Vore Girl\nSylph Girl\nTarantula Girl\nTentacle Kin Girl\nTezcatlipoca Girl\nThanatos Girl\nThree-Mouth Akaname Girl\nThrone Girl\nTiamat Girl\nTiger Girl\nTiny Lamia Girl\nTitania Girl\nTonberry Girl\nTrick Fairy Girl\nTrilobite Girl\nTrooperoid Girl\nTsuchigumo Girl\nTsukuyomi Girl\nTyphon Girl\nUndine Girl\nUpaya Jorogumo Girl\nUranus Girl\nVampire Girl\nVore Banshee Girl\nVouivre Girl\nWalraune Girl\nWatermelon Girl\nWing Harpy Girl\nWolf Girl\nWorm Villager Girl\nWyvern Girl\nYamata no Orochi Girl\nYoma Girl\nYomigumo Girl\nYomotsu-Shikome Girl\nYuki-Onna Girl\nZombie Dragon Girl\nZombie Girl\nZombie Swordsman Girl\n\nAdd additional variety by making up your own subtypes, hybrids, and combinations.\n\nWhen generating monster girl characters, use anime-style naming conventions (Japanese or fantasy-European hybrid). Physical descriptions should emphasize their monstrous features while maintaining attractive human faces and skin tones—lamia have serpentine lower bodies and slit pupils, slime girls have translucent colored bodies with visible cores, dragonkin have horns and scaled patches, etc. Personality traits should mix archetypal anime tropes with practical frontier survival instincts. Each monster girl should have a visible motivation for joining or tolerating the player's operation: examples might include things like debt, exile, ambition, hunger, boredom, or genuine ideological alignment. Be creative. Include at least one comedic or ecchi hook in their design—accidental exposure tendencies, unusual biological needs, cultural misunderstandings about human norms, or competitive instincts regarding the player's attention. Avoid pure innocence; even the sweetest character should have an edge, a secret, or a capacity for violence when pushed.\n\nDungeon enemies should generally be regular fantasy monsters, and *not* monster girls. Make them mindless and hungry.",
+  "imagePromptPrefixCharacter": "anime digital painting, soft shading, soft lighting\n\n",
+  "imagePromptPrefixLocation": "anime digital painting, soft shading, soft lighting\n",
+  "imagePromptPrefixItem": "anime digital painting, soft shading, soft lighting\n\nGame item icon asset, simple grey background.",
+  "imagePromptPrefixScenery": "anime digital painting, soft shading, soft lighting\n",
+  "playerStartingLevel": 3,
+  "defaultStartingCurrency": 10,
+  "defaultPlayerName": "Baato",
+  "defaultPlayerDescription": "A young human man, ready to build a new life in Monster Girl Village.",
+  "defaultStartingLocation": "<instructions>Prior to your XML response, write a plain text list of 20 2-4 word starting region concepts that would work for this setting (no explanatory text). Then use generateRandomInteger to choose one. Give it lots of varied locations and exits to other regions.</instructions>",
+  "defaultExistingSkills": [
+    "Farming",
+    "Foraging",
+    "Alchemy",
+    "Animal Care",
+    "Carpentry",
+    "Cooking",
+    "Fishing",
+    "Mining",
+    "Herbalism",
+    "Tailoring",
+    "Magic",
+    "Construction",
+    "Crafting",
+    "Brewing",
+    "Exploration",
+    "Melee Combat",
+    "Ranged Combat",
+    "Stealth",
+    "Charm",
+    "Bluff",
+    "Negotiation",
+    "Engineering",
+    "Smithing",
+    "Perception",
+    "Scavenging",
+    "Computers"
+  ],
+  "hidingAttribute": "dexterity",
+  "hidingSkill": "Stealth",
+  "perceptionAttribute": "wisdom",
+  "perceptionSkill": "Perception",
+  "defaultFactionCount": 7,
+  "defaultFactions": [],
+  "calendarDefinition": {
+    "yearName": "Common Era",
+    "months": [
+      {
+        "name": "January",
+        "lengthDays": 31,
+        "seasonName": "Winter"
+      },
+      {
+        "name": "February",
+        "lengthDays": 28,
+        "seasonName": "Winter"
+      },
+      {
+        "name": "March",
+        "lengthDays": 31,
+        "seasonName": "Spring"
+      },
+      {
+        "name": "April",
+        "lengthDays": 30,
+        "seasonName": "Spring"
+      },
+      {
+        "name": "May",
+        "lengthDays": 31,
+        "seasonName": "Spring"
+      },
+      {
+        "name": "June",
+        "lengthDays": 30,
+        "seasonName": "Summer"
+      },
+      {
+        "name": "July",
+        "lengthDays": 31,
+        "seasonName": "Summer"
+      },
+      {
+        "name": "August",
+        "lengthDays": 31,
+        "seasonName": "Summer"
+      },
+      {
+        "name": "September",
+        "lengthDays": 30,
+        "seasonName": "Autumn"
+      },
+      {
+        "name": "October",
+        "lengthDays": 31,
+        "seasonName": "Autumn"
+      },
+      {
+        "name": "November",
+        "lengthDays": 30,
+        "seasonName": "Autumn"
+      },
+      {
+        "name": "December",
+        "lengthDays": 31,
+        "seasonName": "Winter"
+      }
+    ],
+    "weekdays": [
+      "Sunday",
+      "Monday",
+      "Tuesday",
+      "Wednesday",
+      "Thursday",
+      "Friday",
+      "Saturday"
+    ],
+    "seasons": [
+      {
+        "name": "Winter",
+        "description": "Cold weather, long nights, and quieter roads as people stay close to shelter and heat.",
+        "startMonth": "December",
+        "startDay": 1,
+        "dayLengthMinutes": 0,
+        "timeDescriptions": [
+          {
+            "timeOfDay": 0,
+            "description": "Deep night with minimal natural light."
+          },
+          {
+            "timeOfDay": 7,
+            "description": "Muted dawn light begins to lift the darkness."
+          },
+          {
+            "timeOfDay": 9,
+            "description": "Cold daylight with clear visibility."
+          },
+          {
+            "timeOfDay": 17,
+            "description": "Late afternoon light fades quickly."
+          },
+          {
+            "timeOfDay": 19,
+            "description": "Night returns with poor visibility."
+          }
+        ]
+      },
+      {
+        "name": "Spring",
+        "description": "Mild rain, fresh growth, and renewed travel as markets and communities become busier.",
+        "startMonth": "March",
+        "startDay": 1,
+        "dayLengthMinutes": 0,
+        "timeDescriptions": [
+          {
+            "timeOfDay": 0,
+            "description": "Nighttime conditions with limited natural light."
+          },
+          {
+            "timeOfDay": 6,
+            "description": "Early dawn as the sky brightens."
+          },
+          {
+            "timeOfDay": 8,
+            "description": "Bright daytime light with good visibility."
+          },
+          {
+            "timeOfDay": 18,
+            "description": "Evening light is fading toward dusk."
+          },
+          {
+            "timeOfDay": 20,
+            "description": "Night settles in and visibility drops."
+          }
+        ]
+      },
+      {
+        "name": "Summer",
+        "description": "Warm to hot days, high activity, and long daylight hours favorable to travel and work.",
+        "startMonth": "June",
+        "startDay": 1,
+        "dayLengthMinutes": 0,
+        "timeDescriptions": [
+          {
+            "timeOfDay": 0,
+            "description": "Short midsummer night with low visibility."
+          },
+          {
+            "timeOfDay": 5,
+            "description": "Early dawn light spreads across the horizon."
+          },
+          {
+            "timeOfDay": 7,
+            "description": "Strong daylight with excellent visibility."
+          },
+          {
+            "timeOfDay": 19,
+            "description": "Long evening light starts to soften."
+          },
+          {
+            "timeOfDay": 21,
+            "description": "Late twilight transitions into night."
+          }
+        ]
+      },
+      {
+        "name": "Autumn",
+        "description": "Cooling air, harvest routines, and shorter days as settlements prepare for winter.",
+        "startMonth": "September",
+        "startDay": 1,
+        "dayLengthMinutes": 0,
+        "timeDescriptions": [
+          {
+            "timeOfDay": 0,
+            "description": "Dark overnight conditions with low visibility."
+          },
+          {
+            "timeOfDay": 6.5,
+            "description": "Cool dawn light grows across the landscape."
+          },
+          {
+            "timeOfDay": 8.5,
+            "description": "Clear daytime light suitable for travel and work."
+          },
+          {
+            "timeOfDay": 17.5,
+            "description": "Dusk arrives as daylight recedes."
+          },
+          {
+            "timeOfDay": 19.5,
+            "description": "Nightfall with reduced natural visibility."
+          }
+        ]
+      }
+    ],
+    "holidays": [
+      {
+        "name": "New Year's Day",
+        "description": "The first day of the year, marked by resolutions, public gatherings, and ceremonial toasts.",
+        "month": "January",
+        "day": 1
+      },
+      {
+        "name": "Deep Winter Vigil",
+        "description": "A night of lanterns and shared fires held to endure the harshest stretch of winter.",
+        "month": "January",
+        "day": 20
+      },
+      {
+        "name": "Vernal Eve",
+        "description": "A celebration of spring's arrival with planting rites and bright decorations.",
+        "month": "March",
+        "day": 20
+      },
+      {
+        "name": "Founders' Day",
+        "description": "Communities honor their origins with speeches, local histories, and civic festivals.",
+        "month": "April",
+        "day": 15
+      },
+      {
+        "name": "Midspring Fair",
+        "description": "Trade stalls, games, and performances draw crowds for a week of commerce and leisure.",
+        "month": "May",
+        "day": 1
+      },
+      {
+        "name": "High Sun Festival",
+        "description": "The longest-day celebration features outdoor feasts, competitions, and music.",
+        "month": "June",
+        "day": 21
+      },
+      {
+        "name": "Harvest Oath",
+        "description": "Farmers and merchants mark the main harvest with vows, contracts, and gratitude rites.",
+        "month": "September",
+        "day": 22
+      },
+      {
+        "name": "Remembering Night",
+        "description": "People honor the dead and absent with quiet offerings, stories, and candlelit walks.",
+        "month": "October",
+        "day": 31
+      },
+      {
+        "name": "First Frost Market",
+        "description": "A seasonal market opens as cold weather settles in, focusing on storage goods and winter wares.",
+        "month": "November",
+        "day": 15
+      },
+      {
+        "name": "Year's End",
+        "description": "The final day of the year is kept with reflection, debts settled, and midnight celebrations.",
+        "month": "December",
+        "day": 31
+      }
+    ]
+  },
+  "unifiedTonalScale": {
+    "idealism": {
+      "level": 3
+    },
+    "grit": {
+      "level": 2.5
+    },
+    "seriousness": {
+      "level": 2.5
+    },
+    "focus": {
+      "level": 3
+    },
+    "dialogue_uniqueness": {
+      "level": 5
+    }
+  },
+  "availableClasses": [
+    "Alchemist",
+    "Farmer",
+    "Ranger",
+    "Artisan",
+    "Merchant",
+    "Sorcerer",
+    "Wizard",
+    "Rogue",
+    "Priest",
+    "Warrior",
+    "Ninja",
+    "Engineer",
+    "Hacker"
+  ],
+  "availableRaces": [
+    "Human: Adaptable and balanced in all skills",
+    "Kitsune: Fox-like people with natural magical affinity",
+    "Nekomimi: Cat-like people with heightened senses and agility",
+    "Bastet: Egyption nekomimi variant",
+    "Lamia: Snake-human hybrids with hypnotic gaze and natural talents in Seduction and Covert Operations",
+    "Succubus: Demon-human hybrids with charm magic and enhanced Persuasion and Energy Drain abilities",
+    "Slime: Amorphous shapeshifters with adaptive bodies and talents in Infiltration and Absorption",
+    "Dragonkin: Dragon-human hybrids with elemental breath and natural advantages in Smithing and Treasure Hunting",
+    "Elf: Pointy-eared forest dwellers with extended lifespans and bonuses to Archery and Forest Magic",
+    "Dark Elf: Dark-skinned elves with a tradition of mysterious arcane magic",
+    "Siren: Enchanting singers with mesmerizing voices and talents in Performance and Mind Control",
+    "Dryad: Tree spirits with botanical connection and advantages in Plant Magic and Woodworking",
+    "Nereid: Water spirits with oceanic affinity and bonuses to Sailing and Marine Biology",
+    "Yuki-onna: Snow spirits with ice control and natural talents in Winter Survival and Cold Resistance"
+  ],
+  "customSlopWords": [],
+  "modSettings": {
+    "implants": {
+      "displayLabel": "implants",
+      "itemLabel": "Implant",
+      "badgeImagePath": "microchip.svg"
+    },
+    "modules": {
+      "displayLabel": "Crystals",
+      "itemLabel": "Crystal",
+      "slotTypes": [
+        {
+          "id": "crystal",
+          "label": "Crystal",
+          "description": "Crystal socket."
+        }
+      ]
+    }
+  },
+  "createdAt": "2026-08-08T16:54:18.483Z",
+  "lastUpdated": "2026-08-08T16:54:18.483Z"
+}

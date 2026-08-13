@@ -14,15 +14,15 @@ Plan the concrete action, at most three meaningful character reactions, and whet
 
 Draft Response: Write the complete prose, treating the requested action as having happened. Respect character knowledge and current state. Output prose only.
 
-{% llm_dummy_action %}
+{% llmparse('player_action_required_prose') %}
 
 {% set tinyBrainAuditFocus = 'Do not reject or weaken the authoritative creative action; avoid unsupported consequences, omniscience, repetition, and crowd-like reaction lists.' %}
 {% include "_includes/tinybrain-prose-audit.njk" %}
 
-Return XML only.
 {% if creativeScope.travel %}
+Return XML only.
 Use the exact movement schema below:
 {% include "_includes/travel-prose.njk" %}
 {% else %}
-Use <turnResult><prose>polished prose</prose></turnResult>.
+{% llmresult('turn_result_from_approved_prose') %}
 {% endif %}

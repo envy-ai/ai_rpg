@@ -1,0 +1,487 @@
+{
+  "version": 1,
+  "scenario": "random-scheduled-events",
+  "case": "EVENT-8-save-reload-idempotency",
+  "description": "Resolve both fixture schedules offscreen, save their terminal records, advance beyond them, reload the resolved save, and advance again without replaying either event or its mutation/bookkeeping.",
+  "fixture": "random-scheduled-events",
+  "configProfile": "scheduled-event-interruption-mechanics",
+  "trackedPaths": [
+    "player.payload.player.locationId",
+    "players.payload.players",
+    "locations.payload.locations",
+    "regions.payload.regions",
+    "things.payload.things",
+    "scheduledEvents.payload.scheduledEvents",
+    "calendar.payload.worldTime",
+    "history.payload.history"
+  ],
+  "steps": [
+    {
+      "type": "loadFixture"
+    },
+    {
+      "type": "request",
+      "name": "move_player_away",
+      "method": "POST",
+      "route": "/api/npcs/$fixture.playerId/teleport",
+      "body": {
+        "locationId": "$fixture.isolationLocationId",
+        "accountTravelTime": false,
+        "storyToolTeleport": true
+      }
+    },
+    {
+      "type": "request",
+      "name": "player_before_due",
+      "method": "GET",
+      "route": "/api/npcs/$fixture.playerId"
+    },
+    {
+      "type": "snapshot",
+      "name": "before_due"
+    },
+    {
+      "type": "request",
+      "name": "resolve_both_events",
+      "method": "POST",
+      "route": "/api/slash-command",
+      "body": {
+        "command": "time",
+        "argsText": "+3 minutes"
+      }
+    },
+    {
+      "type": "request",
+      "name": "player_after_due",
+      "method": "GET",
+      "route": "/api/npcs/$fixture.playerId"
+    },
+    {
+      "type": "assert",
+      "assertions": [
+        {
+          "type": "httpStatus",
+          "equals": 200
+        },
+        {
+          "type": "responseOk",
+          "equals": true
+        },
+        {
+          "type": "equals",
+          "source": "responses.resolve_both_events",
+          "path": "payload.success",
+          "equals": true
+        },
+        {
+          "type": "equals",
+          "source": "after",
+          "path": "calendar.payload.worldTime.timeMinutes",
+          "equals": 666
+        },
+        {
+          "type": "equals",
+          "source": "responses.player_after_due",
+          "path": "payload.npc.elapsedTime",
+          "equals": 666
+        },
+        {
+          "type": "equals",
+          "source": "after",
+          "path": "player.payload.player.locationId",
+          "equals": "$fixture.isolationLocationId"
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "after",
+          "path": "scheduledEvents.payload.scheduledEvents",
+          "where": {
+            "id": "$fixture.visibleScheduledEventId",
+            "event": "$fixture.visibleScheduledEventDescription",
+            "status": "resolved",
+            "playerProse": "",
+            "resolvedAtWorldMinute": 666,
+            "resolvedAtWorldTime": {
+              "dayIndex": 0,
+              "timeMinutes": 666
+            }
+          },
+          "equals": 1
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "after",
+          "path": "scheduledEvents.payload.scheduledEvents",
+          "where": {
+            "id": "$fixture.offscreenScheduledEventId",
+            "event": "$fixture.offscreenScheduledEventDescription",
+            "status": "resolved",
+            "playerProse": "",
+            "resolvedAtWorldMinute": 666,
+            "resolvedAtWorldTime": {
+              "dayIndex": 0,
+              "timeMinutes": 666
+            }
+          },
+          "equals": 1
+        },
+        {
+          "type": "notEquals",
+          "source": "after",
+          "path": "scheduledEvents.payload.scheduledEvents.0.resolutionSummary",
+          "equals": ""
+        },
+        {
+          "type": "notEquals",
+          "source": "after",
+          "path": "scheduledEvents.payload.scheduledEvents.1.resolutionSummary",
+          "equals": ""
+        },
+        {
+          "type": "entityField",
+          "source": "after",
+          "collection": "things",
+          "id": "$fixture.depotMarkerId",
+          "path": "description",
+          "equals": "$fixture.depotMarkerAlteredDescription"
+        },
+        {
+          "type": "entityField",
+          "source": "after",
+          "collection": "things",
+          "id": "$fixture.depotMarkerId",
+          "path": "metadata.locationId",
+          "equals": "$fixture.depotLocationId"
+        },
+        {
+          "type": "historyAddedTypeCount",
+          "beforeSource": "snapshots.before_due",
+          "afterSource": "after",
+          "entryType": "scheduled-event",
+          "equals": 2
+        },
+        {
+          "type": "historyAddedTypeCount",
+          "beforeSource": "snapshots.before_due",
+          "afterSource": "after",
+          "entryType": "scheduled-event-prose",
+          "equals": 0
+        }
+      ]
+    },
+    {
+      "type": "snapshot",
+      "name": "resolved_before_save"
+    },
+    {
+      "type": "save",
+      "name": "resolved_save"
+    },
+    {
+      "type": "assert",
+      "assertions": [
+        {
+          "type": "httpStatus",
+          "equals": 200
+        },
+        {
+          "type": "responseOk",
+          "equals": true
+        },
+        {
+          "type": "equals",
+          "source": "responses.resolved_save",
+          "path": "payload.success",
+          "equals": true
+        },
+        {
+          "type": "stateUnchanged",
+          "beforeSource": "snapshots.resolved_before_save",
+          "afterSource": "after",
+          "paths": [
+            "player.payload.player.locationId",
+            "things.payload.things",
+            "scheduledEvents.payload.scheduledEvents",
+            "calendar.payload.worldTime"
+          ]
+        },
+        {
+          "type": "historyAddedTypeCount",
+          "beforeSource": "snapshots.resolved_before_save",
+          "afterSource": "after",
+          "entryType": "save-notice",
+          "equals": 1
+        }
+      ]
+    },
+    {
+      "type": "snapshot",
+      "name": "resolved_saved"
+    },
+    {
+      "type": "request",
+      "name": "advance_after_save",
+      "method": "POST",
+      "route": "/api/slash-command",
+      "body": {
+        "command": "time",
+        "argsText": "+10 minutes"
+      }
+    },
+    {
+      "type": "request",
+      "name": "player_after_post_save_advance",
+      "method": "GET",
+      "route": "/api/npcs/$fixture.playerId"
+    },
+    {
+      "type": "assert",
+      "assertions": [
+        {
+          "type": "httpStatus",
+          "equals": 200
+        },
+        {
+          "type": "responseOk",
+          "equals": true
+        },
+        {
+          "type": "equals",
+          "source": "after",
+          "path": "calendar.payload.worldTime.timeMinutes",
+          "equals": 676
+        },
+        {
+          "type": "equals",
+          "source": "responses.player_after_post_save_advance",
+          "path": "payload.npc.elapsedTime",
+          "equals": 676
+        },
+        {
+          "type": "stateUnchanged",
+          "beforeSource": "snapshots.resolved_saved",
+          "afterSource": "after",
+          "paths": [
+            "player.payload.player.locationId",
+            "locations.payload.locations",
+            "regions.payload.regions",
+            "things.payload.things",
+            "scheduledEvents.payload.scheduledEvents",
+            "history.payload.history"
+          ]
+        },
+        {
+          "type": "historyAddedTypeCount",
+          "beforeSource": "snapshots.resolved_saved",
+          "afterSource": "after",
+          "entryType": "scheduled-event",
+          "equals": 0
+        },
+        {
+          "type": "historyAddedTypeCount",
+          "beforeSource": "snapshots.resolved_saved",
+          "afterSource": "after",
+          "entryType": "scheduled-event-prose",
+          "equals": 0
+        }
+      ]
+    },
+    {
+      "type": "reload",
+      "name": "reload_resolved_save",
+      "saveName": "$response.resolved_save.payload.saveName"
+    },
+    {
+      "type": "request",
+      "name": "player_after_reload",
+      "method": "GET",
+      "route": "/api/npcs/$fixture.playerId"
+    },
+    {
+      "type": "assert",
+      "assertions": [
+        {
+          "type": "httpStatus",
+          "equals": 200
+        },
+        {
+          "type": "responseOk",
+          "equals": true
+        },
+        {
+          "type": "equals",
+          "source": "responses.reload_resolved_save",
+          "path": "payload.success",
+          "equals": true
+        },
+        {
+          "type": "equals",
+          "source": "after",
+          "path": "calendar.payload.worldTime.timeMinutes",
+          "equals": 666
+        },
+        {
+          "type": "equals",
+          "source": "responses.player_after_reload",
+          "path": "payload.npc.elapsedTime",
+          "equals": 666
+        },
+        {
+          "type": "stateUnchanged",
+          "beforeSource": "snapshots.resolved_saved",
+          "afterSource": "after",
+          "paths": [
+            "player.payload.player.locationId",
+            "locations.payload.locations",
+            "regions.payload.regions",
+            "things.payload.things",
+            "scheduledEvents.payload.scheduledEvents",
+            "calendar.payload.worldTime"
+          ]
+        },
+        {
+          "type": "equals",
+          "source": "after",
+          "path": "history.payload.count",
+          "equalsFrom": {
+            "source": "snapshots.resolved_saved",
+            "path": "history.payload.count"
+          }
+        },
+        {
+          "type": "historyAddedTypeCount",
+          "beforeSource": "snapshots.resolved_saved",
+          "afterSource": "after",
+          "entryType": "scheduled-event",
+          "equals": 0
+        },
+        {
+          "type": "historyAddedTypeCount",
+          "beforeSource": "snapshots.resolved_saved",
+          "afterSource": "after",
+          "entryType": "scheduled-event-prose",
+          "equals": 0
+        }
+      ]
+    },
+    {
+      "type": "snapshot",
+      "name": "after_resolved_reload"
+    },
+    {
+      "type": "request",
+      "name": "advance_after_reload",
+      "method": "POST",
+      "route": "/api/slash-command",
+      "body": {
+        "command": "time",
+        "argsText": "+1 minute"
+      }
+    },
+    {
+      "type": "request",
+      "name": "player_after_replay_check",
+      "method": "GET",
+      "route": "/api/npcs/$fixture.playerId"
+    },
+    {
+      "type": "assert",
+      "assertions": [
+        {
+          "type": "httpStatus",
+          "equals": 200
+        },
+        {
+          "type": "responseOk",
+          "equals": true
+        },
+        {
+          "type": "exactDelta",
+          "beforeSource": "snapshots.after_resolved_reload",
+          "afterSource": "after",
+          "path": "calendar.payload.worldTime.timeMinutes",
+          "delta": 1
+        },
+        {
+          "type": "equals",
+          "source": "after",
+          "path": "calendar.payload.worldTime.timeMinutes",
+          "equals": 667
+        },
+        {
+          "type": "equals",
+          "source": "responses.player_after_replay_check",
+          "path": "payload.npc.elapsedTime",
+          "equals": 667
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "after",
+          "path": "scheduledEvents.payload.scheduledEvents",
+          "where": {
+            "id": "$fixture.visibleScheduledEventId",
+            "status": "resolved",
+            "resolvedAtWorldMinute": 666
+          },
+          "equals": 1
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "after",
+          "path": "scheduledEvents.payload.scheduledEvents",
+          "where": {
+            "id": "$fixture.offscreenScheduledEventId",
+            "status": "resolved",
+            "resolvedAtWorldMinute": 666
+          },
+          "equals": 1
+        },
+        {
+          "type": "entityField",
+          "source": "after",
+          "collection": "things",
+          "id": "$fixture.depotMarkerId",
+          "path": "description",
+          "equals": "$fixture.depotMarkerAlteredDescription"
+        },
+        {
+          "type": "stateUnchanged",
+          "beforeSource": "snapshots.after_resolved_reload",
+          "afterSource": "after",
+          "paths": [
+            "player.payload.player.locationId",
+            "locations.payload.locations",
+            "regions.payload.regions",
+            "things.payload.things",
+            "scheduledEvents.payload.scheduledEvents",
+            "history.payload.history"
+          ]
+        },
+        {
+          "type": "historyAddedTypeCount",
+          "beforeSource": "snapshots.after_resolved_reload",
+          "afterSource": "after",
+          "entryType": "scheduled-event",
+          "equals": 0
+        },
+        {
+          "type": "historyAddedTypeCount",
+          "beforeSource": "snapshots.after_resolved_reload",
+          "afterSource": "after",
+          "entryType": "scheduled-event-prose",
+          "equals": 0
+        },
+        {
+          "type": "noRealtimeErrors"
+        },
+        {
+          "type": "noUnexpectedErrorLogs"
+        }
+      ]
+    }
+  ],
+  "humanReview": [
+    "Confirm the two initial offscreen summaries describe only the one-ring bell event and the depot-marker description change, with no visible scheduled-event prose.",
+    "Confirm the ten-minute post-save advance, resolved-save hydration, and one-minute post-reload advance make no new completion requests and add no duplicate scheduled-event bookkeeping or mutation."
+  ]
+}

@@ -1,0 +1,49 @@
+{
+  "version": 1,
+  "name": "checked-container-three-lock",
+  "description": "Copied unopened checked-container fixture retained from the original CONT audit.",
+  "createdAt": "2026-08-12T12:51:27.861Z",
+  "source": {
+    "setupCommand": "Historical CONT setup: unopened QA Three-Lock Chest with two QA Silver Pins and one QA Blue Ledger pending.",
+    "saveName": "2026-08-08T16-55-05-354Z_Monster_Girl_Life_2026-06b-Baato-Ember_Hollow_Outskirts-char_2-mskm6qve",
+    "saveType": "saves",
+    "settingName": "Monster Girl Life 2026-06b",
+    "playerName": "Baato"
+  },
+  "configProfile": "isolated-base",
+  "requiredMods": [],
+  "worldTime": {
+    "dayIndex": 0,
+    "timeMinutes": 658
+  },
+  "entities": {
+    "playerId": "char_2",
+    "locationId": "loc_5",
+    "chestId": "thing_187",
+    "silverPinName": "QA Silver Pin",
+    "ledgerName": "QA Blue Ledger"
+  },
+  "invariants": [
+    {
+      "type": "entityField",
+      "source": "after",
+      "collection": "things",
+      "id": "thing_187",
+      "path": "name",
+      "equals": "QA Three-Lock Chest"
+    },
+    {
+      "type": "entityField",
+      "source": "after",
+      "collection": "things",
+      "id": "thing_187",
+      "path": "requiresCheckToOpen",
+      "equals": true
+    }
+  ],
+  "validation": {
+    "passed": true,
+    "evidence": "Retained live API artifacts under tmp/followup-api-playtest/container."
+  },
+  "integrity": "sha256:3fe9334972785d6d237bd63ef64438bd728d37e66c798dbc31108de9bbac3f7c"
+}

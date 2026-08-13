@@ -4,6 +4,7 @@ const fs = require('fs');
 const vm = require('vm');
 
 const Globals = require('../Globals.js');
+const StatusEffect = require('../StatusEffect.js');
 const Utils = require('../Utils.js');
 
 function loadParseThingsXml() {
@@ -19,6 +20,7 @@ function loadParseThingsXml() {
         Error,
         Number,
         Object,
+        StatusEffect,
         String,
         Utils,
         console,
@@ -61,6 +63,41 @@ test('thing XML parser treats omitted and empty status-effect tags as absent eff
     }
 });
 
+test('thing XML parser treats status-effect null sentinels as absent effects', async () => {
+    const parseThingsXml = loadParseThingsXml();
+    const previousConfig = Globals.config;
+    Globals.config = { ...(previousConfig || {}), strictXMLParsing: false };
+    try {
+        const parsed = await parseThingsXml(`
+<item>
+  <name>Plain Depot Marker</name>
+  <count>1</count>
+  <description>A plain marker.</description>
+  <shortDescription>Plain depot marker</shortDescription>
+  <itemOrScenery>item</itemOrScenery>
+  <type>marker</type>
+  <slot>N/A</slot>
+  <rarity>Common</rarity>
+  <relativeLevel>0</relativeLevel>
+  <causeStatusEffectOnTarget>
+    <name>N/A</name>
+    <description>not applicable</description>
+    <duration>none</duration>
+  </causeStatusEffectOnTarget>
+  <causeStatusEffectOnEquipper>
+    <name>no status effect</name>
+    <description>null</description>
+  </causeStatusEffectOnEquipper>
+</item>`);
+
+        assert.equal(parsed.length, 1);
+        assert.equal(parsed[0].causeStatusEffectOnTarget, null);
+        assert.equal(parsed[0].causeStatusEffectOnEquipper, null);
+    } finally {
+        Globals.config = previousConfig;
+    }
+});
+
 test('thing XML parser parses populated equipper status-effect tags', async () => {
     const parseThingsXml = loadParseThingsXml();
     const previousConfig = Globals.config;
@@ -90,6 +127,55 @@ test('thing XML parser parses populated equipper status-effect tags', async () =
             parsed[0].causeStatusEffectOnEquipper.description,
             'Creates phantom auditory duplicates around the wearer.'
         );
+    } finally {
+        Globals.config = previousConfig;
+    }
+});
+
+test('thing XML parser validates generated status-effect durations before returning a blueprint', async () => {
+    const parseThingsXml = loadParseThingsXml();
+    const previousConfig = Globals.config;
+    Globals.config = { ...(previousConfig || {}), strictXMLParsing: false };
+    try {
+        await assert.rejects(
+            parseThingsXml(`
+<item>
+  <name>Looping Ward</name>
+  <count>1</count>
+  <description>A generated item with an invalid effect duration.</description>
+  <shortDescription>Ward with invalid duration</shortDescription>
+  <itemOrScenery>item</itemOrScenery>
+  <type>armor</type>
+  <slot>body</slot>
+  <rarity>Rare</rarity>
+  <relativeLevel>1</relativeLevel>
+  <causeStatusEffectOnEquipper>
+    <name>Looping Ward</name>
+    <description>Protects the wearer.</description>
+    <duration>Permanent while equipped</duration>
+  </causeStatusEffectOnEquipper>
+</item>`),
+            /Looping Ward.*invalid duration.*StatusEffect duration/i
+        );
+
+        const parsed = await parseThingsXml(`
+<item>
+  <name>Brief Ward</name>
+  <count>1</count>
+  <description>A generated item with a valid effect duration.</description>
+  <shortDescription>Brief protective ward</shortDescription>
+  <itemOrScenery>item</itemOrScenery>
+  <type>armor</type>
+  <slot>body</slot>
+  <rarity>Rare</rarity>
+  <relativeLevel>1</relativeLevel>
+  <causeStatusEffectOnEquipper>
+    <name>Brief Ward</name>
+    <description>Protects the wearer.</description>
+    <duration>10 minutes</duration>
+  </causeStatusEffectOnEquipper>
+</item>`);
+        assert.equal(parsed[0].causeStatusEffectOnEquipper.duration, 10);
     } finally {
         Globals.config = previousConfig;
     }

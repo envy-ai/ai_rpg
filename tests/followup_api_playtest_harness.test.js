@@ -75,6 +75,513 @@ test('scenario validation rejects unknown fields and assertion types before exec
         }),
         /Duplicate scenario step name "same"/
     );
+    assert.throws(
+        () => validateScenarioDefinition({
+            version: 1,
+            scenario: 'synthetic',
+            case: 'bad-prompt-wait',
+            steps: [{ type: 'waitForPromptIdle', labelIncludes: '', requireActivity: true }]
+        }),
+        /labelIncludes is required/i
+    );
+    assert.throws(
+        () => validateScenarioDefinition({
+            version: 1,
+            scenario: 'synthetic',
+            case: 'empty-request-wait',
+            steps: [{
+                type: 'waitForRequest',
+                name: 'eventual-state',
+                method: 'GET',
+                route: '/api/example',
+                until: []
+            }]
+        }),
+        /until must contain at least one assertion/i
+    );
+    assert.throws(
+        () => validateScenarioDefinition({
+            version: 1,
+            scenario: 'synthetic',
+            case: 'unsafe-saved-json',
+            steps: [{ type: 'readSavedJson', name: 'raw', fileName: '../allPlayers.json' }]
+        }),
+        /fileName may contain only letters, numbers, dots, underscores, and hyphens/i
+    );
+    assert.throws(
+        () => validateScenarioDefinition({
+            version: 1,
+            scenario: 'synthetic',
+            case: 'unawaited-background-chat',
+            steps: [{
+                type: 'startChat',
+                name: 'background',
+                text: 'Keep working.',
+                interactive: {
+                    roll: null,
+                    questAccepted: false,
+                    confirmed: false,
+                    deferPlayerInput: true
+                }
+            }]
+        }),
+        /unawaited startChat step.*background/i
+    );
+});
+
+test('readSavedJson captures a generated save file and rejects path traversal', { concurrency: false }, async () => {
+    const { readSavedJson } = await import('../scripts/lib/followup_api_playtest/scenario.mjs');
+    const root = makeTempRoot('followup-read-save-');
+    const saveDirectory = path.join(root, 'saves', 'case-save');
+    fs.mkdirSync(saveDirectory, { recursive: true });
+    fs.writeFileSync(
+        path.join(saveDirectory, 'allPlayers.json'),
+        `${JSON.stringify({ player_1: { declinedAbilities: [{ name: 'Not Chosen' }] } }, null, 2)}\n`,
+        'utf8'
+    );
+    try {
+        const result = await readSavedJson(root, {
+            saveName: 'case-save',
+            fileName: 'allPlayers.json'
+        });
+        assert.equal(result.status, 200);
+        assert.deepEqual(result.payload.player_1.declinedAbilities, [{ name: 'Not Chosen' }]);
+        await assert.rejects(
+            readSavedJson(root, {
+                saveName: '../case-save',
+                fileName: 'allPlayers.json'
+            }),
+            /saveName may contain only letters, numbers, dots, underscores, and hyphens/i
+        );
+    } finally {
+        fs.rmSync(root, { recursive: true, force: true });
+    }
+});
+
+test('waitForRequest polls an authoritative response until mechanical assertions pass', { concurrency: false }, async () => {
+    const { runScenario } = await import('../scripts/lib/followup_api_playtest/scenario.mjs');
+    const root = makeTempRoot('followup-request-wait-');
+    fs.mkdirSync(path.join(root, 'logs'), { recursive: true });
+    let reads = 0;
+    const apiClient = {
+        async fetchJson(method, route) {
+            if (route === '/api/llm-completion-cassette/status') {
+                return {
+                    method,
+                    route,
+                    status: 200,
+                    ok: true,
+                    payload: {
+                        success: true,
+                        replay: { active: false, version: null },
+                        recording: { active: false, version: null }
+                    }
+                };
+            }
+            if (route === '/eventual') {
+                reads += 1;
+                return {
+                    method,
+                    route,
+                    status: 200,
+                    ok: true,
+                    payload: { value: reads >= 3 ? 12 : 0 }
+                };
+            }
+            return { method, route, status: 200, ok: true, payload: {} };
+        },
+        async captureState() {
+            return {
+                player: { payload: { player: { id: 'player_1' } } },
+                players: { payload: { players: [] } },
+                history: { payload: { history: [] } }
+            };
+        }
+    };
+    const realtimeSession = {
+        clientId: 'synthetic-client',
+        events: [],
+        async connect() {},
+        async close() {}
+    };
+    try {
+        const output = await runScenario({
+            root,
+            mode: 'state-only',
+            apiClient,
+            realtimeSession,
+            definition: {
+                version: 1,
+                scenario: 'synthetic',
+                case: 'request-wait',
+                steps: [{
+                    type: 'waitForRequest',
+                    name: 'eventual',
+                    method: 'GET',
+                    route: '/eventual',
+                    timeoutMs: 100,
+                    pollIntervalMs: 1,
+                    until: [{
+                        type: 'equals',
+                        source: 'response',
+                        path: 'payload.value',
+                        equals: 12
+                    }]
+                }]
+            }
+        });
+        assert.equal(reads, 3);
+        const stepResults = JSON.parse(fs.readFileSync(path.join(output.attemptDir, 'steps.json'), 'utf8'));
+        const step = stepResults.find(entry => entry.type === 'waitForRequest');
+        assert.equal(step.attempts, 3);
+        assert.equal(step.response.payload.value, 12);
+    } finally {
+        fs.rmSync(root, { recursive: true, force: true });
+    }
+});
+
+test('background chat can wait on realtime state, cancel concurrently, and must be awaited', { concurrency: false }, async () => {
+    const { runScenario } = await import('../scripts/lib/followup_api_playtest/scenario.mjs');
+    const root = makeTempRoot('followup-background-chat-');
+    fs.mkdirSync(path.join(root, 'logs'), { recursive: true });
+    let resolveChat;
+    let endRequestCount = 0;
+    const apiClient = {
+        async fetchJson(method, route) {
+            if (route === '/api/llm-completion-cassette/status') {
+                return {
+                    method,
+                    route,
+                    status: 200,
+                    ok: true,
+                    payload: {
+                        success: true,
+                        replay: { active: false, version: null },
+                        recording: { active: false, version: null }
+                    }
+                };
+            }
+            if (route === '/api/chat') {
+                return await new Promise(resolve => {
+                    resolveChat = resolve;
+                });
+            }
+            if (route === '/api/prompts/cancel-all') {
+                resolveChat({
+                    method: 'POST',
+                    route: '/api/chat',
+                    status: 499,
+                    ok: false,
+                    payload: { error: 'Prompt canceled by user.' }
+                });
+                return {
+                    method,
+                    route,
+                    status: 200,
+                    ok: true,
+                    payload: {
+                        success: true,
+                        cancellation: { canceledCount: 1 },
+                        playerInputRequests: { cancelledCount: 0 }
+                    }
+                };
+            }
+            return { method, route, status: 200, ok: true, payload: {} };
+        },
+        async captureState() {
+            return {
+                player: { payload: { player: { id: 'player_1' } } },
+                players: { payload: { players: [] } },
+                history: { payload: { history: [] } }
+            };
+        }
+    };
+    const realtimeSession = {
+        clientId: 'synthetic-client',
+        events: [],
+        async connect() {},
+        beginRequest() {
+            const identifiers = { clientId: this.clientId, requestId: 'background-request' };
+            setTimeout(() => {
+                this.events.push({
+                    type: 'prompt_progress',
+                    entries: [{ id: 'prompt-1', label: 'question' }]
+                });
+            }, 2);
+            return identifiers;
+        },
+        endRequest() {
+            endRequestCount += 1;
+        },
+        async close() {}
+    };
+    try {
+        const output = await runScenario({
+            root,
+            mode: 'live-verify',
+            apiClient,
+            realtimeSession,
+            definition: {
+                version: 1,
+                scenario: 'synthetic',
+                case: 'background-chat',
+                steps: [
+                    {
+                        type: 'startChat',
+                        name: 'background',
+                        text: '? Keep working.',
+                        interactive: {
+                            roll: null,
+                            questAccepted: false,
+                            confirmed: false,
+                            deferPlayerInput: true
+                        }
+                    },
+                    {
+                        type: 'waitForRealtime',
+                        until: [{
+                            type: 'arrayObjectCount',
+                            source: 'realtime',
+                            path: '.',
+                            where: { type: 'prompt_progress' },
+                            equals: 1
+                        }],
+                        timeoutMs: 100,
+                        pollIntervalMs: 1
+                    },
+                    {
+                        type: 'request',
+                        name: 'cancellation',
+                        method: 'POST',
+                        route: '/api/prompts/cancel-all',
+                        body: { waitForDrain: true }
+                    },
+                    {
+                        type: 'awaitChat',
+                        name: 'background'
+                    },
+                    {
+                        type: 'assert',
+                        assertions: [
+                            {
+                                type: 'equals',
+                                source: 'responses.cancellation',
+                                path: 'payload.cancellation.canceledCount',
+                                equals: 1
+                            },
+                            {
+                                type: 'equals',
+                                source: 'responses.background',
+                                path: 'status',
+                                equals: 499
+                            }
+                        ]
+                    }
+                ]
+            }
+        });
+        assert.equal(endRequestCount, 1);
+        const stepResults = JSON.parse(fs.readFileSync(path.join(output.attemptDir, 'steps.json'), 'utf8'));
+        assert.equal(stepResults.some(entry => entry.type === 'startChat'), true);
+        assert.equal(stepResults.some(entry => entry.type === 'waitForRealtime'), true);
+        assert.equal(stepResults.some(entry => entry.type === 'awaitChat'), true);
+    } finally {
+        fs.rmSync(root, { recursive: true, force: true });
+    }
+});
+
+test('realtime prompt-idle wait observes matching activity and ignores unrelated progress', { concurrency: false }, async () => {
+    const { FollowupApiClient, RealtimeSession } = await import('../scripts/lib/followup_api_playtest/core.mjs');
+    const session = new RealtimeSession({
+        apiClient: new FollowupApiClient({ baseUrl: 'http://127.0.0.1:1' })
+    });
+    session.events.push({
+        type: 'prompt_progress',
+        entries: [{ label: 'unrelated[1]' }]
+    });
+    const waiting = session.waitForPromptIdle({
+        labelIncludes: 'npc_memories_QA_Lantern_Witness',
+        sinceEventIndex: 0,
+        timeoutMs: 500,
+        quietPeriodMs: 5,
+        pollIntervalMs: 2
+    });
+    setTimeout(() => {
+        session.events.push({
+            type: 'prompt_progress',
+            entries: [{ label: 'npc_memories_QA_Lantern_Witness[2]' }]
+        });
+    }, 5);
+    setTimeout(() => {
+        session.events.push({ type: 'prompt_progress', entries: [] });
+    }, 15);
+    const result = await waiting;
+    assert.equal(result.sawActivity, true);
+    assert.equal(result.labelIncludes, 'npc_memories_QA_Lantern_Witness');
+});
+
+test('strict replay prompt-idle waits do not require a sampled active websocket frame', { concurrency: false }, async () => {
+    const { resolvePromptWaitRequireActivity } = await import('../scripts/lib/followup_api_playtest/scenario.mjs');
+    assert.equal(resolvePromptWaitRequireActivity('replay', true), false);
+    assert.equal(resolvePromptWaitRequireActivity('live-record', true), true);
+    assert.equal(resolvePromptWaitRequireActivity('live-verify', true), true);
+    assert.equal(resolvePromptWaitRequireActivity('live-verify', false), false);
+});
+
+test('disposition summary assertion matches each changed type to authoritative state once', { concurrency: false }, async () => {
+    const { evaluateAssertions } = await import('../scripts/lib/followup_api_playtest/assertions.mjs');
+    const before = {
+        players: {
+            payload: {
+                players: [{
+                    id: 'npc_1',
+                    dispositions: { player_1: { platonic: 0, trust: 0 } }
+                }]
+            }
+        },
+        history: { payload: { history: [] } }
+    };
+    const after = {
+        players: {
+            payload: {
+                players: [{
+                    id: 'npc_1',
+                    dispositions: { player_1: { platonic: 12, trust: 12 } }
+                }]
+            }
+        },
+        history: {
+            payload: {
+                history: [{
+                    id: 'summary_1',
+                    type: 'event-summary',
+                    summaryItems: [
+                        {
+                            sourceType: 'disposition_change',
+                            metadata: {
+                                dispositionChange: {
+                                    npcId: 'npc_1',
+                                    typeKey: 'platonic',
+                                    previousValue: 0,
+                                    newValue: 12,
+                                    delta: 12,
+                                    reason: 'A concrete favor.'
+                                }
+                            }
+                        },
+                        {
+                            sourceType: 'disposition_change',
+                            metadata: {
+                                dispositionChange: {
+                                    npcId: 'npc_1',
+                                    typeKey: 'trust',
+                                    previousValue: 0,
+                                    newValue: 12,
+                                    delta: 12,
+                                    reason: 'The player followed through.'
+                                }
+                            }
+                        }
+                    ]
+                }]
+            }
+        }
+    };
+    const assertion = {
+        type: 'dispositionChangesMatchState',
+        npcId: 'npc_1',
+        playerId: 'player_1',
+        direction: 'increase'
+    };
+    const [passing] = evaluateAssertions([assertion], { before, after });
+    assert.equal(passing.passed, true);
+
+    const projectedBefore = structuredClone(before);
+    const projectedAfter = structuredClone(after);
+    projectedBefore.players.payload.players[0] = {
+        id: 'npc_1',
+        dispositionsTowardPlayer: { platonic: 0, trust: 0 }
+    };
+    projectedAfter.players.payload.players[0] = {
+        id: 'npc_1',
+        dispositionsTowardPlayer: { platonic: 12, trust: 12 }
+    };
+    const [projectedPassing] = evaluateAssertions([assertion], {
+        before: projectedBefore,
+        after: projectedAfter
+    });
+    assert.equal(projectedPassing.passed, true);
+
+    after.history.payload.history[0].summaryItems.push({
+        ...after.history.payload.history[0].summaryItems[0]
+    });
+    const [duplicate] = evaluateAssertions([assertion], { before, after });
+    assert.equal(duplicate.passed, false);
+});
+
+test('faction reputation summary assertion matches authoritative standing and rejects duplicates', { concurrency: false }, async () => {
+    const { evaluateAssertions } = await import('../scripts/lib/followup_api_playtest/assertions.mjs');
+    const before = {
+        factions: {
+            payload: {
+                playerStandings: { faction_existing: 5 }
+            }
+        },
+        history: { payload: { history: [] } }
+    };
+    const after = {
+        factions: {
+            payload: {
+                playerStandings: { faction_existing: 5, faction_lantern: 1 }
+            }
+        },
+        history: {
+            payload: {
+                history: [{
+                    id: 'summary_1',
+                    type: 'event-summary',
+                    summaryItems: [{
+                        sourceType: 'faction_reputation_change',
+                        metadata: {
+                            factionReputationChange: {
+                                factionId: 'faction_lantern',
+                                factionName: 'Lantern Guild',
+                                amount: 1,
+                                before: 0,
+                                after: 1,
+                                reason: 'Completed useful guild work.'
+                            }
+                        }
+                    }]
+                }]
+            }
+        }
+    };
+    const assertion = {
+        type: 'factionReputationChangesMatchState',
+        factionId: 'faction_lantern',
+        direction: 'increase',
+        onlyFaction: true
+    };
+
+    const [passing] = evaluateAssertions([assertion], { before, after });
+    assert.equal(passing.passed, true);
+    assert.equal(passing.targetChanges[0].before, 0, 'a missing sparse standing starts at zero');
+
+    const wrongSummary = structuredClone(after);
+    wrongSummary.history.payload.history[0].summaryItems[0]
+        .metadata.factionReputationChange.after = 4;
+    assert.equal(evaluateAssertions([assertion], { before, after: wrongSummary })[0].passed, false);
+
+    const duplicateSummary = structuredClone(after);
+    duplicateSummary.history.payload.history[0].summaryItems.push(
+        structuredClone(duplicateSummary.history.payload.history[0].summaryItems[0])
+    );
+    assert.equal(evaluateAssertions([assertion], { before, after: duplicateSummary })[0].passed, false);
+
+    const unrelatedChange = structuredClone(after);
+    unrelatedChange.factions.payload.playerStandings.faction_other = -1;
+    assert.equal(evaluateAssertions([assertion], { before, after: unrelatedChange })[0].passed, false);
 });
 
 test('mechanical assertions compare exact selected state without prose inspection', { concurrency: false }, async () => {
@@ -109,6 +616,13 @@ test('mechanical assertions compare exact selected state without prose inspectio
         { type: 'noRealtimeErrors' },
         { type: 'noUnexpectedErrorLogs' },
         { type: 'historyAddedTypeCount', entryType: 'player-action', equals: 0 },
+        {
+            type: 'historyAddedSequence',
+            entryTypes: ['user'],
+            expected: [
+                { id: 'new-user', type: 'user' }
+            ]
+        },
         {
             type: 'historyAddedNestedObjectCount',
             entryWhere: { type: 'event-summary' },
@@ -158,6 +672,14 @@ test('mechanical assertions compare exact selected state without prose inspectio
                 path: 'payload.expectedHealth'
             }
         },
+        {
+            type: 'entityField',
+            source: 'response',
+            collection: 'players',
+            id: 'char_1',
+            path: 'isHostileToPlayer',
+            equals: true
+        },
         { type: 'cassetteConsumed' }
     ], {
         ...context,
@@ -165,6 +687,7 @@ test('mechanical assertions compare exact selected state without prose inspectio
             ...context.response,
             payload: {
                 expectedHealth: 9,
+                players: [{ id: 'char_1', isHostileToPlayer: true }],
                 toolInvocations: [{
                     name: 'resolveAttack',
                     metadata: {
@@ -221,13 +744,49 @@ test('mechanical assertions compare exact selected state without prose inspectio
         changedLogs: [{ name: 'ERROR_chatCompletionError_region_stub_locations_123.log' }]
     });
     assert.equal(recoveredRetry[0].passed, true);
-    assert.equal(evaluateAssertions([{ type: 'noUnexpectedErrorLogs' }], {
+    const unallowedErrorLog = evaluateAssertions([{ type: 'noUnexpectedErrorLogs' }], {
         ...context,
         changedLogs: [{ name: 'ERROR_chatCompletionError_region_stub_locations_123.log' }]
-    })[0].passed, false);
+    })[0];
+    assert.equal(unallowedErrorLog.passed, true);
+    assert.equal(unallowedErrorLog.diagnosticOnly, true);
+    assert.equal(unallowedErrorLog.errorLogs.length, 1);
+    assert.equal(unallowedErrorLog.unacknowledged.length, 1);
+
+    const semanticallyRecoveredRetry = evaluateAssertions([{
+        type: 'noUnexpectedErrorLogs',
+        allowRecoveredProviderRetries: true
+    }], {
+        ...context,
+        changedLogs: [{
+            name: 'ERROR_chatCompletionError_player_action_456.log',
+            errorDetails: { attemptNumber: 1, maxAttempts: 7, willRetry: true }
+        }]
+    });
+    assert.equal(semanticallyRecoveredRetry[0].passed, true);
+
+    const exhaustedRetry = evaluateAssertions([{
+        type: 'noUnexpectedErrorLogs',
+        allowRecoveredProviderRetries: true
+    }], {
+        ...context,
+        changedLogs: [{
+            name: 'ERROR_chatCompletionError_player_action_789.log',
+            errorDetails: { attemptNumber: 7, maxAttempts: 7, willRetry: false }
+        }]
+    });
+    assert.equal(exhaustedRetry[0].passed, true);
+    assert.equal(exhaustedRetry[0].unacknowledged.length, 1);
+
+    const toolFailureLog = evaluateAssertions([{ type: 'noUnexpectedErrorLogs' }], {
+        ...context,
+        changedLogs: [{ name: 'ERROR_tool_call_failed_player_action_example_123.log' }]
+    });
+    assert.equal(toolFailureLog[0].passed, true);
+    assert.equal(toolFailureLog[0].unacknowledged.length, 1);
 });
 
-test('state capture includes live region summaries', { concurrency: false }, async () => {
+test('state capture includes factions, live region summaries, and scheduled-event records', { concurrency: false }, async () => {
     const { FollowupApiClient } = await import('../scripts/lib/followup_api_playtest/core.mjs');
     const client = new FollowupApiClient({ baseUrl: 'http://127.0.0.1:1' });
     const requestedRoutes = [];
@@ -239,12 +798,69 @@ test('state capture includes live region summaries', { concurrency: false }, asy
         if (route === '/api/regions') {
             return { status: 200, ok: true, payload: { regions: [{ id: 'region_1' }] } };
         }
+        if (route === '/api/factions') {
+            return {
+                status: 200,
+                ok: true,
+                payload: {
+                    factions: [{ id: 'faction_1', name: 'Test Faction' }],
+                    playerStandings: { faction_1: 4 }
+                }
+            };
+        }
+        if (route === '/api/story-tools/scheduled-events') {
+            return {
+                status: 200,
+                ok: true,
+                payload: {
+                    success: true,
+                    scheduledEvents: [{ id: 'sevent_1', status: 'pending', targetWorldMinute: 120 }],
+                    count: 1
+                }
+            };
+        }
         return { status: 200, ok: true, payload: {} };
     };
 
     const state = await client.captureState();
+    assert.deepEqual(state.factions.payload.factions, [{ id: 'faction_1', name: 'Test Faction' }]);
+    assert.deepEqual(state.factions.payload.playerStandings, { faction_1: 4 });
     assert.deepEqual(state.regions.payload.regions, [{ id: 'region_1' }]);
+    assert.deepEqual(state.scheduledEvents.payload.scheduledEvents, [
+        { id: 'sevent_1', status: 'pending', targetWorldMinute: 120 }
+    ]);
+    assert.equal(requestedRoutes.includes('/api/factions'), true);
     assert.equal(requestedRoutes.includes('/api/regions'), true);
+    assert.equal(requestedRoutes.includes('/api/story-tools/scheduled-events'), true);
+});
+
+test('log manifests expose structured retry details without retaining prompt payloads', { concurrency: false }, async () => {
+    const { getLogManifest } = await import('../scripts/lib/followup_api_playtest/core.mjs');
+    const root = makeTempRoot('followup-log-manifest-');
+    const logsDir = path.join(root, 'logs');
+    fs.mkdirSync(logsDir, { recursive: true });
+    const largeRetryDetails = {
+        attemptNumber: 1,
+        maxAttempts: 7,
+        willRetry: true,
+        config: { data: 'x'.repeat(20 * 1024) }
+    };
+    fs.writeFileSync(
+        path.join(logsDir, 'ERROR_chatCompletionError_player_action_123.log'),
+        `Error Details:\n${JSON.stringify(largeRetryDetails)}\n\nPayload:\nlarge prompt body`
+    );
+    fs.writeFileSync(path.join(logsDir, 'ordinary.log'), 'ordinary prompt log');
+    try {
+        const manifest = await getLogManifest(root);
+        const retry = manifest.find(entry => entry.name.startsWith('ERROR_chatCompletionError_'));
+        const ordinary = manifest.find(entry => entry.name === 'ordinary.log');
+        assert.deepEqual(retry.errorDetails, { attemptNumber: 1, maxAttempts: 7, willRetry: true });
+        assert.equal(Object.hasOwn(retry.errorDetails, 'config'), false);
+        assert.equal(Object.hasOwn(ordinary, 'errorDetails'), false);
+        assert.equal(Object.hasOwn(retry, 'contents'), false);
+    } finally {
+        fs.rmSync(root, { recursive: true, force: true });
+    }
 });
 
 test('attack result assertions normalize single-target and area-attack tool results', { concurrency: false }, async () => {
@@ -683,6 +1299,81 @@ test('cassette recording finalization waits for an active logical completion to 
         }, { timeoutMs: 0, pollIntervalMs: 1, quietPeriodMs: 0 }),
         /Timed out after 0ms/
     );
+});
+
+test('failed-attempt cassette cleanup archives the partial document before resetting the recorder', { concurrency: false }, async () => {
+    const { archiveAndResetIncompleteCassetteRecording } = await import('../scripts/lib/followup_api_playtest/scenario.mjs');
+    const root = makeTempRoot('followup-cassette-reset-');
+    const attemptDir = path.join(root, 'attempt-1');
+    const cassettePath = path.join(root, 'source-cassette.json');
+    fs.mkdirSync(attemptDir, { recursive: true });
+    const partial = {
+        version: 2,
+        strict: true,
+        complete: false,
+        entries: [{ ordinal: 1 }]
+    };
+    fs.writeFileSync(cassettePath, `${JSON.stringify(partial, null, 2)}\n`);
+    let resetCalls = 0;
+    const apiClient = {
+        async fetchJson(method, route, body) {
+            if (route === '/api/llm-completion-cassette/status') {
+                return {
+                    method,
+                    route,
+                    status: 200,
+                    ok: true,
+                    payload: {
+                        success: true,
+                        replay: { active: false, version: null },
+                        recording: {
+                            active: true,
+                            version: 2,
+                            resolvedPath: cassettePath,
+                            complete: false,
+                            total: 1,
+                            completionActive: false
+                        }
+                    }
+                };
+            }
+            assert.equal(method, 'POST');
+            assert.equal(route, '/api/llm-completion-cassette/reset-incomplete-recording');
+            assert.deepEqual(body, { description: 'Synthetic failed attempt.' });
+            resetCalls += 1;
+            return {
+                method,
+                route,
+                status: 200,
+                ok: true,
+                payload: {
+                    success: true,
+                    recording: {
+                        active: true,
+                        version: 2,
+                        resolvedPath: cassettePath,
+                        complete: false,
+                        total: 0,
+                        discardedTotal: 1
+                    }
+                }
+            };
+        }
+    };
+    try {
+        const cleanup = await archiveAndResetIncompleteCassetteRecording(apiClient, {
+            attemptDir,
+            description: 'Synthetic failed attempt.'
+        });
+        assert.equal(cleanup.discardedTotal, 1);
+        assert.equal(resetCalls, 1);
+        assert.deepEqual(
+            JSON.parse(fs.readFileSync(cleanup.archivePath, 'utf8')),
+            partial
+        );
+    } finally {
+        fs.rmSync(root, { recursive: true, force: true });
+    }
 });
 
 test('cassette replay finalization waits for background consumption and stable idle', { concurrency: false }, async () => {

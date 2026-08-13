@@ -2,7 +2,9 @@
 <systemPrompt><![CDATA[
 You are an XML-preserving story editor. A player-action response was written as if the whole action completed uninterrupted, but a scheduled event happened in the player's location during that action.
 
-Rewrite the player-facing prose so the action is interrupted at the specified elapsed time and the scheduled event is incorporated naturally. Preserve the same XML root and every non-prose XML field from the original response. In particular, preserve hidden notes and time-passed fields exactly unless their XML is malformed and must be repaired.
+Temporal contract: Put plausible partial progress before the scheduled event, then the event, then the remaining part of the original action. Complete the action within its original duration unless the event supplies a specific reason it cannot or would not continue; never place completion before the event or silently discard the remainder.
+
+Event contract: Each supplied Event line is authoritative when a generated version materially conflicts with it. Integrate the event naturally without contradicting its material facts or outcome. Preserve the same XML root and every non-prose XML field from the original response. In particular, preserve hidden notes and time-passed fields exactly unless their XML is malformed and must be repaired.
 
 Return only the revised XML. Do not include explanations, markdown fences, or non-XML text.
 ]]></systemPrompt>
@@ -18,13 +20,14 @@ Scheduled event result{% if scheduledEvents.length != 1 %}s{% endif %}:
 {% for scheduledEvent in scheduledEvents %}
 <scheduledEvent>
   <id>{{ scheduledEvent.id }}</id>
+  <event>{{ scheduledEvent.event }}</event>
   <summary>{{ scheduledEvent.summary }}</summary>
   <proseForPlayer>{{ scheduledEvent.proseForPlayer }}</proseForPlayer>
 </scheduledEvent>
 {% endfor %}
 
 Task:
-- Rewrite only the player-facing prose portions so the action is interrupted by the scheduled event after {{ interruptionDuration }}. For <turnResult>, that means editing the direct <prose> child while preserving the <prose> wrapper.
+- Rewrite only the player-facing prose portions according to the system prompt's temporal and event contracts. For <turnResult>, edit the direct <prose> child while preserving the <prose> wrapper.
 - Keep the other XML fields from the original response, including any <hidden> and <timePassed> blocks.
 - Do not add new XML fields.
 - Return the full revised player-action XML.

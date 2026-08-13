@@ -1,0 +1,264 @@
+{
+  "version": 1,
+  "scenario": "random-scheduled-events",
+  "case": "EVENT-3-visible-scheduled",
+  "description": "Cross only the current-location bell event's due minute while the player is present, proving one visible prose row, one hidden bookkeeping row, exact resolution state, and no unrelated mutation.",
+  "fixture": "random-scheduled-events",
+  "configProfile": "random-scheduled-mechanics",
+  "trackedPaths": [
+    "player.payload.player.locationId",
+    "player.payload.player.needBars",
+    "player.payload.player.statusEffects",
+    "players.payload.players",
+    "locations.payload.locations",
+    "regions.payload.regions",
+    "things.payload.things",
+    "scheduledEvents.payload.scheduledEvents",
+    "calendar.payload.worldTime",
+    "history.payload.history"
+  ],
+  "steps": [
+    {
+      "type": "loadFixture"
+    },
+    {
+      "type": "request",
+      "name": "player_before_due",
+      "method": "GET",
+      "route": "/api/npcs/$fixture.playerId"
+    },
+    {
+      "type": "snapshot",
+      "name": "before_due"
+    },
+    {
+      "type": "request",
+      "name": "cross_visible_due",
+      "method": "POST",
+      "route": "/api/slash-command",
+      "body": {
+        "command": "time",
+        "argsText": "+2 minutes"
+      }
+    },
+    {
+      "type": "request",
+      "name": "player_after_due",
+      "method": "GET",
+      "route": "/api/npcs/$fixture.playerId"
+    },
+    {
+      "type": "assert",
+      "assertions": [
+        {
+          "type": "httpStatus",
+          "equals": 200
+        },
+        {
+          "type": "responseOk",
+          "equals": true
+        },
+        {
+          "type": "equals",
+          "source": "responses.cross_visible_due",
+          "path": "status",
+          "equals": 200
+        },
+        {
+          "type": "equals",
+          "source": "responses.cross_visible_due",
+          "path": "ok",
+          "equals": true
+        },
+        {
+          "type": "equals",
+          "source": "responses.cross_visible_due",
+          "path": "payload.success",
+          "equals": true
+        },
+        {
+          "type": "exactDelta",
+          "beforeSource": "snapshots.before_due",
+          "afterSource": "after",
+          "path": "calendar.payload.worldTime.timeMinutes",
+          "delta": 2
+        },
+        {
+          "type": "equals",
+          "source": "after",
+          "path": "calendar.payload.worldTime.timeMinutes",
+          "equals": 665
+        },
+        {
+          "type": "exactDelta",
+          "beforeSource": "responses.player_before_due",
+          "afterSource": "responses.player_after_due",
+          "path": "payload.npc.elapsedTime",
+          "delta": 2
+        },
+        {
+          "type": "equals",
+          "source": "responses.player_after_due",
+          "path": "payload.npc.elapsedTime",
+          "equals": 665
+        },
+        {
+          "type": "equals",
+          "source": "after",
+          "path": "scheduledEvents.payload.count",
+          "equals": 2
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "after",
+          "path": "scheduledEvents.payload.scheduledEvents",
+          "where": {
+            "id": "$fixture.visibleScheduledEventId",
+            "event": "$fixture.visibleScheduledEventDescription",
+            "locationId": "$fixture.baselineLocationId",
+            "targetWorldMinute": "$fixture.visibleScheduledEventTargetWorldMinute",
+            "status": "resolved",
+            "resolvedAtWorldMinute": 665
+          },
+          "equals": 1
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "after",
+          "path": "scheduledEvents.payload.scheduledEvents",
+          "where": {
+            "id": "$fixture.visibleScheduledEventId",
+            "status": "resolved",
+            "playerProse": ""
+          },
+          "equals": 0
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "after",
+          "path": "scheduledEvents.payload.scheduledEvents",
+          "where": {
+            "id": "$fixture.visibleScheduledEventId",
+            "status": "resolved",
+            "resolutionSummary": ""
+          },
+          "equals": 0
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "after",
+          "path": "scheduledEvents.payload.scheduledEvents",
+          "where": {
+            "id": "$fixture.offscreenScheduledEventId",
+            "event": "$fixture.offscreenScheduledEventDescription",
+            "locationId": "$fixture.depotLocationId",
+            "targetWorldMinute": "$fixture.offscreenScheduledEventTargetWorldMinute",
+            "status": "pending",
+            "resolutionSummary": "",
+            "playerProse": "",
+            "resolvedAtWorldMinute": null,
+            "resolvedAtWorldTime": null
+          },
+          "equals": 1
+        },
+        {
+          "type": "historyAddedTypeCount",
+          "beforeSource": "snapshots.before_due",
+          "afterSource": "after",
+          "entryType": "scheduled-event",
+          "equals": 1
+        },
+        {
+          "type": "historyAddedTypeCount",
+          "beforeSource": "snapshots.before_due",
+          "afterSource": "after",
+          "entryType": "scheduled-event-prose",
+          "equals": 1
+        },
+        {
+          "type": "historyAddedSequence",
+          "beforeSource": "snapshots.before_due",
+          "afterSource": "after",
+          "entryTypes": [
+            "scheduled-event",
+            "scheduled-event-prose"
+          ],
+          "expected": [
+            {
+              "type": "scheduled-event",
+              "locationId": "$fixture.baselineLocationId",
+              "metadata": {
+                "scheduledEventId": "$fixture.visibleScheduledEventId",
+                "playerPresent": true,
+                "source": "slash_command_time",
+                "visibleProseSuppressed": false,
+                "hiddenFromClient": true
+              }
+            },
+            {
+              "type": "scheduled-event-prose",
+              "locationId": "$fixture.baselineLocationId",
+              "metadata": {
+                "scheduledEventId": "$fixture.visibleScheduledEventId",
+                "source": "slash_command_time"
+              }
+            }
+          ]
+        },
+        {
+          "type": "historyAddedTypeCount",
+          "beforeSource": "snapshots.before_due",
+          "afterSource": "after",
+          "entryType": "random-event",
+          "equals": 0
+        },
+        {
+          "type": "equals",
+          "source": "after",
+          "path": "currentLocation.payload.location.randomEvents",
+          "equals": [
+            "$fixture.locationRandomEvent"
+          ]
+        },
+        {
+          "type": "entityField",
+          "source": "after",
+          "collection": "players",
+          "id": "$fixture.bellRunnerId",
+          "path": "locationId",
+          "equals": "$fixture.baselineLocationId"
+        },
+        {
+          "type": "entityField",
+          "source": "after",
+          "collection": "things",
+          "id": "$fixture.brassBellId",
+          "path": "metadata.locationId",
+          "equals": "$fixture.baselineLocationId"
+        },
+        {
+          "type": "stateUnchanged",
+          "beforeSource": "snapshots.before_due",
+          "afterSource": "after",
+          "paths": [
+            "player.payload.player.locationId",
+            "player.payload.player.statusEffects",
+            "locations.payload.locations",
+            "regions.payload.regions",
+            "things.payload.things"
+          ]
+        },
+        {
+          "type": "noRealtimeErrors"
+        },
+        {
+          "type": "noUnexpectedErrorLogs"
+        }
+      ]
+    }
+  ],
+  "humanReview": [
+    "Confirm the single visible scheduled-event prose describes QA Bell Runner ringing QA Brass Bell exactly once at March Start Marker and does not narrate the offscreen marker event.",
+    "Confirm the hidden resolution summary is a concise faithful account of the same one bell ring, with no character/object relocation or unsupported extra action."
+  ]
+}

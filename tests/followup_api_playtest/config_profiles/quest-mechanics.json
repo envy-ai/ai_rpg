@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "name": "quest-mechanics",
+  "description": "Runs isolated player events and a quest check on every eligible action.",
+  "extends": "vehicle-mechanics",
+  "values": {
+    "quest_checks.enabled": true,
+    "quest_checks.interval": 1
+  }
+}

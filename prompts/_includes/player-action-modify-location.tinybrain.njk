@@ -11,20 +11,22 @@ Received portable items: {% if receivedItems and receivedItems.length %}{% for i
 Additional effect: {{ otherEffect | default('none', true) }}
 Authoritative elapsed duration: {{ authoritativeTimePassedMinutes }} minutes
 
-List the exact persistent change, portable-item transfers, additional effect, and the mechanically selected duration of exactly {{ authoritativeTimePassedMinutes }} minutes. Do not add any other change.
+Plan how to depict the attempt and its visible result without inventing another location change.
 
 {% llm_dummy_action %}
 
 Draft Response: Describe the attempt and visible result concisely, strictly following the supplied alteration and degree. Output prose only.
 
-{% llm_dummy_action %}
+{% llmparse('player_action_required_prose') %}
 
 {% set tinyBrainAuditFocus = 'The persistent alteration, received items, consumed materials, success degree, and additional effect must remain exact; do not invent another location change.' %}
 {% include "_includes/tinybrain-prose-audit.njk" %}
 
-Return XML only:
-<result>
-  <description>polished modification prose</description>
-  <otherEffectDescription>{% if otherEffect %}one paragraph describing only the supplied effect{% else %}N/A{% endif %}</otherEffectDescription>
-  <timePassed><reasoning>brief timing breakdown consistent with the authoritative duration</reasoning><duration>{{ authoritativeTimePassedMinutes }} minutes</duration></timePassed>
-</result>
+{% if otherEffect %}Write one paragraph describing only the supplied additional effect. Output prose only.
+{% llmparse('player_action_required_prose') as otherEffectProse %}
+{% endif %}
+
+Briefly explain why the action consumed {{ authoritativeTimePassedMinutes }} minutes. Do not repeat the duration itself.
+{% llmparse('player_action_time_reasoning') as timeReasoning %}
+
+{% llmresult('location_modification_result') %}

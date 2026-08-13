@@ -1,0 +1,190 @@
+{
+  "version": 1,
+  "scenario": "random-scheduled-events",
+  "case": "EVENT-2-location",
+  "description": "Force the current-location random-event category from an isolated fixture restore, verify only its pool is consumed, then prove the one-entry pool cannot dispatch twice.",
+  "fixture": "random-scheduled-events",
+  "configProfile": "random-scheduled-mechanics",
+  "trackedPaths": [
+    "player.payload.player.locationId",
+    "players.payload.players",
+    "locations.payload.locations",
+    "regions.payload.regions",
+    "things.payload.things",
+    "scheduledEvents.payload.scheduledEvents",
+    "calendar.payload.worldTime",
+    "history.payload.history"
+  ],
+  "steps": [
+    {
+      "type": "loadFixture"
+    },
+    {
+      "type": "snapshot",
+      "name": "before_location"
+    },
+    {
+      "type": "request",
+      "name": "location_event",
+      "method": "POST",
+      "route": "/api/slash-command",
+      "body": {
+        "command": "random",
+        "argsText": "location"
+      }
+    },
+    {
+      "type": "snapshot",
+      "name": "after_location"
+    },
+    {
+      "type": "assert",
+      "assertions": [
+        {
+          "type": "equals",
+          "source": "responses.location_event",
+          "path": "status",
+          "equals": 200
+        },
+        {
+          "type": "equals",
+          "source": "responses.location_event",
+          "path": "ok",
+          "equals": true
+        },
+        {
+          "type": "equals",
+          "source": "responses.location_event",
+          "path": "payload.success",
+          "equals": true
+        },
+        {
+          "type": "count",
+          "source": "responses.location_event",
+          "path": "payload.replies",
+          "equals": 1
+        },
+        {
+          "type": "equals",
+          "source": "responses.location_event",
+          "path": "payload.replies.0.ephemeral",
+          "equals": false
+        },
+        {
+          "type": "historyAddedSequence",
+          "beforeSource": "snapshots.before_location",
+          "afterSource": "snapshots.after_location",
+          "entryTypes": [
+            "random-event"
+          ],
+          "expected": [
+            {
+              "type": "random-event",
+              "actor": "Random Event",
+              "randomEvent": true,
+              "rarity": "location",
+              "locationId": "$fixture.baselineLocationId"
+            }
+          ]
+        },
+        {
+          "type": "equals",
+          "source": "snapshots.after_location",
+          "path": "currentLocation.payload.location.randomEvents",
+          "equals": []
+        },
+        {
+          "type": "stateUnchanged",
+          "beforeSource": "snapshots.before_location",
+          "afterSource": "snapshots.after_location",
+          "paths": [
+            "player.payload.player.locationId",
+            "players.payload.players",
+            "locations.payload.locations",
+            "regions.payload.regions",
+            "things.payload.things",
+            "scheduledEvents.payload.scheduledEvents",
+            "calendar.payload.worldTime"
+          ]
+        }
+      ]
+    },
+    {
+      "type": "request",
+      "name": "location_empty",
+      "method": "POST",
+      "route": "/api/slash-command",
+      "body": {
+        "command": "random",
+        "argsText": "location"
+      }
+    },
+    {
+      "type": "snapshot",
+      "name": "after_location_empty"
+    },
+    {
+      "type": "assert",
+      "assertions": [
+        {
+          "type": "httpStatus",
+          "equals": 200
+        },
+        {
+          "type": "responseOk",
+          "equals": true
+        },
+        {
+          "type": "equals",
+          "source": "responses.location_empty",
+          "path": "payload.success",
+          "equals": true
+        },
+        {
+          "type": "count",
+          "source": "responses.location_empty",
+          "path": "payload.replies",
+          "equals": 1
+        },
+        {
+          "type": "equals",
+          "source": "responses.location_empty",
+          "path": "payload.replies.0.ephemeral",
+          "equals": true
+        },
+        {
+          "type": "historyAddedTypeCount",
+          "beforeSource": "snapshots.after_location",
+          "afterSource": "snapshots.after_location_empty",
+          "entryType": "random-event",
+          "equals": 0
+        },
+        {
+          "type": "stateUnchanged",
+          "beforeSource": "snapshots.after_location",
+          "afterSource": "snapshots.after_location_empty",
+          "paths": [
+            "player.payload.player.locationId",
+            "players.payload.players",
+            "locations.payload.locations",
+            "regions.payload.regions",
+            "things.payload.things",
+            "scheduledEvents.payload.scheduledEvents",
+            "calendar.payload.worldTime",
+            "history.payload.history"
+          ]
+        },
+        {
+          "type": "noRealtimeErrors"
+        },
+        {
+          "type": "noUnexpectedErrorLogs"
+        }
+      ]
+    }
+  ],
+  "humanReview": [
+    "Confirm the one visible random-event narration follows the exact QA Bell Runner/QA Brass Bell seed, rings once, and moves nobody and nothing.",
+    "Confirm the empty-pool retry produces no second narration or history event."
+  ]
+}

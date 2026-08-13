@@ -1,0 +1,278 @@
+{
+  "version": 1,
+  "scenario": "random-scheduled-events",
+  "case": "EVENT-7-tool-failure",
+  "description": "Delete the target of the offscreen scheduled mutation after resolving the earlier due event, then prove the invalid direct update produces a structured failure, leaves the event pending, and does not add resolution bookkeeping.",
+  "fixture": "random-scheduled-events",
+  "configProfile": "scheduled-event-interruption-mechanics",
+  "trackedPaths": [
+    "player.payload.player.locationId",
+    "players.payload.players",
+    "locations.payload.locations",
+    "regions.payload.regions",
+    "things.payload.things",
+    "scheduledEvents.payload.scheduledEvents",
+    "calendar.payload.worldTime",
+    "history.payload.history"
+  ],
+  "steps": [
+    {
+      "type": "loadFixture"
+    },
+    {
+      "type": "request",
+      "name": "resolve_earlier_event",
+      "method": "POST",
+      "route": "/api/slash-command",
+      "body": {
+        "command": "time",
+        "argsText": "+2 minutes"
+      }
+    },
+    {
+      "type": "assert",
+      "assertions": [
+        {
+          "type": "httpStatus",
+          "equals": 200
+        },
+        {
+          "type": "responseOk",
+          "equals": true
+        },
+        {
+          "type": "equals",
+          "source": "after",
+          "path": "calendar.payload.worldTime.timeMinutes",
+          "equals": 665
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "after",
+          "path": "scheduledEvents.payload.scheduledEvents",
+          "where": {
+            "id": "$fixture.visibleScheduledEventId",
+            "status": "resolved",
+            "resolvedAtWorldMinute": 665
+          },
+          "equals": 1
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "after",
+          "path": "scheduledEvents.payload.scheduledEvents",
+          "where": {
+            "id": "$fixture.offscreenScheduledEventId",
+            "status": "pending",
+            "resolvedAtWorldMinute": null
+          },
+          "equals": 1
+        }
+      ]
+    },
+    {
+      "type": "request",
+      "name": "delete_scheduled_target",
+      "method": "DELETE",
+      "route": "/api/things/$fixture.depotMarkerId"
+    },
+    {
+      "type": "assert",
+      "assertions": [
+        {
+          "type": "httpStatus",
+          "equals": 200
+        },
+        {
+          "type": "responseOk",
+          "equals": true
+        },
+        {
+          "type": "equals",
+          "source": "responses.delete_scheduled_target",
+          "path": "payload.success",
+          "equals": true
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "after",
+          "path": "things.payload.things",
+          "where": {
+            "id": "$fixture.depotMarkerId"
+          },
+          "equals": 0
+        }
+      ]
+    },
+    {
+      "type": "request",
+      "name": "player_before_tool_failure",
+      "method": "GET",
+      "route": "/api/npcs/$fixture.playerId"
+    },
+    {
+      "type": "snapshot",
+      "name": "before_tool_failure"
+    },
+    {
+      "type": "request",
+      "name": "trigger_invalid_scheduled_update",
+      "method": "POST",
+      "route": "/api/slash-command",
+      "body": {
+        "command": "time",
+        "argsText": "+1 minute"
+      }
+    },
+    {
+      "type": "assert",
+      "assertions": [
+        {
+          "type": "httpStatus",
+          "equals": 500
+        },
+        {
+          "type": "responseOk",
+          "equals": false
+        },
+        {
+          "type": "equals",
+          "source": "responses.trigger_invalid_scheduled_update",
+          "path": "payload.success",
+          "equals": false
+        },
+        {
+          "type": "includes",
+          "source": "responses.trigger_invalid_scheduled_update",
+          "path": "payload.error",
+          "value": "failed tool invocation"
+        }
+      ]
+    },
+    {
+      "type": "request",
+      "name": "player_after_tool_failure",
+      "method": "GET",
+      "route": "/api/npcs/$fixture.playerId"
+    },
+    {
+      "type": "assert",
+      "assertions": [
+        {
+          "type": "httpStatus",
+          "equals": 200
+        },
+        {
+          "type": "responseOk",
+          "equals": true
+        },
+        {
+          "type": "exactDelta",
+          "beforeSource": "snapshots.before_tool_failure",
+          "afterSource": "after",
+          "path": "calendar.payload.worldTime.timeMinutes",
+          "delta": 1
+        },
+        {
+          "type": "equals",
+          "source": "after",
+          "path": "calendar.payload.worldTime.timeMinutes",
+          "equals": 666
+        },
+        {
+          "type": "exactDelta",
+          "beforeSource": "responses.player_before_tool_failure",
+          "afterSource": "responses.player_after_tool_failure",
+          "path": "payload.npc.elapsedTime",
+          "delta": 1
+        },
+        {
+          "type": "equals",
+          "source": "after",
+          "path": "player.payload.player.locationId",
+          "equals": "$fixture.baselineLocationId"
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "after",
+          "path": "things.payload.things",
+          "where": {
+            "id": "$fixture.depotMarkerId"
+          },
+          "equals": 0
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "after",
+          "path": "scheduledEvents.payload.scheduledEvents",
+          "where": {
+            "id": "$fixture.offscreenScheduledEventId",
+            "event": "$fixture.offscreenScheduledEventDescription",
+            "locationId": "$fixture.depotLocationId",
+            "targetWorldMinute": 666,
+            "status": "pending",
+            "resolutionSummary": "",
+            "playerProse": "",
+            "resolvedAtWorldMinute": null,
+            "resolvedAtWorldTime": null
+          },
+          "equals": 1
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "after",
+          "path": "scheduledEvents.payload.scheduledEvents",
+          "where": {
+            "id": "$fixture.offscreenScheduledEventId",
+            "status": "resolved"
+          },
+          "equals": 0
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "after",
+          "path": "scheduledEvents.payload.scheduledEvents",
+          "where": {
+            "id": "$fixture.offscreenScheduledEventId",
+            "status": "skipped"
+          },
+          "equals": 0
+        },
+        {
+          "type": "stateUnchanged",
+          "beforeSource": "snapshots.before_tool_failure",
+          "afterSource": "after",
+          "paths": [
+            "locations.payload.locations",
+            "regions.payload.regions",
+            "things.payload.things",
+            "scheduledEvents.payload.scheduledEvents",
+            "history.payload.history"
+          ]
+        },
+        {
+          "type": "historyAddedTypeCount",
+          "entryType": "scheduled-event",
+          "equals": 0,
+          "beforeSource": "snapshots.before_tool_failure",
+          "afterSource": "after"
+        },
+        {
+          "type": "historyAddedTypeCount",
+          "entryType": "scheduled-event-prose",
+          "equals": 0,
+          "beforeSource": "snapshots.before_tool_failure",
+          "afterSource": "after"
+        },
+        {
+          "type": "noRealtimeErrors"
+        }
+      ]
+    }
+  ],
+  "humanReview": [
+    "Inspect the failed scheduled-event prompt log and confirm updateObjectFields returned a structured <toolError> for the deleted QA Depot Marker rather than being treated as a successful mutation.",
+    "Confirm checkpoint retries did not produce a hidden summary, visible prose, or a resolved/skipped status for the failed event. The one-minute clock advance is expected because /time advances before resolving due events.",
+    "The deterministic runtime regression separately proves successful operations in a mixed plan are cached once while failed operations remain retryable and uncached."
+  ]
+}

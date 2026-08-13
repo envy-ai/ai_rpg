@@ -9,9 +9,9 @@ const {
     parsePlayerActionDestination,
     parsePlayerActionVehicleDestination,
     parsePlayerActionDestinationChanges,
+    parsePlayerActionExplicitDuration,
     parsePlayerActionDuration,
     parsePlayerActionAccompanyingCharacters,
-    parsePlayerActionCheckedActionActors,
     parsePlayerActionHiddenNotes,
     parsePlayerActionMoreInfoOrNa,
     parsePlayerActionMovement,
@@ -20,6 +20,10 @@ const {
     parsePlayerActionTimeReasoning,
     parsePlayerActionVehicleDecision,
     parseRevisionDecision,
+    parseScheduledEventApplicability,
+    parseScheduledEventToolPlan,
+    parseScheduledEventToolExecution,
+    parseScheduledEventSummary,
     parseWhileAwayArrivalUpdates,
     parseWhileAwayCharacterUpdate
 } = require('./TinyBrainPromptParsers.js');
@@ -41,7 +45,7 @@ function buildParseRetryInstruction(error) {
     return [
         'Your previous response failed validation. Correct it and answer the same checkpoint again.',
         `Validation feedback: ${validationMessage}`,
-        'Return only what the checkpoint requests. Do not repeat any successful tool calls whose results are already present in the conversation.'
+        'Return only what the checkpoint requests. Do not repeat any successful tool calls whose results are already present in the conversation unless the validation feedback explicitly requires a corrective call.'
     ].join('\n');
 }
 
@@ -388,9 +392,9 @@ class TinyBrainPromptRunner {
             player_action_destination: parsePlayerActionDestination,
             player_action_vehicle_destination: parsePlayerActionVehicleDestination,
             player_action_destination_changes: parsePlayerActionDestinationChanges,
+            player_action_explicit_duration: parsePlayerActionExplicitDuration,
             player_action_duration: parsePlayerActionDuration,
             player_action_accompanying_characters: parsePlayerActionAccompanyingCharacters,
-            player_action_checked_action_actors: parsePlayerActionCheckedActionActors,
             player_action_hidden_notes: parsePlayerActionHiddenNotes,
             player_action_more_info_or_na: parsePlayerActionMoreInfoOrNa,
             player_action_movement: parsePlayerActionMovement,
@@ -401,6 +405,10 @@ class TinyBrainPromptRunner {
             player_is_traveling: parsePlayerIsTraveling,
             response_or_na: parseResponseOrNa,
             revision_decision: parseRevisionDecision,
+            scheduled_event_applicability: parseScheduledEventApplicability,
+            scheduled_event_tool_plan: parseScheduledEventToolPlan,
+            scheduled_event_tool_execution: parseScheduledEventToolExecution,
+            scheduled_event_summary: parseScheduledEventSummary,
             while_away_arrival_updates: parseWhileAwayArrivalUpdates,
             while_away_character_update: parseWhileAwayCharacterUpdate,
             yes_no: parseYesNo,
@@ -738,16 +746,21 @@ class TinyBrainPromptRunner {
         }
 
         const assignments = Object.create(null);
+        const checkpointValues = [];
         for (const checkpoint of checkpoints) {
+            const completed = renderState.completedCheckpoints?.[checkpoint.index];
+            if (!completed || !Object.hasOwn(completed, 'value')) {
+                throw new Error(`Tiny-brain checkpoint ${checkpoint.index + 1} has no completed value.`);
+            }
+            checkpointValues.push(Object.freeze({
+                checkpoint: Object.freeze({ ...checkpoint }),
+                value: completed.value
+            }));
             if (!checkpoint.target) {
                 continue;
             }
             if (Object.hasOwn(assignments, checkpoint.target)) {
                 throw new Error(`Tiny-brain checkpoint target "${checkpoint.target}" is assigned more than once.`);
-            }
-            const completed = renderState.completedCheckpoints?.[checkpoint.index];
-            if (!completed || !Object.hasOwn(completed, 'value')) {
-                throw new Error(`Tiny-brain checkpoint target "${checkpoint.target}" has no completed value.`);
             }
             assignments[checkpoint.target] = completed.value;
         }
@@ -755,7 +768,9 @@ class TinyBrainPromptRunner {
         const response = await builder({
             assignments: Object.freeze({ ...assignments }),
             checkpoints: Object.freeze(checkpoints.map(checkpoint => Object.freeze({ ...checkpoint }))),
-            templateContext: Object.freeze({ ...templateContext })
+            checkpointValues: Object.freeze(checkpointValues),
+            templateContext: Object.freeze({ ...templateContext }),
+            toolInvocations: Object.freeze(allToolInvocations.map(invocation => Object.freeze(cloneToolInvocation(invocation))))
         });
         if (typeof response !== 'string' || !response.trim()) {
             throw new Error(`Tiny-brain result builder "${marker.builderName}" must return a non-empty string.`);

@@ -23,9 +23,10 @@
   </resolutionContext>
   <instructions>
     This scheduled event is now due. Decide whether it still makes sense in the current game state.
+    The surrounding base context describes the scheduled location, even when the player is elsewhere. Player presence controls only whether proseForPlayer is returned; it does not determine whether the event can occur. Judge the event from the current state at its scheduled location. Do not reject it merely because the player is absent, the scheduled location differs from the player's location, or an affected entity is not in the player's inventory. Resolve feasible offscreen events with the available tools.
     If it no longer makes sense, return exactly <scheduledEventResult/>.
     If it does make sense, decide what happens now and use tool calls to update the game state to match that decision before returning the final XML.
-    Always include a concise summary of what happened for the chat log.
+    Always include a concise summary of what happened for the chat log, adhering to successful tool outcomes.
     If playerPresent is true, also include proseForPlayer describing what the player perceives. If playerPresent is false, do not include player-facing prose.
     Return only the scheduledEventResult XML after all needed tool calls are complete.
   </instructions>

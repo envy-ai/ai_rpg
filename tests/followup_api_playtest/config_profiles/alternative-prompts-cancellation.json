@@ -1,0 +1,7 @@
+{
+  "version": 1,
+  "name": "alternative-prompts-cancellation",
+  "description": "ALT-11-owned profile copy for live cancellation of a long no-context prompt.",
+  "extends": "isolated-base",
+  "values": {}
+}

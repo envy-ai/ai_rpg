@@ -1,0 +1,202 @@
+{
+  "version": 1,
+  "scenario": "long-time-setup",
+  "case": "TIME-fixture-scheduled-events",
+  "description": "Derive the long-time scheduled-event fixture by creating exact current-location and lodge events at +30 and +45 minutes through the documented @@ scheduleEvent tool path.",
+  "fixture": "long-time-rest-lodge",
+  "configProfile": "long-time-mechanics",
+  "trackedPaths": [
+    "player.payload.player.locationId",
+    "calendar.payload.worldTime.timeMinutes",
+    "scheduledEvents.payload.scheduledEvents"
+  ],
+  "steps": [
+    {
+      "type": "loadFixture"
+    },
+    {
+      "type": "snapshot",
+      "name": "before_schedule"
+    },
+    {
+      "type": "chat",
+      "name": "schedule_events",
+      "text": "@@ QA FIXTURE SETUP ONLY. You must call scheduleEvent exactly twice and no other tools. First schedule this exact event in 30 minutes at March Start Marker in QA Frost March: `The QA March test bell rings exactly once; this is a deterministic observation and no character or object moves.` Second schedule this exact event in 45 minutes at QA Long Rest Lodge in QA Frost March: `QA Lodge Keeper writes exactly one dated line in the lodge guest ledger; this is a deterministic observation and no character or object moves.` After both successful tool results, reply exactly: QA long-time scheduled events ready.",
+      "travel": false,
+      "interactive": {
+        "roll": null,
+        "questAccepted": false,
+        "confirmed": false
+      }
+    },
+    {
+      "type": "assert",
+      "assertions": [
+        {
+          "type": "httpStatus",
+          "equals": 200
+        },
+        {
+          "type": "responseOk",
+          "equals": true
+        },
+        {
+          "type": "count",
+          "source": "responses.schedule_events",
+          "path": "payload.toolInvocations",
+          "equals": 2
+        },
+        {
+          "type": "equals",
+          "source": "responses.schedule_events",
+          "path": "payload.toolInvocations.0.name",
+          "equals": "scheduleEvent"
+        },
+        {
+          "type": "equals",
+          "source": "responses.schedule_events",
+          "path": "payload.toolInvocations.0.metadata.status",
+          "equals": "success"
+        },
+        {
+          "type": "equals",
+          "source": "responses.schedule_events",
+          "path": "payload.toolInvocations.0.metadata.timeMinutes",
+          "equals": 693
+        },
+        {
+          "type": "equals",
+          "source": "responses.schedule_events",
+          "path": "payload.toolInvocations.1.name",
+          "equals": "scheduleEvent"
+        },
+        {
+          "type": "equals",
+          "source": "responses.schedule_events",
+          "path": "payload.toolInvocations.1.metadata.status",
+          "equals": "success"
+        },
+        {
+          "type": "equals",
+          "source": "responses.schedule_events",
+          "path": "payload.toolInvocations.1.metadata.timeMinutes",
+          "equals": 708
+        }
+      ]
+    },
+    {
+      "type": "assert",
+      "assertions": [
+        {
+          "type": "exactDelta",
+          "beforeSource": "snapshots.before_schedule",
+          "afterSource": "after",
+          "path": "calendar.payload.worldTime.timeMinutes",
+          "delta": 0
+        },
+        {
+          "type": "equals",
+          "source": "after",
+          "path": "player.payload.player.locationId",
+          "equals": "$fixture.baselineLocationId"
+        },
+        {
+          "type": "equals",
+          "source": "after",
+          "path": "scheduledEvents.payload.count",
+          "equals": 2
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "after",
+          "path": "scheduledEvents.payload.scheduledEvents",
+          "where": {
+            "id": "$response.schedule_events.payload.toolInvocations.0.metadata.id",
+            "event": "The QA March test bell rings exactly once; this is a deterministic observation and no character or object moves.",
+            "regionId": "$fixture.regionId",
+            "regionName": "$fixture.regionName",
+            "locationId": "$fixture.baselineLocationId",
+            "locationName": "$fixture.baselineLocationName",
+            "targetWorldMinute": 693,
+            "targetWorldTime": {
+              "dayIndex": 0,
+              "timeMinutes": 693
+            },
+            "createdAtWorldMinute": 663,
+            "createdAtWorldTime": {
+              "dayIndex": 0,
+              "timeMinutes": 663
+            },
+            "status": "pending",
+            "resolutionSummary": "",
+            "playerProse": "",
+            "resolvedAtWorldMinute": null,
+            "resolvedAtWorldTime": null
+          },
+          "equals": 1
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "after",
+          "path": "scheduledEvents.payload.scheduledEvents",
+          "where": {
+            "id": "$response.schedule_events.payload.toolInvocations.1.metadata.id",
+            "event": "QA Lodge Keeper writes exactly one dated line in the lodge guest ledger; this is a deterministic observation and no character or object moves.",
+            "regionId": "$fixture.regionId",
+            "regionName": "$fixture.regionName",
+            "locationId": "$fixture.lodgeLocationId",
+            "locationName": "$fixture.lodgeName",
+            "targetWorldMinute": 708,
+            "targetWorldTime": {
+              "dayIndex": 0,
+              "timeMinutes": 708
+            },
+            "createdAtWorldMinute": 663,
+            "createdAtWorldTime": {
+              "dayIndex": 0,
+              "timeMinutes": 663
+            },
+            "status": "pending",
+            "resolutionSummary": "",
+            "playerProse": "",
+            "resolvedAtWorldMinute": null,
+            "resolvedAtWorldTime": null
+          },
+          "equals": 1
+        },
+        {
+          "type": "noRealtimeErrors"
+        },
+        {
+          "type": "noUnexpectedErrorLogs"
+        }
+      ]
+    },
+    {
+      "type": "save",
+      "name": "long_time_scheduled_fixture_save"
+    },
+    {
+      "type": "assert",
+      "assertions": [
+        {
+          "type": "httpStatus",
+          "equals": 200
+        },
+        {
+          "type": "responseOk",
+          "equals": true
+        },
+        {
+          "type": "equals",
+          "source": "responses.long_time_scheduled_fixture_save",
+          "path": "payload.success",
+          "equals": true
+        }
+      ]
+    }
+  ],
+  "humanReview": [
+    "Fixture setup only: confirm the generic response merely acknowledges the two scheduled records and does not narrate either future event as already happening."
+  ]
+}

@@ -1,0 +1,40 @@
+{
+  "tracker_5": {
+    "id": "tracker_5",
+    "name": "Mirei’s Noon Deadline",
+    "type": "countdown",
+    "value": "1 hour, 18 minutes",
+    "hiddenFromPlayer": false,
+    "lastUpdatedWorldMinute": 642,
+    "description": "Counts down to noon on New Year’s Day, when Mirei must finish her broth quota. Update only if the deadline changes. Remove after noon or when the goal is resolved.",
+    "note": "Current time is 10:19 AM; noon is roughly 1 hour 40 minutes away.",
+    "createdAt": "2026-08-07T06:15:16.372Z",
+    "updatedAt": "2026-08-07T18:06:05.917Z",
+    "countdownUntilWorldMinute": 720
+  },
+  "tracker_7": {
+    "id": "tracker_7",
+    "name": "Tomorrow's Shipment",
+    "type": "countdown",
+    "value": "13 hours 18 minutes",
+    "hiddenFromPlayer": false,
+    "lastUpdatedWorldMinute": 642,
+    "description": "Counts down to the herbal alchemy shop opening time tomorrow morning (approx 7 AM). Baato must be there to sort the new shipment before opening. Update if the opening time changes.",
+    "note": "Current time is 10:42 AM Day 0. Shop opening is typically early morning, estimated at 7 AM Day 1.",
+    "createdAt": "2026-08-07T18:06:24.537Z",
+    "updatedAt": "2026-08-07T18:06:24.537Z",
+    "countdownUntilWorldMinute": 1440
+  },
+  "tracker_8": {
+    "id": "tracker_8",
+    "name": "Deliveries Complete",
+    "type": "x_out_of_total",
+    "value": "0/3",
+    "hiddenFromPlayer": false,
+    "lastUpdatedWorldMinute": 658,
+    "description": "Tracks progress on the Northern Ridge Delivery quest. Update when Baato successfully delivers letters at each of the three stops (Watch Post, Hermit's Cabin, Caravan Camp). Remove when the quest is completed or failed.",
+    "note": "Starts at 0/3. Updates to 1/3, 2/3, and 3/3 as deliveries are made.",
+    "createdAt": "2026-08-08T10:09:56.992Z",
+    "updatedAt": "2026-08-08T10:09:56.992Z"
+  }
+}

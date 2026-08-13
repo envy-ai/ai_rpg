@@ -1,0 +1,191 @@
+{
+  "version": 1,
+  "name": "progression-level4-pending",
+  "description": "Reusable progression baseline derived from an immutable fast-travel fixture copy: level-4 Baato has exactly three abilities at levels 1-3, no level-4 abilities, no generated pending cards, and existing QA Courier/Mina NPCs available for separation tests.",
+  "createdAt": "2026-08-12T07:26:48.845Z",
+  "source": {
+    "setupCommand": "Restore immutable fast-travel-visited-favorites into the harness's disposable runtime copy; call POST /api/player/levelup once; verify level 4, recalculated full health 45, the exact nine prior abilities, one level-up history row, and a pending level-4 draft with six cards still ungenerated; save the derivative without a model completion or entity creation.",
+    "saveName": "2026-08-12T07-25-28-930Z_Monster_Girl_Life_2026-06b-Baato-March_Start_Marker-char_2-msprlmua",
+    "saveType": "saves",
+    "settingName": "Monster Girl Life 2026-06b",
+    "playerName": "Baato"
+  },
+  "configProfile": "progression-mechanics",
+  "requiredMods": [
+    "implants",
+    "modules",
+    "nsfw-boost",
+    "party-needs",
+    "scene-illustration"
+  ],
+  "worldTime": 663,
+  "entities": {
+    "playerId": "char_2",
+    "playerName": "Baato",
+    "baselineLocationId": "loc_39",
+    "baselineLocationName": "March Start Marker",
+    "groveLocationId": "loc_43",
+    "groveLocationName": "QA Fast Travel Grove",
+    "towerLocationId": "loc_44",
+    "towerLocationName": "QA Fast Travel Tower",
+    "baselineToGroveExitId": "exit_81",
+    "baselineToTowerExitId": "exit_83",
+    "courierId": "char_37",
+    "courierName": "QA Courier",
+    "courierAlias": "Quickstep",
+    "groveNpcId": "char_38",
+    "groveNpcName": "Mina",
+    "pendingLevel": 4,
+    "requiredAbilitiesPerLevel": 3,
+    "optionsPerLevel": 6,
+    "initialPlayerAbilityCount": 9,
+    "initialPlayerHealth": 45,
+    "initialPlayerExperience": 15
+  },
+  "invariants": [
+    {
+      "type": "equals",
+      "source": "after",
+      "path": "player.payload.player.id",
+      "equals": "char_2"
+    },
+    {
+      "type": "equals",
+      "source": "after",
+      "path": "player.payload.player.level",
+      "equals": 4
+    },
+    {
+      "type": "equals",
+      "source": "after",
+      "path": "player.payload.player.health",
+      "equals": 45
+    },
+    {
+      "type": "equals",
+      "source": "after",
+      "path": "player.payload.player.maxHealth",
+      "equals": 45
+    },
+    {
+      "type": "equals",
+      "source": "after",
+      "path": "player.payload.player.locationId",
+      "equals": "loc_39"
+    },
+    {
+      "type": "equals",
+      "source": "after",
+      "path": "player.payload.player.experience",
+      "equals": 15
+    },
+    {
+      "type": "count",
+      "source": "after",
+      "path": "player.payload.player.abilities",
+      "equals": 9
+    },
+    {
+      "type": "arrayObjectCount",
+      "source": "after",
+      "path": "player.payload.player.abilities",
+      "where": {
+        "level": 1
+      },
+      "equals": 3
+    },
+    {
+      "type": "arrayObjectCount",
+      "source": "after",
+      "path": "player.payload.player.abilities",
+      "where": {
+        "level": 2
+      },
+      "equals": 3
+    },
+    {
+      "type": "arrayObjectCount",
+      "source": "after",
+      "path": "player.payload.player.abilities",
+      "where": {
+        "level": 3
+      },
+      "equals": 3
+    },
+    {
+      "type": "arrayObjectCount",
+      "source": "after",
+      "path": "player.payload.player.abilities",
+      "where": {
+        "level": 4
+      },
+      "equals": 0
+    },
+    {
+      "type": "equals",
+      "source": "after",
+      "path": "calendar.payload.worldTime.timeMinutes",
+      "equals": 663
+    },
+    {
+      "type": "arrayObjectCount",
+      "source": "after",
+      "path": "history.payload.history",
+      "where": {
+        "type": "level-up",
+        "metadata": {
+          "excludeFromBaseContextHistory": true,
+          "levelUp": {
+            "characterId": "char_2",
+            "previousLevel": 3,
+            "newLevel": 4
+          }
+        }
+      },
+      "equals": 1
+    },
+    {
+      "type": "entityField",
+      "source": "after",
+      "collection": "players",
+      "id": "char_37",
+      "path": "name",
+      "equals": "QA Courier"
+    },
+    {
+      "type": "entityField",
+      "source": "after",
+      "collection": "players",
+      "id": "char_37",
+      "path": "level",
+      "equals": 2
+    },
+    {
+      "type": "entityField",
+      "source": "after",
+      "collection": "players",
+      "id": "char_37",
+      "path": "locationId",
+      "equals": "loc_39"
+    },
+    {
+      "type": "entityField",
+      "source": "after",
+      "collection": "players",
+      "id": "char_38",
+      "path": "name",
+      "equals": "Mina"
+    }
+  ],
+  "validation": {
+    "passed": true,
+    "scenario": "PROG-fixture-level4-pending",
+    "mode": "state-only",
+    "artifactDirectory": "tmp/followup-api-playtest/progression-setup/PROG-fixture-level4-pending/attempt-1",
+    "assertionsPassed": 39,
+    "assertionsFailed": 0,
+    "humanReviewed": true,
+    "notes": "The setup restored the immutable source into a disposable runtime copy, changed only level/derived health/history through the real level-up endpoint, generated no entities or cards, made no completion request, and saved a new derivative."
+  },
+  "integrity": "sha256:0ff8d3ce00655e3e2c501c581bad8108cbd3c0a212dc22e151c6bfb7ed4878c4"
+}

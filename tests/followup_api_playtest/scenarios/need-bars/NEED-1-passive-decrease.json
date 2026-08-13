@@ -2,7 +2,7 @@
   "version": 1,
   "scenario": "need-bars",
   "case": "NEED-1-passive-decrease",
-  "description": "One explicit minute of strenuous shared activity applies one structured stamina decrease to the player and party member, combines it with passive per-minute changes, and records matching structured event-summary metadata.",
+  "description": "One explicit minute of strenuous shared activity applies one structured stamina decrease to the player and party member, combines it with passive per-minute changes, and records matching structured event-summary metadata without prescribing a model-judged magnitude or excluding other configuration-valid need effects.",
   "fixture": "need-bars-status-lifecycle",
   "configProfile": "need-bars-mechanics",
   "trackedPaths": [
@@ -89,8 +89,7 @@
           "where": {
             "character": "Baato",
             "bar": "stamina",
-            "direction": "decrease",
-            "magnitude": "small"
+            "direction": "decrease"
           },
           "equals": 1
         },
@@ -101,8 +100,7 @@
           "where": {
             "character": "QA Tired Companion",
             "bar": "stamina",
-            "direction": "decrease",
-            "magnitude": "small"
+            "direction": "decrease"
           },
           "equals": 1
         },
@@ -116,48 +114,12 @@
           "equals": 0
         },
         {
-          "type": "count",
-          "source": "responses.strenuous_action",
-          "path": "payload.debug.eventStructured.parsed.needbar_change",
-          "equals": 2
-        },
-        {
-          "type": "exists",
-          "source": "responses.strenuous_action",
-          "path": "payload.debug.eventStructured.parsed.needbar_change.0.reason"
-        },
-        {
-          "type": "exists",
-          "source": "responses.strenuous_action",
-          "path": "payload.debug.eventStructured.parsed.needbar_change.1.reason"
-        },
-        {
-          "type": "arrayObjectCount",
-          "source": "after",
-          "path": "player.payload.player.needBars",
-          "where": {
-            "id": "food",
-            "value": 599.3
-          },
-          "equals": 1
-        },
-        {
           "type": "arrayObjectCount",
           "source": "after",
           "path": "player.payload.player.needBars",
           "where": {
             "id": "rest",
             "value": 400.4
-          },
-          "equals": 1
-        },
-        {
-          "type": "arrayObjectCount",
-          "source": "after",
-          "path": "player.payload.player.needBars",
-          "where": {
-            "id": "stamina",
-            "value": 550
           },
           "equals": 1
         },
@@ -178,32 +140,8 @@
           "id": "$fixture.companionId",
           "path": "needBars",
           "where": {
-            "id": "food",
-            "value": 599.3
-          },
-          "equals": 1
-        },
-        {
-          "type": "entityArrayObjectCount",
-          "source": "after",
-          "collection": "players",
-          "id": "$fixture.companionId",
-          "path": "needBars",
-          "where": {
             "id": "rest",
             "value": 400.4
-          },
-          "equals": 1
-        },
-        {
-          "type": "entityArrayObjectCount",
-          "source": "after",
-          "collection": "players",
-          "id": "$fixture.companionId",
-          "path": "needBars",
-          "where": {
-            "id": "stamina",
-            "value": 550
           },
           "equals": 1
         },
@@ -220,10 +158,7 @@
                 "actorId": "$fixture.playerId",
                 "actorName": "$fixture.playerName",
                 "needBarId": "stamina",
-                "delta": -100,
-                "direction": "decrease",
-                "magnitude": "small",
-                "max": 1000
+                "direction": "decrease"
               }
             }
           },
@@ -244,27 +179,11 @@
                 "actorId": "$fixture.companionId",
                 "actorName": "$fixture.companionName",
                 "needBarId": "stamina",
-                "delta": -100,
-                "direction": "decrease",
-                "magnitude": "small",
-                "max": 1000
+                "direction": "decrease"
               }
             }
           },
           "equals": 1,
-          "beforeSource": "snapshots.before_action",
-          "afterSource": "after"
-        },
-        {
-          "type": "historyAddedNestedObjectCount",
-          "entryWhere": {
-            "type": "event-summary"
-          },
-          "path": "summaryItems",
-          "where": {
-            "sourceType": "need_bar_change"
-          },
-          "equals": 2,
           "beforeSource": "snapshots.before_action",
           "afterSource": "after"
         },

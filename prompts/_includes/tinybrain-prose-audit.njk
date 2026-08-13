@@ -11,5 +11,5 @@ Return XML only:
 {% if tinyBrainRevisionDecision.revise %}
 Write a second draft that fixes every listed issue. Preserve all required facts. Output prose only, without analysis, labels, markdown, or XML.
 
-{% llm_dummy_action %}
+{% llmparse('player_action_required_prose') %}
 {% endif %}

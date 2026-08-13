@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "name": "relationship-faction-mechanics",
+  "description": "Runs player-action relationship, disposition, and faction event mechanics without unrelated NPC turns, quests, random events, background prompts, or image generation.",
+  "extends": "isolated-base",
+  "values": {
+    "event_checks.enabled": true,
+    "plausibility_checks.enabled": true,
+    "use_legacy_prompt_checks": false,
+    "housekeeping.interval": 1
+  }
+}

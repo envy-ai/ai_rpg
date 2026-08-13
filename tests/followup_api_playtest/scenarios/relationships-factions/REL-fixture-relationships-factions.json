@@ -1,0 +1,411 @@
+{
+  "version": 1,
+  "scenario": "relationships-factions-setup",
+  "case": "REL-fixture-relationships-factions",
+  "description": "Derive the shared relationship/faction fixture from an immutable fast-travel fixture copy by deterministically repurposing three existing NPCs and one existing reciprocal-neutral faction pair, then save it for promotion.",
+  "fixture": "fast-travel-visited-favorites",
+  "configProfile": "relationship-faction-mechanics",
+  "trackedPaths": [
+    "player.payload.player.locationId",
+    "players.payload.players",
+    "factions.payload.factions",
+    "factions.payload.playerStandings",
+    "locations.payload.locations",
+    "scheduledEvents.payload.scheduledEvents",
+    "calendar.payload.worldTime.timeMinutes",
+    "history.payload.history"
+  ],
+  "steps": [
+    {
+      "type": "loadFixture"
+    },
+    {
+      "type": "snapshot",
+      "name": "before_setup"
+    },
+    {
+      "type": "request",
+      "name": "normalize_lantern_faction",
+      "method": "PUT",
+      "route": "/api/factions/faction_2",
+      "body": {
+        "name": "QA Lantern Guild",
+        "description": "A neutral test guild whose witnesses record relationship and reputation changes.",
+        "shortDescription": "Neutral QA relationship test guild.",
+        "tags": ["qa", "lantern"],
+        "goals": ["Observe deterministic social tests."]
+      }
+    },
+    {
+      "type": "request",
+      "name": "normalize_cinder_faction",
+      "method": "PUT",
+      "route": "/api/factions/faction_6",
+      "body": {
+        "name": "QA Cinder Guild",
+        "description": "A neutral test guild paired with the Lantern Guild for deterministic social tests.",
+        "shortDescription": "Neutral paired QA test guild.",
+        "tags": ["qa", "cinder"],
+        "goals": ["Participate in deterministic social tests."]
+      }
+    },
+    {
+      "type": "request",
+      "name": "clear_lantern_standing",
+      "method": "PUT",
+      "route": "/api/player/factions/faction_2/standing",
+      "body": {
+        "value": null
+      }
+    },
+    {
+      "type": "request",
+      "name": "clear_cinder_standing",
+      "method": "PUT",
+      "route": "/api/player/factions/faction_6/standing",
+      "body": {
+        "value": null
+      }
+    },
+    {
+      "type": "request",
+      "name": "normalize_lantern_witness",
+      "method": "PUT",
+      "route": "/api/npcs/char_37",
+      "body": {
+        "name": "QA Lantern Witness",
+        "description": "A composed guild observer used for deterministic relationship and reputation tests.",
+        "shortDescription": "Composed Lantern Guild test witness.",
+        "class": "Observer",
+        "race": "Human",
+        "factionId": "faction_2",
+        "aliases": ["Lantern"],
+        "isDead": false,
+        "hiddenFromPlayer": false,
+        "willingToTrade": true,
+        "personalityType": "Measured observer",
+        "personalityTraits": "composed, fair, attentive",
+        "personalityNotes": "Makes independent judgments and records only social changes that actually occur.",
+        "aiNotes": "Deterministic relationship/faction fixture NPC. Remain at March Start Marker unless a test explicitly changes this character."
+      }
+    },
+    {
+      "type": "request",
+      "name": "move_cinder_witness",
+      "method": "POST",
+      "route": "/api/npcs/char_38/teleport",
+      "body": {
+        "locationId": "loc_39",
+        "accountTravelTime": false,
+        "storyToolTeleport": true
+      }
+    },
+    {
+      "type": "request",
+      "name": "normalize_cinder_witness",
+      "method": "PUT",
+      "route": "/api/npcs/char_38",
+      "body": {
+        "name": "QA Cinder Witness",
+        "description": "A practical guild observer paired with the Lantern witness for deterministic social tests.",
+        "shortDescription": "Practical Cinder Guild test witness.",
+        "class": "Observer",
+        "race": "Human",
+        "factionId": "faction_6",
+        "aliases": ["Cinder"],
+        "isDead": false,
+        "hiddenFromPlayer": false,
+        "willingToTrade": true,
+        "personalityType": "Practical observer",
+        "personalityTraits": "direct, reliable, independent",
+        "personalityNotes": "Acts on prior commitments without requiring the player to control this character's decisions.",
+        "aiNotes": "Deterministic relationship/faction fixture NPC. Remain at March Start Marker unless a test explicitly changes this character."
+      }
+    },
+    {
+      "type": "request",
+      "name": "normalize_private_contact",
+      "method": "PUT",
+      "route": "/api/npcs/char_39",
+      "body": {
+        "name": "QA Private Contact",
+        "description": "A private offscreen contact used to verify faction witness boundaries.",
+        "shortDescription": "Private offscreen QA contact.",
+        "class": "Contact",
+        "race": "Human",
+        "factionId": "faction_2",
+        "aliases": ["Contact"],
+        "isDead": false,
+        "hiddenFromPlayer": false,
+        "willingToTrade": true,
+        "personalityType": "Discreet contact",
+        "personalityTraits": "private, observant, reserved",
+        "personalityNotes": "Does not witness events outside QA Fast Travel Tower.",
+        "aiNotes": "Deterministic relationship/faction fixture NPC. Remain at QA Fast Travel Tower unless a test explicitly changes this character."
+      }
+    },
+    {
+      "type": "request",
+      "name": "zero_lantern_dispositions",
+      "method": "PUT",
+      "route": "/api/npcs/char_37/dispositions",
+      "body": {
+        "dispositions": [
+          { "key": "platonic", "value": 0 },
+          { "key": "romantic", "value": 0 },
+          { "key": "lust", "value": 0 },
+          { "key": "respect", "value": 0 },
+          { "key": "comfort_fear", "value": 0 },
+          { "key": "trust", "value": 0 }
+        ]
+      }
+    },
+    {
+      "type": "request",
+      "name": "zero_cinder_dispositions",
+      "method": "PUT",
+      "route": "/api/npcs/char_38/dispositions",
+      "body": {
+        "dispositions": [
+          { "key": "platonic", "value": 0 },
+          { "key": "romantic", "value": 0 },
+          { "key": "lust", "value": 0 },
+          { "key": "respect", "value": 0 },
+          { "key": "comfort_fear", "value": 0 },
+          { "key": "trust", "value": 0 }
+        ]
+      }
+    },
+    {
+      "type": "request",
+      "name": "zero_contact_dispositions",
+      "method": "PUT",
+      "route": "/api/npcs/char_39/dispositions",
+      "body": {
+        "dispositions": [
+          { "key": "platonic", "value": 0 },
+          { "key": "romantic", "value": 0 },
+          { "key": "lust", "value": 0 },
+          { "key": "respect", "value": 0 },
+          { "key": "comfort_fear", "value": 0 },
+          { "key": "trust", "value": 0 }
+        ]
+      }
+    },
+    {
+      "type": "request",
+      "name": "fixture_factions",
+      "method": "GET",
+      "route": "/api/factions"
+    },
+    {
+      "type": "request",
+      "name": "fixture_lantern",
+      "method": "GET",
+      "route": "/api/npcs/char_37"
+    },
+    {
+      "type": "request",
+      "name": "fixture_cinder",
+      "method": "GET",
+      "route": "/api/npcs/char_38"
+    },
+    {
+      "type": "request",
+      "name": "fixture_contact",
+      "method": "GET",
+      "route": "/api/npcs/char_39"
+    },
+    {
+      "type": "assert",
+      "assertions": [
+        {
+          "type": "httpStatus",
+          "equals": 200
+        },
+        {
+          "type": "responseOk",
+          "equals": true
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "responses.fixture_factions",
+          "path": "payload.factions",
+          "where": {
+            "id": "faction_2",
+            "name": "QA Lantern Guild"
+          },
+          "equals": 1
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "responses.fixture_factions",
+          "path": "payload.factions",
+          "where": {
+            "id": "faction_6",
+            "name": "QA Cinder Guild"
+          },
+          "equals": 1
+        },
+        {
+          "type": "absent",
+          "source": "responses.fixture_factions",
+          "path": "payload.playerStandings.faction_2"
+        },
+        {
+          "type": "absent",
+          "source": "responses.fixture_factions",
+          "path": "payload.playerStandings.faction_6"
+        },
+        {
+          "type": "entityField",
+          "source": "after",
+          "collection": "factions",
+          "id": "faction_2",
+          "path": "relations.faction_6.status",
+          "equals": "neutral"
+        },
+        {
+          "type": "entityField",
+          "source": "after",
+          "collection": "factions",
+          "id": "faction_6",
+          "path": "relations.faction_2.status",
+          "equals": "neutral"
+        },
+        {
+          "type": "equals",
+          "source": "responses.fixture_lantern",
+          "path": "payload.npc.dispositions.char_2",
+          "equals": {
+            "platonic": 0,
+            "romantic": 0,
+            "lust": 0,
+            "respect": 0,
+            "comfort_fear": 0,
+            "trust": 0
+          }
+        },
+        {
+          "type": "equals",
+          "source": "responses.fixture_cinder",
+          "path": "payload.npc.dispositions.char_2",
+          "equals": {
+            "platonic": 0,
+            "romantic": 0,
+            "lust": 0,
+            "respect": 0,
+            "comfort_fear": 0,
+            "trust": 0
+          }
+        },
+        {
+          "type": "equals",
+          "source": "responses.fixture_contact",
+          "path": "payload.npc.dispositions.char_2",
+          "equals": {
+            "platonic": 0,
+            "romantic": 0,
+            "lust": 0,
+            "respect": 0,
+            "comfort_fear": 0,
+            "trust": 0
+          }
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "after",
+          "path": "players.payload.players",
+          "where": {
+            "id": "char_37",
+            "name": "QA Lantern Witness",
+            "locationId": "loc_39",
+            "factionId": "faction_2",
+            "aliases": ["Lantern"],
+            "relationships": {},
+            "isHostileToPlayer": false
+          },
+          "equals": 1
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "after",
+          "path": "players.payload.players",
+          "where": {
+            "id": "char_38",
+            "name": "QA Cinder Witness",
+            "locationId": "loc_39",
+            "factionId": "faction_6",
+            "aliases": ["Cinder"],
+            "relationships": {},
+            "isHostileToPlayer": false
+          },
+          "equals": 1
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "after",
+          "path": "players.payload.players",
+          "where": {
+            "id": "char_39",
+            "name": "QA Private Contact",
+            "locationId": "loc_44",
+            "factionId": "faction_2",
+            "aliases": ["Contact"],
+            "relationships": {},
+            "isHostileToPlayer": false
+          },
+          "equals": 1
+        },
+        {
+          "type": "equals",
+          "source": "after",
+          "path": "scheduledEvents.payload.count",
+          "equals": 0
+        },
+        {
+          "type": "stateUnchanged",
+          "beforeSource": "snapshots.before_setup",
+          "afterSource": "after",
+          "paths": [
+            "player.payload.player.locationId",
+            "calendar.payload.worldTime.timeMinutes",
+            "history.payload.history"
+          ]
+        }
+      ]
+    },
+    {
+      "type": "save",
+      "name": "fixture_save"
+    },
+    {
+      "type": "assert",
+      "assertions": [
+        {
+          "type": "httpStatus",
+          "equals": 200
+        },
+        {
+          "type": "responseOk",
+          "equals": true
+        },
+        {
+          "type": "equals",
+          "source": "responses.fixture_save",
+          "path": "payload.success",
+          "equals": true
+        },
+        {
+          "type": "noRealtimeErrors"
+        },
+        {
+          "type": "noUnexpectedErrorLogs"
+        }
+      ]
+    }
+  ],
+  "humanReview": [
+    "Fixture setup only: confirm the source fast-travel fixture remained immutable, the derived save used only deterministic API mutations, and no player-facing story turn or model completion was generated."
+  ]
+}

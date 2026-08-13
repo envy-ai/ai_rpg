@@ -60,6 +60,11 @@ test('player ability option generation passes declined ability names into the ex
   assert.match(generateSource, /const declinedAbilityNames = getCharacterDeclinedAbilityNames\(character\);/);
   assert.match(generateSource, /for \(const rawName of \[\.\.\.excludedAbilityNames, \.\.\.declinedAbilityNames\]\)/);
   assert.match(generateSource, /declinedAbilityNames/);
+  assert.match(
+    generateSource,
+    /resolveConfiguredPromptMaxAttempts\(config\?\.ai,\s*\{\s*fallbackMaxAttempts:\s*3\s*\}\)/,
+    'option shortages should use the configured prompt-attempt policy instead of a hard-coded attempt count'
+  );
 
   const declinedIndex = generateSource.indexOf('declinedAbilityNames');
   const requestIndex = generateSource.indexOf('requestLevelUpAbilityAssignmentsForCharacter({');
@@ -85,6 +90,113 @@ test('player ability selection submit persists unselected thumbs-down options', 
   assert.match(applySource, /declinedAbilityNames must be an array/);
   assert.match(applySource, /declinedAbilitiesToSave/);
   assert.match(applySource, /character\.addDeclinedAbilities\(declinedAbilitiesToSave\)/);
+  assert.match(applySource, /const mutationSnapshot = \{/);
+  assert.match(applySource, /pendingAbilityOptionsByLevel:\s*character\.getPendingAbilityOptionsByLevel\(\)/);
+  assert.match(applySource, /return await resolvePlayerAbilitySelectionState\(character,\s*\{\s*ensureOptionsForNext:\s*true/);
+  assert.match(applySource, /character\.setAbilities\(mutationSnapshot\.abilities\)/);
+  assert.match(applySource, /character\.setDeclinedAbilities\(mutationSnapshot\.declinedAbilities\)/);
+  assert.match(applySource, /character\.clearPendingAbilityOptions\(\)/);
+  assert.match(applySource, /character\.setPendingAbilityOptionsForLevel\(pendingLevel, pendingAbilities\)/);
+});
+
+test('player ability selection restores abilities, declines, and drafts when next-level generation fails', async () => {
+  const applySource = extractFunction(serverSource, 'applyPlayerAbilitySelection');
+  const options = ['Alpha', 'Bravo', 'Charlie', 'Delta', 'Echo', 'Foxtrot'].map(name => ({
+    name,
+    description: `${name} description`,
+    shortDescription: `${name} short`,
+    type: 'Passive',
+    level: 2
+  }));
+  const state = {
+    abilities: [{
+      name: 'Existing',
+      description: 'Existing description',
+      shortDescription: 'Existing short',
+      type: 'Passive',
+      level: 1
+    }],
+    declined: [{
+      name: 'Old Decline',
+      description: 'Old decline description',
+      shortDescription: 'Old decline short',
+      type: 'Passive',
+      level: 1
+    }],
+    pending: {
+      2: options.map(ability => ({ ...ability }))
+    }
+  };
+  const initialState = structuredClone(state);
+  const character = {
+    isNPC: false,
+    getAbilities: () => state.abilities.map(ability => ({ ...ability })),
+    setAbilities: abilities => {
+      state.abilities = abilities.map(ability => ({ ...ability }));
+    },
+    getDeclinedAbilities: () => state.declined.map(ability => ({ ...ability })),
+    setDeclinedAbilities: abilities => {
+      state.declined = abilities.map(ability => ({ ...ability }));
+    },
+    addDeclinedAbilities: abilities => {
+      state.declined.push(...abilities.map(ability => ({ ...ability })));
+    },
+    getPendingAbilityOptionsByLevel: () => structuredClone(state.pending),
+    clearPendingAbilityOptionsForLevel: level => {
+      delete state.pending[level];
+    },
+    clearPendingAbilityOptions: () => {
+      state.pending = {};
+    },
+    setPendingAbilityOptionsForLevel: (level, abilities) => {
+      state.pending[level] = abilities.map(ability => ({ ...ability }));
+    }
+  };
+
+  let resolveCalls = 0;
+  const executableApplySource = applySource.startsWith('async ')
+    ? applySource
+    : `async ${applySource}`;
+  const applyPlayerAbilitySelection = new Function(
+    'resolvePlayerAbilitySelectionState',
+    'ensureUniqueAbilityNames',
+    'getCharacterAbilities',
+    'sortAbilitiesByLevelAndName',
+    'normalizeAbilityNameForLookup',
+    `${executableApplySource}; return applyPlayerAbilitySelection;`
+  )(
+    async () => {
+      resolveCalls += 1;
+      if (resolveCalls === 1) {
+        return {
+          pending: true,
+          selection: {
+            level: 2,
+            requiredSelections: 3,
+            optionsReady: true,
+            options
+          }
+        };
+      }
+      throw new Error('next-level generation failed');
+    },
+    () => {},
+    target => target.getAbilities(),
+    abilities => abilities.sort((left, right) => left.level - right.level || left.name.localeCompare(right.name)),
+    name => (typeof name === 'string' ? name.trim().toLowerCase() : '')
+  );
+
+  await assert.rejects(
+    applyPlayerAbilitySelection(character, {
+      level: 2,
+      selectedAbilityNames: ['Alpha', 'Bravo', 'Charlie'],
+      declinedAbilityNames: ['Delta', 'Echo', 'Foxtrot']
+    }),
+    /next-level generation failed/
+  );
+
+  assert.equal(resolveCalls, 2);
+  assert.deepEqual(state, initialState);
 });
 
 test('player ability selection modal renders separate select and thumbs-down controls', () => {

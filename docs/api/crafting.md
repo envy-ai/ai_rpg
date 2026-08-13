@@ -35,13 +35,14 @@ Response:
   - `timeProgress`: raw world-time advancement result from `Globals.advanceTime(...)`.
   - `locationRefreshRequested`: boolean indicating that automatic hidden-NPC checks require a client location refresh.
   - `worldTime`: updated serialized world-time payload.
-- 400: `{ success: false, error }` for request-level validation failures such as no active player, unknown selected thing id, nonlocal/offscreen selected input, equipped player-owned input, non-empty container input, wrong salvage/harvest slot count, or implausible crafting.
+- 400: `{ success: false, error }` for request-level validation failures such as no active player, unknown selected thing id, nonlocal/offscreen selected input, equipped player-owned input, non-empty container input, wrong salvage/harvest slot count, a harvest target whose authoritative `isHarvestable` flag is not `true`, or implausible crafting.
 - 500: `{ success: false, error }` for prompt, parser, model-result validation, item-name validation, or world-mutation failures that occur during processing.
 
 ## Input Selection
 
 - Craft/process can run with no selected slot inputs; the prompts judge the attempt from the station, current scene, player abilities, and notes.
 - Salvage/harvest require exactly one selected slot target.
+- Harvest additionally requires the selected Thing's authoritative `isHarvestable` value to be exactly `true`; labels and prompt context cannot make a non-harvestable Thing eligible.
 - Selected inputs may come from the active player inventory, existing item contents inside unlocked containers in that inventory, loose current-location items or scenery, or existing item contents inside unlocked containers in the current location. Player-owned selected inputs must be unequipped; offscreen/nonlocal thing ids are rejected.
 - Current-location container contents are available even when the container itself is scenery. Nested current-location and player-inventory container contents are accepted by the server through recursive availability sets, but traversal stops at any container that still has `requiresCheckToOpen: true`.
 - Crafting availability only walks already-instantiated `containedThingIds`. It does not open containers or generate pending `containerContents` seeds for either location containers or player-inventory containers.

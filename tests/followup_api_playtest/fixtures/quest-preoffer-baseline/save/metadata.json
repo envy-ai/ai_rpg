@@ -1,0 +1,110 @@
+{
+  "timestamp": "2026-08-08T10:11:40.632Z",
+  "playerName": "Baato",
+  "playerId": "char_2",
+  "playerLevel": 3,
+  "gameVersion": "1.0.0",
+  "chatHistoryLength": 298,
+  "totalPlayers": 18,
+  "totalThings": 180,
+  "totalLocations": 31,
+  "totalLocationExits": 61,
+  "totalRegions": 3,
+  "totalFactions": 7,
+  "totalMysteryBoxes": 0,
+  "totalMysteryThreads": 0,
+  "totalScheduledEvents": 0,
+  "totalTrackers": 3,
+  "totalGeneratedImages": 121,
+  "totalSkills": 26,
+  "currentSettingId": "setting_1782765587711_8ccb23b33de9",
+  "currentSettingName": "Monster Girl Life 2026-06b",
+  "enabledMods": [
+    "implants",
+    "modules",
+    "nsfw-boost",
+    "party-needs",
+    "scene-illustration"
+  ],
+  "idCounters": {
+    "char": 19,
+    "thing": 186,
+    "loc": 33,
+    "exit": 61,
+    "region": 1,
+    "faction": 7,
+    "tracker": 8,
+    "quest": 9,
+    "obj": 56,
+    "status": 127
+  },
+  "plotAnalysis": {
+    "raw": "Here is the breakdown of the current plot state:\n\n**Active Plot Threads:**\n\n*   **Northern Ridge Delivery**\n    *   **Status:** Active (Current Focus).\n    *   **Description:** Baato must deliver three letters to specific stops on the northern ridge and return to Sora.\n    *   **Complications:**\n        *   **Weather:** A blizzard is building, requiring speed and protection of the satchel.\n        *   **Debt Tracking:** Lina has logged the job; failure or lateness results in a financial penalty.\n        *   **Apprenticeship Risk:** Failure is reported to Tsubaki, which could jeopardize Baato’s new apprenticeship.\n    *   **Subplots/Related Threads:**\n        *   *Apprentice Duties:* Baato must sort the shop shipment tomorrow (Tracker: Tomorrow's Shipment). This is a separate obligation but shares the \"failure consequence\" mechanic with the delivery.\n        *   *Broth Quota:* Mirei needs 50 bowls by noon. This is a separate task but competes for Baato's time if he returns late.\n\n*   **Tomorrow's Shipment Sorting**\n    *   **Status:** Pending (Countdown active).\n    *   **Description:** Baato must be at the Herbal Alchemy Shop before opening tomorrow to sort a new shipment.\n    *   **Relation:** This is a root thread, not a complication of the delivery. However, if the delivery takes too long or goes poorly, it creates a *time pressure* complication for this thread.\n\n*   **Mirei’s Noon Deadline**\n    *   **Status:** Pending (Countdown active).\n    *   **Description:** Mirei needs 50 bowls of broth by noon.\n    *   **Relation:** Root thread. Currently, Baato is away from the kitchen, so this is a latent threat rather than an active complication unless he returns late.\n\n*   **General Life Simulation**\n    *   **Status:** Ongoing.\n    *   **Description:** Baato exploring the town, establishing relationships, and managing his new role as apprentice.\n    *   **Relation:** The delivery is the primary driver of this currently, but the thread itself is the background state of the game.\n\n**Current Main Plot Thread:**\nThe **Northern Ridge Delivery** is the active, driving plot. Baato is currently on the path, engaged in the action of the delivery. The other threads (Shipment, Broth) are deadlines that loom over him but are not yet the primary focus of his immediate actions.\n\n**Current Plot Complications (in order of precedence):**\n\n1.  **Main Plot:** Deliver three letters to the Northern Ridge (Watch Post, Hermit's Cabin, Caravan Camp) and return to Sora.\n2.  **Complication 1:** The blizzard is approaching, forcing Baato to move quickly to avoid getting caught in the worst of it while keeping the satchel dry.\n3.  **Complication 2:** Lina is tracking the delivery strictly; any delay or failure will result in a financial penalty and potential damage to his standing with Tsubaki.\n4.  **Complication 3 (Latent):** He must balance this delivery with his upcoming duties as an apprentice (sorting shipment tomorrow) and the kitchen's needs (broth quota by noon), though these are currently secondary to the immediate physical task of the delivery.\n\n<response>\n  <plotThreads>\n    <plotThread>\n      <description>Baato must deliver three letters to stops along the northern ridge and return to Sora to complete the courier job.</description>\n      <isCurrentFocus>true</isCurrentFocus>\n    </plotThread>\n    <plotThread>\n      <description>Baato must sort the new herbal alchemy shipment at the shop before it opens tomorrow morning.</description>\n      <isCurrentFocus>false</isCurrentFocus>\n    </plotThread>\n    <plotThread>\n      <description>Mirei needs 50 bowls of broth completed by noon today at the community kitchen.</description>\n      <isCurrentFocus>false</isCurrentFocus>\n    </plotThread>\n  </plotThreads>\n  <currentPlotComplications>\n    <complication>\n      <description>Deliver three letters to the Northern Ridge (Watch Post, Hermit's Cabin, Caravan Camp) and return to Sora.</description>\n    </complication>\n    <complication>\n      <description>A blizzard is building, requiring Baato to move quickly to complete the deliveries before conditions worsen.</description>\n    </complication>\n    <complication>\n      <description>Lina is strictly tracking the delivery; failure or lateness will result in a financial penalty and potential damage to his apprenticeship standing.</description>\n    </complication>\n  </currentPlotComplications>\n</response>",
+    "updatedAt": "2026-08-08T14:51:12.029Z",
+    "startedAt": "2026-08-08T14:49:43.676Z",
+    "completedAt": "2026-08-08T14:51:12.029Z",
+    "sourceRequestId": "followup-71d63485-73e0-4d66-823b-642e5e3c2815",
+    "locationId": "loc_10",
+    "sequence": 1,
+    "plotThreads": [
+      {
+        "description": "Baato must deliver three letters to stops along the northern ridge and return to Sora to complete the courier job.",
+        "isCurrentFocus": true
+      },
+      {
+        "description": "Baato must sort the new herbal alchemy shipment at the shop before it opens tomorrow morning.",
+        "isCurrentFocus": false
+      },
+      {
+        "description": "Mirei needs 50 bowls of broth completed by noon today at the community kitchen.",
+        "isCurrentFocus": false
+      }
+    ],
+    "currentPlotComplications": [
+      {
+        "description": "Deliver three letters to the Northern Ridge (Watch Post, Hermit's Cabin, Caravan Camp) and return to Sora."
+      },
+      {
+        "description": "A blizzard is building, requiring Baato to move quickly to complete the deliveries before conditions worsen."
+      },
+      {
+        "description": "Lina is strictly tracking the delivery; failure or lateness will result in a financial penalty and potential damage to his apprenticeship standing."
+      }
+    ]
+  },
+  "saveName": "2026-08-08T10-11-40-521Z_Monster_Girl_Life_2026-06b-Baato-Ember_Hollow_Outskirts-char_2-msk7ryax",
+  "npcAliasesGenerated": true,
+  "saveFileSaveVersion": 1.2,
+  "summaryStyle": "scene",
+  "plotSummaryTurnCounter": 0,
+  "plotExpanderTurnCounter": 0,
+  "improvementPromptTurnCounter": 0,
+  "tonalScaleEvaluationTurnCounter": 48,
+  "plotAnalysisTurnCounter": 5,
+  "mysteryBoxCleanupTurnCounter": 54,
+  "housekeepingTurnCounter": 40,
+  "questCheckTurnCounter": 5,
+  "lastHousekeepingTurnId": "req-msk7nn5b-qr3ktwo11a",
+  "offscreenNpcActivityState": {
+    "dailyMentionedNpcNamesByWeek": {
+      "0": [
+        "rumi kagami",
+        "mirei hoshino",
+        "lina ashford",
+        "sora fujimiya",
+        "hana mizuki",
+        "mizuho",
+        "nuru",
+        "tsubaki morino",
+        "yuzu hoshizora"
+      ]
+    },
+    "turnsSinceDailyPrompt": 5,
+    "turnsSinceWeeklyPrompt": 45,
+    "lastDailyPromptWorldTime": null,
+    "lastWeeklyPromptWorldTime": null
+  },
+  "currentLocationId": "loc_5",
+  "currentLocationName": "Ember Hollow Outskirts",
+  "source": "saves"
+}

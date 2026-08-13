@@ -1,0 +1,110 @@
+{
+  "timestamp": "2026-08-08T14:43:19.031Z",
+  "playerName": "Baato",
+  "playerId": "char_2",
+  "playerLevel": 3,
+  "gameVersion": "1.0.0",
+  "chatHistoryLength": 302,
+  "totalPlayers": 20,
+  "totalThings": 189,
+  "totalLocations": 31,
+  "totalLocationExits": 61,
+  "totalRegions": 3,
+  "totalFactions": 7,
+  "totalMysteryBoxes": 0,
+  "totalMysteryThreads": 0,
+  "totalScheduledEvents": 0,
+  "totalTrackers": 3,
+  "totalGeneratedImages": 121,
+  "totalSkills": 26,
+  "currentSettingId": "setting_1782765587711_8ccb23b33de9",
+  "currentSettingName": "Monster Girl Life 2026-06b",
+  "enabledMods": [
+    "implants",
+    "modules",
+    "nsfw-boost",
+    "party-needs",
+    "scene-illustration"
+  ],
+  "idCounters": {
+    "char": 21,
+    "thing": 195,
+    "loc": 33,
+    "exit": 61,
+    "region": 1,
+    "faction": 7,
+    "tracker": 8,
+    "quest": 9,
+    "obj": 56,
+    "status": 127
+  },
+  "plotAnalysis": {
+    "raw": "Based on the current game state, here is the analysis of the active plot threads and complications.\n\n**Active Plot Threads:**\n\n*   **Northern Ridge Delivery (Current Focus):** Baato has accepted Sora’s quest to deliver letters to the northern ridge. This is the immediate, active plot driving Baato's movement and actions right now.\n    *   *Complication 1:* The route is exposed to a building blizzard and cold weather, requiring speed and protection of the satchel.\n    *   *Complication 2:* Lina has logged this under his name for debt tracking; failure to return or complete it results in penalties (bad debt, potential apprenticeship issues).\n*   **Apprentice Probation (Secondary Thread):** Baato is now Tsubaki’s apprentice. He must sort the new shipment tomorrow before opening.\n    *   *Subplot:* If he fails the Northern Ridge delivery or returns late/tired, Lina may flag him, giving Tsubaki a reason to pull his apprenticeship or dock his pay.\n*   **Mirei’s Broth Quota (Resolved/Background):** Mirei needed 50 bowls of broth by noon. This was the initial hook for Scene 1. It is largely resolved (Baato earned money and reputation), but the *consequence* of that resolution (his reputation with the town) is now feeding into the current delivery job's stakes.\n*   **Tsubaki’s Shipment (Pending Thread):** Baato must be at the shop tomorrow morning to sort stock. This is a future deadline, not currently active.\n\n**Current Main Plot Thread:** Northern Ridge Delivery.\n\n**Current Plot Complications (in order of precedence):**\n\n1.  **Main Plot:** Deliver the letters to three stops on the northern ridge for Sora Fujimiya.\n2.  **Complication 1:** The weather is deteriorating (building blizzard), so Baato must move quickly and keep the satchel dry to avoid penalty or failure.\n3.  **Complication 2:** Lina Ashford is tracking this as a formal debt; failure to complete the delivery or return on time will result in financial penalties and potential damage to his apprenticeship status with Tsubaki.\n\n```xml\n<response>\n  <plotThreads>\n    <plotThread>\n      <description>Baato must deliver three letters to the northern ridge for Sora Fujimiya within a limited window before a blizzard hits.</description>\n      <isCurrentFocus>true</isCurrentFocus>\n    </plotThread>\n    <plotThread>\n      <description>Baato must report to the Herbal Alchemy Shop tomorrow morning to sort a new shipment of stock before the shop opens.</description>\n      <isCurrentFocus>false</isCurrentFocus>\n    </plotThread>\n    <plotThread>\n      <description>Baato is under probationary status as Tsubaki’s apprentice; his reliability is being tracked by Lina Ashford for potential debt or dismissal.</description>\n      <isCurrentFocus>false</isCurrentFocus>\n    </plotThread>\n  </plotThreads>\n  <currentPlotComplications>\n    <complication>\n      <description>Deliver the letters to three stops on the northern ridge for Sora Fujimiya.</description>\n    </complication>\n    <complication>\n      <description>The route is exposed to a building blizzard, requiring Baato to move quickly and protect the satchel from damage.</description>\n    </complication>\n    <complication>\n      <description>Lina Ashford is tracking this as a formal debt; failure to complete the delivery or return on time will result in financial penalties and potential damage to his apprenticeship status.</description>\n    </complication>\n  </currentPlotComplications>\n</response>\n```",
+    "updatedAt": "2026-08-08T09:48:13.871Z",
+    "startedAt": "2026-08-08T09:46:40.171Z",
+    "completedAt": "2026-08-08T09:48:13.871Z",
+    "sourceRequestId": "req-msk6vrzg-br1179b3hi",
+    "locationId": "loc_1",
+    "sequence": 1,
+    "plotThreads": [
+      {
+        "description": "Baato must deliver three letters to the northern ridge for Sora Fujimiya within a limited window before a blizzard hits.",
+        "isCurrentFocus": true
+      },
+      {
+        "description": "Baato must report to the Herbal Alchemy Shop tomorrow morning to sort a new shipment of stock before the shop opens.",
+        "isCurrentFocus": false
+      },
+      {
+        "description": "Baato is under probationary status as Tsubaki’s apprentice; his reliability is being tracked by Lina Ashford for potential debt or dismissal.",
+        "isCurrentFocus": false
+      }
+    ],
+    "currentPlotComplications": [
+      {
+        "description": "Deliver the letters to three stops on the northern ridge for Sora Fujimiya."
+      },
+      {
+        "description": "The route is exposed to a building blizzard, requiring Baato to move quickly and protect the satchel from damage."
+      },
+      {
+        "description": "Lina Ashford is tracking this as a formal debt; failure to complete the delivery or return on time will result in financial penalties and potential damage to his apprenticeship status."
+      }
+    ]
+  },
+  "saveName": "2026-08-08T14-43-18-916Z_Monster_Girl_Life_2026-06b-Baato-Ember_Hollow_Outskirts-char_2-mskhha84",
+  "npcAliasesGenerated": true,
+  "saveFileSaveVersion": 1.2,
+  "summaryStyle": "scene",
+  "plotSummaryTurnCounter": 0,
+  "plotExpanderTurnCounter": 0,
+  "improvementPromptTurnCounter": 0,
+  "tonalScaleEvaluationTurnCounter": 46,
+  "plotAnalysisTurnCounter": 0,
+  "mysteryBoxCleanupTurnCounter": 54,
+  "housekeepingTurnCounter": 40,
+  "questCheckTurnCounter": 5,
+  "lastHousekeepingTurnId": "req-msk7nn5b-qr3ktwo11a",
+  "offscreenNpcActivityState": {
+    "dailyMentionedNpcNamesByWeek": {
+      "0": [
+        "rumi kagami",
+        "mirei hoshino",
+        "lina ashford",
+        "sora fujimiya",
+        "hana mizuki",
+        "mizuho",
+        "nuru",
+        "tsubaki morino",
+        "yuzu hoshizora"
+      ]
+    },
+    "turnsSinceDailyPrompt": 5,
+    "turnsSinceWeeklyPrompt": 45,
+    "lastDailyPromptWorldTime": null,
+    "lastWeeklyPromptWorldTime": null
+  },
+  "currentLocationId": "loc_5",
+  "currentLocationName": "Ember Hollow Outskirts",
+  "source": "saves"
+}

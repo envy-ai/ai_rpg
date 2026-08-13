@@ -1,0 +1,537 @@
+{
+  "version": 1,
+  "scenario": "alternative-prompts",
+  "case": "ALT-12-history-audit",
+  "description": "Audit ordinary and full history plus the live base-context visibility contracts for normal, excluded-history, no-context, and no-log prompt modes without changing semantic game state.",
+  "fixture": "relationships-factions",
+  "configProfile": "alternative-prompts-history-audit",
+  "trackedPaths": [
+    "player.payload.player",
+    "players.payload.players",
+    "locations.payload.locations",
+    "regions.payload.regions",
+    "things.payload.things",
+    "factions.payload.factions",
+    "factions.payload.playerStandings",
+    "scheduledEvents.payload.scheduledEvents",
+    "calendar.payload.worldTime",
+    "history.payload.history"
+  ],
+  "steps": [
+    {
+      "type": "loadFixture"
+    },
+    {
+      "type": "snapshot",
+      "name": "before_history_modes"
+    },
+    {
+      "type": "chat",
+      "name": "ordinary_comment",
+      "text": "# ALT12_ORDINARY_CONTEXT_CANARY_4187",
+      "interactive": {
+        "roll": null,
+        "questAccepted": false,
+        "confirmed": false
+      }
+    },
+    {
+      "type": "chat",
+      "name": "excluded_generic",
+      "text": "@@ Reply exactly ALT12_EXCLUDED_HISTORY_RESPONSE_6291. Do not call tools.",
+      "interactive": {
+        "roll": null,
+        "questAccepted": false,
+        "confirmed": false
+      }
+    },
+    {
+      "type": "chat",
+      "name": "no_context_generic",
+      "text": "\\ Reply exactly ALT12_NO_CONTEXT_RESPONSE_7354.",
+      "interactive": {
+        "roll": null,
+        "questAccepted": false,
+        "confirmed": false
+      }
+    },
+    {
+      "type": "snapshot",
+      "name": "before_no_log"
+    },
+    {
+      "type": "chat",
+      "name": "no_log_generic",
+      "text": "@@@ Reply exactly ALT12_NO_LOG_RESPONSE_8462. Do not call tools.",
+      "interactive": {
+        "roll": null,
+        "questAccepted": false,
+        "confirmed": false
+      }
+    },
+    {
+      "type": "snapshot",
+      "name": "after_no_log"
+    },
+    {
+      "type": "chat",
+      "name": "normal_generic",
+      "text": "@ Reply exactly ALT12_NORMAL_GENERIC_RESPONSE_9513. Do not call tools.",
+      "interactive": {
+        "roll": null,
+        "questAccepted": false,
+        "confirmed": false
+      }
+    },
+    {
+      "type": "chat",
+      "name": "ordinary_question",
+      "text": "? Reply exactly ALT12_ORDINARY_QUESTION_RESPONSE_1738.",
+      "interactive": {
+        "roll": null,
+        "questAccepted": false,
+        "confirmed": false
+      }
+    },
+    {
+      "type": "request",
+      "name": "ordinary_history",
+      "method": "GET",
+      "route": "/api/chat/history"
+    },
+    {
+      "type": "request",
+      "name": "full_history",
+      "method": "GET",
+      "route": "/api/chat/history?includeAllEntries=true"
+    },
+    {
+      "type": "assert",
+      "assertions": [
+        {
+          "type": "equals",
+          "source": "responses.ordinary_comment",
+          "path": "status",
+          "equals": 200
+        },
+        {
+          "type": "equals",
+          "source": "responses.ordinary_comment",
+          "path": "payload.commentLogged",
+          "equals": true
+        },
+        {
+          "type": "equals",
+          "source": "responses.excluded_generic",
+          "path": "status",
+          "equals": 200
+        },
+        {
+          "type": "equals",
+          "source": "responses.excluded_generic",
+          "path": "payload.debug.genericPromptStorageMode",
+          "equals": "hide_base_context"
+        },
+        {
+          "type": "includes",
+          "source": "responses.excluded_generic",
+          "path": "payload.debug.generationPrompt",
+          "value": "ALT12_ORDINARY_CONTEXT_CANARY_4187"
+        },
+        {
+          "type": "equals",
+          "source": "responses.no_context_generic",
+          "path": "status",
+          "equals": 200
+        },
+        {
+          "type": "equals",
+          "source": "responses.no_context_generic",
+          "path": "payload.debug.usedGenericPromptNoContextTemplate",
+          "equals": true
+        },
+        {
+          "type": "notIncludes",
+          "source": "responses.no_context_generic",
+          "path": "payload.debug.rawTemplate",
+          "value": "ALT12_ORDINARY_CONTEXT_CANARY_4187"
+        },
+        {
+          "type": "notIncludes",
+          "source": "responses.no_context_generic",
+          "path": "payload.debug.rawTemplate",
+          "value": "ALT12_EXCLUDED_HISTORY_RESPONSE_6291"
+        },
+        {
+          "type": "equals",
+          "source": "responses.no_log_generic",
+          "path": "status",
+          "equals": 200
+        },
+        {
+          "type": "equals",
+          "source": "responses.no_log_generic",
+          "path": "payload.debug.genericPromptStorageMode",
+          "equals": "no_log"
+        },
+        {
+          "type": "includes",
+          "source": "responses.no_log_generic",
+          "path": "payload.debug.generationPrompt",
+          "value": "ALT12_ORDINARY_CONTEXT_CANARY_4187"
+        },
+        {
+          "type": "includes",
+          "source": "responses.no_log_generic",
+          "path": "payload.debug.generationPrompt",
+          "value": "ALT12_EXCLUDED_HISTORY_RESPONSE_6291"
+        },
+        {
+          "type": "includes",
+          "source": "responses.no_log_generic",
+          "path": "payload.debug.generationPrompt",
+          "value": "ALT12_NO_CONTEXT_RESPONSE_7354"
+        },
+        {
+          "type": "stateUnchanged",
+          "beforeSource": "snapshots.before_no_log",
+          "afterSource": "snapshots.after_no_log",
+          "paths": [
+            "history.payload.history"
+          ]
+        },
+        {
+          "type": "equals",
+          "source": "responses.normal_generic",
+          "path": "status",
+          "equals": 200
+        },
+        {
+          "type": "equals",
+          "source": "responses.normal_generic",
+          "path": "payload.debug.genericPromptStorageMode",
+          "equals": "normal"
+        },
+        {
+          "type": "includes",
+          "source": "responses.normal_generic",
+          "path": "payload.debug.generationPrompt",
+          "value": "ALT12_ORDINARY_CONTEXT_CANARY_4187"
+        },
+        {
+          "type": "includes",
+          "source": "responses.normal_generic",
+          "path": "payload.debug.generationPrompt",
+          "value": "ALT12_EXCLUDED_HISTORY_RESPONSE_6291"
+        },
+        {
+          "type": "includes",
+          "source": "responses.normal_generic",
+          "path": "payload.debug.generationPrompt",
+          "value": "ALT12_NO_CONTEXT_RESPONSE_7354"
+        },
+        {
+          "type": "notIncludes",
+          "source": "responses.normal_generic",
+          "path": "payload.debug.generationPrompt",
+          "value": "ALT12_NO_LOG_RESPONSE_8462"
+        },
+        {
+          "type": "equals",
+          "source": "responses.ordinary_question",
+          "path": "status",
+          "equals": 200
+        },
+        {
+          "type": "equals",
+          "source": "responses.ordinary_question",
+          "path": "payload.debug.usedQuestionAction",
+          "equals": true
+        },
+        {
+          "type": "includes",
+          "source": "responses.ordinary_question",
+          "path": "payload.debug.generationPrompt",
+          "value": "ALT12_ORDINARY_CONTEXT_CANARY_4187"
+        },
+        {
+          "type": "includes",
+          "source": "responses.ordinary_question",
+          "path": "payload.debug.generationPrompt",
+          "value": "ALT12_NORMAL_GENERIC_RESPONSE_9513"
+        },
+        {
+          "type": "notIncludes",
+          "source": "responses.ordinary_question",
+          "path": "payload.debug.generationPrompt",
+          "value": "ALT12_EXCLUDED_HISTORY_RESPONSE_6291"
+        },
+        {
+          "type": "notIncludes",
+          "source": "responses.ordinary_question",
+          "path": "payload.debug.generationPrompt",
+          "value": "ALT12_NO_CONTEXT_RESPONSE_7354"
+        },
+        {
+          "type": "notIncludes",
+          "source": "responses.ordinary_question",
+          "path": "payload.debug.generationPrompt",
+          "value": "ALT12_NO_LOG_RESPONSE_8462"
+        },
+        {
+          "type": "historyAddedSequence",
+          "beforeSource": "snapshots.before_history_modes",
+          "afterSource": "after",
+          "entryTypes": [
+            "user-generic-prompt",
+            "generic-prompt-response",
+            "user-question",
+            "storyteller-answer"
+          ],
+          "expected": [
+            {
+              "type": "user-generic-prompt",
+              "role": "user",
+              "content": "Reply exactly ALT12_EXCLUDED_HISTORY_RESPONSE_6291. Do not call tools.",
+              "metadata": {
+                "excludeFromBaseContextHistory": true
+              }
+            },
+            {
+              "type": "generic-prompt-response",
+              "role": "assistant",
+              "metadata": {
+                "excludeFromBaseContextHistory": true
+              }
+            },
+            {
+              "type": "user-generic-prompt",
+              "role": "user",
+              "content": "Reply exactly ALT12_NO_CONTEXT_RESPONSE_7354.",
+              "metadata": {
+                "excludeFromBaseContextHistory": true
+              }
+            },
+            {
+              "type": "generic-prompt-response",
+              "role": "assistant",
+              "metadata": {
+                "excludeFromBaseContextHistory": true
+              }
+            },
+            {
+              "type": "user-generic-prompt",
+              "role": "user",
+              "content": "Reply exactly ALT12_NORMAL_GENERIC_RESPONSE_9513. Do not call tools."
+            },
+            {
+              "type": "generic-prompt-response",
+              "role": "assistant"
+            },
+            {
+              "type": "user-question",
+              "role": "user",
+              "content": "Reply exactly ALT12_ORDINARY_QUESTION_RESPONSE_1738."
+            },
+            {
+              "type": "storyteller-answer",
+              "role": "assistant"
+            }
+          ]
+        },
+        {
+          "type": "historyAddedTypeCount",
+          "beforeSource": "snapshots.before_history_modes",
+          "afterSource": "after",
+          "entryType": "unknown",
+          "equals": 1
+        },
+        {
+          "type": "historyAddedTypeCount",
+          "beforeSource": "snapshots.before_history_modes",
+          "afterSource": "after",
+          "entryType": "user-generic-prompt",
+          "equals": 3
+        },
+        {
+          "type": "historyAddedTypeCount",
+          "beforeSource": "snapshots.before_history_modes",
+          "afterSource": "after",
+          "entryType": "generic-prompt-response",
+          "equals": 3
+        },
+        {
+          "type": "historyAddedTypeCount",
+          "beforeSource": "snapshots.before_history_modes",
+          "afterSource": "after",
+          "entryType": "user-question",
+          "equals": 1
+        },
+        {
+          "type": "historyAddedTypeCount",
+          "beforeSource": "snapshots.before_history_modes",
+          "afterSource": "after",
+          "entryType": "storyteller-answer",
+          "equals": 1
+        },
+        {
+          "type": "historyAddedTypeCount",
+          "beforeSource": "snapshots.before_history_modes",
+          "afterSource": "after",
+          "entryType": "tool-call-debug",
+          "equals": 0
+        },
+        {
+          "type": "historyAddedTypeCount",
+          "beforeSource": "snapshots.before_history_modes",
+          "afterSource": "after",
+          "entryType": "slop-remover",
+          "equals": 0
+        },
+        {
+          "type": "historyAddedTypeCount",
+          "beforeSource": "snapshots.before_history_modes",
+          "afterSource": "after",
+          "entryType": "player-action",
+          "equals": 0
+        },
+        {
+          "type": "equals",
+          "source": "responses.ordinary_history",
+          "path": "status",
+          "equals": 200
+        },
+        {
+          "type": "equals",
+          "source": "responses.full_history",
+          "path": "status",
+          "equals": 200
+        },
+        {
+          "type": "equals",
+          "source": "responses.ordinary_history",
+          "path": "payload.count",
+          "equalsFrom": {
+            "source": "responses.full_history",
+            "path": "payload.count"
+          }
+        },
+        {
+          "type": "count",
+          "source": "responses.ordinary_history",
+          "path": "payload.history",
+          "equals": 279
+        },
+        {
+          "type": "count",
+          "source": "responses.full_history",
+          "path": "payload.history",
+          "equals": 338
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "responses.ordinary_history",
+          "path": "payload.history",
+          "where": {
+            "role": "user",
+            "content": "# ALT12_ORDINARY_CONTEXT_CANARY_4187"
+          },
+          "equals": 1
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "responses.full_history",
+          "path": "payload.history",
+          "where": {
+            "type": "user-generic-prompt",
+            "content": "Reply exactly ALT12_EXCLUDED_HISTORY_RESPONSE_6291. Do not call tools.",
+            "metadata": {
+              "excludeFromBaseContextHistory": true
+            }
+          },
+          "equals": 1
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "responses.full_history",
+          "path": "payload.history",
+          "where": {
+            "type": "user-generic-prompt",
+            "content": "Reply exactly ALT12_NO_CONTEXT_RESPONSE_7354.",
+            "metadata": {
+              "excludeFromBaseContextHistory": true
+            }
+          },
+          "equals": 1
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "responses.ordinary_history",
+          "path": "payload.history",
+          "where": {
+            "type": "user-generic-prompt",
+            "content": "Reply exactly ALT12_NORMAL_GENERIC_RESPONSE_9513. Do not call tools."
+          },
+          "equals": 1
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "responses.ordinary_history",
+          "path": "payload.history",
+          "where": {
+            "content": "Reply exactly ALT12_NO_LOG_RESPONSE_8462. Do not call tools."
+          },
+          "equals": 0
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "responses.full_history",
+          "path": "payload.history",
+          "where": {
+            "content": "Reply exactly ALT12_NO_LOG_RESPONSE_8462. Do not call tools."
+          },
+          "equals": 0
+        },
+        {
+          "type": "stateUnchanged",
+          "beforeSource": "snapshots.before_history_modes",
+          "afterSource": "after",
+          "paths": [
+            "player.payload.player.id",
+            "player.payload.player.level",
+            "player.payload.player.health",
+            "player.payload.player.maxHealth",
+            "player.payload.player.locationId",
+            "player.payload.player.experience",
+            "player.payload.player.abilities",
+            "player.payload.player.attributes",
+            "player.payload.player.skills",
+            "player.payload.player.inventory",
+            "player.payload.player.currency",
+            "player.payload.player.statusEffects",
+            "player.payload.player.needBars",
+            "player.payload.player.quests",
+            "player.payload.player.completedQuests",
+            "locations.payload.locations",
+            "regions.payload.regions",
+            "things.payload.things",
+            "factions.payload.factions",
+            "factions.payload.playerStandings",
+            "scheduledEvents.payload.scheduledEvents",
+            "calendar.payload.worldTime"
+          ]
+        },
+        {
+          "type": "noRealtimeErrors"
+        },
+        {
+          "type": "noUnexpectedErrorLogs",
+          "allowRecoveredProviderRetries": true
+        }
+      ]
+    }
+  ],
+  "humanReview": [
+    "This is a history-contract audit. Review only whether the modes store and expose the right rows and whether generic versus ordinary prompts receive the documented prior context; do not turn response wording into prose restrictions."
+  ]
+}

@@ -1,0 +1,590 @@
+{
+  "version": 1,
+  "scenario": "long-time",
+  "case": "TIME-1-multi-hour-rest",
+  "description": "Consume the deterministic ten-minute tonic in one normal action, then sleep for exactly eight hours and prove exact time, passive need ticks, explicit recovery events, status expiry, calendar labels, and non-duplication.",
+  "fixture": "long-time-rest-lodge",
+  "configProfile": "long-time-mechanics",
+  "trackedPaths": [
+    "player.payload.player.locationId",
+    "player.payload.player.needBars",
+    "player.payload.player.statusEffects",
+    "player.payload.player.inventory",
+    "players.payload.players",
+    "things.payload.things",
+    "scheduledEvents.payload.scheduledEvents",
+    "calendar.payload.worldTime",
+    "history.payload"
+  ],
+  "steps": [
+    {
+      "type": "loadFixture"
+    },
+    {
+      "type": "request",
+      "name": "remove_companion",
+      "method": "DELETE",
+      "route": "/api/player/party",
+      "body": {
+        "ownerId": "$fixture.playerId",
+        "memberId": "$fixture.companionId"
+      }
+    },
+    {
+      "type": "request",
+      "name": "relocate_companion",
+      "method": "POST",
+      "route": "/api/npcs/$fixture.companionId/teleport",
+      "body": {
+        "locationId": "$fixture.isolationLocationId",
+        "accountTravelTime": false
+      }
+    },
+    {
+      "type": "request",
+      "name": "relocate_courier",
+      "method": "POST",
+      "route": "/api/npcs/$fixture.nonPartyNpcId/teleport",
+      "body": {
+        "locationId": "$fixture.isolationLocationId",
+        "accountTravelTime": false
+      }
+    },
+    {
+      "type": "request",
+      "name": "relocate_lodge_keeper",
+      "method": "POST",
+      "route": "/api/npcs/$fixture.lodgeKeeperId/teleport",
+      "body": {
+        "locationId": "$fixture.isolationLocationId",
+        "accountTravelTime": false
+      }
+    },
+    {
+      "type": "request",
+      "name": "relocate_first_lodge_resident",
+      "method": "POST",
+      "route": "/api/npcs/$fixture.lodgeResidentIds.0/teleport",
+      "body": {
+        "locationId": "$fixture.isolationLocationId",
+        "accountTravelTime": false
+      }
+    },
+    {
+      "type": "request",
+      "name": "relocate_second_lodge_resident",
+      "method": "POST",
+      "route": "/api/npcs/$fixture.lodgeResidentIds.1/teleport",
+      "body": {
+        "locationId": "$fixture.isolationLocationId",
+        "accountTravelTime": false
+      }
+    },
+    {
+      "type": "request",
+      "name": "place_player_in_lodge",
+      "method": "POST",
+      "route": "/api/npcs/$fixture.playerId/teleport",
+      "body": {
+        "locationId": "$fixture.lodgeLocationId",
+        "storyToolTeleport": true,
+        "accountTravelTime": false
+      }
+    },
+    {
+      "type": "assert",
+      "assertions": [
+        {
+          "type": "httpStatus",
+          "equals": 200
+        },
+        {
+          "type": "responseOk",
+          "equals": true
+        },
+        {
+          "type": "equals",
+          "source": "after",
+          "path": "scheduledEvents.payload.count",
+          "equals": 0
+        },
+        {
+          "type": "equals",
+          "source": "after",
+          "path": "player.payload.player.locationId",
+          "equals": "$fixture.lodgeLocationId"
+        },
+        {
+          "type": "entityField",
+          "source": "after",
+          "collection": "players",
+          "id": "$fixture.lodgeKeeperId",
+          "path": "locationId",
+          "equals": "$fixture.isolationLocationId"
+        },
+        {
+          "type": "entityField",
+          "source": "after",
+          "collection": "players",
+          "id": "$fixture.lodgeResidentIds.0",
+          "path": "locationId",
+          "equals": "$fixture.isolationLocationId"
+        },
+        {
+          "type": "entityField",
+          "source": "after",
+          "collection": "players",
+          "id": "$fixture.lodgeResidentIds.1",
+          "path": "locationId",
+          "equals": "$fixture.isolationLocationId"
+        }
+      ]
+    },
+    {
+      "type": "request",
+      "name": "set_stamina_to_max",
+      "method": "PUT",
+      "route": "/api/player/needs",
+      "body": {
+        "needs": [
+          {
+            "id": "stamina",
+            "value": 1000
+          }
+        ]
+      }
+    },
+    {
+      "type": "assert",
+      "assertions": [
+        {
+          "type": "httpStatus",
+          "equals": 200
+        },
+        {
+          "type": "responseOk",
+          "equals": true
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "responses.set_stamina_to_max",
+          "path": "payload.applied",
+          "where": {
+            "id": "stamina",
+            "value": 1000
+          },
+          "equals": 1
+        }
+      ]
+    },
+    {
+      "type": "snapshot",
+      "name": "before_tonic"
+    },
+    {
+      "type": "chat",
+      "name": "drink_tonic",
+      "text": "I stand still and drink exactly one complete QA Short Tonic over exactly one minute. The measured tonic is a minor stimulant, but it is not food, a meal, or a source of calories. I do not eat, rest, sleep, meditate, travel, use magic, or perform another activity.",
+      "travel": false,
+      "interactive": {
+        "roll": null,
+        "questAccepted": false,
+        "confirmed": false
+      }
+    },
+    {
+      "type": "assert",
+      "assertions": [
+        {
+          "type": "httpStatus",
+          "equals": 200
+        },
+        {
+          "type": "responseOk",
+          "equals": true
+        },
+        {
+          "type": "exactDelta",
+          "beforeSource": "snapshots.before_tonic",
+          "afterSource": "after",
+          "path": "calendar.payload.worldTime.timeMinutes",
+          "delta": 1
+        },
+        {
+          "type": "equals",
+          "source": "responses.drink_tonic",
+          "path": "payload.timeProgress.advancedMinutes",
+          "equals": 1
+        },
+        {
+          "type": "count",
+          "source": "responses.drink_tonic",
+          "path": "payload.debug.eventStructured.parsed.item_ingest",
+          "equals": 1
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "responses.drink_tonic",
+          "path": "payload.debug.eventStructured.parsed.item_ingest",
+          "where": {
+            "item": "$fixture.tonicName",
+            "target": "$fixture.playerName"
+          },
+          "equals": 1
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "responses.drink_tonic",
+          "path": "payload.debug.eventStructured.parsed.consume_item",
+          "where": {
+            "item": "$fixture.tonicName",
+            "quantity": 1
+          },
+          "equals": 1
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "responses.drink_tonic",
+          "path": "payload.debug.eventStructured.parsed.status_effect_change",
+          "where": {
+            "entity": "$fixture.playerName",
+            "detail": "A precisely timed QA vigor effect.",
+            "action": "gained",
+            "source": "item_ingest",
+            "item": "$fixture.tonicName"
+          },
+          "equals": 1
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "responses.drink_tonic",
+          "path": "payload.debug.eventStructured.parsed.needbar_change",
+          "where": {
+            "character": "$fixture.playerName",
+            "bar": "rest",
+            "direction": "increase",
+            "magnitude": "small"
+          },
+          "equals": 1
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "after",
+          "path": "player.payload.player.inventory",
+          "where": {
+            "id": "$fixture.tonicId"
+          },
+          "equals": 0
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "after",
+          "path": "things.payload.things",
+          "where": {
+            "id": "$fixture.tonicId"
+          },
+          "equals": 0
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "after",
+          "path": "player.payload.player.statusEffects",
+          "where": {
+            "name": "$fixture.tonicEffectName",
+            "duration": "$fixture.tonicDurationMinutes",
+            "appliedAt": 664
+          },
+          "equals": 1
+        },
+        {
+          "type": "count",
+          "source": "after",
+          "path": "player.payload.player.statusEffects",
+          "equals": 1
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "after",
+          "path": "player.payload.player.statusEffects.0.attributes",
+          "where": {
+            "attribute": "$fixture.tonicEffectAttribute",
+            "modifier": "$fixture.tonicEffectAttributeModifier"
+          },
+          "equals": 1
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "after",
+          "path": "player.payload.player.needBars",
+          "where": {
+            "id": "food",
+            "value": 599.3
+          },
+          "equals": 1
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "after",
+          "path": "player.payload.player.needBars",
+          "where": {
+            "id": "rest",
+            "value": 500.4
+          },
+          "equals": 1
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "after",
+          "path": "player.payload.player.needBars",
+          "where": {
+            "id": "stamina",
+            "value": 1000
+          },
+          "equals": 1
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "after",
+          "path": "player.payload.player.needBars",
+          "where": {
+            "id": "mana",
+            "value": 610
+          },
+          "equals": 1
+        }
+      ]
+    },
+    {
+      "type": "snapshot",
+      "name": "after_tonic"
+    },
+    {
+      "type": "chat",
+      "name": "sleep_eight_hours",
+      "text": "I remain inside QA Long Rest Lodge, settle into one of its clean bunks under the thick wool blankets, and sleep peacefully and continuously for exactly eight hours, from 11:04 AM until 7:04 PM on this same Sunday, until fully recovered. I do not eat, drink, travel, use an item, use magic, or perform any other activity during this sleep, and no other character sleeps or rests with me.",
+      "travel": false,
+      "interactive": {
+        "roll": null,
+        "questAccepted": false,
+        "confirmed": false
+      }
+    },
+    {
+      "type": "assert",
+      "assertions": [
+        {
+          "type": "httpStatus",
+          "equals": 200
+        },
+        {
+          "type": "responseOk",
+          "equals": true
+        },
+        {
+          "type": "exactDelta",
+          "beforeSource": "snapshots.after_tonic",
+          "afterSource": "after",
+          "path": "calendar.payload.worldTime.timeMinutes",
+          "delta": 480
+        },
+        {
+          "type": "exactDelta",
+          "beforeSource": "snapshots.before_tonic",
+          "afterSource": "after",
+          "path": "calendar.payload.worldTime.timeMinutes",
+          "delta": 481
+        },
+        {
+          "type": "equals",
+          "source": "responses.sleep_eight_hours",
+          "path": "payload.timeProgress.advancedMinutes",
+          "equals": 480
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "responses.sleep_eight_hours",
+          "path": "payload.debug.eventStructured.parsed.needbar_change",
+          "where": {
+            "character": "$fixture.playerName",
+            "bar": "rest",
+            "direction": "increase",
+            "magnitude": "full"
+          },
+          "equals": 1
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "responses.sleep_eight_hours",
+          "path": "payload.debug.eventStructured.parsed.needbar_change",
+          "where": {
+            "character": "$fixture.playerName",
+            "bar": "mana",
+            "direction": "increase",
+            "magnitude": "full"
+          },
+          "equals": 1
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "responses.sleep_eight_hours",
+          "path": "payload.debug.eventStructured.parsed.needbar_change",
+          "where": {
+            "character": "$fixture.companionName"
+          },
+          "equals": 0
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "responses.sleep_eight_hours",
+          "path": "payload.debug.eventStructured.parsed.needbar_change",
+          "where": {
+            "character": "$fixture.nonPartyNpcName"
+          },
+          "equals": 0
+        },
+        {
+          "type": "equals",
+          "source": "after",
+          "path": "player.payload.player.locationId",
+          "equals": "$fixture.lodgeLocationId"
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "after",
+          "path": "player.payload.player.needBars",
+          "where": {
+            "id": "food",
+            "value": 263.29999999999995,
+            "max": 1000
+          },
+          "equals": 1
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "after",
+          "path": "player.payload.player.needBars",
+          "where": {
+            "id": "rest",
+            "value": 1000,
+            "max": 1000
+          },
+          "equals": 1
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "after",
+          "path": "player.payload.player.needBars",
+          "where": {
+            "id": "stamina",
+            "value": 1000,
+            "max": 1000
+          },
+          "equals": 1
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "after",
+          "path": "player.payload.player.needBars",
+          "where": {
+            "id": "mana",
+            "value": 1000,
+            "max": 1000
+          },
+          "equals": 1
+        },
+        {
+          "type": "count",
+          "source": "after",
+          "path": "player.payload.player.statusEffects",
+          "equals": 0
+        },
+        {
+          "type": "equals",
+          "source": "after",
+          "path": "calendar.payload.worldTime.dayIndex",
+          "equals": 0
+        },
+        {
+          "type": "equals",
+          "source": "after",
+          "path": "calendar.payload.worldTime.timeMinutes",
+          "equals": 1144
+        },
+        {
+          "type": "equals",
+          "source": "after",
+          "path": "calendar.payload.worldTime.timeLabel",
+          "equals": "7:04 PM"
+        },
+        {
+          "type": "equals",
+          "source": "after",
+          "path": "calendar.payload.worldTime.dateLabel",
+          "equals": "Sunday, January 1, Common Era 1"
+        },
+        {
+          "type": "equals",
+          "source": "after",
+          "path": "calendar.payload.worldTime.season",
+          "equals": "Winter"
+        },
+        {
+          "type": "equals",
+          "source": "after",
+          "path": "calendar.payload.worldTime.lighting",
+          "equals": "Night returns with poor visibility."
+        },
+        {
+          "type": "historyAddedTypeCount",
+          "entryType": "player-action",
+          "equals": 2,
+          "beforeSource": "snapshots.before_tonic",
+          "afterSource": "after"
+        },
+        {
+          "type": "historyAddedTypeCount",
+          "entryType": "event-summary",
+          "equals": 2,
+          "beforeSource": "snapshots.before_tonic",
+          "afterSource": "after"
+        },
+        {
+          "type": "historyAddedTypeCount",
+          "entryType": "status-summary",
+          "equals": 1,
+          "beforeSource": "snapshots.before_tonic",
+          "afterSource": "after"
+        },
+        {
+          "type": "historyAddedNestedObjectCount",
+          "entryWhere": {
+            "type": "event-summary"
+          },
+          "path": "summaryItems",
+          "where": {
+            "sourceType": "time_passed"
+          },
+          "equals": 2,
+          "beforeSource": "snapshots.before_tonic",
+          "afterSource": "after"
+        },
+        {
+          "type": "equals",
+          "source": "after",
+          "path": "scheduledEvents.payload.count",
+          "equals": 0
+        },
+        {
+          "type": "noRealtimeErrors"
+        },
+        {
+          "type": "noUnexpectedErrorLogs"
+        }
+      ]
+    },
+    {
+      "type": "humanReviewNote",
+      "text": "Confirm the two accepted player-facing actions are one concise tonic-drinking action followed by one continuous eight-hour sleep, with no duplicated elapsed period or unrelated activity. Do not use prose matching as a mechanical pass condition."
+    }
+  ]
+}

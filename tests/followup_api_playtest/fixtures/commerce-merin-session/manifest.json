@@ -1,0 +1,67 @@
+{
+  "version": 1,
+  "name": "commerce-merin-session",
+  "description": "Copied commerce fixture retained from the original TRADE audit.",
+  "createdAt": "2026-08-12T12:51:28.368Z",
+  "source": {
+    "setupCommand": "Historical TRADE setup: willing non-hostile QA Merin with QA Iron Flask, plus player-owned QA Amber Chip.",
+    "saveName": "2026-08-08T22-23-40-419Z_Monster_Girl_Life_2026-06b-Baato-Ember_Hollow_Outskirts-char_2-mskxxb43",
+    "saveType": "saves",
+    "settingName": "Monster Girl Life 2026-06b",
+    "playerName": "Baato"
+  },
+  "configProfile": "isolated-base",
+  "requiredMods": [],
+  "worldTime": {
+    "dayIndex": 0,
+    "timeMinutes": 658
+  },
+  "entities": {
+    "playerId": "char_2",
+    "locationId": "loc_5",
+    "merchantId": "char_20",
+    "merchantAlias": "Merin",
+    "amberId": "thing_200",
+    "flaskId": "thing_201",
+    "otherLocationId": "loc_6"
+  },
+  "invariants": [
+    {
+      "type": "entityField",
+      "source": "after",
+      "collection": "players",
+      "id": "char_20",
+      "path": "name",
+      "equals": "QA Merin"
+    },
+    {
+      "type": "entityField",
+      "source": "after",
+      "collection": "players",
+      "id": "char_20",
+      "path": "currency",
+      "equals": 30
+    },
+    {
+      "type": "entityField",
+      "source": "after",
+      "collection": "things",
+      "id": "thing_200",
+      "path": "metadata.ownerId",
+      "equals": "char_2"
+    },
+    {
+      "type": "entityField",
+      "source": "after",
+      "collection": "things",
+      "id": "thing_201",
+      "path": "metadata.ownerId",
+      "equals": "char_20"
+    }
+  ],
+  "validation": {
+    "passed": true,
+    "evidence": "Retained live API artifacts under tmp/followup-api-playtest/commerce."
+  },
+  "integrity": "sha256:ee19619edd7bf2bf95132486eed15d2ce06d97ec74fc98283a3a6be9314a7d7b"
+}

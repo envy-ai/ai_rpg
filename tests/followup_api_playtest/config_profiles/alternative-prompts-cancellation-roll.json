@@ -1,0 +1,9 @@
+{
+  "version": 1,
+  "name": "alternative-prompts-cancellation-roll",
+  "description": "ALT-11-owned profile copy for cancellation while a forced player-action roll is pending.",
+  "extends": "alternative-prompts-mechanics",
+  "values": {
+    "plausibility_checks.enabled": true
+  }
+}

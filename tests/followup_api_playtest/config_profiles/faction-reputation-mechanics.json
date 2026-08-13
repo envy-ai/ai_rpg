@@ -1,0 +1,9 @@
+{
+  "version": 1,
+  "name": "faction-reputation-mechanics",
+  "description": "Copies isolated relationship/faction mechanics for witnessed reputation tests while deferring unrelated housekeeping maintenance.",
+  "extends": "relationship-faction-mechanics",
+  "values": {
+    "housekeeping.interval": 1000000000
+  }
+}

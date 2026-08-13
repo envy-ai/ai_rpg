@@ -1,0 +1,298 @@
+{
+  "version": 1,
+  "scenario": "alternative-prompts",
+  "case": "ALT-3-forced-event",
+  "description": "Force one exact item-transfer event involving an existing fixture prop, verify forced-event dispatch and structured bookkeeping, and prove that no unrelated state changes.",
+  "fixture": "relationships-factions",
+  "configProfile": "alternative-prompts-forced-event",
+  "trackedPaths": [
+    "player.payload.player",
+    "players.payload.players",
+    "locations.payload.locations",
+    "regions.payload.regions",
+    "things.payload.things",
+    "factions.payload.factions",
+    "factions.payload.playerStandings",
+    "scheduledEvents.payload.scheduledEvents",
+    "calendar.payload.worldTime",
+    "history.payload.history"
+  ],
+  "steps": [
+    {
+      "type": "loadFixture"
+    },
+    {
+      "type": "snapshot",
+      "name": "before_forced_event"
+    },
+    {
+      "type": "chat",
+      "name": "forced_event",
+      "text": "!! QA Lantern Witness gives exactly one Whistle of the Ridge to Baato at March Start Marker. Nothing else happens and no time passes.",
+      "interactive": {
+        "roll": null,
+        "questAccepted": false,
+        "confirmed": false
+      }
+    },
+    {
+      "type": "assert",
+      "assertions": [
+        {
+          "type": "equals",
+          "source": "responses.forced_event",
+          "path": "status",
+          "equals": 200
+        },
+        {
+          "type": "responseOk",
+          "equals": true
+        },
+        {
+          "type": "equals",
+          "source": "responses.forced_event",
+          "path": "payload.response",
+          "equals": "[Forced] QA Lantern Witness gives exactly one Whistle of the Ridge to Baato at March Start Marker. Nothing else happens and no time passes."
+        },
+        {
+          "type": "equals",
+          "source": "responses.forced_event",
+          "path": "payload.debug.usedForcedEventAction",
+          "equals": true
+        },
+        {
+          "type": "equals",
+          "source": "responses.forced_event",
+          "path": "payload.debug.usedCreativeTemplate",
+          "equals": false
+        },
+        {
+          "type": "equals",
+          "source": "responses.forced_event",
+          "path": "payload.debug.usedPlayerTemplate",
+          "equals": false
+        },
+        {
+          "type": "equals",
+          "source": "responses.forced_event",
+          "path": "payload.debug.forcedEventText",
+          "equals": "QA Lantern Witness gives exactly one Whistle of the Ridge to Baato at March Start Marker. Nothing else happens and no time passes."
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "responses.forced_event",
+          "path": "payload.debug.forcedEventStructured.parsed.transfer_item",
+          "where": {
+            "giver": "$fixture.lanternWitnessName",
+            "item": "Whistle of the Ridge",
+            "quantity": 1,
+            "receiver": "$fixture.playerName"
+          },
+          "equals": 1
+        },
+        {
+          "type": "count",
+          "source": "responses.forced_event",
+          "path": "payload.debug.forcedEventStructured.parsed.transfer_item",
+          "equals": 1
+        },
+        {
+          "type": "absent",
+          "source": "responses.forced_event",
+          "path": "payload.actionResolution"
+        },
+        {
+          "type": "absent",
+          "source": "responses.forced_event",
+          "path": "payload.plausibility"
+        },
+        {
+          "type": "exactDelta",
+          "beforeSource": "snapshots.before_forced_event",
+          "afterSource": "after",
+          "path": "player.payload.player.inventory.length",
+          "delta": 1
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "after",
+          "path": "player.payload.player.inventory",
+          "where": {
+            "id": "thing_283",
+            "name": "Whistle of the Ridge",
+            "count": 1,
+            "metadata": {
+              "ownerId": "$fixture.playerId"
+            }
+          },
+          "equals": 1
+        },
+        {
+          "type": "entityArrayObjectCount",
+          "source": "after",
+          "collection": "players",
+          "id": "$fixture.lanternWitnessId",
+          "path": "inventory",
+          "where": {
+            "id": "thing_283"
+          },
+          "equals": 0
+        },
+        {
+          "type": "entityField",
+          "source": "after",
+          "collection": "things",
+          "id": "thing_283",
+          "path": "metadata.ownerId",
+          "equals": "$fixture.playerId"
+        },
+        {
+          "type": "entityField",
+          "source": "after",
+          "collection": "things",
+          "id": "thing_283",
+          "path": "metadata.playerId",
+          "equals": "$fixture.playerId"
+        },
+        {
+          "type": "entityField",
+          "source": "after",
+          "collection": "things",
+          "id": "thing_283",
+          "path": "count",
+          "equals": 1
+        },
+        {
+          "type": "exactDelta",
+          "beforeSource": "snapshots.before_forced_event",
+          "afterSource": "after",
+          "path": "things.payload.things.length",
+          "delta": 0
+        },
+        {
+          "type": "historyAddedTypeCount",
+          "beforeSource": "snapshots.before_forced_event",
+          "afterSource": "after",
+          "entryType": "player-action",
+          "equals": 1
+        },
+        {
+          "type": "historyAddedTypeCount",
+          "beforeSource": "snapshots.before_forced_event",
+          "afterSource": "after",
+          "entryType": "event-summary",
+          "equals": 1
+        },
+        {
+          "type": "historyAddedNestedObjectCount",
+          "beforeSource": "snapshots.before_forced_event",
+          "afterSource": "after",
+          "entryWhere": {
+            "type": "event-summary"
+          },
+          "path": "summaryItems",
+          "where": {
+            "sourceType": "transfer_item"
+          },
+          "equals": 1
+        },
+        {
+          "type": "historyAddedTypeCount",
+          "beforeSource": "snapshots.before_forced_event",
+          "afterSource": "after",
+          "entryType": "random-event",
+          "equals": 0
+        },
+        {
+          "type": "historyAddedTypeCount",
+          "beforeSource": "snapshots.before_forced_event",
+          "afterSource": "after",
+          "entryType": "npc-turn",
+          "equals": 0
+        },
+        {
+          "type": "historyAddedTypeCount",
+          "beforeSource": "snapshots.before_forced_event",
+          "afterSource": "after",
+          "entryType": "plausibility",
+          "equals": 0
+        },
+        {
+          "type": "historyAddedTypeCount",
+          "beforeSource": "snapshots.before_forced_event",
+          "afterSource": "after",
+          "entryType": "skill-check",
+          "equals": 0
+        },
+        {
+          "type": "stateUnchanged",
+          "beforeSource": "snapshots.before_forced_event",
+          "afterSource": "after",
+          "paths": [
+            "player.payload.player.id",
+            "player.payload.player.level",
+            "player.payload.player.health",
+            "player.payload.player.maxHealth",
+            "player.payload.player.locationId",
+            "player.payload.player.experience",
+            "player.payload.player.abilities",
+            "player.payload.player.attributes",
+            "player.payload.player.skills",
+            "player.payload.player.currency",
+            "player.payload.player.statusEffects",
+            "player.payload.player.needBars",
+            "player.payload.player.quests",
+            "player.payload.player.completedQuests",
+            "locations.payload.locations",
+            "regions.payload.regions",
+            "factions.payload.factions",
+            "factions.payload.playerStandings",
+            "scheduledEvents.payload.scheduledEvents",
+            "calendar.payload.worldTime"
+          ]
+        },
+        {
+          "type": "entityField",
+          "source": "after",
+          "collection": "players",
+          "id": "$fixture.lanternWitnessId",
+          "path": "locationId",
+          "equals": "$fixture.baselineLocationId"
+        },
+        {
+          "type": "entityField",
+          "source": "after",
+          "collection": "players",
+          "id": "$fixture.lanternWitnessId",
+          "path": "relationships",
+          "equals": {}
+        },
+        {
+          "type": "entityField",
+          "source": "after",
+          "collection": "players",
+          "id": "$fixture.cinderWitnessId",
+          "path": "locationId",
+          "equals": "$fixture.baselineLocationId"
+        },
+        {
+          "type": "entityField",
+          "source": "after",
+          "collection": "players",
+          "id": "$fixture.privateContactId",
+          "path": "locationId",
+          "equals": "$fixture.privateLocationId"
+        },
+        {
+          "type": "noRealtimeErrors"
+        },
+        {
+          "type": "noUnexpectedErrorLogs"
+        }
+      ]
+    }
+  ],
+  "humanReview": [
+    "Confirm the forced response is the code-owned acknowledgment, not generated story prose, and that the structured transfer summary agrees with the exact ownership change. Treat any model-authored event explanation as diagnostic prompt output, not player-facing prose."
+  ]
+}

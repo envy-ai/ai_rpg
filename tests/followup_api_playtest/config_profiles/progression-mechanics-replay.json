@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "name": "progression-mechanics-replay",
+  "description": "Strict no-provider progression replay profile; preserves progression isolation while disabling local/router startup and model-switch/image handoff.",
+  "extends": "progression-mechanics",
+  "values": {
+    "ai.local_startup_script_path": "",
+    "ai.unload_during_image_generation": false,
+    "router_preload_model": "",
+    "unload_model_on_switch": false
+  }
+}

@@ -1,0 +1,229 @@
+{
+  "version": 1,
+  "name": "relationships-factions",
+  "description": "Deterministic relationship/faction baseline derived from an immutable fast-travel fixture copy, with two colocated neutral witnesses, one offscreen private contact, reciprocal-neutral test factions, empty directed relationship maps, zero player dispositions, and no pending schedules.",
+  "createdAt": "2026-08-12T04:03:49.324Z",
+  "source": {
+    "setupCommand": "Restore immutable fast-travel-visited-favorites; in the disposable copy only, repurpose char_37, char_38, and char_39 through direct NPC APIs, teleport char_38 to the baseline without time accounting, repurpose reciprocal-neutral faction_2 and faction_6 through direct faction APIs, clear their player standings, zero all three NPC disposition maps, validate, and save without any LLM completion. In the independently promoted relationships-factions copy only, clear the stale lastHousekeepingTurnId inherited from history that had already been pruned from the source save; do not alter the source fixture.",
+    "saveName": "2026-08-12T04-02-36-454Z_Monster_Girl_Life_2026-06b-Baato-March_Start_Marker-char_2-mspkcqhy",
+    "saveType": "saves",
+    "settingName": "Monster Girl Life 2026-06b",
+    "playerName": "Baato"
+  },
+  "configProfile": "relationship-faction-mechanics",
+  "requiredMods": [
+    "implants",
+    "modules",
+    "nsfw-boost",
+    "party-needs",
+    "scene-illustration"
+  ],
+  "worldTime": 663,
+  "entities": {
+    "playerId": "char_2",
+    "playerName": "Baato",
+    "baselineLocationId": "loc_39",
+    "baselineLocationName": "March Start Marker",
+    "privateLocationId": "loc_44",
+    "privateLocationName": "QA Fast Travel Tower",
+    "lanternFactionId": "faction_2",
+    "lanternFactionName": "QA Lantern Guild",
+    "cinderFactionId": "faction_6",
+    "cinderFactionName": "QA Cinder Guild",
+    "lanternWitnessId": "char_37",
+    "lanternWitnessName": "QA Lantern Witness",
+    "lanternWitnessAlias": "Lantern",
+    "cinderWitnessId": "char_38",
+    "cinderWitnessName": "QA Cinder Witness",
+    "cinderWitnessAlias": "Cinder",
+    "privateContactId": "char_39",
+    "privateContactName": "QA Private Contact",
+    "privateContactAlias": "Contact",
+    "initialDispositions": {
+      "platonic": 0,
+      "romantic": 0,
+      "lust": 0,
+      "respect": 0,
+      "comfort_fear": 0,
+      "trust": 0
+    }
+  },
+  "invariants": [
+    {
+      "type": "equals",
+      "source": "after",
+      "path": "player.payload.player.locationId",
+      "equals": "loc_39"
+    },
+    {
+      "type": "equals",
+      "source": "after",
+      "path": "calendar.payload.worldTime.timeMinutes",
+      "equals": 663
+    },
+    {
+      "type": "equals",
+      "source": "after",
+      "path": "scheduledEvents.payload.count",
+      "equals": 0
+    },
+    {
+      "type": "equals",
+      "source": "after",
+      "path": "currentLocation.payload.location.npcIds",
+      "equals": [
+        "char_37",
+        "char_38"
+      ]
+    },
+    {
+      "type": "absent",
+      "source": "after",
+      "path": "factions.payload.playerStandings.faction_2"
+    },
+    {
+      "type": "absent",
+      "source": "after",
+      "path": "factions.payload.playerStandings.faction_6"
+    },
+    {
+      "type": "entityField",
+      "source": "after",
+      "collection": "factions",
+      "id": "faction_2",
+      "path": "name",
+      "equals": "QA Lantern Guild"
+    },
+    {
+      "type": "entityField",
+      "source": "after",
+      "collection": "factions",
+      "id": "faction_2",
+      "path": "relations.faction_6.status",
+      "equals": "neutral"
+    },
+    {
+      "type": "entityField",
+      "source": "after",
+      "collection": "factions",
+      "id": "faction_6",
+      "path": "name",
+      "equals": "QA Cinder Guild"
+    },
+    {
+      "type": "entityField",
+      "source": "after",
+      "collection": "factions",
+      "id": "faction_6",
+      "path": "relations.faction_2.status",
+      "equals": "neutral"
+    },
+    {
+      "type": "entityField",
+      "source": "after",
+      "collection": "players",
+      "id": "char_37",
+      "path": "name",
+      "equals": "QA Lantern Witness"
+    },
+    {
+      "type": "entityField",
+      "source": "after",
+      "collection": "players",
+      "id": "char_37",
+      "path": "locationId",
+      "equals": "loc_39"
+    },
+    {
+      "type": "entityField",
+      "source": "after",
+      "collection": "players",
+      "id": "char_37",
+      "path": "factionId",
+      "equals": "faction_2"
+    },
+    {
+      "type": "entityField",
+      "source": "after",
+      "collection": "players",
+      "id": "char_37",
+      "path": "relationships",
+      "equals": {}
+    },
+    {
+      "type": "entityField",
+      "source": "after",
+      "collection": "players",
+      "id": "char_38",
+      "path": "name",
+      "equals": "QA Cinder Witness"
+    },
+    {
+      "type": "entityField",
+      "source": "after",
+      "collection": "players",
+      "id": "char_38",
+      "path": "locationId",
+      "equals": "loc_39"
+    },
+    {
+      "type": "entityField",
+      "source": "after",
+      "collection": "players",
+      "id": "char_38",
+      "path": "factionId",
+      "equals": "faction_6"
+    },
+    {
+      "type": "entityField",
+      "source": "after",
+      "collection": "players",
+      "id": "char_38",
+      "path": "relationships",
+      "equals": {}
+    },
+    {
+      "type": "entityField",
+      "source": "after",
+      "collection": "players",
+      "id": "char_39",
+      "path": "name",
+      "equals": "QA Private Contact"
+    },
+    {
+      "type": "entityField",
+      "source": "after",
+      "collection": "players",
+      "id": "char_39",
+      "path": "locationId",
+      "equals": "loc_44"
+    },
+    {
+      "type": "entityField",
+      "source": "after",
+      "collection": "players",
+      "id": "char_39",
+      "path": "factionId",
+      "equals": "faction_2"
+    },
+    {
+      "type": "entityField",
+      "source": "after",
+      "collection": "players",
+      "id": "char_39",
+      "path": "relationships",
+      "equals": {}
+    }
+  ],
+  "validation": {
+    "passed": true,
+    "scenario": "REL-fixture-relationships-factions",
+    "mode": "live-verify",
+    "artifactDirectory": "tmp/followup-api-playtest/relationships-factions-setup/REL-fixture-relationships-factions/attempt-5",
+    "assertionsPassed": 21,
+    "assertionsFailed": 0,
+    "humanReviewed": true,
+    "notes": "The source fixture was restored into a disposable runtime copy. All entity mutations used deterministic HTTP APIs, no chat step ran, no model completion was generated, no time/history/schedule state changed, and the saved derivative passed every setup assertion. The independently promoted relationships-factions copy then removed only its inherited stale housekeeping-history boundary, because the referenced player turn was absent from the copied chat history; the source fast-travel fixture remains unchanged."
+  },
+  "integrity": "sha256:a1ca40e1ed52ed88401b403fa38075bbd273dd13c5bc3341a70ddf5bc5de69c2"
+}

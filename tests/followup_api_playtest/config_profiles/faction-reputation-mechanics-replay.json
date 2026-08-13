@@ -1,0 +1,9 @@
+{
+  "version": 1,
+  "name": "faction-reputation-mechanics-replay",
+  "description": "Copies the isolated faction-reputation profile for strict replay without starting, preloading, or contacting the local llama.cpp router.",
+  "extends": "relationship-faction-mechanics-replay",
+  "values": {
+    "housekeeping.interval": 1000000000
+  }
+}

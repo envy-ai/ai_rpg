@@ -1,0 +1,330 @@
+{
+  "version": 1,
+  "scenario": "alternative-prompts",
+  "case": "ALT-4-generic",
+  "description": "Run one normal in-context generic prompt with one read-only lookup, verify its normal generic history/tool-loop and slop-bypass contracts, and prove that no gameplay state changes.",
+  "fixture": "relationships-factions",
+  "configProfile": "alternative-prompts-mechanics",
+  "trackedPaths": [
+    "player.payload.player",
+    "players.payload.players",
+    "locations.payload.locations",
+    "regions.payload.regions",
+    "things.payload.things",
+    "factions.payload.factions",
+    "factions.payload.playerStandings",
+    "scheduledEvents.payload.scheduledEvents",
+    "calendar.payload.worldTime",
+    "history.payload.history"
+  ],
+  "steps": [
+    {
+      "type": "loadFixture"
+    },
+    {
+      "type": "snapshot",
+      "name": "before_generic"
+    },
+    {
+      "type": "chat",
+      "name": "generic",
+      "text": "@ Use the moreInfo tool exactly once for QA Private Contact as a character, then briefly say where that character currently is. Do not call any other tool and do not change game state.",
+      "interactive": {
+        "roll": null,
+        "questAccepted": false,
+        "confirmed": false
+      }
+    },
+    {
+      "type": "assert",
+      "assertions": [
+        {
+          "type": "equals",
+          "source": "responses.generic",
+          "path": "status",
+          "equals": 200
+        },
+        {
+          "type": "responseOk",
+          "equals": true
+        },
+        {
+          "type": "exists",
+          "source": "responses.generic",
+          "path": "payload.response"
+        },
+        {
+          "type": "equals",
+          "source": "responses.generic",
+          "path": "payload.debug.usedGenericPromptAction",
+          "equals": true
+        },
+        {
+          "type": "equals",
+          "source": "responses.generic",
+          "path": "payload.debug.genericPromptStorageMode",
+          "equals": "normal"
+        },
+        {
+          "type": "equals",
+          "source": "responses.generic",
+          "path": "payload.debug.genericPromptTemplateMode",
+          "equals": "base_context"
+        },
+        {
+          "type": "equals",
+          "source": "responses.generic",
+          "path": "payload.debug.genericPromptText",
+          "equals": "Use the moreInfo tool exactly once for QA Private Contact as a character, then briefly say where that character currently is. Do not call any other tool and do not change game state."
+        },
+        {
+          "type": "equals",
+          "source": "responses.generic",
+          "path": "payload.debug.usedQuestionAction",
+          "equals": false
+        },
+        {
+          "type": "equals",
+          "source": "responses.generic",
+          "path": "payload.debug.usedPlayerTemplate",
+          "equals": false
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "responses.generic",
+          "path": "payload.debug.toolInvocations",
+          "where": {
+            "name": "moreInfo",
+            "metadata": {
+              "query": "QA Private Contact",
+              "type": "character",
+              "totalMatches": 1
+            }
+          },
+          "equals": 1
+        },
+        {
+          "type": "count",
+          "source": "responses.generic",
+          "path": "payload.debug.toolInvocations",
+          "equals": 1
+        },
+        {
+          "type": "historyAddedTypeCount",
+          "beforeSource": "snapshots.before_generic",
+          "afterSource": "after",
+          "entryType": "user-generic-prompt",
+          "equals": 1
+        },
+        {
+          "type": "historyAddedTypeCount",
+          "beforeSource": "snapshots.before_generic",
+          "afterSource": "after",
+          "entryType": "generic-prompt-response",
+          "equals": 1
+        },
+        {
+          "type": "historyAddedSequence",
+          "beforeSource": "snapshots.before_generic",
+          "afterSource": "after",
+          "entryTypes": [
+            "user-generic-prompt",
+            "tool-call-debug",
+            "generic-prompt-response"
+          ],
+          "expected": [
+            {
+              "type": "user-generic-prompt",
+              "role": "user",
+              "content": "Use the moreInfo tool exactly once for QA Private Contact as a character, then briefly say where that character currently is. Do not call any other tool and do not change game state."
+            },
+            {
+              "type": "tool-call-debug",
+              "role": "system",
+              "metadata": {
+                "excludeFromBaseContextHistory": true,
+                "debugToolCalls": true,
+                "promptLabel": "generic_prompt",
+                "toolCallCount": 1,
+                "completedToolCallCount": 1,
+                "erroredToolCallCount": 0
+              }
+            },
+            {
+              "type": "generic-prompt-response",
+              "role": "assistant"
+            }
+          ]
+        },
+        {
+          "type": "historyAddedNestedObjectCount",
+          "beforeSource": "snapshots.before_generic",
+          "afterSource": "after",
+          "entryWhere": {
+            "type": "tool-call-debug"
+          },
+          "path": "toolCalls",
+          "where": {
+            "name": "moreInfo",
+            "status": "completed",
+            "parameters": {
+              "name": "QA Private Contact",
+              "type": "character"
+            }
+          },
+          "equals": 1
+        },
+        {
+          "type": "historyAddedTypeCount",
+          "beforeSource": "snapshots.before_generic",
+          "afterSource": "after",
+          "entryType": "user-question",
+          "equals": 0
+        },
+        {
+          "type": "historyAddedTypeCount",
+          "beforeSource": "snapshots.before_generic",
+          "afterSource": "after",
+          "entryType": "storyteller-answer",
+          "equals": 0
+        },
+        {
+          "type": "historyAddedTypeCount",
+          "beforeSource": "snapshots.before_generic",
+          "afterSource": "after",
+          "entryType": "player-action",
+          "equals": 0
+        },
+        {
+          "type": "historyAddedTypeCount",
+          "beforeSource": "snapshots.before_generic",
+          "afterSource": "after",
+          "entryType": "event-summary",
+          "equals": 0
+        },
+        {
+          "type": "historyAddedTypeCount",
+          "beforeSource": "snapshots.before_generic",
+          "afterSource": "after",
+          "entryType": "random-event",
+          "equals": 0
+        },
+        {
+          "type": "historyAddedTypeCount",
+          "beforeSource": "snapshots.before_generic",
+          "afterSource": "after",
+          "entryType": "npc-turn",
+          "equals": 0
+        },
+        {
+          "type": "historyAddedTypeCount",
+          "beforeSource": "snapshots.before_generic",
+          "afterSource": "after",
+          "entryType": "slop-remover",
+          "equals": 0
+        },
+        {
+          "type": "stateUnchanged",
+          "beforeSource": "snapshots.before_generic",
+          "afterSource": "after",
+          "paths": [
+            "player.payload.player.id",
+            "player.payload.player.level",
+            "player.payload.player.health",
+            "player.payload.player.maxHealth",
+            "player.payload.player.locationId",
+            "player.payload.player.experience",
+            "player.payload.player.abilities",
+            "player.payload.player.attributes",
+            "player.payload.player.skills",
+            "player.payload.player.inventory",
+            "player.payload.player.currency",
+            "player.payload.player.statusEffects",
+            "player.payload.player.needBars",
+            "player.payload.player.quests",
+            "player.payload.player.completedQuests",
+            "locations.payload.locations",
+            "regions.payload.regions",
+            "things.payload.things",
+            "factions.payload.factions",
+            "factions.payload.playerStandings",
+            "scheduledEvents.payload.scheduledEvents",
+            "calendar.payload.worldTime"
+          ]
+        },
+        {
+          "type": "entityField",
+          "source": "after",
+          "collection": "players",
+          "id": "$fixture.lanternWitnessId",
+          "path": "locationId",
+          "equals": "$fixture.baselineLocationId"
+        },
+        {
+          "type": "entityField",
+          "source": "after",
+          "collection": "players",
+          "id": "$fixture.lanternWitnessId",
+          "path": "factionId",
+          "equals": "$fixture.lanternFactionId"
+        },
+        {
+          "type": "entityField",
+          "source": "after",
+          "collection": "players",
+          "id": "$fixture.lanternWitnessId",
+          "path": "relationships",
+          "equals": {}
+        },
+        {
+          "type": "entityArrayObjectCount",
+          "source": "after",
+          "collection": "players",
+          "id": "$fixture.lanternWitnessId",
+          "path": "inventory",
+          "where": {
+            "id": "thing_283",
+            "name": "Whistle of the Ridge",
+            "metadata": {
+              "ownerId": "$fixture.lanternWitnessId"
+            }
+          },
+          "equals": 1
+        },
+        {
+          "type": "entityField",
+          "source": "after",
+          "collection": "players",
+          "id": "$fixture.cinderWitnessId",
+          "path": "locationId",
+          "equals": "$fixture.baselineLocationId"
+        },
+        {
+          "type": "entityField",
+          "source": "after",
+          "collection": "players",
+          "id": "$fixture.cinderWitnessId",
+          "path": "relationships",
+          "equals": {}
+        },
+        {
+          "type": "entityField",
+          "source": "after",
+          "collection": "players",
+          "id": "$fixture.privateContactId",
+          "path": "locationId",
+          "equals": "$fixture.privateLocationId"
+        },
+        {
+          "type": "noRealtimeErrors"
+        },
+        {
+          "type": "noUnexpectedErrorLogs"
+        }
+      ]
+    }
+  ],
+  "humanReview": [
+    "Confirm the response is a natural brief answer grounded in the read-only QA Private Contact lookup. Treat wording variation as valid; if the prose contradicts the tool result, record the full example in tmp/prose_issues_log.md rather than adding a response-text matcher or prompt micro-rule."
+  ]
+}

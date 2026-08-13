@@ -1,0 +1,361 @@
+{
+  "version": 1,
+  "scenario": "long-time-setup",
+  "case": "TIME-fixture-rest-lodge",
+  "description": "Create and visit the deterministic long-rest lodge, then generate the required keeper and ten-minute tonic through @@ tool prompts before promoting the saved state.",
+  "fixture": "need-bars-status-lifecycle",
+  "configProfile": "long-time-mechanics",
+  "trackedPaths": [
+    "player.payload.player.locationId",
+    "player.payload.player.inventory",
+    "players.payload.players",
+    "locations.payload.locations",
+    "things.payload.things",
+    "scheduledEvents.payload.scheduledEvents",
+    "calendar.payload.worldTime.timeMinutes"
+  ],
+  "steps": [
+    {
+      "type": "loadFixture"
+    },
+    {
+      "type": "snapshot",
+      "name": "before_setup"
+    },
+    {
+      "type": "request",
+      "name": "create_lodge",
+      "method": "POST",
+      "route": "/api/locations/$fixture.baselineLocationId/exits",
+      "body": {
+        "type": "location",
+        "name": "QA Long Rest Lodge",
+        "description": "A quiet, secure roadside lodge used only for deterministic long-duration, calendar, scheduled-event, and while-away tests.",
+        "travelTimeMinutes": 12,
+        "bidirectional": true
+      }
+    },
+    {
+      "type": "assert",
+      "assertions": [
+        {
+          "type": "httpStatus",
+          "equals": 200
+        },
+        {
+          "type": "responseOk",
+          "equals": true
+        },
+        {
+          "type": "equals",
+          "source": "responses.create_lodge",
+          "path": "payload.created.name",
+          "equals": "QA Long Rest Lodge"
+        },
+        {
+          "type": "equals",
+          "source": "responses.create_lodge",
+          "path": "payload.created.isStub",
+          "equals": true
+        }
+      ]
+    },
+    {
+      "type": "request",
+      "name": "visit_lodge",
+      "method": "POST",
+      "route": "/api/npcs/$fixture.playerId/teleport",
+      "body": {
+        "locationId": "$response.create_lodge.payload.created.destinationId",
+        "storyToolTeleport": true,
+        "accountTravelTime": false
+      }
+    },
+    {
+      "type": "request",
+      "name": "return_from_lodge",
+      "method": "POST",
+      "route": "/api/npcs/$fixture.playerId/teleport",
+      "body": {
+        "locationId": "$fixture.baselineLocationId",
+        "storyToolTeleport": true,
+        "accountTravelTime": false
+      }
+    },
+    {
+      "type": "chat",
+      "name": "create_lodge_keeper",
+      "text": "@@ QA FIXTURE SETUP ONLY. You must call createNpc exactly once now to create one living non-hostile NPC named QA Lodge Keeper at QA Long Rest Lodge. Use a concise innkeeper description, class Innkeeper, relativeLevel 0, and persist aiNotes saying this is the deterministic long-time lodge fixture. Do not call any other tools, do not create any other objects, and do not move anyone. After the successful tool result, reply exactly: QA lodge keeper fixture ready.",
+      "travel": false,
+      "interactive": {
+        "roll": null,
+        "questAccepted": false,
+        "confirmed": false
+      }
+    },
+    {
+      "type": "request",
+      "name": "normalize_lodge_keeper",
+      "method": "PUT",
+      "route": "/api/npcs/$response.create_lodge_keeper.payload.toolInvocations.0.metadata.npcId",
+      "body": {
+        "name": "QA Lodge Keeper",
+        "description": "A practical lodge keeper who maintains the hearth, beds, provisions, and visitor ledger at QA Long Rest Lodge.",
+        "shortDescription": "Practical keeper of the long-rest lodge.",
+        "class": "Innkeeper",
+        "race": "Human",
+        "isDead": false,
+        "personalityType": "Practical caretaker",
+        "personalityTraits": "patient, observant, dependable",
+        "personalityNotes": "Keeps the lodge ready for travelers and records arrivals without inventing unrelated obligations.",
+        "aiNotes": "Deterministic long-time lodge fixture NPC. Remain at QA Long Rest Lodge unless a test explicitly moves this character."
+      }
+    },
+    {
+      "type": "chat",
+      "name": "create_short_tonic",
+      "text": "@@ QA FIXTURE SETUP ONLY. You must call createThing exactly once now to create one portable consumable item named QA Short Tonic at March Start Marker (loc_39). Give it a concise tonic description and shortDescription, count 1, relativeLevel 0, and notes saying this is the deterministic ten-minute status fixture. Do not call any other tools and do not create or alter anything else. After the successful tool result, reply exactly: QA short tonic fixture ready.",
+      "travel": false,
+      "interactive": {
+        "roll": null,
+        "questAccepted": false,
+        "confirmed": false
+      }
+    },
+    {
+      "type": "assert",
+      "assertions": [
+        {
+          "type": "httpStatus",
+          "equals": 200
+        },
+        {
+          "type": "responseOk",
+          "equals": true
+        },
+        {
+          "type": "equals",
+          "source": "responses.create_lodge_keeper",
+          "path": "payload.toolInvocations.0.metadata.status",
+          "equals": "success"
+        },
+        {
+          "type": "equals",
+          "source": "responses.create_lodge_keeper",
+          "path": "payload.toolInvocations.0.metadata.finalName",
+          "equals": "QA Lodge Keeper"
+        },
+        {
+          "type": "equals",
+          "source": "responses.normalize_lodge_keeper",
+          "path": "payload.npc.name",
+          "equals": "QA Lodge Keeper"
+        },
+        {
+          "type": "equals",
+          "source": "responses.normalize_lodge_keeper",
+          "path": "payload.npc.class",
+          "equals": "Innkeeper"
+        },
+        {
+          "type": "equals",
+          "source": "responses.normalize_lodge_keeper",
+          "path": "payload.npc.aiNotes",
+          "equals": "Deterministic long-time lodge fixture NPC. Remain at QA Long Rest Lodge unless a test explicitly moves this character."
+        },
+        {
+          "type": "equals",
+          "source": "responses.create_short_tonic",
+          "path": "payload.toolInvocations.0.metadata.status",
+          "equals": "success"
+        },
+        {
+          "type": "equals",
+          "source": "responses.create_short_tonic",
+          "path": "payload.toolInvocations.0.metadata.finalName",
+          "equals": "QA Short Tonic"
+        }
+      ]
+    },
+    {
+      "type": "request",
+      "name": "normalize_short_tonic",
+      "method": "PUT",
+      "route": "/api/things/$response.create_short_tonic.payload.toolInvocations.0.metadata.thingId",
+      "body": {
+        "name": "QA Short Tonic",
+        "description": "A measured tonic used to verify ten-minute status duration and expiry across long actions.",
+        "shortDescription": "Deterministic ten-minute test tonic.",
+        "thingType": "item",
+        "itemTypeDetail": "consumable",
+        "count": 1,
+        "causeStatusEffectOnTarget": {
+          "name": "QA Brief Vigor",
+          "description": "A precisely timed QA vigor effect.",
+          "attributes": [
+            {
+              "attribute": "luck",
+              "modifier": 1
+            }
+          ],
+          "skills": [],
+          "needBars": [],
+          "duration": 10
+        }
+      }
+    },
+    {
+      "type": "request",
+      "name": "give_short_tonic",
+      "method": "POST",
+      "route": "/api/things/$response.create_short_tonic.payload.toolInvocations.0.metadata.thingId/give",
+      "body": {
+        "ownerId": "$fixture.playerId",
+        "ownerType": "player",
+        "locationId": "$fixture.baselineLocationId"
+      }
+    },
+    {
+      "type": "request",
+      "name": "read_lodge",
+      "method": "GET",
+      "route": "/api/locations/$response.create_lodge.payload.created.destinationId?expandStubs=false"
+    },
+    {
+      "type": "assert",
+      "assertions": [
+        {
+          "type": "httpStatus",
+          "equals": 200
+        },
+        {
+          "type": "responseOk",
+          "equals": true
+        },
+        {
+          "type": "equals",
+          "source": "after",
+          "path": "player.payload.player.locationId",
+          "equals": "$fixture.baselineLocationId"
+        },
+        {
+          "type": "exactDelta",
+          "beforeSource": "snapshots.before_setup",
+          "afterSource": "after",
+          "path": "calendar.payload.worldTime.timeMinutes",
+          "delta": 0
+        },
+        {
+          "type": "equals",
+          "source": "responses.read_lodge",
+          "path": "payload.location.id",
+          "equals": "$response.create_lodge.payload.created.destinationId"
+        },
+        {
+          "type": "equals",
+          "source": "responses.read_lodge",
+          "path": "payload.location.name",
+          "equals": "QA Long Rest Lodge"
+        },
+        {
+          "type": "equals",
+          "source": "responses.read_lodge",
+          "path": "payload.location.isStub",
+          "equals": false
+        },
+        {
+          "type": "equals",
+          "source": "responses.read_lodge",
+          "path": "payload.location.visited",
+          "equals": true
+        },
+        {
+          "type": "equals",
+          "source": "responses.read_lodge",
+          "path": "payload.location.lastVisitedTime",
+          "equals": 663
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "responses.read_lodge",
+          "path": "payload.location.npcs",
+          "where": {
+            "id": "$response.create_lodge_keeper.payload.toolInvocations.0.metadata.npcId",
+            "name": "QA Lodge Keeper",
+            "locationId": "$response.create_lodge.payload.created.destinationId",
+            "isDead": false,
+            "isHostile": false
+          },
+          "equals": 1
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "after",
+          "path": "player.payload.player.inventory",
+          "where": {
+            "id": "$response.create_short_tonic.payload.toolInvocations.0.metadata.thingId",
+            "name": "QA Short Tonic",
+            "thingType": "item",
+            "itemTypeDetail": "consumable",
+            "count": 1
+          },
+          "equals": 1
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "after",
+          "path": "things.payload.things",
+          "where": {
+            "id": "$response.create_short_tonic.payload.toolInvocations.0.metadata.thingId",
+            "name": "QA Short Tonic",
+            "metadata": {
+              "ownerId": "$fixture.playerId"
+            }
+          },
+          "equals": 1
+        },
+        {
+          "type": "equals",
+          "source": "after",
+          "path": "scheduledEvents.payload.count",
+          "equals": 0
+        },
+        {
+          "type": "noRealtimeErrors"
+        },
+        {
+          "type": "noUnexpectedErrorLogs",
+          "allowedPrefixes": [
+            "ERROR_chatCompletionError_location_generation_"
+          ]
+        }
+      ]
+    },
+    {
+      "type": "save",
+      "name": "long_time_rest_fixture_save"
+    },
+    {
+      "type": "assert",
+      "assertions": [
+        {
+          "type": "httpStatus",
+          "equals": 200
+        },
+        {
+          "type": "responseOk",
+          "equals": true
+        },
+        {
+          "type": "equals",
+          "source": "responses.long_time_rest_fixture_save",
+          "path": "payload.success",
+          "equals": true
+        }
+      ]
+    }
+  ],
+  "humanReview": [
+    "Fixture setup only: verify the generated lodge remains a quiet test destination, the keeper is a single non-hostile innkeeper there, and the tonic is a portable consumable rather than narrative action prose."
+  ]
+}

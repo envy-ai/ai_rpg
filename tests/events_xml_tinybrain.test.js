@@ -137,18 +137,17 @@ test('tiny-brain event stage parser validates allowlists, semantics, trackers, a
     assert.match(currency.value.xml, /<currency>/);
     assert.equal(currency.value.signatures.length, 1);
 
-    assert.throws(
-        () => Events.parseTinyBrainEventXmlStage(
-            '<events><npcArrival><npcName>Rika the Gazer</npcName><hideFromPlayer>false</hideFromPlayer></npcArrival></events>',
-            {
-                sectionKind: 'destination',
-                stageId: 'characters',
-                allowedTags: ['npcArrival'],
-                authoritativeMovementCompanionNames: ['Rika the Gazer']
-            }
-        ),
-        /must not emit <npcArrival> for authoritative player-movement companion "Rika the Gazer"/
+    const redundantCompanionArrival = Events.parseTinyBrainEventXmlStage(
+        '<events><npcArrival><npcName>Rika the Gazer</npcName><hideFromPlayer>false</hideFromPlayer></npcArrival></events>',
+        {
+            sectionKind: 'destination',
+            stageId: 'characters',
+            allowedTags: ['npcArrival'],
+            authoritativeMovementCompanionNames: ['Rika the Gazer']
+        }
     );
+    assert.equal(redundantCompanionArrival.value.xml, '');
+    assert.deepEqual(redundantCompanionArrival.value.signatures, []);
     const unrelatedArrival = Events.parseTinyBrainEventXmlStage(
         '<events><npcArrival><npcName>Station Porter</npcName><hideFromPlayer>false</hideFromPlayer></npcArrival></events>',
         {
@@ -174,17 +173,16 @@ test('tiny-brain event stage parser validates allowlists, semantics, trackers, a
         ),
         /requires a non-empty <actorName>/
     );
-    assert.throws(
-        () => Events.parseTinyBrainEventXmlStage(
-            '<events><currency><amount>5</amount></currency></events>',
-            {
-                stageId: 'final',
-                allowedTags: ['currency'],
-                acceptedSignatures: currency.value.signatures
-            }
-        ),
-        /repeated an already accepted/
+    const repeatedCurrency = Events.parseTinyBrainEventXmlStage(
+        '<events><currency><amount>5</amount></currency></events>',
+        {
+            stageId: 'final',
+            allowedTags: ['currency'],
+            acceptedSignatures: currency.value.signatures
+        }
     );
+    assert.equal(repeatedCurrency.value.xml, '');
+    assert.deepEqual(repeatedCurrency.value.signatures, []);
     assert.throws(
         () => Events.parseTinyBrainEventXmlStage(
             '<events><updateTracker><trackerName>Alarm</trackerName></updateTracker></events>',
@@ -281,7 +279,7 @@ test('tiny-brain event stage parser rejects empty and malformed responses', () =
     );
 });
 
-test('tiny-brain thing arrivals cannot strip ownership or containment', () => {
+test('tiny-brain thing arrival duplicates are safely suppressed for owned and contained things', () => {
     const previousDeps = Events._deps;
     const owner = { id: 'char_player', name: 'Baato' };
     const satchel = {
@@ -325,30 +323,29 @@ test('tiny-brain thing arrivals cannot strip ownership or containment', () => {
     };
 
     try {
-        assert.throws(
-            () => Events.parseTinyBrainEventXmlStage(
-                '<events><thingArrival><thingName>QA Brass Travel Case</thingName></thingArrival></events>',
-                {
-                    sectionKind: 'destination',
-                    stageId: 'scene',
-                    allowedTags: ['thingArrival'],
-                    eventLocation: { id: 'loc_destination' },
-                },
-            ),
-            /must not emit <thingArrival> for owned thing "QA Brass Travel Case" carried by "Baato"/,
+        const ownedArrival = Events.parseTinyBrainEventXmlStage(
+            '<events><thingArrival><thingName>QA Brass Travel Case</thingName></thingArrival></events>',
+            {
+                sectionKind: 'destination',
+                stageId: 'scene',
+                allowedTags: ['thingArrival'],
+                eventLocation: { id: 'loc_destination' },
+            },
         );
-        assert.throws(
-            () => Events.parseTinyBrainEventXmlStage(
-                '<events><thingArrival><thingName>QA Contained Chip</thingName></thingArrival></events>',
-                {
-                    sectionKind: 'destination',
-                    stageId: 'scene',
-                    allowedTags: ['thingArrival'],
-                    eventLocation: { id: 'loc_destination' },
-                },
-            ),
-            /must not emit <thingArrival> for contained thing "QA Contained Chip"/,
+        assert.equal(ownedArrival.value.xml, '');
+        assert.deepEqual(ownedArrival.value.signatures, []);
+
+        const containedArrival = Events.parseTinyBrainEventXmlStage(
+            '<events><thingArrival><thingName>QA Contained Chip</thingName></thingArrival></events>',
+            {
+                sectionKind: 'destination',
+                stageId: 'scene',
+                allowedTags: ['thingArrival'],
+                eventLocation: { id: 'loc_destination' },
+            },
         );
+        assert.equal(containedArrival.value.xml, '');
+        assert.deepEqual(containedArrival.value.signatures, []);
 
         const legitimateArrival = Events.parseTinyBrainEventXmlStage(
             '<events><thingArrival><thingName>QA Supply Crate</thingName></thingArrival></events>',
@@ -422,7 +419,7 @@ test('tiny-brain event stage parser requires a persistent outcome for zero-healt
     }
 });
 
-test('tiny-brain event stage parser rejects status gains and losses that contradict current actor state', () => {
+test('tiny-brain event stage parser suppresses status changes already satisfied by current actor state', () => {
     const previousDeps = Events._deps;
     const wanderer = {
         name: 'Wanderer',
@@ -437,13 +434,11 @@ test('tiny-brain event stage parser rejects status gains and losses that contrad
     };
 
     try {
-        assert.throws(
-            () => Events.parseTinyBrainEventXmlStage(
-                '<events><statusEffectChange><entityName>Wanderer</entityName><statusEffectName>Burnt</statusEffectName><action>gained</action></statusEffectChange></events>',
-                { stageId: 'characters', allowedTags: ['statusEffectChange'] }
-            ),
-            /already has it/
+        const duplicateGain = Events.parseTinyBrainEventXmlStage(
+            '<events><statusEffectChange><entityName>Wanderer</entityName><statusEffectName>Burnt</statusEffectName><action>gained</action></statusEffectChange></events>',
+            { stageId: 'characters', allowedTags: ['statusEffectChange'] }
         );
+        assert.equal(duplicateGain.value.xml, '');
 
         const loss = Events.parseTinyBrainEventXmlStage(
             '<events><statusEffectChange><entityName>Wanderer</entityName><statusEffectName>Burnt</statusEffectName><action>lost</action></statusEffectChange></events>',
@@ -451,13 +446,11 @@ test('tiny-brain event stage parser rejects status gains and losses that contrad
         );
         assert.match(loss.value.xml, /<statusEffectChange>/);
 
-        assert.throws(
-            () => Events.parseTinyBrainEventXmlStage(
-                '<events><statusEffectChange><entityName>Wanderer</entityName><statusEffectName>Poisoned</statusEffectName><action>lost</action></statusEffectChange></events>',
-                { stageId: 'characters', allowedTags: ['statusEffectChange'] }
-            ),
-            /does not currently have it/
+        const duplicateLoss = Events.parseTinyBrainEventXmlStage(
+            '<events><statusEffectChange><entityName>Wanderer</entityName><statusEffectName>Poisoned</statusEffectName><action>lost</action></statusEffectChange></events>',
+            { stageId: 'characters', allowedTags: ['statusEffectChange'] }
         );
+        assert.equal(duplicateLoss.value.xml, '');
 
         const gain = Events.parseTinyBrainEventXmlStage(
             '<events><statusEffectChange><entityName>Wanderer</entityName><statusEffectName>Poisoned</statusEffectName><action>gained</action></statusEffectChange></events>',
@@ -469,7 +462,7 @@ test('tiny-brain event stage parser rejects status gains and losses that contrad
     }
 });
 
-test('tiny-brain status stage rejects a renamed duplicate of an accepted authoritative item effect', () => {
+test('tiny-brain status stage suppresses a renamed duplicate of an accepted authoritative item effect', () => {
     const previousDeps = Events._deps;
     const actor = {
         name: 'Baato',
@@ -510,17 +503,16 @@ test('tiny-brain status stage rejects a renamed duplicate of an accepted authori
             sourceTag: 'itemIngest',
         }]);
 
-        assert.throws(
-            () => Events.parseTinyBrainEventXmlStage(
-                '<events><statusEffectChange><entityName>Baato</entityName><statusEffectName>QA Focus Draught effect</statusEffectName><action>gained</action><level>1</level></statusEffectChange></events>',
-                {
-                    stageId: 'characters',
-                    allowedTags: ['statusEffectChange'],
-                    acceptedItemStatusApplications: applications,
-                },
-            ),
-            /already applies its authoritative configured status/,
+        const duplicateItemEffect = Events.parseTinyBrainEventXmlStage(
+            '<events><statusEffectChange><entityName>Baato</entityName><statusEffectName>QA Focus Draught effect</statusEffectName><action>gained</action><level>1</level></statusEffectChange></events>',
+            {
+                stageId: 'characters',
+                allowedTags: ['statusEffectChange'],
+                acceptedItemStatusApplications: applications,
+            },
         );
+        assert.equal(duplicateItemEffect.value.xml, '');
+        assert.deepEqual(duplicateItemEffect.value.signatures, []);
 
         const independent = Events.parseTinyBrainEventXmlStage(
             '<events><statusEffectChange><entityName>Baato</entityName><statusEffectName>Chilled</statusEffectName><action>gained</action><level>1</level></statusEffectChange></events>',
@@ -702,21 +694,8 @@ test('events tiny-brain template registers category checkpoints and local result
         /A plan, memory, dialogue mention, or offscreen action alone is not physical presence/,
         'character-presence stage must not turn mere references into arrivals'
     );
-    assert.match(
-        full,
-        /The item must cease being carried or owned by that character/,
-        'drop-item guidance must require a real ownership change'
-    );
-    assert.match(
-        full,
-        /luggage beside the owner's seat/,
-        'temporary travel placement must not become a drop event'
-    );
-    assert.match(
-        full,
-        /authoritative player-movement companions for this turn:[\s\S]*Rika the Gazer[\s\S]*Do not emit `<npcArrival>`, `<npcDeparture>`, or `<npcArrivalDeparture>`/,
-        'authoritative companions must be excluded from event-owned NPC movement'
-    );
+    assert.match(full, /drops, places, or sets down an inventory item into the current scene/);
+    assert.doesNotMatch(full, /authoritative player-movement companions for this turn/);
     assert.doesNotMatch(full, /Do not write any XML in this first step/);
 
     const marker = state.programStartMarker;

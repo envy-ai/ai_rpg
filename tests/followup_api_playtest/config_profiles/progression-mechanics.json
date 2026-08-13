@@ -1,0 +1,7 @@
+{
+  "version": 1,
+  "name": "progression-mechanics",
+  "description": "Shared progression-family profile on disposable fixture copies, with image generation and unrelated prompt families disabled while ability-selection endpoints remain available.",
+  "extends": "isolated-base",
+  "values": {}
+}

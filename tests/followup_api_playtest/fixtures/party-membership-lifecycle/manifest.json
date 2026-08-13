@@ -1,0 +1,58 @@
+{
+  "version": 1,
+  "name": "party-membership-lifecycle",
+  "description": "Copied party lifecycle fixture retained from the original PARTY audit.",
+  "createdAt": "2026-08-12T12:51:28.683Z",
+  "source": {
+    "setupCommand": "Historical PARTY setup: local QA Lark (alias Skylark) and distant QA Distant Moss (alias Moss), neither initially in Baato's party.",
+    "saveName": "2026-08-08T14-43-18-916Z_Monster_Girl_Life_2026-06b-Baato-Ember_Hollow_Outskirts-char_2-mskhha84",
+    "saveType": "saves",
+    "settingName": "Monster Girl Life 2026-06b",
+    "playerName": "Baato"
+  },
+  "configProfile": "vehicle-mechanics",
+  "requiredMods": [],
+  "worldTime": {
+    "dayIndex": 0,
+    "timeMinutes": 658
+  },
+  "entities": {
+    "playerId": "char_2",
+    "locationId": "loc_5",
+    "larkId": "char_20",
+    "larkAlias": "Skylark",
+    "distantMossId": "char_21",
+    "distantAlias": "Moss"
+  },
+  "invariants": [
+    {
+      "type": "entityField",
+      "source": "after",
+      "collection": "players",
+      "id": "char_20",
+      "path": "name",
+      "equals": "QA Lark"
+    },
+    {
+      "type": "entityField",
+      "source": "after",
+      "collection": "players",
+      "id": "char_20",
+      "path": "isInPlayerParty",
+      "equals": false
+    },
+    {
+      "type": "entityField",
+      "source": "after",
+      "collection": "players",
+      "id": "char_21",
+      "path": "isInPlayerParty",
+      "equals": false
+    }
+  ],
+  "validation": {
+    "passed": true,
+    "evidence": "Retained live API artifacts under tmp/followup-api-playtest/party."
+  },
+  "integrity": "sha256:0cc097c25181bbbf99af1500dd6307f3c473d4c67b8e820df29a9a8a3c6ac16e"
+}

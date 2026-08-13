@@ -121,6 +121,61 @@ test('tiny-brain exterior branch renders the resolved travel target name and des
     );
 });
 
+test('tiny-brain vehicle arrival guidance preserves onboard occupancy and player location', () => {
+    const promptEnv = new nunjucks.Environment(
+        new nunjucks.FileSystemLoader(path.join(__dirname, '..', 'prompts'), { noCache: true }),
+        { autoescape: false }
+    );
+    promptEnv.addExtension('TinyBrainPromptExtension', new TinyBrainPromptExtension());
+    addPlayerActionDestinationGlobals(promptEnv);
+    const renderState = TinyBrainPromptRunner.createRenderState();
+
+    const rendered = promptEnv.render('_includes/player-action.tinybrain.njk', {
+        __tinyBrainState: renderState,
+        actionText: 'Wait aboard for one minute while the tram arrives. No one disembarks.',
+        characterName: 'The player',
+        config: {
+            prose_instructions: 'Write clear prose.',
+            prose_length: 'three paragraphs',
+            prose_prompt_suffix: '',
+            repetition_buster: true,
+            use_legacy_prompt_checks: false
+        },
+        currentLocationLastSeenNpcs: [],
+        currentVehicle: {
+            destination: 'East Platform',
+            name: 'Night Train',
+            timeToDestination: '1 minute',
+            vehicleKind: 'location',
+            vehicleInfo: {
+                hasArrived: false,
+                isUnderway: true
+            },
+            allowedDestinations: []
+        },
+        isAttack: false,
+        isExterior: false,
+        modPlayerActionPromptSteps: [],
+        npcs: [],
+        party: [],
+        playerActionAccompanyingCharacters: [],
+        setting: { writingStyleNotes: 'Keep it concrete.' }
+    });
+
+    assert.match(
+        rendered,
+        /A vehicle moving or reaching its scheduled destination does not itself disembark the player or any other occupant/
+    );
+    assert.match(
+        rendered,
+        /If the player remains aboard, answer NONE even when the vehicle arrives, its doors open, or destination scenery appears in the draft/
+    );
+    assert.match(rendered, /Do not turn an unauthorized draft disembarkation into game state/);
+    assert.ok(renderState.checkpoints.some(checkpoint => (
+        checkpoint.parserName === 'player_action_movement'
+    )));
+});
+
 test('player-action actor roster excludes mechanically dead NPCs and party members', () => {
     const promptEnv = new nunjucks.Environment(
         new nunjucks.FileSystemLoader(path.join(__dirname, '..', 'prompts'), { noCache: true }),
@@ -170,7 +225,7 @@ test('player-action actor roster excludes mechanically dead NPCs and party membe
     assert.doesNotMatch(aiNotes, /Dead Ally/);
 });
 
-test('tiny-brain player-action stages and allowlists checked-action actor identity', () => {
+test('tiny-brain player-action does not freeze checked-action actors before drafting', () => {
     const promptEnv = new nunjucks.Environment(
         new nunjucks.FileSystemLoader(path.join(__dirname, '..', 'prompts'), { noCache: true }),
         { autoescape: false }
@@ -198,23 +253,14 @@ test('tiny-brain player-action stages and allowlists checked-action actor identi
         npcs: [{ name: 'QA Loud Decoy', race: 'Harpy', class: 'Guard', isDead: false }],
         party: [],
         playerActionAccompanyingCharacters: [],
-        playerActionSkillCheckActors: [
-            { name: 'Baato', aliases: ['player'] },
-            { name: 'QA Loud Decoy', aliases: ['Decoy'] }
-        ],
         setting: { writingStyleNotes: 'Keep it concrete.' }
     });
 
-    assert.match(rendered, /Do not list a character who merely observes/);
-    assert.match(rendered, /QA Loud Decoy \(accepted aliases: Decoy\)/);
+    assert.doesNotMatch(rendered, /Do not list a character who merely observes/);
     const checkpoint = renderState.checkpoints.find(candidate => (
         candidate.parserName === 'player_action_checked_action_actors'
     ));
-    assert.ok(checkpoint);
-    assert.deepEqual(checkpoint.parserArgs[0], [
-        { name: 'Baato', aliases: ['player'] },
-        { name: 'QA Loud Decoy', aliases: ['Decoy'] }
-    ]);
+    assert.equal(checkpoint, undefined);
 });
 
 test('tiny-brain committed travel uses authoritative destination without a movement or destination checkpoint', () => {
@@ -265,14 +311,10 @@ test('tiny-brain committed travel uses authoritative destination without a movem
     assert.ok(renderState.checkpoints.some(checkpoint => (
         checkpoint.parserName === 'player_action_accompanying_characters'
     )));
+    assert.doesNotMatch(rendered, /Keep carried and equipped items in their current owner's possession/);
     assert.match(
         rendered,
-        /Keep carried and equipped items in their current owner's possession unless the <playerAction> or a mechanical tool result explicitly commits an inventory change/,
-        'travel prose must preserve authoritative inventory ownership'
-    );
-    assert.match(
-        rendered,
-        /if the action and second draft establish that an eligible character deliberately travels with the player, report that character even when an alias was used/,
-        'companion selection must retain deliberate alias-named travelers'
+        /Use exact names or any listed aliases[\s\S]*established explicitly or reasonably inferred/,
+        'companion selection must accept aliases and reasonably inferred travelers'
     );
 });

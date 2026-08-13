@@ -4429,6 +4429,25 @@ class LLMClient {
         });
     }
 
+    static resetIncompleteCompletionCassetteRecording({ description = undefined } = {}) {
+        const sourcePath = LLMCompletionCassette.resolveRecordingSource(Globals?.config);
+        if (!sourcePath) {
+            throw new Error('No completion cassette recording destination is configured.');
+        }
+        const serialization = LLMClient.#getCompletionCassetteSerializationStatus();
+        if (serialization.active || serialization.queued > 0) {
+            throw new Error(
+                'Cannot reset a cassette while completion requests are active or queued '
+                + `(active=${serialization.active}, queued=${serialization.queued}).`
+            );
+        }
+        return LLMCompletionCassette.resetIncompleteRecording({
+            sourcePath,
+            baseDir: Globals?.baseDir || process.cwd(),
+            description
+        });
+    }
+
     static #isPlainObject(value) {
         return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
     }

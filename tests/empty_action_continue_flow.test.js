@@ -35,3 +35,10 @@ test('empty player actions skip attack and plausibility checks before prompt ren
     assert.match(apiSource, /if\s*\(\s*!isEmptyPlayerAction\s*&&\s*!isCreativeModeAction\s*&&\s*!isForcedEventAction\s*&&\s*plausibilityChecksEnabled\s*&&\s*legacyPromptChecksEnabled\s*\)/);
     assert.doesNotMatch(apiSource, /runAttackCheckPrompt\(\{[\s\S]{0,500}?isEmptyPlayerAction[\s\S]{0,500}?runPlausibilityCheck/);
 });
+
+test('creative and prompt-only actions do not receive disabled-check fallback outcomes', () => {
+    assert.match(
+        apiSource,
+        /else if\s*\(\s*!isEmptyPlayerAction\s*&&\s*!isCreativeModeAction\s*&&\s*!isForcedEventAction\s*&&\s*!isPromptOnlyAction\s*&&\s*!plausibilityChecksEnabled\s*\)/
+    );
+});

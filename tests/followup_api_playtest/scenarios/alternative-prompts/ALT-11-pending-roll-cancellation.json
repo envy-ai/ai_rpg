@@ -1,0 +1,266 @@
+{
+  "version": 1,
+  "scenario": "alternative-prompts",
+  "case": "ALT-11-pending-roll-cancellation",
+  "description": "Start an ordinary <f> action, deliberately leave its integer request pending, cancel through the prompt-control API, await the original request, and prove clean failure with no partial mechanics or mutation.",
+  "fixture": "relationships-factions",
+  "configProfile": "alternative-prompts-cancellation-roll",
+  "trackedPaths": [
+    "player.payload.player",
+    "players.payload.players",
+    "locations.payload.locations",
+    "regions.payload.regions",
+    "things.payload.things",
+    "factions.payload.factions",
+    "factions.payload.playerStandings",
+    "scheduledEvents.payload.scheduledEvents",
+    "calendar.payload.worldTime",
+    "history.payload.history"
+  ],
+  "steps": [
+    { "type": "loadFixture" },
+    { "type": "snapshot", "name": "before_pending_roll" },
+    {
+      "type": "startChat",
+      "name": "pending_roll",
+      "text": "<f> I carefully inspect the fixed face of March Start Marker for a subtle mason's alignment mark. Resolve this as one unopposed Perception check at Medium difficulty. I do not touch, alter, take, move, attack, or do anything else.",
+      "travel": false,
+      "interactive": {
+        "roll": null,
+        "questAccepted": false,
+        "confirmed": false,
+        "deferPlayerInput": true
+      }
+    },
+    {
+      "type": "waitForRealtime",
+      "name": "roll_is_pending",
+      "until": [
+        {
+          "type": "arrayObjectCount",
+          "source": "realtime",
+          "path": ".",
+          "where": {
+            "type": "player_input_request",
+            "mode": "integer"
+          },
+          "equals": 1
+        }
+      ],
+      "timeoutMs": 300000,
+      "pollIntervalMs": 10
+    },
+    {
+      "type": "request",
+      "name": "cancel_pending_roll",
+      "method": "POST",
+      "route": "/api/prompts/cancel-all",
+      "body": {
+        "waitForDrain": true,
+        "timeoutMs": 30000
+      }
+    },
+    { "type": "awaitChat", "name": "pending_roll" },
+    {
+      "type": "assert",
+      "assertions": [
+        {
+          "type": "equals",
+          "source": "responses.cancel_pending_roll",
+          "path": "status",
+          "equals": 200
+        },
+        {
+          "type": "equals",
+          "source": "responses.cancel_pending_roll",
+          "path": "payload.success",
+          "equals": true
+        },
+        {
+          "type": "equals",
+          "source": "responses.cancel_pending_roll",
+          "path": "payload.playerInputRequests.cancelledCount",
+          "equals": 1
+        },
+        {
+          "type": "equals",
+          "source": "responses.cancel_pending_roll",
+          "path": "payload.drain.activeCount",
+          "equals": 0
+        },
+        {
+          "type": "equals",
+          "source": "responses.cancel_pending_roll",
+          "path": "payload.drain.trackedCount",
+          "equals": 0
+        },
+        {
+          "type": "equals",
+          "source": "responses.pending_roll",
+          "path": "status",
+          "equals": 500
+        },
+        {
+          "type": "exists",
+          "source": "responses.pending_roll",
+          "path": "payload.error"
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "realtime",
+          "path": ".",
+          "where": {
+            "type": "player_input_request",
+            "mode": "integer"
+          },
+          "equals": 1
+        },
+        {
+          "type": "arrayObjectCount",
+          "source": "realtime",
+          "path": ".",
+          "where": {
+            "type": "harness_response",
+            "route": "/api/chat/user-input-response"
+          },
+          "equals": 0
+        },
+        {
+          "type": "stateUnchanged",
+          "beforeSource": "snapshots.before_pending_roll",
+          "afterSource": "after",
+          "paths": [
+            "player.payload.player.id",
+            "player.payload.player.level",
+            "player.payload.player.health",
+            "player.payload.player.maxHealth",
+            "player.payload.player.locationId",
+            "player.payload.player.experience",
+            "player.payload.player.abilities",
+            "player.payload.player.attributes",
+            "player.payload.player.skills",
+            "player.payload.player.inventory",
+            "player.payload.player.currency",
+            "player.payload.player.statusEffects",
+            "player.payload.player.needBars",
+            "player.payload.player.quests",
+            "player.payload.player.completedQuests",
+            "locations.payload.locations",
+            "regions.payload.regions",
+            "things.payload.things",
+            "factions.payload.factions",
+            "factions.payload.playerStandings",
+            "scheduledEvents.payload.scheduledEvents",
+            "calendar.payload.worldTime"
+          ]
+        },
+        {
+          "type": "historyAddedTypeCount",
+          "beforeSource": "snapshots.before_pending_roll",
+          "afterSource": "after",
+          "entryType": "check-results",
+          "equals": 1
+        },
+        {
+          "type": "historyAddedTypeCount",
+          "beforeSource": "snapshots.before_pending_roll",
+          "afterSource": "after",
+          "entryType": "tool-call-debug",
+          "equals": 1
+        },
+        {
+          "type": "historyAddedNestedObjectCount",
+          "beforeSource": "snapshots.before_pending_roll",
+          "afterSource": "after",
+          "entryWhere": {
+            "type": "check-results",
+            "metadata": {
+              "promptLabel": "player_action",
+              "checkResultCount": 1,
+              "completedCheckResultCount": 0,
+              "erroredCheckResultCount": 1
+            }
+          },
+          "path": "checkResults",
+          "where": {
+            "kind": "skill",
+            "status": "error",
+            "error": {
+              "message": "Prompt canceled by user."
+            }
+          },
+          "equals": 1
+        },
+        {
+          "type": "historyAddedNestedObjectCount",
+          "beforeSource": "snapshots.before_pending_roll",
+          "afterSource": "after",
+          "entryWhere": {
+            "type": "check-results"
+          },
+          "path": "checkResults",
+          "where": {
+            "status": "running"
+          },
+          "equals": 0
+        },
+        {
+          "type": "historyAddedNestedObjectCount",
+          "beforeSource": "snapshots.before_pending_roll",
+          "afterSource": "after",
+          "entryWhere": {
+            "type": "tool-call-debug",
+            "metadata": {
+              "promptLabel": "player_action",
+              "toolCallCount": 1,
+              "completedToolCallCount": 0,
+              "erroredToolCallCount": 1
+            }
+          },
+          "path": "toolCalls",
+          "where": {
+            "name": "resolveSkillCheck",
+            "status": "error",
+            "error": {
+              "message": "Prompt canceled by user.",
+              "code": "user_input_cancelled"
+            }
+          },
+          "equals": 1
+        },
+        {
+          "type": "historyAddedNestedObjectCount",
+          "beforeSource": "snapshots.before_pending_roll",
+          "afterSource": "after",
+          "entryWhere": {
+            "type": "tool-call-debug"
+          },
+          "path": "toolCalls",
+          "where": {
+            "status": "running"
+          },
+          "equals": 0
+        },
+        {
+          "type": "historyAddedTypeCount",
+          "beforeSource": "snapshots.before_pending_roll",
+          "afterSource": "after",
+          "entryType": "player-action",
+          "equals": 0
+        },
+        {
+          "type": "historyAddedTypeCount",
+          "beforeSource": "snapshots.before_pending_roll",
+          "afterSource": "after",
+          "entryType": "event-summary",
+          "equals": 0
+        },
+        { "type": "noRealtimeErrors" },
+        { "type": "noUnexpectedErrorLogs" }
+      ]
+    }
+  ],
+  "humanReview": [
+    "This branch tests cancellation mechanics rather than prose. Confirm no completed action narration is presented after the pending roll is cancelled; do not add prose rules for partial streamed text."
+  ]
+}

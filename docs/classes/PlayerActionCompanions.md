@@ -25,3 +25,7 @@ Player-action base prompt records retain an authoritative `isDead` flag for loca
 - selected non-party NPCs retain non-party status, receive the player's destination as `currentLocation`, and are added to the destination `npcIds` list.
 
 This module deliberately does not recruit or dismiss anyone. Player-action event checks remain the authority for party-membership changes.
+
+## Follow-Up Watch Item
+
+Companion movement may be inferred when the player action and evolving draft reasonably establish that an eligible character travels with the player; explicit agreement is not required. This preserves useful narrative movement and NPC agency. Revisit this policy only if future live prose produces recurring material movement/bookkeeping mismatches, and prefer a structured selection or state-boundary correction over inspecting or mechanically classifying free-form prose.

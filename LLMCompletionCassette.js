@@ -547,10 +547,26 @@ class LLMCompletionCassette {
         const resolvedPath = resolveFilePath(sourcePath, baseDir);
         let state = LLMCompletionCassette.#recordingStates.get(resolvedPath);
         if (!state) {
+            let reusableEmptyDocument = false;
             if (fs.existsSync(resolvedPath)) {
-                throw new Error(
-                    `Completion cassette recording destination already exists; use a new attempt path: ${resolvedPath}`
-                );
+                let existingData;
+                try {
+                    existingData = JSON.parse(fs.readFileSync(resolvedPath, 'utf8'));
+                } catch (error) {
+                    throw new Error(
+                        `Completion cassette recording destination already exists and is invalid JSON (${resolvedPath}): ${error.message}`
+                    );
+                }
+                reusableEmptyDocument = LLMCompletionCassette.isVersion2Document(existingData)
+                    && existingData.strict === true
+                    && existingData.complete === false
+                    && Array.isArray(existingData.entries)
+                    && existingData.entries.length === 0;
+                if (!reusableEmptyDocument) {
+                    throw new Error(
+                        `Completion cassette recording destination already exists; use a new attempt path: ${resolvedPath}`
+                    );
+                }
             }
             state = {
                 sourcePath,
@@ -653,6 +669,59 @@ class LLMCompletionCassette {
             resolvedPath,
             complete: true,
             total: data.entries.length
+        };
+    }
+
+    static resetIncompleteRecording({ sourcePath, baseDir, description = undefined } = {}) {
+        const resolvedPath = resolveFilePath(sourcePath, baseDir);
+        const state = LLMCompletionCassette.#recordingStates.get(resolvedPath);
+        if (state?.active) {
+            throw new Error(`Cannot reset a cassette while a logical completion is active: ${resolvedPath}`);
+        }
+
+        let previousData = state?.data || null;
+        if (!previousData && fs.existsSync(resolvedPath)) {
+            try {
+                previousData = JSON.parse(fs.readFileSync(resolvedPath, 'utf8'));
+            } catch (error) {
+                throw new Error(`Completion cassette recording JSON is invalid (${resolvedPath}): ${error.message}`);
+            }
+        }
+        if (previousData && !LLMCompletionCassette.isVersion2Document(previousData)) {
+            throw new Error(`Completion cassette recording must use version 2: ${resolvedPath}`);
+        }
+        if (previousData?.complete === true) {
+            throw new Error(`Cannot reset a completed completion cassette recording: ${resolvedPath}`);
+        }
+
+        const discardedTotal = Array.isArray(previousData?.entries)
+            ? previousData.entries.length
+            : 0;
+        const data = {
+            version: CASSETTE_VERSION,
+            strict: true,
+            complete: false,
+            description: typeof description === 'string'
+                ? description
+                : (typeof previousData?.description === 'string' ? previousData.description : ''),
+            recordedAt: new Date().toISOString(),
+            entries: []
+        };
+        writeJsonAtomic(resolvedPath, data);
+        LLMCompletionCassette.#recordingStates.set(resolvedPath, {
+            sourcePath,
+            resolvedPath,
+            data,
+            active: false
+        });
+        return {
+            active: true,
+            version: CASSETTE_VERSION,
+            sourcePath,
+            resolvedPath,
+            complete: false,
+            total: 0,
+            discardedTotal
         };
     }
 

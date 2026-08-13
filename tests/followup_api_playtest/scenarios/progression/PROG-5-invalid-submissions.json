@@ -1,0 +1,470 @@
+{
+  "version": 1,
+  "scenario": "progression",
+  "case": "PROG-5-invalid-submissions",
+  "description": "Reject wrong-level, too-few, too-many, duplicate, unknown, and duplicate-decline ability submissions independently and atomically on a disposable copy of the cached level-4 options fixture.",
+  "fixture": "progression-level4-options",
+  "configProfile": "progression-mechanics",
+  "trackedPaths": [
+    "player.payload.player",
+    "players.payload.players",
+    "locations.payload.locations",
+    "things.payload.things",
+    "factions.payload.factions",
+    "factions.payload.playerStandings",
+    "scheduledEvents.payload.scheduledEvents",
+    "calendar.payload.worldTime",
+    "history.payload.history"
+  ],
+  "steps": [
+    {
+      "type": "loadFixture"
+    },
+    {
+      "type": "request",
+      "name": "cached_level4",
+      "method": "GET",
+      "route": "/api/player/ability-selection?generateOptions=false"
+    },
+    {
+      "type": "assert",
+      "assertions": [
+        {
+          "type": "equals",
+          "source": "responses.cached_level4",
+          "path": "status",
+          "equals": 200
+        },
+        {
+          "type": "equals",
+          "source": "responses.cached_level4",
+          "path": "payload.pending",
+          "equals": true
+        },
+        {
+          "type": "equals",
+          "source": "responses.cached_level4",
+          "path": "payload.abilitySelection.selection.level",
+          "equals": 4
+        },
+        {
+          "type": "equals",
+          "source": "responses.cached_level4",
+          "path": "payload.abilitySelection.selection.options",
+          "equals": [
+            {
+              "name": "Cold Tolerance",
+              "description": "Baato’s body adapts to freezing temperatures, reducing stamina drain from cold weather effects by 20%.",
+              "shortDescription": "Reduces stamina drain in freezing weather.",
+              "type": "Passive",
+              "level": 4
+            },
+            {
+              "name": "Carry Weight",
+              "description": "Baato’s muscles strengthen from hauling crates and satchels, increasing his maximum inventory capacity by 10 units.",
+              "shortDescription": "Increases maximum inventory capacity.",
+              "type": "Passive",
+              "level": 4
+            },
+            {
+              "name": "Apprentice’s Eye",
+              "description": "Years of sorting herbs reveal their secrets; Baato can now see the basic recipe requirements for common potions.",
+              "shortDescription": "Reveals basic recipe requirements for common potions.",
+              "type": "Passive",
+              "level": 4
+            },
+            {
+              "name": "Swift Step",
+              "description": "Baato moves with practiced efficiency, increasing his base movement speed by 5% on foot.",
+              "shortDescription": "Increases base movement speed on foot.",
+              "type": "Passive",
+              "level": 4
+            },
+            {
+              "name": "Resilient Constitution",
+              "description": "Baato’s human adaptability hardens him against injury, increasing his maximum health by 10 points.",
+              "shortDescription": "Increases maximum health by 10 points.",
+              "type": "Passive",
+              "level": 4
+            },
+            {
+              "name": "Potion Stability",
+              "description": "Baato’s careful handling reduces the chance of failed alchemy experiments by 5%.",
+              "shortDescription": "Reduces chance of failed alchemy experiments.",
+              "type": "Passive",
+              "level": 4
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "snapshot",
+      "name": "before_invalid"
+    },
+    {
+      "type": "request",
+      "name": "wrong_level",
+      "method": "POST",
+      "route": "/api/player/ability-selection/submit",
+      "body": {
+        "level": 5,
+        "selectedAbilityNames": [
+          "$fixture.generatedOptionNames.0",
+          "$fixture.generatedOptionNames.1",
+          "$fixture.generatedOptionNames.2"
+        ]
+      }
+    },
+    {
+      "type": "assert",
+      "assertions": [
+        {
+          "type": "equals",
+          "source": "responses.wrong_level",
+          "path": "status",
+          "equals": 400
+        },
+        {
+          "type": "equals",
+          "source": "responses.wrong_level",
+          "path": "payload.error",
+          "equals": "Ability selections must be submitted for level 4 next (received level 5)."
+        },
+        {
+          "type": "stateUnchanged",
+          "beforeSource": "snapshots.before_invalid",
+          "afterSource": "after",
+          "paths": [
+            "player.payload.player",
+            "players.payload.players",
+            "locations.payload.locations",
+            "things.payload.things",
+            "factions.payload.factions",
+            "factions.payload.playerStandings",
+            "scheduledEvents.payload.scheduledEvents",
+            "calendar.payload.worldTime",
+            "history.payload.history"
+          ]
+        }
+      ]
+    },
+    {
+      "type": "request",
+      "name": "too_few",
+      "method": "POST",
+      "route": "/api/player/ability-selection/submit",
+      "body": {
+        "level": 4,
+        "selectedAbilityNames": [
+          "$fixture.generatedOptionNames.0",
+          "$fixture.generatedOptionNames.1"
+        ]
+      }
+    },
+    {
+      "type": "assert",
+      "assertions": [
+        {
+          "type": "equals",
+          "source": "responses.too_few",
+          "path": "status",
+          "equals": 400
+        },
+        {
+          "type": "equals",
+          "source": "responses.too_few",
+          "path": "payload.error",
+          "equals": "Exactly 3 abilities must be selected for level 4."
+        },
+        {
+          "type": "stateUnchanged",
+          "beforeSource": "snapshots.before_invalid",
+          "afterSource": "after",
+          "paths": [
+            "player.payload.player",
+            "players.payload.players",
+            "locations.payload.locations",
+            "things.payload.things",
+            "factions.payload.factions",
+            "factions.payload.playerStandings",
+            "scheduledEvents.payload.scheduledEvents",
+            "calendar.payload.worldTime",
+            "history.payload.history"
+          ]
+        }
+      ]
+    },
+    {
+      "type": "request",
+      "name": "too_many",
+      "method": "POST",
+      "route": "/api/player/ability-selection/submit",
+      "body": {
+        "level": 4,
+        "selectedAbilityNames": [
+          "$fixture.generatedOptionNames.0",
+          "$fixture.generatedOptionNames.1",
+          "$fixture.generatedOptionNames.2",
+          "$fixture.generatedOptionNames.3"
+        ]
+      }
+    },
+    {
+      "type": "assert",
+      "assertions": [
+        {
+          "type": "equals",
+          "source": "responses.too_many",
+          "path": "status",
+          "equals": 400
+        },
+        {
+          "type": "equals",
+          "source": "responses.too_many",
+          "path": "payload.error",
+          "equals": "Exactly 3 abilities must be selected for level 4."
+        },
+        {
+          "type": "stateUnchanged",
+          "beforeSource": "snapshots.before_invalid",
+          "afterSource": "after",
+          "paths": [
+            "player.payload.player",
+            "players.payload.players",
+            "locations.payload.locations",
+            "things.payload.things",
+            "factions.payload.factions",
+            "factions.payload.playerStandings",
+            "scheduledEvents.payload.scheduledEvents",
+            "calendar.payload.worldTime",
+            "history.payload.history"
+          ]
+        }
+      ]
+    },
+    {
+      "type": "request",
+      "name": "duplicate_selected",
+      "method": "POST",
+      "route": "/api/player/ability-selection/submit",
+      "body": {
+        "level": 4,
+        "selectedAbilityNames": [
+          "$fixture.generatedOptionNames.0",
+          "$fixture.generatedOptionNames.1",
+          "$fixture.generatedOptionNames.1"
+        ]
+      }
+    },
+    {
+      "type": "assert",
+      "assertions": [
+        {
+          "type": "equals",
+          "source": "responses.duplicate_selected",
+          "path": "status",
+          "equals": 400
+        },
+        {
+          "type": "equals",
+          "source": "responses.duplicate_selected",
+          "path": "payload.error",
+          "equals": "Duplicate ability names were submitted."
+        },
+        {
+          "type": "stateUnchanged",
+          "beforeSource": "snapshots.before_invalid",
+          "afterSource": "after",
+          "paths": [
+            "player.payload.player",
+            "players.payload.players",
+            "locations.payload.locations",
+            "things.payload.things",
+            "factions.payload.factions",
+            "factions.payload.playerStandings",
+            "scheduledEvents.payload.scheduledEvents",
+            "calendar.payload.worldTime",
+            "history.payload.history"
+          ]
+        }
+      ]
+    },
+    {
+      "type": "request",
+      "name": "unknown_selected",
+      "method": "POST",
+      "route": "/api/player/ability-selection/submit",
+      "body": {
+        "level": 4,
+        "selectedAbilityNames": [
+          "$fixture.generatedOptionNames.0",
+          "$fixture.generatedOptionNames.1",
+          "QA Unknown Ability"
+        ]
+      }
+    },
+    {
+      "type": "assert",
+      "assertions": [
+        {
+          "type": "equals",
+          "source": "responses.unknown_selected",
+          "path": "status",
+          "equals": 400
+        },
+        {
+          "type": "equals",
+          "source": "responses.unknown_selected",
+          "path": "payload.error",
+          "equals": "Selected ability \"qa unknown ability\" is not one of the available options."
+        },
+        {
+          "type": "stateUnchanged",
+          "beforeSource": "snapshots.before_invalid",
+          "afterSource": "after",
+          "paths": [
+            "player.payload.player",
+            "players.payload.players",
+            "locations.payload.locations",
+            "things.payload.things",
+            "factions.payload.factions",
+            "factions.payload.playerStandings",
+            "scheduledEvents.payload.scheduledEvents",
+            "calendar.payload.worldTime",
+            "history.payload.history"
+          ]
+        }
+      ]
+    },
+    {
+      "type": "request",
+      "name": "duplicate_declined",
+      "method": "POST",
+      "route": "/api/player/ability-selection/submit",
+      "body": {
+        "level": 4,
+        "selectedAbilityNames": [
+          "$fixture.generatedOptionNames.0",
+          "$fixture.generatedOptionNames.1",
+          "$fixture.generatedOptionNames.2"
+        ],
+        "declinedAbilityNames": [
+          "$fixture.generatedOptionNames.3",
+          "$fixture.generatedOptionNames.3"
+        ]
+      }
+    },
+    {
+      "type": "assert",
+      "assertions": [
+        {
+          "type": "equals",
+          "source": "responses.duplicate_declined",
+          "path": "status",
+          "equals": 400
+        },
+        {
+          "type": "equals",
+          "source": "responses.duplicate_declined",
+          "path": "payload.error",
+          "equals": "Duplicate declined ability names were submitted."
+        },
+        {
+          "type": "stateUnchanged",
+          "beforeSource": "snapshots.before_invalid",
+          "afterSource": "after",
+          "paths": [
+            "player.payload.player",
+            "players.payload.players",
+            "locations.payload.locations",
+            "things.payload.things",
+            "factions.payload.factions",
+            "factions.payload.playerStandings",
+            "scheduledEvents.payload.scheduledEvents",
+            "calendar.payload.worldTime",
+            "history.payload.history"
+          ]
+        }
+      ]
+    },
+    {
+      "type": "request",
+      "name": "still_pending",
+      "method": "GET",
+      "route": "/api/player/ability-selection?generateOptions=false"
+    },
+    {
+      "type": "assert",
+      "assertions": [
+        {
+          "type": "equals",
+          "source": "responses.still_pending",
+          "path": "status",
+          "equals": 200
+        },
+        {
+          "type": "equals",
+          "source": "responses.still_pending",
+          "path": "payload.abilitySelection",
+          "equalsFrom": {
+            "source": "responses.cached_level4",
+            "path": "payload.abilitySelection"
+          }
+        },
+        {
+          "type": "equals",
+          "source": "responses.still_pending",
+          "path": "payload.player",
+          "equalsFrom": {
+            "source": "snapshots.before_invalid",
+            "path": "player.payload.player"
+          }
+        }
+      ]
+    },
+    {
+      "type": "save",
+      "name": "invalid_submission_save"
+    },
+    {
+      "type": "readSavedJson",
+      "name": "raw_players",
+      "fileName": "allPlayers.json"
+    },
+    {
+      "type": "assert",
+      "assertions": [
+        {
+          "type": "count",
+          "source": "responses.raw_players",
+          "path": "payload.char_2.declinedAbilities",
+          "equals": 0
+        },
+        {
+          "type": "equals",
+          "source": "responses.raw_players",
+          "path": "payload.char_2.pendingAbilityOptionsByLevel.4",
+          "equalsFrom": {
+            "source": "responses.cached_level4",
+            "path": "payload.abilitySelection.selection.options"
+          }
+        },
+        {
+          "type": "historyAddedTypeCount",
+          "entryType": "player-action",
+          "equals": 0,
+          "beforeSource": "snapshots.before_invalid",
+          "afterSource": "after"
+        },
+        {
+          "type": "noRealtimeErrors"
+        },
+        {
+          "type": "noUnexpectedErrorLogs"
+        }
+      ]
+    }
+  ],
+  "humanReview": []
+}

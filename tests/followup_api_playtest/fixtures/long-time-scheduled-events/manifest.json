@@ -1,0 +1,196 @@
+{
+  "version": 1,
+  "name": "long-time-scheduled-events",
+  "description": "Long-time baseline with two pending deterministic scheduled events at +30 and +45 minutes, one visible at the player baseline and one offscreen at the visited lodge.",
+  "createdAt": "2026-08-11T16:01:38.778Z",
+  "source": {
+    "setupCommand": "@@ QA FIXTURE SETUP ONLY. From the validated long-time-rest-lodge fixture, call scheduleEvent exactly twice to create the exact March Start Marker +30-minute bell and QA Long Rest Lodge +45-minute ledger events.",
+    "saveName": "2026-08-11T16-00-35-199Z_Monster_Girl_Life_2026-06b-Baato-March_Start_Marker-char_2-msouk7lr",
+    "saveType": "saves",
+    "settingName": "Monster Girl Life 2026-06b",
+    "playerName": "Baato"
+  },
+  "configProfile": "long-time-mechanics",
+  "requiredMods": [
+    "implants",
+    "modules",
+    "nsfw-boost",
+    "party-needs",
+    "scene-illustration"
+  ],
+  "worldTime": 663,
+  "entities": {
+    "playerId": "char_2",
+    "playerName": "Baato",
+    "baselineLocationId": "loc_39",
+    "baselineLocationName": "March Start Marker",
+    "isolationLocationId": "loc_30",
+    "isolationLocationName": "Stairwell",
+    "regionId": "region_1786438821952_m5baxvz2",
+    "regionName": "QA Frost March",
+    "lodgeLocationId": "loc_45",
+    "lodgeName": "QA Long Rest Lodge",
+    "baselineToLodgeExitId": "exit_85",
+    "lodgeToBaselineExitId": "exit_86",
+    "lodgeTravelMinutes": 12,
+    "lodgeKeeperId": "char_43",
+    "lodgeKeeperName": "QA Lodge Keeper",
+    "lodgeResidentIds": [
+      "char_41",
+      "char_42"
+    ],
+    "lodgeResidentNames": [
+      "Ruri",
+      "Mio"
+    ],
+    "tonicId": "thing_325",
+    "tonicName": "QA Short Tonic",
+    "tonicEffectName": "QA Brief Vigor",
+    "tonicDurationMinutes": 10,
+    "currentEventId": "sevent_1",
+    "currentEventDescription": "The QA March test bell rings exactly once; this is a deterministic observation and no character or object moves.",
+    "currentEventTargetWorldMinute": 693,
+    "lodgeEventId": "sevent_2",
+    "lodgeEventDescription": "QA Lodge Keeper writes exactly one dated line in the lodge guest ledger; this is a deterministic observation and no character or object moves.",
+    "lodgeEventTargetWorldMinute": 708,
+    "companionId": "char_40",
+    "companionName": "QA Tired Companion",
+    "nonPartyNpcId": "char_37",
+    "nonPartyNpcName": "QA Courier",
+    "nonPartyNpcAlias": "Quickstep",
+    "startingNeeds": {
+      "food": 600,
+      "rest": 401,
+      "stamina": 600,
+      "mana": 600
+    }
+  },
+  "invariants": [
+    {
+      "type": "equals",
+      "source": "after",
+      "path": "player.payload.player.locationId",
+      "equals": "loc_39"
+    },
+    {
+      "type": "equals",
+      "source": "after",
+      "path": "calendar.payload.worldTime.timeMinutes",
+      "equals": 663
+    },
+    {
+      "type": "entityField",
+      "source": "after",
+      "collection": "locations",
+      "id": "loc_45",
+      "path": "visited",
+      "equals": true
+    },
+    {
+      "type": "equals",
+      "source": "after",
+      "path": "currentLocation.payload.location.exits.qa_long_rest_lodge.id",
+      "equals": "exit_85"
+    },
+    {
+      "type": "equals",
+      "source": "after",
+      "path": "currentLocation.payload.location.exits.qa_long_rest_lodge.travelTimeMinutes",
+      "equals": 12
+    },
+    {
+      "type": "entityField",
+      "source": "after",
+      "collection": "players",
+      "id": "char_43",
+      "path": "class",
+      "equals": "Innkeeper"
+    },
+    {
+      "type": "entityField",
+      "source": "after",
+      "collection": "players",
+      "id": "char_43",
+      "path": "locationId",
+      "equals": "loc_45"
+    },
+    {
+      "type": "entityField",
+      "source": "after",
+      "collection": "things",
+      "id": "thing_325",
+      "path": "metadata.ownerId",
+      "equals": "char_2"
+    },
+    {
+      "type": "entityField",
+      "source": "after",
+      "collection": "things",
+      "id": "thing_325",
+      "path": "causeStatusEffectOnTarget.duration",
+      "equals": 10
+    },
+    {
+      "type": "equals",
+      "source": "after",
+      "path": "scheduledEvents.payload.count",
+      "equals": 2
+    },
+    {
+      "type": "arrayObjectCount",
+      "source": "after",
+      "path": "scheduledEvents.payload.scheduledEvents",
+      "where": {
+        "id": "sevent_1",
+        "event": "The QA March test bell rings exactly once; this is a deterministic observation and no character or object moves.",
+        "regionId": "region_1786438821952_m5baxvz2",
+        "locationId": "loc_39",
+        "targetWorldMinute": 693,
+        "targetWorldTime": {
+          "dayIndex": 0,
+          "timeMinutes": 693
+        },
+        "createdAtWorldMinute": 663,
+        "status": "pending",
+        "resolutionSummary": "",
+        "playerProse": "",
+        "resolvedAtWorldMinute": null,
+        "resolvedAtWorldTime": null
+      },
+      "equals": 1
+    },
+    {
+      "type": "arrayObjectCount",
+      "source": "after",
+      "path": "scheduledEvents.payload.scheduledEvents",
+      "where": {
+        "id": "sevent_2",
+        "event": "QA Lodge Keeper writes exactly one dated line in the lodge guest ledger; this is a deterministic observation and no character or object moves.",
+        "regionId": "region_1786438821952_m5baxvz2",
+        "locationId": "loc_45",
+        "targetWorldMinute": 708,
+        "targetWorldTime": {
+          "dayIndex": 0,
+          "timeMinutes": 708
+        },
+        "createdAtWorldMinute": 663,
+        "status": "pending",
+        "resolutionSummary": "",
+        "playerProse": "",
+        "resolvedAtWorldMinute": null,
+        "resolvedAtWorldTime": null
+      },
+      "equals": 1
+    }
+  ],
+  "validation": {
+    "passed": true,
+    "scenario": "TIME-fixture-scheduled-events",
+    "mode": "live-verify",
+    "artifactDirectory": "tmp/followup-api-playtest/long-time-setup/TIME-fixture-scheduled-events/attempt-1",
+    "assertionsPassed": 41,
+    "assertionsFailed": 0,
+    "notes": "The model issued exactly two successful scheduleEvent tool calls in one generic prompt. Both pending records have exact canonical location, timing, creation-minute, and empty resolution fields; world time remained unchanged and no realtime or changed error logs appeared."
+  },
+  "integrity": "sha256:eb0f38ee04beb2936199ad6d5ceb61655b55a26f3fbb450413db5fda05c5a21e"
+}

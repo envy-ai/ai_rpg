@@ -89,6 +89,7 @@ function buildContext() {
         interruptionMinutes: 5,
         scheduledEvents: [{
             id: 'event-1',
+            event: 'Mira rings the workshop bell exactly once.',
             summary: 'The bell rang.',
             proseForPlayer: 'A bell rings.'
         }],
@@ -132,6 +133,17 @@ test('all newly added tiny-brain prose programs render and register staged check
     }
 });
 
+test('scheduled interruption chronology has one authoritative prompt-local contract', () => {
+    const env = createPromptEnv();
+    const context = buildContext();
+    configureTinyBrainPromptContext(context, 'scheduled_event_interruption_rewrite');
+    const rendered = env.render('_includes/scheduled-event-interruption-rewrite.njk', context);
+
+    assert.equal((rendered.match(/Temporal contract:/g) || []).length, 1);
+    assert.match(rendered, /unless the event supplies a specific reason it cannot or would not continue/);
+    assert.doesNotMatch(rendered, /do not end the revised prose while the action is still ongoing/);
+});
+
 test('base context routes only through the allowlisted configured tiny-brain template', () => {
     const env = createPromptEnv();
     const context = {
@@ -165,7 +177,7 @@ test('tiny-brain player-action destination lookup exposes only moreInfo', () => 
     );
     assert.match(
         apiSource,
-        /isDestinationLookupCheckpoint\s*\? tinyBrainPlayerActionDestinationLookupTools\s*:\s*enabledChatTools/
+        /isDestinationLookupCheckpoint\s*\? tinyBrainPlayerActionDestinationLookupTools\s*:\s*promptChatTools/
     );
     assert.match(
         apiSource,
