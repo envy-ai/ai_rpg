@@ -233,6 +233,7 @@ class LLMClient {
     static #lastPromptModelTarget = null;
     static #routerContextCachePaths = new Set();
     static #promptQueueReservationStates = new WeakMap();
+    static #activePromptQueueReservationStates = new Set();
     static #completionCassetteSemaphore = new Semaphore(1);
     static #promptProgressGroupContext = new AsyncLocalStorage();
     static #tinyBrainXmlRepetitionContext = new AsyncLocalStorage();
@@ -252,7 +253,10 @@ class LLMClient {
     };
     static #streamCounter = 0;
     static #abortControllers = new Map();
+    static #activeAttemptControllers = new Set();
     static #controllerAbortIntents = new WeakMap();
+    static #cancelAllGeneration = 0;
+    static #lastCancelAllReason = 'Prompt canceled by user';
     static #codexUsageStats = {
         promptCount: 0,
         quotaTurnCount: 0
@@ -454,6 +458,23 @@ class LLMClient {
         LLMClient.#ensureProgressTicker();
         LLMClient.#broadcastProgress(false, { force: true });
         return id;
+    }
+
+    static #activateStreamStartTimeout(id, startTimeoutMs) {
+        if (!id) {
+            return;
+        }
+        const entry = LLMClient.#streamProgress.active.get(id);
+        if (!entry) {
+            return;
+        }
+        const now = Date.now();
+        entry.stageStartTs = now;
+        entry.startDeadline = Number.isFinite(startTimeoutMs)
+            ? now + startTimeoutMs
+            : null;
+        entry.continueDeadline = null;
+        LLMClient.#broadcastProgress(false, { force: true });
     }
 
     static #countTextCharacters(text) {
@@ -1336,23 +1357,40 @@ class LLMClient {
             ? reason.trim()
             : 'Prompt canceled by user';
         const entries = Array.from(LLMClient.#abortControllers.entries());
+        const activeAttemptControllers = Array.from(LLMClient.#activeAttemptControllers);
+        const activeReservationStates = Array.from(LLMClient.#activePromptQueueReservationStates);
+        const controllers = new Set([
+            ...activeAttemptControllers,
+            ...entries.map(([, controller]) => controller).filter(Boolean)
+        ]);
         const canceledPromptIds = [];
         const cancellationErrors = [];
+
+        LLMClient.#cancelAllGeneration += 1;
+        LLMClient.#lastCancelAllReason = resolvedReason;
+        for (const state of activeReservationStates) {
+            state.cancelled = true;
+            state.cancellationReason = resolvedReason;
+        }
 
         for (const [streamId, controller] of entries) {
             if (!controller) {
                 cancellationErrors.push(`Prompt '${streamId}' has no abort controller.`);
                 continue;
             }
-
-            LLMClient.#controllerAbortIntents.set(controller, 'cancel');
             LLMClient.#abortControllers.delete(streamId);
+            canceledPromptIds.push(streamId);
+        }
+
+        for (const controller of controllers) {
+            LLMClient.#controllerAbortIntents.set(controller, 'cancel');
             try {
-                controller.abort(new Error(resolvedReason));
-                canceledPromptIds.push(streamId);
+                if (!controller.signal.aborted) {
+                    controller.abort(LLMClient.#createPromptCancellationError(resolvedReason));
+                }
             } catch (error) {
                 const message = error?.message || String(error);
-                cancellationErrors.push(`Prompt '${streamId}' failed to cancel: ${message}`);
+                cancellationErrors.push(`Prompt attempt failed to cancel: ${message}`);
             }
         }
 
@@ -1361,10 +1399,14 @@ class LLMClient {
         }
 
         return {
-            canceledCount: canceledPromptIds.length,
+            canceledCount: controllers.size,
             canceledPromptIds,
             trackedBefore: entries.length,
             trackedAfter: LLMClient.#abortControllers.size,
+            activeAttemptsBefore: activeAttemptControllers.length,
+            activeAttemptsAfter: LLMClient.#activeAttemptControllers.size,
+            activeReservationsBefore: activeReservationStates.length,
+            activeReservationsAfter: LLMClient.#activePromptQueueReservationStates.size,
             activeAfterRequest: LLMClient.#streamProgress.active.size
         };
     }
@@ -1386,18 +1428,27 @@ class LLMClient {
         while (true) {
             const activeCount = LLMClient.#streamProgress.active.size;
             const trackedCount = LLMClient.#abortControllers.size;
-            if (activeCount === 0 && trackedCount === 0) {
+            const activeAttemptCount = LLMClient.#activeAttemptControllers.size;
+            const activeReservationCount = LLMClient.#activePromptQueueReservationStates.size;
+            if (
+                activeCount === 0
+                && trackedCount === 0
+                && activeAttemptCount === 0
+                && activeReservationCount === 0
+            ) {
                 return {
                     elapsedMs: Date.now() - startedAt,
                     activeCount,
-                    trackedCount
+                    trackedCount,
+                    activeAttemptCount,
+                    activeReservationCount
                 };
             }
 
             if (Date.now() >= timeoutAt) {
                 throw new Error(
                     `Timed out waiting for prompt drain after ${Math.floor(normalizedTimeoutMs)}ms `
-                    + `(active=${activeCount}, tracked=${trackedCount}).`
+                    + `(active=${activeCount}, tracked=${trackedCount}, attempts=${activeAttemptCount}, reservations=${activeReservationCount}).`
                 );
             }
 
@@ -1417,8 +1468,80 @@ class LLMClient {
         const normalizedMode = mode === 'retry' ? 'retry' : 'cancel';
         LLMClient.#controllerAbortIntents.set(controller, normalizedMode);
         LLMClient.#abortControllers.delete(resolvedId);
-        controller.abort(new Error(reason));
+        controller.abort(normalizedMode === 'cancel'
+            ? LLMClient.#createPromptCancellationError(reason)
+            : new Error(reason));
         return true;
+    }
+
+    static #createPromptCancellationError(reason = 'Prompt canceled by user') {
+        const message = typeof reason === 'string' && reason.trim()
+            ? reason.trim()
+            : 'Prompt canceled by user';
+        const error = new Error(message);
+        error.name = 'PromptCancellationError';
+        error.code = 'PROMPT_CANCELLED';
+        return error;
+    }
+
+    static isPromptCancellationError(error) {
+        return error?.code === 'PROMPT_CANCELLED'
+            || error?.name === 'PromptCancellationError';
+    }
+
+    static #throwIfPromptCanceled(controller, cancelAllGeneration) {
+        if (controller?.signal?.aborted) {
+            const reason = controller.signal.reason;
+            if (LLMClient.isPromptCancellationError(reason)) {
+                throw reason;
+            }
+            throw LLMClient.#createPromptCancellationError(reason?.message || reason);
+        }
+        if (cancelAllGeneration !== LLMClient.#cancelAllGeneration) {
+            const error = LLMClient.#createPromptCancellationError(LLMClient.#lastCancelAllReason);
+            if (controller && !controller.signal.aborted) {
+                LLMClient.#controllerAbortIntents.set(controller, 'cancel');
+                controller.abort(error);
+            }
+            throw error;
+        }
+    }
+
+    static async #waitForPromptRetryDelay(milliseconds, controller, cancelAllGeneration) {
+        const delayMs = Number(milliseconds);
+        if (!Number.isFinite(delayMs) || delayMs < 0) {
+            throw new Error('Prompt retry delay must be a finite number >= 0.');
+        }
+        LLMClient.#throwIfPromptCanceled(controller, cancelAllGeneration);
+        if (delayMs === 0) {
+            return;
+        }
+
+        await new Promise((resolve, reject) => {
+            let settled = false;
+            const finish = callback => value => {
+                if (settled) {
+                    return;
+                }
+                settled = true;
+                clearTimeout(timer);
+                controller?.signal?.removeEventListener('abort', onAbort);
+                callback(value);
+            };
+            const onResolve = finish(resolve);
+            const onReject = finish(reject);
+            const timer = setTimeout(onResolve, delayMs);
+            const onAbort = () => onReject(
+                controller?.signal?.reason
+                || LLMClient.#createPromptCancellationError(LLMClient.#lastCancelAllReason)
+            );
+            if (controller?.signal?.aborted) {
+                onAbort();
+                return;
+            }
+            controller?.signal?.addEventListener('abort', onAbort, { once: true });
+        });
+        LLMClient.#throwIfPromptCanceled(controller, cancelAllGeneration);
     }
 
     static #broadcastProgress(isFinal = false, { force = false } = {}) {
@@ -1591,6 +1714,12 @@ class LLMClient {
         ) {
             errors.push('AI local_startup_script_path must be a string when provided.');
         }
+        if (
+            config?.router_slot_cache_enabled !== undefined
+            && typeof config.router_slot_cache_enabled !== 'boolean'
+        ) {
+            errors.push('AI router_slot_cache_enabled must be a boolean when provided.');
+        }
         if (config?.router_slot_cache_directory !== undefined) {
             try {
                 LLMClient.resolveRouterSlotCacheDirectory(config);
@@ -1676,6 +1805,19 @@ class LLMClient {
             );
         }
         return path.normalize(value.trim());
+    }
+
+    static resolveRouterSlotCacheEnabled(aiConfigOverride = Globals?.config?.ai) {
+        const value = aiConfigOverride?.router_slot_cache_enabled;
+        if (value === undefined || value === null) {
+            return false;
+        }
+        if (typeof value !== 'boolean') {
+            throw LLMClient.#configurationError(
+                'AI router_slot_cache_enabled must be a boolean when provided.'
+            );
+        }
+        return value;
     }
 
     static resolveRouterPreloadModel(configOverride = Globals?.config) {
@@ -2124,6 +2266,9 @@ class LLMClient {
         if (!state || state.released) {
             throw new Error('queueReservation is invalid or has already been released.');
         }
+        if (state.cancelled) {
+            throw LLMClient.#createPromptCancellationError(state.cancellationReason);
+        }
         if (state.activeRequest) {
             throw new Error('A prompt queue reservation cannot be used by concurrent chatCompletion requests.');
         }
@@ -2144,7 +2289,15 @@ class LLMClient {
         if (state.completionCassettePermit) {
             return;
         }
+        if (state.cancelled) {
+            throw LLMClient.#createPromptCancellationError(state.cancellationReason);
+        }
         state.completionCassettePermit = await LLMClient.#completionCassetteSemaphore.acquire();
+        if (state.cancelled) {
+            LLMClient.#completionCassetteSemaphore.release(state.completionCassettePermit);
+            state.completionCassettePermit = null;
+            throw LLMClient.#createPromptCancellationError(state.cancellationReason);
+        }
     }
 
     static async #retainPromptQueueReservationPermits(state, {
@@ -2158,6 +2311,9 @@ class LLMClient {
         }
         if (!semaphore || typeof semaphore.acquire !== 'function' || typeof semaphore.release !== 'function') {
             throw new Error('Prompt queue reservation requires a valid model semaphore.');
+        }
+        if (state.cancelled) {
+            throw LLMClient.#createPromptCancellationError(state.cancellationReason);
         }
         const isBackground = Boolean(background);
         if (state.acquired) {
@@ -2176,10 +2332,18 @@ class LLMClient {
         }
 
         const semaphorePermit = await semaphore.acquire({ background: isBackground });
+        if (state.cancelled) {
+            semaphore.release(semaphorePermit);
+            throw LLMClient.#createPromptCancellationError(state.cancellationReason);
+        }
         let allModelsSemaphorePermit = null;
         try {
             if (allModelsSemaphore) {
                 allModelsSemaphorePermit = await allModelsSemaphore.acquire({ background: isBackground });
+                if (state.cancelled) {
+                    allModelsSemaphore.release(allModelsSemaphorePermit);
+                    throw LLMClient.#createPromptCancellationError(state.cancellationReason);
+                }
             }
         } catch (error) {
             semaphore.release(semaphorePermit);
@@ -2232,13 +2396,20 @@ class LLMClient {
             allModelsSemaphore: null,
             allModelsSemaphorePermit: null,
             completionCassettePermit: null,
-            background: false
+            background: false,
+            cancelled: false,
+            cancellationReason: null
         };
         LLMClient.#promptQueueReservationStates.set(reservation, state);
+        LLMClient.#activePromptQueueReservationStates.add(state);
         try {
             return await callback(reservation);
         } finally {
-            LLMClient.#releasePromptQueueReservation(state);
+            try {
+                LLMClient.#releasePromptQueueReservation(state);
+            } finally {
+                LLMClient.#activePromptQueueReservationStates.delete(state);
+            }
         }
     }
 
@@ -2258,6 +2429,9 @@ class LLMClient {
         }
         if (state.yielded) {
             throw new Error('Cannot yield a prompt queue reservation recursively.');
+        }
+        if (state.cancelled) {
+            throw LLMClient.#createPromptCancellationError(state.cancellationReason);
         }
         if (!state.acquired && !state.completionCassettePermit) {
             return await callback();
@@ -2291,6 +2465,11 @@ class LLMClient {
             callbackResult = await callback();
         } catch (error) {
             callbackError = error;
+        }
+
+        if (state.cancelled) {
+            state.yielded = false;
+            throw LLMClient.#createPromptCancellationError(state.cancellationReason);
         }
 
         let reacquireError = null;
@@ -2369,7 +2548,11 @@ class LLMClient {
     }
 
     static #trackRouterContextCacheTarget(target) {
-        if (!target || target.isLocalRouter !== true) {
+        if (
+            !target
+            || target.isLocalRouter !== true
+            || target.slotCacheEnabled !== true
+        ) {
             return null;
         }
         const model = typeof target.model === 'string' ? target.model.trim() : '';
@@ -2395,6 +2578,9 @@ class LLMClient {
 
         const addConfiguration = (aiConfig, modelOverride = null) => {
             if (!aiConfig || typeof aiConfig !== 'object' || Array.isArray(aiConfig)) {
+                return;
+            }
+            if (!LLMClient.resolveRouterSlotCacheEnabled(aiConfig)) {
                 return;
             }
             const startupScriptPath = typeof aiConfig.local_startup_script_path === 'string'
@@ -2559,6 +2745,7 @@ class LLMClient {
             },
             timeoutMs: attemptRuntime.resolvedTimeout,
             isLocalRouter: Boolean(startupScriptPath),
+            slotCacheEnabled: LLMClient.resolveRouterSlotCacheEnabled(attemptRuntime.aiConfig),
             slotCacheDirectory: LLMClient.resolveRouterSlotCacheDirectory(attemptRuntime.aiConfig)
         };
         LLMClient.#trackRouterContextCacheTarget(target);
@@ -2591,7 +2778,7 @@ class LLMClient {
         }
     }
 
-    static async #unloadPreviousPromptModelOnSwitch({ attemptRuntime, metadataLabel, log } = {}) {
+    static async #unloadPreviousPromptModelOnSwitch({ attemptRuntime, metadataLabel, log, signal = null } = {}) {
         const currentTarget = LLMClient.#resolvePromptModelTarget(attemptRuntime, { required: true });
         const previousTarget = LLMClient.#lastPromptModelTarget;
         if (!previousTarget || previousTarget.key === currentTarget.key) {
@@ -2607,13 +2794,17 @@ class LLMClient {
             model: previousTarget.model,
             headers: previousTarget.headers,
             timeoutMs: previousTarget.timeoutMs,
-            slotCacheDirectory: previousTarget.slotCacheDirectory
+            slotCacheDirectory: previousTarget.slotCacheDirectory,
+            signal
         });
         const switchesWithinManagedLocalRouter = previousTarget.isLocalRouter === true
             && currentTarget.isLocalRouter === true
             && LlamaCppRouterClient.resolveRouterBaseUrl(previousTarget.endpoint)
                 === LlamaCppRouterClient.resolveRouterBaseUrl(currentTarget.endpoint);
-        if (switchesWithinManagedLocalRouter) {
+        const preservesSlotCache = switchesWithinManagedLocalRouter
+            && previousTarget.slotCacheEnabled === true
+            && currentTarget.slotCacheEnabled === true;
+        if (preservesSlotCache) {
             try {
                 const previousStatus = await previousRouter.getModelStatus();
                 if (previousStatus.value !== 'unloaded') {
@@ -2625,6 +2816,9 @@ class LLMClient {
                     }
                 }
             } catch (error) {
+                if (signal?.aborted) {
+                    throw signal.reason || error;
+                }
                 console.warn(
                     `⚠️ Failed to save llama.cpp context cache for model "${previousTarget.model}"; continuing model switch: ${error?.message || String(error)}`
                 );
@@ -2635,6 +2829,9 @@ class LLMClient {
         try {
             unloadState = await previousRouter.unloadModelIfLoaded();
         } catch (cause) {
+            if (signal?.aborted) {
+                throw signal.reason || cause;
+            }
             LLMClient.#emitRouterModelUnloadWarning({
                 previousTarget,
                 currentTarget,
@@ -2655,13 +2852,14 @@ class LLMClient {
             }
         }
 
-        if (switchesWithinManagedLocalRouter) {
+        if (preservesSlotCache) {
             const currentRouter = new LlamaCppRouterClient({
                 endpoint: currentTarget.endpoint,
                 model: currentTarget.model,
                 headers: currentTarget.headers,
                 timeoutMs: currentTarget.timeoutMs,
-                slotCacheDirectory: currentTarget.slotCacheDirectory
+                slotCacheDirectory: currentTarget.slotCacheDirectory,
+                signal
             });
             try {
                 const cacheExists = await currentRouter.slotCacheFileExists();
@@ -2683,6 +2881,9 @@ class LLMClient {
                     );
                 }
             } catch (cause) {
+                if (signal?.aborted) {
+                    throw signal.reason || cause;
+                }
                 if (cause?.slotCacheDeleteFailed === true) {
                     cause.isModelSwitchError = true;
                     throw cause;
@@ -2710,7 +2911,7 @@ class LLMClient {
         LLMClient.#managedLocalModelStartupHandler = handler;
     }
 
-    static async #ensureManagedLocalModelBeforePrompt({ aiConfig, metadataLabel } = {}) {
+    static async #ensureManagedLocalModelBeforePrompt({ aiConfig, metadataLabel, signal = null } = {}) {
         if (aiConfig?.terminate_during_image_generation !== true) {
             return;
         }
@@ -2735,12 +2936,22 @@ class LLMClient {
             throw error;
         }
         try {
+            if (signal?.aborted) {
+                throw signal.reason || LLMClient.#createPromptCancellationError();
+            }
             await LLMClient.#managedLocalModelStartupHandler({
                 aiConfig,
                 metadataLabel: label,
-                startupScriptPath
+                startupScriptPath,
+                signal
             });
+            if (signal?.aborted) {
+                throw signal.reason || LLMClient.#createPromptCancellationError();
+            }
         } catch (cause) {
+            if (signal?.aborted || LLMClient.isPromptCancellationError(cause)) {
+                throw signal?.reason || cause;
+            }
             const error = new Error(
                 `Failed to prepare managed local llama.cpp for LLM prompt "${label}" with startup script "${startupScriptPath}": ${cause?.message || String(cause)}`,
                 { cause }
@@ -2750,7 +2961,7 @@ class LLMClient {
         }
     }
 
-    static async #unloadComfyModelsBeforePrompt({ aiConfig, metadataLabel } = {}) {
+    static async #unloadComfyModelsBeforePrompt({ aiConfig, metadataLabel, signal = null } = {}) {
         if (aiConfig?.unload_during_image_generation !== true) {
             return;
         }
@@ -2765,11 +2976,21 @@ class LLMClient {
             throw error;
         }
         try {
+            if (signal?.aborted) {
+                throw signal.reason || LLMClient.#createPromptCancellationError();
+            }
             await LLMClient.#comfyModelCleanupHandler({
                 aiConfig,
-                metadataLabel: label
+                metadataLabel: label,
+                signal
             });
+            if (signal?.aborted) {
+                throw signal.reason || LLMClient.#createPromptCancellationError();
+            }
         } catch (cause) {
+            if (signal?.aborted || LLMClient.isPromptCancellationError(cause)) {
+                throw signal?.reason || cause;
+            }
             const error = new Error(
                 `Failed to unload ComfyUI models before LLM prompt "${label}": ${cause?.message || String(cause)}`,
                 { cause }
@@ -4868,6 +5089,7 @@ class LLMClient {
             timeoutMs: LLMClient.resolveTimeout(null, 1),
             isLocalRouter: typeof aiConfig.local_startup_script_path === 'string'
                 && Boolean(aiConfig.local_startup_script_path.trim()),
+            slotCacheEnabled: LLMClient.resolveRouterSlotCacheEnabled(aiConfig),
             slotCacheDirectory: LLMClient.resolveRouterSlotCacheDirectory(aiConfig)
         };
     }
@@ -4903,6 +5125,7 @@ class LLMClient {
                 headers: { ...(target.headers || {}) },
                 timeoutMs: target.timeoutMs,
                 isLocalRouter: target.isLocalRouter,
+                slotCacheEnabled: target.slotCacheEnabled,
                 slotCacheDirectory: target.slotCacheDirectory
             };
             if (loadState.loadedByClient) {
@@ -5493,6 +5716,7 @@ class LLMClient {
         onResponse = null,
         validateXML = true,
         validateXMLStrict = false,
+        expectedXmlRootTag = null,
         requiredTags = [],
         requiredRegex = null,
         waitAfterError = null,
@@ -5526,6 +5750,7 @@ class LLMClient {
         onLiveTokenStreamFallback = null,
         preserveBaseContextToolDefinitions = false,
     } = {}) {
+        const cancelAllGeneration = LLMClient.#cancelAllGeneration;
         const resolvedOutput = LLMClient.resolveOutput(output);
         const isSilent = resolvedOutput === 'silent';
         const outputConsole = resolvedOutput === 'stderr'
@@ -5544,6 +5769,22 @@ class LLMClient {
         const errorLog = (...args) => {
             console.error(...args);
         };
+        const normalizedExpectedXmlRootTag = (() => {
+            if (expectedXmlRootTag === null || expectedXmlRootTag === undefined) {
+                return null;
+            }
+            if (typeof expectedXmlRootTag !== 'string' || !expectedXmlRootTag.trim()) {
+                throw new TypeError('expectedXmlRootTag must be a non-empty XML tag name when provided.');
+            }
+            const normalized = expectedXmlRootTag.trim();
+            if (!/^[A-Za-z_][A-Za-z0-9_.:-]*$/.test(normalized)) {
+                throw new Error(`Invalid expected XML root tag name: ${normalized}`);
+            }
+            if (validateXML === false) {
+                throw new Error('expectedXmlRootTag requires validateXML to be enabled.');
+            }
+            return normalized;
+        })();
         const resolvedErrorLogLabel = (() => {
             if (typeof errorLogLabel === 'string' && errorLogLabel.trim()) {
                 return errorLogLabel.trim();
@@ -5593,6 +5834,7 @@ class LLMClient {
                 additionalPayload,
                 validateXML,
                 validateXMLStrict,
+                expectedXmlRootTag: normalizedExpectedXmlRootTag,
                 requiredTags,
                 requiredRegex,
                 waitAfterError,
@@ -5679,20 +5921,21 @@ class LLMClient {
         );
         const promptQueueReservationState = LLMClient.#beginPromptQueueReservationRequest(queueReservation);
         let completionCassetteSerializationPermit = null;
-        if (completionCassetteSerializationEnabled) {
-            if (promptQueueReservationState) {
-                await LLMClient.#retainPromptQueueReservationCompletionCassettePermit(
-                    promptQueueReservationState
-                );
-            } else {
-                completionCassetteSerializationPermit = await LLMClient.#completionCassetteSemaphore.acquire();
-            }
-        }
         let completionCassetteReplayLease = null;
         let completionCassetteRecordingLease = null;
         let completionCassetteRequestDescriptor = null;
         let currentTime = Date.now();
         try {
+            if (completionCassetteSerializationEnabled) {
+                if (promptQueueReservationState) {
+                    await LLMClient.#retainPromptQueueReservationCompletionCassettePermit(
+                        promptQueueReservationState
+                    );
+                } else {
+                    completionCassetteSerializationPermit = await LLMClient.#completionCassetteSemaphore.acquire();
+                }
+            }
+            LLMClient.#throwIfPromptCanceled(null, cancelAllGeneration);
             dumpReasoningToConsole = true;
 
             if (metadataLabel) {
@@ -5844,6 +6087,7 @@ class LLMClient {
                 multimodal,
                 validateXML,
                 validateXMLStrict,
+                expectedXmlRootTag: normalizedExpectedXmlRootTag,
                 requiredTags,
                 requiredRegex: normalizedRequiredRegexForCassette
             });
@@ -6405,8 +6649,10 @@ class LLMClient {
                 const acquireAttemptAtFront = queueNextAttemptAtFront;
                 queueNextAttemptAtFront = false;
                 const controller = new AbortController();
+                LLMClient.#activeAttemptControllers.add(controller);
                 let response = null;
                 try {
+                    LLMClient.#throwIfPromptCanceled(controller, cancelAllGeneration);
                     if (retainedRetryPermits) {
                         attemptSemaphore = retainedRetryPermits.semaphore;
                         attemptSemaphorePermit = retainedRetryPermits.semaphorePermit;
@@ -6465,6 +6711,7 @@ class LLMClient {
                         }
                     } else {
                         attemptRuntime = await resolveAttemptRuntime({ attemptNumber: attempt });
+                        LLMClient.#throwIfPromptCanceled(controller, cancelAllGeneration);
                         payload = attemptRuntime.payload;
                         requestMessages = attemptRuntime.requestMessages;
                         resolvedBackend = attemptRuntime.backend;
@@ -6503,6 +6750,7 @@ class LLMClient {
                                     background: Boolean(runInBackground)
                                 }
                             );
+                            LLMClient.#throwIfPromptCanceled(controller, cancelAllGeneration);
                         } else {
                             const isBackgroundAttempt = Boolean(runInBackground);
                             const hasRetainedAttemptPermits = Boolean(attemptSemaphore);
@@ -6519,6 +6767,7 @@ class LLMClient {
                                     background: isBackgroundAttempt,
                                     front: acquireAttemptAtFront || retainedModelPermitChanged
                                 });
+                                LLMClient.#throwIfPromptCanceled(controller, cancelAllGeneration);
                             }
 
                             const retainedAllModelsPermitChanged = hasRetainedAttemptPermits
@@ -6534,13 +6783,17 @@ class LLMClient {
                                     background: isBackgroundAttempt,
                                     front: acquireAttemptAtFront || retainedAllModelsPermitChanged
                                 });
+                                LLMClient.#throwIfPromptCanceled(controller, cancelAllGeneration);
                             }
                         }
                         const shouldTrackPromptProgress = !isSilent
                             && (payload.stream || LLMClient.#isCliBridgeBackend(resolvedBackend));
                         streamTrackerId = shouldTrackPromptProgress
                             ? LLMClient.#trackStreamStart(metadataLabel, {
-                                startTimeoutMs: streamStartTimeoutMs,
+                                // Keep queued prompts visible and cancellable while an image-render
+                                // lifecycle owns the local GPU, but do not spend their transport
+                                // timeout before ComfyUI has yielded VRAM.
+                                startTimeoutMs: null,
                                 continueTimeoutMs: streamContinueTimeoutMs,
                                 isBackground: Boolean(runInBackground),
                                 model: resolvedModel,
@@ -6560,23 +6813,35 @@ class LLMClient {
                         attemptModelLifecycleRelease = unloadModelOnSwitch || managesLocalModel
                             ? await LLMClient.#modelLifecycleGate.acquireExclusive()
                             : await LLMClient.#modelLifecycleGate.acquireShared();
+                        LLMClient.#throwIfPromptCanceled(controller, cancelAllGeneration);
                         await LLMClient.#ensureManagedLocalModelBeforePrompt({
                             aiConfig: attemptRuntime.aiConfig,
-                            metadataLabel
+                            metadataLabel,
+                            signal: controller.signal
                         });
+                        LLMClient.#throwIfPromptCanceled(controller, cancelAllGeneration);
                         await LLMClient.#unloadComfyModelsBeforePrompt({
                             aiConfig: attemptRuntime.aiConfig,
-                            metadataLabel
+                            metadataLabel,
+                            signal: controller.signal
                         });
+                        LLMClient.#throwIfPromptCanceled(controller, cancelAllGeneration);
                         if (unloadModelOnSwitch) {
                             await LLMClient.#unloadPreviousPromptModelOnSwitch({
                                 attemptRuntime,
                                 metadataLabel,
-                                log
+                                log,
+                                signal: controller.signal
                             });
                         } else {
                             LLMClient.#recordPromptModelTarget(attemptRuntime);
                         }
+                        LLMClient.#throwIfPromptCanceled(controller, cancelAllGeneration);
+
+                        // All queue and model-lifecycle prerequisites are now complete. In
+                        // particular, an exclusive image-render lifecycle has released the
+                        // gate only after ComfyUI yielded VRAM and the local model reloaded.
+                        LLMClient.#activateStreamStartTimeout(streamTrackerId, streamStartTimeoutMs);
 
                         const cliBridgeClient = LLMClient.#resolveCliBridgeClient(resolvedBackend);
                         if (cliBridgeClient) {
@@ -6637,7 +6902,11 @@ class LLMClient {
                                 : waitAfterErrorSeconds;
                             if (retryWaitSeconds > 0) {
                                 log(`Waiting ${retryWaitSeconds} seconds before retrying...`);
-                                await new Promise(resolve => setTimeout(resolve, retryWaitSeconds * 1000));
+                                await LLMClient.#waitForPromptRetryDelay(
+                                    retryWaitSeconds * 1000,
+                                    controller,
+                                    cancelAllGeneration
+                                );
                             }
                             throw new Error(`Server error from LLM (status ${response.status}).`);
                         }
@@ -7240,6 +7509,7 @@ class LLMClient {
                                     waitAfterNetworkError: waitAfterNetworkErrorSeconds,
                                     validateXML,
                                     validateXMLStrict,
+                                    expectedXmlRootTag: normalizedExpectedXmlRootTag,
                                     requiredTags,
                                     requiredRegex: resolvedRequiredRegex ? resolvedRequiredRegex.toString() : requiredRegex,
                                     dumpReasoningToConsole
@@ -7258,12 +7528,31 @@ class LLMClient {
                     }
 
                     if (validateXML && !hasToolCalls) {
-                        const responseXmlContent = Utils.extractFinalXmlBlockFromResponse(responseContent) || responseContent;
+                        const responseXmlContent = normalizedExpectedXmlRootTag
+                            ? Utils.extractFinalXmlRootBlock(
+                                responseContent,
+                                normalizedExpectedXmlRootTag
+                            )
+                            : (Utils.extractFinalXmlBlockFromResponse(responseContent) || responseContent);
                         try {
+                            if (normalizedExpectedXmlRootTag && !responseXmlContent) {
+                                throw new Error(
+                                    `Expected one complete <${normalizedExpectedXmlRootTag}>...</${normalizedExpectedXmlRootTag}> XML root block.`,
+                                );
+                            }
+                            let parsedXmlDocument = null;
                             if (validateXMLStrict) {
-                                Utils.parseXmlDocumentStrict(responseXmlContent);
+                                parsedXmlDocument = Utils.parseXmlDocumentStrict(responseXmlContent);
                             } else {
-                                Utils.parseXmlDocument(responseXmlContent);
+                                parsedXmlDocument = Utils.parseXmlDocument(responseXmlContent);
+                            }
+                            if (
+                                normalizedExpectedXmlRootTag
+                                && parsedXmlDocument?.documentElement?.nodeName !== normalizedExpectedXmlRootTag
+                            ) {
+                                throw new Error(
+                                    `Expected XML root <${normalizedExpectedXmlRootTag}> but received <${parsedXmlDocument?.documentElement?.nodeName || 'unknown'}>.`,
+                                );
                             }
                         } catch (xmlError) {
                             errorLog(`XML validation failed (attempt ${attempt + 1}):`, xmlError);
@@ -7516,7 +7805,8 @@ class LLMClient {
                             continue;
                         }
                         warn(`Prompt '${metadataLabel || 'unknown'}' canceled by user.`);
-                        return '';
+                        LLMClient.#throwIfPromptCanceled(controller, cancelAllGeneration);
+                        throw LLMClient.#createPromptCancellationError(controller.signal.reason?.message);
                     }
                     if (
                         error?.isAssistantPrefillError
@@ -7547,13 +7837,21 @@ class LLMClient {
                         log('Rate limit exceeded. Waiting before retrying...');
                         if (waitAfterRateLimitErrorSeconds > 0) {
                             log(`Waiting ${waitAfterRateLimitErrorSeconds} seconds before retrying...`);
-                            await new Promise(resolve => setTimeout(resolve, waitAfterRateLimitErrorSeconds * 1000));
+                            await LLMClient.#waitForPromptRetryDelay(
+                                waitAfterRateLimitErrorSeconds * 1000,
+                                controller,
+                                cancelAllGeneration
+                            );
                         }
                     } else if (LLMClient.#isRetryableNetworkError(error, errorStatus)
                         && attempt < retryAttempts
                         && waitAfterNetworkErrorSeconds > 0) {
                         log(`Network error from LLM transport. Waiting ${waitAfterNetworkErrorSeconds} seconds before retrying...`);
-                        await new Promise(resolve => setTimeout(resolve, waitAfterNetworkErrorSeconds * 1000));
+                        await LLMClient.#waitForPromptRetryDelay(
+                            waitAfterNetworkErrorSeconds * 1000,
+                            controller,
+                            cancelAllGeneration
+                        );
                     }
 
                     const shouldForceOAuthRefresh = errorStatus === 401
@@ -7614,6 +7912,7 @@ class LLMClient {
                         return '';
                     }
                 } finally {
+                    LLMClient.#activeAttemptControllers.delete(controller);
                     LLMClient.#controllerAbortIntents.delete(controller);
                     if (startTimer) {
                         clearTimeout(startTimer);

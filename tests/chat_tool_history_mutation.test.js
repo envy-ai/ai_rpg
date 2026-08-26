@@ -87,6 +87,11 @@ test('chat history mutation tool schemas exist', () => {
     assert.equal(editTool.parameters.properties.content.type, 'string');
     assert.ok(editTool.parameters.required.includes('content'));
 
+    const regexTool = findToolDefinition('regexReplace');
+    assert.ok(regexTool, 'regexReplace tool definition should exist');
+    assert.deepEqual(regexTool.parameters.required, ['pattern', 'replacement']);
+    assert.equal(regexTool.parameters.properties.scope.type, 'string');
+
     const rerunTool = findToolDefinition('rerunSceneSummary');
     assert.ok(rerunTool, 'rerunSceneSummary tool definition should exist');
     assert.deepEqual(rerunTool.parameters.required, ['sceneNumber']);
@@ -105,12 +110,14 @@ test('chat history mutation tools are generic-prompt-only built-ins', () => {
     const infoToolBlock = apiSource.match(/const INFORMATION_GATHERING_CHAT_TOOL_NAMES = new Set\(\[[\s\S]*?\]\);/)?.[0] || '';
     assert.ok(infoToolBlock, 'information-gathering tool allowlist should be present');
     assert.doesNotMatch(infoToolBlock, /editChatLogEntry/);
+    assert.doesNotMatch(infoToolBlock, /regexReplace/);
     assert.doesNotMatch(infoToolBlock, /rerunSceneSummary/);
     assert.doesNotMatch(infoToolBlock, /editSceneSummary/);
 
     const genericOnlyBlock = apiSource.match(/const GENERIC_PROMPT_ONLY_BUILT_IN_CHAT_TOOL_NAMES = new Set\(\[[\s\S]*?\]\);/)?.[0] || '';
     assert.ok(genericOnlyBlock, 'generic-prompt-only built-in tool denylist should be present');
     assert.match(genericOnlyBlock, /editChatLogEntry/);
+    assert.match(genericOnlyBlock, /regexReplace/);
     assert.match(genericOnlyBlock, /rerunSceneSummary/);
     assert.match(genericOnlyBlock, /editSceneSummary/);
     assert.match(apiSource, /includeGenericPromptOnly:\s*false/);

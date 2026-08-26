@@ -163,6 +163,38 @@ test('Region XML location hasWeather accepts sheltered, legacy outside, and lega
     );
 });
 
+test('generated location parsers can require an explicit weather exposure scope', () => {
+    assert.throws(
+        () => Location.fromXMLSnippet(`
+<location>
+  <name>Generated Sealed Room</name>
+  <description>An enclosed room.</description>
+  <shortDescription>A sealed generated room.</shortDescription>
+  <relativeLevel>0</relativeLevel>
+</location>`, { requireHasWeather: true }),
+        /missing required <hasWeather>/
+    );
+
+    assert.throws(
+        () => Region.fromXMLSnippet(`
+<region>
+  <regionName>Generated Interior</regionName>
+  <regionDescription>An enclosed generated region.</regionDescription>
+  <shortDescription>An enclosed generated region.</shortDescription>
+  <relativeLevel>1</relativeLevel>
+  <weather><hasDynamicWeather>false</hasDynamicWeather></weather>
+  <locations>
+    <location>
+      <name>Generated Sealed Room</name>
+      <description>An enclosed room.</description>
+      <shortDescription>A sealed generated room.</shortDescription>
+    </location>
+  </locations>
+</region>`, { requireLocationHasWeather: true }),
+        /missing required <hasWeather>/
+    );
+});
+
 test('base context renders weatherOutside for sheltered weather', () => {
     const rendered = renderCurrentConditions({
         dateLabel: '1 Spring',

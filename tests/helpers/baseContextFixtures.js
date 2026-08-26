@@ -245,6 +245,7 @@ function loadBuildBasePromptContext({
         modExtensionRegistry: registry,
         normalizeLocationWeatherExposure: () => 'no',
         resolveLocationHasWeather: () => null,
+        resolveEffectiveLocationHasWeather: () => 'no',
         resolveMysteryThreadMaxActive: () => 0,
         resolveRegionWeatherForPrompt: () => null,
         formatHistoryEntrySpeakerPrefix: (_entry, { roleLabel }) => `${roleLabel}:`,

@@ -101,6 +101,45 @@ test('moreInfo tool description discourages redundant lookups for visible full X
     assert.match(definition.description, /do not call.*items or characters.*full XML.*redundant information/i);
 });
 
+test('regexReplace tool is declared and mutates allowlisted text through the shared runtime', async () => {
+    const definition = findToolDefinition('regexReplace');
+    assert.ok(definition, 'Expected regexReplace chat tool definition.');
+    assert.deepEqual(definition.parameters.required, ['pattern', 'replacement']);
+    assert.match(definition.description, /Generic-prompt mutation tool only/);
+
+    const npc = {
+        id: 'regex-tool-npc',
+        name: 'Red Keeper',
+        isNPC: true,
+        description: 'A red keeper.',
+        shortDescription: 'Red keeper.',
+        personalityType: '',
+        personalityTraits: '',
+        personalityNotes: '',
+        aiNotes: '',
+        resistances: '',
+        vulnerabilities: '',
+        importantMemories: ['The red bell rang.']
+    };
+    const runtime = createMinimalRuntime({ characters: [npc] });
+    const result = await runtime.executeChatToolCall({
+        functionName: 'regexReplace',
+        argumentsObject: {
+            pattern: 'red',
+            replacement: 'blue',
+            flags: 'gi',
+            scope: 'npcs'
+        }
+    });
+
+    assert.equal(npc.description, 'A blue keeper.');
+    assert.equal(npc.shortDescription, 'blue keeper.');
+    assert.deepEqual(npc.importantMemories, ['The red bell rang.']);
+    assert.equal(result.metadata.totalReplacements, 2);
+    assert.equal(result.metadata.modifiedNpcFields, 2);
+    assert.match(result.content, /<modifiedNpcFields>2<\/modifiedNpcFields>/);
+});
+
 test('tool loop rejects a model-emitted tool that was not declared for the request', async () => {
     const capturedMessagesByRound = [];
     const debugEvents = [];

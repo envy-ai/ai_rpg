@@ -410,7 +410,8 @@ class Location {
       allowRename = true,
       baseLevelFallback = null,
       relativeLevelBase = null,
-      regionId = null
+      regionId = null,
+      requireHasWeather = false
     } = options || {};
 
     //console.log('🔍 Parsing XML snippet (length:', xmlSnippet.length, 'chars)');
@@ -660,6 +661,10 @@ class Location {
         npcIds: existingLocation.npcIds,
         thingIds: existingLocation.thingIds
       };
+      if (requireHasWeather && promotionData.generationHints.hasWeather === null) {
+        const locationName = locationData.name || existingLocation.name || existingLocation.id || 'unknown';
+        throw new Error(`Generated location "${locationName}" is missing required <hasWeather>.`);
+      }
 
       if (allowRename && locationData.name) {
         promotionData.name = locationData.name;
@@ -711,6 +716,11 @@ class Location {
     }
 
     baseLevel = Math.max(1, Math.round(baseLevel));
+
+    if (requireHasWeather && !locationData.hasWeather) {
+      const locationName = locationData.name || 'unknown';
+      throw new Error(`Generated location "${locationName}" is missing required <hasWeather>.`);
+    }
 
     return new Location({
       description: locationData.description,

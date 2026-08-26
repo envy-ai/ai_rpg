@@ -111,8 +111,9 @@ ai:
   terminate_during_image_generation: false
   local_startup_script_path: null
 
-  # Local directory configured by llama.cpp --slot-save-path. During managed
-  # local router switches, slot 0 is cached here and restored when its model returns.
+  # Opt-in persistence of llama.cpp slot 0 across managed local-router model
+  # switches. The directory must match llama.cpp --slot-save-path when enabled.
+  router_slot_cache_enabled: false
   router_slot_cache_directory: /dev/shm
 
   # Codex bridge settings. These are used only when ai.backend is codex_cli_bridge.
@@ -204,6 +205,7 @@ ai:
     craft_player_action: true
     location_modify_player_action: true
     player_action_open_container: true
+    scene_summarize: true
     while_you_were_away: true
     scheduled_event_resolution: true
     scheduled_event_interruption_rewrite: true
@@ -291,6 +293,7 @@ prompt_progress:
     barter_prices: 5000
     bridge_*: 5000
     calendar_generation: 5000
+    season_image_descriptions: 5000
     chat*: 5000
     choose_important_memories: 5000
     codex_*: 5000
@@ -330,7 +333,7 @@ prompt_progress:
     run_prompts: 5000
     scheduled_event_*: 5000
     scene_illustration_prompt: 5000
-    scene_summarize: 5000
+    scene_summarize*: 5000
     separate_thing: 5000
     set_travel_times: 5000
     setting_*: 5000
@@ -362,10 +365,6 @@ imagegen:
   # engine can currently be "comfyui", "nanogpt", or "openai"
   engine: nanogpt
 
-  # api_template is still used to build comfyui prompts and can be ignored for others. Uncomment one of the below lines as needed.
-  #api_template: sdxl_illustrious.json.njk
-  api_template: qwen_image.json.njk
-
   # Checkpoint is relative to the ComfyUI models/
   # Required for ComfyUI engine
   #checkpoint: "sdxl/QuillworksIllustrious_QuillworksV15.safetensors"
@@ -374,7 +373,6 @@ imagegen:
   #port: 8188
 
   # When engine is "nanogpt" or "openai", the following fields are required:
-  # api_template is still used to build prompts
   # model: model name from your image generation host
   # endpoint: "https://..." (leave blank for the engine's default hosted endpoint)
   # apiKey: "..."
@@ -387,7 +385,7 @@ imagegen:
   maxConcurrentJobs: 1
 
   # Submit compatible ComfyUI render jobs through one list-based workflow.
-  # Jobs are grouped by API template and exact width/height; weather variants are excluded.
+  # Jobs are grouped by selected workflow template and exact width/height; weather variants are excluded.
   batch_prompts: false
 
   # Retry and batch only the LLM prompt-writing calls used before image rendering.
@@ -397,6 +395,35 @@ imagegen:
     delay_ms: 2000
     max_items: 10
 
+  workflow:
+    generation:
+      family: krea2
+      custom_template: ""
+      model: ""
+      text_encoder: ""
+      vae: ""
+      loras: []
+      steps: 6
+      cfg: 1
+      sampler: euler
+      scheduler: simple
+      denoise: 0.45
+      resolutions: {}
+    edit:
+      # Standard editing is provided by Krea 2 Identity Edit, Flux Klein, and Qwen Image Edit.
+      family: flux_klein
+      custom_template: ""
+      model: ""
+      text_encoder: ""
+      vae: ""
+      loras: []
+      steps: 6
+      cfg: 1
+      sampler: euler
+      scheduler: simple
+      denoise: 0.45
+      flux_kv_cache: true
+      resolutions: {}
   # For Illustrious or SDXL based models, you might want to use these templates (regardless of engine):
   #prompt_generator_templates:
   #character: player-portrait-illustrious.xml.njk
@@ -436,20 +463,6 @@ imagegen:
     image:
       width: 1280
       height: 720
-  location_variant_settings:
-    # ComfyUI-only image-to-image workflow used for visible weather/lighting variants.
-    api_template: flux2_klein_edit.json.njk
-    image:
-      # Falls back to the source image metadata, location image settings, then defaults.
-      width: null
-      height: null
-    sampling:
-      steps: 20
-      denoise: 0.45
-      cfg: 6
-      sampler: dpmpp_2m
-      scheduler: karras
-
   #Additional user instructions to include in the image prompt generation
   image_prompt_instructions:
     character:

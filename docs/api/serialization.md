@@ -121,7 +121,7 @@ Migration behavior developers need to preserve:
 - Location saves without `visited` hydrate non-stub locations as visited and stub locations as unvisited. Missing `favorite` hydrates as `false`.
 - Saves with mystery boxes but no threads hydrate one inactive `Legacy Mystery Boxes` thread containing the existing boxes.
 - Saved settings without hiding/perception selections can be backfilled during `/api/load`; successful backfill rewrites the loaded save.
-- Missing `calendarDefinition.json` is filled from the loaded setting calendar definition when present, or generated through the calendar generation path.
+- Missing `calendarDefinition.json` is filled from the loaded setting calendar definition when present, or generated through the calendar generation path. A loaded calendar whose seasons lack either `vegetationDescription` or `interiorDescription` values is backfilled by one logged `season_image_descriptions` prompt and the loaded save is rewritten.
 - `VehicleInfo.fromJSON()` accepts `eta`, `departure_time`, and `vehicleExitID` aliases, but rejects obsolete `destination` and `destinationType` fields.
 
 After a migrated load, the in-memory metadata version is normalized and the next save writes the upgraded format.

@@ -1,5 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const { Readable } = require('node:stream');
 const axios = require('axios');
 const Globals = require('../Globals.js');
 const LLMClient = require('../LLMClient.js');
@@ -96,6 +97,106 @@ test('exclusive model lifecycle waits for active requests and blocks new LLM req
         firstResponse.resolve();
         releaseExclusive.resolve();
         axios.post = originalPost;
+        Globals.config = originalConfig;
+    }
+});
+
+test('a local prompt waiting behind image generation does not start its timeout countdown', { concurrency: false }, async () => {
+    const originalConfig = Globals.config;
+    const originalPost = axios.post;
+    const originalRealtimeHub = Globals.realtimeHub;
+    const releaseImageLifecycle = deferred();
+    const imageLifecycleEntered = deferred();
+    const progressPayloads = [];
+    const events = [];
+    let transportCalls = 0;
+
+    Globals.config = {
+        ai: {
+            backend: 'openai_compatible',
+            endpoint: 'https://example.invalid/v1',
+            apiKey: 'test-key',
+            model: `image-wait-timeout-${Date.now()}`,
+            unload_during_image_generation: true,
+            stream: true,
+            stream_start_timeout: 0.05,
+            stream_continue_timeout: 5,
+            retryAttempts: 0,
+            max_concurrent_requests: 1,
+            supress_seed: true
+        },
+        prompt_progress: {
+            character_targets: {
+                image_wait_timeout: 100
+            }
+        }
+    };
+    Globals.realtimeHub = {
+        emit(_clientId, eventName, payload) {
+            if (eventName === 'prompt_progress') {
+                progressPayloads.push(structuredClone(payload));
+            }
+        }
+    };
+    LLMClient.setComfyModelCleanupHandler(async () => {
+        events.push('comfy-yielded');
+    });
+    axios.post = async () => {
+        transportCalls += 1;
+        events.push('llm-transport');
+        const responseStream = new Readable({ read() {} });
+        setImmediate(() => {
+            responseStream.push('data: {"choices":[{"delta":{"content":"ready"},"finish_reason":"stop"}]}\n\n');
+            responseStream.push('data: [DONE]\n\n');
+            responseStream.push(null);
+        });
+        return {
+            status: 200,
+            statusText: 'OK',
+            data: responseStream
+        };
+    };
+
+    try {
+        const imageLifecycle = LLMClient.withExclusiveModelLifecycle(async () => {
+            imageLifecycleEntered.resolve();
+            await releaseImageLifecycle.promise;
+        });
+        await imageLifecycleEntered.promise;
+
+        const completion = LLMClient.chatCompletion({
+            messages: [{ role: 'user', content: 'Wait until image generation yields VRAM.' }],
+            metadataLabel: 'image_wait_timeout',
+            validateXML: false,
+            retryAttempts: 0,
+            output: 'stdout'
+        });
+        await new Promise(resolve => setTimeout(resolve, 80));
+
+        assert.equal(transportCalls, 0);
+        const queuedEntry = progressPayloads
+            .flatMap(payload => payload.entries || [])
+            .find(entry => entry.promptText.includes('Wait until image generation yields VRAM.'));
+        assert.ok(queuedEntry, 'expected the queued local prompt to remain visible');
+        assert.equal(queuedEntry.timeoutSeconds, null);
+
+        releaseImageLifecycle.resolve();
+        await imageLifecycle;
+        assert.equal(await completion, 'ready');
+        assert.deepEqual(events, ['comfy-yielded', 'llm-transport']);
+
+        const activeTimeoutEntry = progressPayloads
+            .flatMap(payload => payload.entries || [])
+            .find(entry => (
+                entry.promptText.includes('Wait until image generation yields VRAM.')
+                && entry.timeoutSeconds !== null
+            ));
+        assert.ok(activeTimeoutEntry, 'expected the full timeout to activate after VRAM release');
+    } finally {
+        releaseImageLifecycle.resolve();
+        LLMClient.setComfyModelCleanupHandler(null);
+        axios.post = originalPost;
+        Globals.realtimeHub = originalRealtimeHub;
         Globals.config = originalConfig;
     }
 });

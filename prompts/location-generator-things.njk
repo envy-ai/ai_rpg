@@ -68,6 +68,6 @@ Scenery:
 {% set sceneryRarities = rarityList and rarityList.scenery or {} %}{% if sceneryRarities %}{% for rarity, count in sceneryRarities | dictsort %}  {{ rarity }}: {{ count }}
 {% endfor %}{% else %}  (none){% endif %}
 
-<![CDATA[Return exactly {{ itemCount }} top-level <item> {% if itemCount == 1 %}entry{% else %}entries{% endif %} whose <itemOrScenery> is item and exactly {{ sceneryCount }} top-level <item> {% if sceneryCount == 1 %}entry{% else %}entries{% endif %} whose <itemOrScenery> is scenery. Each rarity count above is the number of top-level entries of that kind and rarity. An entry's inner <count> is only that entry's stack quantity; it does not replace or add top-level entries. After exactly {{ itemCount + sceneryCount }} total top-level entries, close </things> immediately and stop. Do not add any other entries or commentary.]]>
+<![CDATA[Return at least {{ itemCount }} top-level <item> {% if itemCount == 1 %}entry{% else %}entries{% endif %} whose <itemOrScenery> is item and at least {{ sceneryCount }} top-level <item> {% if sceneryCount == 1 %}entry{% else %}entries{% endif %} whose <itemOrScenery> is scenery. Each rarity count above is the minimum number of top-level entries of that kind and rarity. You may add more setting-appropriate items or scenery after meeting those minimums. An entry's inner <count> is only that entry's stack quantity; it does not replace or add top-level entries. Close </things> after all entries and do not add commentary.]]>
 </generationPrompt>
 </template>

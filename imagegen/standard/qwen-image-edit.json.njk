@@ -1,0 +1,57 @@
+{
+  "1": {
+    "class_type": "LoadImage",
+    "inputs": { "image": "{{ image.sourceFilename | json }}" },
+    "_meta": { "title": "Source Image" }
+  },
+  "3": {
+    "class_type": "UNETLoader",
+    "inputs": { "unet_name": "d/qwen_image_edit_2511_int8_convrot.safetensors", "weight_dtype": "default" },
+    "_meta": { "title": "Qwen Image Edit 2511" }
+  },
+  "4": { "class_type": "ModelSamplingAuraFlow", "inputs": { "model": ["3", 0], "shift": 3.1 } },
+  "5": { "class_type": "CFGNorm", "inputs": { "model": ["4", 0], "strength": 1.0 } },
+  "6": {
+    "class_type": "CLIPLoader",
+    "inputs": { "clip_name": "qwen_2.5_vl_7b_fp8_scaled.safetensors", "type": "qwen_image", "device": "default" },
+    "_meta": { "title": "Qwen Image Text Encoder" }
+  },
+  "7": { "class_type": "VAELoader", "inputs": { "vae_name": "qwen_image_vae.safetensors" } },
+  "8": {
+    "class_type": "TextEncodeQwenImageEditPlus",
+    "inputs": { "clip": ["6", 0], "vae": ["7", 0], "image1": ["1", 0], "prompt": "{{ image.prompt | json }}" }
+  },
+  "9": {
+    "class_type": "TextEncodeQwenImageEditPlus",
+    "inputs": { "clip": ["6", 0], "vae": ["7", 0], "image1": ["1", 0], "prompt": "{{ image.negativePrompt | json }}" }
+  },
+  "10": { "class_type": "FluxKontextMultiReferenceLatentMethod", "inputs": { "conditioning": ["8", 0], "reference_latents_method": "index_timestep_zero" } },
+  "11": { "class_type": "FluxKontextMultiReferenceLatentMethod", "inputs": { "conditioning": ["9", 0], "reference_latents_method": "index_timestep_zero" } },
+  "12": { "class_type": "VAEEncode", "inputs": { "pixels": ["1", 0], "vae": ["7", 0] } },
+  "13": {
+    "class_type": "KSampler",
+    "inputs": {
+      "model": ["5", 0], "seed": {{ image.seed }}, "steps": {{ image.steps }}, "cfg": {{ image.cfg }},
+      "sampler_name": "{{ image.sampler | json }}", "scheduler": "{{ image.scheduler | json }}",
+      "positive": ["10", 0], "negative": ["11", 0], "latent_image": ["12", 0], "denoise": {{ image.denoise }}
+    }
+  },
+  "14": { "class_type": "VAEDecode", "inputs": { "samples": ["13", 0], "vae": ["7", 0] } },
+  "15": { "class_type": "SaveImage", "inputs": { "images": ["17", 0], "filename_prefix": "airpg/qwen-image-edit" } },
+  "16": {
+    "class_type": "GetImageSize",
+    "inputs": { "image": ["1", 0] },
+    "_meta": { "title": "Get Source Image Size" }
+  },
+  "17": {
+    "class_type": "ImageScale",
+    "inputs": {
+      "image": ["14", 0],
+      "upscale_method": "lanczos",
+      "width": ["16", 0],
+      "height": ["16", 1],
+      "crop": "disabled"
+    },
+    "_meta": { "title": "Preserve Source Resolution" }
+  }
+}

@@ -1,0 +1,68 @@
+{
+  "1": {
+    "class_type": "UNETLoader",
+    "inputs": { "unet_name": "d/ideogram4_int8_convrot.safetensors", "weight_dtype": "default" },
+    "_meta": { "title": "Ideogram 4 Conditional Model" }
+  },
+  "2": {
+    "class_type": "CFGOverride",
+    "inputs": { "model": ["1", 0], "cfg": 3.0, "start_percent": 0.7, "end_percent": 1.0 },
+    "_meta": { "title": "Late Conditional CFG Override" }
+  },
+  "3": {
+    "class_type": "UNETLoader",
+    "inputs": { "unet_name": "d/ideogram4_unconditional_int8_convrot.safetensors", "weight_dtype": "default" },
+    "_meta": { "title": "Ideogram 4 Unconditional Model" }
+  },
+  "4": {
+    "class_type": "CLIPLoader",
+    "inputs": { "clip_name": "d/qwen3vl_8b_int8_convrot.safetensors", "type": "ideogram4", "device": "default" },
+    "_meta": { "title": "Ideogram 4 Text Encoder" }
+  },
+  "5": {
+    "class_type": "CLIPTextEncode",
+    "inputs": { "text": "{{ image.prompt | json }}", "clip": ["4", 0] },
+    "_meta": { "title": "Ideogram 4 Prompt" }
+  },
+  "6": {
+    "class_type": "ConditioningZeroOut",
+    "inputs": { "conditioning": ["5", 0] },
+    "_meta": { "title": "Text-Free Unconditional Conditioning" }
+  },
+  "7": {
+    "class_type": "DualModelGuider",
+    "inputs": { "model": ["2", 0], "positive": ["5", 0], "cfg": 7.0, "model_negative": ["3", 0], "negative": ["6", 0] },
+    "_meta": { "title": "Ideogram 4 Asymmetric Guidance" }
+  },
+  "8": {
+    "class_type": "EmptyFlux2LatentImage",
+    "inputs": { "width": {{ image.width }}, "height": {{ image.height }}, "batch_size": 1 },
+    "_meta": { "title": "Canvas" }
+  },
+  "9": {
+    "class_type": "RandomNoise",
+    "inputs": { "noise_seed": {{ image.seed }} },
+    "_meta": { "title": "Seed" }
+  },
+  "10": { "class_type": "KSamplerSelect", "inputs": { "sampler_name": "euler" } },
+  "11": {
+    "class_type": "Ideogram4Scheduler",
+    "inputs": { "steps": {{ image.steps }}, "width": {{ image.width }}, "height": {{ image.height }}, "mu": 0.5, "std": 1.75 },
+    "_meta": { "title": "Ideogram 4 Turbo Schedule" }
+  },
+  "12": {
+    "class_type": "SamplerCustomAdvanced",
+    "inputs": { "noise": ["9", 0], "guider": ["7", 0], "sampler": ["10", 0], "sigmas": ["11", 0], "latent_image": ["8", 0] }
+  },
+  "13": {
+    "class_type": "VAELoader",
+    "inputs": { "vae_name": "flux2-vae.safetensors" },
+    "_meta": { "title": "Flux 2 VAE" }
+  },
+  "14": { "class_type": "VAEDecode", "inputs": { "samples": ["12", 0], "vae": ["13", 0] } },
+  "15": {
+    "class_type": "SaveImage",
+    "inputs": { "images": ["14", 0], "filename_prefix": "airpg/ideogram4" },
+    "_meta": { "title": "Generated Image" }
+  }
+}

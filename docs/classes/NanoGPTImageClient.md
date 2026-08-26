@@ -15,7 +15,7 @@ The class does not generate final image prompts, manage the image-job queue, att
   - Sets an instance request timeout of `60000` ms.
 - `server.js` selects this client when `imagegen.engine` is `nanogpt`.
 - Startup validation reports missing NanoGPT `apiKey`/`NANOGPT_API_KEY` or missing `model` before server initialization completes.
-- `config.default.yaml` documents the shared remote-backend settings: `imagegen.engine`, `imagegen.api_template`, `imagegen.model`, `imagegen.endpoint`, `imagegen.apiKey`, and `imagegen.maxConcurrentJobs`.
+- `config.default.yaml` documents the shared remote-backend settings: `imagegen.engine`, `imagegen.model`, `imagegen.endpoint`, `imagegen.apiKey`, and `imagegen.maxConcurrentJobs`.
 
 ## Instance API
 

@@ -63,6 +63,7 @@ function findApprovedProse(checkpointValues) {
     for (const index of searchIndexes) {
         const entry = values[index];
         const isApprovedProseCheckpoint = entry?.checkpoint?.parserName === 'player_action_required_prose'
+            || entry?.checkpoint?.parserName === 'player_action_optional_prose'
             || entry?.checkpoint?.kind === 'dummy';
         if (isApprovedProseCheckpoint && typeof entry.value === 'string' && entry.value.trim()) {
             return entry.value.trim();
@@ -129,10 +130,19 @@ function buildWhileYouWereAwayResult({ checkpointValues }) {
     const moveChildren = Array.from(movesDoc.documentElement?.childNodes || [])
         .filter(node => node?.nodeType === 1)
         .map(node => node.toString());
-    const prose = findApprovedProse(values);
+    const optionalProseEntry = values.find(
+        entry => entry?.checkpoint?.parserName === 'player_action_optional_prose'
+    );
+    const prose = optionalProseEntry
+        ? (
+            typeof optionalProseEntry.value === 'string' && optionalProseEntry.value.trim()
+                ? findApprovedProse(values)
+                : ''
+        )
+        : findApprovedProse(values);
     return [
         '<response>',
-        `  <proseForPlayer>${wrapCdata(prose)}</proseForPlayer>`,
+        ...(prose ? [`  <proseForPlayer>${wrapCdata(prose)}</proseForPlayer>`] : []),
         '  <characterUpdates>',
         ...characterUpdates.map(xml => `    ${xml}`),
         ...arrivalChildren.map(xml => `    ${xml}`),
@@ -183,6 +193,91 @@ function buildScheduledEventInterruptionResult({ checkpointValues, templateConte
     }
     proseNode.appendChild(doc.createCDATASection(findApprovedProse(checkpointValues)));
     return root.toString();
+}
+
+function buildSceneSummaryResult({ assignments, checkpointValues, templateContext }) {
+    const boundaries = assignments?.sceneBoundaries;
+    if (!Array.isArray(boundaries) || boundaries.length < 2) {
+        throw new Error(
+            'Scene-summary result builder requires at least two approved scene boundaries.'
+        );
+    }
+    const fullHistoryLines = templateContext?.fullHistoryLines;
+    if (!Array.isArray(fullHistoryLines) || !fullHistoryLines.length) {
+        throw new Error('Scene-summary result builder requires non-empty indexed history lines.');
+    }
+
+    const normalizedBoundaries = boundaries.map((boundary, index) => {
+        const record = requireObject(boundary, `Scene-summary boundary ${index + 1}`);
+        const start = Number(record.index);
+        if (!Number.isInteger(start) || start <= 0 || start > fullHistoryLines.length) {
+            throw new Error(
+                `Scene-summary boundary ${index + 1} must be inside entries 1-${fullHistoryLines.length}.`
+            );
+        }
+        if (index > 0 && start <= Number(boundaries[index - 1]?.index)) {
+            throw new Error('Scene-summary result boundaries must be strictly ascending.');
+        }
+        return start;
+    });
+    const sceneEntries = requireCheckpointValues(checkpointValues)
+        .filter(entry => entry?.checkpoint?.parserName === 'scene_summary_entry')
+        .map((entry, index) => requireObject(
+            entry.value,
+            `Scene-summary entry ${index + 1}`
+        ));
+    if (sceneEntries.length !== normalizedBoundaries.length - 1) {
+        throw new Error(
+            `Scene-summary result expected ${normalizedBoundaries.length - 1} summarized entries but found ${sceneEntries.length}.`
+        );
+    }
+
+    const lines = ['<scenes>'];
+    sceneEntries.forEach((scene, index) => {
+        const expectedStart = normalizedBoundaries[index];
+        const expectedEnd = normalizedBoundaries[index + 1] - 1;
+        if (scene.localStartIndex !== expectedStart || scene.localEndIndex !== expectedEnd) {
+            throw new Error(
+                `Scene-summary entry ${index + 1} does not match approved range ${expectedStart}-${expectedEnd}.`
+            );
+        }
+        const details = Array.isArray(scene.details) ? scene.details : null;
+        const quotes = Array.isArray(scene.quotes) ? scene.quotes : null;
+        if (!details || !quotes) {
+            throw new Error(`Scene-summary entry ${index + 1} has invalid details or quotes.`);
+        }
+        lines.push(
+            '  <scene>',
+            `    <index>${expectedStart}</index>`,
+            `    <summary>${wrapCdata(requireText(scene.summary, `Scene-summary entry ${index + 1} summary`))}</summary>`,
+            '    <details>'
+        );
+        for (const detail of details) {
+            lines.push(`      ${escapeXmlText(requireText(detail, `Scene-summary entry ${index + 1} detail`))}`);
+        }
+        lines.push('    </details>');
+        for (const quote of quotes) {
+            const record = requireObject(quote, `Scene-summary entry ${index + 1} quote`);
+            lines.push(
+                '    <quote>',
+                `      <character>${escapeXmlText(requireText(record.character, 'Scene-summary quote character'))}</character>`,
+                `      <text>${escapeXmlText(requireText(record.text, 'Scene-summary quote text'))}</text>`,
+                '    </quote>'
+            );
+        }
+        lines.push('  </scene>');
+    });
+
+    const followingSceneStart = normalizedBoundaries[normalizedBoundaries.length - 1];
+    lines.push(
+        '  <scene>',
+        `    <index>${followingSceneStart}</index>`,
+        '    <summary>Following scene boundary marker.</summary>',
+        '    <details></details>',
+        '  </scene>',
+        '</scenes>'
+    );
+    return lines.join('\n');
 }
 
 function buildCraftResult({ assignments, checkpointValues, templateContext }) {
@@ -274,6 +369,7 @@ module.exports = {
     buildGameIntroResult,
     buildLocationModificationResult,
     buildQuestRewardResult,
+    buildSceneSummaryResult,
     buildScheduledEventInterruptionResult,
     buildScheduledEventResult,
     buildTurnResultFromApprovedProse,

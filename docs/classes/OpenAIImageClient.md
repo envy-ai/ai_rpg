@@ -12,7 +12,7 @@
   - Uses a fixed request timeout of 60 seconds.
   - Throws a clear initialization error when the API key or model is missing.
 
-Server configuration validation also requires the shared image-generation settings used before this client is called, including `imagegen.api_template` and `imagegen.default_settings.image`.
+Server configuration validation also requires the shared image-generation settings used before this client is called, including `imagegen.default_settings.image`.
 
 ## Instance API
 - `generateRequestId()`: UUID for request tracking.

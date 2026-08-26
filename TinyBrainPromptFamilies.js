@@ -12,6 +12,7 @@ const TINY_BRAIN_PROMPT_FAMILIES = Object.freeze({
     craft_player_action: '_includes/player-action-craft.tinybrain.njk',
     location_modify_player_action: '_includes/player-action-modify-location.tinybrain.njk',
     player_action_open_container: '_includes/player-action-open-container.tinybrain.njk',
+    scene_summarize: '_includes/scene-summarize.tinybrain.njk',
     while_you_were_away: '_includes/while-you-were-away.tinybrain.njk',
     scheduled_event_resolution: '_includes/scheduled-event-resolution.tinybrain.njk',
     scheduled_event_interruption_rewrite: '_includes/scheduled-event-interruption-rewrite.tinybrain.njk'
@@ -29,6 +30,7 @@ const TINY_BRAIN_PROMPT_METADATA_LABELS = Object.freeze({
     craft_player_action: 'craft_player_action',
     location_modify_player_action: 'location_modify_player_action',
     player_action_open_container: 'player_action_open_container',
+    scene_summarize: 'scene_summarize',
     while_you_were_away: 'while_you_were_away',
     scheduled_event_resolution: 'scheduled_event_resolution',
     scheduled_event_interruption_rewrite: 'player_action_interruption_rewrite'
@@ -62,8 +64,26 @@ function getTinyBrainPromptConfigurationErrors(aiConfig) {
     return errors;
 }
 
-function isTinyBrainPromptEnabled(aiConfig, family) {
-    requireKnownTinyBrainPromptFamily(family);
+function resolveTinyBrainAiConfig(configOrAiConfig, family) {
+    const normalizedFamily = requireKnownTinyBrainPromptFamily(family);
+    if (
+        configOrAiConfig
+        && typeof configOrAiConfig === 'object'
+        && !Array.isArray(configOrAiConfig)
+        && Object.hasOwn(configOrAiConfig, 'ai')
+    ) {
+        const metadataLabel = TINY_BRAIN_PROMPT_METADATA_LABELS[normalizedFamily];
+        const LLMClient = require('./LLMClient.js');
+        return LLMClient.resolveEffectiveAiConfiguration(
+            metadataLabel,
+            configOrAiConfig
+        ).aiConfig;
+    }
+    return configOrAiConfig;
+}
+
+function isTinyBrainPromptEnabled(configOrAiConfig, family) {
+    const aiConfig = resolveTinyBrainAiConfig(configOrAiConfig, family);
     if (aiConfig?.tinybrain !== true) {
         return false;
     }
@@ -118,6 +138,7 @@ module.exports = {
     configureTinyBrainPromptContext,
     getTinyBrainPromptConfigurationErrors,
     isTinyBrainPromptEnabled,
+    resolveTinyBrainAiConfig,
     requireKnownTinyBrainPromptFamily,
     runTinyBrainPromptProgram
 };

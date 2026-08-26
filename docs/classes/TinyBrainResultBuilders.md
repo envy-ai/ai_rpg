@@ -13,7 +13,8 @@ Local builders currently cover:
 - scheduled-event results, including the literal no-event result and approved summary/player prose branches;
 - scheduled-event interruption rewrites by replacing only the direct player-facing prose node in the original `turnResult`;
 - craft and location-modification results, combining approved prose and model-supplied reasoning/effect prose with authoritative durations;
-- checked-container results, combining approved prose and timing/permanence judgments with the one successful check invocation's authoritative tool name and success result.
+- checked-container results, combining approved prose and timing/permanence judgments with the one successful check invocation's authoritative tool name and success result;
+- scene summaries, combining each validated assigned-range checkpoint into `<scenes>` and appending a fixed final following-scene marker that the established downstream parser uses to close the last completed scene and then discards.
 
 Builders XML-escape ordinary text, use split-safe CDATA for prose, and validate the authoritative inputs they consume. Downstream domain parsers remain responsible for validating the assembled result at API boundaries. Movement-shaped interruption XML is intentionally excluded by the caller; the local interruption builder accepts only `turnResult`.
 

@@ -101,6 +101,148 @@ function rejectUnexpectedDirectChildren(node, allowedTags, label) {
     }
 }
 
+function requirePositiveIntegerArgument(value, label) {
+    const parsed = Number(value);
+    if (!Number.isInteger(parsed) || parsed <= 0) {
+        throw new Error(`${label} must be a positive integer.`);
+    }
+    return parsed;
+}
+
+function rejectNestedElements(node, label) {
+    const nested = directChildElements(node);
+    if (nested.length) {
+        throw new Error(`${label} must contain text only, not <${normalizedTagName(nested[0])}>.`);
+    }
+}
+
+function parseSceneSummaryBoundaries(response, entryCount) {
+    const totalEntries = requirePositiveIntegerArgument(
+        entryCount,
+        'Scene-summary boundary parser entry count'
+    );
+    const { root } = parseStrictXml(response, 'scene-summary boundaries');
+    if (normalizedTagName(root) !== 'sceneboundaries') {
+        throw new Error('Scene-summary boundaries must use one <sceneBoundaries> root.');
+    }
+    if (directTextContent(root)) {
+        throw new Error('Scene-summary boundaries cannot contain text outside <boundary> entries.');
+    }
+    rejectUnexpectedDirectChildren(root, ['boundary'], 'Scene-summary boundaries');
+    const boundaryNodes = directChildrenByTagName(root, 'boundary');
+    if (boundaryNodes.length < 2) {
+        throw new Error(
+            'Scene-summary boundaries require at least two starts: one completed scene and one following-scene boundary.'
+        );
+    }
+
+    const boundaries = boundaryNodes.map((boundaryNode, boundaryIndex) => {
+        const label = `Scene-summary boundary ${boundaryIndex + 1}`;
+        if (directTextContent(boundaryNode)) {
+            throw new Error(`${label} cannot contain text outside its fields.`);
+        }
+        rejectUnexpectedDirectChildren(boundaryNode, ['index', 'reason'], label);
+        const indexField = requireSingleDirectChild(boundaryNode, 'index', label);
+        const reasonField = requireSingleDirectChild(boundaryNode, 'reason', label);
+        rejectNestedElements(indexField.node, `${label} <index>`);
+        rejectNestedElements(reasonField.node, `${label} <reason>`);
+        if (!/^\d+$/.test(indexField.text)) {
+            throw new Error(`${label} <index> must be a positive integer.`);
+        }
+        const index = Number(indexField.text);
+        if (!Number.isInteger(index) || index <= 0 || index > totalEntries) {
+            throw new Error(`${label} index ${indexField.text} is outside entries 1-${totalEntries}.`);
+        }
+        return {
+            index,
+            reason: reasonField.text
+        };
+    });
+
+    for (let index = 1; index < boundaries.length; index += 1) {
+        if (boundaries[index].index <= boundaries[index - 1].index) {
+            throw new Error('Scene-summary boundary indices must be unique and strictly ascending.');
+        }
+    }
+
+    return {
+        value: boundaries,
+        normalizedResponse: root.toString()
+    };
+}
+
+function parseSceneSummaryEntry(response, expectedStartIndex, expectedEndIndex) {
+    const expectedStart = requirePositiveIntegerArgument(
+        expectedStartIndex,
+        'Scene-summary entry expected start index'
+    );
+    const expectedEnd = requirePositiveIntegerArgument(
+        expectedEndIndex,
+        'Scene-summary entry expected end index'
+    );
+    if (expectedEnd < expectedStart) {
+        throw new Error('Scene-summary entry expected end index must not precede its start index.');
+    }
+
+    const { root } = parseStrictXml(response, `scene-summary entry ${expectedStart}-${expectedEnd}`);
+    if (normalizedTagName(root) !== 'scene') {
+        throw new Error('Scene-summary entry must use one <scene> root.');
+    }
+    if (directTextContent(root)) {
+        throw new Error('Scene-summary entry cannot contain text outside its fields.');
+    }
+    rejectUnexpectedDirectChildren(root, ['index', 'summary', 'details', 'quote'], 'Scene-summary entry');
+
+    const indexField = requireSingleDirectChild(root, 'index', 'Scene-summary entry');
+    const summaryField = requireSingleDirectChild(root, 'summary', 'Scene-summary entry');
+    const detailsField = requireSingleDirectChild(root, 'details', 'Scene-summary entry', {
+        allowEmpty: true
+    });
+    rejectNestedElements(indexField.node, 'Scene-summary entry <index>');
+    rejectNestedElements(summaryField.node, 'Scene-summary entry <summary>');
+    rejectNestedElements(detailsField.node, 'Scene-summary entry <details>');
+
+    if (!/^\d+$/.test(indexField.text) || Number(indexField.text) !== expectedStart) {
+        throw new Error(`Scene-summary entry must use the assigned start index ${expectedStart}.`);
+    }
+
+    const details = detailsField.text
+        .split(/\r?\n/)
+        .map(line => line.trim())
+        .map(line => line.replace(/^(?:[-*]+|\d+[.)])\s+/, '').trim())
+        .filter(Boolean);
+    const quoteNodes = directChildrenByTagName(root, 'quote');
+    if (quoteNodes.length > 2) {
+        throw new Error('Scene-summary entry permits at most two notable quotes.');
+    }
+    const quotes = quoteNodes.map((quoteNode, quoteIndex) => {
+        const label = `Scene-summary quote ${quoteIndex + 1}`;
+        if (directTextContent(quoteNode)) {
+            throw new Error(`${label} cannot contain text outside its fields.`);
+        }
+        rejectUnexpectedDirectChildren(quoteNode, ['character', 'text'], label);
+        const characterField = requireSingleDirectChild(quoteNode, 'character', label);
+        const textField = requireSingleDirectChild(quoteNode, 'text', label);
+        rejectNestedElements(characterField.node, `${label} <character>`);
+        rejectNestedElements(textField.node, `${label} <text>`);
+        return {
+            character: characterField.text,
+            text: textField.text
+        };
+    });
+
+    return {
+        value: {
+            localStartIndex: expectedStart,
+            localEndIndex: expectedEnd,
+            summary: summaryField.text,
+            details,
+            quotes
+        },
+        normalizedResponse: root.toString()
+    };
+}
+
 function parseBooleanText(text, fieldLabel) {
     const normalized = String(text || '').trim().toLowerCase();
     if (normalized === 'true' || normalized === 'yes') {
@@ -141,57 +283,46 @@ function rejectPlayerActionResultMarkup(response, label, { rejectHidden = false 
     }
 }
 
-function parsePlayerActionMoreInfoOrNa(response, parseContext = {}) {
+function parsePlayerActionDestinationNameOrNa(response, parseContext = {}) {
     const currentToolInvocations = Array.isArray(parseContext?.currentToolInvocations)
         ? parseContext.currentToolInvocations
         : [];
-    const unexpectedToolInvocation = currentToolInvocations.find(invocation => (
-        invocation?.name !== 'moreInfo'
-    ));
-    if (unexpectedToolInvocation) {
+    if (currentToolInvocations.length) {
         throw new Error(
-            `Player-action destination lookup may only call moreInfo; received ${unexpectedToolInvocation.name || 'an unnamed tool'}.`
+            'Player-action destination-name context checkpoint must not make tool calls.'
         );
     }
 
-    const failedMoreInfoInvocation = currentToolInvocations.find(invocation => (
-        invocation?.name === 'moreInfo'
-        && invocation?.metadata?.error === true
-    ));
-    if (failedMoreInfoInvocation) {
-        throw new Error('Player-action destination lookup moreInfo execution failed.');
-    }
-
-    const successfulMoreInfoInvocations = currentToolInvocations.filter(invocation => (
-        invocation?.name === 'moreInfo'
-        && invocation?.metadata?.error !== true
-    ));
-    const normalized = normalizePlainResponse(response, 'player-action destination lookup')
-        .replace(/^[*_`~]+/, '')
+    const normalized = normalizePlainResponse(response, 'player-action destination name')
+        .replace(/^[*_`~]+|[*_`~]+$/g, '')
         .replace(/^answer\s*:\s*/i, '')
         .trim();
-    const choice = normalized.match(/^(READY|N\s*\/?\s*A)(?=$|\s|[.,;:!?])/i)?.[1]
-        ?.replace(/\s+/g, '')
-        .toUpperCase();
-    if (choice === 'N/A' || choice === 'NA') {
-        if (successfulMoreInfoInvocations.length) {
-            throw new Error(
-                'Player-action destination lookup must answer READY after a successful moreInfo call.'
-            );
-        }
-        return { value: false, normalizedResponse: 'N/A' };
+    if (/^N\s*\/?\s*A\.?$/i.test(normalized)) {
+        return { value: null, normalizedResponse: 'N/A' };
     }
-    if (choice === 'READY') {
-        if (!successfulMoreInfoInvocations.length) {
-            throw new Error(
-                'Player-action destination lookup cannot answer READY without a successful moreInfo call.'
-            );
-        }
-        return { value: true, normalizedResponse: 'READY' };
+    const lines = normalized.split(/\r?\n/).map(line => line.trim()).filter(Boolean);
+    if (lines.length !== 1) {
+        throw new Error('Player-action destination name must be one line or exactly N/A.');
     }
-    throw new Error(
-        'Player-action destination lookup must begin with N/A, or READY after calling moreInfo.'
-    );
+    let location = lines[0]
+        .replace(/^[-*]\s+/, '')
+        .replace(/^Location\s*:\s*/i, '')
+        .trim();
+    const first = location.charAt(0);
+    const last = location.charAt(location.length - 1);
+    if ((first === '"' && last === '"') || (first === "'" && last === "'")) {
+        location = location.slice(1, -1).trim();
+    }
+    if (!location || /^N\s*\/?\s*A\.?$/i.test(location)) {
+        return { value: null, normalizedResponse: 'N/A' };
+    }
+    if (/<\/?[A-Za-z][^>]*>/.test(location)) {
+        throw new Error('Player-action destination name must not contain XML markup.');
+    }
+    return {
+        value: { location, region: null },
+        normalizedResponse: location
+    };
 }
 
 function parsePlayerActionMovement(response, onVehicle = false) {
@@ -739,6 +870,18 @@ function parsePlayerActionRequiredProse(response) {
     return { value: normalized };
 }
 
+function parsePlayerActionOptionalProse(response) {
+    const normalized = normalizePlainResponse(response, 'optional player-action prose');
+    if (/^n\s*(?:[/._-]\s*)?a\.?$/i.test(normalized)) {
+        return { value: null, normalizedResponse: 'N/A' };
+    }
+    rejectPlayerActionResultMarkup(normalized, 'Optional player-action prose', { rejectHidden: true });
+    if (/<(?:\/?[A-Za-z_][A-Za-z0-9_.:-]*(?:\s[^<>]*?)?\/?>|!\[CDATA\[|\?xml\b)/i.test(normalized)) {
+        throw new Error('Optional player-action prose must contain prose only, without XML markup, or exactly N/A.');
+    }
+    return { value: normalized };
+}
+
 function parsePlayerActionHiddenNotes(response) {
     const normalized = normalizePlainResponse(response, 'player-action hidden notes');
     if (/^n\s*\/\s*a\.?$/i.test(normalized)) {
@@ -1209,7 +1352,13 @@ function parseWhileYouWereAwayResult(response) {
         throw new Error('While-you-were-away result must use <response> as its document root.');
     }
     rejectUnexpectedDirectChildren(root, ['proseforplayer', 'characterupdates', 'itemscenerymoves'], 'While-you-were-away result');
-    requireSingleDirectChild(root, 'proseForPlayer', 'While-you-were-away result');
+    const proseNodes = directChildrenByTagName(root, 'proseForPlayer');
+    if (proseNodes.length > 1) {
+        throw new Error('While-you-were-away result may contain at most one direct <proseForPlayer> child.');
+    }
+    if (proseNodes.length === 1) {
+        requireSingleDirectChild(root, 'proseForPlayer', 'While-you-were-away result', { allowEmpty: true });
+    }
     const characterUpdatesRoot = requireSingleDirectChild(
         root,
         'characterUpdates',
@@ -1980,8 +2129,9 @@ module.exports = {
     parsePlayerActionAccompanyingCharacters,
     parsePlayerActionHiddenContests,
     parsePlayerActionHiddenNotes,
-    parsePlayerActionMoreInfoOrNa,
+    parsePlayerActionDestinationNameOrNa,
     parsePlayerActionMovement,
+    parsePlayerActionOptionalProse,
     parsePlayerActionProseScope,
     parsePlayerActionRequiredProse,
     parsePlayerActionTimeReasoning,
@@ -1994,6 +2144,8 @@ module.exports = {
     parseScheduledEventToolExecution,
     validateScheduledEventToolCallAgainstPlan,
     parseScheduledEventSummary,
+    parseSceneSummaryBoundaries,
+    parseSceneSummaryEntry,
     parseScheduledEventInterruptionRewrite,
     parseScheduledEventStagedResult,
     parseTurnNarrativeResult,

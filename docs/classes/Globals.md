@@ -26,7 +26,7 @@
 - `getBasePromptContext`, `getPromptEnv`, `parseXMLTemplate`, and `appendChatEntry` are fail-loud placeholders until `server.js` assigns implementations.
 - `appendChatEntry(entry, { collector, locationId, clientId, emitClientRefresh, refreshPayload })` routes through `pushChatEntry`. It requires an explicit `locationId` or current player location and can emit `chat_history_updated`.
 - `analyzeChatSlopwords`, `analyzeSlopwordsForText(text)`, `analyzeConfiguredNgramsForText(text)`, `analyzeSlopRegexesForText(text)`, and `findSlopRegexesInText(text)` are assigned by `server.js`. Text analysis throws on empty input; regex helpers strip asterisks before matching configured regexes.
-- `reloadConfigAndDefs(...)` reloads merged config, validates definition overlays/formulas, refreshes caches, and stores the active per-game YAML override.
+- `reloadConfigAndDefs(...)` reloads merged config, validates definition overlays/formulas, refreshes caches, stores the active per-game YAML override, and can atomically select a process-local config-file override above the save layer.
 - `reloadLorebooks()` reloads the active lorebook manager or throws if the manager is unavailable.
 
 ### Current Player And Movement
@@ -48,7 +48,7 @@
 
 ### Time And Calendar
 - `getTimeConfig()` reads `Globals.config?.time` and validates `cycleLengthMinutes`, `tickMinutes`, and named `segmentBoundaries`. Defaults are a 1440-minute day, 15-minute tick, and dawn/day/dusk/night boundaries.
-- `generateCalendarDefinition({ settingName })` returns a normalized Gregorian-style default calendar with months, weekdays, seasons, seasonal light descriptions, and holidays.
+- `generateCalendarDefinition({ settingName })` returns a normalized Gregorian-style default calendar with months, weekdays, seasons, separate exterior-vegetation and interior image descriptions, seasonal light descriptions, and holidays.
 - `normalizeCalendarDefinition(calendarDefinition)` validates and returns a normalized deep clone without mutating active state.
 - `ensureWorldTimeInitialized({ settingName })` initializes or normalizes `calendarDefinition` and `worldTime`, then returns `getWorldTimeContext({ skipEnsure: true })`.
 - `resetWorldTime({ settingName, calendarDefinition })` installs a generated or supplied calendar, resets time to day 0 at the configured day segment start, syncs the current player, and returns world-time context.
@@ -59,7 +59,7 @@
 - `getCalendarDayIndex({ monthNumber, dayOfMonth, calendarDefinition? })` converts a one-based year-one calendar date to canonical zero-based `dayIndex`. It validates the month position and the selected month's exact length without clamping.
 - `advanceTime(minutes, { source })` requires non-negative integer minutes, advances `worldTime`, syncs the current player, and returns `{ source, advancedMinutes, transitions, previous, current }`.
 - `getTimeSegment(worldTime?)`, `getSeason(worldTime?)`, `getCalendarDate(worldTime?)`, `getLightLevelDescription(worldTime?)`, `getLightingDescription(segmentName?)`, `formatTime(worldTime?)`, and `formatDate(worldTime?)` derive labels and calendar context from minute-based world time.
-- `getWorldTimeContext({ transitions })` returns day/time, segment, season, formatted labels, lighting, holiday data, full date info, and cloned transition entries.
+- `getWorldTimeContext({ transitions })` returns day/time, segment, season, season/exterior-vegetation/interior descriptions, formatted labels, lighting, holiday data, full date info, and cloned transition entries.
 - `syncWorldTimeToPlayer(player?)` writes total world minutes to non-NPC players whose `elapsedTime` field is numeric or undefined.
 
 ### Realtime Helpers
@@ -69,7 +69,7 @@
 ## Notes
 - Canonical world time is `worldTime = { dayIndex, timeMinutes }`.
 - Calendar generation has no leap-year handling.
-- `calendarDefinition.seasons[*].timeDescriptions` is normalized and sorted, then used for `lightLevelDescription`. Segment-based lighting is used when no seasonal description applies.
-- `getCalendarDate()` and `getWorldTimeContext()` include season descriptions and holiday context when the current date matches a configured holiday.
+- `calendarDefinition.seasons[*].timeDescriptions` is normalized and sorted, then used for `lightLevelDescription`. `vegetationDescription` is optional image-ready exterior plant-life guidance, while `interiorDescription` is optional image-ready guidance for enclosed seasonal changes. Segment-based lighting is used when no seasonal description applies.
+- `getCalendarDate()` and `getWorldTimeContext()` expose these as `seasonVegetationDescription` and `seasonInteriorDescription`, plus holiday context when the current date matches a configured holiday.
 - `formatTime()` renders 12-hour `h:MM AM/PM` labels.
 - Player-arrival visit-state helpers are runtime-only and are cleared at the start of player chat, direct-move, and teleport flows. Non-NPC `Player.setLocation(...)` snapshots the destination before marking it visited.

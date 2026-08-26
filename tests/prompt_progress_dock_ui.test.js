@@ -279,6 +279,11 @@ test('prompt view action spawns persistent modeless prompt viewers', () => {
     assert.match(scssSource, /\.prompt-progress-viewer__response-inline\s*\{[\s\S]*color:\s*#67e8f9/);
     assert.match(chatSource, /failedResponses[\s\S]*\(empty response\)/);
     assert.match(chatSource, /entry\.responseFailed === true \? '' : renderedResponseText/);
+    assert.match(createViewerBlock, /viewerState\.selectionPointerActive = true/);
+    assert.match(syncViewerWindowBlock, /updateSelectableTextElement\(promptTextElement, renderedPromptText\)/);
+    assert.match(syncViewerWindowBlock, /updateSelectableTextElement\(failedResponseTextElement, renderedFailedResponses\)/);
+    assert.match(syncViewerWindowBlock, /updateSelectableTextElement\([\s\S]*responseTextElement/);
+    assert.match(syncViewerWindowBlock, /scrollPromptProgressViewerToBottom\(viewerState\)/);
     assert.match(chatSource, /case 'prompt_progress_group_failure':[\s\S]*handlePromptProgressGroupFailure\(payload\)/);
     assert.match(chatSource, /handlePromptProgressGroupFailure\(payload\)[\s\S]*failedResponses:\s*\[\.\.\.failedResponses\]/);
     assert.match(scssSource, /\.prompt-progress-viewer__failed-response-inline\s*\{[\s\S]*color:\s*#fca5a5/);

@@ -153,11 +153,11 @@ The repeated transport pattern proves an immediate router/upstream connection ab
 
 Do not rely on an earlier attempt directory when the current aggregate points to a later selected rerun.
 
-- Machine aggregate: `tmp/model-benchmarks/qwen36-35b-a3b-20260812-clean/results.json`
-- Incremental state: `tmp/model-benchmarks/qwen36-35b-a3b-20260812-clean/progress.json`
-- Resolved inventory/options: `tmp/model-benchmarks/qwen36-35b-a3b-20260812-clean/manifest.json`
-- Human-readable report: `tmp/model-benchmarks/qwen36-35b-a3b-20260812-clean/airpgbench-Qwen3.6-35B-A3B-uncensored-heretic-Native-MTP-Preserved-GGUF.html`
-- Per-profile server output: `tmp/model-benchmarks/qwen36-35b-a3b-20260812-clean/server-logs/`
+- Machine aggregate: `benchmarks/model/qwen36-35b-a3b-20260812-clean/results.json`
+- Incremental state: `benchmarks/model/qwen36-35b-a3b-20260812-clean/progress.json`
+- Resolved inventory/options: `benchmarks/model/qwen36-35b-a3b-20260812-clean/manifest.json`
+- Human-readable report: `benchmarks/model/qwen36-35b-a3b-20260812-clean/airpgbench-Qwen3.6-35B-A3B-uncensored-heretic-Native-MTP-Preserved-GGUF.html`
+- Per-profile server output: `benchmarks/model/qwen36-35b-a3b-20260812-clean/server-logs/`
 - Per-case attempts: paths are recorded in each `results.json` entry and contain `triage.md`, `triage.json`, `steps.json`, `response.json`, before/after snapshots, realtime evidence, and changed-log manifests.
 - Human prose issue log: `tmp/prose_issues_log.md`
 

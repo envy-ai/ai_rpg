@@ -640,7 +640,7 @@ class Region {
     });
   }
 
-  static fromXMLSnippet(xmlSnippet) {
+  static fromXMLSnippet(xmlSnippet, { requireLocationHasWeather = false } = {}) {
     if (!xmlSnippet || typeof xmlSnippet !== 'string') {
       throw new Error('Region XML snippet must be a string');
     }
@@ -830,6 +830,9 @@ class Region {
 
       if (hasWeatherNode) {
         hasWeather = Region.#normalizeWeatherExposure(hasWeatherNode.textContent?.trim(), `location "${locName}" hasWeather`);
+      }
+      if (requireLocationHasWeather && hasWeather === null) {
+        throw new Error(`Generated region location "${locName}" is missing required <hasWeather>.`);
       }
 
       const exitEntries = exitsNode

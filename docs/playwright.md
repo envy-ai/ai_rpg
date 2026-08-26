@@ -176,6 +176,14 @@ node playwright_scripts/check_fitty_overflow.js
 
 This targets `http://127.0.0.1:7777`, checks visible `.entity-name`, `.party-name`, and `#chatPlayerName` elements for horizontal overflow, and writes `tmp/fitty-overflow-check.json`.
 
+Item-to-currency context-menu verification:
+
+```bash
+PLAYWRIGHT_BASE_URL=http://127.0.0.1:4174 node playwright_scripts/verify_item_currency_conversion_ui.js
+```
+
+This helper intentionally refuses to run against a loaded game. Against an isolated no-save `Adventurer` session, it creates disposable valued and valueless inventory items, verifies the conversion warning and clear missing-value alert, confirms that cancelling leaves both the item and currency unchanged, then accepts the warning and checks the item deletion and currency payout. It writes its screenshot and result JSON under `tmp/item-currency-browser-verification/`.
+
 ## Existing X Session Helper
 
 `playwright_scripts/run_on_existing_x_session.sh` finds a same-user process with `DISPLAY`, exports the related X/session environment variables, and runs the command passed to it. With no arguments, it runs:

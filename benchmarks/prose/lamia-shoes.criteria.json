@@ -1,0 +1,32 @@
+{
+  "id": "lamia-shoes",
+  "title": "Lamia shoes joke and social judgment",
+  "context": "Mizuchi is visibly a lamia: below the waist she has a serpentine tail rather than legs or feet, so she does not wear shoes. Baato is physically present with her and can plainly see this. His compliment about her shoes is therefore knowingly absurd rather than an innocent anatomical mistake. Baato and Mizuchi have barely met, and he is asking her out unexpectedly.",
+  "instructions": "Evaluate Mizuchi's portrayed understanding and social judgment, including narration, dialogue, physical reaction, timing, and subtext. A dry correction can still show social understanding if its delivery clearly plays along with Baato. Do not require her to explain lamia anatomy or explicitly label the remark a joke. Judge her response to the invitation independently from whether she understands the joke.",
+  "criteria": [
+    {
+      "id": "lamia_does_not_wear_shoes",
+      "title": "Physical grounding",
+      "description": "The generated response understands that Mizuchi has no feet and is not actually wearing shoes.",
+      "pass": "The response explicitly or implicitly grounds her serpentine anatomy or the absence/impossibility of shoes, without inventing footwear for her.",
+      "fail": "The response portrays her as wearing, owning, adjusting, displaying, or receiving a sincere compliment about actual shoes, or otherwise contradicts her visible anatomy.",
+      "unclear": "The response neither invents shoes nor provides enough evidence that it noticed the anatomical impossibility, such as ignoring the shoe remark entirely."
+    },
+    {
+      "id": "recognizes_deliberate_teasing",
+      "title": "Social and humorous subtext",
+      "description": "Mizuchi realizes that Baato knows lamias do not wear shoes and is deliberately trying to be clever, teasing, or flirtatious.",
+      "pass": "Her response or reaction shows that she reads the absurd compliment as intentional wit, teasing, flirtation, or a knowingly bad line and responds with that shared understanding.",
+      "fail": "She treats Baato as sincerely mistaken or ignorant and merely corrects or educates him, or the response otherwise clearly misses his deliberate social intent.",
+      "unclear": "Her reaction could plausibly be either recognition or literal correction, with insufficient evidence to distinguish them."
+    },
+    {
+      "id": "appropriate_social_caution",
+      "title": "Appropriate social caution",
+      "description": "Because Mizuchi and Baato have barely met, she responds to his unexpected invitation with some skepticism, caution, conditions, boundaries, deferral, or rejection rather than accepting uncritically.",
+      "pass": "She turns him down; defers the decision; asks a probing question; sets a boundary or condition; or accepts in a clearly tentative, skeptical, guarded, or conditional way. She need not explicitly say that they barely know each other.",
+      "fail": "She immediately accepts in a clearly uncritical, unconditional way, with no meaningful hesitation, skepticism, condition, boundary, or acknowledgment of the social risk of an unexpected invitation from someone she barely knows.",
+      "unclear": "The response flirts, jokes, redirects, or ends before establishing whether she accepts, rejects, defers, or attaches any meaningful caution or condition."
+    }
+  ]
+}

@@ -17,7 +17,8 @@ class LlamaCppRouterClient {
         httpClient = axios,
         fileSystem = fs,
         sleep = null,
-        logger = console
+        logger = console,
+        signal = null
     } = {}) {
         if (typeof endpoint !== 'string' || !endpoint.trim()) {
             throw new Error('llama.cpp router endpoint is required.');
@@ -63,6 +64,16 @@ class LlamaCppRouterClient {
         if (!logger || typeof logger.warn !== 'function') {
             throw new Error('llama.cpp router logger must expose warn().');
         }
+        if (
+            signal !== null
+            && (
+                typeof signal !== 'object'
+                || typeof signal.aborted !== 'boolean'
+                || typeof signal.addEventListener !== 'function'
+            )
+        ) {
+            throw new Error('llama.cpp router signal must be an AbortSignal when provided.');
+        }
 
         this.baseUrl = LlamaCppRouterClient.resolveRouterBaseUrl(endpoint);
         this.model = model.trim();
@@ -76,6 +87,7 @@ class LlamaCppRouterClient {
         this.httpClient = httpClient;
         this.fileSystem = fileSystem;
         this.logger = logger;
+        this.signal = signal;
         this.sleep = typeof sleep === 'function'
             ? sleep
             : milliseconds => new Promise(resolve => setTimeout(resolve, milliseconds));
@@ -114,10 +126,29 @@ class LlamaCppRouterClient {
     }
 
     requestOptions() {
+        this.throwIfAborted();
         return {
             headers: { ...this.headers },
-            timeout: this.timeoutMs
+            timeout: this.timeoutMs,
+            ...(this.signal ? { signal: this.signal } : {})
         };
+    }
+
+    throwIfAborted() {
+        if (!this.signal?.aborted) {
+            return;
+        }
+        if (this.signal.reason instanceof Error) {
+            throw this.signal.reason;
+        }
+        const error = new Error(
+            typeof this.signal.reason === 'string' && this.signal.reason.trim()
+                ? this.signal.reason.trim()
+                : `llama.cpp router operation for model "${this.model}" was cancelled.`
+        );
+        error.name = 'AbortError';
+        error.code = 'ERR_CANCELED';
+        throw error;
     }
 
     describeHttpError(error) {
@@ -137,14 +168,18 @@ class LlamaCppRouterClient {
     }
 
     async listModels() {
+        this.throwIfAborted();
         const url = `${this.baseUrl}/models`;
         const totalAttempts = this.statusRetryAttempts + 1;
         let response;
         for (let attempt = 1; attempt <= totalAttempts; attempt += 1) {
+            this.throwIfAborted();
             try {
                 response = await this.httpClient.get(url, this.requestOptions());
+                this.throwIfAborted();
                 break;
             } catch (error) {
+                this.throwIfAborted();
                 const shouldRetry = attempt < totalAttempts && this.isTransientStatusError(error);
                 if (!shouldRetry) {
                     const attemptSummary = attempt > 1 ? ` after ${attempt} attempts` : '';
@@ -156,6 +191,7 @@ class LlamaCppRouterClient {
                     `Transient llama.cpp router status failure (${attempt}/${totalAttempts}): ${this.describeHttpError(error)}; retrying.`
                 );
                 await this.sleep(this.statusRetryDelayMs);
+                this.throwIfAborted();
             }
         }
 
@@ -185,6 +221,7 @@ class LlamaCppRouterClient {
     }
 
     async postModelAction(action) {
+        this.throwIfAborted();
         let response;
         try {
             response = await this.httpClient.post(
@@ -192,7 +229,9 @@ class LlamaCppRouterClient {
                 { model: this.model },
                 this.requestOptions()
             );
+            this.throwIfAborted();
         } catch (error) {
+            this.throwIfAborted();
             throw new Error(
                 `Failed to ${action} llama.cpp model "${this.model}": ${this.describeHttpError(error)}`
             );
@@ -221,11 +260,14 @@ class LlamaCppRouterClient {
     }
 
     async slotCacheFileExists(filename = this.getSlotCacheFilename()) {
+        this.throwIfAborted();
         const cachePath = this.getSlotCachePath(filename);
         try {
             await this.fileSystem.promises.access(cachePath);
+            this.throwIfAborted();
             return true;
         } catch (error) {
+            this.throwIfAborted();
             if (error?.code === 'ENOENT') {
                 return false;
             }
@@ -237,6 +279,7 @@ class LlamaCppRouterClient {
     }
 
     async postSlotAction(action, filename = this.getSlotCacheFilename()) {
+        this.throwIfAborted();
         if (action !== 'save' && action !== 'restore') {
             throw new Error(`Unsupported llama.cpp slot-cache action "${action}".`);
         }
@@ -252,7 +295,9 @@ class LlamaCppRouterClient {
                 },
                 this.requestOptions()
             );
+            this.throwIfAborted();
         } catch (error) {
+            this.throwIfAborted();
             throw new Error(
                 `Failed to ${action} llama.cpp slot ${this.slotId} cache for model "${this.model}": ${this.describeHttpError(error)}`,
                 { cause: error }
@@ -320,6 +365,7 @@ class LlamaCppRouterClient {
     }
 
     async waitForStatus(expectedStatus) {
+        this.throwIfAborted();
         const expected = String(expectedStatus || '').trim().toLowerCase();
         if (!expected) {
             throw new Error('Expected llama.cpp model status is required.');
@@ -328,6 +374,7 @@ class LlamaCppRouterClient {
         let lastStatus = null;
 
         while (true) {
+            this.throwIfAborted();
             const status = await this.getModelStatus();
             lastStatus = status.value;
             if (lastStatus === expected) {
@@ -339,6 +386,7 @@ class LlamaCppRouterClient {
                 );
             }
             await this.sleep(this.pollIntervalMs);
+            this.throwIfAborted();
         }
     }
 

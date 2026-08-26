@@ -9,8 +9,8 @@ This API manages reusable world profiles backed by `SettingInfo`. The `/settings
 `SettingInfo` serializes with:
 - Identity and metadata: `id`, `name`, `createdAt`, `lastUpdated`.
 - World description fields: `description`, `theme`, `genre`, `startingLocationType`, `magicLevel`, `techLevel`, `tone`, `difficulty`.
-- Prompt and style fields: `currencyName`, `currencyNamePlural`, `currencyValueNotes`, `writingStyleNotes`, `baseContextPreamble`, `characterGenInstructions`, `imagePromptPrefixCharacter`, `imagePromptPrefixLocation`, `imagePromptPrefixItem`, `imagePromptPrefixScenery`.
-- New-game defaults: `playerStartingLevel`, `defaultStartingCurrency`, `defaultPlayerName`, `defaultPlayerDescription`, `defaultStartingLocation`, `defaultExistingSkills`, `availableClasses`, `availableRaces`.
+- Prompt and style fields: `currencyName`, `currencyNamePlural`, `currencyValueNotes`, `writingStyleNotes`, `baseContextPreamble`, `characterGenInstructions`, final image-prompt prefixes (`imagePromptPrefixCharacter`, `imagePromptPrefixLocation`, `imagePromptPrefixItem`, `imagePromptPrefixScenery`), and per-world image-prompt-writer instructions (`imagePromptInstructionsCharacter`, `imagePromptInstructionsLocation`, `imagePromptInstructionsItem`, `imagePromptInstructionsScenery`).
+- New-game defaults: `playerStartingLevel`, `defaultStartingCurrency`, `defaultPlayerName`, `defaultPlayerDescription`, `defaultStartingLocation`, `defaultStartMonth`, `defaultStartDay`, `defaultStartTime`, `defaultExistingSkills`, `availableClasses`, `availableRaces`.
 - Hide/perception mechanics: `hidingAttribute`, `hidingSkill`, `perceptionAttribute`, `perceptionSkill`.
 - Setting-scoped factions: `defaultFactionCount`, `defaultFactions`.
 - Prompt controls: `calendarDefinition`, `unifiedTonalScale`, `customSlopWords`, `modSettings`.
@@ -19,15 +19,18 @@ Field normalization:
 - `name` is required for creation.
 - String lists accept arrays in the JSON API. `SettingInfo` also normalizes newline-delimited strings for list fields.
 - `playerStartingLevel` is stored as at least `1`; `defaultStartingCurrency` is stored as at least `0`.
+- `defaultStartMonth` and `defaultStartDay` must be positive integers. `defaultStartTime` must be an integer from `0` through `23`. Missing legacy values default to `1`, `1`, and `9`, respectively.
 - `defaultFactionCount` is `null` or a non-negative integer. `defaultFactions` is an array of faction drafts with unique ids/names; relation targets must reference another draft id and use `allied`, `neutral`, `hostile`, or `rival`.
-- `calendarDefinition` is `null` or a calendar object normalized by `Globals.normalizeCalendarDefinition`: `yearName`, non-empty `months`, non-empty `weekdays`, optional `seasons`, and optional `holidays`.
+- `calendarDefinition` is `null` or a calendar object normalized by `Globals.normalizeCalendarDefinition`: `yearName`, non-empty `months`, non-empty `weekdays`, optional `seasons`, and optional `holidays`. Season records persist distinct `vegetationDescription` and `interiorDescription` image-edit guidance.
 - `unifiedTonalScale` is an object keyed by merged `defs/unified_tonal_scale.yaml` axis ids. Entries are `{ level, comment? }`; `level` must be numeric. Prompt rendering accepts defined levels and generated half-step values such as `3.5`, and requires every axis when any tonal selection is used.
 - `customSlopWords` stores extra slop entries. Single-token entries are checked as words; multi-token entries are checked as ngrams.
 - `modSettings` is a JSON object keyed by mod namespace. Each namespace value must be an object.
+- A nonblank `imagePromptInstructions*` field replaces the matching global `imagegen.image_prompt_instructions` value for that active world profile. Blank fields use the global value.
 
 UI validation:
 - The World Profiles page loads merged `defs/default_skills.yaml`, `defs/attributes.yaml`, `defs/unified_tonal_scale.yaml`, and registered mod setting metadata.
 - The page requires `hidingAttribute` and `perceptionAttribute` and validates them against merged attribute keys. `hidingSkill` and `perceptionSkill` are optional and must match `defaultExistingSkills` when provided.
+- Default start month/day selectors follow the profile's structured calendar. Saving rejects a month outside that calendar, a day outside the selected month, or a start hour outside `0` through `23`.
 - Mod setting fields registered with `persist: false`, including preset-apply selectors, update other editor fields but are not stored in `modSettings`.
 
 Route-order behavior:
@@ -118,7 +121,7 @@ Response:
 Notes:
 - Renaming creates a separate setting with a new id and leaves the original in memory.
 - `id`, `createdAt`, and `lastUpdated` in the body are ignored.
-- `calendarDefinition`, `unifiedTonalScale`, and `modSettings` validation errors propagate as `400`.
+- `calendarDefinition`, `unifiedTonalScale`, `modSettings`, and default start date/time validation errors propagate as `400`.
 - Other setter validation errors inside `SettingInfo.update(...)` are warning-logged by the model; the old value remains and the route can still return `200`.
 
 ## DELETE /api/settings/:id
@@ -275,7 +278,7 @@ Response:
 - 500: `{ success: false, error }`
 
 Notes:
-- The generated XML must parse to a valid calendar object and is normalized by `Globals.normalizeCalendarDefinition`.
+- The generated XML must parse to a valid calendar object and is normalized by `Globals.normalizeCalendarDefinition`; every generated season includes separate two-sentence `vegetationDescription` and `interiorDescription` fields.
 - Prompt logging uses metadata label `calendar_generation`.
 - This route returns an error when calendar generation fails. New-game creation has its own calendar fallback path.
 

@@ -292,6 +292,7 @@ class LLMCompletionCassette {
         multimodal = false,
         validateXML = true,
         validateXMLStrict = false,
+        expectedXmlRootTag = null,
         requiredTags = [],
         requiredRegex = null
     } = {}) {
@@ -340,6 +341,9 @@ class LLMCompletionCassette {
                     : (requiredRegex === null || requiredRegex === undefined ? null : String(requiredRegex))
             }
         };
+        if (typeof expectedXmlRootTag === 'string' && expectedXmlRootTag.trim()) {
+            descriptor.validation.expectedXmlRootTag = expectedXmlRootTag.trim();
+        }
         return Object.freeze(descriptor);
     }
 

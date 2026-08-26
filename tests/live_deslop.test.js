@@ -223,6 +223,11 @@ test('tiny-brain live deslop selects both draft checkpoints and the final struct
         checkpoint: { parserName: 'player_action_required_prose' }
     }), 'plain');
     assert.equal(resolveTinyBrainLiveDeslopProseMode({
+        messages: messagesFor('Return prose or N/A.'),
+        isFinal: false,
+        checkpoint: { parserName: 'player_action_optional_prose' }
+    }), 'plain');
+    assert.equal(resolveTinyBrainLiveDeslopProseMode({
         messages: messagesFor('State the exact elapsed duration only.'),
         isFinal: false,
         checkpoint: { parserName: 'player_action_duration' }

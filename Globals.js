@@ -321,6 +321,12 @@ class Globals {
         const description = typeof season.description === 'string' && season.description.trim()
           ? season.description.trim()
           : null;
+        const vegetationDescription = typeof season.vegetationDescription === 'string' && season.vegetationDescription.trim()
+          ? season.vegetationDescription.trim()
+          : null;
+        const interiorDescription = typeof season.interiorDescription === 'string' && season.interiorDescription.trim()
+          ? season.interiorDescription.trim()
+          : null;
         const timeDescriptions = Globals.#normalizeSeasonTimeDescriptions(season.timeDescriptions, {
           seasonName: name,
           seasonIndex: index
@@ -328,6 +334,8 @@ class Globals {
         return {
           name,
           description,
+          vegetationDescription,
+          interiorDescription,
           startMonth,
           startDay,
           dayLengthMinutes,
@@ -339,6 +347,8 @@ class Globals {
       seasons = seasonNames.map(name => ({
         name,
         description: null,
+        vegetationDescription: null,
+        interiorDescription: null,
         startMonth: months.find(month => month.seasonName === name)?.name || null,
         startDay: 1,
         dayLengthMinutes: null,
@@ -425,6 +435,8 @@ class Globals {
         {
           name: 'Winter',
           description: 'Cold weather, long nights, and quieter roads as people stay close to shelter and heat.',
+          vegetationDescription: 'Small plants die back or lie dormant, and deciduous trees stand bare against the landscape. Evergreens keep their dark foliage, while snow or frost exposes the structure of hedges and branches.',
+          interiorDescription: 'Use warm artificial light, heavier textiles, closed shutters, and active hearths or heaters where they already fit the room. Show cold only through existing windows, entrances, winter clothing, or plausible tracked-in residue without opening the interior to the outdoors.',
           startMonth: 'December',
           startDay: 1,
           dayLengthMinutes: null,
@@ -439,6 +451,8 @@ class Globals {
         {
           name: 'Spring',
           description: 'Mild rain, fresh growth, and renewed travel as markets and communities become busier.',
+          vegetationDescription: 'Fresh shoots and wildflowers return as grass, shrubs, and deciduous trees leaf out. Damp ground supports new growth, making verges and fields look greener and fuller each week.',
+          interiorDescription: 'Use clearer daylight through existing openings, lighter fabrics, and signs of airing or spring cleaning that fit the established room. Keep rain and new growth outside unless an existing window, doorway, or indoor planting already makes them visible.',
           startMonth: 'March',
           startDay: 1,
           dayLengthMinutes: null,
@@ -453,6 +467,8 @@ class Globals {
         {
           name: 'Summer',
           description: 'Warm to hot days, high activity, and long daylight hours favorable to travel and work.',
+          vegetationDescription: 'Trees and grasses are fully leafed and dense, with flowering plants or ripening crops at their height. Prolonged heat may dry exposed ground, but shaded growth remains lush.',
+          interiorDescription: 'Use strong daylight through existing openings, lighter textiles, ventilation, and a warmer interior color balance where appropriate. Keep the space enclosed and do not add outdoor vegetation, sky, or weather that the source does not already show.',
           startMonth: 'June',
           startDay: 1,
           dayLengthMinutes: null,
@@ -467,6 +483,8 @@ class Globals {
         {
           name: 'Autumn',
           description: 'Cooling air, harvest routines, and shorter days as settlements prepare for winter.',
+          vegetationDescription: 'Deciduous foliage turns color and thins, while seed heads, fallen leaves, and harvested fields become more visible. Late flowers fade and groundcover loses some of its summer fullness.',
+          interiorDescription: 'Use softer shortening daylight, warmer lamps, thicker textiles, and setting-appropriate stored goods or autumn decor without changing the room layout. Keep fallen leaves, bare trees, sky, and outdoor weather outside unless the source already provides a visible opening.',
           startMonth: 'September',
           startDay: 1,
           dayLengthMinutes: null,
@@ -784,6 +802,8 @@ class Globals {
       return season.name.trim().toLowerCase() === seasonName.trim().toLowerCase();
     }) || null;
     const seasonDescription = seasonDefinition?.description || null;
+    const seasonVegetationDescription = seasonDefinition?.vegetationDescription || null;
+    const seasonInteriorDescription = seasonDefinition?.interiorDescription || null;
     const seasonTimeDescriptions = Array.isArray(seasonDefinition?.timeDescriptions)
       ? seasonDefinition.timeDescriptions.map(entry => ({
         timeOfDay: Number(entry.timeOfDay),
@@ -818,6 +838,8 @@ class Globals {
       weekday,
       seasonName,
       seasonDescription,
+      seasonVegetationDescription,
+      seasonInteriorDescription,
       seasonTimeDescriptions,
       holiday
     };
@@ -932,6 +954,8 @@ class Globals {
       segment,
       season: date.seasonName,
       seasonDescription: date.seasonDescription || null,
+      seasonVegetationDescription: date.seasonVegetationDescription || null,
+      seasonInteriorDescription: date.seasonInteriorDescription || null,
       timeLabel: Globals.formatTime(worldTime, { skipEnsure: true }),
       dateLabel: Globals.formatDate(worldTime, { skipEnsure: true }),
       lighting: lightLevelDescription,

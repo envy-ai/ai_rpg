@@ -47,6 +47,62 @@ function normalizeBackendAlias(rawValue) {
         : normalized;
 }
 
+function prepareKimiPromptMessages(messages) {
+    if (!Array.isArray(messages)) {
+        throw new Error('Kimi bridge messages must be an array.');
+    }
+
+    const images = [];
+    const transcriptMessages = messages.map(message => {
+        if (!message || !Array.isArray(message.content)) {
+            return message;
+        }
+        const content = message.content.map(part => {
+            if (!part || part.type !== 'image_url') {
+                return part;
+            }
+            const imageUrl = typeof part.image_url?.url === 'string'
+                ? part.image_url.url.trim()
+                : '';
+            if (!imageUrl) {
+                throw new Error('Kimi bridge image URL content is missing.');
+            }
+            const match = imageUrl.match(/^data:([^;,]+)(?:;[^;,]+)*?;base64,([\s\S]+)$/i);
+            if (!match || !match[1].toLowerCase().startsWith('image/')) {
+                throw new Error('Kimi bridge images must be base64 image data URLs.');
+            }
+            const mimeType = match[1].toLowerCase();
+            const data = match[2].replace(/\s+/g, '');
+            if (!data || !/^[a-z0-9+/]*={0,2}$/i.test(data) || data.length % 4 !== 0) {
+                throw new Error('Kimi bridge image data URL contains invalid base64 data.');
+            }
+            const decoded = Buffer.from(data, 'base64');
+            if (!decoded.length) {
+                throw new Error('Kimi bridge image data URL payload is empty.');
+            }
+            images.push({
+                type: 'image',
+                data,
+                mimeType
+            });
+            return {
+                type: 'text',
+                text: `[attached image ${images.length}]`
+            };
+        });
+        return {
+            ...message,
+            content
+        };
+    });
+
+    return {
+        transcriptMessages,
+        promptImages: images,
+        imageCount: images.length
+    };
+}
+
 function buildDeveloperInstructions({ systemMessages, tools, metadataLabel, promptPreamble }) {
     const toolText = renderToolDefinitions(tools, BRIDGE_LABEL);
     const preamble = typeof promptPreamble === 'string' && promptPreamble.trim()
@@ -318,10 +374,26 @@ class KimiBridgeClient {
         signal = null,
         onStdoutChunk = null,
         onStdoutEvent = null,
-        promptText
+        promptText,
+        promptImages = []
     } = {}) {
         if (typeof promptText !== 'string' || !promptText.trim()) {
             throw new Error('Kimi bridge prompt text must be a non-empty string.');
+        }
+        if (!Array.isArray(promptImages)) {
+            throw new Error('Kimi bridge prompt images must be an array.');
+        }
+        for (const [index, image] of promptImages.entries()) {
+            if (
+                !isPlainObject(image)
+                || image.type !== 'image'
+                || typeof image.data !== 'string'
+                || !image.data
+                || typeof image.mimeType !== 'string'
+                || !image.mimeType.startsWith('image/')
+            ) {
+                throw new Error(`Kimi bridge prompt image ${index + 1} is invalid.`);
+            }
         }
         const bridgeConfig = KimiBridgeClient.resolveBridgeConfig(aiConfig);
         const cwd = KimiBridgeClient.resolveCwdPath(aiConfig);
@@ -480,7 +552,8 @@ class KimiBridgeClient {
                             {
                                 type: 'text',
                                 text: promptText
-                            }
+                            },
+                            ...promptImages
                         ]
                     }
                 });
@@ -828,8 +901,13 @@ class KimiBridgeClient {
             metadataLabel,
             promptPreamble: bridgeConfig.prompt_preamble
         });
+        const {
+            transcriptMessages,
+            promptImages,
+            imageCount
+        } = prepareKimiPromptMessages(conversationMessages);
         const promptText = buildUserPrompt({
-            messages: conversationMessages,
+            messages: transcriptMessages,
             developerInstructions
         }, BRIDGE_LABEL);
         const responseModel = bridgeConfig.model || model || 'kimi-default';
@@ -844,6 +922,7 @@ class KimiBridgeClient {
             client_capabilities: {},
             mcp_servers: [],
             prompt: '[logged as generation prompt]',
+            image_count: imageCount,
             additionalPayload
         };
 
@@ -855,7 +934,8 @@ class KimiBridgeClient {
                 signal,
                 onStdoutChunk,
                 onStdoutEvent,
-                promptText
+                promptText,
+                promptImages
             });
             const parsed = parseBridgeMessage(execution.finalText, {
                 allowToolCalls: tools.length > 0

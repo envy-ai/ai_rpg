@@ -73,6 +73,8 @@ test('ai item combiner prompt asks for same-quality stack groups by id', () => {
     assert.match(output, /thing-torch-1/);
     assert.match(output, /<statusEffects>- self: Crackling aura \(duration: ongoing\)<\/statusEffects>/);
     assert.match(output, /<statModifiers>- Strength \+2<\/statModifiers>/);
+    assert.match(output, /copper-coin stacks may be grouped/i);
+    assert.match(output, /stack is kept[\s\S]*mechanics will apply/i);
     assert.match(output, /<combinationGroups>/);
     assert.match(output, /<itemId>thing-torch-1<\/itemId>/);
 });
@@ -135,7 +137,7 @@ test('ai item combiner response parser rejects duplicate ids across groups', () 
     `), /appeared in more than one/);
 });
 
-test('item combiner merge validation requires item stacks with identical mechanics from same holder and quality', () => {
+test('item combiner merge validation permits keeper-wins mechanics from the same holder and quality', () => {
     const { validateItemCombinerMergeSet } = loadCombinerHelpers();
     const contexts = new Map([
         ['thing-a', { owner: { id: 'player-1' }, container: null, location: { id: 'loc-1' } }],
@@ -153,7 +155,7 @@ test('item combiner merge validation requires item stacks with identical mechani
     const result = validateItemCombinerMergeSet(keep, [mergeable], resolver);
     assert.equal(result.holderKey, 'owner:player-1');
     assert.equal(result.qualityKey, 'common');
-    assert.equal(result.mechanicsChecksum, 'mechanics-a');
+    assert.equal(Object.hasOwn(result, 'mechanicsChecksum'), false);
 
     const containedResult = validateItemCombinerMergeSet(
         { ...keep, id: 'thing-e' },
@@ -166,9 +168,17 @@ test('item combiner merge validation requires item stacks with identical mechani
         { ...mergeable, id: 'thing-d', rarity: 'rare' }
     ], resolver), /same quality/);
 
-    assert.throws(() => validateItemCombinerMergeSet(keep, [
+    const differingMechanicsResult = validateItemCombinerMergeSet(keep, [
         { ...mergeable, id: 'thing-d', combinerMechanicsChecksum: 'mechanics-b' }
-    ], resolver), /identical authoritative mechanics/);
+    ], resolver);
+    assert.equal(differingMechanicsResult.holderKey, 'owner:player-1');
+
+    const missingMechanicsResult = validateItemCombinerMergeSet(
+        { ...keep, combinerMechanicsChecksum: undefined },
+        [{ ...mergeable, combinerMechanicsChecksum: undefined }],
+        resolver
+    );
+    assert.equal(missingMechanicsResult.qualityKey, 'common');
 
     assert.throws(() => validateItemCombinerMergeSet(keep, [
         { ...mergeable, id: 'thing-c' }

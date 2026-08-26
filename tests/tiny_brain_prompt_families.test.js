@@ -116,6 +116,28 @@ test('tiny-brain family config validates names and booleans with enabled-by-defa
     ]);
 });
 
+test('tiny-brain family routing honors the effective per-prompt AI override', () => {
+    const config = {
+        ai: {
+            tinybrain: true,
+            tinybrain_prompts: {
+                player_action: true,
+                event_checks: true
+            }
+        },
+        ai_model_overrides: {
+            prose: {
+                prompts: ['player_action'],
+                tinybrain: false,
+                backend: 'kimi_cli_bridge'
+            }
+        }
+    };
+
+    assert.equal(isTinyBrainPromptEnabled(config, 'player_action'), false);
+    assert.equal(isTinyBrainPromptEnabled(config, 'event_checks'), true);
+});
+
 test('all newly added tiny-brain prose programs render and register staged checkpoints', () => {
     const env = createPromptEnv();
     const context = buildContext();
@@ -165,19 +187,16 @@ test('tiny-brain NPC stages expose lookup-only tools at the information checkpoi
     assert.match(apiSource, /isLookupCheckpoint \? tinyBrainNpcLookupTools : \[\]/);
 });
 
-test('tiny-brain player-action destination lookup exposes only moreInfo', () => {
+test('tiny-brain player-action destination context checkpoint exposes no tools', () => {
     const apiSource = fs.readFileSync(path.join(__dirname, '..', 'api.js'), 'utf8');
+    assert.doesNotMatch(apiSource, /TINY_BRAIN_PLAYER_ACTION_DESTINATION_LOOKUP_TOOL_NAMES/);
     assert.match(
         apiSource,
-        /const TINY_BRAIN_PLAYER_ACTION_DESTINATION_LOOKUP_TOOL_NAMES = new Set\(\[\s*'moreInfo'\s*\]\)/
+        /checkpoint\?\.parserName === 'player_action_destination_name_or_na'/
     );
     assert.match(
         apiSource,
-        /checkpoint\?\.parserName === 'player_action_more_info_or_na'/
-    );
-    assert.match(
-        apiSource,
-        /isDestinationLookupCheckpoint\s*\? tinyBrainPlayerActionDestinationLookupTools\s*:\s*\(isHiddenContestCheckpoint\s*\? tinyBrainPlayerActionHiddenContestTools\s*:\s*promptChatTools\)/
+        /isDestinationContextCheckpoint\s*\? \[\]\s*:\s*\(isHiddenContestCheckpoint\s*\? tinyBrainPlayerActionHiddenContestTools\s*:\s*promptChatTools\)/
     );
     assert.match(
         apiSource,

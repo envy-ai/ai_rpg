@@ -14,6 +14,7 @@ const MysteryThread = require('./MysteryThread.js');
 const Faction = require('./Faction.js');
 const Tracker = require('./Tracker.js');
 const { normalizeWeatherExposure } = require('./location_region_utils.js');
+const { applyRegexReplace } = require('./regex_replace_runtime.js');
 
 const MORE_INFO_MAX_MATCHES = 50;
 const CACHED_CHECK_TOOL_CALL_NOTE = 'You already made this tool call. Do not re-run tool calls for the same checks that you made in earlier drafts.';
@@ -399,6 +400,38 @@ const CHAT_TOOL_DEFINITIONS = Object.freeze([
                     }
                 },
                 required: ['content'],
+                additionalProperties: false
+            }
+        }
+    },
+    {
+        type: 'function',
+        function: {
+            name: 'regexReplace',
+            description: 'Run one exact JavaScript regular-expression replacement across persisted game text. Generic-prompt mutation tool only. With no scope, searches story entries, actor memories, NPC narrative fields, location descriptions, and item/scenery descriptions. Use scope story, memories, npcs, locations, or items to restrict a category; any other scope is treated as an exact chat-entry type.',
+            parameters: {
+                type: 'object',
+                properties: {
+                    pattern: {
+                        type: 'string',
+                        minLength: 1,
+                        description: 'JavaScript regular-expression pattern without slash delimiters.'
+                    },
+                    replacement: {
+                        type: 'string',
+                        description: 'Replacement text. JavaScript replacement captures such as $1 are supported. Use an empty string to delete matches.'
+                    },
+                    flags: {
+                        type: 'string',
+                        default: 'g',
+                        description: 'JavaScript regex flags using only g, i, m, s, u, and y. Defaults to g.'
+                    },
+                    scope: {
+                        type: 'string',
+                        description: 'Optional category (story, memories, npcs, locations, items) or exact chat-entry type. Omit to search every supported text category.'
+                    }
+                },
+                required: ['pattern', 'replacement'],
                 additionalProperties: false
             }
         }
@@ -9500,6 +9533,41 @@ const createChatToolRuntime = ({
         return resolvedFromIndex !== null ? resolvedFromIndex : resolvedFromEntry;
     };
 
+    const executeRegexReplaceTool = ({ pattern, replacement, flags = 'g', scope = '' } = {}) => {
+        const result = applyRegexReplace({
+            pattern,
+            replacement,
+            flags,
+            scope,
+            chatHistory: getMutableChatHistory('regexReplace'),
+            players: Player.getAll(),
+            locations: Location.getAll(),
+            things: Thing.getAll()
+        });
+        const lines = [
+            '<regexReplaceResult>',
+            '  <status>success</status>',
+            `  <totalReplacements>${result.totalReplacements}</totalReplacements>`,
+            `  <modifiedTextValues>${result.modifiedTextValues}</modifiedTextValues>`,
+            `  <modifiedMessages>${result.modifiedChatEntries}</modifiedMessages>`,
+            `  <modifiedMemories>${result.modifiedMemories}</modifiedMemories>`,
+            `  <modifiedNpcFields>${result.modifiedNpcFields}</modifiedNpcFields>`,
+            `  <modifiedLocationFields>${result.modifiedLocationFields}</modifiedLocationFields>`,
+            `  <modifiedItemFields>${result.modifiedItemFields}</modifiedItemFields>`
+        ];
+        if (result.scope) {
+            lines.push(`  <scope>${xmlEscapeText(result.scope)}</scope>`);
+        }
+        lines.push('</regexReplaceResult>');
+        return {
+            content: lines.join('\n'),
+            metadata: {
+                status: 'success',
+                ...result
+            }
+        };
+    };
+
     const executeEditChatLogEntryTool = ({ entry = null, index = null, content, reason = null } = {}) => {
         if (typeof content !== 'string' || !content.trim()) {
             throw new ToolVisibleError(
@@ -11432,6 +11500,8 @@ const createChatToolRuntime = ({
                 toolResult = executeGetFullSceneTool(argumentsObject);
             } else if (toolCall.functionName === 'editChatLogEntry') {
                 toolResult = executeEditChatLogEntryTool(argumentsObject);
+            } else if (toolCall.functionName === 'regexReplace') {
+                toolResult = executeRegexReplaceTool(argumentsObject);
             } else if (toolCall.functionName === 'rerunSceneSummary') {
                 toolResult = executeRerunSceneSummaryTool(argumentsObject);
             } else if (toolCall.functionName === 'editSceneSummary') {

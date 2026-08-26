@@ -133,6 +133,8 @@ Helpers that can be unavailable are exposed as `null`. Commands should check req
 | `/kill` | - | Kills a named NPC. |
 | `/list_npcs` | - | Lists NPC locations and short descriptions. |
 | `/locate` | - | Finds NPCs by exact name or alias. |
+| `/model [model]` | - | Shows or sets the runtime main AI model. |
+| `/model_override [category] [model]` | - | Lists override models, or sets one existing named override category. |
 | `/needbars` | - | Lists or edits character need bars. |
 | `/orphaned_locations` | - | Lists locations missing valid region links or usable exits. |
 | `/plot_analysis` | - | Displays the latest background plot analysis. |
@@ -140,8 +142,8 @@ Helpers that can be unavailable are exposed as `null`. Commands should check req
 | `/random` | - | Triggers a configured random event type. |
 | `/refill_needs` | - | Refills stored need bars for one NPC or every NPC. |
 | `/regen_party_images` | - | Queues forced portrait regeneration for current party NPCs. |
-| `/regex_replace` | - | Runs regex replacement across story history, optionally limited to one chat entry type. |
-| `/reload_config` | `/reloadconfig`, `/rcfg` | Reloads config files and definition caches. |
+| `/regex_replace` | - | Runs regex replacement across story entries, memories, and allowlisted NPC/location/item text; supports category or chat-type scope. |
+| `/reload_config [override_file]` | `/reloadconfig`, `/rcfg` | Reloads config files and definition caches, optionally selecting a highest-priority process-local override. |
 | `/reload_lorebooks` | `/reloadlorebooks`, `/rlb` | Reloads lorebooks from disk. |
 | `/resolve_mystery_threads` | - | Runs mystery cleanup and lists resolved threads and boxes with thoughts. |
 | `/respec_abilities` | - | Rebuilds a character's ability selections across a level range. |

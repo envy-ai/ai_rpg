@@ -314,7 +314,10 @@ function extractStableLivePlainProse(rawResponse) {
 }
 
 function resolveTinyBrainLiveDeslopProseMode({ messages, isFinal = false, checkpoint = null } = {}) {
-    if (checkpoint?.parserName === 'player_action_required_prose') {
+    if (
+        checkpoint?.parserName === 'player_action_required_prose'
+        || checkpoint?.parserName === 'player_action_optional_prose'
+    ) {
         return 'plain';
     }
     if (isFinal) {

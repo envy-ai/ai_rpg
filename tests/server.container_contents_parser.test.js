@@ -78,6 +78,51 @@ test('thing XML parser reads containedItem seeds and promotes non-container cont
     }
 });
 
+test('thing XML parser rejects entries with missing or blank identity prose', async () => {
+    const parseThingsXml = loadParseThingsXml();
+    const previousConfig = Globals.config;
+
+    Globals.config = { ...(previousConfig || {}), strictXMLParsing: false };
+    try {
+        await assert.rejects(
+            () => parseThingsXml(`
+<items>
+  <item>
+    <description>A nameless generated object.</description>
+    <itemOrScenery>item</itemOrScenery>
+  </item>
+</items>`),
+            /missing required <name>/
+        );
+
+        await assert.rejects(
+            () => parseThingsXml(`
+<items>
+  <item>
+    <name>   </name>
+    <description>A generated object with a blank name.</description>
+    <itemOrScenery>item</itemOrScenery>
+  </item>
+</items>`),
+            /blank <name>/
+        );
+
+        await assert.rejects(
+            () => parseThingsXml(`
+<items>
+  <item>
+    <name>Nameless Description Test</name>
+    <description>   </description>
+    <itemOrScenery>item</itemOrScenery>
+  </item>
+</items>`),
+            /missing a non-empty <description>/
+        );
+    } finally {
+        Globals.config = previousConfig;
+    }
+});
+
 test('thing XML parser treats omitted and empty containerContents as empty', async () => {
     const parseThingsXml = loadParseThingsXml();
     const previousConfig = Globals.config;

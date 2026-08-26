@@ -4,8 +4,9 @@ const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
 const nunjucks = require('nunjucks');
+const { resolveEffectiveLocationWeatherExposure } = require('../LocationWeatherExposure.js');
 
-function loadVariantHelpers({ hasWeather = true } = {}) {
+function loadVariantHelpers({ hasWeather = true, regionName = 'Weather Test Region' } = {}) {
     const source = fs.readFileSync(require.resolve('../server.js'), 'utf8');
     const start = source.indexOf('function slugifyLocationVariantKeyPart(value, fallback = ');
     const end = source.indexOf('\nfunction parseImageDataUrl(dataUrl) {', start);
@@ -48,12 +49,17 @@ function loadVariantHelpers({ hasWeather = true } = {}) {
                 timeLabel: '11:30 PM',
                 dateLabel: '1 Spring',
                 season: 'Spring',
+                seasonVegetationDescription: 'Fresh green shoots cover the banks. Young leaves brighten the trees.',
+                seasonInteriorDescription: 'Fresh daylight brightens established windows and lighter fabrics replace winter textiles. Keep all vegetation and rain outside the enclosed room.',
                 dayIndex: 0,
                 timeMinutes: 1410
             })
         },
-        resolveLocationHasWeather: () => hasWeather,
-        findRegionByLocationId: () => ({ id: 'region-1' }),
+        resolveEffectiveLocationWeatherExposure: (location, { region } = {}) => resolveEffectiveLocationWeatherExposure({
+            ...location,
+            generationHints: { ...(location?.generationHints || {}), hasWeather }
+        }, { region }),
+        findRegionByLocationId: () => ({ id: 'region-1', name: regionName }),
         resolveRegionWeatherForPrompt: () => ({
             name: 'Heavy Rain',
             description: 'Rain falls hard enough to bead on stone and blur distant shapes.'
@@ -81,10 +87,12 @@ test('location weather variant keys normalize lighting and weather labels', () =
     assert.equal(
         helpers.buildLocationWeatherVariantKey({
             sourceImageId: 'img_abc_123',
+            seasonKey: 'Spring',
             lightingKey: 'Moonlit Night',
+            weatherScope: 'yes',
             weatherKey: 'Heavy Rain!'
         }),
-        'img-abc-123__moonlit-night__heavy-rain'
+        'img-abc-123__spring__moonlit-night__yes__heavy-rain'
     );
 });
 
@@ -98,10 +106,82 @@ test('sheltered location conditions omit weather labels and use sheltered key', 
     assert.equal(conditions.hasLocalWeather, false);
     assert.equal(conditions.weatherName, null);
     assert.equal(conditions.weatherKey, 'sheltered');
-    assert.equal(conditions.variantKey, 'base-image__moonlit-night__sheltered');
+    assert.equal(conditions.variantKey, 'base-image__spring__moonlit-night__no__sheltered');
 });
 
-test('location weather variant prompt renders current lighting and weather conditions', () => {
+test('indoor weather variant prompt uses the interior seasonal template', () => {
+    const helpers = loadVariantHelpers({ hasWeather: 'no' });
+    const conditions = helpers.resolveLocationWeatherVariantConditions({
+        id: 'location-1',
+        imageId: 'base-image'
+    });
+    const prompt = helpers.buildLocationWeatherVariantPrompt(
+        {
+            name: 'Archive Reading Room',
+            shortDescription: 'A quiet interior.',
+            description: 'Shelves surround a long reading table.'
+        },
+        conditions
+    );
+
+    assert.equal(conditions.weatherScope, 'no');
+    assert.match(prompt, /interior conditions/i);
+    assert.match(prompt, /Season: Spring/);
+    assert.match(prompt, /Seasonal interior changes: Fresh daylight brightens established windows/);
+    assert.match(prompt, /Do not add or emphasize outdoor vegetation, trees, open sky, rain, snow, or other precipitation\./);
+    assert.doesNotMatch(prompt, /Seasonal vegetation:/);
+    assert.doesNotMatch(prompt, /Weather:/);
+});
+
+test('legacy null weather hint inside an Interior region uses the interior template', () => {
+    const helpers = loadVariantHelpers({
+        hasWeather: null,
+        regionName: 'Herbal Alchemy Shop Interior'
+    });
+    const conditions = helpers.resolveLocationWeatherVariantConditions({
+        id: 'location-loft',
+        name: 'Loft',
+        imageId: 'base-image',
+        generationHints: { hasWeather: null }
+    });
+    const prompt = helpers.buildLocationWeatherVariantPrompt({ name: 'Loft' }, conditions);
+
+    assert.equal(conditions.weatherScope, 'no');
+    assert.equal(conditions.hasLocalWeather, false);
+    assert.match(prompt, /Seasonal interior changes:/);
+    assert.doesNotMatch(prompt, /Seasonal vegetation:/);
+    assert.doesNotMatch(prompt, /Weather:/);
+});
+
+test('location weather variant cache keys differ by season and exposure scope', () => {
+    const helpers = loadVariantHelpers();
+    const spring = helpers.buildLocationWeatherVariantKey({
+        sourceImageId: 'base-image',
+        seasonKey: 'Spring',
+        lightingKey: 'Daylight',
+        weatherScope: 'no',
+        weatherKey: 'sheltered'
+    });
+    const winter = helpers.buildLocationWeatherVariantKey({
+        sourceImageId: 'base-image',
+        seasonKey: 'Winter',
+        lightingKey: 'Daylight',
+        weatherScope: 'no',
+        weatherKey: 'sheltered'
+    });
+    const sheltered = helpers.buildLocationWeatherVariantKey({
+        sourceImageId: 'base-image',
+        seasonKey: 'Spring',
+        lightingKey: 'Daylight',
+        weatherScope: 'sheltered',
+        weatherKey: 'sheltered'
+    });
+
+    assert.notEqual(spring, winter);
+    assert.notEqual(spring, sheltered);
+});
+
+test('location weather variant prompt renders current lighting, season, and weather conditions', () => {
     const helpers = loadVariantHelpers();
     const conditions = helpers.resolveLocationWeatherVariantConditions({
         id: 'location-1',
@@ -122,6 +202,8 @@ test('location weather variant prompt renders current lighting and weather condi
     );
 
     assert.match(prompt, /Lighting: Moonlit night/);
+    assert.match(prompt, /Season: Spring/);
+    assert.match(prompt, /Seasonal vegetation: Fresh green shoots cover the banks/);
     assert.match(prompt, /Weather: Heavy Rain/);
     assert.doesNotMatch(prompt, /<p>/);
 });

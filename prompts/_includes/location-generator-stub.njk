@@ -27,6 +27,7 @@
   {% if stubHasControllingFaction -%}<controllingFaction>{% if stubControllingFaction %}{{ stubControllingFaction }}{% else %}(assigned; do not change){% endif %}</controllingFaction>{% endif %}
   {% if stubHasNumNpcs -%}<numNpcs>{{ stubNumNpcs }}</numNpcs>{% endif %}
   {% if stubHasNumHostiles -%}<numHostiles>{{ stubNumHostiles }}</numHostiles>{% endif %}
+  {% if stubHasWeather -%}<hasWeather>{{ stubWeatherScope }}</hasWeather>{% endif %}
 </stub>
 {% endif -%}
 
@@ -73,6 +74,7 @@ Return ONLY the following fields, in this format:
   {% if not (stubHasRelativeLevel or stubHasBaseLevel) -%}<relativeLevel><!-- integer from -3 to 3, indicating the difficulty compared to the rest of the region --></relativeLevel>{% endif %}
   {% if stubNumNpcs is none -%}<numNpcs><!-- Integer from 0 to 4, indicating how many NPCs typically inhabit this location --></numNpcs>{% endif %}
   {% if stubNumHostiles is none -%}<numHostiles><!-- Integer from 0 to 4, indicating how many hostile entities (creatures, NPCs, etc) typically inhabit this location --></numHostiles>{% endif %}
+  {% if not stubHasWeather -%}<hasWeather><!-- Use "yes" when outdoors and exposed to local weather, "sheltered" when outside weather remains visible from a protected or indoor space, or "no" when no outdoor weather is visible. Never omit this field. --></hasWeather>{% endif %}
   <numItems><!-- Integer from 0 to 4, indicating how many items typically can be found in this location --></numItems>
   <numScenery><!-- Integer from 2 to 4, indicating how many notable scenery features typically can be found in this location --></numScenery>
 {#  <randomStoryEvents>

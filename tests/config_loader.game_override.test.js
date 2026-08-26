@@ -57,6 +57,49 @@ value: game
     }
 });
 
+test('session override file merges above the runtime game YAML override', () => {
+    const rootDir = makeTempGameDir();
+
+    try {
+        writeFile(rootDir, 'config.default.yaml', 'value: default\n');
+        writeFile(rootDir, 'config.yaml', 'value: config\n');
+        writeFile(rootDir, 'cli.override.yaml', 'value: cli\n');
+        writeFile(rootDir, 'session.override.yaml', `
+value: session
+sessionOnly: true
+`);
+
+        const merged = loadMergedConfig(rootDir, path.join(rootDir, 'cli.override.yaml'), {
+            runtimeOverrideYaml: 'value: game\ngameOnly: true\n',
+            sessionOverridePath: path.join(rootDir, 'session.override.yaml')
+        });
+
+        assert.equal(merged.value, 'session');
+        assert.equal(merged.gameOnly, true);
+        assert.equal(merged.sessionOnly, true);
+    } finally {
+        fs.rmSync(rootDir, { recursive: true, force: true });
+    }
+});
+
+test('missing session override file fails explicitly', () => {
+    const rootDir = makeTempGameDir();
+
+    try {
+        writeFile(rootDir, 'config.default.yaml', 'value: default\n');
+        writeFile(rootDir, 'config.yaml', 'value: config\n');
+
+        assert.throws(
+            () => loadMergedConfig(rootDir, null, {
+                sessionOverridePath: path.join(rootDir, 'missing.override.yaml')
+            }),
+            /Session config override file not found/
+        );
+    } finally {
+        fs.rmSync(rootDir, { recursive: true, force: true });
+    }
+});
+
 test('parseYamlOverrideObject rejects non-object game override YAML', () => {
     assert.throws(
         () => parseYamlOverrideObject('- item\n', 'Game configuration override YAML'),

@@ -15,13 +15,7 @@ You are a narrative analysis assistant for a text-based RPG log. Your tasks invo
 </systemPrompt>
     
 <generationPrompt>
-<data>
-{%- for line in fullHistoryLines %}
-[{{ loop.index }}] [{{ line.name }}] {{ line.text }}
-{%- endfor %}
-</data>
-
-<instructions>
+{% set modSceneSummarizeContributions = modSceneSummarizeContributions | default([]) %}
 {%- set lineCount = fullHistoryLines | length -%}
 {%- set minScenes = 1 -%}
 {%- set maxScenes = 1 -%}
@@ -31,6 +25,14 @@ You are a narrative analysis assistant for a text-based RPG log. Your tasks invo
 {%- endif -%}
 {%- if minScenes < 1 -%}{%- set minScenes = 1 -%}{%- endif -%}
 {%- if maxScenes < 1 -%}{%- set maxScenes = 1 -%}{%- endif -%}
+<data>
+{%- for line in fullHistoryLines %}
+[{{ loop.index }}] [{{ line.name }}] {{ line.text }}
+{%- endfor %}
+</data>
+
+{% if tinyBrainProgramTemplate %}{{ __tinyBrainState.programStartMarker }}{% include tinyBrainProgramTemplate %}{% else %}
+<instructions>
 Step 1: Your task is to break the above story into major narrative scenes. A scene represents a significant story beat or dramatic arc—typically:
 - A complete encounter with a new character (introduction through resolution)
 - A continuous sequence of exploration/discovery at one location
@@ -68,11 +70,16 @@ Step 3:
 <scene>
 <index><!-- index number of start --></index>
 <summary><!-- 1-2 paragraphs of summary depending on important story beats --></summary>
-<details><!-- list of important details about plots or characters that should be retained in context, but weren't included in the summary above, separated by newlines. 14 words or less per point. Also, characters' life timelines and history are crucial for consistency and should be included here with as much precision as possible. For example:
+<details><!-- list of important details about plots or characters that should be retained in context, but weren't included in the summary above, separated by newlines. 14 words or less per point. Also, characters' life timelines and history are crucial for consistency and should be included here with as much precision as possible. Additionally, if a character a specific promise, plan, or deal with another character, include that here, with as much specificity as possible. For example:
 - Kobolds stole Jane's jacket when she was 7
 - Jane's father is a blacksmith who hates kobolds
 - Randolph was nearly killed by a dragon at an unspecified time in the past, but survived by hiding in a barrel of ale4
 - Bob was stranded on an island for 3 years starting 20 years ago
+- Alice promised to bring Bob strawberries on June 11th, Common Era 1.
+
+{% for contribution in modSceneSummarizeContributions %}
+{{ contribution.text }}
+{% endfor %}
 
 Don't include things that don't matter much outside of the scene, or information already available in a character record, like:
 - Jane is cold
@@ -92,5 +99,6 @@ Don't include things that don't matter much outside of the scene, or information
 </scenes>
 ```
 </instructions>
+{% endif %}
 </generationPrompt>
 </template>

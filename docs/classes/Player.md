@@ -125,6 +125,7 @@ Represents a player or NPC with attributes, skills, inventory, gear, status effe
   - `dropAllInventoryItems()`.
 - Currency:
   - `getCurrency()`, `setCurrency(value)`, `adjustCurrency(delta)`.
+  - The item `Convert to Currency` cheat uses `setCurrency(...)` only after its server-authoritative item preview has been reconfirmed and the complete stack has been deleted. The payout is the stack count multiplied by its integer per-unit standard value and always goes to the active player regardless of the item's prior holder.
 - Trade state:
   - `willingToTrade`, `setWillingToTrade(value, { refusalExpiresAt })`, `refreshTradeWillingness(currentWorldMinutes)`.
   - `tradeRefusalExpiresAt`, `barterStockUpdatedAt`, `barterProfile`.

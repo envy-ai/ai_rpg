@@ -7,7 +7,7 @@ Location/region rules:
 * A "sublocation" is a distinct area within a location that is likely to have a different description, such as deeper into a forest, through an open archway, moving a long distance within the same location, moving into a nook or alcove (one that's not a path to a different location), or moving to any other part of the location that would be described differently. Going *inside* a piece of scenery that's large enough to enter (a tent, a large crate, a hollowed-out tree, etc) but not large enough to be its own location is a sublocation.
 * Some moves within locations aren't to sublocations; for instance, moving to (but not inside) scenery or furniture, sitting down or resting, moving somewhere nearby in the location, or any kind of moving for combat positioning (hiding, taking cover, dodging, attacking, being moved or thrown due to an attack, and so on). These are not sublocations. The exception to combat movement is being hit or thrown so hard that you end up beyond the boundaries of the current location, which is a move to a new location or region depending on where you land.
 
-You are an AI Game Master responding to a character's action. Consider the character's current state, description, and the action they want to take.
+You are an storyteller responding to a character's action. Consider the character's current state, description, and the action they want to take.
 
 Writing style notes:
 {{ setting.writingStyleNotes }}
@@ -144,8 +144,28 @@ Here is the information about the location the player is arriving at this turn.
 Destination name: {{ travelTargetLocation.name }}
 Destination description: {{ travelTargetLocation.description }}
 {% else %}
-Is the player moving to a different location this turn? If so, call the moreInfo tool to get its description and any relevant information about it. After the tool result, respond with exactly READY. If the player is not moving to a different location, respond with exactly N/A. Do not write story prose at this checkpoint.
-{% llmparse('player_action_more_info_or_na') %}{% endif %}
+{% if playerActionTravelDestination %}
+{% set preDraftPlayerDestination = playerActionTravelDestination %}
+{% else %}
+If the player action identifies a different location the player is moving to this turn, answer with that destination's exact location name only. If the player is not moving to a different location, or no destination location name is identifiable yet, answer exactly N/A. Do not call tools or write story prose.
+{% llmparse('player_action_destination_name_or_na') as preDraftPlayerDestination %}
+{% endif %}
+{% if preDraftPlayerDestination %}
+{% set preDraftPlayerDestinationContext = resolvePlayerActionDestinationPreviewContext(preDraftPlayerDestination, playerActionOriginLocationId, playerActionWorldTimeMinutes) %}
+{% if preDraftPlayerDestinationContext.resolved %}
+The destination name resolves to this existing game location. Use these facts when drafting:
+- Canonical location: {{ preDraftPlayerDestinationContext.locationName }}
+- Canonical region: {{ preDraftPlayerDestinationContext.regionName | default('N/A', true) }}
+- Short description: {{ preDraftPlayerDestinationContext.shortDescription | default('N/A', true) }}
+- Description: {{ preDraftPlayerDestinationContext.description | default('N/A', true) }}
+- NPCs currently present: {% if preDraftPlayerDestinationContext.presentNpcNames and preDraftPlayerDestinationContext.presentNpcNames.length %}{{ preDraftPlayerDestinationContext.presentNpcNames | join(', ') }}{% else %}None{% endif %}
+- Exits:{% if preDraftPlayerDestinationContext.exitSummaries and preDraftPlayerDestinationContext.exitSummaries.length %}
+{% for exit in preDraftPlayerDestinationContext.exitSummaries %}  - {{ exit.direction }}: {{ exit.destinationName }}{% if exit.destinationRegionName %} ({{ exit.destinationRegionName }}){% endif %}{% if exit.description %} — {{ exit.description }}{% endif %}{% if exit.travelTimeMinutes != null %}; {{ exit.travelTimeMinutes }} minutes{% endif %}
+{% endfor %}{% else %} None
+{% endif %}
+{% endif %}
+{% endif %}
+{% endif %}
 
 Do any of the NPCs you picked have any extremely pressing needs? If so, who are they and what are those needs? They should act on these. If a character's needs information implies that a need is to the point where it's all-consuming, don't ignore that for the sake of the scene, even if it would be inappropriate or would interrupt the flow of the story, and don't have them be subtle about it! Extreme/desperate needs even override overall story tone (note that they're specifically enabled by the player, so assume that they're wanted). Also, it's best for characters to prioritize needs *before* they reach that point, when they can be dealt with at more opportune times, so keep them in the front of your mind and don't defer them. 
 
@@ -198,11 +218,27 @@ Do this now.
 
 {% llm_dummy_action %}
 
-{% for step in modPlayerActionPromptSteps | default([], true) %}{% if (step.step | default(3, true)) == 1 %}
+Thinking careful about the player's action, can any subtext be inferred about what the player said or did? If so, write about it here, 3 sentences maximum. Otherwise, reply N/A. 
+
+{% llm_dummy_action as subtextResponse %}
+{% if subtextResponse != 'N/A' %}
+Briefly, in markdown list format, list each other character at the current location who is aware of the player's action, and what, if anything, they might infer from it (whether they picked up on the above subtext or not). If they did not pick up on any subtext, say "N/A" for that character. If a character is not present, do not list them. If no characters are present, just respond with N/A.
+
+{% llm_dummy_action %}
+{% endif %}
+
+{% for step in modPlayerActionPromptSteps('1g') %}
 {{ step.tinyBrainText or step.text }}
 {% llmparse('mod_step_' ~ step.number) %} {# Most of these will probably be no-ops, but we call them anyway to maintain the structure and give modules the opportunity to parse if they want to #}
-{% endif %}
 {% endfor %}
+
+In markdown format, list three (if there are few possibilities) to five (if things could easily go all sorts of different directions) ways that the next few paragraphs could play out, using no more than 12 words per bullet. Each bullet should be a different possible direction for the story to take, based on the current context and the player's action. Do not include any commentary or explanation, just the list of possibilities.
+
+{% llm_dummy_action %}
+
+Pick whichever one you feel is most interesting, dramatic, funny, or fun to write (depending on the tone of the story), and use that as a basis for your draft response.
+
+{% llm_dummy_action %}
 
 {% if config.use_legacy_prompt_checks %}
 Draft Response: Generate a preliminary but full draft that continues the story based on the current context, strictly adhering to this degree of success/failure: "{{ success_or_failure }}" regardless of how hard the action is. This is just a first attempt. Use no more than {{ config.prose_length }}.
@@ -274,12 +310,14 @@ Answer this question succinctly based on your draft response above. If it is not
 
 {% llm_dummy_action %}
 
-{% for step in modPlayerActionPromptSteps | default([], true) %}
-{% if (step.step | default(3, true)) == 3 %}
-{{ step.number }}. {{ step.tinyBrainText or step.text }}
+10. Does each character have a unique voice? A quirk is not a voice. Having a character that talks like a "generic smart person" or a "generic lawyer" is so overdone that it actually makes them less unique than if they'd just spoken plainly. Identify any characters where you used generic voice quirk tropes and list them here in markdown, along with fixed dialogue.
+
+{% llm_dummy_action %}
+
+{% for step in modPlayerActionPromptSteps('3m') %}
+{{ step.tinyBrainText or step.text }}
 
 {% llmparse('mod_step_' ~ step.number) %}
-{% endif %}
 {% endfor %}
 
 Write a second draft that fixes the above issues, using no more than {{ config.prose_length }}. Adhere to every skill-check, opposed skill-check, and attack outcome received above. If you omitted a necessary check from the first draft, make it here and adjust the prose to its result. Fix any formatting issues. Use <hidden>...</hidden> tags to make any notes to save to your context for later without revealing them to the reader. Hidden tags do not count toward the length limit. In <hidden>...</hidden> notes, only track items, plot details, or other facts that are NEW or have CHANGED since the previous turn. Do not include things already visible in the prompt context or copy forward unchanged states.
@@ -316,6 +354,15 @@ This description is available as destination context.
 {% else %}
 Decide what concrete movement actually occurs in the second draft. Mentioning travel in dialogue does not count. Ordinary combat positioning, approaching scenery, sitting down, and similar movement within the current scene count as NONE.
 
+{% if preDraftPlayerDestination %}
+An earlier checkpoint selected this destination from the player's action:
+{% if preDraftPlayerDestinationContext and preDraftPlayerDestinationContext.resolved %}- Destination: {{ preDraftPlayerDestinationContext.locationName }}{% if preDraftPlayerDestinationContext.regionName %} ({{ preDraftPlayerDestinationContext.regionName }}){% endif %}
+{% else %}- Destination location: {{ preDraftPlayerDestination.location | default('N/A', true) }}
+- Destination region: {{ preDraftPlayerDestination.region | default('N/A', true) }}
+{% endif %}
+The second draft is expected to carry out that selected travel. Answer NONE only if the prose was revised so the player no longer travels to that destination at all. Do not answer NONE merely because the prose refers to the destination by a landmark, building, shelter, or other descriptive wording instead of repeating its canonical name.
+{% endif %}
+
 {% if currentVehicle %}
 The player is currently aboard the vehicle "{{ currentVehicle.name }}". Answer with exactly one keyword:
 - NONE: the player remains in the same place inside the vehicle.
@@ -327,8 +374,11 @@ Do not answer DESTINATION while the player is aboard; leaving the vehicle is DIS
 {% llmparse('player_action_movement', true) as movementKind %}
 {% else %}
 Answer with exactly one keyword:
-- NONE: the player does not travel to another location or region.
+{% if preDraftPlayerDestination %}- NONE: the second draft was revised so the already-selected travel no longer happens.
+- DESTINATION: the second draft still carries out the already-selected travel.
+{% else %}- NONE: the player does not travel to another location or region.
 - DESTINATION: the player travels to another location or region.
+{% endif %}
 {% llmparse('player_action_movement', false) as movementKind %}
 {% endif %}
 {% endif %}

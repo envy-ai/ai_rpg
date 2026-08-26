@@ -155,7 +155,7 @@ test('base prompt context exposes registered generator fields to crafting item X
     assert.match(rendered, /<implantSlot><!--N\/A unless this item can be installed as an implant; otherwise use neural, dermal, ocular, skeletal, or arcane\.--><\/implantSlot>/);
 });
 
-test('base prompt context exposes registered player-action prompt steps', () => {
+test('base prompt context leaves player-action prompt numbering to Nunjucks', () => {
     const registry = new ModExtensionRegistry();
     registry.registerPlayerActionPromptStep({
         modName: 'implants',
@@ -179,16 +179,7 @@ test('base prompt context exposes registered player-action prompt steps', () => 
         }
     });
 
-    assert.deepEqual(baseContext.modPlayerActionPromptSteps, [{
-        modName: 'implants',
-        id: 'implant-consistency',
-        fullId: 'implants:implant-consistency',
-        step: 3,
-        number: '3l',
-        text: 'Check whether implant behavior stayed consistent with installed hardware.',
-        tinyBrainText: 'Check whether implant behavior stayed consistent with installed hardware.',
-        order: 1
-    }]);
+    assert.equal(Object.hasOwn(baseContext, 'modPlayerActionPromptSteps'), false);
 });
 
 test('thing XML parser maps registered item prompt fields onto first-class parsed properties', async () => {

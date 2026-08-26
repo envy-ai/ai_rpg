@@ -881,3 +881,72 @@ test('LLMClient.chatCompletion validateXMLStrict fails malformed forced XML outp
         Globals.config = originalConfig;
     }
 });
+
+test('LLMClient.chatCompletion retries when the expected XML root is not closed', { concurrency: false }, async () => {
+    const originalAxiosPost = axios.post;
+    const originalConfig = Globals.config;
+    const originalBaseDir = Globals.baseDir;
+    const tmpRoot = path.resolve(__dirname, '..', 'tmp');
+    fs.mkdirSync(tmpRoot, { recursive: true });
+    const tempBaseDir = fs.mkdtempSync(path.join(tmpRoot, 'llmclient-expected-root-'));
+    const validResponse = '<quests><quest><index>3</index></quest></quests>';
+    let calls = 0;
+
+    axios.post = async (_endpoint, payload) => {
+        calls += 1;
+        return {
+            status: 200,
+            statusText: 'OK',
+            headers: {},
+            config: {},
+            data: {
+                id: `mock_response_${calls}`,
+                model: payload.model,
+                choices: [
+                    {
+                        message: {
+                            content: calls === 1
+                                ? '<quests><quest><index>1</index></quest>'
+                                : validResponse
+                        },
+                        finish_reason: 'stop'
+                    }
+                ],
+                usage: { total_tokens: 12 }
+            }
+        };
+    };
+    Globals.baseDir = tempBaseDir;
+    Globals.config = {
+        ai: {
+            backend: 'openai_compatible',
+            endpoint: 'https://example.invalid/v1/chat/completions',
+            apiKey: 'test-key',
+            model: 'test-model',
+            stream: false,
+            retryAttempts: 1,
+            max_concurrent_requests: 1,
+            supress_seed: true
+        }
+    };
+
+    try {
+        const result = await LLMClient.chatCompletion({
+            messages: [{ role: 'user', content: 'Return quest status XML.' }],
+            metadataLabel: 'quest_check',
+            validateXML: true,
+            expectedXmlRootTag: 'quests',
+            stream: false,
+            retryAttempts: 1,
+            waitAfterError: 0,
+            output: 'silent'
+        });
+
+        assert.equal(calls, 2);
+        assert.equal(result, validResponse);
+    } finally {
+        axios.post = originalAxiosPost;
+        Globals.config = originalConfig;
+        Globals.baseDir = originalBaseDir;
+    }
+});

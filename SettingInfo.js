@@ -32,11 +32,22 @@ class SettingInfo {
   #imagePromptPrefixLocation;
   #imagePromptPrefixItem;
   #imagePromptPrefixScenery;
+  #imagePromptInstructionsCharacter;
+  #imagePromptInstructionsLocation;
+  #imagePromptInstructionsItem;
+  #imagePromptInstructionsScenery;
+  #useGlobalImageGenerationSettings;
+  #useGlobalImageEditSettings;
+  #imageGenerationSettings;
+  #imageEditSettings;
   #playerStartingLevel;
   #defaultStartingCurrency;
   #defaultPlayerName;
   #defaultPlayerDescription;
   #defaultStartingLocation;
+  #defaultStartMonth;
+  #defaultStartDay;
+  #defaultStartTime;
   #defaultExistingSkills;
   #hidingAttribute;
   #hidingSkill;
@@ -110,6 +121,19 @@ class SettingInfo {
     const parsed = Number.parseInt(value, 10);
     if (!Number.isFinite(parsed) || parsed < 0) {
       throw new Error('defaultFactionCount must be a non-negative integer or null.');
+    }
+    return parsed;
+  }
+
+  static #normalizeDefaultStartInteger(value, fieldName, fallback, minimum, maximum = null) {
+    if (value === null || value === undefined || value === '') {
+      return fallback;
+    }
+    const parsed = Number(value);
+    const exceedsMaximum = maximum !== null && parsed > maximum;
+    if (!Number.isInteger(parsed) || parsed < minimum || exceedsMaximum) {
+      const range = maximum === null ? `at least ${minimum}` : `between ${minimum} and ${maximum}`;
+      throw new Error(`${fieldName} must be an integer ${range}.`);
     }
     return parsed;
   }
@@ -394,6 +418,22 @@ class SettingInfo {
     this.#imagePromptPrefixScenery = typeof options.imagePromptPrefixScenery === 'string'
       ? options.imagePromptPrefixScenery.replace(/\r\n/g, '\n')
       : '';
+    this.#imagePromptInstructionsCharacter = typeof options.imagePromptInstructionsCharacter === 'string'
+      ? options.imagePromptInstructionsCharacter.replace(/\r\n/g, '\n')
+      : '';
+    this.#imagePromptInstructionsLocation = typeof options.imagePromptInstructionsLocation === 'string'
+      ? options.imagePromptInstructionsLocation.replace(/\r\n/g, '\n')
+      : '';
+    this.#imagePromptInstructionsItem = typeof options.imagePromptInstructionsItem === 'string'
+      ? options.imagePromptInstructionsItem.replace(/\r\n/g, '\n')
+      : '';
+    this.#imagePromptInstructionsScenery = typeof options.imagePromptInstructionsScenery === 'string'
+      ? options.imagePromptInstructionsScenery.replace(/\r\n/g, '\n')
+      : '';
+    this.#useGlobalImageGenerationSettings = options.useGlobalImageGenerationSettings !== false;
+    this.#useGlobalImageEditSettings = options.useGlobalImageEditSettings !== false;
+    this.#imageGenerationSettings = SettingInfo.#cloneJsonObject(options.imageGenerationSettings || {}, 'imageGenerationSettings');
+    this.#imageEditSettings = SettingInfo.#cloneJsonObject(options.imageEditSettings || {}, 'imageEditSettings');
 
     // Additional properties
     this.#playerStartingLevel = Math.max(1, options.playerStartingLevel || 1);
@@ -404,6 +444,25 @@ class SettingInfo {
     this.#defaultPlayerName = typeof options.defaultPlayerName === 'string' ? options.defaultPlayerName : '';
     this.#defaultPlayerDescription = typeof options.defaultPlayerDescription === 'string' ? options.defaultPlayerDescription : '';
     this.#defaultStartingLocation = typeof options.defaultStartingLocation === 'string' ? options.defaultStartingLocation : '';
+    this.#defaultStartMonth = SettingInfo.#normalizeDefaultStartInteger(
+      options.defaultStartMonth,
+      'defaultStartMonth',
+      1,
+      1
+    );
+    this.#defaultStartDay = SettingInfo.#normalizeDefaultStartInteger(
+      options.defaultStartDay,
+      'defaultStartDay',
+      1,
+      1
+    );
+    this.#defaultStartTime = SettingInfo.#normalizeDefaultStartInteger(
+      options.defaultStartTime,
+      'defaultStartTime',
+      9,
+      0,
+      23
+    );
     this.#defaultExistingSkills = SettingInfo.#normalizeExistingSkills(options.defaultExistingSkills);
     this.#hidingAttribute = SettingInfo.#normalizeSelectorValue(options.hidingAttribute);
     this.#hidingSkill = SettingInfo.#normalizeSelectorValue(options.hidingSkill);
@@ -453,11 +512,22 @@ class SettingInfo {
   get imagePromptPrefixLocation() { return this.#imagePromptPrefixLocation; }
   get imagePromptPrefixItem() { return this.#imagePromptPrefixItem; }
   get imagePromptPrefixScenery() { return this.#imagePromptPrefixScenery; }
+  get imagePromptInstructionsCharacter() { return this.#imagePromptInstructionsCharacter; }
+  get imagePromptInstructionsLocation() { return this.#imagePromptInstructionsLocation; }
+  get imagePromptInstructionsItem() { return this.#imagePromptInstructionsItem; }
+  get imagePromptInstructionsScenery() { return this.#imagePromptInstructionsScenery; }
+  get useGlobalImageGenerationSettings() { return this.#useGlobalImageGenerationSettings; }
+  get useGlobalImageEditSettings() { return this.#useGlobalImageEditSettings; }
+  get imageGenerationSettings() { return SettingInfo.#cloneJsonObject(this.#imageGenerationSettings, 'imageGenerationSettings'); }
+  get imageEditSettings() { return SettingInfo.#cloneJsonObject(this.#imageEditSettings, 'imageEditSettings'); }
   get playerStartingLevel() { return this.#playerStartingLevel; }
   get defaultStartingCurrency() { return this.#defaultStartingCurrency; }
   get defaultPlayerName() { return this.#defaultPlayerName; }
   get defaultPlayerDescription() { return this.#defaultPlayerDescription; }
   get defaultStartingLocation() { return this.#defaultStartingLocation; }
+  get defaultStartMonth() { return this.#defaultStartMonth; }
+  get defaultStartDay() { return this.#defaultStartDay; }
+  get defaultStartTime() { return this.#defaultStartTime; }
   get defaultExistingSkills() { return [...this.#defaultExistingSkills]; }
   get hidingAttribute() { return this.#hidingAttribute; }
   get hidingSkill() { return this.#hidingSkill; }
@@ -673,6 +743,54 @@ class SettingInfo {
     this.#updateTimestamp();
   }
 
+  set imagePromptInstructionsCharacter(value) {
+    this.#imagePromptInstructionsCharacter = typeof value === 'string'
+      ? value.replace(/\r\n/g, '\n')
+      : '';
+    this.#updateTimestamp();
+  }
+
+  set imagePromptInstructionsLocation(value) {
+    this.#imagePromptInstructionsLocation = typeof value === 'string'
+      ? value.replace(/\r\n/g, '\n')
+      : '';
+    this.#updateTimestamp();
+  }
+
+  set imagePromptInstructionsItem(value) {
+    this.#imagePromptInstructionsItem = typeof value === 'string'
+      ? value.replace(/\r\n/g, '\n')
+      : '';
+    this.#updateTimestamp();
+  }
+
+  set imagePromptInstructionsScenery(value) {
+    this.#imagePromptInstructionsScenery = typeof value === 'string'
+      ? value.replace(/\r\n/g, '\n')
+      : '';
+    this.#updateTimestamp();
+  }
+
+  set useGlobalImageGenerationSettings(value) {
+    this.#useGlobalImageGenerationSettings = value !== false;
+    this.#updateTimestamp();
+  }
+
+  set useGlobalImageEditSettings(value) {
+    this.#useGlobalImageEditSettings = value !== false;
+    this.#updateTimestamp();
+  }
+
+  set imageGenerationSettings(value) {
+    this.#imageGenerationSettings = SettingInfo.#cloneJsonObject(value || {}, 'imageGenerationSettings');
+    this.#updateTimestamp();
+  }
+
+  set imageEditSettings(value) {
+    this.#imageEditSettings = SettingInfo.#cloneJsonObject(value || {}, 'imageEditSettings');
+    this.#updateTimestamp();
+  }
+
   set defaultStartingCurrency(value) {
     const parsed = Number.parseInt(value, 10);
     this.#defaultStartingCurrency = Number.isFinite(parsed)
@@ -693,6 +811,21 @@ class SettingInfo {
 
   set defaultStartingLocation(value) {
     this.#defaultStartingLocation = typeof value === 'string' ? value : '';
+    this.#updateTimestamp();
+  }
+
+  set defaultStartMonth(value) {
+    this.#defaultStartMonth = SettingInfo.#normalizeDefaultStartInteger(value, 'defaultStartMonth', 1, 1);
+    this.#updateTimestamp();
+  }
+
+  set defaultStartDay(value) {
+    this.#defaultStartDay = SettingInfo.#normalizeDefaultStartInteger(value, 'defaultStartDay', 1, 1);
+    this.#updateTimestamp();
+  }
+
+  set defaultStartTime(value) {
+    this.#defaultStartTime = SettingInfo.#normalizeDefaultStartInteger(value, 'defaultStartTime', 9, 0, 23);
     this.#updateTimestamp();
   }
 
@@ -810,7 +943,12 @@ class SettingInfo {
       }
 
       if (key in this) {
-        if (key === 'unifiedTonalScale' || key === 'calendarDefinition' || key === 'modSettings') {
+        if (key === 'unifiedTonalScale'
+          || key === 'calendarDefinition'
+          || key === 'modSettings'
+          || key === 'defaultStartMonth'
+          || key === 'defaultStartDay'
+          || key === 'defaultStartTime') {
           this[key] = value;
           return;
         }
@@ -848,11 +986,22 @@ class SettingInfo {
       imagePromptPrefixLocation: this.#imagePromptPrefixLocation,
       imagePromptPrefixItem: this.#imagePromptPrefixItem,
       imagePromptPrefixScenery: this.#imagePromptPrefixScenery,
+      imagePromptInstructionsCharacter: this.#imagePromptInstructionsCharacter,
+      imagePromptInstructionsLocation: this.#imagePromptInstructionsLocation,
+      imagePromptInstructionsItem: this.#imagePromptInstructionsItem,
+      imagePromptInstructionsScenery: this.#imagePromptInstructionsScenery,
+      useGlobalImageGenerationSettings: this.#useGlobalImageGenerationSettings,
+      useGlobalImageEditSettings: this.#useGlobalImageEditSettings,
+      imageGenerationSettings: SettingInfo.#cloneJsonObject(this.#imageGenerationSettings, 'imageGenerationSettings'),
+      imageEditSettings: SettingInfo.#cloneJsonObject(this.#imageEditSettings, 'imageEditSettings'),
       playerStartingLevel: this.#playerStartingLevel,
       defaultStartingCurrency: this.#defaultStartingCurrency,
       defaultPlayerName: this.#defaultPlayerName,
       defaultPlayerDescription: this.#defaultPlayerDescription,
       defaultStartingLocation: this.#defaultStartingLocation,
+      defaultStartMonth: this.#defaultStartMonth,
+      defaultStartDay: this.#defaultStartDay,
+      defaultStartTime: this.#defaultStartTime,
       defaultExistingSkills: [...this.#defaultExistingSkills],
       hidingAttribute: this.#hidingAttribute,
       hidingSkill: this.#hidingSkill,
@@ -919,6 +1068,14 @@ class SettingInfo {
       imagePromptPrefixLocation: this.#imagePromptPrefixLocation,
       imagePromptPrefixItem: this.#imagePromptPrefixItem,
       imagePromptPrefixScenery: this.#imagePromptPrefixScenery,
+      imagePromptInstructionsCharacter: this.#imagePromptInstructionsCharacter,
+      imagePromptInstructionsLocation: this.#imagePromptInstructionsLocation,
+      imagePromptInstructionsItem: this.#imagePromptInstructionsItem,
+      imagePromptInstructionsScenery: this.#imagePromptInstructionsScenery,
+      useGlobalImageGenerationSettings: this.#useGlobalImageGenerationSettings,
+      useGlobalImageEditSettings: this.#useGlobalImageEditSettings,
+      imageGenerationSettings: SettingInfo.#cloneJsonObject(this.#imageGenerationSettings, 'imageGenerationSettings'),
+      imageEditSettings: SettingInfo.#cloneJsonObject(this.#imageEditSettings, 'imageEditSettings'),
       playerStartingLevel: this.#playerStartingLevel,
       defaultStartingCurrency: this.#defaultStartingCurrency,
       hidingAttribute: this.#hidingAttribute,

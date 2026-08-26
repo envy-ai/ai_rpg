@@ -14,6 +14,7 @@ function renderImagegenWorkflow(templateName, imageOverrides = {}, configOverrid
         prompt: 'Shift the scene to a rainy midnight atmosphere.',
         negativePrompt: '',
         sourceFilename: 'airpg-location-variants/source.png',
+        input_filename: 'airpg-location-variants/source.png',
         width: 768,
         height: 512,
         steps: 4,
@@ -105,6 +106,32 @@ test('flux2 edit workflow prints the rendered image prompt to the ComfyUI consol
     );
     assert.ok(positivePromptNode, 'expected the positive CLIPTextEncode node');
     assert.deepEqual(positivePromptNode.node.inputs.text, [promptTextNode.id, 0]);
+});
+
+test('standard edit workflows preserve source dimensions with ComfyUI nodes', () => {
+    for (const templateName of [
+        'standard/krea2-identity-edit.json.njk',
+        'standard/flux-klein-edit.json.njk',
+        'standard/qwen-image-edit.json.njk'
+    ]) {
+        const workflow = renderImagegenWorkflow(templateName);
+        const source = findWorkflowNode(workflow, node => node.class_type === 'LoadImage');
+        const dimensions = findWorkflowNode(workflow, node => node.class_type === 'GetImageSize');
+        const preserveScale = findWorkflowNode(workflow, node => (
+            node.class_type === 'ImageScale'
+            && node._meta?.title === 'Preserve Source Resolution'
+        ));
+        const save = findWorkflowNode(workflow, node => node.class_type === 'SaveImage');
+
+        assert.ok(source, `${templateName} should load a source image`);
+        assert.ok(dimensions, `${templateName} should read the source dimensions in ComfyUI`);
+        assert.ok(preserveScale, `${templateName} should scale its decoded result to the source dimensions`);
+        assert.ok(save, `${templateName} should save the dimension-preserved result`);
+        assert.deepEqual(dimensions.node.inputs.image, [source.id, 0]);
+        assert.deepEqual(preserveScale.node.inputs.width, [dimensions.id, 0]);
+        assert.deepEqual(preserveScale.node.inputs.height, [dimensions.id, 1]);
+        assert.deepEqual(save.node.inputs.images, [preserveScale.id, 0]);
+    }
 });
 
 test('krea2 workflows use VAE Utils decoder with the Wan x2 VAE and print the prompt', () => {
@@ -252,7 +279,7 @@ test('Krea 2 batch workflow preserves the configured lovely model and LoRA chain
     ]);
 
     assert.equal(workflow['4'].inputs.unet_name, 'krea2_turbo_unfiltered_int8_convrot.safetensors');
-    assert.equal(workflow['5'].inputs.clip_name, 'qwen3vl_4b_instruct_heretic_7refusal_int8_convrot.safetensors');
+    assert.equal(workflow['5'].inputs.clip_name, 'd/text_encoders/qwen3vl_4b_fp8_scaled.safetensors');
     assert.equal(workflow['5'].inputs.type, 'krea2');
     assert.equal(workflow['6'].inputs.vae_name, 'Wan2.1_VAE_upscale2x_imageonly_real_v1.safetensors');
     assert.equal(workflow['8'].inputs.lora_name, 'krea2/k2-pix12_000000200-lora.safetensors');

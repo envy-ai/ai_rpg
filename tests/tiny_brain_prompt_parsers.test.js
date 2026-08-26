@@ -17,8 +17,9 @@ const {
     parsePlayerActionAccompanyingCharacters,
     parsePlayerActionHiddenContests,
     parsePlayerActionHiddenNotes,
-    parsePlayerActionMoreInfoOrNa,
+    parsePlayerActionDestinationNameOrNa,
     parsePlayerActionMovement,
+    parsePlayerActionOptionalProse,
     parsePlayerActionProseScope,
     parsePlayerActionRequiredProse,
     parsePlayerActionTimeReasoning,
@@ -432,6 +433,8 @@ test('player-action non-XML parsers enforce compact branch-safe answers', () => 
 
     assert.equal(parsePlayerActionRequiredProse('A door opens.').value, 'A door opens.');
     assert.equal(parsePlayerActionRequiredProse('One count is less than < two.').value, 'One count is less than < two.');
+    assert.equal(parsePlayerActionOptionalProse('A door opens.').value, 'A door opens.');
+    assert.equal(parsePlayerActionOptionalProse(' N/A. ').value, null);
     assert.equal(parsePlayerActionHiddenNotes('N/A').value, null);
     assert.equal(parsePlayerActionHiddenNotes('The key is newly bent.').value, 'The key is newly bent.');
     assert.equal(parsePlayerActionTimeReasoning('The conversation is brief.').value, 'The conversation is brief.');
@@ -453,46 +456,31 @@ test('player-action non-XML parsers enforce compact branch-safe answers', () => 
     );
 });
 
-test('player-action destination lookup requires N/A or a successful moreInfo call followed by READY', () => {
-    assert.equal(parsePlayerActionMoreInfoOrNa('N/A').value, false);
-    assert.equal(parsePlayerActionMoreInfoOrNa('**Answer: N/A.**').value, false);
-    assert.equal(parsePlayerActionMoreInfoOrNa('N/A. There is no useful lookup to make.').normalizedResponse, 'N/A');
-    assert.equal(
-        parsePlayerActionMoreInfoOrNa('READY — the lookup result has what I need.', {
-            currentToolInvocations: [{
-                id: 'lookup-1',
-                name: 'moreInfo',
-                metadata: { totalMatches: 1 }
-            }]
-        }).value,
-        true
+test('player-action destination-name context accepts one location name or N/A without tools', () => {
+    assert.equal(parsePlayerActionDestinationNameOrNa('N/A').value, null);
+    assert.equal(parsePlayerActionDestinationNameOrNa('**Answer: N/A.**').value, null);
+    assert.deepEqual(
+        parsePlayerActionDestinationNameOrNa('Town Square').value,
+        { location: 'Town Square', region: null }
+    );
+    assert.deepEqual(
+        parsePlayerActionDestinationNameOrNa('- Location: "Town Square"').value,
+        { location: 'Town Square', region: null }
     );
 
     assert.throws(
-        () => parsePlayerActionMoreInfoOrNa('Baato walks into the square.'),
-        /must begin with N\/A/i
+        () => parsePlayerActionDestinationNameOrNa('Town Square\nOld Town'),
+        /one line/i
     );
     assert.throws(
-        () => parsePlayerActionMoreInfoOrNa('READY'),
-        /without a successful moreInfo call/i
+        () => parsePlayerActionDestinationNameOrNa('<location>Town Square</location>'),
+        /must not contain XML/i
     );
     assert.throws(
-        () => parsePlayerActionMoreInfoOrNa('N/A', {
-            currentToolInvocations: [{ name: 'moreInfo', metadata: { totalMatches: 0 } }]
+        () => parsePlayerActionDestinationNameOrNa('Town Square', {
+            currentToolInvocations: [{ name: 'moreInfo', metadata: {} }]
         }),
-        /must answer READY/i
-    );
-    assert.throws(
-        () => parsePlayerActionMoreInfoOrNa('READY', {
-            currentToolInvocations: [{ name: 'moreInfo', metadata: { error: true } }]
-        }),
-        /execution failed/i
-    );
-    assert.throws(
-        () => parsePlayerActionMoreInfoOrNa('READY', {
-            currentToolInvocations: [{ name: 'getHistory', metadata: {} }]
-        }),
-        /may only call moreInfo/i
+        /must not make tool calls/i
     );
 });
 
@@ -682,11 +670,31 @@ test('while-away staged parser prevents final structured-state drift', () => {
         + rinArrival
         + '</characterUpdates><itemSceneryMoves/></response>';
     assert.equal(parseWhileYouWereAwayResult(finalWithArrival).value, finalWithArrival);
+    const finalWithoutProse = '<response><characterUpdates>' + rinArrival
+        + '</characterUpdates><itemSceneryMoves/></response>';
+    assert.equal(parseWhileYouWereAwayResult(finalWithoutProse).value, finalWithoutProse);
+    const finalWithEmptyProse = '<response><proseForPlayer> \n </proseForPlayer><characterUpdates>' + rinArrival
+        + '</characterUpdates><itemSceneryMoves/></response>';
+    assert.equal(parseWhileYouWereAwayResult(finalWithEmptyProse).value, finalWithEmptyProse);
+    assert.throws(
+        () => parseWhileYouWereAwayResult(
+            finalWithArrival.replace(
+                '<proseForPlayer>Rin is waiting here.</proseForPlayer>',
+                '<proseForPlayer>One.</proseForPlayer><proseForPlayer>Two.</proseForPlayer>'
+            )
+        ),
+        /at most one direct <proseForPlayer>/
+    );
     assert.equal(parseWhileYouWereAwayStagedResult(finalWithArrival, {
         characterUpdateXml: [],
         arrivalUpdatesXml: `<characterUpdates>${rinArrival}</characterUpdates>`,
         itemSceneryMovesXml: '<itemSceneryMoves/>'
     }).value, finalWithArrival);
+    assert.equal(parseWhileYouWereAwayStagedResult(finalWithoutProse, {
+        characterUpdateXml: [],
+        arrivalUpdatesXml: `<characterUpdates>${rinArrival}</characterUpdates>`,
+        itemSceneryMovesXml: '<itemSceneryMoves/>'
+    }).value, finalWithoutProse);
     assert.throws(
         () => parseWhileYouWereAwayResult(finalWithArrival.replace('>HERE<', '>nearby<')),
         /location.*region.*HERE sentinel/i

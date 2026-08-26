@@ -38,6 +38,36 @@ Response:
 - 200: `{ success: true, thing: Thing }`
 - 404: `{ success: false, error }`
 
+## GET /api/things/:id/currency-conversion
+Preview the current authoritative payout for converting one complete item stack into player currency.
+
+Response:
+- 200: `{ success: true, conversion: { thingId, thingName, count, unitValue, totalValue, currencyLabel } }`
+- 404 when the Thing no longer exists.
+- 409 with `{ success: false, error }` when the Thing is not an item, has no numeric non-negative value, has an invalid stack count/total, or is a non-empty container. Pending generated container contents also count as non-empty.
+
+Notes:
+- `unitValue` uses the same ordered standard-value fields as barter: direct `value`, then metadata `value`, `standardValue`, or `baseValue`. Numeric values are floored to the game's integer currency unit before multiplying by the complete stack count.
+- Missing stack counts represent one item. An explicitly stored zero value or zero count is valid and produces a zero payout; the warning UI still shows that amount before the player decides.
+- This route does not mutate the item or player.
+
+## POST /api/things/:id/convert-to-currency
+Delete one complete item stack and award its previewed total standard value to the active player. This is a deliberate single-player convenience/cheat for physical currency items or any other item the player chooses to liquidate.
+
+Request:
+- Body: `{ expected: { count, unitValue, totalValue } }`, copied from the preview shown in the destructive confirmation.
+
+Response:
+- 200: `{ success: true, conversion, currencyBefore, currencyAfter, player, message, locationIds, playerIds, npcIds, containerIds }`
+- 400 when confirmation details are absent or malformed.
+- 404 when the Thing no longer exists.
+- 409 with `{ success: false, error }` when conversion validation fails, the item changed after preview, or the active player cannot receive the payout.
+
+Notes:
+- The server recomputes and compares count, unit value, and total before deletion, so a changed stack can never pay a different amount than the confirmation displayed. A mismatch leaves the item and currency untouched and asks the player to reopen the action.
+- All validation and the next finite player-currency total are resolved before the existing authoritative Thing deletion path runs. The path detaches the stack from locations, actor inventory/equipment, or a containing Thing and then credits the active player.
+- Conversion never requires merchant approval and does not run a prompt or create a barter session.
+
 ## POST /api/things/ai-search
 Run `prompts/ai-item-search.xml.njk` against a caller-supplied item list and search criteria.
 
@@ -82,8 +112,8 @@ Response:
 
 Notes:
 - This is the authoritative mutation endpoint for the AI-backed item stack combiner. It revalidates all requested stacks before deleting anything.
-- The kept stack preserves its name, image, description, metadata, effects, value, and mechanics. Only its `count` changes.
-- Merge candidates must be item-type, unequipped, non-container stacks with the same quality/rarity, the same authoritative mechanics checksum, and the same real holder: actor inventory, Thing container, or loose location. The mechanics checksum deliberately ignores IDs, names, descriptive prose, images, timestamps, and quantity so an AI-approved cosmetic naming variant can merge, but it preserves structured type, effect, bonus, flag, value, weight, property, and mod-field differences. Validation finishes before any source stack is deleted.
+- The kept stack preserves its name, image, description, metadata, effects, value, and mechanics. Only its `count` changes. Differing mechanics from deleted source stacks are intentionally not aggregated; the player-selected keeper is authoritative for the combined quantity.
+- Merge candidates must be item-type, unequipped, non-container stacks with the same quality/rarity and the same real holder: actor inventory, Thing container, or loose location. AI-approved, player-confirmed groups may contain differing incidental mechanics so fungible minor items such as currency are not blocked by random stats. Validation finishes before any source stack is deleted.
 
 ## POST /api/mod-thing-context-actions/:actionId
 Execute a registered mod-owned Thing context-menu action.

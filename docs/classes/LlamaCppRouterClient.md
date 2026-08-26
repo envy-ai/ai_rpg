@@ -6,7 +6,7 @@
 
 ## Construction
 
-`new LlamaCppRouterClient({ endpoint, model, headers, timeoutMs, pollIntervalMs, statusRetryAttempts, statusRetryDelayMs, slotId, slotCacheDirectory, httpClient, fileSystem, sleep, logger })`
+`new LlamaCppRouterClient({ endpoint, model, headers, timeoutMs, pollIntervalMs, statusRetryAttempts, statusRetryDelayMs, slotId, slotCacheDirectory, httpClient, fileSystem, sleep, logger, signal })`
 
 - `endpoint` is the effective OpenAI-compatible chat endpoint. The client removes trailing `/chat/completions` and `/v1` segments to find the router root.
 - `model` is the exact effective model id selected for the `image_prompt_generation` label, including `ai_model_overrides`.
@@ -17,6 +17,7 @@
 - `slotId` defaults to `0`. `slotCacheDirectory` defaults to `/dev/shm` and must match the local llama.cpp router's `--slot-save-path`.
 - `httpClient`, `fileSystem`, and `sleep` are injectable for deterministic tests.
 - `logger` receives warnings when a transient status read will be retried.
+- Optional `signal` is forwarded to every router HTTP request and checked around status polling, retry delays, and cache-file access. A cancelled prompt therefore stops waiting on model status, unload, save, or restore immediately instead of blocking turn rollback until the router request times out.
 
 ## API
 
@@ -30,11 +31,11 @@
 - `restoreSlotCacheIfPresent()` skips a model with no saved cache. Otherwise it calls `POST /slots/0?action=restore` and immediately unlinks the restored file. A restore failure leaves the file available for a later attempt; a post-restore deletion failure is marked explicitly.
 - `resolveRouterBaseUrl(endpoint)` exposes endpoint normalization for tests and diagnostics.
 
-Router response mismatches, missing models, rejected actions, failed states, exhausted status retries, and timeouts throw explicit errors. Only the read-only status request is retried; unload and load action requests are never repeated implicitly. If an unload request was accepted but status polling fails, the error is marked so the lifecycle can attempt a compensating reload.
+Router response mismatches, missing models, rejected actions, failed states, exhausted status retries, timeouts, and aborts throw explicit errors. Only the read-only status request is retried; unload and load action requests are never repeated implicitly. If an unload request was accepted but status polling fails, the error is marked so the lifecycle can attempt a compensating reload.
 
-`LLMClient` decides which slot-cache errors are nonfatal: failed saves and restores emit `console.warn` and the model swap continues. A successful restore followed by a deletion failure is fatal so a consumed cache file cannot silently linger. During a same-router prompt-model swap, `LLMClient` deliberately does not call `loadModel()`: it submits a cache restore directly when a cache exists, allowing the router to autoload/wait before restoring, or submits the replacement prompt directly when there is no cache. Explicit `loadModel()` remains in use for startup preload and image-generation lifecycle restoration.
+`LLMClient` only invokes slot save/restore when both effective prompt targets set `ai.router_slot_cache_enabled: true`; the setting defaults to `false`. When enabled, failed saves and restores emit `console.warn` and the model swap continues. A successful restore followed by a deletion failure is fatal so a consumed cache file cannot silently linger. During a same-router prompt-model swap, `LLMClient` deliberately does not call `loadModel()`: it submits a cache restore directly when a cache exists, allowing the router to autoload/wait before restoring, or submits the replacement prompt directly when there is no cache. Explicit `loadModel()` remains in use for startup preload and image-generation lifecycle restoration.
 
-The game server also deletes every exact, model-derived slot-cache path it owns when the program terminates or performs a self-restart. Graceful signal handling stops the managed router before asynchronous deletion; the process exit hook repeats the operation synchronously as an idempotent fallback. It uses `buildSlotCacheFilename()` for root, preload, override, and runtime-observed local models and never globs the shared `/dev/shm` directory. Like all in-process cleanup, this cannot run after an uncatchable `SIGKILL` or abrupt power loss.
+When slot persistence is enabled, the game server also deletes every exact, model-derived slot-cache path it owns when the program terminates or performs a self-restart. Graceful signal handling stops the managed router before asynchronous deletion; the process exit hook repeats the operation synchronously as an idempotent fallback. It uses `buildSlotCacheFilename()` for root, preload, override, and runtime-observed local models and never globs the shared `/dev/shm` directory. Like all in-process cleanup, this cannot run after an uncatchable `SIGKILL` or abrupt power loss.
 
 Some llama.cpp builds reject slot persistence for models loaded with multimodal projection data. That response (currently HTTP 501 with `This feature is not supported by multimodal`) follows the same nonfatal save-warning path: the old model still unloads and the replacement still loads, but no context cache is retained for that switch.
 

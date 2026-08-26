@@ -53,6 +53,23 @@ test('current location favorite toggle uses transparent chrome and hugs the imag
     assert.doesNotMatch(body, /box-shadow:/);
 });
 
+test('explored Region Map and World Map locations expose the shared Favorites context action', () => {
+    const viewSource = read('views/index.njk');
+    const regionMapSource = read('public/js/map.js');
+    const worldMapSource = read('public/js/world-map.js');
+
+    assert.match(viewSource, /id="mapLocationMenuFavoriteButton"[^>]*>Add to Favorites</);
+    assert.match(viewSource, /const mapLocationMenuFavoriteButton = document\.getElementById\('mapLocationMenuFavoriteButton'\);/);
+    assert.match(viewSource, /const isExplored = Boolean\(targetLocation && targetLocation\.visited === true && !isStub\);/);
+    assert.match(viewSource, /mapLocationMenuFavoriteButton\.hidden = !isExplored;/);
+    assert.match(viewSource, /favorite \? 'Remove from Favorites' : 'Add to Favorites'/);
+    assert.match(viewSource, /async function toggleSelectedMapLocationFavorite/);
+    assert.match(viewSource, /Only explored locations can be added to Favorites\./);
+    assert.match(viewSource, /mapLocationMenuFavoriteButton\.addEventListener\('click'/);
+    assert.match(regionMapSource, /openLocationContextMenuForLocationId\(locationId,[\s\S]*?useFloatingMenu: true/);
+    assert.match(worldMapSource, /openLocationContextMenuForLocationId\(locationId,[\s\S]*?useFloatingMenu: true/);
+});
+
 test('Favorites tab list sits in the same dark rounded box style as faction panels', () => {
     const scssSource = read('public/css/main.scss');
     const blockMatch = scssSource.match(/\.favorites-panel\s*\{(?<body>[\s\S]*?)\n\}/);

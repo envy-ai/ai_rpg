@@ -13,6 +13,8 @@ test('ComfyUI sampler progress is forwarded through realtime image job updates',
     assert.match(serverSource, /function updateComfyRenderProgress\(job, progressEvent = \{\}\)/);
     assert.match(serverSource, /renderProgress = Math\.round\(fraction \* 1000\) \/ 10/);
     assert.match(serverSource, /onProgress: progressEvent => updateComfyRenderProgress\(job, progressEvent\)/);
+    assert.match(serverSource, /function createBatchedComfyProgressHandler\(jobs, workflow\)/);
+    assert.match(serverSource, /onProgress: handleBatchRenderProgress/);
     assert.match(serverSource, /job\.isRendering = false;[\s\S]*phase: 'rendering-complete'/);
     assert.match(serverSource, /isRendering: job\.isRendering === true/);
     assert.match(managerSource, /this\.activeRenderJobs = new Map\(\)/);
@@ -20,6 +22,14 @@ test('ComfyUI sampler progress is forwarded through realtime image job updates',
     assert.match(managerSource, /return `\$\{this\._normalizeEntityType\(entityType\)\}:\$\{entityId \|\| ''\}`/);
     assert.match(managerSource, /renderProgress: update\.renderProgress/);
     assert.match(managerSource, /this\._dispatch\('image:job-progress', detail\)/);
+});
+
+test('system config persistence removes shared presets and obsolete workflow template fields', () => {
+    assert.match(serverSource, /function normalizeImageWorkflowConfigForPersistence\(configuration\)/);
+    assert.match(serverSource, /api_template: _legacyGenerationTemplate/);
+    assert.match(serverSource, /location_variant_settings: _legacyLocationVariantSettings/);
+    assert.match(serverSource, /Object\.entries\(workflow\)\.filter\(\(\[key\]\) => key !== 'presets'\)/);
+    assert.doesNotMatch(serverSource, /location_variant_settings: normalizedLocationVariantSettings/);
 });
 
 test('active image renders use spinner and progress overlays with a seasonal variant mode', () => {

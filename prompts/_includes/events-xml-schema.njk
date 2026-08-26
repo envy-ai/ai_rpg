@@ -8,7 +8,7 @@ The XML element names use camelCase. Section headings use snake_case labels for 
 
 ## Top-Level Shape
 
-The response is a flat chronological list of event elements.{% if tinyBrainEventSchema %} Player movement is handled before event extraction and must not be emitted here.{% else %} Travel is the only context boundary: a player/party travel event separates origin-context events from destination-context events.{% endif %}
+The response is a flat chronological list of event elements. Player and party movement is handled by the prose response and must not be emitted during event extraction.
 
 ```xml
 <events>
@@ -20,6 +20,12 @@ Rules:
 
 - Omit event tags when that event did not occur.
 - Repeat event tags for multiple instances.
+- Do not emit player or party movement or arrival markers. The prose response owns travel detection and location changes.
+{#
+Player-movement event guidance is intentionally disabled. Keep it here so the
+parser/executor contract remains documented beside the prompt if event-driven
+movement is ever restored, but do not render it into event-check prompts.
+
 {% if tinyBrainEventSchema %}
 - Do not emit player or party movement or arrival markers. The prose has already been assigned to its correct movement phase.
 {% else %}
@@ -28,6 +34,7 @@ Rules:
 - Omit any events that occur chronologically between the beginning and end of travel.
 - Do not emit more than one player/party travel event in a single `<events>` block.
 {% endif %}
+#}
 - `newExitDiscovered` is a normal event and does not create a context boundary.
 - Emit one element for each observed event. Downstream processing may aggregate compatible entries later.
 {% if modEventPromptSchemas and modEventPromptSchemas.length %}
@@ -47,6 +54,10 @@ The active mods also accept these event tags. Use them only when the prose expli
 ```
 {% endfor %}
 {% endif %}
+
+{#
+Player-movement event elements are intentionally omitted from the rendered
+event-check schema. Parsing and execution support remains in Events.js.
 
 {% if not tinyBrainEventSchema %}
 ## Travel Boundary
@@ -86,6 +97,7 @@ Empty marker for the chronological point where arrival completes after a `moveLo
 <arriveAtLocation/>
 ```
 {% endif %}
+#}
 
 ## Normal Event Elements
 
@@ -206,12 +218,18 @@ Use this when a character takes one or more items out of a container, such as a 
 </removeItemFromContainer>
 ```
 
+### Character presence bookkeeping
+
+A character physically present in the checked text but absent from `Characters at location` is not represented at this location in the game data. Do not assume a private mystery note or narrative mention created an NPC record.
+
+- Use `npcFirstAppearance` to create a newly introduced, physically present NPC. Also use it when the prose reveals a hidden NPC that is missing from the supplied character and reveal-target data; provide the name or alias used in the prose, and event application will reveal a matching stored hidden NPC instead of creating a duplicate.
+- Use `npcArrival` when an existing NPC arrives or otherwise newly appears in the scene.
+{% if eventCheckHiddenNpcNames and eventCheckHiddenNpcNames | length %}- Use `revealHiddenNpc` only when the NPC is already present and hidden under one of these exact names:
+{% for npcName in eventCheckHiddenNpcNames %}  - {{ npcName }}
+{% endfor %}
 ### `reveal_hidden_npc`
 
-Use this when a previously hidden NPC or entity is revealed or becomes visible to the player. This is not for NPCs that were already present and visible in the scene, or for NPCs that are newly arrived but immediately visible (use `npcArrival` for that). This event should be triggered any time a hidden NPC (marked hidden in the XML) is described visibly in the text, even if previous prose already mentioned that they became visible, to ensure that their visibility is properly tracked in the system. The following characters are currently believed by the system to be present but hidden:
-{% for npc in npcs %}{% if npc.hiddenFromPlayer %}- {{ npc.name }}
-{% endif %}{% endfor %}
-Check the text for each of them and emit 'revealHiddenNpc' for any that can be inferred to be visible from the text to check.
+Use this when one of the exact present hidden NPCs listed above becomes visible to the player. This is not for a new NPC or an NPC arriving from elsewhere. Use the exact listed name; a private mystery-box name does not prove that an NPC record exists. Trigger this whenever the checked text makes a listed hidden NPC visible, even if earlier prose also described the reveal.
 
 ```xml
 <revealHiddenNpc>
@@ -220,6 +238,7 @@ Check the text for each of them and emit 'revealHiddenNpc' for any that can be i
   <useOpposedCheck>False if the NPC willingly revealed itself, true otherwise</useOpposedCheck>
 </revealHiddenNpc>
 ```
+{% endif %}
 
 ### `hide_visible_npc`
 
@@ -368,7 +387,7 @@ Use this when an animate entity gains or loses a temporary status effect that is
 
 ### `npc_arrival`
 
-Use this when an animate entity arrives at the current location from elsewhere, or newly appears in the scene.
+Use this when an existing animate entity arrives at the current location from elsewhere, or otherwise newly appears in the scene. If the prose introduces a physically present NPC that does not yet exist in game data, use `npcFirstAppearance` instead.
 
 ```xml
 <npcArrival>
@@ -425,7 +444,7 @@ Use this when a non-animate entity moves with a character from one location to a
 
 ### `npc_first_appearance`
 
-Use this as a catch-all for physically present entities mentioned or acting in the checked text that are not already known to the system. Do not include entities only mentioned in dialogue, on a phone, on a screen, through a vision, or otherwise not physically present at the location.
+Use this to create physically present entities mentioned or acting in the checked text that do not yet exist in the game data. This includes unnamed entities; give one stable proper name or role name that matches the prose. This event is also the recovery path when the prose reveals a hidden NPC that is not exposed in the supplied character or reveal-target data: use the NPC name or alias from the prose. If that name or alias matches a hidden NPC already stored by the runtime, the existing NPC is revealed and no duplicate is generated. Do not include entities only mentioned in dialogue, a private mystery note, on a phone, on a screen, through a vision, or otherwise not physically present at the location.
 
 ```xml
 <npcFirstAppearance>

@@ -101,6 +101,7 @@ test('runQuestChecks still sends a prompt when there is an active quest', async 
         await Events.runQuestChecks();
 
         assert.equal(capturedOptions?.metadataLabel, 'quest_check');
+        assert.equal(capturedOptions?.expectedXmlRootTag, 'quests');
         assert.notEqual(capturedOptions?.stream, false);
     } finally {
         LLMClient.chatCompletion = previousChatCompletion;

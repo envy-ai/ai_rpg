@@ -239,7 +239,7 @@ test('base-context system prompt preserves CDATA-like literal text when XML norm
     assert.match(parsed.generationPrompt, /offscreen NPC activity/);
 });
 
-test('location things prompt preserves cardinality XML tag names as instructional text', () => {
+test('location things prompt preserves minimum-count XML tag names as instructional text', () => {
     Globals.config = { strictXMLParsing: true };
     const parseXMLTemplate = loadServerFunction('parseXMLTemplate');
     const promptEnv = new nunjucks.Environment(
@@ -270,11 +270,11 @@ test('location things prompt preserves cardinality XML tag names as instructiona
 
     assert.match(
         parsed.generationPrompt,
-        /Return exactly 1 top-level <item> entry whose <itemOrScenery> is item/
+        /Return at least 1 top-level <item> entry whose <itemOrScenery> is item/
     );
     assert.match(
         parsed.generationPrompt,
-        /exactly 2 top-level <item> entries whose <itemOrScenery> is scenery/
+        /at least 2 top-level <item> entries whose <itemOrScenery> is scenery/
     );
     assert.match(
         parsed.generationPrompt,
@@ -282,7 +282,7 @@ test('location things prompt preserves cardinality XML tag names as instructiona
     );
     assert.match(
         parsed.generationPrompt,
-        /After exactly 3 total top-level entries, close <\/things> immediately and stop\. Do not add any other entries or commentary\.$/
+        /You may add more setting-appropriate items or scenery after meeting those minimums\./
     );
     assert.doesNotMatch(
         parsed.generationPrompt,
@@ -318,7 +318,7 @@ test('scene summary requests disable whole-response XML validation', () => {
     const source = fs.readFileSync(require.resolve('../server.js'), 'utf8');
     const sceneRequestStart = source.indexOf("metadataLabel: 'scene_summarize'");
     assert.notEqual(sceneRequestStart, -1);
-    const requestBlock = source.slice(sceneRequestStart, sceneRequestStart + 500);
+    const requestBlock = source.slice(sceneRequestStart, sceneRequestStart + 1200);
 
     assert.match(requestBlock, /validateXML:\s*false/);
 });

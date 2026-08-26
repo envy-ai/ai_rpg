@@ -36,11 +36,11 @@ Rendered inside `#mapContainer` in the Map tab.
 
 - Tapping a visited, non-current location calls `window.travelToAdjacentLocationFromMap(locationId)`.
 - Tapping an expanded region-exit bubble calls `loadRegionMap(targetRegionId)`.
-- Right-clicking a hydrated location opens the shared floating location menu with Edit Location, Edit Region, Edit Weather, Edit Calendar, Set Last Seen, Summon NPC, Summon Item/Scenery, Upload Image, Regenerate Image, Regenerate Image +, and Delete Location actions. `Regenerate Image +` generates the final prompt, opens the shared prompt-edit modal, and only queues image rendering after confirmation. Stub locations hide region/weather/calendar/regenerate/delete actions in that shared menu and expose Unstub.
+- Right-clicking a hydrated location opens the shared floating location menu with Teleport Player Here, Edit Location, Edit Region, Edit Weather, Edit Calendar, Set Last Seen, Summon NPC, Summon Item/Scenery, Upload Image, Regenerate Image, Regenerate Image +, and Delete Location actions. Explored, non-stub locations additionally expose `Add to Favorites`, or `Remove from Favorites` when already marked; this persists through `PUT /api/locations/:id/favorite`. Teleport Player Here uses the Story Tools teleport path, so it moves immediately without gameplay travel prose or travel-time accounting. `Regenerate Image +` generates the final prompt, opens the shared prompt-edit modal, and only queues image rendering after confirmation. Stub and unexplored locations hide the favorite action. Stub locations also hide region/weather/calendar/regenerate/delete actions in that shared menu and expose Unstub; their teleport action expands the destination before moving the player.
 - The Set Last Seen map action opens the shared modal and submits `/set_last_seen <location> <time>` through `AIRPG_CHAT.executeSlashCommand`. Accepted time text matches the slash command guidance: exact `H AM/PM`, exact `H:MM AM/PM`, or relative durations such as `2 hours ago`.
-- Right-clicking a stub node in the Region Map opens a compact map menu with Unstub, Edit stub, and Delete stub. Unstub calls `POST /api/stubs/:id/expand`; Edit stub opens `window.openStubEditModal(stubId)`; Delete stub calls `DELETE /api/stubs/:id`.
+- Right-clicking a stub node in the Region Map opens a compact map menu with Unstub, Teleport player here, Edit stub, and Delete stub. Unstub calls `POST /api/stubs/:id/expand`; Teleport uses the Story Tools path that expands the destination before moving the player; Edit stub opens `window.openStubEditModal(stubId)`; Delete stub calls `DELETE /api/stubs/:id`.
 - The shared stub editor exposes vehicle metadata controls (`isVehicle` and `vehicleInfo`) for location stubs and region-entry stubs. Ordinary location stubs also expose a Region selector and can move between live or pending regions. Region-entry stubs hide that selector because their target region is fixed.
-- Right-clicking an edge opens a compact menu for deleting the exit. Deletion calls `DELETE /api/locations/:id/exits/:exitId`.
+- Right-clicking an edge opens a compact menu for deleting the exit. Both internal and cross-region rendered edges retain their authoritative exit id, so deletion calls `DELETE /api/locations/:id/exits/:exitId` for either kind of edge. After a successful local deletion, an orphaned cross-region target bubble and its vehicle-icon overlay are removed with the edge; ordinary location endpoint nodes and region indicators that still have another connected edge remain.
 - Shift-dragging from a location enters link mode. Dropping on another location creates an exit with `POST /api/locations/:id/exits` and payload `{ type: "location", locationId }`. Dropping on empty space opens the New Exit modal in map mode with origin/preferred region context; map-mode location creation sends `bidirectional: true`.
 - Discovered-exit summary map pills dispatch `airpg:new-exit-summary-selected`; the handler opens the origin region's map and focuses the discovered destination location or `region-exit-<exitId>` bubble.
 
@@ -67,7 +67,7 @@ Rendered inside `#worldMapContainer` in the World Map tab.
 ### Interactions
 
 - Tapping a visited, non-current location starts the shared map fast-travel flow and focuses Adventure as soon as the Travel confirmation is accepted.
-- Right-clicking a location node opens the same shared floating location menu used by the Region Map.
+- Right-clicking a location node opens the same shared floating location menu used by the Region Map, including the explored-location Favorites toggle.
 - The World Map Reload button calls `window.loadWorldMap()`.
 
 ## Shared Map Travel
@@ -97,6 +97,7 @@ The Favorites tab fetches `GET /api/locations?scope=favorites`, renders favorite
 - Gameplay movement after confirmed map travel: `POST /api/npcs/:id/teleport` with `accountTravelTime: true` for the player.
 - Exit creation/deletion: `POST /api/locations/:id/exits`, `DELETE /api/locations/:id/exits/:exitId`.
 - Stub read/edit/delete/expand: `GET /api/stubs/:id`, `PUT /api/stubs/:id`, `DELETE /api/stubs/:id`, `POST /api/stubs/:id/expand`.
+- Explored-location Favorites toggle: `PUT /api/locations/:id/favorite`.
 - Hydrated location deletion from the map menu: `DELETE /api/locations/:id`, followed by Region Map and World Map refresh attempts.
 
 ## Styling

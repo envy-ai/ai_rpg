@@ -6,22 +6,28 @@ const vm = require('vm');
 function loadImagePromptPreambleHelpers({
     engine = 'comfyui',
     settingSnapshot = {},
+    globalInstructions = {},
     deterministicRender = null,
-    resolveLocationHasWeather = () => null
+    resolveLocationHasWeather = () => null,
+    resolveEffectiveLocationHasWeather = location => resolveLocationHasWeather(location) || 'yes',
+    findRegionByLocationId = () => null
 } = {}) {
     const source = fs.readFileSync(require.resolve('../server.js'), 'utf8');
     const start = source.indexOf('function resolveBaseContextPreambleForImagePrompts() {');
     const end = source.indexOf('\nasync function generateImagePromptFromTemplate(prompts, options = {}) {', start);
-    if (start < 0 || end < 0) {
+    const instructionStart = source.indexOf('function resolveImagePromptGenerationInstructions(kind, settingSnapshot = getActiveSettingSnapshot()) {');
+    const instructionEnd = source.indexOf('\nfunction buildNegativePrompt(', instructionStart);
+    if (start < 0 || end < 0 || instructionStart < 0 || instructionEnd < 0) {
         throw new Error('Unable to locate image prompt preamble helpers in server.js');
     }
 
-    const functionSource = source.slice(start, end);
+    const functionSource = `${source.slice(instructionStart, instructionEnd)}\n${source.slice(start, end)}`;
     const context = {
         String,
         config: {
             imagegen: {
-                engine
+                engine,
+                image_prompt_instructions: globalInstructions
             }
         },
         getActiveSettingSnapshot: () => settingSnapshot,
@@ -49,13 +55,16 @@ function loadImagePromptPreambleHelpers({
                 ? deterministicRender(templateName, variables)
                 : variables?.image?.prompt || ''
         },
-        resolveLocationHasWeather
+        findRegionByLocationId,
+        resolveLocationHasWeather,
+        resolveEffectiveLocationHasWeather
     };
 
     vm.createContext(context);
     vm.runInContext(
         `${functionSource}
 this.resolveBaseContextPreambleForImagePrompts = resolveBaseContextPreambleForImagePrompts;
+this.resolveImagePromptGenerationInstructions = resolveImagePromptGenerationInstructions;
 this.shouldPrependBaseContextPreambleForImagePrompts = shouldPrependBaseContextPreambleForImagePrompts;
 this.prependBaseContextPreamble = prependBaseContextPreamble;
 this.applyImagePromptPrefix = applyImagePromptPrefix;
@@ -67,6 +76,7 @@ this.renderLocationFinalImagePrompt = typeof renderLocationFinalImagePrompt === 
 
     return {
         resolveBaseContextPreambleForImagePrompts: context.resolveBaseContextPreambleForImagePrompts,
+        resolveImagePromptGenerationInstructions: context.resolveImagePromptGenerationInstructions,
         shouldPrependBaseContextPreambleForImagePrompts: context.shouldPrependBaseContextPreambleForImagePrompts,
         prependBaseContextPreamble: context.prependBaseContextPreamble,
         applyImagePromptPrefix: context.applyImagePromptPrefix,
@@ -87,6 +97,25 @@ test('prependBaseContextPreamble skips the setting preamble for ComfyUI', () => 
         prependBaseContextPreamble('  cinematic starship bridge  '),
         'cinematic starship bridge'
     );
+});
+
+test('per-world image prompt instructions override only their matching global fallback', () => {
+    const { resolveImagePromptGenerationInstructions } = loadImagePromptPreambleHelpers({
+        settingSnapshot: {
+            imagePromptInstructionsCharacter: 'Use graphic-novel portrait composition.',
+            imagePromptInstructionsItem: '   '
+        },
+        globalInstructions: {
+            character: 'Global character guidance.',
+            item: 'Global item guidance.'
+        }
+    });
+
+    assert.equal(
+        resolveImagePromptGenerationInstructions('character'),
+        'Use graphic-novel portrait composition.'
+    );
+    assert.equal(resolveImagePromptGenerationInstructions('item'), 'Global item guidance.');
 });
 
 test('prependBaseContextPreamble still applies the setting preamble for OpenAI image generation', () => {

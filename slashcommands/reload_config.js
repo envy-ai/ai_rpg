@@ -11,22 +11,32 @@ class ReloadConfigCommand extends SlashCommandBase {
   }
 
   static get description() {
-    return 'Reload config.default.yaml, config.yaml, and definition caches.';
+    return 'Reload configuration and definitions, optionally selecting a session override file.';
   }
 
   static get args() {
-    return [];
+    return [
+      { name: 'override_file', type: 'string', required: false }
+    ];
   }
 
-  static async execute(interaction) {
+  static async execute(interaction, args = {}) {
     const reloadFn = Globals.reloadConfigAndDefs;
     if (typeof reloadFn !== 'function') {
       throw new Error('Config reload is unavailable on this server.');
     }
 
+    let overrideFile = typeof args.override_file === 'string'
+      ? args.override_file.trim()
+      : '';
+    if ((overrideFile.startsWith('"') && overrideFile.endsWith('"'))
+      || (overrideFile.startsWith("'") && overrideFile.endsWith("'"))) {
+      overrideFile = overrideFile.slice(1, -1).trim();
+    }
+
     let result;
     try {
-      result = reloadFn();
+      result = reloadFn(overrideFile ? { configOverridePath: overrideFile } : {});
     } catch (error) {
       await interaction.reply({
         content: `Reload failed: ${error.message}`,
@@ -38,6 +48,9 @@ class ReloadConfigCommand extends SlashCommandBase {
     const details = [];
     if (result?.timestamp) {
       details.push(`at ${result.timestamp}`);
+    }
+    if (result?.configOverridePath) {
+      details.push(`Session override: ${result.configOverridePath}.`);
     }
     if (result?.modEnableDiff?.changed) {
         const segments = [];

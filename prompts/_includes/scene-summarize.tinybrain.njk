@@ -1,0 +1,64 @@
+{%- set lineCount = fullHistoryLines | length -%}
+{%- set minScenes = 2 -%}
+{%- set maxScenes = 2 -%}
+{%- if lineCount > 0 -%}
+{%- set minScenes = (lineCount * 15 / 500) | round(0) -%}
+{%- set maxScenes = (lineCount * 25 / 500) | round(0) -%}
+{%- endif -%}
+{%- if minScenes < 2 -%}{%- set minScenes = 2 -%}{%- endif -%}
+{%- if maxScenes < 2 -%}{%- set maxScenes = 2 -%}{%- endif -%}
+<task>Divide the indexed RPG log into completed narrative scenes and summarize each completed scene.</task>
+
+The log contains {{ lineCount }} indexed entries. Aim for {{ minScenes }}-{{ maxScenes }} major scene starts, including the final following-scene boundary. Use structural story beats, not individual dialogue lines or minor mechanical actions.
+
+Boundary proposal: Identify each major scene's start. The last boundary must mark the start of the newest scene that follows the completed scenes; the server uses it only to close the preceding summary and will not store a summary for that final scene. Return at least two strictly ascending boundaries inside entries 1-{{ lineCount }}. Give one short structural reason per boundary.
+
+Return XML only:
+<sceneBoundaries>
+  <boundary><index>1</index><reason>brief structural reason</reason></boundary>
+  <boundary><index>later index</index><reason>brief structural reason</reason></boundary>
+</sceneBoundaries>
+
+{% llmparse('scene_summary_boundaries', lineCount) as boundaryPlan %}
+
+Boundary verification: Review the proposal against the entire indexed log. Merge boundaries caused only by short asides, isolated dialogue, small inventory actions, or movement between connected rooms. Split continuous material only for a real encounter, exploration/discovery sequence, combat arc, crafting/repair sequence, journey, shopping expedition, or another self-contained dramatic unit. Make sure the last boundary starts the following, newest scene rather than ending the previous scene.
+
+Proposed boundaries:
+{% for boundary in boundaryPlan %}- Entry {{ boundary.index }}: {{ boundary.reason }}
+{% endfor %}
+
+Return the corrected final boundary list in the same XML-only format. Preserve at least two strictly ascending boundaries inside entries 1-{{ lineCount }}.
+
+{% llmparse('scene_summary_boundaries', lineCount) as sceneBoundaries %}
+
+{% for boundary in sceneBoundaries %}
+{% if not loop.last %}
+{% set nextBoundary = sceneBoundaries[loop.index] %}
+Scene {{ loop.index }} covers indexed entries {{ boundary.index }} through {{ nextBoundary.index - 1 }}. Summarize only that range.
+
+Write a one- or two-paragraph summary of the important story beats. Include one sentence about character or story development. Do not add events from another range.
+
+In <details>, put each durable plot, relationship, or character-history fact omitted from the summary on its own line. Keep each detail to 14 words or fewer. Omit temporary conditions, routine mechanics, and facts already represented by ordinary character records. Promises and plans between characters are always durable details, including specifics of what was promised, to whom, and when. You may exceed 14 words if the fact is a single, complex relationship or plot point that cannot be broken into smaller facts, but keep it as short as possible.
+
+{% if modSceneSummarizeContributions.length %}
+When writing this scene's durable details, also follow these enabled-mod instructions:
+{% for contribution in modSceneSummarizeContributions %}
+- {{ contribution.text }}
+{% endfor %}
+{% endif %}
+
+Include zero, one, or two self-contained notable character quotes. Quotes must come from this assigned range. Return XML only:
+<scene>
+  <index>{{ boundary.index }}</index>
+  <summary>one or two paragraphs</summary>
+  <details>
+    - durable detail
+  </details>
+  <quote><character>name</character><text>exact notable quote</text></quote>
+</scene>
+
+{% llmparse('scene_summary_entry', boundary.index, nextBoundary.index - 1) %}
+{% endif %}
+{% endfor %}
+
+{% llmresult('scene_summary_result') %}

@@ -101,11 +101,13 @@ Request (optional):
 
 Response:
 - 200: `{ success: true, message, waitForDrain, timeoutMs, cancellation, drain, playerInputRequests }`
-  - `cancellation`: `{ canceledCount, canceledPromptIds, trackedBefore, trackedAfter, activeAfterRequest }`
-  - `drain`: `null` when `waitForDrain` is `false`; otherwise `{ elapsedMs, activeCount, trackedCount }`
+  - `cancellation`: `{ canceledCount, canceledPromptIds, trackedBefore, trackedAfter, activeAttemptsBefore, activeAttemptsAfter, activeReservationsBefore, activeReservationsAfter, activeAfterRequest }`. `canceledCount` includes untracked non-stream/silent attempts and requests still in pre-transport model lifecycle work; only UI-tracked requests appear in `canceledPromptIds`. Active staged reservations are separately invalidated so the next checkpoint cannot start.
+  - `drain`: `null` when `waitForDrain` is `false`; otherwise `{ elapsedMs, activeCount, trackedCount, activeAttemptCount, activeReservationCount }`
   - `playerInputRequests`: `{ cancelledCount }`
 - 400: `{ success: false, error }` for invalid request fields or cancellation errors
 - 408: `{ success: false, error }` (drain wait timed out)
+
+Cancelled logical completions fail with terminal `PROMPT_CANCELLED` errors. They do not become blank model responses and cannot enter parser, TinyBrain checkpoint, or transport retry loops.
 
 ## POST /api/prompts/:promptId/retry
 Abort the current in-flight LLM prompt attempt and immediately retry the same prompt call.

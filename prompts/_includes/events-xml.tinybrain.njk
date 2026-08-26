@@ -24,12 +24,18 @@ Check the {{ tinyBrainEventSectionLabel }} prose for {{ stage.label }} events.
 
 {{ stage.instructions }}
 
+{# If this location is heuristially determined to be an exterior: #}
+{% if currentLocation.isExterior | default(false) %}
+IMPORTANT NOTE: This is an exterior location. Before counting any events, make sure the events aren't actually occurring *inside* the building, as that's not the current location and therefore not relevant to this checkpoint. If the prose doesn't make it clear whether the events are inside or outside, assume they are outside. As a rule, if the events are described as being seen through a window or door, do not count them here.
+{% endif %}
+{# end if #}
+
 Allowed top-level tags for this checkpoint: {{ stage.allowedTagList }}{% if stage.allowRegisteredXmlEvents %}, plus any registered mod-event tags documented in the schema above{% endif %}.
 {% if stage.requiredTags and stage.requiredTags | length %}Required top-level tags for this checkpoint (include them even when their value is false): {{ stage.requiredTags | join(', ') }}.
 {% endif %}
 
 Return one `<events>...</events>` block with every qualifying event for this checkpoint. If there are none, return exactly `<events><done/></events>`. Output XML only.
 
-{% llmparse('event_xml_stage', tinyBrainEventSectionKind, stage.id, stage.allowedTags, stage.requiredTags, stage.allowRegisteredXmlEvents) %}
+{% llmparse('event_xml_stage', tinyBrainEventSectionKind, stage.id, stage.allowedTags, stage.requiredTags, stage.allowRegisteredXmlEvents, eventCheckHiddenNpcNames) %}
 {% endfor %}
 {% llmresult('event_xml_result') %}

@@ -31,7 +31,13 @@ function addStoredScene(sceneSummaries, startIndex, endIndex, summary = 'Existin
     });
 }
 
-function loadSummarizer({ sceneSummaries, localSceneStarts, onRequest = null }) {
+function loadSummarizer({
+    sceneSummaries,
+    localSceneStarts,
+    onRequest = null,
+    useTinyBrain = false,
+    onTinyBrainRun = null
+}) {
     const source = fs.readFileSync(require.resolve('../server.js'), 'utf8');
     const start = source.indexOf('async function summarizeScenesForHistoryRange');
     const end = source.indexOf('Globals.summarizeScenesForHistoryRange = summarizeScenesForHistoryRange;', start);
@@ -40,6 +46,7 @@ function loadSummarizer({ sceneSummaries, localSceneStarts, onRequest = null }) 
     }
 
     const context = {
+        config: { ai: { tinybrain: useTinyBrain, retryAttempts: 1 } },
         SceneSummaries,
         Globals: {
             getSceneSummaries: () => sceneSummaries
@@ -62,6 +69,20 @@ function loadSummarizer({ sceneSummaries, localSceneStarts, onRequest = null }) 
             entry
         })),
         resolveSceneSummaryMaxEntries: () => 20,
+        isTinyBrainPromptEnabled: () => useTinyBrain,
+        configureTinyBrainPromptContext: templateContext => ({
+            family: 'scene_summarize',
+            programTemplateName: '_includes/scene-summarize.tinybrain.njk',
+            renderState: {},
+            templateContext
+        }),
+        runTinyBrainPromptProgram: async options => {
+            if (onTinyBrainRun) {
+                onTinyBrainRun(options);
+            }
+            return { aiResponse: '<scenes></scenes>' };
+        },
+        buildSceneSummaryResult: () => '<scenes></scenes>',
         formatSceneSummaryRangeError: () => 'Invalid scene summary range.',
         promptEnv: {
             render: () => '<template></template>'
@@ -115,6 +136,31 @@ test('scene summarization anchors a model scene starting at local entry two to t
     assert.equal(result.scenes[0].startIndex, 3);
     assert.equal(result.scenes[0].startEntryId, 'entry-3');
     assert.equal(sceneSummaries.getContiguousSummarizedEndIndex(), 6);
+});
+
+test('scene summarization uses the staged TinyBrain family when its root family flag is enabled', async () => {
+    const sceneSummaries = new SceneSummaries();
+    let tinyBrainRun = null;
+    const summarizeScenesForHistoryRange = loadSummarizer({
+        sceneSummaries,
+        localSceneStarts: [1, 5],
+        useTinyBrain: true,
+        onTinyBrainRun(options) {
+            tinyBrainRun = options;
+        }
+    });
+
+    const result = await summarizeScenesForHistoryRange({
+        chatHistory: createEntries(7),
+        startIndex: 1,
+        endIndex: 7
+    });
+
+    assert.ok(tinyBrainRun);
+    assert.equal(tinyBrainRun.tinyBrain.family, 'scene_summarize');
+    assert.equal(tinyBrainRun.runnerOptions.metadataLabel, 'scene_summarize');
+    assert.equal(typeof tinyBrainRun.runnerOptions.resultBuilders.scene_summary_result, 'function');
+    assert.deepEqual({ ...result.summarizedRange }, { start: 1, end: 4 });
 });
 
 test('scene summary redo uses following context and preserves the old scene on insufficient coverage', async () => {

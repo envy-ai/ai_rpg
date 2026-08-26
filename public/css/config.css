@@ -1,16 +1,90 @@
 .config-content {
+  --config-accent: #67e8f9;
+  --config-accent-strong: #22d3ee;
+  --config-surface: rgba(15, 23, 42, 0.78);
+  --config-surface-raised: rgba(30, 41, 59, 0.92);
+  --config-border: rgba(148, 163, 184, 0.24);
+  --config-border-active: rgba(103, 232, 249, 0.58);
+  --config-muted: rgba(226, 232, 240, 0.68);
   display: flex;
   flex-direction: column;
   gap: 20px;
 }
 
 .config-page-tabs {
-  margin-top: 0;
+  display: grid;
+  grid-template-columns: repeat(7, minmax(145px, 1fr));
+  gap: 8px;
+  padding: 8px;
+  border: 1px solid var(--config-border);
+  border-radius: 16px;
+  background: rgba(2, 6, 23, 0.66);
+  box-shadow: 0 18px 45px rgba(2, 6, 23, 0.22);
 }
 
-.config-tab-panels {
+.config-page-tab {
+  position: relative;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  min-height: 62px;
+  padding: 10px 12px;
+  border: 1px solid transparent;
+  border-radius: 11px;
+  background: transparent;
+  color: rgba(241, 245, 249, 0.82);
+  text-align: left;
+  cursor: pointer;
+  transition: background 160ms ease, border-color 160ms ease, color 160ms ease, transform 160ms ease;
+}
+.config-page-tab:hover {
+  border-color: var(--config-border);
+  background: rgba(51, 65, 85, 0.58);
+  color: #fff;
+  transform: translateY(-1px);
+}
+.config-page-tab:focus-visible {
+  outline: 2px solid var(--config-accent);
+  outline-offset: 2px;
+}
+.config-page-tab.active {
+  border-color: var(--config-border-active);
+  background: linear-gradient(145deg, rgba(8, 145, 178, 0.28), rgba(30, 41, 59, 0.88));
+  color: #ecfeff;
+  box-shadow: inset 0 -2px 0 var(--config-accent-strong), 0 8px 20px rgba(8, 145, 178, 0.13);
+}
+.config-page-tab strong,
+.config-page-tab small {
+  display: block;
+}
+.config-page-tab strong {
+  font-size: 0.9rem;
+  line-height: 1.2;
+}
+.config-page-tab small {
+  margin-top: 3px;
+  color: var(--config-muted);
+  font-size: 0.7rem;
+  font-weight: 500;
+  line-height: 1.25;
+}
+
+.config-page-tab__icon {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 9px;
+  background: rgba(255, 255, 255, 0.07);
+  font-size: 1rem;
+}
+
+.config-tab-panels,
+.config-tab-panels > form {
   display: flex;
   flex-direction: column;
+  min-width: 0;
 }
 
 .config-tab-panel {
@@ -21,6 +95,18 @@
   display: none !important;
 }
 
+[data-ai-backend-section][hidden],
+[data-codex-session-mode-section][hidden],
+[data-image-workflow-mode][hidden] {
+  display: none !important;
+}
+
+.form-actions--panel {
+  width: fit-content;
+  margin-right: 0;
+  margin-left: auto;
+}
+
 .game-config-override-textarea {
   min-height: 420px;
   resize: vertical;
@@ -28,13 +114,64 @@
   font-size: 14px;
   line-height: 1.45;
   white-space: pre;
-  -moz-tab-size: 2;
-    -o-tab-size: 2;
-       tab-size: 2;
+  tab-size: 2;
 }
 
+.game-config-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 14px;
+  margin-top: 18px;
+}
+
+.game-config-save-state {
+  color: var(--config-muted);
+  font-size: 0.85rem;
+}
+.game-config-save-state.is-dirty {
+  color: #fde68a;
+}
+.game-config-save-state.is-error {
+  color: #fecaca;
+}
+
+@media (max-width: 1200px) {
+  .config-page-tabs {
+    display: flex;
+    overflow-x: auto;
+    scrollbar-width: thin;
+  }
+  .config-page-tab {
+    flex: 0 0 190px;
+  }
+}
 @media (max-width: 768px) {
+  .config-content {
+    padding-right: 10px;
+    padding-left: 10px;
+  }
+  .config-page-tab {
+    flex-basis: 170px;
+    min-height: 56px;
+  }
+  .config-sections .config-section {
+    min-width: 0;
+    flex-basis: 100%;
+  }
   .game-config-override-textarea {
     min-height: 320px;
   }
-}/*# sourceMappingURL=config.css.map */
+  .game-config-actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .config-page-tab {
+    transition: none;
+  }
+}
+
+/*# sourceMappingURL=config.css.map */

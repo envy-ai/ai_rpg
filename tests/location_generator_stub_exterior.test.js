@@ -18,6 +18,7 @@ test('exterior stub prompt renders the base building name without crashing', () 
     assert.match(rendered, /THIS IS THE EXTERIOR OF A BUILDING, NOT THE INTERIOR!/);
     assert.match(rendered, /people who might be found outside of Community Kitchen\./);
     assert.match(rendered, /enemies who might be found outside of Community Kitchen\./);
+    assert.match(rendered, /<hasWeather>/);
     assert.doesNotMatch(rendered, /outside of community kitchen exterior/i);
 });
 

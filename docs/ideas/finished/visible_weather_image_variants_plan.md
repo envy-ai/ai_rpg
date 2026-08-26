@@ -63,7 +63,7 @@ Missing legacy saves hydrate with an empty variant cache. `Location` exposes `ge
 Variant jobs are ComfyUI-only:
 
 - Non-ComfyUI image engines skip requests with `reason: "unsupported-engine"`.
-- `imagegen.location_variant_settings.api_template` selects the workflow. The default template is `imagegen/flux2_klein_edit.json.njk`.
+- Historical note: the original implementation selected the workflow through `imagegen.location_variant_settings.api_template`. The current implementation uses the effective `imagegen.workflow.edit` profile and removes the retired location-variant block on configuration save.
 - `ComfyUIClient.uploadInputImage(...)` uploads the source image into the `airpg-location-variants` ComfyUI input subfolder for img2img workflows.
 - The default workflow detects source dimensions and routes the rendered edit prompt to a ComfyUI `Text to Console` node labeled `Final Prompt`.
 

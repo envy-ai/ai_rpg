@@ -71,7 +71,11 @@ function resolveExactRegion({ regionId, regionName, regions }) {
     return matches[0] || null;
 }
 
-function resolveExistingLocation(destination, { locations, regions }) {
+function resolveExistingLocation(destination, {
+    locations,
+    regions,
+    unresolvedOnAmbiguousName = false
+}) {
     if (destination.locationId) {
         const location = locations.find(candidate => candidate?.id === destination.locationId) || null;
         if (!location) {
@@ -82,8 +86,13 @@ function resolveExistingLocation(destination, { locations, regions }) {
                 `Player-action destination location id "${destination.locationId}" is named "${location?.name || 'unknown'}", not "${destination.location}".`
             );
         }
+        const locationRegionId = optionalTrimmedString(location?.regionId);
+        const hasBackingRegion = locationRegionId && regions.some(candidate => candidate?.id === locationRegionId);
+        if (location.isStub === true && !hasBackingRegion) {
+            return { location: null, region: null };
+        }
         const region = resolveExactRegion({
-            regionId: destination.regionId || optionalTrimmedString(location?.regionId),
+            regionId: destination.regionId || locationRegionId,
             regionName: destination.region,
             regions
         });
@@ -114,6 +123,9 @@ function resolveExistingLocation(destination, { locations, regions }) {
         ));
     }
     if (matches.length > 1) {
+        if (unresolvedOnAmbiguousName) {
+            return { location: null, region: null };
+        }
         const labels = matches.map(candidate => `${candidate?.name || 'unnamed'} (${candidate?.id || 'no id'})`);
         throw new Error(
             `Player-action destination location "${destination.location}" is ambiguous: ${labels.join(', ')}.`
@@ -123,10 +135,24 @@ function resolveExistingLocation(destination, { locations, regions }) {
         return { location: null, region: null };
     }
     const location = matches[0];
+    const locationRegionId = optionalTrimmedString(location?.regionId);
+    const hasBackingRegion = locationRegionId && regions.some(candidate => candidate?.id === locationRegionId);
+    if (location.isStub === true && !hasBackingRegion) {
+        return { location: null, region: null };
+    }
     const region = requestedRegion
-        || regions.find(candidate => candidate?.id === location?.regionId)
+        || regions.find(candidate => candidate?.id === locationRegionId)
         || null;
     return { location, region };
+}
+
+function resolveShortDescription(location) {
+    const candidates = [
+        location?.shortDescription,
+        location?.stubMetadata?.stubShortDescription,
+        location?.stubMetadata?.shortDescription
+    ];
+    return optionalTrimmedString(candidates.find(candidate => optionalTrimmedString(candidate)));
 }
 
 function resolveDescription(location) {
@@ -168,6 +194,63 @@ function resolvePresentNpcNames(location, players) {
     return names.sort((left, right) => left.localeCompare(right));
 }
 
+function resolveExitSummaries(location, locations, regions) {
+    const rawExits = location?.exits;
+    let entries = [];
+    if (rawExits === null || rawExits === undefined) {
+        return Object.freeze([]);
+    }
+    if (rawExits instanceof Map) {
+        entries = Array.from(rawExits.entries());
+    } else if (typeof rawExits === 'object' && !Array.isArray(rawExits)) {
+        entries = Object.entries(rawExits);
+    } else {
+        throw new TypeError(`Player-action destination "${location?.name || location?.id || 'unknown'}" exits must be a Map or object.`);
+    }
+
+    const summaries = entries.map(([rawDirection, exit]) => {
+        const direction = optionalTrimmedString(rawDirection);
+        if (!direction) {
+            throw new Error(`Player-action destination "${location?.name || location?.id || 'unknown'}" has an exit without a direction.`);
+        }
+        if (!exit || typeof exit !== 'object' || Array.isArray(exit)) {
+            throw new Error(`Player-action destination "${location?.name || location?.id || 'unknown'}" has an invalid ${direction} exit.`);
+        }
+        const destinationId = optionalTrimmedString(exit.destination);
+        if (!destinationId) {
+            throw new Error(`Player-action destination "${location?.name || location?.id || 'unknown'}" has a ${direction} exit without a destination.`);
+        }
+        const destinationLocation = locations.find(candidate => candidate?.id === destinationId) || null;
+        const destinationName = optionalTrimmedString(destinationLocation?.name)
+            || optionalTrimmedString(exit.name)
+            || destinationId;
+        const destinationRegionId = optionalTrimmedString(destinationLocation?.regionId)
+            || optionalTrimmedString(exit.destinationRegion);
+        const destinationRegion = destinationRegionId
+            ? regions.find(candidate => candidate?.id === destinationRegionId) || null
+            : null;
+        let travelTimeMinutes = null;
+        if (exit.travelTimeMinutes !== null && exit.travelTimeMinutes !== undefined) {
+            travelTimeMinutes = Number(exit.travelTimeMinutes);
+            if (!Number.isInteger(travelTimeMinutes) || travelTimeMinutes < 0) {
+                throw new Error(
+                    `Player-action destination "${location?.name || location?.id || 'unknown'}" has an invalid ${direction} exit travel time.`
+                );
+            }
+        }
+        return Object.freeze({
+            direction,
+            destinationId,
+            destinationName,
+            destinationRegionName: optionalTrimmedString(destinationRegion?.name),
+            description: optionalTrimmedString(exit.description),
+            travelTimeMinutes
+        });
+    });
+
+    return Object.freeze(summaries.sort((left, right) => left.direction.localeCompare(right.direction)));
+}
+
 function createTravelDuration(minutes) {
     if (minutes === null || minutes === undefined) {
         return null;
@@ -191,11 +274,13 @@ function unresolvedContext(destination, travelTimeMinutes) {
         locationName: null,
         regionId: null,
         regionName: null,
+        shortDescription: null,
         description: null,
         visitedBefore: false,
         lastVisitedTime: null,
         minutesSinceLastVisitAtPrompt: null,
         presentNpcNames: Object.freeze([]),
+        exitSummaries: Object.freeze([]),
         travelTimeMinutes,
         travelDuration: createTravelDuration(travelTimeMinutes)
     });
@@ -207,7 +292,8 @@ function resolvePlayerActionDestinationContext(destinationInput, {
     locations = Location.getAll(),
     regions = Region.getAll(),
     players = Player.getAll(),
-    findTravelTimeMinutes = Location.findShortestTravelTimeMinutes.bind(Location)
+    findTravelTimeMinutes = Location.findShortestTravelTimeMinutes.bind(Location),
+    unresolvedOnAmbiguousName = false
 } = {}) {
     const destination = normalizeDestination(destinationInput);
     const resolvedLocations = requireArray(locations, 'Player-action destination locations');
@@ -220,7 +306,8 @@ function resolvePlayerActionDestinationContext(destinationInput, {
     const explicitTravelTimeMinutes = destination.explicitTravelTimeMinutes;
     const { location, region } = resolveExistingLocation(destination, {
         locations: resolvedLocations,
-        regions: resolvedRegions
+        regions: resolvedRegions,
+        unresolvedOnAmbiguousName
     });
     if (!location) {
         return unresolvedContext(destination, explicitTravelTimeMinutes);
@@ -260,6 +347,7 @@ function resolvePlayerActionDestinationContext(destinationInput, {
         ? effectiveCurrentWorldMinutes - lastVisitedTime
         : null;
     const presentNpcNames = Object.freeze(resolvePresentNpcNames(location, resolvedPlayers));
+    const exitSummaries = resolveExitSummaries(location, resolvedLocations, resolvedRegions);
 
     return Object.freeze({
         resolved: true,
@@ -269,13 +357,22 @@ function resolvePlayerActionDestinationContext(destinationInput, {
         locationName: optionalTrimmedString(location.name),
         regionId: optionalTrimmedString(region?.id) || optionalTrimmedString(location.regionId),
         regionName: optionalTrimmedString(region?.name),
+        shortDescription: resolveShortDescription(location),
         description: resolveDescription(location),
         visitedBefore,
         lastVisitedTime,
         minutesSinceLastVisitAtPrompt,
         presentNpcNames,
+        exitSummaries,
         travelTimeMinutes,
         travelDuration: createTravelDuration(travelTimeMinutes)
+    });
+}
+
+function resolvePlayerActionDestinationPreviewContext(destinationInput, options = {}) {
+    return resolvePlayerActionDestinationContext(destinationInput, {
+        ...options,
+        unresolvedOnAmbiguousName: true
     });
 }
 
@@ -304,5 +401,6 @@ function formatPlayerActionDestinationAbsence(destinationContext, travelDuration
 module.exports = {
     createTravelDuration,
     formatPlayerActionDestinationAbsence,
-    resolvePlayerActionDestinationContext
+    resolvePlayerActionDestinationContext,
+    resolvePlayerActionDestinationPreviewContext
 };

@@ -90,3 +90,13 @@ test('entity image context menus can regenerate from the saved prompt', () => {
     assertIncludes(viewSource, 'payload.useExistingPrompt = true;');
     assertIncludes(apiSource, 'generatorOptions.finalImagePrompt = existingPrompt;');
 });
+
+test('location image context menus can force a fresh seasonal display variant', () => {
+    assertIncludes(viewSource, 'id="locationImageRegenerateSeasonalButton"');
+    assertIncludes(viewSource, 'id="mapLocationMenuRegenerateSeasonalButton"');
+    assertIncludes(viewSource, 'async function regenerateSeasonalLocationImage(options = {})');
+    assertIncludes(viewSource, 'force: true');
+    assertIncludes(viewSource, 'applyLocationVariantImageIfCurrent({');
+    assertIncludes(imageApiDocs, 'Regenerate Seasonal Image');
+    assertIncludes(chatDocs, 'Regenerate Seasonal Image');
+});

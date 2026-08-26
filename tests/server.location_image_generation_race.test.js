@@ -52,6 +52,8 @@ function loadGenerateLocationImageHarness() {
         JOB_STATUS: { QUEUED: 'queued' },
         hasExistingImage: () => false,
         clearLocationImageVariants: () => {},
+        findRegionByLocationId: () => null,
+        resolveEffectiveLocationHasWeather: () => 'no',
         renderLocationImagePrompt: location => ({
             systemPrompt: `system:${location.id}`,
             generationPrompt: `prompt:${location.id}`,

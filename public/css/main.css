@@ -7520,6 +7520,42 @@ body.dark .thing-toggle-hint {
   gap: 8px;
 }
 
+.terminal-output-button {
+  position: absolute;
+  top: 10px;
+  right: 94px;
+  z-index: 300;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(186, 230, 253, 0.46);
+  border-radius: 8px;
+  background: rgba(8, 47, 73, 0.82);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.32);
+  cursor: pointer;
+  transition: background 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease, transform 0.18s ease;
+}
+.terminal-output-button:hover, .terminal-output-button:focus-visible, .terminal-output-button[aria-expanded=true] {
+  background: rgba(3, 105, 161, 0.9);
+  border-color: rgba(255, 255, 255, 0.5);
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.4), 0 0 0 1px rgba(125, 211, 252, 0.18);
+  outline: none;
+}
+.terminal-output-button:active {
+  transform: translateY(1px);
+}
+
+.terminal-output-icon {
+  width: 21px;
+  height: 21px;
+  display: block;
+  filter: brightness(0) invert(1);
+  pointer-events: none;
+}
+
 .abort-turn-button {
   position: absolute;
   top: 10px;
@@ -7840,6 +7876,78 @@ body.dark .thing-toggle-hint {
 }
 .form-group .toggle-password:hover {
   color: #ffffff;
+}
+
+.config-sections--single-column {
+  flex-direction: column;
+}
+.config-sections--single-column > * {
+  flex: 1 1 auto;
+  width: 100%;
+  min-width: 0;
+}
+
+.image-workflow-editor {
+  width: 100%;
+  min-width: 0;
+}
+
+.image-workflow-subtabs {
+  display: inline-flex;
+  gap: 5px;
+  margin-bottom: 18px;
+  padding: 5px;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.22);
+}
+
+.image-workflow-subtab {
+  padding: 9px 18px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.7);
+  font-family: "Roboto", "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 0.3s ease;
+}
+.image-workflow-subtab:hover, .image-workflow-subtab:focus-visible {
+  color: #ffffff;
+}
+.image-workflow-subtab.is-active {
+  border-color: rgba(74, 144, 226, 0.75);
+  background: rgba(74, 144, 226, 0.26);
+  color: #ffffff;
+}
+
+.image-workflow-controls.is-muted {
+  opacity: 0.45;
+  filter: grayscale(1);
+}
+
+[data-flux-kv-cache-setting][hidden] {
+  display: none !important;
+}
+
+.searchable-select__choices {
+  display: grid;
+  gap: 3px;
+  max-height: 180px;
+  margin-top: 5px;
+  overflow: auto;
+}
+.searchable-select__choices label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+}
+
+.searchable-select__search {
+  box-sizing: border-box;
+  width: 100%;
 }
 
 .prompt-progress-dock {
@@ -8988,6 +9096,63 @@ body.dark .thing-toggle-hint {
   cursor: grabbing;
 }
 
+.terminal-output-viewer {
+  width: min(920px, 70vw);
+  height: min(620px, 72vh);
+  min-width: 480px;
+  min-height: 280px;
+}
+
+.terminal-output-viewer__source-label {
+  min-height: 30px;
+  padding: 0 5px 0 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(191, 219, 254, 0.32);
+  background: rgba(15, 23, 42, 0.58);
+  color: #dbeafe;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 0.72rem;
+  font-weight: 600;
+}
+
+.terminal-output-viewer__source-select {
+  height: 24px;
+  min-width: 104px;
+  padding: 0 24px 0 8px;
+  border: 0;
+  border-radius: 999px;
+  background: rgba(8, 47, 73, 0.92);
+  color: #f8fafc;
+  font: inherit;
+  cursor: pointer;
+}
+.terminal-output-viewer__source-select:focus-visible {
+  outline: 1px solid #7dd3fc;
+  outline-offset: 1px;
+}
+.terminal-output-viewer__source-select option {
+  background: #0f172a;
+  color: #f8fafc;
+}
+
+.terminal-output-viewer__section {
+  background: rgba(2, 6, 12, 0.94);
+  border-color: rgba(125, 211, 252, 0.24);
+}
+
+.terminal-output-viewer__output {
+  color: #d1fae5;
+  white-space: pre;
+  word-break: normal;
+  tab-size: 4;
+}
+
+.terminal-output-viewer.is-dragging .terminal-output-viewer__header {
+  cursor: grabbing;
+}
+
 @media (max-width: 1100px) {
   .factions-panel {
     flex-direction: column;
@@ -9031,6 +9196,9 @@ body.dark .thing-toggle-hint {
     top: auto;
     bottom: 10px;
     height: min(280px, 42vh);
+  }
+  .terminal-output-viewer {
+    height: min(460px, 68vh);
   }
 }
 .form-actions {

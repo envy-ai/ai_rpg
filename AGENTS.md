@@ -32,9 +32,11 @@
 - Make use of existing documentation to bring yourself up to date about code
 - When finished with a coding task, update any relevant documentation. If no relevant documentation exists, create some. Name the doc file after the name of the class (Location.js -> Location.md).
 - When updating documentation, also update docs/README.md to reflect any changes or new items.
-- The game server runs outside of the sandbox. When restarting it, don't load a save.
+- The game server (and associated processes) run outside of the sandbox. When restarting it, don't load a save.
 
 ## Tinybrain prompts
 
 - Anything handled in standard prompts must be (broadly) handled in TinyBrain prompts as well, although things can be handled differently.
 - Tinybrain prompt responses must be checked for syntactical correctness by their parsers so that syntax errors can be caught and fixed without the entire prompt failing
+- Never require a tinybrain prompt to tell you exactly something that you already know. If you know it, you don't need to ask again.
+- If tool calls can be eliminated by asking it questions and providing the information, do that.

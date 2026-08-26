@@ -368,27 +368,32 @@ class ComfyUIClient {
   }
 
   /**
-   * Ask ComfyUI to unload cached models and release memory.
-   * This is intentionally strict so callers can report cleanup failures before
-   * another GPU-backed model is loaded.
+   * Full-cleanup fallback for releaseVram(). Keeping this private prevents a
+   * caller from bypassing Cache Monitor and discarding its RAM-backed cache.
    * @returns {Promise<Object>} ComfyUI response metadata
    */
-  async unloadModels() {
+  async #unloadModels({ signal = null } = {}) {
+    throwIfAborted(signal, 'ComfyUI model cleanup cancelled.');
     try {
       const response = await axios.post(`${this.baseURL}/free`, {
         unload_models: true,
         free_memory: true
       }, {
         timeout: this.timeout,
+        signal,
         headers: {
           'Content-Type': 'application/json'
         }
       });
+      throwIfAborted(signal, 'ComfyUI model cleanup cancelled.');
       return {
         success: true,
         data: response.data
       };
     } catch (error) {
+      if (signal?.aborted || isAbortError(error)) {
+        throw createAbortError(signal?.reason || error?.message || 'ComfyUI model cleanup cancelled.');
+      }
       throw new Error(`Failed to ask ComfyUI to unload models: ${error?.message || String(error)}`);
     }
   }
@@ -399,15 +404,18 @@ class ComfyUIClient {
    * ComfyUI's full /free cleanup and report that fallback to the caller.
    * @returns {Promise<Object>} Cache Monitor or fallback response metadata
    */
-  async releaseVram() {
+  async releaseVram({ signal = null } = {}) {
+    throwIfAborted(signal, 'ComfyUI VRAM release cancelled.');
     let cacheMonitorError = null;
     try {
       const response = await axios.post(`${this.baseURL}/comfyui-cache-monitor/release_vram`, {}, {
         timeout: this.timeout,
+        signal,
         headers: {
           'Content-Type': 'application/json'
         }
       });
+      throwIfAborted(signal, 'ComfyUI VRAM release cancelled.');
       if (response.data?.released !== true) {
         throw new Error('ComfyUI Cache Monitor did not confirm that VRAM was released.');
       }
@@ -417,6 +425,9 @@ class ComfyUIClient {
         data: response.data
       };
     } catch (error) {
+      if (signal?.aborted || isAbortError(error)) {
+        throw createAbortError(signal?.reason || error?.message || 'ComfyUI VRAM release cancelled.');
+      }
       cacheMonitorError = new Error(
         `Failed to ask ComfyUI Cache Monitor to release VRAM: ${error?.message || String(error)}`,
         { cause: error }
@@ -425,8 +436,13 @@ class ComfyUIClient {
 
     let fallback;
     try {
-      fallback = await this.unloadModels();
+      fallback = await this.#unloadModels({ signal });
     } catch (fallbackError) {
+      if (signal?.aborted || isAbortError(fallbackError)) {
+        throw createAbortError(
+          signal?.reason || fallbackError?.message || 'ComfyUI VRAM release cancelled.'
+        );
+      }
       throw new AggregateError(
         [cacheMonitorError, fallbackError],
         'ComfyUI Cache Monitor VRAM release and the /free fallback both failed.'
@@ -617,6 +633,25 @@ class ComfyUIClient {
       }, ms);
       signal?.addEventListener('abort', handleAbort, { once: true });
     });
+  }
+
+  /**
+   * Return ComfyUI's live node metadata for configuration widgets.
+   * This intentionally does not infer filenames: unavailable ComfyUI is an
+   * explicit error so callers can retain only their already-saved values.
+   */
+  async getObjectInfo() {
+    try {
+      const response = await axios.get(`${this.baseURL}/object_info`, {
+        timeout: this.timeout
+      });
+      if (!response.data || typeof response.data !== 'object' || Array.isArray(response.data)) {
+        throw new Error('ComfyUI returned an invalid object-info response.');
+      }
+      return response.data;
+    } catch (error) {
+      throw new Error(`Failed to fetch ComfyUI object metadata: ${error.message}`);
+    }
   }
 
   /**

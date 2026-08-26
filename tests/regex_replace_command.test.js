@@ -2,18 +2,32 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 
 const Globals = require('../Globals.js');
+const Location = require('../Location.js');
+const Player = require('../Player.js');
+const Thing = require('../Thing.js');
+const { applyRegexReplace } = require('../regex_replace_runtime.js');
 const RegexReplaceCommand = require('../slashcommands/regex_replace.js');
 
-async function runRegexReplace(args, chatHistory) {
+async function runRegexReplace(args, chatHistory, {
+    players = [],
+    locations = [],
+    things = []
+} = {}) {
     const replies = [];
     const saves = [];
     const emits = [];
     const previousRealtimeHub = Globals.realtimeHub;
+    const previousPlayerGetAll = Player.getAll;
+    const previousLocationGetAll = Location.getAll;
+    const previousThingGetAll = Thing.getAll;
     Globals.realtimeHub = {
         emit: (...emitArgs) => {
             emits.push(emitArgs);
         }
     };
+    Player.getAll = () => players;
+    Location.getAll = () => locations;
+    Thing.getAll = () => things;
 
     try {
         await RegexReplaceCommand.execute({
@@ -27,6 +41,9 @@ async function runRegexReplace(args, chatHistory) {
         }, args);
     } finally {
         Globals.realtimeHub = previousRealtimeHub;
+        Player.getAll = previousPlayerGetAll;
+        Location.getAll = previousLocationGetAll;
+        Thing.getAll = previousThingGetAll;
     }
 
     return { replies, saves, emits };
@@ -121,4 +138,118 @@ test('regex_replace validation accepts null replacement but still requires the a
     assert.deepEqual(RegexReplaceCommand.validateArgs({
         pattern: 'x'
     }), ['Missing required argument: replacement']);
+});
+
+test('regex_replace updates memories and allowlisted NPC, location, and item text fields', async () => {
+        const region = {
+            id: 'regex-region',
+            name: 'Red March',
+            description: 'Region fields are outside the regex replacement allowlist.'
+        };
+        const location = {
+            id: 'regex-location',
+            name: 'Red Hall',
+            description: 'A red hall.',
+            shortDescription: 'Red stone.'
+        };
+        const npc = {
+            id: 'regex-npc',
+            name: 'Red Keeper',
+            isNPC: true,
+            description: 'A red-robed keeper.',
+            shortDescription: 'Red-robed keeper.',
+            personalityNotes: 'Prefers red banners.',
+            personalityType: '',
+            personalityTraits: '',
+            aiNotes: '',
+            resistances: '',
+            vulnerabilities: '',
+            importantMemories: ['Saw the red comet.']
+        };
+        const item = {
+            id: 'regex-item',
+            name: 'Red Key',
+            description: 'A red iron key.',
+            shortDescription: 'Red key.'
+        };
+        const chatHistory = [{ id: 'entry-world', content: 'The red door opens.' }];
+
+        const result = await runRegexReplace({
+            pattern: 'red',
+            replacement: 'blue',
+            flags: 'gi'
+        }, chatHistory, {
+            players: [npc],
+            locations: [location],
+            things: [item]
+        });
+
+        assert.equal(chatHistory[0].content, 'The blue door opens.');
+        assert.deepEqual(npc.importantMemories, ['Saw the blue comet.']);
+        assert.equal(npc.description, 'A blue-robed keeper.');
+        assert.equal(npc.shortDescription, 'blue-robed keeper.');
+        assert.equal(npc.personalityNotes, 'Prefers blue banners.');
+        assert.equal(location.description, 'A blue hall.');
+        assert.equal(location.shortDescription, 'blue stone.');
+        assert.equal(item.description, 'A blue iron key.');
+        assert.equal(item.shortDescription, 'blue key.');
+        assert.equal(npc.name, 'Red Keeper');
+        assert.equal(location.name, 'Red Hall');
+        assert.equal(item.name, 'Red Key');
+        assert.equal(region.name, 'Red March');
+        assert.equal(result.saves.length, 1);
+        assert.equal(result.emits[0][2].modifiedMemories, 1);
+        assert.equal(result.emits[0][2].modifiedNpcFields, 3);
+        assert.equal(result.emits[0][2].modifiedLocationFields, 2);
+        assert.equal(result.emits[0][2].modifiedItemFields, 2);
+        assert.equal(result.emits[0][2].totalReplacements, 9);
+});
+
+test('regex_replace memories scope leaves story and NPC descriptive fields unchanged', async () => {
+        const npc = {
+            id: 'regex-memory-npc',
+            name: 'Keeper',
+            isNPC: true,
+            description: 'A red keeper.',
+            importantMemories: ['Saw the red comet.']
+        };
+        const chatHistory = [{ id: 'entry-memory-scope', content: 'The red door opens.' }];
+
+        const result = await runRegexReplace({
+            pattern: 'red',
+            replacement: 'blue',
+            flags: 'g',
+            scope: 'memories'
+        }, chatHistory, { players: [npc] });
+
+        assert.equal(chatHistory[0].content, 'The red door opens.');
+        assert.equal(npc.description, 'A red keeper.');
+        assert.deepEqual(npc.importantMemories, ['Saw the blue comet.']);
+        assert.equal(result.emits[0][2].modifiedMemories, 1);
+        assert.equal(result.emits[0][2].modifiedEntries, 0);
+});
+
+test('regex replacement validates the full batch before applying any mutation', () => {
+    const chatHistory = [{ id: 'atomic-entry', content: 'red' }];
+    const item = {
+        id: 'atomic-item',
+        description: 'red',
+        shortDescription: 'red marker'
+    };
+
+    assert.throws(
+        () => applyRegexReplace({
+            pattern: 'red',
+            replacement: '',
+            flags: 'g',
+            chatHistory,
+            players: [],
+            locations: [],
+            things: [item]
+        }),
+        /would erase the required description for item atomic-item/
+    );
+    assert.equal(chatHistory[0].content, 'red');
+    assert.equal(item.description, 'red');
+    assert.equal(item.shortDescription, 'red marker');
 });

@@ -344,7 +344,7 @@ The current game supports visible weather/lighting variants for location images 
 Current behavior:
 
 - `POST /api/images/location-variant/request` resolves conditions from world time, location weather exposure, and regional weather.
-- Variants require `imagegen.engine: "comfyui"` and `imagegen.location_variant_settings.api_template`.
+- Variants require `imagegen.engine: "comfyui"` and use the effective `imagegen.workflow.edit` profile.
 - The server renders a deterministic edit prompt locally from `templates/location-weather-variant-image-prompt.njk`; no LLM prompt-writing call is used.
 - `Location.imageVariants` stores display-only cached variants keyed by source image plus normalized lighting/weather.
 - Base image regeneration, uploads, visual location edits, vehicle visual edits, and weather-exposure edits clear obsolete variants.

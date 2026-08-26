@@ -59,7 +59,11 @@ function parseYamlOverrideObject(rawYaml, label, { allowBlank = true } = {}) {
     return parsed;
 }
 
-function loadMergedConfig(baseDir, configOverridePath = null, { allowMissing = false, runtimeOverrideYaml = null } = {}) {
+function loadMergedConfig(baseDir, configOverridePath = null, {
+    allowMissing = false,
+    runtimeOverrideYaml = null,
+    sessionOverridePath = null
+} = {}) {
     if (typeof baseDir !== 'string' || !baseDir.trim()) {
         throw new Error('loadMergedConfig requires a non-empty baseDir.');
     }
@@ -84,6 +88,11 @@ function loadMergedConfig(baseDir, configOverridePath = null, { allowMissing = f
     const runtimeOverride = parseYamlOverrideObject(runtimeOverrideYaml, 'Game configuration override YAML');
     if (runtimeOverride) {
         mergedConfig = mergeDeep(mergedConfig, runtimeOverride);
+    }
+
+    if (sessionOverridePath) {
+        const sessionOverride = readYamlObject(sessionOverridePath, 'Session config override file');
+        mergedConfig = mergeDeep(mergedConfig, sessionOverride);
     }
 
     return mergedConfig;

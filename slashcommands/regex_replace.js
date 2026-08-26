@@ -1,5 +1,12 @@
 const SlashCommandBase = require('../SlashCommandBase.js');
 const Globals = require('../Globals.js');
+const Location = require('../Location.js');
+const Player = require('../Player.js');
+const Thing = require('../Thing.js');
+const {
+  SPECIAL_REGEX_REPLACE_SCOPES,
+  applyRegexReplace
+} = require('../regex_replace_runtime.js');
 
 class RegexReplaceCommand extends SlashCommandBase {
   static get name() {
@@ -7,7 +14,7 @@ class RegexReplaceCommand extends SlashCommandBase {
   }
 
   static get description() {
-    return 'Replace strings throughout the story log using regular expressions.';
+    return 'Replace text across the story log, memories, NPCs, locations, and items using regular expressions.';
   }
 
   static get args() {
@@ -72,32 +79,11 @@ class RegexReplaceCommand extends SlashCommandBase {
       return;
     }
 
-    // Validate flags - only allow valid RegExp flags
-    const validFlags = ['g', 'i', 'm', 's', 'u', 'y'];
-    const flagChars = flags.split('');
-    const invalidFlags = flagChars.filter(flag => !validFlags.includes(flag));
-    if (invalidFlags.length > 0) {
-      await interaction.reply({
-        content: `Invalid regex flags: ${invalidFlags.join(', ')}. Valid flags are: ${validFlags.join(', ')}`,
-        ephemeral: true
-      });
-      return;
-    }
-
-    let regex;
-    try {
-      regex = new RegExp(pattern, flags);
-    } catch (error) {
-      await interaction.reply({
-        content: `Invalid regex pattern: ${error.message}`,
-        ephemeral: true
-      });
-      return;
-    }
-
     const chatHistory = interaction?.chatHistory;
-
-    if (!Array.isArray(chatHistory) || chatHistory.length === 0) {
+    const scopeTargetsOnlyStory = Boolean(scope)
+      && scope !== 'story'
+      && !SPECIAL_REGEX_REPLACE_SCOPES.has(scope);
+    if (scopeTargetsOnlyStory && (!Array.isArray(chatHistory) || chatHistory.length === 0)) {
       await interaction.reply({
         content: 'No chat history available to modify.',
         ephemeral: true
@@ -105,33 +91,27 @@ class RegexReplaceCommand extends SlashCommandBase {
       return;
     }
 
-    let totalReplacements = 0;
-    let modifiedEntries = 0;
-    const modifiedEntryIds = [];
-
-    // Apply regex replacement to each chat entry
-    for (const entry of chatHistory) {
-      if (scope && entry?.type !== scope) {
-        continue;
-      }
-      if (entry && typeof entry.content === 'string') {
-        const originalContent = entry.content;
-        const newContent = originalContent.replace(regex, replacement);
-
-        if (newContent !== originalContent) {
-          entry.content = newContent;
-          entry.lastEditedAt = new Date().toISOString();
-          if (entry.id) {
-            modifiedEntryIds.push(entry.id);
-          }
-          modifiedEntries++;
-          const entryReplacements = (originalContent.match(regex) || []).length;
-          totalReplacements += entryReplacements;
-        }
-      }
+    let result;
+    try {
+      result = applyRegexReplace({
+        pattern,
+        replacement,
+        flags,
+        scope,
+        chatHistory: Array.isArray(chatHistory) ? chatHistory : [],
+        players: Player.getAll(),
+        locations: Location.getAll(),
+        things: Thing.getAll()
+      });
+    } catch (error) {
+      await interaction.reply({
+        content: error.message,
+        ephemeral: true
+      });
+      return;
     }
 
-    if (modifiedEntries === 0) {
+    if (result.modifiedTextValues === 0) {
       await interaction.reply({
         content: 'No matches found for the given pattern.',
         ephemeral: false
@@ -144,7 +124,10 @@ class RegexReplaceCommand extends SlashCommandBase {
       const performGameSave = interaction?.performGameSave;
       if (typeof performGameSave === 'function') {
         await performGameSave();
-        console.log(`Game saved after regex_replace: ${totalReplacements} replacements in ${modifiedEntries} messages`);
+        console.log(
+          `Game saved after regex_replace: ${result.totalReplacements} replacements across `
+          + `${result.modifiedTextValues} text values`
+        );
       } else {
         console.warn('performGameSave function not available for persisting regex_replace changes');
       }
@@ -157,17 +140,41 @@ class RegexReplaceCommand extends SlashCommandBase {
       const realtimeHub = Globals?.realtimeHub;
       if (realtimeHub && typeof realtimeHub.emit === 'function') {
         realtimeHub.emit(null, 'chat_history_updated', {
-          modifiedEntryIds,
-          totalReplacements,
-          modifiedEntries
+          modifiedEntryIds: result.modifiedChatEntryIds,
+          totalReplacements: result.totalReplacements,
+          modifiedEntries: result.modifiedChatEntries,
+          ...result
         });
       }
     } catch (error) {
       console.warn('Failed to emit chat history refresh after /regex_replace:', error.message);
     }
 
+    const changedOnlyChatHistory = result.modifiedChatEntries > 0
+      && result.modifiedMemories === 0
+      && result.modifiedNpcFields === 0
+      && result.modifiedLocationFields === 0
+      && result.modifiedItemFields === 0;
+    if (changedOnlyChatHistory) {
+      await interaction.reply({
+        content: `Replaced ${result.totalReplacements} occurrence(s) in ${result.modifiedChatEntries} message(s). Changes have been saved.`,
+        ephemeral: false
+      });
+      return;
+    }
+
+    const targetCounts = [
+      [result.modifiedChatEntries, 'message'],
+      [result.modifiedMemories, 'memory'],
+      [result.modifiedNpcFields, 'NPC field'],
+      [result.modifiedLocationFields, 'location field'],
+      [result.modifiedItemFields, 'item field']
+    ]
+      .filter(([count]) => count > 0)
+      .map(([count, label]) => `${count} ${label}${count === 1 ? '' : 's'}`);
+
     await interaction.reply({
-      content: `Replaced ${totalReplacements} occurrence(s) in ${modifiedEntries} message(s). Changes have been saved.`,
+      content: `Replaced ${result.totalReplacements} occurrence(s) in ${targetCounts.join(', ')}. Changes have been saved.`,
       ephemeral: false
     });
   }

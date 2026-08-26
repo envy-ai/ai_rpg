@@ -1,6 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { EventEmitter } = require('node:events');
+const { PassThrough } = require('node:stream');
 const LocalLlamaServerProcess = require('../LocalLlamaServerProcess.js');
 
 function createFakeChild(pid = 4321) {
@@ -8,6 +9,8 @@ function createFakeChild(pid = 4321) {
     child.pid = pid;
     child.exitCode = null;
     child.signalCode = null;
+    child.stdout = new PassThrough();
+    child.stderr = new PassThrough();
     return child;
 }
 
@@ -18,7 +21,7 @@ test('managed local llama server clears ComfyUI before spawning and retains the 
         startupScriptPath: '/tmp/start-llama.sh',
         beforeStart: async options => events.push(['comfy-unload', options]),
         spawnProcess: (scriptPath, args, options) => {
-            events.push(['spawn-script', scriptPath, args, options.cwd, options.detached]);
+            events.push(['spawn-script', scriptPath, args, options.cwd, options.detached, options.stdio]);
             setImmediate(() => child.emit('spawn'));
             return child;
         },
@@ -35,9 +38,49 @@ test('managed local llama server clears ComfyUI before spawning and retains the 
     assert.equal(processManager.getPid(), 4321);
     assert.deepEqual(events, [
         ['comfy-unload', { preserveComfySystemCache: true }],
-        ['spawn-script', '/tmp/start-llama.sh', [], '/tmp', true],
+        ['spawn-script', '/tmp/start-llama.sh', [], '/tmp', true, ['inherit', 'pipe', 'pipe']],
         ['ready', 4321]
     ]);
+});
+
+test('managed local llama server mirrors and retains a bounded terminal-output snapshot', async () => {
+    const child = createFakeChild(4322);
+    const mirroredStdout = [];
+    const mirroredStderr = [];
+    const processManager = new LocalLlamaServerProcess({
+        startupScriptPath: '/tmp/start-llama.sh',
+        beforeStart: async () => {},
+        spawnProcess: () => {
+            setImmediate(() => child.emit('spawn'));
+            return child;
+        },
+        waitUntilReady: async () => {},
+        writeStdout: chunk => mirroredStdout.push(chunk.toString()),
+        writeStderr: chunk => mirroredStderr.push(chunk.toString()),
+        signalProcessGroup: () => {},
+        logger: { log: () => {}, error: () => {} }
+    });
+
+    await processManager.start();
+    child.stdout.write('\u001b[32mloaded\u001b[0m\n');
+    child.stderr.write('warning\n');
+
+    assert.deepEqual(mirroredStdout, ['\u001b[32mloaded\u001b[0m\n']);
+    assert.deepEqual(mirroredStderr, ['warning\n']);
+    assert.deepEqual(processManager.getOutputSnapshot(), {
+        output: 'loaded\nwarning\n',
+        cursor: 15,
+        startCursor: 0,
+        reset: true,
+        truncated: false
+    });
+    assert.deepEqual(processManager.getOutputSnapshot(7), {
+        output: 'warning\n',
+        cursor: 15,
+        startCursor: 0,
+        reset: false,
+        truncated: false
+    });
 });
 
 test('managed local llama server terminates the saved process group PID', async () => {

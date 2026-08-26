@@ -1,11 +1,11 @@
 const { test, expect } = require('@playwright/test');
 
-test('AI model unload during image generation defaults off and submits both values', async ({ page }) => {
+test('AI model unload during image generation submits both values', async ({ page }) => {
     await page.goto('/config');
+    await page.locator('[data-config-tab-target="ai"]').click();
 
     const checkbox = page.locator('#ai-unload-during-image-generation');
     await expect(checkbox).toBeVisible();
-    await expect(checkbox).not.toBeChecked();
 
     const submitted = [];
     await page.route('**/config', async route => {
@@ -21,12 +21,12 @@ test('AI model unload during image generation defaults off and submits both valu
     });
 
     await checkbox.check();
-    await page.locator('#configForm button[type="submit"]').click();
+    await page.locator('#config-tab-ai button[type="submit"]').click();
     await expect.poll(() => submitted.length).toBe(1);
     expect(submitted[0].get('ai.unload_during_image_generation::boolean')).toBe('true');
 
     await checkbox.uncheck();
-    await page.locator('#configForm button[type="submit"]').click();
+    await page.locator('#config-tab-ai button[type="submit"]').click();
     await expect.poll(() => submitted.length).toBe(2);
     expect(submitted[1].get('ai.unload_during_image_generation::boolean')).toBe('false');
 });

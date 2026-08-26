@@ -2,6 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('fs');
 const path = require('path');
+const vm = require('node:vm');
 
 const Globals = require('../Globals.js');
 const Location = require('../Location.js');
@@ -212,4 +213,60 @@ test('region-map stub menu offers player teleport via the story-tool path', () =
     assert.match(menu, /window\.currentPlayerData/);
     assert.match(menu, /window\.teleportNpcToLocation\(playerRecord, stubId, \{ storyToolTeleport: true \}\)/);
     assert.match(menu, /menu\.appendChild\(teleportBtn\);/);
+});
+
+test('shared hydrated-location map menu offers and executes player teleport via the story-tool path', async () => {
+    const viewSource = fs.readFileSync(path.join(rootDir, 'views', 'index.njk'), 'utf8');
+    const helperStart = viewSource.indexOf('async function teleportPlayerToSelectedMapLocation()');
+    assert.notEqual(helperStart, -1, 'Unable to locate hydrated-location teleport helper');
+    const helperEnd = viewSource.indexOf('async function expandSelectedMapStub()', helperStart);
+    assert.notEqual(helperEnd, -1, 'Unable to locate end of hydrated-location teleport helper');
+    const helper = viewSource.slice(helperStart, helperEnd);
+
+    assert.match(viewSource, /id="mapLocationMenuTeleportPlayerButton"[^>]*>Teleport Player Here</);
+    assert.match(viewSource, /const mapLocationMenuTeleportPlayerButton = document\.getElementById\('mapLocationMenuTeleportPlayerButton'\);/);
+    assert.match(helper, /window\.currentPlayerData/);
+    assert.match(helper, /playerRecord\.locationId \|\| playerRecord\.currentLocation/);
+    assert.match(helper, /teleportNpcToLocation\(playerRecord, targetLocation\.id, \{ storyToolTeleport: true \}\)/);
+    assert.match(helper, /targetLocation\.isStub \? ' It will be expanded first\.'/);
+    assert.match(viewSource, /mapLocationMenuTeleportPlayerButton\.addEventListener\('click'/);
+
+    const teleportCalls = [];
+    let regionMapRefreshes = 0;
+    let contextClears = 0;
+    let overlayShows = 0;
+    let overlayHides = 0;
+    const targetLocation = { id: 'loc_hydrated', name: 'Hydrated Place', isStub: false };
+    const playerRecord = { id: 'player_1', name: 'Player', locationId: 'loc_origin', isNPC: false };
+    const context = vm.createContext({
+        getLocationMenuContext: () => targetLocation,
+        clearLocationMenuContext: () => { contextClears += 1; },
+        showLocationOverlay: () => { overlayShows += 1; },
+        hideLocationOverlay: () => { overlayHides += 1; },
+        teleportNpcToLocation: async (...args) => { teleportCalls.push(args); },
+        alert: message => { throw new Error(`Unexpected alert: ${message}`); },
+        console: { warn: () => {} },
+        document: {
+            querySelector: selector => ({
+                classList: { contains: () => selector === '[data-tab="map"]' }
+            })
+        },
+        window: {
+            currentPlayerData: playerRecord,
+            confirm: message => message === 'Teleport the player to "Hydrated Place"?',
+            loadRegionMap: async () => { regionMapRefreshes += 1; },
+            loadWorldMap: async () => { throw new Error('Inactive World Map should not refresh.'); }
+        }
+    });
+    vm.runInContext(`${helper}\nthis.teleportPlayerToSelectedMapLocation = teleportPlayerToSelectedMapLocation;`, context);
+    await context.teleportPlayerToSelectedMapLocation();
+
+    assert.equal(teleportCalls.length, 1);
+    assert.equal(teleportCalls[0][0], playerRecord);
+    assert.equal(teleportCalls[0][1], targetLocation.id);
+    assert.equal(teleportCalls[0][2]?.storyToolTeleport, true);
+    assert.equal(regionMapRefreshes, 1);
+    assert.equal(contextClears, 1);
+    assert.equal(overlayShows, 1);
+    assert.equal(overlayHides, 1);
 });

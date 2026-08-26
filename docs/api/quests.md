@@ -97,7 +97,7 @@ Quest checks:
 - Return `null` without building a prompt when there are no active, unpaused quests; these calls do not advance the interval counter.
 - Increment the persisted quest-check counter once per eligible call and run only on every `quest_checks.interval`th eligible call. The runtime fallback is `1`, the shipped default config sets it to `5`, and configured values must be integers greater than or equal to `1`.
 - A true XML event-check `anyQuestObjectivesCompleted` signal bypasses the interval and runs one quest check in the same turn when the normal check did not already run. When either path successfully ran the prompt, the signal resets the quest-check counter to zero. `quest_checks.enabled`, active-quest filtering, and duplicate suppression still apply.
-- Render the `quest-check` prompt and call `LLMClient.chatCompletion` with metadata label `quest_check`.
+- Render the `quest-check` prompt and call `LLMClient.chatCompletion` with metadata label `quest_check`. Quest-check validation requires one complete `<quests>...</quests>` root, so a response that stops after a nested `</quest>` is rejected and retried before objective parsing.
 - Parse completed objectives from quest-status XML using one-based quest and objective indices.
 
 Objective completion:

@@ -1,9 +1,12 @@
 <!DOCTYPE html>
 <html lang="en">
 {% set pageTitleValue = title | default("System Configuration") %}
+{% from "_includes/image-workflow-editor.njk" import workflowTab %}
 <head>
     {% include "_includes/head-common.njk" %}
     <link rel="stylesheet" href="/css/config.css">
+    <script defer src="/js/widgets/searchable-select.js"></script>
+    <script defer src="/js/image-workflow-editor.js"></script>
 </head>
 <body>
     <div class="container">
@@ -34,31 +37,90 @@
                 {% endif %}
             </div>
 
-            <div class="config-page-tabs tab-bar" role="tablist" aria-label="Configuration tabs">
+            <div class="config-page-tabs" role="tablist" aria-label="Configuration sections">
                 <button type="button"
-                        class="tab-button active"
+                        id="config-tab-button-server"
+                        class="config-page-tab active"
                         data-config-tab-target="server"
                         role="tab"
                         aria-selected="true"
                         aria-controls="config-tab-server">
-                    Server Configuration
+                    <span class="config-page-tab__icon" aria-hidden="true">🖥️</span>
+                    <span><strong>Server</strong><small>Host and network</small></span>
                 </button>
                 <button type="button"
-                        class="tab-button"
+                        id="config-tab-button-ai"
+                        class="config-page-tab"
+                        data-config-tab-target="ai"
+                        role="tab"
+                        aria-selected="false"
+                        aria-controls="config-tab-ai">
+                    <span class="config-page-tab__icon" aria-hidden="true">🤖</span>
+                    <span><strong>AI</strong><small>Models and providers</small></span>
+                </button>
+                <button type="button"
+                        id="config-tab-button-story"
+                        class="config-page-tab"
+                        data-config-tab-target="story"
+                        role="tab"
+                        aria-selected="false"
+                        aria-controls="config-tab-story">
+                    <span class="config-page-tab__icon" aria-hidden="true">📚</span>
+                    <span><strong>Story Engine</strong><small>Memory, events, and tone</small></span>
+                </button>
+                <button type="button"
+                        id="config-tab-button-gameplay"
+                        class="config-page-tab"
+                        data-config-tab-target="gameplay"
+                        role="tab"
+                        aria-selected="false"
+                        aria-controls="config-tab-gameplay">
+                    <span class="config-page-tab__icon" aria-hidden="true">⚙️</span>
+                    <span><strong>Gameplay</strong><small>World rules and generation</small></span>
+                </button>
+                <button type="button"
+                        id="config-tab-button-images"
+                        class="config-page-tab"
+                        data-config-tab-target="images"
+                        role="tab"
+                        aria-selected="false"
+                        aria-controls="config-tab-images">
+                    <span class="config-page-tab__icon" aria-hidden="true">🎨</span>
+                    <span><strong>Image Generation</strong><small>Models, workflows, and rendering</small></span>
+                </button>
+                <button type="button"
+                        id="config-tab-button-image-prompts"
+                        class="config-page-tab"
+                        data-config-tab-target="image-prompts"
+                        role="tab"
+                        aria-selected="false"
+                        aria-controls="config-tab-image-prompts">
+                    <span class="config-page-tab__icon" aria-hidden="true">🖌️</span>
+                    <span><strong>Image Prompts</strong><small>Global prompt-writing guidance</small></span>
+                </button>
+                <button type="button"
+                        id="config-tab-button-game"
+                        class="config-page-tab"
                         data-config-tab-target="game"
                         role="tab"
                         aria-selected="false"
                         aria-controls="config-tab-game">
-                    Game Configuration
+                    <span class="config-page-tab__icon" aria-hidden="true">🎮</span>
+                    <span><strong>Current Game</strong><small>Save-specific overrides</small></span>
                 </button>
             </div>
 
+            <div id="config-save-target" class="status-message info" role="note">
+                Saving this page modifies <code>{{ configSaveTarget }}</code>.
+            </div>
+
             <div class="config-tab-panels">
+            <form id="configForm" method="POST">
             <section id="config-tab-server"
                      class="config-tab-panel"
                      data-config-tab-panel="server"
+                     aria-labelledby="config-tab-button-server"
                      role="tabpanel">
-            <form id="configForm" method="POST">
                 <div class="config-sections">
                 <!-- Server Configuration -->
                 <div class="config-section">
@@ -77,10 +139,20 @@
                         </div>
                     </div>
                 </div>
+                <div class="form-actions form-actions--panel">
+                    <button type="submit" class="btn btn-primary">💾 Save Server Settings</button>
+                </div>
+            </section>
+
+            <section id="config-tab-ai"
+                     class="config-tab-panel"
+                     data-config-tab-panel="ai"
+                     aria-labelledby="config-tab-button-ai"
+                     role="tabpanel"
+                     hidden>
+                <div class="config-sections" data-ai-configuration>
                 
                 <!-- AI Configuration -->
-                <div class="config-section">
-                    <h2>🤖 AI Configuration</h2>
                     {% set aiBackend = config.ai.backend or 'openai_compatible' %}
                     {% set codexBridgeConfig = config.ai.codex_bridge or {} %}
                     {% set clineBridgeConfig = config.ai.cline_bridge or {} %}
@@ -107,7 +179,7 @@
                     {% set kimiThinkingValue = kimiBridgeConfig.thinking or '' %}
                     {% set kimiPromptPreambleValue = kimiBridgeConfig.prompt_preamble or '' %}
                     {% set aiSyspromptAppendValue = config.ai.sysprompt_append or '' %}
-                    <div class="form-grid">
+                    <div class="form-grid" data-ai-settings-grid>
                         <div class="form-group full-width">
                             <label for="ai-backend">Backend:</label>
                             <select id="ai-backend" name="ai.backend::string" required>
@@ -251,15 +323,24 @@
                             <select id="ai-model"
                                     name="ai.model::string"
                                     {% if aiBackend != 'kimi_cli_bridge' %}required{% endif %}>
+                                {% if modelOptionsAreAdvertised and modelOptionsError %}
+                                    <option value="" selected disabled>Local llama.cpp models unavailable</option>
+                                {% endif %}
                                 {% if aiBackend == 'kimi_cli_bridge' and not config.ai.model %}
                                     <option value="" selected>Kimi CLI default (shared model unused)</option>
                                 {% endif %}
                                 {% for option in modelOptions %}
                                     <option value="{{ option }}" {% if option == config.ai.model %}selected{% endif %}>{{ option }}</option>
                                 {% endfor %}
+                                {% if not modelOptionsAreAdvertised %}
                                 <option value="__add_new__">Add New...</option>
+                                {% endif %}
                             </select>
-                            <span class="help-text">Select the default AI model. Kimi uses the separate optional alias above or its saved CLI default.</span>
+                            {% if modelOptionsAreAdvertised %}
+                                <span class="help-text">Models advertised by the running local llama.cpp server.{% if modelOptionsError %} Query failed: {{ modelOptionsError }}{% endif %}</span>
+                            {% else %}
+                                <span class="help-text">Select the default AI model. Kimi uses the separate optional alias above or its saved CLI default.</span>
+                            {% endif %}
                         </div>
 
                         <div class="form-group full-width">
@@ -477,7 +558,7 @@
                         <div class="form-group full-width">
                             <label for="model-options">Model Swap Options (JSON Array):</label>
                             <textarea id="model-options" name="model_swap_options::string-array" rows="4">{{ modelOptions | dump }}</textarea>
-                            <span class="help-text">Edit as JSON array of model names, e.g. ["model-a","model-b"]</span>
+                            <span class="help-text">{% if modelOptionsAreAdvertised %}Current model IDs advertised by local llama.cpp.{% else %}Edit as JSON array of model names, e.g. ["model-a","model-b"]{% endif %}</span>
                         </div>
 
                         <div class="form-group full-width">
@@ -597,6 +678,19 @@
                         </div>
                     </div>
                 </div>
+                <div class="form-actions form-actions--panel">
+                    <button type="submit" class="btn btn-primary">💾 Save AI Settings</button>
+                    <button type="button" class="btn btn-secondary" onclick="testConnection()">🔗 Test Connection</button>
+                </div>
+            </section>
+
+            <section id="config-tab-story"
+                     class="config-tab-panel"
+                     data-config-tab-panel="story"
+                     aria-labelledby="config-tab-button-story"
+                     role="tabpanel"
+                     hidden>
+                <div class="config-sections">
 
                 <!-- Memory & Autosaves -->
                 <div class="config-section">
@@ -670,200 +764,6 @@
                     </div>
                 </div>
 
-                <!-- Image Generation -->
-                <div class="config-section">
-                    <h2>🎨 Image Generation</h2>
-                    <div class="form-grid">
-                        <div class="form-group">
-                            <label for="imagegen-enabled">Enabled:</label>
-                            <div class="checkbox-wrapper">
-                                <input type="hidden" name="imagegen.enabled::boolean" value="false">
-                                <input type="checkbox" id="imagegen-enabled" name="imagegen.enabled::boolean" value="true" {% if config.imagegen.enabled %}checked{% endif %}>
-                            </div>
-                            <span class="help-text">Toggle image generation</span>
-                        </div>
-
-                        <div class="form-group">
-                            <label for="imagegen-engine">Engine:</label>
-                            <select id="imagegen-engine" name="imagegen.engine::string">
-                                {% set imagegenEngine = config.imagegen.engine or 'comfyui' %}
-                                <option value="comfyui" {% if imagegenEngine == 'comfyui' %}selected{% endif %}>comfyui</option>
-                                <option value="nanogpt" {% if imagegenEngine == 'nanogpt' %}selected{% endif %}>nanogpt</option>
-                                <option value="openai" {% if imagegenEngine == 'openai' %}selected{% endif %}>openai</option>
-                            </select>
-                            <span class="help-text">Image generation engine</span>
-                        </div>
-
-                        <div class="form-group full-width">
-                            <label for="imagegen-api-template">API Template:</label>
-                            <input type="text" id="imagegen-api-template" name="imagegen.api_template::string" value="{{ config.imagegen.api_template }}">
-                            <span class="help-text">Template file used to build image requests</span>
-                        </div>
-
-                        <div class="form-group full-width">
-                            <label for="imagegen-api-key">API Key:</label>
-                            <input type="password" id="imagegen-api-key" name="imagegen.apiKey::string" value="{{ config.imagegen.apiKey }}">
-                            <span class="help-text">Image generation API key</span>
-                            <button type="button" class="toggle-password" onclick="togglePassword('imagegen-api-key')">👁️</button>
-                        </div>
-
-                        <div class="form-group full-width">
-                            <label for="imagegen-endpoint">Endpoint:</label>
-                            <input type="url" id="imagegen-endpoint" name="imagegen.endpoint::string" value="{{ config.imagegen.endpoint }}">
-                            <span class="help-text">Custom image generation endpoint URL</span>
-                        </div>
-
-                        <div class="form-group full-width">
-                            <label for="imagegen-model">Model:</label>
-                            <input type="text" id="imagegen-model" name="imagegen.model::string" value="{{ config.imagegen.model }}">
-                            <span class="help-text">Model name for the image engine</span>
-                        </div>
-
-                        <div class="form-group">
-                            <label for="imagegen-max-concurrent-jobs">Max Concurrent Jobs:</label>
-                            <input type="number" id="imagegen-max-concurrent-jobs" name="imagegen.maxConcurrentJobs::int" value="{{ config.imagegen.maxConcurrentJobs }}" min="1" step="1">
-                            <span class="help-text">Parallel image jobs</span>
-                        </div>
-
-                        <div class="form-group">
-                            <label for="imagegen-batch-prompts">Batch Render Prompts:</label>
-                            <div class="checkbox-wrapper">
-                                <input type="hidden" name="imagegen.batch_prompts::boolean" value="false">
-                                <input type="checkbox" id="imagegen-batch-prompts" name="imagegen.batch_prompts::boolean" value="true" {% if config.imagegen.batch_prompts %}checked{% endif %}>
-                            </div>
-                            <span class="help-text">Submit same-resolution ComfyUI renders as a list</span>
-                        </div>
-
-                        <div class="form-group">
-                            <label for="imagegen-prompt-batching-enabled">Prompt Batching:</label>
-                            <div class="checkbox-wrapper">
-                                <input type="hidden" name="imagegen.prompt_batching.enabled::boolean" value="false">
-                                <input type="checkbox" id="imagegen-prompt-batching-enabled" name="imagegen.prompt_batching.enabled::boolean" value="true" {% if config.imagegen.prompt_batching.enabled %}checked{% endif %}>
-                            </div>
-                            <span class="help-text">Batch LLM image prompt generation requests</span>
-                        </div>
-
-                        <div class="form-group">
-                            <label for="imagegen-prompt-batching-delay">Prompt Batch Delay (ms):</label>
-                            <input type="number" id="imagegen-prompt-batching-delay" name="imagegen.prompt_batching.delay_ms::int" value="{{ config.imagegen.prompt_batching.delay_ms }}" min="0" step="100">
-                            <span class="help-text">Wait after the most recent prompt request</span>
-                        </div>
-
-                        <div class="form-group">
-                            <label for="imagegen-prompt-batching-max-items">Max Prompts per Batch:</label>
-                            <input type="number" id="imagegen-prompt-batching-max-items" name="imagegen.prompt_batching.max_items::int" value="{{ config.imagegen.prompt_batching.max_items }}" min="1" step="1">
-                            <span class="help-text">Maximum compatible prompt requests per LLM call</span>
-                        </div>
-
-                        <div class="form-group full-width">
-                            <label for="imagegen-default-negative-prompt">Default Negative Prompt:</label>
-                            <textarea id="imagegen-default-negative-prompt" name="imagegen.default_negative_prompt::string" rows="3">{{ config.imagegen.default_negative_prompt }}</textarea>
-                            <span class="help-text">Negative prompt appended to image requests</span>
-                        </div>
-
-                        <div class="form-group">
-                            <label for="imagegen-megapixels">Megapixels:</label>
-                            <input type="number" id="imagegen-megapixels" name="imagegen.megapixels::number" value="{{ config.imagegen.megapixels }}" min="0" step="0.1">
-                            <span class="help-text">Scale used by templates that reference megapixels</span>
-                        </div>
-
-                        <div class="form-group">
-                            <label for="imagegen-server-host">ComfyUI Host:</label>
-                            <input type="text" id="imagegen-server-host" name="imagegen.server.host::string" value="{{ config.imagegen.server.host }}">
-                            <span class="help-text">ComfyUI server host</span>
-                        </div>
-
-                        <div class="form-group">
-                            <label for="imagegen-server-port">ComfyUI Port:</label>
-                            <input type="number" id="imagegen-server-port" name="imagegen.server.port::int" value="{{ config.imagegen.server.port }}" min="1" max="65535" step="1">
-                            <span class="help-text">ComfyUI server port</span>
-                        </div>
-
-                        <div class="form-group">
-                            <label for="imagegen-default-width">Default Width:</label>
-                            <input type="number" id="imagegen-default-width" name="imagegen.default_settings.image.width::int" value="{{ config.imagegen.default_settings.image.width }}" min="1" step="1">
-                            <span class="help-text">Default image width</span>
-                        </div>
-
-                        <div class="form-group">
-                            <label for="imagegen-default-height">Default Height:</label>
-                            <input type="number" id="imagegen-default-height" name="imagegen.default_settings.image.height::int" value="{{ config.imagegen.default_settings.image.height }}" min="1" step="1">
-                            <span class="help-text">Default image height</span>
-                        </div>
-
-                        <div class="form-group">
-                            <label for="imagegen-default-seed">Default Seed:</label>
-                            <input type="number" id="imagegen-default-seed" name="imagegen.default_settings.image.seed::int" value="{{ config.imagegen.default_settings.image.seed }}" min="0" step="1">
-                            <span class="help-text">Seed for deterministic image generation</span>
-                        </div>
-
-                        <div class="form-group">
-                            <label for="imagegen-default-steps">Default Steps:</label>
-                            <input type="number" id="imagegen-default-steps" name="imagegen.default_settings.sampling.steps::int" value="{{ config.imagegen.default_settings.sampling.steps }}" min="1" step="1">
-                            <span class="help-text">Sampling steps for default images</span>
-                        </div>
-
-                        <div class="form-group">
-                            <label for="imagegen-location-width">Location Width:</label>
-                            <input type="number" id="imagegen-location-width" name="imagegen.location_settings.image.width::int" value="{{ config.imagegen.location_settings.image.width }}" min="1" step="1">
-                            <span class="help-text">Location image width</span>
-                        </div>
-
-                        <div class="form-group">
-                            <label for="imagegen-location-height">Location Height:</label>
-                            <input type="number" id="imagegen-location-height" name="imagegen.location_settings.image.height::int" value="{{ config.imagegen.location_settings.image.height }}" min="1" step="1">
-                            <span class="help-text">Location image height</span>
-                        </div>
-
-                        <div class="form-group full-width">
-                            <label for="imagegen-template-character">Character Prompt Template:</label>
-                            <input type="text" id="imagegen-template-character" name="imagegen.prompt_generator_templates.character::string" value="{{ config.imagegen.prompt_generator_templates.character }}">
-                            <span class="help-text">Template for character images</span>
-                        </div>
-
-                        <div class="form-group full-width">
-                            <label for="imagegen-template-item">Item Prompt Template:</label>
-                            <input type="text" id="imagegen-template-item" name="imagegen.prompt_generator_templates.item::string" value="{{ config.imagegen.prompt_generator_templates.item }}">
-                            <span class="help-text">Template for item images</span>
-                        </div>
-
-                        <div class="form-group full-width">
-                            <label for="imagegen-template-location">Location Prompt Template:</label>
-                            <input type="text" id="imagegen-template-location" name="imagegen.prompt_generator_templates.location::string" value="{{ config.imagegen.prompt_generator_templates.location }}">
-                            <span class="help-text">Template for location images</span>
-                        </div>
-
-                        <div class="form-group full-width">
-                            <label for="imagegen-template-scenery">Scenery Prompt Template:</label>
-                            <input type="text" id="imagegen-template-scenery" name="imagegen.prompt_generator_templates.scenery::string" value="{{ config.imagegen.prompt_generator_templates.scenery }}">
-                            <span class="help-text">Template for scenery images</span>
-                        </div>
-
-                        <div class="form-group full-width">
-                            <label for="imagegen-instructions-character">Character Prompt Instructions:</label>
-                            <textarea id="imagegen-instructions-character" name="imagegen.image_prompt_instructions.character::string" rows="3">{{ config.imagegen.image_prompt_instructions.character }}</textarea>
-                            <span class="help-text">Additional character image prompt instructions</span>
-                        </div>
-
-                        <div class="form-group full-width">
-                            <label for="imagegen-instructions-item">Item Prompt Instructions:</label>
-                            <textarea id="imagegen-instructions-item" name="imagegen.image_prompt_instructions.item::string" rows="3">{{ config.imagegen.image_prompt_instructions.item }}</textarea>
-                            <span class="help-text">Additional item image prompt instructions</span>
-                        </div>
-
-                        <div class="form-group full-width">
-                            <label for="imagegen-instructions-location">Location Prompt Instructions:</label>
-                            <textarea id="imagegen-instructions-location" name="imagegen.image_prompt_instructions.location::string" rows="3">{{ config.imagegen.image_prompt_instructions.location }}</textarea>
-                            <span class="help-text">Additional location image prompt instructions</span>
-                        </div>
-
-                        <div class="form-group full-width">
-                            <label for="imagegen-instructions-scenery">Scenery Prompt Instructions:</label>
-                            <textarea id="imagegen-instructions-scenery" name="imagegen.image_prompt_instructions.scenery::string" rows="3">{{ config.imagegen.image_prompt_instructions.scenery }}</textarea>
-                            <span class="help-text">Additional scenery image prompt instructions</span>
-                        </div>
-                    </div>
-                </div>
 
                 <!-- Random Events -->
                 <div class="config-section">
@@ -987,6 +887,20 @@
                         </div>
                     </div>
                 </div>
+
+                </div>
+                <div class="form-actions form-actions--panel">
+                    <button type="submit" class="btn btn-primary">💾 Save Story Settings</button>
+                </div>
+            </section>
+
+            <section id="config-tab-gameplay"
+                     class="config-tab-panel"
+                     data-config-tab-panel="gameplay"
+                     aria-labelledby="config-tab-button-gameplay"
+                     role="tabpanel"
+                     hidden>
+                <div class="config-sections">
 
                 <!-- World Generation -->
                 <div class="config-section">
@@ -1303,17 +1217,90 @@
                 </div>
 
                 <!-- Action Buttons -->
-                <div class="form-actions">
-                    <button type="submit" class="btn btn-primary">💾 Save Configuration</button>
-                    <button type="button" class="btn btn-secondary" onclick="testConnection()">🔗 Test Connection</button>
+                <div class="form-actions form-actions--panel">
+                    <button type="submit" class="btn btn-primary">💾 Save Gameplay Settings</button>
                 </div>
                 
-            </form>
             </section>
+
+            <section id="config-tab-images"
+                     class="config-tab-panel"
+                     data-config-tab-panel="images"
+                     aria-labelledby="config-tab-button-images"
+                     role="tabpanel"
+                     hidden>
+                <div class="image-workflow-editor config-sections config-sections--single-column">
+                        <div class="config-section">
+                            <h2>🎨 Image Workflows</h2>
+                            <p class="help-text">Choose the model family and rendering parameters used for new images and edits.</p>
+                            <div class="image-workflow-subtabs" role="tablist" aria-label="Image workflow mode">
+                                <button type="button" class="image-workflow-subtab is-active" data-image-workflow-subtab="generation" role="tab" aria-selected="true">Generate</button>
+                                <button type="button" class="image-workflow-subtab" data-image-workflow-subtab="edit" role="tab" aria-selected="false">Edit</button>
+                            </div>
+                        </div>
+                        {{ workflowTab('generation', 'imagegen.workflow.generation::json', '', false, config.imagegen.workflow.generation or {}, false) }}
+                        {{ workflowTab('edit', 'imagegen.workflow.edit::json', '', false, config.imagegen.workflow.edit or {}, false) }}
+                </div>
+                <div class="form-actions form-actions--panel">
+                    <button type="submit" class="btn btn-primary">💾 Save Image Settings</button>
+                </div>
+            </section>
+
+            <section id="config-tab-image-prompts"
+                     class="config-tab-panel"
+                     data-config-tab-panel="image-prompts"
+                     aria-labelledby="config-tab-button-image-prompts"
+                     role="tabpanel"
+                     hidden>
+                <div class="config-sections config-sections--single-column">
+                    <div class="config-section">
+                        <h2>🖌️ Global Image Prompt Instructions</h2>
+                        <p class="help-text">These instructions guide the LLM that writes final image prompts. A nonblank World Profile → Image Prompt Generation value overrides its matching global field.</p>
+                        <div class="form-grid">
+                            <div class="form-group full-width">
+                                <label for="image-prompt-instructions-character">Character Prompt Instructions</label>
+                                <textarea id="image-prompt-instructions-character"
+                                          name="imagegen.image_prompt_instructions.character::string"
+                                          rows="6"
+                                          placeholder="Global instructions for character image prompts...">{{ config.imagegen.image_prompt_instructions.character or '' }}</textarea>
+                            </div>
+
+                            <div class="form-group full-width">
+                                <label for="image-prompt-instructions-location">Location Prompt Instructions</label>
+                                <textarea id="image-prompt-instructions-location"
+                                          name="imagegen.image_prompt_instructions.location::string"
+                                          rows="6"
+                                          placeholder="Global instructions for location image prompts...">{{ config.imagegen.image_prompt_instructions.location or '' }}</textarea>
+                            </div>
+
+                            <div class="form-group full-width">
+                                <label for="image-prompt-instructions-item">Item Prompt Instructions</label>
+                                <textarea id="image-prompt-instructions-item"
+                                          name="imagegen.image_prompt_instructions.item::string"
+                                          rows="6"
+                                          placeholder="Global instructions for item image prompts...">{{ config.imagegen.image_prompt_instructions.item or '' }}</textarea>
+                            </div>
+
+                            <div class="form-group full-width">
+                                <label for="image-prompt-instructions-scenery">Scenery Prompt Instructions</label>
+                                <textarea id="image-prompt-instructions-scenery"
+                                          name="imagegen.image_prompt_instructions.scenery::string"
+                                          rows="6"
+                                          placeholder="Global instructions for scenery image prompts...">{{ config.imagegen.image_prompt_instructions.scenery or '' }}</textarea>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="form-actions form-actions--panel">
+                    <button type="submit" class="btn btn-primary">💾 Save Image Prompt Instructions</button>
+                </div>
+            </section>
+            </form>
 
             <section id="config-tab-game"
                      class="config-tab-panel"
                      data-config-tab-panel="game"
+                     aria-labelledby="config-tab-button-game"
                      role="tabpanel"
                      hidden>
                 <div class="config-section">
@@ -1326,18 +1313,29 @@
                                       spellcheck="false"
                                       {% if not gameLoaded %}disabled{% endif %}>{{ gameConfigOverrideYaml }}</textarea>
                             {% if gameLoaded %}
-                                <span class="help-text">This YAML is merged on top of `config.default.yaml`, `config.yaml`, and any CLI config override for the currently loaded game. Changing it reloads the merged runtime config immediately and the raw YAML is saved with the game.</span>
+                                <span class="help-text">This YAML is merged on top of `config.default.yaml`, `config.yaml`, and any CLI config override for the currently loaded game. Save explicitly to reload the merged runtime config and persist the raw YAML with the game.</span>
                             {% else %}
                                 <span class="help-text">Load or start a game to edit the per-game YAML override. It stays disabled while no game is loaded.</span>
                             {% endif %}
                             <span class="help-text">This uses the same reload path as `/reload_config`. Mod enable/disable changes are validated immediately, but still require a restart to fully apply.</span>
                         </div>
                     </div>
+                    <div class="game-config-actions">
+                        <span id="game-config-save-state" class="game-config-save-state" aria-live="polite"></span>
+                        <button type="button"
+                                id="save-game-config-override"
+                                class="btn btn-primary"
+                                {% if not gameLoaded %}disabled{% endif %}>
+                            💾 Save Game Configuration
+                        </button>
+                    </div>
                 </div>
             </section>
             </div>
         </div>
     </div>
+
+    {% include "_includes/image-workflow-preset-modal.njk" %}
 
     <div id="addModelModal" class="modal config-add-model-modal" role="dialog" aria-modal="true" aria-hidden="true" data-ctrl-enter-submit="#addModelConfirm" hidden>
         <div class="modal__dialog">

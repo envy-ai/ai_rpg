@@ -3,7 +3,8 @@ const assert = require('node:assert/strict');
 
 const {
     formatPlayerActionDestinationAbsence,
-    resolvePlayerActionDestinationContext
+    resolvePlayerActionDestinationContext,
+    resolvePlayerActionDestinationPreviewContext
 } = require('../PlayerActionDestinationContext.js');
 
 function fixtures() {
@@ -24,7 +25,15 @@ function fixtures() {
             id: 'square',
             name: 'Town Square',
             regionId: 'old-town',
+            shortDescription: 'The old town gathering place.',
             description: 'A broad square surrounds an old fountain.',
+            exits: new Map([
+                ['west', {
+                    destination: 'gate',
+                    description: 'A cobbled lane passes beneath the market arch.',
+                    travelTimeMinutes: 15
+                }]
+            ]),
             visited: true,
             lastVisitedTime: 120
         },
@@ -70,10 +79,19 @@ test('player-action destination context resolves canonical revisit facts and exa
     assert.equal(context.locationId, 'square');
     assert.equal(context.locationName, 'Town Square');
     assert.equal(context.regionName, 'Old Town');
+    assert.equal(context.shortDescription, 'The old town gathering place.');
     assert.equal(context.description, 'A broad square surrounds an old fountain.');
     assert.equal(context.visitedBefore, true);
     assert.equal(context.minutesSinceLastVisitAtPrompt, 60);
     assert.deepEqual(context.presentNpcNames, ['Ada', 'Merek']);
+    assert.deepEqual(context.exitSummaries, [{
+        direction: 'west',
+        destinationId: 'gate',
+        destinationName: 'Market Gate',
+        destinationRegionName: 'Old Town',
+        description: 'A cobbled lane passes beneath the market arch.',
+        travelTimeMinutes: 15
+    }]);
     assert.deepEqual(context.travelDuration, { text: '15 minutes', minutes: 15 });
     assert.equal(formatPlayerActionDestinationAbsence(context), '1 hour, 15 minutes');
 });
@@ -110,7 +128,9 @@ test('player-action destination context is unresolved for a missing destination 
         players
     });
     assert.equal(unresolved.resolved, false);
+    assert.equal(unresolved.shortDescription, null);
     assert.equal(unresolved.description, null);
+    assert.deepEqual(unresolved.exitSummaries, []);
 
     assert.throws(
         () => resolvePlayerActionDestinationContext({ location: 'Town Square', region: null }, {
@@ -121,6 +141,79 @@ test('player-action destination context is unresolved for a missing destination 
         }),
         /ambiguous/i
     );
+});
+
+test('player-action destination context treats an unresolved region stub as new rather than failing template rendering', () => {
+    const { regions, locations, players } = fixtures();
+    locations.push({
+        id: 'ridge-outpost-interior',
+        name: 'Ridge Outpost Interior',
+        regionId: 'unknown-region-stub',
+        isStub: true,
+        shortDescription: 'An unexplored path leading inside the outpost.'
+    });
+
+    const input = {
+        locationId: 'ridge-outpost-interior',
+        location: 'Ridge Outpost Interior',
+        regionId: 'unknown-region-stub',
+        region: 'Unknown Region'
+    };
+    const context = resolvePlayerActionDestinationContext(input, {
+        currentWorldMinutes: 180,
+        regions,
+        locations,
+        players
+    });
+    const preview = resolvePlayerActionDestinationPreviewContext(input, {
+        currentWorldMinutes: 180,
+        regions,
+        locations,
+        players
+    });
+
+    assert.equal(context.resolved, false);
+    assert.equal(preview.resolved, false);
+    assert.equal(context.locationId, null);
+    assert.deepEqual(context.exitSummaries, []);
+});
+
+test('player-action destination context continues to reject a non-stub location with a missing region', () => {
+    const { regions, locations, players } = fixtures();
+    locations.push({
+        id: 'corrupt-location',
+        name: 'Corrupt Location',
+        regionId: 'missing-region',
+        isStub: false
+    });
+
+    assert.throws(
+        () => resolvePlayerActionDestinationContext({ locationId: 'corrupt-location' }, {
+            currentWorldMinutes: 180,
+            regions,
+            locations,
+            players
+        }),
+        /missing region id "missing-region"/i
+    );
+});
+
+test('player-action destination preview skips ambiguous name-only context without guessing', () => {
+    const { regions, locations, players } = fixtures();
+    const context = resolvePlayerActionDestinationPreviewContext({
+        location: 'Town Square',
+        region: null
+    }, {
+        currentWorldMinutes: 180,
+        regions,
+        locations,
+        players
+    });
+
+    assert.equal(context.resolved, false);
+    assert.equal(context.requestedLocation, 'Town Square');
+    assert.deepEqual(context.presentNpcNames, []);
+    assert.deepEqual(context.exitSummaries, []);
 });
 
 test('player-action destination context skips exact absence when legacy visit time is missing', () => {

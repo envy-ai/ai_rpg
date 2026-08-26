@@ -18,6 +18,7 @@ function buildConfig(directory) {
             endpoint: 'http://127.0.0.1:5005/v1/',
             model: 'base-model',
             local_startup_script_path: './scripts/start-router.sh',
+            router_slot_cache_enabled: true,
             router_slot_cache_directory: directory
         },
         ai_model_overrides: {
@@ -33,6 +34,14 @@ function buildConfig(directory) {
         }
     };
 }
+
+test('router context-cache discovery is empty when persistence is disabled', () => {
+    const directory = path.join(os.tmpdir(), 'ai-rpg-router-cache-disabled');
+    const config = buildConfig(directory);
+    config.ai.router_slot_cache_enabled = false;
+
+    assert.deepEqual(LLMClient.resolveRouterContextCachePaths(config), []);
+});
 
 test('router context-cache discovery includes exact local configured models only', () => {
     const directory = path.join(os.tmpdir(), 'ai-rpg-router-cache-discovery');

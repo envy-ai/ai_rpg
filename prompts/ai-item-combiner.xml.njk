@@ -1,7 +1,7 @@
 <template>
 <description>This prompt is given a list of item stacks and identifies groups of similar same-quality stacks that a player may reasonably combine.</description>
 <systemPrompt>
-You are an AI that reviews RPG inventory item stacks. Your task is to find item stacks that are similar enough to be combined into one stack without changing gameplay meaning. Only group items that have the same quality level.
+You are an AI that reviews RPG inventory item stacks. Your task is to find same-quality item stacks that a player would reasonably treat as one fungible stack. The player will choose which listed stack is kept, and that stack's name, presentation, and mechanics will apply to the combined quantity.
 </systemPrompt>
 <generationPrompt>
 <items>
@@ -24,9 +24,10 @@ Find groups of two or more item stacks that can reasonably be combined into a si
 
 Rules:
 - Only group items with the same quality level.
-- Only group item stacks that are functionally similar enough that the player would not lose meaningful information by keeping one stack and deleting the others.
+- Only group item stacks that are functionally similar enough for the player to reasonably choose one listed stack as the mechanical and descriptive version to keep.
+- Currency, ammunition, basic materials, and other minor fungible items may be grouped despite incidental random status effects or stat modifiers that do not meaningfully define how the item is used. For example, otherwise similar copper-coin stacks may be grouped even when one stack has a minor random stat modifier.
 - If there are multiple quality levels of the same item, group stacks of the same quality level together (for instance, if there are two junk quality Iron Swords, one common quality Iron Sword, and two rare quality Iron Swords, group the two junk quality Iron Swords together, and the two rare quality Iron Swords together, but do not group the common quality Iron Sword with any of the others).
-- Do not group unique named items, non-empty containers, equipped gear, or items with differing status effects or stat modifiers.
+- Do not group unique named items, non-empty containers, equipped gear, or items whose differing effects or modifiers are an important part of their identity or use.
 - Use exact item ids from the list above.
 - Do not put the same item id in more than one group.
 - If there are no reasonable groups, return an empty <combinationGroups></combinationGroups> block.

@@ -1,0 +1,179 @@
+{
+  "1": {
+    "inputs": {
+      "text": [
+        "25",
+        0
+      ],
+      "clip": [
+        "5",
+        0
+      ]
+    },
+    "class_type": "CLIPTextEncode",
+    "_meta": {
+      "title": "CLIP Text Encode (Prompt)"
+    }
+  },
+  "2": {
+    "inputs": {
+      "width": {{ image.width }},
+      "height": {{ image.height }},
+      "batch_size": 1
+    },
+    "class_type": "EmptyLatentImage",
+    "_meta": {
+      "title": "Empty Latent Image"
+    }
+  },
+  "3": {
+    "inputs": {
+      "upscale": -1,
+      "tile": false,
+      "tile_size": 512,
+      "overlap": 64,
+      "temporal_size": 4096,
+      "temporal_overlap": 64,
+      "samples": [
+        "17",
+        0
+      ],
+      "vae": [
+        "6",
+        0
+      ]
+    },
+    "class_type": "VAEUtils_VAEDecodeTiled",
+    "_meta": {
+      "title": "VAE Decode (VAE Utils)"
+    }
+  },
+  "4": {
+    "inputs": {
+      "unet_name": "krea2_turbo_unfiltered_int8_convrot.safetensors",
+      "weight_dtype": "default"
+    },
+    "class_type": "UNETLoader",
+    "_meta": {
+      "title": "Load Diffusion Model"
+    }
+  },
+  "5": {
+    "inputs": {
+      "clip_name": "d/text_encoders/qwen3vl_4b_fp8_scaled.safetensors",
+      "type": "krea2",
+      "device": "default"
+    },
+    "class_type": "CLIPLoader",
+    "_meta": {
+      "title": "Load CLIP"
+    }
+  },
+  "6": {
+    "inputs": {
+      "vae_name": "Wan2.1_VAE_upscale2x_imageonly_real_v1.safetensors",
+      "disable_offload": false
+    },
+    "class_type": "VAEUtils_CustomVAELoader",
+    "_meta": {
+      "title": "Load VAE (VAE Utils)"
+    }
+  },
+  "7": {
+    "inputs": {
+      "conditioning": [
+        "1",
+        0
+      ]
+    },
+    "class_type": "ConditioningZeroOut",
+    "_meta": {
+      "title": "ConditioningZeroOut"
+    }
+  },
+  "17": {
+    "inputs": {
+      "seed": {{ image.seed }},
+      "steps": 8,
+      "cfg": 1,
+      "sampler_name": "euler",
+      "scheduler": "simple",
+      "denoise": 1,
+      "model": [
+        "4",
+        0
+      ],
+      "positive": [
+        "1",
+        0
+      ],
+      "negative": [
+        "7",
+        0
+      ],
+      "latent_image": [
+        "2",
+        0
+      ]
+    },
+    "class_type": "KSampler",
+    "_meta": {
+      "title": "KSampler"
+    }
+  },
+  "22": {
+    "inputs": {
+      "format": "%Y-%m-%d/ComfyUI"
+    },
+    "class_type": "JWDatetimeString",
+    "_meta": {
+      "title": "Datetime String"
+    }
+  },
+  "23": {
+    "inputs": {
+      "filename_prefix": [
+        "22",
+        0
+      ],
+      "subdirectory_name": "",
+      "output_format": "webp",
+      "quality": "high",
+      "metadata_scope": "full",
+      "include_batch_num": true,
+      "prefer_nearest": true,
+      "images": [
+        "3",
+        0
+      ]
+    },
+    "class_type": "SaveImageWithMetaData",
+    "_meta": {
+      "title": "Save Image With MetaData"
+    }
+  },
+  "25": {
+    "inputs": {
+      "value": "{{ image.prompt | json }}"
+    },
+    "class_type": "PrimitiveStringMultiline",
+    "_meta": {
+      "title": "Input Text"
+    }
+  },
+  "26": {
+    "inputs": {
+      "any_value": [
+        "25",
+        0
+      ],
+      "console": true,
+      "display": true,
+      "prefix": "Final Prompt"
+    },
+    "class_type": "Show any [Crystools]",
+    "_meta": {
+      "title": "🪛 Show any value to console/display"
+    }
+  }
+}

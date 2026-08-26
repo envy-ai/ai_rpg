@@ -41,15 +41,14 @@ function formatCounts(counts) {
         .join(', ');
 }
 
-function assertMatchingRarityCounts(actual, expected, label) {
-    const allRarities = new Set([...actual.keys(), ...expected.keys()]);
-    const mismatched = Array.from(allRarities).some(rarity => (
-        (actual.get(rarity) || 0) !== (expected.get(rarity) || 0)
+function assertMinimumRarityCounts(actual, expected, label) {
+    const missingRequiredRarity = Array.from(expected.entries()).find(([rarity, count]) => (
+        (actual.get(rarity) || 0) < count
     ));
-    if (mismatched) {
+    if (missingRequiredRarity) {
         throw new Error(
-            `Location things generation ${label} rarity multiset mismatch: `
-            + `expected ${formatCounts(expected)}; received ${formatCounts(actual)}.`
+            `Location things generation ${label} rarity minimum not met: `
+            + `requires at least ${formatCounts(expected)}; received ${formatCounts(actual)}.`
         );
     }
 }
@@ -90,6 +89,14 @@ function validateGeneratedLocationThingBatch(parsedItems, {
         if (!entry || typeof entry !== 'object' || Array.isArray(entry)) {
             throw new TypeError(`Location things generation entry ${index + 1} must be an object.`);
         }
+        const name = typeof entry.name === 'string' ? entry.name.trim() : '';
+        if (!name) {
+            throw new Error(`Location things generation entry ${index + 1} must have a non-empty name.`);
+        }
+        const description = typeof entry.description === 'string' ? entry.description.trim() : '';
+        if (!description) {
+            throw new Error(`Location thing "${name}" must have a non-empty description.`);
+        }
         const kind = typeof entry.itemOrScenery === 'string'
             ? entry.itemOrScenery.trim().toLowerCase()
             : (typeof entry.thingType === 'string' ? entry.thingType.trim().toLowerCase() : '');
@@ -101,15 +108,15 @@ function validateGeneratedLocationThingBatch(parsedItems, {
         actualItems[kind].push(entry);
     }
 
-    if (actualItems.item.length !== expectedItemCount) {
+    if (actualItems.item.length < expectedItemCount) {
         throw new Error(
-            `Location things generation expected exactly ${expectedItemCount} item entries, `
+            `Location things generation expected at least ${expectedItemCount} item entries, `
             + `but received ${actualItems.item.length}.`
         );
     }
-    if (actualItems.scenery.length !== expectedSceneryCount) {
+    if (actualItems.scenery.length < expectedSceneryCount) {
         throw new Error(
-            `Location things generation expected exactly ${expectedSceneryCount} scenery entries, `
+            `Location things generation expected at least ${expectedSceneryCount} scenery entries, `
             + `but received ${actualItems.scenery.length}.`
         );
     }
@@ -123,7 +130,7 @@ function validateGeneratedLocationThingBatch(parsedItems, {
             );
             actualRarities.set(rarity, (actualRarities.get(rarity) || 0) + 1);
         }
-        assertMatchingRarityCounts(actualRarities, expectedRarities[kind], kind);
+        assertMinimumRarityCounts(actualRarities, expectedRarities[kind], kind);
     }
 
     return parsedItems;

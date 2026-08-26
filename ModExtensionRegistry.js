@@ -10,6 +10,7 @@ class ModExtensionRegistry {
     #thingTargetStatusEffectContributors = [];
     #thingPromptContributors = [];
     #inventorySyncContributors = [];
+    #sceneSummarizeContributors = [];
     #settingFields = new Map();
     #settingTabs = new Map();
     #entityFieldsByType = new Map();
@@ -594,15 +595,22 @@ class ModExtensionRegistry {
         return normalized;
     }
 
-    static #getPlayerActionPromptStepNumbering(step) {
-        switch (step) {
-            case 1:
-                return { prefix: '1', startSuffix: 'g' };
-            case 3:
-                return { prefix: '3', startSuffix: 'l' };
-            default:
-                throw new Error('Player-action prompt step must be either 1 or 3.');
+    static #parsePlayerActionPromptStartStep(startStep, expectedStep = null) {
+        const normalized = ModExtensionRegistry.#normalizeString(
+            startStep,
+            'player-action prompt start step'
+        ).toLowerCase();
+        const match = normalized.match(/^([13])([a-z]+)$/);
+        if (!match) {
+            throw new Error('Player-action prompt start step must use a stage prefix followed by letters, such as "3m".');
         }
+        const step = Number(match[1]);
+        if (expectedStep !== null && step !== expectedStep) {
+            throw new Error(
+                `Player-action prompt start step "${normalized}" must begin with stage ${expectedStep}.`
+            );
+        }
+        return { step, prefix: match[1], startSuffix: match[2] };
     }
 
     static #normalizeBoolean(value) {
@@ -630,6 +638,7 @@ class ModExtensionRegistry {
         this.#thingTargetStatusEffectContributors = [];
         this.#thingPromptContributors = [];
         this.#inventorySyncContributors = [];
+        this.#sceneSummarizeContributors = [];
         this.#settingFields.clear();
         this.#settingTabs.clear();
         this.#entityFieldsByType.clear();
@@ -796,6 +805,10 @@ class ModExtensionRegistry {
         this.#registerContributor(this.#inventorySyncContributors, 'inventory sync', { modName, contributor });
     }
 
+    registerSceneSummarizeContributor({ modName, contributor } = {}) {
+        this.#registerContributor(this.#sceneSummarizeContributors, 'scene summarize', { modName, contributor });
+    }
+
     getBaseContextContributors() {
         return [...this.#baseContextContributors];
     }
@@ -822,6 +835,10 @@ class ModExtensionRegistry {
 
     getInventorySyncContributors() {
         return [...this.#inventorySyncContributors];
+    }
+
+    getSceneSummarizeContributors() {
+        return [...this.#sceneSummarizeContributors];
     }
 
     registerPlayerActionPromptStep({
@@ -865,38 +882,59 @@ class ModExtensionRegistry {
         });
     }
 
-    getPlayerActionPromptSteps({
-        step = null,
-        stepPrefix = null,
-        startSuffix = null
-    } = {}) {
-        const requestedStep = step === null || step === undefined || step === ''
-            ? null
-            : ModExtensionRegistry.#normalizePlayerActionPromptStep(step);
+    getPlayerActionPromptSteps({ step = null, startStep = null, startSteps = null } = {}) {
+        const hasSingleStep = step !== null && step !== undefined && step !== '';
+        const hasSingleStartStep = startStep !== null && startStep !== undefined && startStep !== '';
+        if ((hasSingleStep || hasSingleStartStep) && startSteps !== null && startSteps !== undefined) {
+            throw new Error('Player-action prompt numbering accepts either step/startStep or startSteps, not both.');
+        }
+        const numberingByStep = new Map();
+        if (hasSingleStep || hasSingleStartStep) {
+            const requestedStep = hasSingleStep
+                ? ModExtensionRegistry.#normalizePlayerActionPromptStep(step)
+                : null;
+            const numbering = ModExtensionRegistry.#parsePlayerActionPromptStartStep(
+                startStep,
+                requestedStep
+            );
+            numberingByStep.set(
+                numbering.step,
+                numbering
+            );
+        } else {
+            if (!startSteps || typeof startSteps !== 'object' || Array.isArray(startSteps)) {
+                throw new Error('Player-action prompt numbering requires step/startStep or a startSteps object.');
+            }
+            for (const [rawStep, configuredStartStep] of Object.entries(startSteps)) {
+                const requestedStep = ModExtensionRegistry.#normalizePlayerActionPromptStep(rawStep);
+                numberingByStep.set(
+                    requestedStep,
+                    ModExtensionRegistry.#parsePlayerActionPromptStartStep(configuredStartStep, requestedStep)
+                );
+            }
+            if (!numberingByStep.size) {
+                throw new Error('Player-action prompt startSteps must define at least one stage.');
+            }
+        }
         const nextIndexByStep = new Map();
         return Array.from(this.#playerActionPromptSteps.values())
-            .filter(record => requestedStep === null || record.step === requestedStep)
+            .filter(record => numberingByStep.has(record.step))
             .sort((a, b) => (a.step - b.step) || (a.order - b.order) || (a.sequence - b.sequence) || a.fullId.localeCompare(b.fullId))
             .map((record) => {
-                const numbering = ModExtensionRegistry.#getPlayerActionPromptStepNumbering(record.step);
-                const prefix = stepPrefix === null || stepPrefix === undefined || stepPrefix === ''
-                    ? numbering.prefix
-                    : ModExtensionRegistry.#normalizeString(stepPrefix, 'prompt step prefix');
-                const suffix = startSuffix === null || startSuffix === undefined || startSuffix === ''
-                    ? numbering.startSuffix
-                    : startSuffix;
-                const startIndex = ModExtensionRegistry.#stepNumberIndexFromSuffix(suffix);
+                const numbering = numberingByStep.get(record.step);
+                const startIndex = ModExtensionRegistry.#stepNumberIndexFromSuffix(numbering.startSuffix);
                 const stepIndex = nextIndexByStep.get(record.step) || 0;
                 nextIndexByStep.set(record.step, stepIndex + 1);
+                const number = `${numbering.prefix}${ModExtensionRegistry.#stepNumberSuffixFromIndex(startIndex + stepIndex)}`;
                 return {
-                modName: record.modName,
-                id: record.id,
-                fullId: record.fullId,
-                step: record.step,
-                number: `${prefix}${ModExtensionRegistry.#stepNumberSuffixFromIndex(startIndex + stepIndex)}`,
-                text: record.text,
-                tinyBrainText: record.tinyBrainText,
-                order: record.order
+                    modName: record.modName,
+                    id: record.id,
+                    fullId: record.fullId,
+                    step: record.step,
+                    number,
+                    text: record.text,
+                    tinyBrainText: record.tinyBrainText,
+                    order: record.order
                 };
             });
     }
@@ -1046,6 +1084,24 @@ class ModExtensionRegistry {
         for (const record of this.#inventorySyncContributors) {
             record.contributor(actor, event);
         }
+    }
+
+    collectSceneSummarizeContributions(context = {}) {
+        const contributions = [];
+        for (const record of this.#sceneSummarizeContributors) {
+            const value = record.contributor(context);
+            if (value === null || value === undefined) {
+                continue;
+            }
+            if (typeof value !== 'string') {
+                throw new Error(`Scene summarize contributor from mod "${record.modName}" must return a string or null.`);
+            }
+            const text = value.trim();
+            if (text) {
+                contributions.push({ modName: record.modName, text });
+            }
+        }
+        return contributions;
     }
 
     // Collect per-Thing prompt fragments contributed by mods. Each contributor

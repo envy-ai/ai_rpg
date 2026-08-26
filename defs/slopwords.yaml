@@ -64,6 +64,9 @@ regexes:
   - pattern: "/you can't just say/i"
     name: '"You can''t just say [x]!" - This dialogue is overused. Replace it with something else.'
     ppm: 1
+  - pattern: "/you're either very [\\w\\s]+ or very/i"
+    name: '"You''re either very X or very Y." - Overused. Replace with completely different phrasing.'
+    ppm: 0
 slopwords:
   # Custom ones first:
   singing: default

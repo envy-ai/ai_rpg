@@ -46,6 +46,10 @@ test('calendar editor has render and collect helpers for every calendar section'
     assert.match(viewSource, /createCalendarSeasonEditor/);
     assert.match(viewSource, /createCalendarTimeDescriptionRow/);
     assert.match(viewSource, /createCalendarHolidayRow/);
+    assert.match(viewSource, /calendar-edit-season-vegetation-description/);
+    assert.match(viewSource, /calendar-edit-season-interior-description/);
+    assert.match(viewSource, /vegetationDescription:/);
+    assert.match(viewSource, /interiorDescription:/);
 });
 
 test('calendar editor exposes add and reorder controls for ordered sections', () => {

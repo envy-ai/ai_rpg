@@ -159,7 +159,7 @@ test('server preloads the router before default-player prompt generation', () =>
     assert.ok(defaultPlayerIndex > preloadIndex, 'default-player generation must start after router preload');
 });
 
-test('qwen combo router startup disables discovered mmproj paths for both switched models', () => {
+test('qwen combo router startup keeps configured Qwen and Gemma workers text-only', () => {
     const wrapper = fs.readFileSync(
         path.join(__dirname, '..', 'scripts', 'start-qwen-combo-router.sh'),
         'utf8'
@@ -170,7 +170,10 @@ test('qwen combo router startup disables discovered mmproj paths for both switch
     );
 
     assert.match(wrapper, /--no-mmproj/);
+    assert.match(wrapper, /router_context_size="\$\{LLAMA_CTX_SIZE:-96000\}"/);
+    assert.doesNotMatch(wrapper, /--n-gpu-layers\s+99/);
     assert.match(wrapper, /--models-preset \/home\/bart\/ai_rpg\/config\/llama-qwen-combo-text-only\.ini/);
+    assert.match(preset, /\[\*\]\s+n-gpu-layers\s*=\s*99(?:\r?\n|$)/);
     assert.match(
         preset,
         /\[Qwen3\.6-27B-Fable-Fusion-711-Uncensored-Heretic-NM-DAU-NEO-MAX-MTP-GGUF\]\s+mmproj\s*=\s*(?:\r?\n|$)/
@@ -178,5 +181,22 @@ test('qwen combo router startup disables discovered mmproj paths for both switch
     assert.match(
         preset,
         /\[Qwen3\.6-35B-A3B-uncensored-heretic-Native-MTP-Preserved-GGUF\]\s+mmproj\s*=\s*(?:\r?\n|$)/
+    );
+    for (const model of [
+        'G4-MeroMero-31B-uncensored-heretic-GGUF',
+        'Gemma-4-Garnet-31B-it-uncensored-heretic-GGUF',
+        'gemma-4-31B-it-Mystery-Fine-Tune-HERETIC-UNCENSORED-Thinking-Instruct-GGUF',
+        'gemma-4-31B-it-qat-q4_0-uncensored-heretic-GGUF',
+        'gemma-4-Ortenzya-The-Creative-Wordsmith-31B-it-uncensored-heretic-GGUF'
+    ]) {
+        const escapedModel = model.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        assert.match(
+            preset,
+            new RegExp(`\\[${escapedModel}\\]\\s+mmproj\\s*=\\s*(?:\\r?\\n|$)`)
+        );
+    }
+    assert.match(
+        preset,
+        /\[Gemma-4-Garnet-31B-it-uncensored-heretic-GGUF\]\s+mmproj\s*=\s*\r?\n+n-gpu-layers\s*=\s*40(?:\r?\n|$)/
     );
 });

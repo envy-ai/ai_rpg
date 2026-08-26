@@ -1,0 +1,27 @@
+<div id="imageWorkflowPresetModal"
+     class="modal"
+     role="dialog"
+     aria-modal="true"
+     aria-hidden="true"
+     aria-labelledby="imageWorkflowPresetModalTitle"
+     data-ctrl-enter-submit="#imageWorkflowPresetConfirm"
+     hidden>
+  <div class="modal__dialog">
+    <header class="modal__header">
+      <h2 id="imageWorkflowPresetModalTitle">Save Image Workflow Preset As</h2>
+      <button type="button" class="modal__close" id="imageWorkflowPresetClose" aria-label="Close preset dialog">✖️</button>
+    </header>
+    <div class="modal__body">
+      <div class="form-group">
+        <label for="imageWorkflowPresetName">Preset name</label>
+        <input type="text" id="imageWorkflowPresetName" autocomplete="off" placeholder="e.g. Painterly Krea">
+        <span class="help-text">Enter a name only; you do not need to append .yaml.</span>
+      </div>
+      <p id="imageWorkflowPresetError" class="help-text" role="alert" hidden></p>
+    </div>
+    <footer class="modal__footer">
+      <button type="button" class="btn btn-secondary" id="imageWorkflowPresetCancel">Cancel</button>
+      <button type="button" class="btn btn-primary" id="imageWorkflowPresetConfirm">Save Preset</button>
+    </footer>
+  </div>
+</div>

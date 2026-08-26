@@ -66,14 +66,15 @@ test('AI model terminate setting requires a startup script and cannot combine wi
     assert.match(conflictingErrors.join('\n'), /cannot both be true/i);
 });
 
-test('server initializes ComfyUI for strict pre-prompt cleanup even when rendering is disabled', () => {
+test('server initializes ComfyUI for cache-preserving pre-prompt cleanup even when rendering is disabled', () => {
     const source = fs.readFileSync(path.join(root, 'server.js'), 'utf8');
 
     assert.match(source, /function isComfyModelCleanupModeConfigured\(configuration = config\)/);
     assert.match(source, /const promptCleanupEnabled = isComfyModelCleanupModeConfigured\(config\)/);
     assert.match(source, /if \(!imageGenerationEnabled && !promptCleanupEnabled\)/);
-    assert.match(source, /LLMClient\.setComfyModelCleanupHandler\(async \(\{ metadataLabel \}\) =>/);
-    assert.match(source, /await comfyUIClient\.unloadModels\(\)/);
+    assert.match(source, /LLMClient\.setComfyModelCleanupHandler\(async \(\{ metadataLabel, signal \}\) =>/);
+    assert.match(source, /await comfyUIClient\.releaseVram\(\{ signal \}\)/);
+    assert.doesNotMatch(source, /comfyUIClient\.unloadModels\(\)/);
     assert.match(source, /configureComfyModelCleanupBeforePrompts\(\)/);
 });
 
@@ -91,15 +92,15 @@ test('all image job producers use the coordinated enqueue helper', () => {
     );
 });
 
-test('server initializes the managed local llama process only after ComfyUI and preserves strict cleanup ordering', () => {
+test('server initializes the managed local llama process only after ComfyUI and preserves cleanup ordering', () => {
     const source = fs.readFileSync(path.join(root, 'server.js'), 'utf8');
     assert.match(source, /await initializeImageEngine\(\)[\s\S]*?await initializeManagedLocalLlamaServer\(\)/);
     assert.match(
         source,
-        /beforeStart: async \(\{ preserveComfySystemCache = false \} = \{\}\) => \{[\s\S]*?clearComfyVramBeforeLocalLlamaStartup\(\{ preserveComfySystemCache \}\)[\s\S]*?waitUntilReady: readiness => waitForManagedLlamaServerReady/
+        /beforeStart: async \(\) => \{[\s\S]*?clearComfyVramForManagedLocalLlamaStartup\(\)[\s\S]*?waitUntilReady: readiness => waitForManagedLlamaServerReady/
     );
-    assert.match(source, /await comfyUIClient\.unloadModels\(\)/);
     assert.match(source, /await comfyUIClient\.releaseVram\(\)/);
+    assert.doesNotMatch(source, /comfyUIClient\.unloadModels\(\)/);
     assert.match(source, /'comfy_cache_monitor_fallback'/);
     assert.match(source, /configureManagedLocalModelStartupBeforePrompts\(\)/);
     assert.match(source, /localLlamaServerProcess\.switchStartupScriptPath/);
@@ -133,34 +134,18 @@ test('a configured local startup script activates managed process startup indepe
     );
     assert.match(
         initializerSource,
-        /if \(resolveImageGenerationModelLifecycleMode\(\) !== 'none'\)[\s\S]*?clearComfyVramBeforeLocalLlamaStartup/
+        /if \(resolveImageGenerationModelLifecycleMode\(\) !== 'none'\)[\s\S]*?clearComfyVramForManagedLocalLlamaStartup/
     );
 });
 
-test('ComfyUI unloadModels posts both unload and free-memory flags', { concurrency: false }, async () => {
-    const originalPost = axios.post;
-    let captured = null;
-    axios.post = async (url, payload, options) => {
-        captured = { url, payload, options };
-        return { data: {} };
-    };
-
-    try {
-        const client = new ComfyUIClient({
-            imagegen: {
-                server: { host: 'comfy.example', port: 8188 }
-            }
-        });
-        const result = await client.unloadModels();
-        assert.equal(result.success, true);
-        assert.equal(captured.url, 'http://comfy.example:8188/free');
-        assert.deepEqual(captured.payload, {
-            unload_models: true,
-            free_memory: true
-        });
-    } finally {
-        axios.post = originalPost;
-    }
+test('managed local llama startup continues when ComfyUI is unreachable but still fails for reachable cleanup errors', () => {
+    const source = fs.readFileSync(path.join(root, 'server.js'), 'utf8');
+    assert.match(source, /function isComfyUiUnavailableError\(error\)/);
+    assert.match(source, /ECONNREFUSED\|ECONNRESET\|ENOTFOUND\|EHOSTUNREACH\|ENETUNREACH\|ETIMEDOUT/);
+    assert.match(
+        source,
+        /async function clearComfyVramForManagedLocalLlamaStartup[\s\S]*?if \(!isComfyUiUnavailableError\(error\)\) \{[\s\S]*?throw error;[\s\S]*?continuing because there are no reachable ComfyUI models to release/
+    );
 });
 
 test('ComfyUI releaseVram uses Cache Monitor without calling the standard free endpoint', { concurrency: false }, async () => {
@@ -221,6 +206,47 @@ test('ComfyUI releaseVram falls back to full cleanup when Cache Monitor is unava
                     free_memory: true
                 }
             }
+        ]);
+    } finally {
+        axios.post = originalPost;
+    }
+});
+
+test('ComfyUI releaseVram cancellation aborts immediately without invoking the full-cleanup fallback', { concurrency: false }, async () => {
+    const originalPost = axios.post;
+    const calls = [];
+    const controller = new AbortController();
+    axios.post = async (url, payload, options = {}) => {
+        calls.push({ url, payload });
+        return await new Promise((resolve, reject) => {
+            const onAbort = () => reject(options.signal?.reason || new Error('cancelled'));
+            if (options.signal?.aborted) {
+                onAbort();
+                return;
+            }
+            options.signal?.addEventListener('abort', onAbort, { once: true });
+        });
+    };
+
+    try {
+        const client = new ComfyUIClient({
+            imagegen: {
+                server: { host: 'comfy.example', port: 8188 }
+            }
+        });
+        const releasePromise = client.releaseVram({ signal: controller.signal });
+        controller.abort(new Error('Stop & Undo requested.'));
+
+        await assert.rejects(
+            releasePromise,
+            error => {
+                assert.equal(error.name, 'AbortError');
+                assert.match(error.message, /Stop & Undo requested/);
+                return true;
+            }
+        );
+        assert.deepEqual(calls.map(call => call.url), [
+            'http://comfy.example:8188/comfyui-cache-monitor/release_vram'
         ]);
     } finally {
         axios.post = originalPost;

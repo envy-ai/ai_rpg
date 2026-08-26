@@ -323,6 +323,13 @@ class ModLoader {
                 return modExtensionRegistry.registerInventorySyncContributor({ modName, contributor });
             },
 
+            registerSceneSummarizeContributor: (contributor) => {
+                if (!modExtensionRegistry || typeof modExtensionRegistry.registerSceneSummarizeContributor !== 'function') {
+                    throw new Error(`Mod "${modName}" cannot register scene summarize contributors because no ModExtensionRegistry is available.`);
+                }
+                return modExtensionRegistry.registerSceneSummarizeContributor({ modName, contributor });
+            },
+
             registerSettingTab: (options = {}) => {
                 if (!modExtensionRegistry || typeof modExtensionRegistry.registerSettingTab !== 'function') {
                     throw new Error(`Mod "${modName}" cannot register setting tabs because no ModExtensionRegistry is available.`);

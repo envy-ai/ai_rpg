@@ -26,12 +26,12 @@ Each request:
 
 1. Separates application `system` messages from the non-system conversation.
 2. Renders the system messages, optional application tool definitions, metadata label, structured response contract, and optional prompt preamble into `Bridge Instructions`.
-3. Flattens the remaining messages into a `Conversation` transcript.
+3. Flattens the remaining messages into a `Conversation` transcript, replacing each image part with a numbered attached-image marker.
 4. Starts `kimi acp` with piped stdin/stdout in the configured isolated working directory.
 5. Sends ACP `initialize` with protocol version 1 and no client filesystem or terminal capabilities.
 6. Creates a fresh session with `session/new`, the absolute isolated CWD, and no MCP servers.
 7. If `model` is non-empty, selects it through `session/set_config_option` and verifies that Kimi applied it.
-8. Sends the complete bridge prompt as a text content block in `session/prompt` over stdin.
+8. Sends the complete bridge prompt as a text content block followed by each base64 image as a native ACP image content block in `session/prompt` over stdin.
 9. Collects `agent_message_chunk` updates, incrementally decodes the wrapper JSON `content` string into prompt-preview deltas, and continues until the prompt response supplies its stop reason.
 10. Replaces the live preview with the fully decoded final content, validates the complete wrapper JSON, then terminates the fresh ACP subprocess.
 
@@ -40,6 +40,8 @@ Configured thinking effort is placed in the child process environment before `ki
 Kimi's ACP subcommand does not accept `--agent-file` or `--skills-dir`. The bridge therefore enforces the completion boundary through the isolated CWD, no advertised client filesystem/terminal capabilities, an empty MCP-server list, explicit no-native-tools prompt instructions, automatic cancellation of permission requests, and rejection of every native ACP `tool_call` or `tool_call_update`. Application tool descriptions remain data in the bridge prompt and never become Kimi-native tools.
 
 The full bridge prompt exists only in the ACP `session/prompt` JSON written to the child process's stdin. It is never placed in process arguments, so normal large game prompts do not encounter the operating system's per-argument size limit.
+
+For multimodal requests, `LLMClient` first converts image data URLs to WebP. The Kimi bridge validates the remaining data URL and base64 payload, assigns a numbered marker in the text transcript, and supplies the corresponding `{ type: "image", data, mimeType }` ACP content block. It rejects unsupported remote URLs and malformed or empty data rather than silently dropping the image.
 
 ## ACP JSONL and response normalization
 

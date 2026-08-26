@@ -155,7 +155,10 @@ test('ModExtensionRegistry registers and numbers player-action prompt steps for 
         text: 'Check whether any spellcasting respected configured costs.'
     });
 
-    assert.deepEqual(registry.getPlayerActionPromptSteps(), [
+    assert.deepEqual([
+        ...registry.getPlayerActionPromptSteps({ startStep: '1g' }),
+        ...registry.getPlayerActionPromptSteps({ startStep: '3m' })
+    ], [
         {
             modName: 'need-bar-lust',
             id: 'need-awareness',
@@ -171,7 +174,7 @@ test('ModExtensionRegistry registers and numbers player-action prompt steps for 
             id: 'implant-consistency',
             fullId: 'implants:implant-consistency',
             step: 3,
-            number: '3l',
+            number: '3m',
             text: 'Check whether implant behavior stayed consistent with installed hardware.',
             tinyBrainText: 'Check whether implant behavior stayed consistent with installed hardware.',
             order: 1
@@ -181,19 +184,19 @@ test('ModExtensionRegistry registers and numbers player-action prompt steps for 
             id: 'spell-costs',
             fullId: 'spells:spell-costs',
             step: 3,
-            number: '3m',
+            number: '3n',
             text: 'Check whether any spellcasting respected configured costs.',
             tinyBrainText: 'Check whether any spellcasting respected configured costs.',
             order: 3
         }
     ]);
     assert.deepEqual(
-        registry.getPlayerActionPromptSteps({ step: 1 }).map(step => step.number),
+        registry.getPlayerActionPromptSteps({ startStep: '1g' }).map(step => step.number),
         ['1g']
     );
     assert.deepEqual(
-        registry.getPlayerActionPromptSteps({ step: 3 }).map(step => step.number),
-        ['3l', '3m']
+        registry.getPlayerActionPromptSteps({ startStep: '3m' }).map(step => step.number),
+        ['3m', '3n']
     );
     assert.throws(
         () => registry.registerPlayerActionPromptStep({
@@ -294,6 +297,7 @@ test('player-action prompt renders mod-registered steps at stages 1 and 3', () =
         },
         actionText: 'I inspect the relay.',
         characterName: 'The player',
+        user: 'The player',
         isAttack: false,
         currentVehicle: {
             name: '',
@@ -306,36 +310,43 @@ test('player-action prompt renders mod-registered steps at stages 1 and 3', () =
         currentLocationLastSeenNpcs: [],
         npcs: [],
         party: [],
-        modPlayerActionPromptSteps: [
-            {
-                step: 1,
-                number: '1g',
-                text: 'Check whether urgent lust needs should affect selected NPC initiative.'
-            },
-            {
-                step: 3,
-                number: '3l',
-                text: 'Check whether implant behavior stayed consistent with installed hardware.'
-            },
-            {
-                step: 3,
-                number: '3m',
-                text: 'Check whether spellcasting respected configured costs.'
+        modPlayerActionPromptSteps(startStep) {
+            if (startStep === '1g') {
+                return [{
+                    step: 1,
+                    number: '1g',
+                    text: 'Check whether urgent lust needs should affect selected NPC initiative.'
+                }];
             }
-        ]
+            if (startStep === '3m') {
+                return [
+                    {
+                        step: 3,
+                        number: '3m',
+                        text: 'Check whether implant behavior stayed consistent with installed hardware.'
+                    },
+                    {
+                        step: 3,
+                        number: '3n',
+                        text: 'Check whether spellcasting respected configured costs.'
+                    }
+                ];
+            }
+            throw new Error(`Unexpected player-action prompt start step: ${startStep}`);
+        }
     });
 
     assert.match(rendered, /3j\. Did you create any "mystery boxes"\?/);
     assert.match(rendered, /1g\. Check whether urgent lust needs should affect selected NPC initiative\./);
-    assert.match(rendered, /3l\. Check whether implant behavior stayed consistent with installed hardware\./);
-    assert.match(rendered, /3m\. Check whether spellcasting respected configured costs\./);
+    assert.match(rendered, /3m\. Check whether implant behavior stayed consistent with installed hardware\./);
+    assert.match(rendered, /3n\. Check whether spellcasting respected configured costs\./);
     assert.ok(
         rendered.indexOf('1f. Is the player currently under the effects') < rendered.indexOf('1g. Check whether urgent lust needs'),
         'stage 1 mod prompt steps should render after the built-in 1f step'
     );
     assert.ok(
-        rendered.indexOf('3k. Remember the rule, "Show, don\'t tell."') < rendered.indexOf('3l. Check whether implant behavior'),
-        'stage 3 mod prompt steps should render immediately after the built-in 3k step'
+        rendered.indexOf('3l. Is this an exterior location') < rendered.indexOf('3m. Check whether implant behavior'),
+        'stage 3 mod prompt steps should render immediately after the built-in 3l step'
     );
 });
 
@@ -347,6 +358,12 @@ test('nsfw-boost mod registers tiny-brain stage 1 player-action prompt steps', (
         modDir: path.join(process.cwd(), 'mods', 'nsfw-boost'),
         registerEntityField() {},
         registerBaseContextContributor() {},
+        registerSceneSummarizeContributor(contributor) {
+            return registry.registerSceneSummarizeContributor({
+                modName: 'nsfw-boost',
+                contributor
+            });
+        },
         registerPlayerActionPromptStep(options = {}) {
             return registry.registerPlayerActionPromptStep({
                 ...options,
@@ -355,7 +372,7 @@ test('nsfw-boost mod registers tiny-brain stage 1 player-action prompt steps', (
         }
     });
 
-    const steps = registry.getPlayerActionPromptSteps();
+    const steps = registry.getPlayerActionPromptSteps({ startStep: '1g' });
     assert.deepEqual(
         steps.map(step => ({
             fullId: step.fullId,
@@ -1067,7 +1084,7 @@ test('ModLoader mod scope exposes mod asset URLs and prompt-step registration', 
         });
 
         assert.deepEqual(
-            registry.getPlayerActionPromptSteps().map(step => ({
+            registry.getPlayerActionPromptSteps({ startStep: '3m' }).map(step => ({
                 fullId: step.fullId,
                 step: step.step,
                 number: step.number,
@@ -1076,7 +1093,7 @@ test('ModLoader mod scope exposes mod asset URLs and prompt-step registration', 
             [{
                 fullId: 'implants:implant-consistency',
                 step: 3,
-                number: '3l',
+                number: '3m',
                 text: 'Check whether implant behavior stayed consistent with installed hardware.'
             }]
         );

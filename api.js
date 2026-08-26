@@ -11,6 +11,10 @@ const Location = require('./Location.js');
 const Region = require('./Region.js');
 const VehicleInfo = require('./VehicleInfo.js');
 const Globals = require('./Globals.js');
+const {
+    normalizeLocationWeatherExposure,
+    resolveEffectiveLocationWeatherExposure
+} = require('./LocationWeatherExposure.js');
 const LLMClient = require('./LLMClient.js');
 const IdGenerator = require('./IdGenerator.js');
 const CodexBridgeClient = require('./CodexBridgeClient.js');
@@ -176,6 +180,118 @@ function sanitizeSlopHistorySegments(historySegments) {
         .filter(Boolean);
 }
 
+function resolveThingStandardValueDetails(thing) {
+    if (!thing || typeof thing !== 'object') {
+        throw new TypeError('Currency conversion requires a Thing object.');
+    }
+
+    const metadata = thing.metadata && typeof thing.metadata === 'object'
+        ? thing.metadata
+        : {};
+    const candidates = [
+        thing.value,
+        metadata.value,
+        metadata.standardValue,
+        metadata.baseValue
+    ];
+
+    for (const candidate of candidates) {
+        if (candidate === null || candidate === undefined) {
+            continue;
+        }
+        if (typeof candidate === 'string' && !candidate.trim()) {
+            continue;
+        }
+        const numeric = Number(candidate);
+        if (!Number.isFinite(numeric)) {
+            continue;
+        }
+        return {
+            found: true,
+            value: Math.floor(numeric)
+        };
+    }
+
+    return {
+        found: false,
+        value: 0
+    };
+}
+
+function resolveThingCurrencyConversion(thing) {
+    if (!thing || typeof thing !== 'object') {
+        throw new TypeError('Currency conversion requires a Thing object.');
+    }
+
+    const thingType = typeof thing.thingType === 'string'
+        ? thing.thingType.trim().toLowerCase()
+        : '';
+    if (thingType !== 'item') {
+        const error = new Error('Only items can be converted to currency.');
+        error.statusCode = 409;
+        throw error;
+    }
+
+    const instantiatedContents = Array.isArray(thing.containedThingIds)
+        ? thing.containedThingIds.filter(Boolean)
+        : [];
+    const pendingContents = Array.isArray(thing.containerContents)
+        ? thing.containerContents.filter(Boolean)
+        : [];
+    if (thing.isContainer && (instantiatedContents.length > 0 || pendingContents.length > 0)) {
+        const error = new Error(
+            `Cannot convert non-empty container "${thing.name || thing.id || 'item'}" to currency. Open it and empty it first.`
+        );
+        error.statusCode = 409;
+        throw error;
+    }
+
+    const rawCount = thing.count;
+    const count = rawCount === undefined || rawCount === null || rawCount === ''
+        ? 1
+        : Number(rawCount);
+    if (!Number.isInteger(count) || count < 0) {
+        const error = new Error(
+            `Cannot convert "${thing.name || thing.id || 'item'}": its stack count must be a non-negative integer.`
+        );
+        error.statusCode = 409;
+        throw error;
+    }
+
+    const standardValue = resolveThingStandardValueDetails(thing);
+    if (!standardValue.found) {
+        const error = new Error(
+            `Cannot convert "${thing.name || thing.id || 'item'}": it has no numeric value. Edit the item and set its value first.`
+        );
+        error.statusCode = 409;
+        throw error;
+    }
+    if (standardValue.value < 0) {
+        const error = new Error(
+            `Cannot convert "${thing.name || thing.id || 'item'}": its value must be zero or greater.`
+        );
+        error.statusCode = 409;
+        throw error;
+    }
+
+    const totalValue = standardValue.value * count;
+    if (!Number.isSafeInteger(totalValue)) {
+        const error = new Error(
+            `Cannot convert "${thing.name || thing.id || 'item'}": its stack total is outside the supported currency range.`
+        );
+        error.statusCode = 409;
+        throw error;
+    }
+
+    return {
+        thingId: typeof thing.id === 'string' ? thing.id : '',
+        thingName: typeof thing.name === 'string' && thing.name.trim() ? thing.name.trim() : 'Unnamed item',
+        count,
+        unitValue: standardValue.value,
+        totalValue
+    };
+}
+
 const TINY_BRAIN_NPC_LOOKUP_TOOL_NAMES = new Set([
     'moreInfo',
     'getHistory',
@@ -191,12 +307,9 @@ const TINY_BRAIN_NPC_LOOKUP_TOOL_NAMES = new Set([
     'locateThings'
 ]);
 
-const TINY_BRAIN_PLAYER_ACTION_DESTINATION_LOOKUP_TOOL_NAMES = new Set([
-    'moreInfo'
-]);
-
 const GENERIC_PROMPT_ONLY_BUILT_IN_CHAT_TOOL_NAMES = new Set([
     'editChatLogEntry',
+    'regexReplace',
     'rerunSceneSummary',
     'editSceneSummary'
 ]);
@@ -2047,6 +2160,39 @@ function assertSafeSaveDirectoryName(rawName) {
     return normalized;
 }
 
+function hasConnectedInteriorRegion(location) {
+    if (!location || typeof location !== 'object') {
+        throw new Error('Exterior heuristic requires a destination location.');
+    }
+
+    const locationName = typeof location.name === 'string'
+        ? location.name.trim()
+        : '';
+    if (!locationName) {
+        throw new Error('Exterior heuristic destination is missing its location name.');
+    }
+
+    if (typeof location.getAvailableDirections !== 'function' || typeof location.getExit !== 'function') {
+        throw new Error(`Exterior heuristic destination "${locationName}" does not expose exits.`);
+    }
+
+    const expectedInteriorRegionName = `${locationName} Interior`
+        .replace(/\s+/g, ' ')
+        .toLowerCase();
+    for (const direction of location.getAvailableDirections()) {
+        const exit = location.getExit(direction);
+        const connectedRegion = exit?.region || null;
+        const regionName = typeof connectedRegion?.name === 'string'
+            ? connectedRegion.name.trim().replace(/\s+/g, ' ').toLowerCase()
+            : '';
+        if (regionName === expectedInteriorRegionName) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
 function isExitButtonTravelToExterior({ isTravelAction = false, travelContext = null } = {}) {
     if (isTravelAction !== true || !travelContext?.exit) {
         return false;
@@ -2064,7 +2210,8 @@ function isExitButtonTravelToExterior({ isTravelAction = false, travelContext = 
         throw new Error('Exit-button travel destination is missing its location name.');
     }
 
-    return destinationName.toLowerCase().endsWith('exterior');
+    return destinationName.toLowerCase().endsWith('exterior')
+        || hasConnectedInteriorRegion(destinationLocation);
 }
 
 async function abortRuntimeWorkBeforeGameLoad({
@@ -3856,20 +4003,7 @@ module.exports = function registerApiRoutes(scope) {
         }
 
         function getThingStandardValue(thing) {
-            const metadata = thing && typeof thing.metadata === 'object' ? thing.metadata : {};
-            const candidates = [
-                thing?.value,
-                metadata.value,
-                metadata.standardValue,
-                metadata.baseValue
-            ];
-            for (const candidate of candidates) {
-                const numeric = Number(candidate);
-                if (Number.isFinite(numeric)) {
-                    return Math.floor(numeric);
-                }
-            }
-            return 0;
+            return resolveThingStandardValueDetails(thing).value;
         }
 
         function getThingCountForBarter(thing) {
@@ -5520,7 +5654,7 @@ module.exports = function registerApiRoutes(scope) {
             afterParse = null,
             resultBuilders = {}
         } = {}) => {
-            if (!isTinyBrainPromptEnabled(Globals.config?.ai, family)) {
+            if (!isTinyBrainPromptEnabled(Globals.config, family)) {
                 throw new Error(`Tiny-brain prompt family "${family}" is not enabled.`);
             }
             const configuredRetries = Number(Globals.config?.ai?.retryAttempts);
@@ -6298,8 +6432,7 @@ module.exports = function registerApiRoutes(scope) {
             );
             let content = '';
             if (excludedTags.size && node.childNodes) {
-                const childNodes = Array.from(node.childNodes || []);
-                content = childNodes
+                const includedChildNodes = Array.from(node.childNodes || [])
                     .filter(child => {
                         if (!child || child.nodeType !== 1) {
                             return true;
@@ -6308,14 +6441,22 @@ module.exports = function registerApiRoutes(scope) {
                             ? child.nodeName.toLowerCase()
                             : '';
                         return !excludedTags.has(childName);
-                    })
-                    .map(child => {
-                        if (typeof Utils.innerXML === 'function') {
-                            return Utils.innerXML({ childNodes: [child] });
-                        }
-                        return child.textContent || '';
-                    })
-                    .join('');
+                    });
+                const hasCdataChild = includedChildNodes.some(child => child?.nodeType === 4);
+                if (hasCdataChild) {
+                    content = includedChildNodes
+                        .map(child => child?.textContent || child?.nodeValue || '')
+                        .join('');
+                } else {
+                    content = includedChildNodes
+                        .map(child => {
+                            if (typeof Utils.innerXML === 'function') {
+                                return Utils.innerXML({ childNodes: [child] });
+                            }
+                            return child.textContent || '';
+                        })
+                        .join('');
+                }
             } else {
                 content = typeof Utils.extractXmlNodeContent === 'function'
                     ? Utils.extractXmlNodeContent(node)
@@ -6352,6 +6493,18 @@ module.exports = function registerApiRoutes(scope) {
             return node.textContent || '';
         }
 
+        function getSinglePlayerActionTimePassedNode(parentNodes, {
+            fieldLabel = 'player action result'
+        } = {}) {
+            const timePassedNodes = (Array.isArray(parentNodes) ? parentNodes : [parentNodes])
+                .filter(Boolean)
+                .flatMap(parentNode => getDirectChildElementsByTagName(parentNode, 'timePassed'));
+            if (timePassedNodes.length > 1) {
+                throw new Error(`${fieldLabel} may contain at most one <timePassed> block.`);
+            }
+            return timePassedNodes[0] || null;
+        }
+
         function extractturnResultContent(finalNode) {
             if (!finalNode) {
                 return '';
@@ -6362,7 +6515,9 @@ module.exports = function registerApiRoutes(scope) {
                 throw new Error('player action <turnResult> must include a direct <prose> child.');
             }
 
-            const proseText = extractProseNodeContentPreservingTags(proseNode);
+            const proseText = extractProseNodeContentPreservingTags(proseNode, {
+                excludeDirectChildTags: ['timePassed']
+            });
             if (!proseText) {
                 throw new Error('player action <turnResult><prose> must not be empty.');
             }
@@ -6525,7 +6680,11 @@ module.exports = function registerApiRoutes(scope) {
             }
             const finalNode = doc.getElementsByTagName('turnResult')[0] || null;
             if (finalNode) {
-                const finalTimePassedNode = getDirectChildElementByTagName(finalNode, 'timePassed');
+                const proseNode = getDirectChildElementByTagName(finalNode, 'prose');
+                const finalTimePassedNode = getSinglePlayerActionTimePassedNode(
+                    [finalNode, proseNode],
+                    { fieldLabel: 'player action <turnResult>' }
+                );
                 const finalTimePassedMinutes = parsePlayerActionTimePassedNode(finalTimePassedNode, {
                     fieldLabel: 'player action <turnResult><timePassed>'
                 });
@@ -6595,9 +6754,25 @@ module.exports = function registerApiRoutes(scope) {
                 const originNode = getDirectChildElementByTagName(travelNode, 'originProse');
                 const betweenNode = getDirectChildElementByTagName(travelNode, 'betweenProse');
                 const destinationProseNode = getDirectChildElementByTagName(travelNode, 'destinationProse');
-                const origin = extractProseNodeContentPreservingTags(originNode);
-                const between = extractProseNodeContentPreservingTags(betweenNode);
-                const destinationProse = extractProseNodeContentPreservingTags(destinationProseNode);
+                const nestedMoveTimePassedNode = getSinglePlayerActionTimePassedNode(
+                    [originNode, betweenNode, destinationProseNode],
+                    { fieldLabel: 'player action <moveTurnResult> prose' }
+                );
+                if (nestedMoveTimePassedNode) {
+                    // Movement time is owned by route/exit and travelTime metadata. Validate a
+                    // misplaced prose child so malformed timing still fails, but do not apply it
+                    // in addition to authoritative travel time.
+                    parsePlayerActionTimePassedNode(nestedMoveTimePassedNode, {
+                        fieldLabel: 'player action <moveTurnResult> prose <timePassed>'
+                    });
+                }
+                const proseExtractionOptions = { excludeDirectChildTags: ['timePassed'] };
+                const origin = extractProseNodeContentPreservingTags(originNode, proseExtractionOptions);
+                const between = extractProseNodeContentPreservingTags(betweenNode, proseExtractionOptions);
+                const destinationProse = extractProseNodeContentPreservingTags(
+                    destinationProseNode,
+                    proseExtractionOptions
+                );
                 const segments = [origin, between, destinationProse].filter(Boolean);
                 if (!segments.length) {
                     throw new Error('moveTurnResult requires at least one of originProse, betweenProse, or destinationProse.');
@@ -8561,7 +8736,7 @@ module.exports = function registerApiRoutes(scope) {
                 promptType: 'while-you-were-away'
             };
             const useTinyBrainWhileAway = isTinyBrainPromptEnabled(
-                Globals.config?.ai,
+                Globals.config,
                 'while_you_were_away'
             );
             if (suppressVisibleProse && !useTinyBrainWhileAway) {
@@ -8989,7 +9164,7 @@ module.exports = function registerApiRoutes(scope) {
                 scheduledEventToolNames
             };
             const useTinyBrainScheduledEvent = isTinyBrainPromptEnabled(
-                Globals.config?.ai,
+                Globals.config,
                 'scheduled_event_resolution'
             );
             const tinyBrain = useTinyBrainScheduledEvent
@@ -9421,7 +9596,7 @@ module.exports = function registerApiRoutes(scope) {
                 }))
             };
             const useTinyBrainInterruptionRewrite = isTinyBrainPromptEnabled(
-                Globals.config?.ai,
+                Globals.config,
                 'scheduled_event_interruption_rewrite'
             );
             const tinyBrain = useTinyBrainInterruptionRewrite
@@ -10981,7 +11156,7 @@ module.exports = function registerApiRoutes(scope) {
                 promptType: 'game-intro'
             };
             const useTinyBrainGameIntro = isTinyBrainPromptEnabled(
-                Globals.config?.ai,
+                Globals.config,
                 'game_intro'
             );
             const tinyBrain = useTinyBrainGameIntro
@@ -11103,65 +11278,6 @@ module.exports = function registerApiRoutes(scope) {
 
         Globals.generateGameIntro = runGameIntroPrompt;
 
-        function normalizeLocationWeatherExposure(value, fieldName = 'location hasWeather') {
-            if (value === null || value === undefined || value === '') {
-                return null;
-            }
-            if (typeof value === 'boolean') {
-                return value ? 'yes' : 'no';
-            }
-            if (typeof value === 'string') {
-                const lowered = value.trim().toLowerCase();
-                if (!lowered) {
-                    return null;
-                }
-                if (['true', '1', 'yes'].includes(lowered)) {
-                    return 'yes';
-                }
-                if (['false', '0', 'no'].includes(lowered)) {
-                    return 'no';
-                }
-                if (lowered === 'sheltered' || lowered === 'outside') {
-                    return 'sheltered';
-                }
-            }
-            throw new Error(`${fieldName} must be "yes", "no", "sheltered", true, false, or null (legacy "outside" is also accepted).`);
-        }
-
-        function resolveLocationHasWeatherForWorldTime(location) {
-            if (!location || typeof location !== 'object') {
-                return null;
-            }
-            const directScope = normalizeLocationWeatherExposure(location.hasWeather, `location "${location.id || location.name || 'unknown'}" hasWeather`);
-            if (directScope) {
-                return directScope;
-            }
-            const details = location.details;
-            const detailsScope = normalizeLocationWeatherExposure(details?.hasWeather, `location "${location.id || location.name || 'unknown'}" details.hasWeather`);
-            if (detailsScope) {
-                return detailsScope;
-            }
-            const metadata = location.stubMetadata;
-            if (metadata && typeof metadata === 'object') {
-                const metadataScope = normalizeLocationWeatherExposure(metadata.hasWeather, `location "${location.id || location.name || 'unknown'}" stubMetadata.hasWeather`);
-                if (metadataScope) {
-                    return metadataScope;
-                }
-                const locationMetadataScope = normalizeLocationWeatherExposure(metadata.locationHasWeather, `location "${location.id || location.name || 'unknown'}" stubMetadata.locationHasWeather`);
-                if (locationMetadataScope) {
-                    return locationMetadataScope;
-                }
-            }
-            const hints = location.generationHints;
-            if (hints && typeof hints === 'object') {
-                const hintScope = normalizeLocationWeatherExposure(hints.hasWeather, `location "${location.id || location.name || 'unknown'}" generationHints.hasWeather`);
-                if (hintScope) {
-                    return hintScope;
-                }
-            }
-            return null;
-        }
-
         function resolveWeatherForWorldTimePayload(worldTimeContext) {
             const locationId = typeof currentPlayer?.currentLocation === 'string'
                 ? currentPlayer.currentLocation.trim()
@@ -11177,7 +11293,14 @@ module.exports = function registerApiRoutes(scope) {
                 return null;
             }
 
-            const weatherScope = normalizeLocationWeatherExposure(resolveLocationHasWeatherForWorldTime(location)) || 'yes';
+            const regionFromFinder = typeof findRegionByLocationId === 'function' && location.id
+                ? findRegionByLocationId(location.id)
+                : null;
+            const region = regionFromFinder
+                || (location.regionId && typeof Region?.get === 'function' ? Region.get(location.regionId) : null)
+                || location.region
+                || null;
+            const weatherScope = resolveEffectiveLocationWeatherExposure(location, { region });
             if (weatherScope === 'no') {
                 return {
                     hasLocalWeather: false,
@@ -11186,14 +11309,6 @@ module.exports = function registerApiRoutes(scope) {
                     weatherDescription: 'This location is sheltered from outdoor weather.'
                 };
             }
-
-            const regionFromFinder = typeof findRegionByLocationId === 'function' && location.id
-                ? findRegionByLocationId(location.id)
-                : null;
-            const region = regionFromFinder
-                || (location.regionId && typeof Region?.get === 'function' ? Region.get(location.regionId) : null)
-                || location.region
-                || null;
             if (!region || typeof region.resolveCurrentWeather !== 'function') {
                 return null;
             }
@@ -11351,6 +11466,9 @@ module.exports = function registerApiRoutes(scope) {
                         success: false,
                         error: validationError?.message || 'Invalid calendar definition'
                     });
+                }
+                for (const location of gameLocations.values()) {
+                    clearLocationImageVariants(location);
                 }
 
                 res.json({
@@ -13196,6 +13314,61 @@ module.exports = function registerApiRoutes(scope) {
                 npcIds: Array.from(affectedNpcIds),
                 containerIds: Array.from(affectedContainerIds)
             };
+        }
+
+        function resolveThingCurrencyConversionById(thingId) {
+            if (!thingId || typeof thingId !== 'string' || !thingId.trim()) {
+                const error = new Error('Thing ID is required.');
+                error.statusCode = 400;
+                throw error;
+            }
+
+            const normalizedThingId = thingId.trim();
+            const thing = things.get(normalizedThingId) || Thing.getById(normalizedThingId);
+            if (!thing) {
+                const error = new Error(`Thing with ID '${normalizedThingId}' not found.`);
+                error.statusCode = 404;
+                throw error;
+            }
+
+            const conversion = resolveThingCurrencyConversion(thing);
+            const currencyLabel = getCurrencyLabel(conversion.totalValue, {
+                setting: currentSetting || null
+            });
+            return {
+                thing,
+                conversion: {
+                    ...conversion,
+                    currencyLabel
+                }
+            };
+        }
+
+        function assertThingCurrencyConversionConfirmation(expected, conversion) {
+            if (!expected || typeof expected !== 'object') {
+                const error = new Error('Currency conversion confirmation details are required. Please reopen the item menu and try again.');
+                error.statusCode = 400;
+                throw error;
+            }
+
+            const expectedCount = Number(expected.count);
+            const expectedUnitValue = Number(expected.unitValue);
+            const expectedTotalValue = Number(expected.totalValue);
+            if (!Number.isInteger(expectedCount)
+                || !Number.isInteger(expectedUnitValue)
+                || !Number.isInteger(expectedTotalValue)) {
+                const error = new Error('Currency conversion confirmation details are invalid. Please reopen the item menu and try again.');
+                error.statusCode = 400;
+                throw error;
+            }
+
+            if (expectedCount !== conversion.count
+                || expectedUnitValue !== conversion.unitValue
+                || expectedTotalValue !== conversion.totalValue) {
+                const error = new Error('The item stack or its value changed after the warning was shown. Reopen Convert to Currency to review the updated amount.');
+                error.statusCode = 409;
+                throw error;
+            }
         }
 
         function normalizeAttributeBonusesForItem(rawBonuses) {
@@ -17728,7 +17901,7 @@ module.exports = function registerApiRoutes(scope) {
                 .join('\n\n')
                 .trim();
             const useTinyBrainSectionedEventChecks = isTinyBrainPromptEnabled(
-                Globals.config?.ai,
+                Globals.config,
                 'event_checks'
             );
             const tinyBrainEventSequence = useTinyBrainSectionedEventChecks
@@ -19460,7 +19633,7 @@ module.exports = function registerApiRoutes(scope) {
                     eventText: trimmedEventText
                 };
                 const useTinyBrainRandomEvent = isTinyBrainPromptEnabled(
-                    Globals.config?.ai,
+                    Globals.config,
                     'random_event'
                 );
                 const tinyBrain = useTinyBrainRandomEvent
@@ -24015,7 +24188,7 @@ module.exports = function registerApiRoutes(scope) {
             }
 
             const useTinyBrainNpcAction = actor.isNPC === true
-                && isTinyBrainPromptEnabled(Globals.config?.ai, 'npc_action');
+                && isTinyBrainPromptEnabled(Globals.config, 'npc_action');
 
             try {
                 console.log('checking for additional lore')
@@ -24533,7 +24706,7 @@ module.exports = function registerApiRoutes(scope) {
 
                     let attackCheck = null;
                     let attackContext = null;
-                    const tinyBrainNpcActionEnabled = isTinyBrainPromptEnabled(Globals.config?.ai, 'npc_action');
+                    const tinyBrainNpcActionEnabled = isTinyBrainPromptEnabled(Globals.config, 'npc_action');
                     const shouldPreResolveNpcAttack = Globals.config?.use_legacy_prompt_checks === true
                         || tinyBrainNpcActionEnabled;
                     if (shouldPreResolveNpcAttack) {
@@ -25149,8 +25322,15 @@ module.exports = function registerApiRoutes(scope) {
                 requestId: rawRequestId,
                 travel: rawTravelFlag,
                 travelMetadata: rawTravelMetadata,
-                forcedNpcTurns: rawForcedNpcTurns
+                forcedNpcTurns: rawForcedNpcTurns,
+                haltAfterPlayerAction: rawHaltAfterPlayerAction
             } = requestBody;
+            if (rawHaltAfterPlayerAction !== undefined && typeof rawHaltAfterPlayerAction !== 'boolean') {
+                return res.status(400).json({
+                    error: 'haltAfterPlayerAction must be a boolean when provided.'
+                });
+            }
+            const haltAfterPlayerAction = rawHaltAfterPlayerAction === true;
             let forcedNpcTurns = null;
             if (rawForcedNpcTurns !== undefined) {
                 if (!Array.isArray(rawForcedNpcTurns) || rawForcedNpcTurns.length === 0) {
@@ -26809,7 +26989,7 @@ module.exports = function registerApiRoutes(scope) {
                             promptType === 'player-action'
                             || promptType === 'creative-mode-action'
                         ) && isTinyBrainPromptEnabled(
-                            Globals.config?.ai,
+                            Globals.config,
                             tinyBrainPlayerFamily
                         );
                         if (useTinyBrainPlayerAction) {
@@ -27124,14 +27304,6 @@ module.exports = function registerApiRoutes(scope) {
                     ? []
                     : filterEnabledChatTools({ allowWorldMutationTools, modExtensionRegistry });
                 const promptChatTools = enabledChatTools;
-                const tinyBrainPlayerActionDestinationLookupTools = promptChatTools.filter(
-                    toolDefinition => {
-                        const toolName = typeof toolDefinition?.function?.name === 'string'
-                            ? toolDefinition.function.name.trim()
-                            : '';
-                        return TINY_BRAIN_PLAYER_ACTION_DESTINATION_LOOKUP_TOOL_NAMES.has(toolName);
-                    }
-                );
                 const tinyBrainPlayerActionHiddenContestTools = promptChatTools.filter(
                     toolDefinition => {
                         const toolName = typeof toolDefinition?.function?.name === 'string'
@@ -27322,16 +27494,16 @@ module.exports = function registerApiRoutes(scope) {
                                 queueReservation
                             };
                             delete stageRequestOptions.requiredRegex;
-                            const isDestinationLookupCheckpoint = !isFinal
-                                && checkpoint?.parserName === 'player_action_more_info_or_na';
+                            const isDestinationContextCheckpoint = !isFinal
+                                && checkpoint?.parserName === 'player_action_destination_name_or_na';
                             const isHiddenContestCheckpoint = !isFinal
                                 && checkpoint?.parserName === 'player_action_hidden_contests';
-                            const stageToolDefinitions = isDestinationLookupCheckpoint
-                                ? tinyBrainPlayerActionDestinationLookupTools
+                            const stageToolDefinitions = isDestinationContextCheckpoint
+                                ? []
                                 : (isHiddenContestCheckpoint
                                     ? tinyBrainPlayerActionHiddenContestTools
                                     : promptChatTools);
-                            if (isDestinationLookupCheckpoint || isHiddenContestCheckpoint) {
+                            if (isDestinationContextCheckpoint || isHiddenContestCheckpoint) {
                                 stageRequestOptions = configureRequestChatTools(
                                     stageRequestOptions,
                                     stageToolDefinitions
@@ -27403,22 +27575,7 @@ module.exports = function registerApiRoutes(scope) {
                                     onToolCallDebug: toolCallDebugRecorder
                                         ? event => toolCallDebugRecorder.record(event)
                                         : null,
-                                    promptLogFile: logFilePath,
-                                    terminalResponseAfterToolCalls: isDestinationLookupCheckpoint
-                                        ? ({ toolInvocations: currentInvocations }) => {
-                                            const successfulLookups = currentInvocations.filter(invocation => (
-                                                invocation?.name === 'moreInfo'
-                                                && invocation?.metadata?.error !== true
-                                            ));
-                                            const failedOrUnexpected = currentInvocations.some(invocation => (
-                                                invocation?.name !== 'moreInfo'
-                                                || invocation?.metadata?.error === true
-                                            ));
-                                            return successfulLookups.length && !failedOrUnexpected
-                                                ? 'READY'
-                                                : null;
-                                        }
-                                        : null
+                                    promptLogFile: logFilePath
                                 });
                                 return {
                                     aiResponse: toolLoopResult.aiResponse,
@@ -27834,7 +27991,7 @@ module.exports = function registerApiRoutes(scope) {
                         }, newChatEntries);
                     }
 
-                    if (aiResponseEntry) {
+                    if (aiResponseEntry && !haltAfterPlayerAction) {
                         try {
                             await summarizeChatEntry(aiResponseEntry, { location, type: aiResponseEntryType });
                         } catch (summaryError) {
@@ -28023,6 +28180,37 @@ module.exports = function registerApiRoutes(scope) {
                             questionAction: Boolean(isQuestionAction),
                             genericPromptAction: Boolean(isGenericPromptAction),
                             genericPromptStorageMode: isGenericPromptAction ? genericPromptStorageMode : null
+                        });
+                        if (stream.isEnabled) {
+                            stripStreamedEventArtifacts(responseData);
+                        }
+                        responseData.messages = getClientMessages();
+                        return await respond(responseData);
+                    }
+
+                    if (haltAfterPlayerAction) {
+                        corpseProcessingRan = true;
+                        responseData.haltedAfterPlayerAction = true;
+                        const playerActionTransitions = Array.isArray(playerActionTimeProgress?.transitions)
+                            ? playerActionTimeProgress.transitions
+                            : [];
+                        responseData.worldTime = buildWorldTimePayload({ transitions: playerActionTransitions });
+                        if (playerActionTimeProgress && typeof playerActionTimeProgress === 'object') {
+                            responseData.timeProgress = playerActionTimeProgress;
+                        }
+                        if (stream.requestId) {
+                            responseData.streamMeta = {
+                                ...streamState,
+                                enabled: stream.isEnabled,
+                                playerActionStreamed: Boolean(playerActionStreamSent),
+                                haltedAfterPlayerAction: true
+                            };
+                        }
+                        stream.status('player_action:complete', 'Player action completed; post-action processing skipped.');
+                        stream.complete({
+                            hasNpcTurns: false,
+                            playerActionStreamed: Boolean(playerActionStreamSent),
+                            haltedAfterPlayerAction: true
                         });
                         if (stream.isEnabled) {
                             stripStreamedEventArtifacts(responseData);
@@ -28922,7 +29110,7 @@ module.exports = function registerApiRoutes(scope) {
                         && promptType === 'player-action'
                         && typeof moveTurnResultPayload?.destinationProse === 'string'
                         && moveTurnResultPayload.destinationProse.trim()
-                        && isTinyBrainPromptEnabled(Globals.config?.ai, 'while_you_were_away')
+                        && isTinyBrainPromptEnabled(Globals.config, 'while_you_were_away')
                     );
                     await runWhileYouWereAwayOnArrivalIfNeeded({
                         parentEntryId: aiResponseEntry?.id || null,
@@ -29403,6 +29591,55 @@ module.exports = function registerApiRoutes(scope) {
             } catch (error) {
                 console.warn('Failed to resolve image generation feature flag:', error?.message || error);
                 res.status(500).json({ error: 'Failed to resolve image generation flag.' });
+            }
+        });
+
+        app.get('/api/terminal-output', (req, res) => {
+            try {
+                if (typeof scope.getTerminalOutputSnapshot !== 'function') {
+                    throw new Error('Terminal output capture is unavailable on this server.');
+                }
+                const source = typeof req.query?.source === 'string'
+                    ? req.query.source.trim().toLowerCase()
+                    : '';
+                if (source !== 'airpg' && source !== 'llama') {
+                    return res.status(400).json({
+                        success: false,
+                        error: 'Terminal output source must be either "airpg" or "llama".'
+                    });
+                }
+
+                let cursor = null;
+                if (req.query?.cursor !== undefined) {
+                    const cursorText = typeof req.query.cursor === 'string'
+                        ? req.query.cursor.trim()
+                        : '';
+                    if (!/^\d+$/.test(cursorText)) {
+                        return res.status(400).json({
+                            success: false,
+                            error: 'Terminal output cursor must be a non-negative integer.'
+                        });
+                    }
+                    cursor = Number(cursorText);
+                    if (!Number.isSafeInteger(cursor)) {
+                        return res.status(400).json({
+                            success: false,
+                            error: 'Terminal output cursor exceeds the supported integer range.'
+                        });
+                    }
+                }
+
+                res.setHeader('Cache-Control', 'no-store');
+                return res.json({
+                    success: true,
+                    ...scope.getTerminalOutputSnapshot(source, cursor)
+                });
+            } catch (error) {
+                return res.status(500).json({
+                    success: false,
+                    error: error?.message || 'Failed to read terminal output.',
+                    stack: error?.stack || null
+                });
             }
         });
 
@@ -41952,7 +42189,7 @@ module.exports = function registerApiRoutes(scope) {
                     let playerActionResponse = '';
                     let craftingLiveDeslopInfo = null;
                     const useTinyBrainCraftNarrative = isTinyBrainPromptEnabled(
-                        Globals.config?.ai,
+                        Globals.config,
                         'craft_player_action'
                     );
                     try {
@@ -42895,7 +43132,7 @@ module.exports = function registerApiRoutes(scope) {
                     let playerActionResponse = '';
                     let locationModifyLiveDeslopInfo = null;
                     const useTinyBrainLocationModifyNarrative = isTinyBrainPromptEnabled(
-                        Globals.config?.ai,
+                        Globals.config,
                         'location_modify_player_action'
                     );
                     try {
@@ -44189,7 +44426,6 @@ module.exports = function registerApiRoutes(scope) {
             const allThings = [keepThing, ...mergeThings];
             const seenIds = new Set();
             let qualityKey = null;
-            let mechanicsChecksum = null;
             let holderKey = null;
             let owner = null;
             let container = null;
@@ -44214,22 +44450,6 @@ module.exports = function registerApiRoutes(scope) {
                     throw createAiItemCombinerValidationError('Equipped items cannot be combined.');
                 }
 
-                const currentMechanicsChecksum = typeof thing.combinerMechanicsChecksum === 'string'
-                    ? thing.combinerMechanicsChecksum.trim()
-                    : '';
-                if (!currentMechanicsChecksum) {
-                    throw createAiItemCombinerValidationError(
-                        `Item stack "${thing.id}" is missing an authoritative mechanics checksum.`
-                    );
-                }
-                if (mechanicsChecksum === null) {
-                    mechanicsChecksum = currentMechanicsChecksum;
-                } else if (currentMechanicsChecksum !== mechanicsChecksum) {
-                    throw createAiItemCombinerValidationError(
-                        'All item stacks in a combine group must have identical authoritative mechanics.'
-                    );
-                }
-
                 const currentQualityKey = getItemCombinerQualityKey(thing);
                 if (qualityKey === null) {
                     qualityKey = currentQualityKey;
@@ -44251,7 +44471,6 @@ module.exports = function registerApiRoutes(scope) {
 
             return {
                 qualityKey,
-                mechanicsChecksum,
                 holderKey,
                 owner,
                 container,
@@ -46015,7 +46234,7 @@ module.exports = function registerApiRoutes(scope) {
                     containerOpenAction: actionText
                 };
                 const useTinyBrainContainerOpen = isTinyBrainPromptEnabled(
-                    Globals.config?.ai,
+                    Globals.config,
                     'player_action_open_container'
                 );
                 const tinyBrain = useTinyBrainContainerOpen
@@ -47105,6 +47324,80 @@ module.exports = function registerApiRoutes(scope) {
             }
         });
 
+        app.get('/api/things/:id/currency-conversion', (req, res) => {
+            try {
+                const { conversion } = resolveThingCurrencyConversionById(req.params.id);
+                res.json({
+                    success: true,
+                    conversion
+                });
+            } catch (error) {
+                console.warn('Failed to preview item currency conversion:', error?.message || error);
+                res.status(error?.statusCode || 500).json({
+                    success: false,
+                    error: error?.message || 'Failed to preview item currency conversion.'
+                });
+            }
+        });
+
+        app.post('/api/things/:id/convert-to-currency', (req, res) => {
+            try {
+                const conversionPlayer = Globals.currentPlayer || currentPlayer || null;
+                if (!conversionPlayer || conversionPlayer.isNPC === true) {
+                    const error = new Error('No active player is available to receive the currency.');
+                    error.statusCode = 409;
+                    throw error;
+                }
+                if (typeof conversionPlayer.getCurrency !== 'function'
+                    || typeof conversionPlayer.setCurrency !== 'function') {
+                    throw new Error('The active player does not support currency updates.');
+                }
+
+                const { conversion } = resolveThingCurrencyConversionById(req.params.id);
+                assertThingCurrencyConversionConfirmation(req.body?.expected, conversion);
+
+                const currencyBefore = Number(conversionPlayer.getCurrency());
+                const currencyAfter = currencyBefore + conversion.totalValue;
+                if (!Number.isSafeInteger(currencyBefore) || !Number.isSafeInteger(currencyAfter) || currencyAfter < 0) {
+                    const error = new Error('The player currency total is outside the supported range, so the item was not converted.');
+                    error.statusCode = 409;
+                    throw error;
+                }
+
+                const deletionResult = deleteThingById(req.params.id);
+                if (!deletionResult.success) {
+                    const error = new Error(deletionResult.error || 'Failed to delete the converted item.');
+                    error.statusCode = deletionResult.status || 500;
+                    throw error;
+                }
+
+                conversionPlayer.setCurrency(currencyAfter);
+                const affectedPlayerIds = new Set(
+                    Array.isArray(deletionResult.playerIds) ? deletionResult.playerIds : []
+                );
+                affectedPlayerIds.add(conversionPlayer.id);
+
+                res.json({
+                    success: true,
+                    conversion,
+                    currencyBefore,
+                    currencyAfter: conversionPlayer.getCurrency(),
+                    player: serializeNpcForClient(conversionPlayer),
+                    message: `${conversion.thingName} was converted into ${conversion.totalValue} ${conversion.currencyLabel}.`,
+                    locationIds: Array.isArray(deletionResult.locationIds) ? deletionResult.locationIds : [],
+                    playerIds: Array.from(affectedPlayerIds),
+                    npcIds: Array.isArray(deletionResult.npcIds) ? deletionResult.npcIds : [],
+                    containerIds: Array.isArray(deletionResult.containerIds) ? deletionResult.containerIds : []
+                });
+            } catch (error) {
+                console.warn('Failed to convert item to currency:', error?.message || error);
+                res.status(error?.statusCode || 500).json({
+                    success: false,
+                    error: error?.message || 'Failed to convert item to currency.'
+                });
+            }
+        });
+
         // Get all scenery things
         app.get('/api/things/scenery', (req, res) => {
             try {
@@ -47499,6 +47792,20 @@ module.exports = function registerApiRoutes(scope) {
                 return Number.isFinite(parsed) ? String(parsed) : '';
             };
 
+            const toBoundedIntegerString = (value, fieldName, minimum, maximum = null) => {
+                const str = toStringValue(value);
+                if (!str) {
+                    return '';
+                }
+                const parsed = Number(str);
+                const exceedsMaximum = maximum !== null && parsed > maximum;
+                if (!Number.isInteger(parsed) || parsed < minimum || exceedsMaximum) {
+                    const range = maximum === null ? `at least ${minimum}` : `between ${minimum} and ${maximum}`;
+                    throw new Error(`${fieldName} must be an integer ${range}.`);
+                }
+                return String(parsed);
+            };
+
             const toStringArray = (value) => {
                 if (!value) {
                     return [];
@@ -47558,6 +47865,41 @@ module.exports = function registerApiRoutes(scope) {
                 }
                 return Globals.normalizeCalendarDefinition(source);
             };
+
+            const toBoolean = (value, fallback) => {
+                if (value === undefined || value === null || value === '') {
+                    return fallback;
+                }
+                if (typeof value === 'boolean') {
+                    return value;
+                }
+                const normalized = String(value).trim().toLowerCase();
+                if (['true', '1', 'yes', 'on'].includes(normalized)) {
+                    return true;
+                }
+                if (['false', '0', 'no', 'off'].includes(normalized)) {
+                    return false;
+                }
+                throw new Error(`Expected a boolean value, got "${value}".`);
+            };
+
+            const toJsonObject = (value, fieldName) => {
+                if (value === undefined || value === null || value === '') {
+                    return {};
+                }
+                let parsed = value;
+                if (typeof value === 'string') {
+                    try {
+                        parsed = JSON.parse(value);
+                    } catch (error) {
+                        throw new Error(`${fieldName} must be valid JSON: ${error.message}`);
+                    }
+                }
+                if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+                    throw new Error(`${fieldName} must be a JSON object.`);
+                }
+                return parsed;
+            };
 	
             return {
                 name: toStringValue(raw.name),
@@ -47579,10 +47921,21 @@ module.exports = function registerApiRoutes(scope) {
                 imagePromptPrefixLocation: toStringValue(raw.imagePromptPrefixLocation),
                 imagePromptPrefixItem: toStringValue(raw.imagePromptPrefixItem),
                 imagePromptPrefixScenery: toStringValue(raw.imagePromptPrefixScenery),
+                imagePromptInstructionsCharacter: toStringValue(raw.imagePromptInstructionsCharacter),
+                imagePromptInstructionsLocation: toStringValue(raw.imagePromptInstructionsLocation),
+                imagePromptInstructionsItem: toStringValue(raw.imagePromptInstructionsItem),
+                imagePromptInstructionsScenery: toStringValue(raw.imagePromptInstructionsScenery),
+                useGlobalImageGenerationSettings: toBoolean(raw.useGlobalImageGenerationSettings, true),
+                useGlobalImageEditSettings: toBoolean(raw.useGlobalImageEditSettings, true),
+                imageGenerationSettings: toJsonObject(raw.imageGenerationSettings, 'imageGenerationSettings'),
+                imageEditSettings: toJsonObject(raw.imageEditSettings, 'imageEditSettings'),
                 playerStartingLevel: toNumberString(raw.playerStartingLevel),
                 defaultPlayerName: toStringValue(raw.defaultPlayerName),
                 defaultPlayerDescription: toStringValue(raw.defaultPlayerDescription),
                 defaultStartingLocation: toStringValue(raw.defaultStartingLocation),
+                defaultStartMonth: toBoundedIntegerString(raw.defaultStartMonth, 'defaultStartMonth', 1),
+                defaultStartDay: toBoundedIntegerString(raw.defaultStartDay, 'defaultStartDay', 1),
+                defaultStartTime: toBoundedIntegerString(raw.defaultStartTime, 'defaultStartTime', 0, 23),
                 defaultStartingCurrency: toNumberString(raw.defaultStartingCurrency),
                 defaultExistingSkills: toStringArray(raw.defaultExistingSkills),
                 hidingAttribute: toStringValue(raw.hidingAttribute),
@@ -48074,9 +48427,11 @@ module.exports = function registerApiRoutes(scope) {
                     ...incomingSetting,
                     calendarDefinition: null
                 });
-                const calendarDefinition = Globals.normalizeCalendarDefinition(
-                    await generateCalendarDefinitionWithAi({ settingSnapshot })
-                );
+                const generatedCalendarDefinition = await generateCalendarDefinitionWithAi({ settingSnapshot });
+                const { calendarDefinition } = await ensureCalendarSeasonImageDescriptions({
+                    calendarDefinition: generatedCalendarDefinition,
+                    settingSnapshot
+                });
                 res.json({
                     success: true,
                     calendarDefinition
@@ -48760,6 +49115,8 @@ module.exports = function registerApiRoutes(scope) {
                             throw new Error(`Calendar season #${index + 1} is missing <name>.`);
                         }
                         const description = getText(seasonNode, 'description') || null;
+                        const vegetationDescription = getText(seasonNode, 'vegetationDescription') || null;
+                        const interiorDescription = getText(seasonNode, 'interiorDescription') || null;
                         const startMonth = getText(seasonNode, 'startMonth') || null;
                         const startDayText = getText(seasonNode, 'startDay');
                         const dayLengthMinutesText = getText(seasonNode, 'dayLengthMinutes');
@@ -48794,6 +49151,8 @@ module.exports = function registerApiRoutes(scope) {
                         return {
                             name,
                             description,
+                            vegetationDescription,
+                            interiorDescription,
                             startMonth,
                             startDay,
                             dayLengthMinutes,
@@ -48838,9 +49197,89 @@ module.exports = function registerApiRoutes(scope) {
             };
         }
 
-        async function generateCalendarDefinitionWithAi({ settingSnapshot = null } = {}) {
+        function parseSeasonImageDescriptionsXml(xmlContent, expectedSeasons) {
+            if (!xmlContent || typeof xmlContent !== 'string' || !xmlContent.trim()) {
+                throw new Error('Season image description response was empty.');
+            }
+            if (!Array.isArray(expectedSeasons) || !expectedSeasons.length) {
+                throw new Error('Season image description parsing requires at least one expected season.');
+            }
+
+            const expectedByKey = new Map();
+            for (const season of expectedSeasons) {
+                const name = typeof season?.name === 'string' ? season.name.trim() : '';
+                if (!name) {
+                    throw new Error('Season image description parsing received a season without a name.');
+                }
+                const key = name.toLocaleLowerCase();
+                if (expectedByKey.has(key)) {
+                    throw new Error(`Season image description parsing received duplicate expected season "${name}".`);
+                }
+                expectedByKey.set(key, name);
+            }
+
+            const trimmed = xmlContent.trim();
+            const snippetMatch = trimmed.match(/<seasonImageDescriptions[\s\S]*<\/seasonImageDescriptions>/i);
+            const xmlSnippet = snippetMatch ? snippetMatch[0] : trimmed;
+            const doc = Utils.parseXmlDocument(sanitizeXmlForDom(xmlSnippet), 'text/xml');
+            const parserError = doc.getElementsByTagName('parsererror')[0];
+            if (parserError) {
+                throw new Error(`Season image XML parsing error: ${parserError.textContent || 'unknown parser error'}`);
+            }
+
+            const root = doc.getElementsByTagName('seasonImageDescriptions')[0];
+            if (!root) {
+                throw new Error('Season image XML missing <seasonImageDescriptions> root element.');
+            }
+            const directChild = (parent, tagName) => Array.from(parent?.childNodes || []).find(node => (
+                node
+                && node.nodeType === 1
+                && node.tagName
+                && node.tagName.toLowerCase() === tagName.toLowerCase()
+            )) || null;
+            const getText = (parent, tagName) => {
+                const node = directChild(parent, tagName);
+                return typeof node?.textContent === 'string' ? node.textContent.trim() : '';
+            };
+            const seasonNodes = Array.from(root.childNodes || []).filter(node => (
+                node
+                && node.nodeType === 1
+                && node.tagName
+                && node.tagName.toLowerCase() === 'season'
+            ));
+            const descriptions = new Map();
+            for (const seasonNode of seasonNodes) {
+                const suppliedName = getText(seasonNode, 'name');
+                const key = suppliedName.toLocaleLowerCase();
+                const expectedName = expectedByKey.get(key);
+                if (!expectedName) {
+                    throw new Error(`Season image XML returned unknown season "${suppliedName || '(missing name)'}".`);
+                }
+                if (descriptions.has(key)) {
+                    throw new Error(`Season image XML returned duplicate season "${expectedName}".`);
+                }
+                const vegetationDescription = getText(seasonNode, 'vegetationDescription');
+                if (!vegetationDescription) {
+                    throw new Error(`Season image XML season "${expectedName}" is missing <vegetationDescription>.`);
+                }
+                const interiorDescription = getText(seasonNode, 'interiorDescription');
+                if (!interiorDescription) {
+                    throw new Error(`Season image XML season "${expectedName}" is missing <interiorDescription>.`);
+                }
+                descriptions.set(key, { vegetationDescription, interiorDescription });
+            }
+            if (descriptions.size !== expectedByKey.size) {
+                const missing = Array.from(expectedByKey.entries())
+                    .filter(([key]) => !descriptions.has(key))
+                    .map(([, name]) => name);
+                throw new Error(`Season image XML is missing description(s) for: ${missing.join(', ')}.`);
+            }
+            return descriptions;
+        }
+
+        function buildCalendarSettingContext(settingSnapshot = null) {
             const settingDescription = describeSettingForPrompt(settingSnapshot);
-            const settingContext = {
+            return {
                 name: typeof settingSnapshot?.name === 'string' ? settingSnapshot.name : '',
                 description: settingDescription,
                 theme: typeof settingSnapshot?.theme === 'string' ? settingSnapshot.theme : '',
@@ -48852,8 +49291,79 @@ module.exports = function registerApiRoutes(scope) {
                     ? settingSnapshot.startingLocationType
                     : ''
             };
+        }
+
+        async function ensureCalendarSeasonImageDescriptions({ calendarDefinition, settingSnapshot = null } = {}) {
+            const normalizedCalendar = Globals.normalizeCalendarDefinition(calendarDefinition);
+            const missingSeasons = normalizedCalendar.seasons.filter((season) => (
+                typeof season?.vegetationDescription !== 'string' || !season.vegetationDescription.trim()
+                || typeof season?.interiorDescription !== 'string' || !season.interiorDescription.trim()
+            ));
+            if (!missingSeasons.length) {
+                return { calendarDefinition: normalizedCalendar, updated: false };
+            }
+
+            const renderedTemplate = promptEnv.render('season-image-descriptions.xml.njk', {
+                setting: buildCalendarSettingContext(settingSnapshot),
+                seasons: missingSeasons.map(season => ({
+                    name: season.name,
+                    description: season.description || ''
+                }))
+            });
+            const parsedTemplate = parseXMLTemplate(renderedTemplate);
+            const systemPrompt = typeof parsedTemplate.systemPrompt === 'string'
+                ? parsedTemplate.systemPrompt.trim()
+                : '';
+            const generationPrompt = typeof parsedTemplate.generationPrompt === 'string'
+                ? parsedTemplate.generationPrompt.trim()
+                : '';
+            if (!systemPrompt || !generationPrompt) {
+                throw new Error('Season image description prompt template did not produce system/generation prompts.');
+            }
+
+            const requestOptions = {
+                messages: [
+                    { role: 'system', content: systemPrompt },
+                    { role: 'user', content: generationPrompt }
+                ],
+                metadataLabel: 'season_image_descriptions'
+            };
+            if (typeof parsedTemplate.temperature === 'number') {
+                requestOptions.temperature = parsedTemplate.temperature;
+            }
+            const responseText = await LLMClient.chatCompletion(requestOptions);
+            LLMClient.logPrompt({
+                metadataLabel: 'season_image_descriptions',
+                systemPrompt,
+                generationPrompt,
+                response: responseText,
+                model: requestOptions.model,
+                endpoint: requestOptions.endpoint
+            });
+
+            const descriptions = parseSeasonImageDescriptionsXml(responseText, missingSeasons);
+            const seasons = normalizedCalendar.seasons.map((season) => {
+                const generated = descriptions.get(season.name.toLocaleLowerCase());
+                if (!generated) {
+                    return season;
+                }
+                const vegetationDescription = typeof season.vegetationDescription === 'string' && season.vegetationDescription.trim()
+                    ? season.vegetationDescription
+                    : generated.vegetationDescription;
+                const interiorDescription = typeof season.interiorDescription === 'string' && season.interiorDescription.trim()
+                    ? season.interiorDescription
+                    : generated.interiorDescription;
+                return { ...season, vegetationDescription, interiorDescription };
+            });
+            return {
+                calendarDefinition: Globals.normalizeCalendarDefinition({ ...normalizedCalendar, seasons }),
+                updated: true
+            };
+        }
+
+        async function generateCalendarDefinitionWithAi({ settingSnapshot = null } = {}) {
             const renderedTemplate = promptEnv.render('calendar-generator.xml.njk', {
-                setting: settingContext
+                setting: buildCalendarSettingContext(settingSnapshot)
             });
             const parsedTemplate = parseXMLTemplate(renderedTemplate);
             const systemPrompt = typeof parsedTemplate.systemPrompt === 'string'
@@ -48893,14 +49403,23 @@ module.exports = function registerApiRoutes(scope) {
 
         async function resolveCalendarDefinitionForSetting({ settingSnapshot = null, report = null } = {}) {
             if (settingSnapshot?.calendarDefinition !== null && settingSnapshot?.calendarDefinition !== undefined) {
-                return Globals.normalizeCalendarDefinition(settingSnapshot.calendarDefinition);
+                const ensured = await ensureCalendarSeasonImageDescriptions({
+                    calendarDefinition: settingSnapshot.calendarDefinition,
+                    settingSnapshot
+                });
+                return ensured.calendarDefinition;
             }
 
             const fallback = Globals.generateCalendarDefinition({
                 settingName: settingSnapshot?.name || null
             });
             try {
-                return await generateCalendarDefinitionWithAi({ settingSnapshot });
+                const generated = await generateCalendarDefinitionWithAi({ settingSnapshot });
+                const ensured = await ensureCalendarSeasonImageDescriptions({
+                    calendarDefinition: generated,
+                    settingSnapshot
+                });
+                return ensured.calendarDefinition;
             } catch (error) {
                 const message = error?.message || String(error);
                 console.warn('Calendar generation failed; using Gregorian fallback:', message);
@@ -50534,6 +51053,19 @@ module.exports = function registerApiRoutes(scope) {
                     settingName: settingSnapshot?.name || null
                 });
             }
+            const loadedCalendarSettingSnapshot = currentSetting && typeof currentSetting.toJSON === 'function'
+                ? currentSetting.toJSON()
+                : currentSetting;
+            const seasonImageBackfillResult = await ensureCalendarSeasonImageDescriptions({
+                calendarDefinition: Globals.getSerializedCalendarDefinition(),
+                settingSnapshot: loadedCalendarSettingSnapshot
+            });
+            if (seasonImageBackfillResult.updated) {
+                Globals.setCalendarDefinition(seasonImageBackfillResult.calendarDefinition);
+                for (const location of gameLocations.values()) {
+                    clearLocationImageVariants(location);
+                }
+            }
 
             const factionReconciliation = reconcileFactionReferencesOnLoad();
             const factionRepairsApplied = (
@@ -50696,7 +51228,7 @@ module.exports = function registerApiRoutes(scope) {
             metadata.totalGeneratedImages = generatedImages.size;
             metadata.totalSkills = skills.size;
 
-            if (hidePerceptionBackfillResult.updated) {
+            if (hidePerceptionBackfillResult.updated || saveMissingCalendarDefinition || seasonImageBackfillResult.updated) {
                 await persistLoadedGameStateAfterSettingBackfill(saveDir, metadata);
             }
 
@@ -53880,3 +54412,5 @@ module.exports.assertActorCanInitiateAttack = assertActorCanInitiateAttack;
 module.exports.collectSuccessfulNpcAttackActorIds = collectSuccessfulNpcAttackActorIds;
 module.exports.createPlayerActionInvalidVehicleRouteError = createPlayerActionInvalidVehicleRouteError;
 module.exports.shouldPropagatePlayerActionEventCheckError = shouldPropagatePlayerActionEventCheckError;
+module.exports.resolveThingStandardValueDetails = resolveThingStandardValueDetails;
+module.exports.resolveThingCurrencyConversion = resolveThingCurrencyConversion;

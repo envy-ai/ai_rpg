@@ -1,0 +1,77 @@
+{% macro workflowTab(mode, settingsField, useGlobalField, useGlobalValue, settingsValue, includeUseGlobal) %}
+<section class="image-workflow-mode" data-image-workflow-mode="{{ mode }}" {% if mode == 'edit' %}hidden{% endif %}>
+  {% if includeUseGlobal %}
+  <label class="checkbox-wrapper image-workflow-use-global">
+    <input type="hidden" name="{{ useGlobalField }}" value="false">
+    <input type="checkbox" name="{{ useGlobalField }}" value="true" {% if useGlobalValue %}checked{% endif %} data-image-workflow-use-global>
+    Use global setting
+  </label>
+  {% endif %}
+  <input type="hidden" name="{{ settingsField }}" value="{{ settingsValue | dump | escape }}" data-image-workflow-value>
+  <div class="image-workflow-controls config-sections config-sections--single-column" data-image-workflow-controls>
+    <div class="config-section">
+      <h2>Workflow &amp; Rendering</h2>
+      <div class="form-grid">
+        <div class="form-group full-width">
+          <label>Workflow</label>
+          <select data-image-workflow-field="family">
+            {% if mode == 'edit' %}
+            <option value="krea2">Standard: Krea 2 Identity Edit v1.2</option><option value="flux_klein">Standard: Flux Klein 9B+4B Edit</option><option value="qwen">Standard: Qwen Image Edit</option>
+            {% else %}
+            <option value="krea2">Standard: Krea 2</option><option value="sdxl">Standard: SDXL</option><option value="flux_klein">Standard: Flux Klein 9B+4B</option><option value="zimage">Standard: Z-Image</option><option value="qwen">Standard: Qwen Image</option><option value="anima">Standard: Anima</option><option value="ideogram4">Standard: Ideogram 4</option>
+            {% endif %}
+            <option value="custom">Custom workflow…</option>
+          </select>
+        </div>
+        <div class="form-group full-width">
+          <label>Custom workflow</label>
+          <select data-image-workflow-field="custom_template"><option value="">Standard workflow</option></select>
+          <span class="help-text" data-image-workflow-warning hidden>A custom workflow may ignore these options.</span>
+        </div>
+        <div class="form-group"><label>Model</label><div data-image-workflow-select="model" data-placeholder="Search live ComfyUI models…"></div></div>
+        <div class="form-group"><label>Text encoder</label><div data-image-workflow-select="text_encoder" data-placeholder="Search live text encoders…"></div></div>
+        <div class="form-group"><label>VAE</label><div data-image-workflow-select="vae" data-placeholder="Search live VAEs…"></div></div>
+        <div class="form-group"><label>LoRAs</label><div data-image-workflow-select="loras" data-placeholder="Search live LoRAs…"></div></div>
+        <div class="form-group"><label>Steps</label><input type="number" step="1" data-image-workflow-field="steps"></div>
+        <div class="form-group"><label>CFG</label><input type="number" step="0.1" data-image-workflow-field="cfg"></div>
+        <div class="form-group"><label>Sampler</label><input type="text" data-image-workflow-field="sampler"></div>
+        <div class="form-group"><label>Scheduler</label><input type="text" data-image-workflow-field="scheduler"></div>
+        <div class="form-group"><label>Denoise</label><input type="number" step="0.01" data-image-workflow-field="denoise"></div>
+        {% if mode == 'edit' %}
+        <div class="form-group" data-flux-kv-cache-setting>
+          <label>Flux KV cache</label>
+          <div class="checkbox-wrapper">
+            <input type="checkbox" data-image-workflow-field="flux_kv_cache">
+          </div>
+          <span class="help-text">Enable the Flux KV Cache node in the standard Flux Klein edit workflow.</span>
+        </div>
+        {% endif %}
+      </div>
+    </div>
+    {% if mode != 'edit' %}
+    <div class="config-section">
+      <h2>Resolutions</h2>
+      <div class="form-grid" data-image-workflow-resolutions></div>
+    </div>
+    {% endif %}
+    <div class="config-section">
+      <h2>Presets</h2>
+      <p class="help-text">Presets are shared across every config file and saved in image-workflow-presets.yaml.</p>
+      <div class="form-grid">
+        <div class="form-group">
+          <label>Preset</label>
+          <select data-image-workflow-preset><option value="">Select a preset…</option></select>
+        </div>
+        <div class="form-actions">
+          <button type="button" class="btn btn-secondary" data-image-workflow-load>Load</button>
+          <button type="button" class="btn btn-secondary" data-image-workflow-save>Save</button>
+          <button type="button" class="btn btn-secondary" data-image-workflow-save-as>Save As</button>
+        </div>
+        <div class="form-group full-width">
+          <span class="help-text" data-image-workflow-preset-status aria-live="polite"></span>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+{% endmacro %}

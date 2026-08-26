@@ -29,6 +29,7 @@ Registry-backed hooks are process-local. The enabled mod set is fixed at startup
 
 ## Prompt Context and Prompt Instructions
 - `scope.registerBaseContextContributor(fn)` contributes arbitrary mod context. The server collects contributor results under `modContext` while building base prompt context.
+- `scope.registerSceneSummarizeContributor(fn)` contributes scene-summary guidance. The function receives `{ fullHistoryLines }` for the current chunk and returns a string or `null`; non-empty strings render in both standard and TinyBrain scene-summary prompts. Only startup-enabled mods register contributors.
 - `scope.registerPlayerActionPromptStep({ id, step, text, tinyBrainText?, order? })` appends an instruction to `prompts/_includes/player-action.njk`. `tinyBrainText` supplies the smaller instruction used by the staged template and falls back to `text` when omitted.
 - Player-action `step` accepts only `1` or `3`. Step `1` entries render after built-in `1f`; step `3` entries render after built-in `3k` in the GLM editing/pruning sequence.
 - The `id` is scoped to the registering mod; duplicate ids for the same mod throw. The server assigns labels automatically per stage: step `1` starts at `1g`, and step `3` starts at `3l`.

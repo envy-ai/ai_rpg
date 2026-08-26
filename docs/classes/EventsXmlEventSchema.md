@@ -349,7 +349,7 @@ Use this when an animate entity gains or loses a temporary status effect that is
 
 ### `npc_arrival`
 
-Use this when an animate entity arrives at the current location from elsewhere, or newly appears in the scene. Set `hideFromPlayer` only when a living NPC is actively trying to arrive unnoticed; this marks them hidden until the player detects them through the normal opposed check. Dead NPCs/corpses are always visible.
+Use this when an existing animate entity arrives at the current location from elsewhere, or otherwise newly appears in the scene. If a physically present NPC does not yet exist in game data, use `npcFirstAppearance` instead. Set `hideFromPlayer` only when a living NPC is actively trying to arrive unnoticed; this marks them hidden until the player detects them through the normal opposed check. Dead NPCs/corpses are always visible.
 
 ```xml
 <npcArrival>
@@ -373,7 +373,7 @@ Use this when an animate entity leaves the scene for another destination. Includ
 
 ### `reveal_hidden_npc`
 
-Use this when narration says the player could notice, expose, discover, or otherwise reveal a currently hidden living NPC. The handler ignores the event if that NPC is not hidden or is dead. `useOpposedCheck` defaults to `true`; a failed opposed check leaves the NPC hidden. Use `false` when the NPC willingly reveals themself or the narration plainly makes them visible without a check.
+The event prompt includes this event only when the current location has one or more living hidden NPC records, and lists their exact names. Use it only when narration says the player could notice, expose, discover, or otherwise reveal one of those listed NPCs. It is invalid for a new NPC, an arriving NPC, an already-visible NPC, a dead NPC, or a name known only through prose or private mystery context. `useOpposedCheck` defaults to `true`; a failed opposed check leaves the NPC hidden. Use `false` when the listed NPC willingly reveals themself or the narration plainly makes them visible without a check. TinyBrain rejects a missing or non-listed target and retries with guidance to use `npcFirstAppearance`, `npcArrival`, or an exact listed hidden name.
 
 ```xml
 <revealHiddenNpc>
@@ -429,7 +429,7 @@ Use this when an existing, non-animate item or scenery object moves with a chara
 
 ### `npc_first_appearance`
 
-Use this as a catch-all for physically present entities mentioned or acting in the checked text that are not already known to the system. Do not include entities only mentioned in dialogue, on a phone, on a screen, through a vision, or otherwise not physically present at the location.
+Use this to create physically present entities mentioned or acting in the checked text that do not yet exist in game data. This includes unnamed entities, which receive a stable proper name or role name matching the prose. It is also the recovery event for a hidden NPC revealed in prose but absent from the prompt's character and reveal-target data. In that case, use the name or alias from the prose. Before NPC generation, event application resolves exact names and aliases against stored NPCs; if it finds an existing living hidden NPC, it converts the first appearance into a no-check reveal, removes the derived arrival, and does not generate, relocate, or track the NPC as new. An explicit `npcArrival` remains an arrival and retains its normal relocation behavior. Do not include entities only mentioned in dialogue, private mystery notes, on a phone, on a screen, through a vision, or otherwise not physically present at the location.
 
 ```xml
 <npcFirstAppearance>

@@ -1,5 +1,50 @@
 Original prompt: Can you create a button that stops ALL PROMPTS (basically ends processing of the turn immediately wherever it is) and then reverts to the latest autosave?
 
+- Follow-up: the live Stop control fired, but cancellation during a router slot-cache restore remained blocked for 86 seconds. Once the restore completed, `LLMClient` returned an empty string for cancellation, which the TinyBrain checkpoint parser treated as malformed output and retried six times. The rollback endpoint consequently timed out while the active chat turn remained alive.
+- Implemented terminal `PROMPT_CANCELLED` propagation, registered all active real completion attempts before transport, included those attempts in cancel-all/drain accounting, and threaded abort signals through router status/action/cache operations plus ComfyUI pre-prompt cleanup. TinyBrain now receives the cancellation exception before its parser retry loop.
+- Cancel-all also invalidates staged queue reservations between checkpoints and interrupts configured network/rate-limit retry delays, preventing a new stage or delayed retry from starting after Stop & Undo.
+- Focused cancellation, model-switch, queue/reservation, retry-delay, TinyBrain, ComfyUI cleanup, progress, lifecycle, and game-load barrier tests pass.
+- Restarted the game server without loading a save using `config.yaml.qwen-combo-router-artemis`. The llama.cpp router health endpoint reports OK, its preloaded model reports `n_ctx = 96000`, and the game endpoint returns HTTP 200. The initial model read was unusually slow but completed successfully.
+- Ran the required browser smoke against the restarted server. The Play UI and Stop control rendered cleanly with no reported browser/page errors; visually inspected `tmp/stop-cancel-terminal-smoke/shot-0.png`.
+- TODO: none.
+
+Original prompt: Relax item stack combination so minor fungible items such as copper coins can combine despite incidental random stats.
+
+- Removed the explicit AI combiner's authoritative-mechanics checksum equality requirement while retaining item type, non-container, unequipped, same-quality, and same-holder validation.
+- Updated the combiner prompt to allow minor fungible items with incidental mechanical differences while continuing to reject differences that meaningfully define an item's identity or use.
+- Combination remains keeper-wins: the selected stack preserves its mechanics and presentation, discarded stacks contribute only their quantity.
+- Validation passed: `node --check api.js` plus `tests/item_combiner.test.js` and `tests/thing.container.test.js`. Coverage now proves differing or absent mechanics checksums are accepted while the remaining structural safeguards still reject invalid groups.
+- Restarted with `config.yaml.qwen-combo-router-artemis` without loading a save. The game endpoint returns HTTP 200, router health reports OK, and the preloaded model reports `n_ctx = 96000`.
+- Required browser smoke completed without reported page/console errors; visually inspected `tmp/item-combiner-relaxed-smoke/shot-0.png`.
+- TODO: none.
+
+Original prompt: When a TinyBrain player-action destination was already selected, phrase the later movement decision so NONE is valid only when revision removed the travel.
+
+- The late movement checkpoint now repeats the selected destination, expects the draft to carry it out, and explicitly rejects `NONE` merely because prose uses a landmark, building, shelter, or other descriptive wording instead of the canonical destination name.
+- Its non-vehicle choice labels now define `NONE` as revision removing the selected travel and `DESTINATION` as retaining it; actions with no pre-draft destination keep the original neutral definitions.
+- Focused validation passed across `tests/tiny_brain_prompt_runner.test.js`, `tests/player_action_tinybrain_target_location.test.js`, `tests/player_action_tinybrain_result.test.js`, and `tests/tiny_brain_prompt_families.test.js`. Runner assertions cover both unresolved and canonicalized pre-draft destinations.
+- Restarted with `config.yaml.qwen-combo-router-artemis` without loading a save. The game returns HTTP 200, router health reports OK, and the preloaded model reports `n_ctx = 96000`.
+- Required browser smoke reported no page/console errors; visually inspected `tmp/selected-destination-movement-prompt-smoke/shot-0.png`.
+- TODO: none.
+
+Original prompt: When generating a batch of images, make the shared generation progress fill once across the whole batch instead of restarting for each image.
+
+- Confirmed prompt-list output images are only available from ComfyUI history after the shared workflow finishes, so individual images cannot be attached mid-batch with the current list graph.
+- Added server-side aggregation of repeated per-image passes across the batch workflow's sampler nodes. Every member job now receives the same monotonic overall percentage while retaining the existing per-entity overlays.
+- Added focused regression coverage for a two-image repeated sampler sequence and updated the image API, UI, ComfyUI client, and documentation index notes.
+- Validation passed for the changed JavaScript plus the focused render-batching, ComfyUI progress, and progress-UI suites. The existing-server Playwright overlay test passed, and `tmp/image-render-progress-overlays.png` was visually inspected.
+- Per the request, did not restart the game server.
+
+Original prompt: Store image workflow presets independently of runtime config files and make the selected standard workflow authoritative.
+
+- Moved the sole saved `Krea 2` preset out of `config.yaml.qwen-combo-router-artemis` into the shared, Git-ignored root `image-workflow-presets.yaml`; preset GET/PUT now use `ImageWorkflowPresetStore` and never rewrite the active config override.
+- System-config persistence strips embedded workflow presets plus obsolete top-level generation/location-variant template fields, preventing stale in-memory values from returning on the next save.
+- Removed obsolete template precedence from workflow resolution. `imagegen.workflow.generation` and `.edit` now determine standard/custom selection; Krea batching resolves through the standard batch registry.
+- Removed the stale template field from the Artemis, root, qwen-combo-router, and Kimi-prose configs. The two sparse router configs now explicitly select standard Krea 2.
+- Replaced the canonical Krea templates' one-line includes with self-contained generation and batch graphs, so standard selection no longer aliases a root `test_*` custom template.
+- Focused preset-store, workflow-resolution, standard-workflow, progress, syntax, and YAML checks pass. The existing-server config-page Playwright test passed and `tmp/config-image-workflow-shared-presets.png` was visually inspected.
+- The running game server was not restarted.
+
 - Prompt scheduling follow-up: failed attempts now retain their per-model and all-model semaphore position for immediate retries when no higher-priority foreground prompt is waiting; background retries yield to foreground work, then run before already queued background peers. This applies to automatic failures, adaptive stream fallback, and user-requested prompt retry.
 - Retry-order validation passed for same-model, global all-model, background/foreground, configured network-wait, prompt-progress, and lifecycle-gate behavior. Restarted the live server from the newest Community Kitchen Exterior autosave with Qwen 27B; game/model health return 200.
 - Fixed exterior travel unstubbing after the Community Kitchen move failure: `location-generator-stub.njk` now derives `displayName` from the guarded `stubName` string instead of dereferencing `normalizedLocationName.name`, and regression coverage checks both exterior and missing-name rendering.
@@ -1485,3 +1530,59 @@ Original prompt: Implement the follow-up API playtest acceleration plan.
 - EVENT-2 passed three independently restored live-Qwen scenario branches at 33/33 assertions each. The file-backed `party` event made QA Tired Companion its central participant and preserved clock, party membership, spatial/entity state, schedules, and seeded pools. The `location` event consumed only the exact Bell Runner/Bell seed; the `region` event retained that location pool while consuming only the exact distant blue signal-lamp seed. Both consumable branches returned an ephemeral no-event result and added no history row when immediately forced a second time, which behaviorally proves region consumption despite compact API projections omitting region `randomEvents`. All three stored the correct structured rarity and passed human review. No production defect, cassette, or prose heuristic was needed. Current goal progress is 112/148 backend cases with 36 remaining; all 71 pre-harness completions remain credited.
 - EVENT-3 passed live-Qwen attempt 1 with 40/40 assertions plus human review. Advancing exactly two minutes from fixture minute 663 resolved only the present-location `sevent_1` bell at minute 665, stored one hidden scheduled-event row followed by one visible prose row, and left the depot event completely pending. Both summary and prose retained QA Bell Runner, QA Brass Bell, and exactly one ring. Actor/world time advanced once; Bell Runner/Bell placement, player/status state, locations, regions, things, and the location random seed stayed unchanged. No production defect, cassette, or prose heuristic was needed. Current goal progress is 113/148 backend cases with 35 remaining; all 71 pre-harness completions remain credited.
 - EVENT-4 passed the complete prospective evidence chain. Live-record attempt 13 and independent live-Qwen attempt 15 passed 55/55 assertions; strict no-provider replay attempt 14 consumed all 11 ordered completions with no failures or leftovers. After Baato moved away at zero time, the no-mutation local bell and exact-field remote depot event both resolved once at minute 666 with hidden bookkeeping and no visible scheduled prose. QA Depot Marker's `description` became exactly `The depot marker bears one fresh blue QA stripe.` while `shortDescription`, effect fields, placement, all unrelated entity state, and player placement stayed unchanged. Failed iterations exposed player-presence applicability leakage, unsafe whole-entity regeneration for a direct replacement, neighboring-field/value drift, and llama.cpp textual pseudo-tool calls. TinyBrain scheduled resolution now parses an exact authoritative event/target/allowlisted-field/value plan, validates calls before mutation, and deterministically executes direct-update-only/no-change plans through the existing server executor with successful retry caching; richer or prompt-launching plans retain the normal tool loop. Textual pseudo-tool JSON is never treated as executable, and no generated-prose classifier or regex was added. Cassette SHA-256 is `22d66594e5b02df75059cea6ddd254ca8a26036175206c53bfa149d4efb465ca`. Current goal progress is 114/148 backend cases with 34 remaining; all 71 pre-harness completions remain credited.
+
+Original prompt: Add a larger prompt-viewer-style terminal window from a new icon button immediately left of Stop, with follow-output behavior; extend it to select between AI RPG and AI RPG-managed llama.cpp output.
+
+- Audited the existing prompt-following viewer, managed llama lifecycle, and API/UI documentation. The managed child currently inherits stdio, so browser output requires bounded tee capture while preserving the real terminal; AI RPG and llama output must use separate capture paths even though both remain visible in the real server terminal.
+- Added bounded ANSI-cleaned cursor buffers for AI RPG and managed llama output. llama stdout/stderr now use pipes, are retained separately, and are mirrored through uncaptured passthrough writers so the physical server terminal behaves as before without polluting the AI RPG-only browser source.
+- Added `GET /api/terminal-output`, the terminal icon button immediately left of Stop, and a larger draggable/resizable prompt-viewer-style window with AI RPG/llama.cpp selection, explicit unmanaged-llama status, and default-on Follow behavior. Polling runs only while the window is open.
+- Updated `LocalLlamaServerProcess`, game API, chat UI, and docs-index documentation. Compiled `public/css/main.css` from SCSS.
+- Validation passed: syntax checks, the terminal-buffer/managed-process/UI source suites plus the adjacent prompt-progress viewer suite, the required bundled browser-game smoke, and a focused Chromium interaction check. Visual inspection confirmed the large llama-unavailable and live AI RPG terminal states, correct header/button layout, readable output, default Follow selection, and no browser errors. The isolated no-save port-4179 server was stopped; the existing game server was not restarted.
+
+Original prompt: When deleting an exit to another hydrated region from the Region Map, also remove the now-orphaned green destination-region indicator.
+
+- Diagnosed the authoritative exit deletion as correct. The self-initiated realtime event intentionally skips a full Region Map refresh, while the local deletion helper removed only the edge and left its `region-exit` target node (and potentially its vehicle overlay) in Cytoscape.
+- Successful local edge deletion now removes the target only when it is an orphaned `region-exit` indicator, removes its associated vehicle overlay when present, and never removes an ordinary location endpoint or a still-connected indicator.
+- Updated the focused source regression and map documentation. Syntax and adjacent map/teleport tests pass.
+- Browser verification used a synthetic hydrated cross-region map without mutating game state: before deletion it contained one region edge, one green indicator, and one train overlay; afterward all three were zero, `loc_source` remained, exactly one authoritative DELETE was issued, and there were no browser errors. The required bundled browser smoke was rerun on a clean no-error UI path and visually inspected. The isolated no-save server was stopped; the regular game server was not restarted.
+
+Original prompt: Fix Region Map deletion for exits to unstubbed regions and add Story Tools player teleport to hydrated map-location context menus.
+
+- Diagnosed region-exit deletion as missing `forwardExitId` metadata on the rendered Cytoscape edge; internal edges already retained that authoritative id.
+- Diagnosed hydrated-location teleport as a missing action in the shared Region/World Map location menu; the Region Map stub-only menu already exposed the intended Story Tools behavior.
+- Region-exit Cytoscape edges now retain `forwardExitId`, allowing the existing deletion handler and API cleanup to remove both expanded and unexpanded cross-region exits.
+- The shared Region/World Map location context menu now exposes `Teleport Player Here` for hydrated locations and stubs. It guards the current location, confirms the target, uses `storyToolTeleport: true`, and refreshes whichever map is active; stub targets retain expansion-before-teleport behavior.
+- Added a focused region-exit deletion regression, expanded the teleport suite with a dynamically executed hydrated-location helper test, added a reusable non-mutating Playwright context-menu check, and updated map documentation plus the docs index.
+- Validation passed: syntax checks for the changed JavaScript, 3/3 focused test files, 6/6 adjacent UI/teleport test files, the required browser-game client smoke, and visual inspection of both the normal page and the 15-action shared menu. The focused browser result reported no console or page errors.
+- The isolated no-save test server was stopped; no llama.cpp process remains. The pre-existing port-7777 server was not restarted and still serves its cached pre-change template, so the hydrated-location menu addition will become active on its next restart. The external `map.js` region-exit-id change is already on disk and will load with a fresh browser asset request.
+
+Original prompt: Audit every Krea image-generation workflow and replace the Heretic text encoder with `d/text_encoders/qwen3vl_4b_fp8_scaled.safetensors`.
+
+- Found 16 Krea 2 workflow templates: 2 canonical standard graphs and 14 legacy/custom graphs. All 16 had a hard-coded Heretic encoder; the base `config.yaml` also overrode the canonical graph with that stale encoder, while the shared preset and newer profiles were already correct.
+- Replaced every Krea workflow `CLIPLoader` and the base Krea workflow override with the canonical non-Heretic encoder path.
+- Per user direction, added no new test coverage. Only the stale expected encoder value in an existing workflow test was synchronized with the configuration change.
+- One-time read-only validation rendered and parsed all 16 Krea Nunjucks graphs, confirmed each graph has exactly one Krea `CLIPLoader` using `d/text_encoders/qwen3vl_4b_fp8_scaled.safetensors`, parsed the base YAML with the same effective override, and found no remaining Heretic encoder references in the Krea templates or base config.
+Original prompt: Fix the terminal log viewer's janky text selection, which disappears or jumps to the top even while output is silent.
+
+- Diagnosed unconditional `textContent` replacement and follow-scroll on every 750 ms poll as the selection reset source.
+- In progress: preserve the existing text node across empty polls and incremental appends, and suspend follow-scroll while the user is selecting or retains a selection.
+- Implemented selection-stable terminal rendering and added a browser regression that covers both silent polls and an appended delta while Follow remains checked.
+- The first browser run exposed an already-scheduled follow-scroll race; terminal follow now rechecks pointer/selection state inside its animation-frame callback.
+- Final verification passed: `chat.js` syntax, three focused terminal tests, the required web-game smoke, and the dedicated selection browser test. The same selected text, text-node identity, and scroll position survived silent polls and appended output with Follow enabled. Visually inspected `tmp/terminal-selection-behavior.png`; no browser errors occurred.
+- TODO: none. The running server serves the updated static script; an already-open browser tab needs a reload.
+Original prompt: If the prompt follower modals have the same unstable text-selection problem, fix it there too.
+
+- Confirmed all three follower text spans were rewritten on every progress sync and Follow scrolling did not account for selections.
+- In progress: retain prompt/failed-response/response text nodes, apply minimal character-data updates, and pause each viewer's Follow behavior around selections.
+- Implemented stable character-data rendering, per-viewer selection tracking/listener cleanup, and selection-aware delayed Follow scrolling. Added browser coverage for selections in every follower text region.
+- Final validation passed: `chat.js` and both selection-test scripts parse; four focused prompt/terminal suites pass; the dedicated live-page follower test preserved text-node identity, selection text, and scroll position for prompt, failed-response, and response selections as content refreshed or grew. The shared-helper terminal browser regression also still passes.
+- Visually inspected `tmp/prompt-follower-selection-behavior.png`; the follower remains correctly laid out and the browser reported no console/page errors. The required generic web-game client was attempted headless and through the existing X session, but its forced SwiftShader Chromium launch hung/timed out before producing an artifact; all processes from those attempts were cleaned up.
+- TODO: none. The running server already serves the updated static script; existing tabs need a reload.
+
+Original prompt: Add an item context-menu cheat that converts a complete stack into its total standard value in player currency, with a destructive warning and clear popup errors.
+
+- Added authoritative currency-conversion preview and mutation endpoints. The preview resolves the current item value/count; confirmation details are rechecked before mutation so a changed stack cannot pay a different amount than the warning showed.
+- Added item-only `Convert to Currency` context actions across the shared Thing-card UI. The warning names the exact stack, states the currency received, and explains that the entire stack is deleted.
+- Conversion rejects non-items, missing/negative values, invalid counts/totals, non-empty containers (including pending generated contents), stale confirmations, and missing/invalid active-player currency with clear server messages surfaced in a browser popup.
+- Updated Thing, Player, Things API, chat-interface, Playwright, and documentation-index references. Added focused conversion helper/source coverage and a guarded no-save browser verifier.
+- Final validation passed: syntax checks, four focused/adjacent backend test files, the required bundled browser-game smoke, and the dedicated Chromium flow. The browser confirmed cancellation is non-mutating, acceptance deletes a seven-item stack and raises currency from 0 to 14, and a missing value produces a specific corrective alert with no unexpected browser errors. The isolated no-save server was stopped; the regular game server was not restarted.

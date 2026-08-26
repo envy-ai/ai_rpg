@@ -432,6 +432,7 @@ class AIRPGChat {
         this.chatLog = document.getElementById('chatLog');
         this.messageInput = document.getElementById('messageInput');
         this.sendButton = document.getElementById('sendButton');
+        this.terminalOutputButton = document.getElementById('terminalOutputButton');
         this.abortTurnButton = document.getElementById('abortTurnButton');
         this.prefixHelpLink = document.getElementById('prefixHelpLink');
         this.prefixHelpModal = document.getElementById('prefixHelpModal');
@@ -533,6 +534,23 @@ class AIRPGChat {
         this.pendingRedoStorageKey = 'airpg:pendingRedoPlayerAction';
         this.pendingRedoInProgress = false;
         this.turnRollbackInProgress = false;
+        this.terminalOutputViewer = null;
+        this.terminalOutputSource = 'llama';
+        this.terminalOutputCursors = new Map();
+        this.terminalOutputTextBySource = new Map();
+        this.terminalOutputFollow = true;
+        this.terminalOutputPollTimer = null;
+        this.terminalOutputPollGeneration = 0;
+        this.terminalOutputPollIntervalMs = 750;
+        this.terminalOutputClientMaxCharacters = 1000000;
+        this.terminalOutputSelectionPointerActive = false;
+        this.terminalOutputSelectionEndHandler = null;
+        this.terminalOutputDragState = {
+            active: false,
+            pointerId: null,
+            offsetX: 0,
+            offsetY: 0
+        };
         this.shortDescriptionPrompted = false;
         this.pendingSlashUploadRequest = null;
         this.slashUploadSubmitting = false;
@@ -4369,6 +4387,417 @@ class AIRPGChat {
         }
     }
 
+    isTerminalOutputViewerOpen() {
+        return Boolean(this.terminalOutputViewer?.isConnected);
+    }
+
+    createTerminalOutputViewer() {
+        const viewer = document.createElement('aside');
+        viewer.className = 'prompt-progress-viewer terminal-output-viewer';
+        viewer.setAttribute('role', 'dialog');
+        viewer.setAttribute('aria-modal', 'false');
+        viewer.setAttribute('aria-label', 'Server terminal output viewer');
+
+        const header = document.createElement('div');
+        header.className = 'prompt-progress-viewer__header terminal-output-viewer__header';
+
+        const meta = document.createElement('div');
+        meta.className = 'prompt-progress-viewer__meta';
+        const title = document.createElement('div');
+        title.className = 'prompt-progress-viewer__title';
+        title.textContent = 'Terminal';
+        const subtitle = document.createElement('div');
+        subtitle.className = 'prompt-progress-viewer__subtitle terminal-output-viewer__subtitle';
+        subtitle.textContent = 'Connecting…';
+        meta.appendChild(title);
+        meta.appendChild(subtitle);
+
+        const actions = document.createElement('div');
+        actions.className = 'prompt-progress-viewer__actions terminal-output-viewer__actions';
+
+        const sourceLabel = document.createElement('label');
+        sourceLabel.className = 'terminal-output-viewer__source-label';
+        const sourceLabelText = document.createElement('span');
+        sourceLabelText.textContent = 'Source';
+        const sourceSelect = document.createElement('select');
+        sourceSelect.className = 'terminal-output-viewer__source-select';
+        sourceSelect.setAttribute('aria-label', 'Terminal output source');
+        const airpgOption = document.createElement('option');
+        airpgOption.value = 'airpg';
+        airpgOption.textContent = 'AI RPG';
+        const llamaOption = document.createElement('option');
+        llamaOption.value = 'llama';
+        llamaOption.textContent = 'llama.cpp';
+        sourceSelect.appendChild(airpgOption);
+        sourceSelect.appendChild(llamaOption);
+        sourceSelect.value = this.terminalOutputSource;
+        sourceLabel.appendChild(sourceLabelText);
+        sourceLabel.appendChild(sourceSelect);
+
+        const followLabel = document.createElement('label');
+        followLabel.className = 'prompt-progress-viewer__follow terminal-output-viewer__follow';
+        followLabel.title = 'Keep the terminal view scrolled to the current output';
+        const followCheckbox = document.createElement('input');
+        followCheckbox.type = 'checkbox';
+        followCheckbox.className = 'prompt-progress-viewer__follow-input terminal-output-viewer__follow-input';
+        followCheckbox.checked = this.terminalOutputFollow;
+        followCheckbox.setAttribute('aria-label', 'Follow current terminal output');
+        const followText = document.createElement('span');
+        followText.className = 'prompt-progress-viewer__follow-text';
+        followText.textContent = 'Follow';
+        followLabel.appendChild(followCheckbox);
+        followLabel.appendChild(followText);
+
+        const closeButton = document.createElement('button');
+        closeButton.type = 'button';
+        closeButton.className = 'prompt-progress-viewer__close terminal-output-viewer__close';
+        closeButton.textContent = '×';
+        closeButton.title = 'Close terminal output viewer';
+        closeButton.setAttribute('aria-label', 'Close terminal output viewer');
+
+        actions.appendChild(sourceLabel);
+        actions.appendChild(followLabel);
+        actions.appendChild(closeButton);
+        header.appendChild(meta);
+        header.appendChild(actions);
+
+        const content = document.createElement('div');
+        content.className = 'prompt-progress-viewer__content terminal-output-viewer__content';
+        const section = document.createElement('section');
+        section.className = 'prompt-progress-viewer__section terminal-output-viewer__section';
+        const sectionLabel = document.createElement('div');
+        sectionLabel.className = 'prompt-progress-viewer__section-label terminal-output-viewer__section-label';
+        sectionLabel.textContent = 'Current output';
+        const output = document.createElement('pre');
+        output.className = 'prompt-progress-viewer__stream-text terminal-output-viewer__output';
+        output.setAttribute('aria-live', 'polite');
+        content.appendChild(section);
+        section.appendChild(sectionLabel);
+        section.appendChild(output);
+
+        const endTerminalOutputSelection = () => {
+            this.terminalOutputSelectionPointerActive = false;
+        };
+        output.addEventListener('pointerdown', () => {
+            this.terminalOutputSelectionPointerActive = true;
+        });
+        document.addEventListener('pointerup', endTerminalOutputSelection, true);
+        document.addEventListener('pointercancel', endTerminalOutputSelection, true);
+        this.terminalOutputSelectionEndHandler = endTerminalOutputSelection;
+
+        viewer.appendChild(header);
+        viewer.appendChild(content);
+
+        sourceSelect.addEventListener('change', () => {
+            const source = sourceSelect.value;
+            if (source !== 'airpg' && source !== 'llama') {
+                throw new Error(`Unsupported terminal output source "${source}".`);
+            }
+            this.terminalOutputSource = source;
+            this.renderTerminalOutputText();
+            void this.refreshTerminalOutput();
+        });
+        followCheckbox.addEventListener('change', () => {
+            this.terminalOutputFollow = followCheckbox.checked;
+            if (this.terminalOutputFollow) {
+                this.scrollPromptProgressViewerToBottom(viewer);
+            }
+        });
+        closeButton.addEventListener('click', () => this.closeTerminalOutputViewer());
+
+        this.bindPanelDragInteractions(viewer, header, {
+            dragState: this.terminalOutputDragState,
+            shouldIgnorePointerDown: event => Boolean(
+                event.target && event.target.closest('.terminal-output-viewer__actions')
+            )
+        });
+
+        return viewer;
+    }
+
+    selectableTextElementHasSelection(output) {
+        const selection = window.getSelection?.();
+        if (!output || !selection || selection.isCollapsed || selection.rangeCount === 0) {
+            return false;
+        }
+        for (let index = 0; index < selection.rangeCount; index += 1) {
+            try {
+                if (selection.getRangeAt(index).intersectsNode(output)) {
+                    return true;
+                }
+            } catch (error) {
+                throw new Error(`Failed to inspect terminal output selection: ${error.message}`);
+            }
+        }
+        return false;
+    }
+
+    scrollTerminalOutputViewerToBottom(viewer, output) {
+        if (!viewer || !output) {
+            return;
+        }
+        requestAnimationFrame(() => {
+            if (
+                !viewer.isConnected
+                || !this.terminalOutputFollow
+                || this.terminalOutputSelectionPointerActive
+                || this.selectableTextElementHasSelection(output)
+            ) {
+                return;
+            }
+            output.scrollTop = output.scrollHeight;
+        });
+    }
+
+    updateSelectableTextElement(output, nextText, update = null) {
+        if (!output || typeof nextText !== 'string') {
+            throw new Error('Selectable text rendering requires an output element and string text.');
+        }
+        const currentText = output.textContent || '';
+        if (currentText === nextText) {
+            return false;
+        }
+
+        const textNode = output.childNodes.length === 1
+            && output.firstChild?.nodeType === Node.TEXT_NODE
+            ? output.firstChild
+            : null;
+        const canApplyDelta = update
+            && update.reset !== true
+            && typeof update.previousText === 'string'
+            && typeof update.appendedText === 'string'
+            && typeof update.nextText === 'string'
+            && update.nextText === nextText
+            && currentText === update.previousText
+            && textNode;
+
+        if (!textNode) {
+            if (output.childNodes.length > 0) {
+                throw new Error('Selectable text output must contain at most one text node.');
+            }
+            output.appendChild(output.ownerDocument.createTextNode(nextText));
+            return true;
+        }
+
+        if (canApplyDelta) {
+            if (update.appendedText) {
+                textNode.appendData(update.appendedText);
+            }
+            const removedPrefixLength = textNode.length - nextText.length;
+            if (removedPrefixLength > 0) {
+                textNode.deleteData(0, removedPrefixLength);
+            }
+        } else {
+            let commonPrefixLength = 0;
+            while (
+                commonPrefixLength < currentText.length
+                && commonPrefixLength < nextText.length
+                && currentText[commonPrefixLength] === nextText[commonPrefixLength]
+            ) {
+                commonPrefixLength += 1;
+            }
+            let commonSuffixLength = 0;
+            while (
+                commonSuffixLength < currentText.length - commonPrefixLength
+                && commonSuffixLength < nextText.length - commonPrefixLength
+                && currentText[currentText.length - 1 - commonSuffixLength]
+                    === nextText[nextText.length - 1 - commonSuffixLength]
+            ) {
+                commonSuffixLength += 1;
+            }
+            textNode.replaceData(
+                commonPrefixLength,
+                currentText.length - commonPrefixLength - commonSuffixLength,
+                nextText.slice(commonPrefixLength, nextText.length - commonSuffixLength)
+            );
+        }
+        if (textNode.data !== nextText) {
+            throw new Error('Incremental selectable text update did not match the requested text.');
+        }
+        return true;
+    }
+
+    renderTerminalOutputText({
+        status = null,
+        available = null,
+        running = null,
+        pid = null,
+        outputUpdate = null
+    } = {}) {
+        const viewer = this.terminalOutputViewer;
+        if (!viewer) {
+            return;
+        }
+        const output = viewer.querySelector('.terminal-output-viewer__output');
+        const subtitle = viewer.querySelector('.terminal-output-viewer__subtitle');
+        const sourceSelect = viewer.querySelector('.terminal-output-viewer__source-select');
+        const source = this.terminalOutputSource;
+        const sourceName = source === 'llama' ? 'llama.cpp' : 'AI RPG';
+        const capturedText = this.terminalOutputTextBySource.get(source) || '';
+
+        if (output) {
+            const nextText = capturedText || (available === false
+                ? (status || `${sourceName} terminal output is unavailable.`)
+                : 'Waiting for terminal output…');
+            this.updateSelectableTextElement(output, nextText, outputUpdate);
+        }
+        if (subtitle) {
+            if (status) {
+                subtitle.textContent = status;
+            } else {
+                const stateText = running === false ? 'Stopped' : 'Running';
+                const pidText = Number.isInteger(pid) ? `PID ${pid}` : null;
+                subtitle.textContent = [sourceName, stateText, pidText].filter(Boolean).join(' • ');
+            }
+        }
+        if (sourceSelect) {
+            sourceSelect.value = source;
+            const llamaOption = sourceSelect.querySelector('option[value="llama"]');
+            if (llamaOption && source === 'llama' && available !== null) {
+                llamaOption.disabled = available === false;
+                llamaOption.title = available === false
+                    ? (status || 'llama.cpp was not started by AI RPG.')
+                    : '';
+            }
+        }
+        if (
+            this.terminalOutputFollow
+            && !this.terminalOutputSelectionPointerActive
+            && !this.selectableTextElementHasSelection(output)
+        ) {
+            this.scrollTerminalOutputViewerToBottom(viewer, output);
+        }
+    }
+
+    scheduleTerminalOutputRefresh(generation = this.terminalOutputPollGeneration) {
+        if (!this.isTerminalOutputViewerOpen() || generation !== this.terminalOutputPollGeneration) {
+            return;
+        }
+        if (this.terminalOutputPollTimer) {
+            clearTimeout(this.terminalOutputPollTimer);
+        }
+        this.terminalOutputPollTimer = setTimeout(() => {
+            this.terminalOutputPollTimer = null;
+            void this.refreshTerminalOutput({ generation });
+        }, this.terminalOutputPollIntervalMs);
+    }
+
+    async refreshTerminalOutput({ generation = this.terminalOutputPollGeneration } = {}) {
+        if (!this.isTerminalOutputViewerOpen() || generation !== this.terminalOutputPollGeneration) {
+            return;
+        }
+        const source = this.terminalOutputSource;
+        const cursor = this.terminalOutputCursors.get(source);
+        const query = new URLSearchParams({ source });
+        if (Number.isSafeInteger(cursor) && cursor >= 0) {
+            query.set('cursor', String(cursor));
+        }
+
+        try {
+            const response = await fetch(`/api/terminal-output?${query.toString()}`, {
+                cache: 'no-store'
+            });
+            const data = await response.json().catch(() => ({}));
+            if (!response.ok || data?.success !== true) {
+                const error = new Error(data?.error || `HTTP ${response.status}`);
+                error.serverStack = typeof data?.stack === 'string' ? data.stack : '';
+                throw error;
+            }
+            if (data.source !== source) {
+                throw new Error(`Terminal output response source mismatch: expected "${source}".`);
+            }
+            if (typeof data.output !== 'string' || !Number.isSafeInteger(data.cursor) || data.cursor < 0) {
+                throw new Error('Terminal output response is malformed.');
+            }
+
+            let outputUpdate = null;
+            if (data.available === false) {
+                this.terminalOutputCursors.delete(source);
+                this.terminalOutputTextBySource.set(source, '');
+            } else {
+                const previousText = this.terminalOutputTextBySource.get(source) || '';
+                const combinedText = data.reset === true ? data.output : `${previousText}${data.output}`;
+                const nextText = combinedText.slice(-this.terminalOutputClientMaxCharacters);
+                this.terminalOutputTextBySource.set(source, nextText);
+                this.terminalOutputCursors.set(source, data.cursor);
+                outputUpdate = {
+                    reset: data.reset === true,
+                    previousText,
+                    appendedText: data.output,
+                    nextText
+                };
+            }
+
+            if (
+                generation === this.terminalOutputPollGeneration
+                && source === this.terminalOutputSource
+                && this.isTerminalOutputViewerOpen()
+            ) {
+                this.renderTerminalOutputText({
+                    status: typeof data.message === 'string' && data.message.trim()
+                        ? data.message.trim()
+                        : null,
+                    available: data.available !== false,
+                    running: data.running === true,
+                    pid: data.pid,
+                    outputUpdate
+                });
+            }
+        } catch (error) {
+            if (
+                generation === this.terminalOutputPollGeneration
+                && source === this.terminalOutputSource
+                && this.isTerminalOutputViewerOpen()
+            ) {
+                const detail = typeof error?.serverStack === 'string' && error.serverStack.trim()
+                    ? error.serverStack.trim()
+                    : (error?.message || String(error));
+                console.error('Failed to refresh terminal output:', detail);
+                this.renderTerminalOutputText({
+                    status: `Terminal output error: ${error?.message || String(error)}`,
+                    available: false,
+                    running: false,
+                    pid: null
+                });
+            }
+        } finally {
+            this.scheduleTerminalOutputRefresh(generation);
+        }
+    }
+
+    openTerminalOutputViewer() {
+        if (this.isTerminalOutputViewerOpen()) {
+            this.terminalOutputViewer.focus();
+            return;
+        }
+        this.terminalOutputPollGeneration += 1;
+        this.terminalOutputViewer = this.createTerminalOutputViewer();
+        this.terminalOutputViewer.style.top = `${this.getPromptProgressSafeTopOffsetPx()}px`;
+        document.body.appendChild(this.terminalOutputViewer);
+        this.terminalOutputButton?.setAttribute('aria-expanded', 'true');
+        this.renderTerminalOutputText();
+        void this.refreshTerminalOutput({ generation: this.terminalOutputPollGeneration });
+        this.terminalOutputViewer.querySelector('.terminal-output-viewer__source-select')?.focus();
+    }
+
+    closeTerminalOutputViewer() {
+        this.terminalOutputPollGeneration += 1;
+        if (this.terminalOutputPollTimer) {
+            clearTimeout(this.terminalOutputPollTimer);
+            this.terminalOutputPollTimer = null;
+        }
+        if (this.terminalOutputSelectionEndHandler) {
+            document.removeEventListener('pointerup', this.terminalOutputSelectionEndHandler, true);
+            document.removeEventListener('pointercancel', this.terminalOutputSelectionEndHandler, true);
+            this.terminalOutputSelectionEndHandler = null;
+        }
+        this.terminalOutputSelectionPointerActive = false;
+        this.terminalOutputViewer?.remove();
+        this.terminalOutputViewer = null;
+        this.terminalOutputButton?.setAttribute('aria-expanded', 'false');
+        this.terminalOutputButton?.focus();
+    }
+
     async cancelAllPrompts({ waitForDrain = true, timeoutMs = 12000 } = {}) {
         if (typeof waitForDrain !== 'boolean') {
             throw new Error('waitForDrain must be a boolean.');
@@ -5559,6 +5988,7 @@ class AIRPGChat {
         const resolvedViewerId = typeof viewerId === 'string' ? viewerId.trim() : '';
         if (!resolvedViewerId) {
             for (const viewerState of this.promptProgressViewerWindows.values()) {
+                this.cleanupPromptProgressViewerSelection(viewerState);
                 if (viewerState?.element?.isConnected) {
                     viewerState.element.remove();
                 }
@@ -5568,11 +5998,24 @@ class AIRPGChat {
             return;
         }
         const viewerState = this.promptProgressViewerWindows.get(resolvedViewerId);
+        this.cleanupPromptProgressViewerSelection(viewerState);
         if (viewerState?.element?.isConnected) {
             viewerState.element.remove();
         }
         this.promptProgressViewerWindows.delete(resolvedViewerId);
         this.renderPromptProgress(this.promptProgressEntries);
+    }
+
+    cleanupPromptProgressViewerSelection(viewerState) {
+        const handler = viewerState?.selectionEndHandler;
+        if (typeof handler === 'function') {
+            document.removeEventListener('pointerup', handler, true);
+            document.removeEventListener('pointercancel', handler, true);
+        }
+        if (viewerState) {
+            viewerState.selectionEndHandler = null;
+            viewerState.selectionPointerActive = false;
+        }
     }
 
     async copyTextToClipboard(text) {
@@ -5602,8 +6045,9 @@ class AIRPGChat {
         }
     }
 
-    scrollPromptProgressViewerToBottom(viewerOrState = null) {
-        const viewer = viewerOrState?.element || viewerOrState;
+    scrollPromptProgressViewerToBottom(viewerOrState = null, { force = false } = {}) {
+        const viewerState = viewerOrState?.element ? viewerOrState : null;
+        const viewer = viewerState?.element || viewerOrState;
         if (!viewer) {
             return;
         }
@@ -5612,6 +6056,20 @@ class AIRPGChat {
             return;
         }
         requestAnimationFrame(() => {
+            if (
+                !streamTextElement.isConnected
+                || (
+                    viewerState
+                    && force !== true
+                    && (
+                        viewerState.followStream !== true
+                        || viewerState.selectionPointerActive === true
+                        || this.selectableTextElementHasSelection(streamTextElement)
+                    )
+                )
+            ) {
+                return;
+            }
             streamTextElement.scrollTop = streamTextElement.scrollHeight;
         });
     }
@@ -5693,7 +6151,7 @@ class AIRPGChat {
         followCheckbox.addEventListener('change', () => {
             viewerState.followStream = followCheckbox.checked;
             if (followCheckbox.checked) {
-                this.scrollPromptProgressViewerToBottom(viewer);
+                this.scrollPromptProgressViewerToBottom(viewerState, { force: true });
             }
         });
 
@@ -5788,6 +6246,16 @@ class AIRPGChat {
         streamText.appendChild(failedResponseSeparatorText);
         streamText.appendChild(responseText);
 
+        const endPromptProgressSelection = () => {
+            viewerState.selectionPointerActive = false;
+        };
+        streamText.addEventListener('pointerdown', () => {
+            viewerState.selectionPointerActive = true;
+        });
+        document.addEventListener('pointerup', endPromptProgressSelection, true);
+        document.addEventListener('pointercancel', endPromptProgressSelection, true);
+        viewerState.selectionEndHandler = endPromptProgressSelection;
+
         streamSection.appendChild(streamLabel);
         streamSection.appendChild(streamText);
 
@@ -5875,25 +6343,34 @@ class AIRPGChat {
         const renderedPromptText = promptText || 'Prompt not available for this stream.';
         const renderedResponseText = previewText || 'Waiting for streamed text...';
         if (promptTextElement) {
-            promptTextElement.textContent = renderedPromptText;
+            this.updateSelectableTextElement(promptTextElement, renderedPromptText);
         }
         if (failedResponseTextElement) {
-            failedResponseTextElement.textContent = failedResponses
+            const renderedFailedResponses = failedResponses
                 .map(response => response.trim() ? response : '(empty response)')
                 .join('\n\n');
+            this.updateSelectableTextElement(failedResponseTextElement, renderedFailedResponses);
         }
         if (streamTextElement && promptTextElement && failedResponseTextElement && responseTextElement) {
             const separatorNode = promptTextElement.nextSibling;
             if (separatorNode && separatorNode.nodeType === Node.TEXT_NODE) {
-                separatorNode.textContent = '\n\n';
+                if (separatorNode.data !== '\n\n') {
+                    separatorNode.data = '\n\n';
+                }
             }
             const failedResponseSeparatorNode = failedResponseTextElement.nextSibling;
             if (failedResponseSeparatorNode && failedResponseSeparatorNode.nodeType === Node.TEXT_NODE) {
-                failedResponseSeparatorNode.textContent = failedResponses.length ? '\n\n' : '';
+                const nextSeparator = failedResponses.length ? '\n\n' : '';
+                if (failedResponseSeparatorNode.data !== nextSeparator) {
+                    failedResponseSeparatorNode.data = nextSeparator;
+                }
             }
         }
         if (responseTextElement) {
-            responseTextElement.textContent = entry.responseFailed === true ? '' : renderedResponseText;
+            this.updateSelectableTextElement(
+                responseTextElement,
+                entry.responseFailed === true ? '' : renderedResponseText
+            );
         }
         viewer.classList.toggle('is-prompt-empty', !promptText);
         viewer.classList.toggle('has-failed-responses', failedResponses.length > 0);
@@ -5904,7 +6381,7 @@ class AIRPGChat {
             document.body.appendChild(viewer);
         }
         if (viewerState.followStream === true) {
-            this.scrollPromptProgressViewerToBottom(viewer);
+            this.scrollPromptProgressViewerToBottom(viewerState);
         }
     }
 
@@ -5932,6 +6409,8 @@ class AIRPGChat {
             promptId: resolvedId,
             progressGroupId: typeof entry.progressGroupId === 'string' ? entry.progressGroupId : null,
             followStream: true,
+            selectionPointerActive: false,
+            selectionEndHandler: null,
             isLive: true,
             lastEntry: this.createPromptProgressViewerEntrySnapshot(entry),
             stackOffset: ((this.promptProgressViewerCounter - 1) % 6) * 24,
@@ -6883,6 +7362,15 @@ class AIRPGChat {
 
     bindEvents() {
         this.sendButton.addEventListener('click', () => this.sendMessage());
+        if (this.terminalOutputButton) {
+            this.terminalOutputButton.addEventListener('click', () => {
+                if (this.isTerminalOutputViewerOpen()) {
+                    this.closeTerminalOutputViewer();
+                } else {
+                    this.openTerminalOutputViewer();
+                }
+            });
+        }
         if (this.abortTurnButton) {
             this.abortTurnButton.addEventListener('click', () => {
                 void this.cancelAllPromptsAndLoadLatestAutosave({
@@ -6890,6 +7378,13 @@ class AIRPGChat {
                 });
             });
         }
+
+        document.addEventListener('keydown', (event) => {
+            if (event.key === 'Escape' && this.isTerminalOutputViewerOpen()) {
+                event.preventDefault();
+                this.closeTerminalOutputViewer();
+            }
+        });
 
         document.addEventListener('click', (event) => {
             const trigger = event.target?.closest?.('.event-summary-new-exit-pill[data-new-exit-summary-payload]');

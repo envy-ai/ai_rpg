@@ -23,7 +23,7 @@ Merge precedence is:
 3. `--config-override` file
 
 The override file must exist and contain a YAML object. Invalid or missing files fail startup with a clear error.
-If the server is started with `--config-override`, `reload_config` keeps using the same override file.
+If the server is started with `--config-override`, `reload_config` keeps using the same override file as its startup layer.
 
 Object values are merged recursively. Arrays, scalars, and `null` replace the lower-precedence value.
 `config.yaml` must exist for normal server startup; copy `config.default.yaml` to `config.yaml` during setup.
@@ -39,6 +39,8 @@ Merge precedence becomes:
 3. `--config-override` file
 4. loaded game's YAML override
 
+An override file selected later with `/reload_config <override_file>` becomes a fifth, process-local layer above the loaded game's YAML override. This lets a running server switch profiles without editing the loaded save.
+
 Rules:
 - The per-game override must contain a YAML object when non-blank.
 - Blank input clears the per-game override for the loaded game.
@@ -51,9 +53,9 @@ Rules:
 
 The web UI and slash commands expose different config write paths:
 
-- `/config` renders the merged config and saves form submissions to root `config.yaml`. The page response tells the user to restart; the form save path does not run definition reloads or hot-toggle the active mod set.
+- `/config` renders the merged config across Server, AI, Story Engine, Gameplay, and Image Generation tabs. Its save target is the active session override selected by `/reload_config <file>`, otherwise the startup `--config-override` file, otherwise root `config.yaml`; the exact target is displayed below the tab bar. The complete merged form is serialized into that target, so saving a formerly sparse override intentionally turns it into a full configuration snapshot. Before replacement, the server copies the exact previous YAML to a timestamped file under Git-ignored `config-backups/`; that backup preserves comments, while the active `js-yaml` serialization does not. The page response tells the user to restart; the form save path does not run definition reloads or hot-toggle the active mod set. The separate Current Game tab requires an explicit save before its YAML override is reloaded and persisted.
 - `/api/game-config-override` accepts `{ "yaml": "..." }`, requires a loaded game, stores the raw per-game YAML on `Globals`, and runs the same runtime reload path as `/reload_config`.
-- `/reload_config` reloads `config.default.yaml`, `config.yaml`, the startup CLI override, and the loaded game override; validates formula config; refreshes definition caches; invalidates Nunjucks caches; and reports mod enablement drift.
+- `/reload_config [override_file]` reloads `config.default.yaml`, `config.yaml`, the startup CLI override, the loaded game override, and the active process-local session override; validates formula config; refreshes definition caches; invalidates Nunjucks caches; and reports mod enablement drift. A supplied relative path resolves from the project root and becomes the highest-precedence layer for the rest of the process. Bare reloads reuse it; restarting clears it. Selection is atomic, so a missing or invalid file leaves the current live config and prior session override unchanged.
 - `/get <path>` reads a dotted path from `Globals.config`.
 - `/set <path> <value>` mutates the in-memory `Globals.config` object only. It parses `true`/`false` as booleans and leaves other values as strings. It does not write YAML or reload definitions.
 
@@ -100,7 +102,7 @@ The setting defaults to `false` and must be a boolean. It is an AI model setting
 
 For router servers that can leave streamed HTTP connections open, configure `ai.headers.Connection: close`. The header is reused for both chat and router-management requests, preventing a stale pooled connection from causing a later `/models` status read to fail with `socket hang up`.
 
-Before every real LLM transport attempt whose effective setting is `true`, the server calls ComfyUI `/free` with both model-unload and memory-release flags. This happens after the request acquires the shared model-lifecycle gate and before any request reaches the text backend. A cleanup failure prevents the prompt from starting and surfaces as an explicit prompt error. When image rendering itself is disabled but any AI profile enables this mode, the server still initializes and connectivity-checks a ComfyUI client solely for pre-prompt cleanup.
+Before every real LLM transport attempt whose effective setting is `true`, the server calls ComfyUI Cache Monitor's `/comfyui-cache-monitor/release_vram`, preserving its RAM-backed model cache. Only a failed or unconfirmed Cache Monitor release may invoke ComfyUI `/free` with both model-unload and memory-release flags. This happens after the request acquires the shared model-lifecycle gate and before any request reaches the text backend. Failure of both cleanup requests prevents the prompt from starting and surfaces as an explicit prompt error. When image rendering itself is disabled but any AI profile enables this mode, the server still initializes and connectivity-checks a ComfyUI client solely for pre-prompt cleanup.
 
 When enabled:
 
@@ -131,7 +133,7 @@ Any nonblank root `local_startup_script_path` activates automatic startup indepe
 
 Termination handoff does not use llama.cpp router endpoints or model unload/load requests. It stops and starts only the saved local process group. The separate root-level `unload_model_on_switch` feature is independent and should remain `false` when local models are selected through startup scripts.
 
-When either image-handoff mode is enabled, the server initializes the ComfyUI client and strictly calls ComfyUI `/free` with both model-unload and memory-release flags immediately before starting the local process. When both handoff flags are false, automatic local-process startup does not require or contact ComfyUI. Node retains the resulting PID and normalized script path in memory. The script should use `exec` for its final llama.cpp command; the managed child is also placed in its own process group so wrapper descendants receive the termination signal. A required cleanup, spawn, early-exit, or readiness failure aborts startup explicitly.
+When either image-handoff mode is enabled, the server initializes the ComfyUI client and calls ComfyUI cleanup immediately before starting the local process. If ComfyUI is unreachable (for example, it is not running), startup logs a warning and continues: an unreachable ComfyUI instance cannot hold models in VRAM. A reachable cleanup failure still aborts startup explicitly. When both handoff flags are false, automatic local-process startup does not require or contact ComfyUI. Node retains the resulting PID and normalized script path in memory. The script should use `exec` for its final llama.cpp command; the managed child is also placed in its own process group so wrapper descendants receive the termination signal.
 
 Before each real LLM transport whose effective AI profile enables managed termination, the request takes exclusive model-lifecycle access and compares its effective `local_startup_script_path` with the running process. If the normalized paths match, the process and PID are reused. If they differ, the old process group is terminated and awaited first; only then does the server run strict ComfyUI cleanup, start the replacement script, and wait for health before sending the prompt. This makes prompt-specific local-model overrides safe without repeatedly restarting consecutive prompts that use the same script. A switch failure is fatal for that prompt and the replacement transport is never sent.
 
@@ -325,6 +327,20 @@ ai_model_overrides:
 
 The qwen-combo-router profile routes player-visible narrative work through its 27B prose-model override. In addition to ordinary, creative, NPC, crafting, random-event, and game-intro narration, this includes location-modification and checked-container results, quest rewards, visible while-away narration, storyteller questions, no-context generic prompts, scheduled-event narration, and the rewrite used only when an event occurs partway through a longer player action. `slop_remover` deliberately remains on the default fast model because it edits existing prose instead of originating a scene.
 
+`config.yaml.qwen-combo-router-kimi-prose` is the hybrid frontier/local variant. It preserves that same prose prompt-label list but routes it through `kimi_cli_bridge` with Kimi's configured default model and low thinking effort. Those prose families use their ordinary non-TinyBrain templates; event checks, need-bar checks, scene summaries, and all other prompts remain on the local `Qwen3.6-35B-A3B-uncensored-heretic-Native-MTP-Preserved-GGUF`, with TinyBrain enabled for the three structured families. The local Qwen MoE is also the router preload target. Because a CLI bridge is not a llama.cpp router target, this profile disables global model-switch unloading and live deslop; completed-response slop removal remains enabled, while the existing ComfyUI render handoff still unloads and reloads the local model.
+
+`config.yaml.kimi-cli-bridge` is the all-Kimi counterpart. It is a full configuration snapshot based on `config.yaml.qwen-combo-router-artemis`, preserves that profile's complete ComfyUI generation/edit workflow and image-prompt settings, and routes every text prompt—including the existing prose override labels—through `kimi_cli_bridge` using Kimi's saved default model with low thinking effort. TinyBrain is disabled so those families use their standard prompts. Since no local text model remains, the profile blanks router preload state, disables model-switch unloading and live deslop, and clears the managed llama.cpp startup and image-handoff settings. Completed-response slop removal and ComfyUI rendering remain enabled.
+
+`config.yaml.codex-luna-kimi-prose` derives from the all-Kimi profile and keeps its complete Artemis-derived image-generation configuration. Unmatched text prompts use `codex_cli_bridge` with `gpt-5.6-luna` and `codex_bridge.reasoning_effort: none`; only the unified `event_checks` label moves to `gpt-5.6-terra` with the same `none` effort, while `need_bar_event_checks` and every other non-prose label remain on Luna. The existing player-visible prose label list explicitly overrides the backend to `kimi_cli_bridge`, using Kimi's saved default model with low thinking effort. The Codex bridge home is blank in both Codex routes so their subprocesses use the current user's already-authenticated default Codex home instead of an isolated unauthenticated directory. All routes use fresh sessions, TinyBrain and live deslop remain disabled, and no llama.cpp lifecycle setting is enabled.
+
+`config.yaml.artemis-kimi-prose` keeps the same Artemis-derived ComfyUI workflow and current gameplay settings while routing every unmatched/non-prose text prompt to the local `Artemis-31B-v1.Q4_K_S` llama.cpp endpoint. Its sole active model override sends the player-visible prose label list to `kimi_cli_bridge` with Kimi's saved default model and low thinking effort. TinyBrain is enabled for local Artemis event checks, need-bar checks, and scene summaries; every supported prose family handled by the Kimi override has its family switch disabled so Kimi receives the ordinary prompt. The root route enables managed termination handoff, disables router unloading/model switching and startup preloading, and uses `scripts/start-artemis-ram-router.sh`. The prose override explicitly disables both image-handoff flags and clears the local startup path so Kimi never participates in the llama.cpp lifecycle.
+
+The root `config.yaml` uses this Artemis/Kimi profile as its standard configuration. It additionally routes image-referenced multimodal text prompts through `kimi_cli_bridge`, retains NanoGPT's image-generation credentials as the requested inactive alternative to the selected ComfyUI engine, and omits unused Mimo, Pollinations, LocalAI, Codex bridge, Cline bridge, disabled Z.AI, and inactive `dumb` override service configuration.
+
+`scripts/start-artemis-ram-router.sh` stages `/d/llms/Artemis-31B-v1.Q4_K_S.gguf` in the dedicated `/dev/shm/ai-rpg-artemis-models` directory before starting a one-model router. Staging is serialized with `flock`; an existing copy is reused only when its byte size and recorded source device/inode/size/mtime fingerprint still match. New copies are written to a partial file and renamed into place only after their size is verified. The staged GGUF intentionally survives managed llama.cpp termination and is naturally discarded when the host clears `/dev/shm`. The router uses a 96,000-token context, Q8 KV caches, full GPU offload, `--no-mmproj`, and a three-minute idle sleep. Because it starts in router mode without `router_preload_model`, restarting the lightweight router after a ComfyUI batch does not load Artemis until a non-prose request arrives; idle sleep destroys the loaded model and KV cache while leaving the tmpfs GGUF available for the next RAM-to-VRAM load. `ARTEMIS_LLAMA_BINARY`, `ARTEMIS_SOURCE_MODEL`, `ARTEMIS_SHM_MODELS_DIR`, `ARTEMIS_LLAMA_HOST`, `ARTEMIS_LLAMA_PORT`, `ARTEMIS_LLAMA_CTX_SIZE`, and `ARTEMIS_LLAMA_SLEEP_IDLE_SECONDS` provide explicit launch-time overrides.
+
+`scripts/start-all-models-router.sh` is the managed launcher for freely switching the root local model in `config.yaml`. It discovers every top-level `.gguf` in `/d/llms` except projector files whose names contain `mmproj`, rebuilds a symlink-only catalog at `/tmp/ai-rpg-all-model-catalog`, and points llama.cpp router discovery at that catalog. Its shared defaults are a 105,000-token context, Q8 KV caches, full GPU offload, no multimodal projector, no reasoning, one resident model, and a three-minute idle sleep. The catalog prevents a projector GGUF from appearing as a selectable language model without copying model weights. `ALL_MODELS_LLAMA_BINARY`, `ALL_MODELS_SOURCE_DIR`, `ALL_MODELS_CATALOG_DIR`, `ALL_MODELS_LLAMA_HOST`, `ALL_MODELS_LLAMA_PORT`, `ALL_MODELS_LLAMA_CTX_SIZE`, and `ALL_MODELS_LLAMA_SLEEP_IDLE_SECONDS` override those launch-time paths and values. Models that cannot support the shared context or fit its VRAM allocation fail during their own load rather than being silently adjusted.
+
 ## Barter
 
 `barter` controls NPC trade sessions and generated merchant stock.
@@ -426,7 +442,7 @@ model_swap_options:
 - `stream_start_timeout` and `stream_continue_timeout` are seconds. Retry attempts add `increment_start_timeout` and `increment_continue_timeout`, also in seconds.
 - `supress_seed: true` omits the `seed` payload field. The key name is spelled `supress_seed` in the config file and code.
 - `max_concurrent_requests` controls the per-model/API-key semaphore for OpenAI-compatible requests and the one-shot/fresh-session concurrency limit for CLI bridges. The root `max_concurrent_requests_all_models` setting can add a process-wide cap across those per-key semaphores.
-- `model_swap_options` drives the `/config` page model selector and is saved as a JSON string-array field by that page.
+- `model_swap_options` drives the `/config` page model selector for remote providers and CLI bridges and is saved as a JSON string-array field by that page. When `ai.backend` is `openai_compatible` and either `ai.local_startup_script_path` is configured or `ai.endpoint` uses a loopback hostname, `/config` instead queries the running llama.cpp router's read-only `/models` endpoint and limits the selector (including mod model selectors) to the unique model IDs it advertises. A failed local query is shown on the page and does not fall back to stale configured choices.
 
 ## OAuth Refresh-Token Auth
 
@@ -569,6 +585,7 @@ Behavior notes:
 
 - Kimi Code must already be installed and logged in under the user running the game server. The bridge does not read or configure an API key.
 - Every request starts a fresh `kimi acp` process, negotiates ACP protocol version 1, and creates a new session. Session load, resume, and continue modes are intentionally not used.
+- OpenAI-style image data-URL parts are normalized to WebP by `LLMClient`, labeled in the flattened conversation transcript, and sent as native ACP image content blocks after the text prompt. Missing, remote, malformed, or empty image data fails explicitly instead of being reduced to an image-omitted placeholder.
 - Thinking effort is supplied when the Kimi subprocess starts, so it requires no ACP thinking-option negotiation. Models marked `always_thinking` may expose effort levels without an off value; `low` is then the minimum available setting, not disabled reasoning.
 - The ACP client advertises no filesystem or terminal capabilities and passes no MCP servers. Kimi ACP does not expose the prompt-mode `--agent-file` or `--skills-dir` flags.
 - The bridge prompt prohibits native Kimi tools. Any ACP tool event, permission request, or unsupported reverse client request fails the bridge request explicitly.
@@ -744,6 +761,7 @@ ai:
     craft_player_action: true
     location_modify_player_action: true
     player_action_open_container: true
+    scene_summarize: true
     while_you_were_away: true
     scheduled_event_resolution: true
     scheduled_event_interruption_rewrite: true
@@ -751,8 +769,8 @@ ai:
 
 - Must be a boolean when present and defaults to `false`.
 - `tinybrain_prompts` must be an object when present. Its keys are restricted to the documented family names and every value must be boolean. A missing family key defaults to enabled when the master switch is true.
-- With the master switch false, all families use their existing one-shot prompt. With it true, a family set to false intentionally stays one-shot. A selected staged family does not silently rerun its legacy prompt after parser failure.
-- When enabled, TinyBrain templates pause at their `llm_dummy_action` and `llmparse(...)` checkpoints. Each response and any tool results remain in the conversation for later checkpoints. `need_bar_event_checks` uses one plain-text planning checkpoint followed by one strict `<characters>` response, so malformed final XML retries without rerunning the accepted plan.
+- With the effective master switch false, all families use their existing one-shot prompt. With it true, a family set to false intentionally stays one-shot. Runtime routing resolves `ai_model_overrides` for the family's metadata label before reading these switches, so a prompt-specific model profile can set `tinybrain: false` without disabling staged prompts handled by the base model. A selected staged family does not silently rerun its legacy prompt after parser failure.
+- When enabled, TinyBrain templates pause at their `llm_dummy_action` and `llmparse(...)` checkpoints. Each response and any tool results remain in the conversation for later checkpoints. `need_bar_event_checks` uses one plain-text planning checkpoint followed by one strict `<characters>` response, so malformed final XML retries without rerunning the accepted plan. `scene_summarize` proposes and verifies scene boundaries, validates each completed scene independently, and assembles the terminal `<scenes>` XML locally.
 - The full staged run retains one acquired per-model queue permit and its optional `max_concurrent_requests_all_models` permit across checkpoints, retries, and tool-call rounds. This reserves its current queue slot until completion without consuming other configured free slots.
 - A checkpoint parse failure retries only that position, up to `ai.retryAttempts` retries after the initial response. The malformed terminal response is removed, while preceding tool calls and tool results are retained.
 - The run is written incrementally to one prompt log with explicit begin/end markers around every LLM response.
@@ -765,7 +783,7 @@ While a TinyBrain checkpoint or final response streams, the safeguard tracks bal
 
 On detection, the active transport is aborted, the repeated `A` or second `AB` suffix is removed, and the accepted prefix is appended to the request conversation as an `assistant` message followed by an exact `user` message of `continue`. Generation resumes from that conversation and the continuation is stitched onto the accepted prefix. A partial streamed tool call is discarded with the aborted response; tool calls and tool results completed during earlier TinyBrain rounds remain in the accumulated conversation. The maximum number of these continuation recoveries for one checkpoint/final completion is `ai.retryAttempts`; exhausting it raises an explicit error. This mechanism is independent of `ai.live_deslop` and can be enabled with or without it.
 
-The supported prose families use domain-specific planning/outcome checkpoints followed by a plain draft, revision decision, and optional second draft. Where the terminal result is already determined, allowlisted local result builders assemble final XML from approved prose, authoritative mechanics, parsed checkpoint values, and completed tool outcomes instead of asking the model to repeat it. Quest rewards validate indexed coverage; craft/location prompts preserve already-applied mechanics and selected duration; checked containers share one tool cache and require exactly one successful check; while-away validates staged updates before mutation; scheduled-event planning may use read-only lookups before accepting a mutation plan, and its execution stage terminates locally once every accepted obligation is complete; interruption rewrites preserve every non-prose field. XML event checks retain their chunked `<events>` assembly pipeline. Need-bar event checks use their separate two-phase planning/characters program.
+The supported prose families use domain-specific planning/outcome checkpoints followed by a plain draft, revision decision, and optional second draft. Where the terminal result is already determined, allowlisted local result builders assemble final XML from approved prose, authoritative mechanics, parsed checkpoint values, and completed tool outcomes instead of asking the model to repeat it. Quest rewards validate indexed coverage; craft/location prompts preserve already-applied mechanics and selected duration; checked containers share one tool cache and require exactly one successful check; while-away validates staged updates before mutation; scheduled-event planning may use read-only lookups before accepting a mutation plan, and its execution stage terminates locally once every accepted obligation is complete; interruption rewrites preserve every non-prose field. XML event checks retain their chunked `<events>` assembly pipeline. Need-bar event checks use their separate two-phase planning/characters program. Scene summaries use a proposal/correction boundary pass, per-scene validated checkpoints, and local final assembly.
 
 Every current or future prompt implemented through `TinyBrainPromptRunner` automatically reserves one queue position and one cumulative progress row for its complete staged run. The fixed expected-output label is derived as `<metadataLabel>_tinybrain` (`player_action_tinybrain`, `event_checks_tinybrain`, and so on). Successful completed runs record one aggregate output-character sample under that label, which becomes the next run's expected total. The bar uses the ordinary progress curve: 75% at that expected total and an asymptotic approach toward 100% beyond it.
 
@@ -828,6 +846,7 @@ ai:
 unload_model_on_switch: false
 router_preload_model: null
 ai:
+  router_slot_cache_enabled: false
   router_slot_cache_directory: /dev/shm
 ```
 
@@ -837,13 +856,13 @@ The successfully preloaded endpoint/model becomes the initial model-switch targe
 
 When enabled, every real text transport uses exclusive access to the shared model-lifecycle gate. Without router startup preloading, the first prompt establishes the current effective endpoint/model without unloading anything. With preloading, that startup model is already the baseline. If a prompt resolves to a different llama.cpp router endpoint or model—including through `ai_model_overrides`—the server checks the previous model through `GET /models`, sends `POST /models/unload` for that previous model when it is loaded, waits for its `unloaded` status, and only then starts the replacement prompt.
 
-When both targets use the same game-owned local router (identified by a nonblank effective `ai.local_startup_script_path`), the switch additionally preserves slot 0. Before unloading, it sends `POST /slots/0?action=save` with the old model id and a stable model-specific filename, then unloads the old model. If the replacement model has a saved cache, the game immediately sends `POST /slots/0?action=restore`; llama.cpp's router autoloads and waits for that model before performing the restore. The game deletes a successfully restored file before sending the prompt. If no cache exists, the game immediately sends the replacement prompt and lets the router autoload/wait instead of issuing and polling a separate `POST /models/load`. Prompt progress is registered before this lifecycle, so the client remains visibly busy during the router wait. `ai.router_slot_cache_directory` defaults to `/dev/shm`, must be an absolute path, and must exactly match llama.cpp's `--slot-save-path`. This local filesystem contract is why slot preservation is not attempted for remote or non-game-owned routers.
+`ai.router_slot_cache_enabled` is a boolean that defaults to `false` and can be overridden by prompt profiles. When it is true for both targets and both use the same game-owned local router (identified by a nonblank effective `ai.local_startup_script_path`), the switch additionally preserves slot 0. Before unloading, it sends `POST /slots/0?action=save` with the old model id and a stable model-specific filename, then unloads the old model. If the replacement model has a saved cache, the game immediately sends `POST /slots/0?action=restore`; llama.cpp's router autoloads and waits for that model before performing the restore. The game deletes a successfully restored file before sending the prompt. If no cache exists, the game immediately sends the replacement prompt and lets the llama.cpp router load it for the queued prompt. Prompt progress is registered before this lifecycle, so the client remains visibly busy during the router wait. `ai.router_slot_cache_directory` remains configurable, defaults to `/dev/shm`, must be an absolute path, and must exactly match llama.cpp's `--slot-save-path` whenever persistence is enabled. Leaving the router's `--slot-save-path` configured does not create cache files while AIRPG persistence is disabled.
 
 Slot save and restore failures are logged with `console.warn` and do not cancel the switch or prompt. A failed restore retains the cache file for a later attempt, after which the prompt still gives the router an opportunity to autoload the replacement. An old-model unload failure also does not cancel the turn: the server logs it, broadcasts a `llama_router_unload_warning` modal with the diagnostic backtrace, and submits the replacement prompt. The replacement can still fail if the router cannot load it while the old model remains resident. Failure to delete a cache after the router has successfully restored it remains fatal.
 
-Program termination and self-restart remove the exact cache paths for root, preload, prompt-override, and runtime-observed models that use a game-owned local router. Cleanup never scans `ai.router_slot_cache_directory`, so unrelated files remain untouched. Normal signal shutdown stops the managed router before asynchronous deletion, and the direct process-exit hook repeats deletion synchronously as a fallback. An uncatchable `SIGKILL` cannot run application cleanup.
+When slot persistence is enabled, program termination and self-restart remove the exact cache paths for root, preload, prompt-override, and runtime-observed models that use a game-owned local router. Cleanup never scans `ai.router_slot_cache_directory`, so unrelated files remain untouched. Normal signal shutdown stops the managed router before asynchronous deletion, and the direct process-exit hook repeats deletion synchronously as a fallback. An uncatchable `SIGKILL` cannot run application cleanup.
 
-llama.cpp may reject slot save/restore for a model loaded with multimodal projection data. The warning behavior keeps model switching operational, but context preservation requires a llama.cpp/model configuration that supports slot persistence. The qwen-combo-router configuration uses `scripts/start-qwen-combo-router.sh`, which passes the supported `--no-mmproj` option and `config/llama-qwen-combo-text-only.ini` to the shared router launcher. The model-specific preset replaces router directory discovery's explicit projector path with an empty value, so both Qwen workers stay text-only even though their mmproj files remain installed on disk.
+llama.cpp may reject slot save/restore for a model loaded with multimodal projection data. The warning behavior keeps model switching operational, but context preservation requires a llama.cpp/model configuration that supports slot persistence. The qwen-combo-router configuration uses `scripts/start-qwen-combo-router.sh`, which launches the shared Prism router binary with the supported `--no-mmproj` option, a default 96k context, and `config/llama-qwen-combo-text-only.ini`. GPU layers are set to 99 in the preset's global section instead of on the router command line so model-specific values can override it. The preset replaces router directory discovery's explicit projector path with an empty value for both Qwen workers and the five benchmarked Gemma 4 31B workers, so they stay text-only even though their mmproj files remain installed on disk. Garnet's Q6 weights plus the large-context compute graph exceed a 24 GiB GPU when all layers are forced onto CUDA, so its preset partially offloads layers to CPU with `n-gpu-layers = 40`; the other listed models retain the 99-layer global setting.
 
 This feature is independent of both image-generation handoff settings. Enabling `terminate_during_image_generation` neither requires nor enables `unload_model_on_switch`.
 
@@ -1065,6 +1084,8 @@ healthRegenPercentPerMinute: 0.01736111111
 
 `imagegen.prompt_batching` controls batching for the same LLM prompt-writing step. It is separate from `imagegen.batch_prompts`, which batches the final ComfyUI rendering jobs.
 
+`imagegen.image_prompt_instructions` remains the global per-target fallback for the prompt-writing LLM. The four global values are editable under System Configuration → Image Prompts. An active world profile can override each target independently through World Profiles → Image Prompt Generation; an empty profile field deliberately retains the global instruction.
+
 Ordinary ComfyUI workflow templates under `imagegen/` receive the full merged runtime config as `config`, in addition to the image job values under `image`. When render batching is enabled, the configured workflow instead receives the compatible jobs as `images`. For example, a workflow can reference `{{ config.imagegen.lora }}` to select a configured LoRA filename.
 
 ```yaml
@@ -1085,14 +1106,14 @@ imagegen:
 
 `imagegen.batch_prompts` is a strict boolean and is only supported by the ComfyUI engine. When it is `true`:
 
-- The server groups queued ordinary render jobs by effective `api_template`, exact width, and exact height. Different resolutions or workflow overrides are submitted separately even when they were queued together.
+- The server groups queued ordinary render jobs by effective selected workflow template, exact width, and exact height. Different resolutions or workflow overrides are submitted separately even when they were queued together.
 - Every compatible group, including a one-item group, is rendered through the configured list-capable workflow with an `images` array. The configured workflow must therefore support list input even when only one prompt is present.
-- The bundled `test_krea_2_simplified_lovely_batch.json.njk` workflow uses Impact Pack's `ImpactMakeAnyList` to build prompt and seed lists. ComfyUI completes all mapped CLIP encodes before the mapped KSamplers, then completes all samplers before the mapped VAE decodes and saves.
+- The standard Krea 2 batch workflow uses Impact Pack's `ImpactMakeAnyList` to build prompt and seed lists. ComfyUI completes all mapped CLIP encodes before the mapped KSamplers, then completes all samplers before the mapped VAE decodes and saves.
 - The jobs in one list submission share a Comfy prompt id and cancellation signal. Returned image order maps to prompt order, and the server requires exactly one output image per input prompt rather than guessing when counts differ.
 - Location weather/lighting variants remain on their dedicated img2img workflow and are never merged into prompt-list batches.
 - The server runs one list submission at a time; `maxConcurrentJobs` continues to control the non-batched path.
 
-`config.yaml.qwen-combo-router` enables this mode and selects `test_krea_2_simplified_lovely_batch.json.njk`, which preserves the lovely workflow's Krea 2 diffusion model, CLIP, Wan x2 VAE, sampler settings, and two-LoRA chain.
+The standard Krea 2 family automatically selects its matching list workflow when batching is enabled. The workflow editor's model, encoder, VAE, sampling, resolution, and LoRA choices are then applied to that standard graph.
 
 ## Image generation size overrides and portrait layout
 
@@ -1124,30 +1145,60 @@ imagegen:
 - When provided, character/item/scenery override values must be between `64` and `4096`.
 - If neither the per-type override nor `default_settings.image` provides a usable width/height, startup validation fails instead of silently hardcoding a fallback size.
 
-## Location weather/lighting image variants
+## Canonical ComfyUI workflows
 
-`imagegen.location_variant_settings` controls ComfyUI-only image-to-image variants of existing location images for the current world-time lighting and local weather.
+When `imagegen.engine` is `comfyui`, select the application-owned workflow under
+`imagegen.workflow`:
 
 ```yaml
 imagegen:
-  location_variant_settings:
-    api_template: flux2_klein_edit.json.njk
-    image:
-      width: null
-      height: null
-    sampling:
-      steps: 20
+  workflow:
+    generation:
+      family: krea2 # krea2, sdxl, flux_klein, zimage, qwen, anima, ideogram4
+      model: "" # optional compatible model override
+      text_encoder: ""
+      vae: ""
+      loras: []
+      steps: 6
+      cfg: 1
+      sampler: euler
+      scheduler: simple
       denoise: 0.45
-      cfg: 6
-      sampler: dpmpp_2m
-      scheduler: karras
+    edit:
+      family: flux_klein # krea2, flux_klein, or qwen
+      flux_kv_cache: true # standard Flux Klein edit only; defaults on
 ```
 
-- `api_template` is required when the ComfyUI engine is active. The default img2img template is `flux2_klein_edit.json.njk`. The template must exist under `imagegen/`; missing templates fail configuration validation and location-variant requests return an explicit skipped reason.
-- The default `flux2_klein_edit.json.njk` workflow detects width and height from the source image and does not use configured dimensions, so edited variants should return at the original resolution. It also routes the rendered edit prompt through a Crystools `Show any [Crystools]` node with the `Final Prompt` prefix, matching the current non-edit Qwen workflows' ComfyUI-console prompt visibility.
-- `image.width` / `height` are optional for custom variant workflows that reference `{{ image.width }}` or `{{ image.height }}`. `null` or omission falls back to the source image metadata, then `location_settings.image`, then `default_settings.image`.
-- `sampling.steps` falls back to `location_settings.sampling.steps`, then `default_settings.sampling.steps`.
-- `denoise`, `cfg`, `sampler`, and `scheduler` are passed to the variant workflow template.
+The standard templates are held under `imagegen/standard/` and are not shown
+among custom-workflow choices. The runtime applies nonblank compatible model,
+encoder, VAE, sampling, resolution, and LoRA settings after template rendering.
+It raises an error if an edit family is not supported or a selected LoRA cannot
+be attached safely—there is no cross-family substitution. See
+[`standard_image_workflows.md`](standard_image_workflows.md) for the graph
+registry and limitations.
+
+`workflow.edit.flux_kv_cache` controls the core Flux KV Cache node in the
+standard Flux Klein edit graph. Missing values are treated as `true` for
+existing configurations. Setting it to `false` uses ComfyUI's normal
+pass-through bypass topology for that node. It does not affect Qwen editing,
+Krea 2 editing, or custom workflows.
+
+The workflow editor stores named generation and edit presets in the shared
+root `image-workflow-presets.yaml` file. **Load** applies the selected preset,
+**Save** replaces it, and **Save As** opens a name dialog; names are YAML mapping
+keys, so users enter a display name without appending `.yaml`. The preset store
+is independent of the active system-config target, making every preset visible
+under every config override. Edit presets never retain a `resolutions` field.
+
+## Location weather/lighting image variants
+
+Location image-to-image variants for the current world-time lighting, season, scope-appropriate seasonal description, and local weather use the effective `imagegen.workflow.edit` profile in its entirety. This is the root global edit profile when the active world's **Use global setting** checkbox is enabled, or that world's edit profile when it is disabled. The retired `imagegen.location_variant_settings` block is ignored at runtime and removed on the next System Configuration save, so it cannot silently replace configured edit sampling values.
+
+- Location variants use `imagegen.workflow.edit`, whose shipped default is the standard Flux Klein edit workflow. The root `config.yaml` can select the standard Krea 2 Identity Edit v1.2 workflow for experimentation. Set `workflow.edit.custom_template` to select a custom img2img template under `imagegen/`. Missing custom or selected standard templates fail configuration validation.
+- The Image Edit form has no resolution controls. Standard Krea 2, Flux Klein, and Qwen edit graphs use ComfyUI's `GetImageSize` on the loaded source and an explicit final `ImageScale` to preserve its exact dimensions. The standard Krea graph applies the required full `d/krea2_identity_edit_v1_2.safetensors` adapter internally at strength 1.0 and uses the Krea2Edit model-patch and dual grounded-conditioning nodes. Its supplied preset uses 10 steps, CFG 1, Euler/simple, full denoise, `fit` geometry, `ref_boost: 4`, and `grounding_px: 768`. Standard edit graphs route the rendered edit prompt through a Crystools `Show any [Crystools]` node with the `Final Prompt` prefix.
+- The deterministic edit prompt always supplies lighting and season before weather. Weather-exposed and sheltered locations use `templates/location-weather-variant-image-prompt.njk` and receive the active calendar's `vegetationDescription`. Locations whose effective exposure is `no` use `templates/location-weather-variant-interior-image-prompt.njk` and the active season's `interiorDescription`, while prohibiting invented exterior vegetation, sky, openings, and precipitation. Legacy null exposure is inferred from `Exterior`/`Interior` location and region names; generated locations are required to persist an explicit scope. Variant cache keys include source image, season, lighting, effective scope, and weather.
+- Custom variant workflows remain responsible for their own dimension handling; the server's `{{ image.width }}` and `{{ image.height }}` values are metadata/config fallbacks, not the canonical standard-workflow preservation mechanism.
+- Model, encoder, VAE, optional LoRAs, steps, CFG, sampler, scheduler, denoise, and applicable Flux KV-cache selection all come from that same effective edit profile. The required Krea Identity Edit v1.2 LoRA remains baked into the Krea graph so it cannot be accidentally omitted or duplicated through preset selection. The standard Flux Klein graph retains its native `Flux2Scheduler`, which accepts steps and source dimensions but does not expose generic scheduler or denoise inputs; those two generic profile fields apply only to edit graphs with compatible nodes.
 - V1 does not support OpenAI or NanoGPT editing. Non-ComfyUI engines skip `/api/images/location-variant/request` with `unsupported-engine`.
 
 ## Slop remover base attempts

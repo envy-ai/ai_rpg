@@ -7,8 +7,8 @@
 - Identity and timestamps: `#id`, `#name`, `#createdAt`, `#lastUpdated`.
 - World profile fields: `#description`, `#theme`, `#genre`, `#startingLocationType`, `#magicLevel`, `#techLevel`, `#tone`, `#difficulty`.
 - Currency and prompt fields: `#currencyName`, `#currencyNamePlural`, `#currencyValueNotes`, `#writingStyleNotes`, `#baseContextPreamble`, `#characterGenInstructions`.
-- Image prompt fields: `#imagePromptPrefixCharacter`, `#imagePromptPrefixLocation`, `#imagePromptPrefixItem`, `#imagePromptPrefixScenery`.
-- New-game defaults: `#playerStartingLevel`, `#defaultStartingCurrency`, `#defaultPlayerName`, `#defaultPlayerDescription`, `#defaultStartingLocation`, `#defaultExistingSkills`, `#availableClasses`, `#availableRaces`.
+- Image prompt fields: final-prompt prefixes (`#imagePromptPrefixCharacter`, `#imagePromptPrefixLocation`, `#imagePromptPrefixItem`, `#imagePromptPrefixScenery`) and per-world prompt-writer instructions (`#imagePromptInstructionsCharacter`, `#imagePromptInstructionsLocation`, `#imagePromptInstructionsItem`, `#imagePromptInstructionsScenery`).
+- New-game defaults: `#playerStartingLevel`, `#defaultStartingCurrency`, `#defaultPlayerName`, `#defaultPlayerDescription`, `#defaultStartingLocation`, `#defaultStartMonth`, `#defaultStartDay`, `#defaultStartTime`, `#defaultExistingSkills`, `#availableClasses`, `#availableRaces`.
 - Mechanics selectors: `#hidingAttribute`, `#hidingSkill`, `#perceptionAttribute`, `#perceptionSkill`.
 - World setup drafts: `#defaultFactionCount`, `#defaultFactions`, `#calendarDefinition`.
 - Prompt controls: `#unifiedTonalScale`, `#customSlopWords`.
@@ -20,6 +20,7 @@
 - `fromJSON(data)` and `load(filepath)` construct a new instance from serialized data. Constructor timestamps are used for the hydrated instance.
 - `writingStyleNotes` accepts `styleNotes` as an input alias.
 - `playerStartingLevel` is stored as at least `1`; `defaultStartingCurrency` is stored as at least `0`.
+- `defaultStartMonth` and `defaultStartDay` are positive integers. `defaultStartTime` is an integer hour from `0` through `23`. Profiles saved before these fields existed hydrate with month `1`, day `1`, and hour `9`.
 - Line-ending normalization converts `\r\n` to `\n` for multiline prompt and image-prefix fields.
 - List fields accept arrays or newline-delimited strings, trim string entries, and drop blanks.
 - Selector fields trim strings and store blank for non-strings.
@@ -27,7 +28,7 @@
 ## Normalized Structured Fields
 - `defaultFactionCount` is `null` or a non-negative integer.
 - `defaultFactions` is an array of setting-local faction drafts. Drafts require unique ids and names, reject the name `"None"`, normalize string-list fields, require named assets, sort reputation tiers by numeric threshold, and require relation targets to reference another draft id with status `allied`, `neutral`, `hostile`, or `rival` plus notes.
-- `calendarDefinition` is `null` or a normalized calendar object from `Globals.normalizeCalendarDefinition`. Strings are parsed as JSON before normalization. Getters and snapshots return deep clones.
+- `calendarDefinition` is `null` or a normalized calendar object from `Globals.normalizeCalendarDefinition`. Its seasons persist separate `vegetationDescription` and `interiorDescription` image-edit guidance. Strings are parsed as JSON before normalization. Getters and snapshots return deep clones.
 - `unifiedTonalScale` is a JSON object keyed by tonal axis. Each populated entry is `{ level, comment? }`; `level` must be numeric, comments require a level, and decimal half-step values are preserved. Full axis-key and level validation happens when tonal prompt text is rendered from `defs/unified_tonal_scale.yaml`.
 - `modSettings` must be a JSON-serializable object keyed by non-empty namespace. Each namespace value must be an object.
 
@@ -66,12 +67,12 @@
 - Settings calendar controls build structured `calendarDefinition` data through the profile form. The calendar generation route returns a draft; saving the world profile persists it.
 
 ## Runtime Integration
-- New-game setup requires an active setting. It derives player name, description, class, race, level, starting location, starting currency, existing skills, available class/race lists, faction count, faction drafts, and calendar behavior from the active setting.
+- New-game setup requires an active setting. It derives player name, description, class, race, level, starting location, starting currency, starting month/day/time, existing skills, available class/race lists, faction count, faction drafts, and calendar behavior from the active setting.
 - Faction setup loads `defaultFactions` first, up to the resolved target count. `defaultFactionCount` controls the target when set; draft count and config count are fallbacks. A target of `0` disables faction setup.
 - Calendar setup uses `calendarDefinition` when present. Without a stored calendar draft, the server runs the `calendar_generation` prompt and uses the built-in Gregorian-style calendar if generation fails.
 - Game saves serialize the active setting into `setting.json` and save setting id/name in metadata. Loading a save reconstructs `currentSetting` with `SettingInfo.fromJSON()`.
 - Load compatibility behavior fills missing hide/perception selectors through the `setting_hide_perception` prompt and persists the hydrated save when a backfill is applied.
 - Load compatibility behavior fills missing saved `calendarDefinition` data from the loaded setting when available; otherwise it uses calendar generation with Gregorian fallback.
 - Prompt rendering uses setting snapshots for base context, setting includes, generic prompts, slop-remover prompts, region/location/NPC generation, and name prompts. `baseContextPreamble` is inserted into base-context generation prompts.
-- Image prompt prefixes apply by target type. `baseContextPreamble` is prepended to image-generation prompts for non-ComfyUI engines; ComfyUI receives type-specific prefixes without the base preamble.
+- Image prompt prefixes apply by target type. Per-world image-prompt-writer instructions override the corresponding global `imagegen.image_prompt_instructions` value only when nonblank; blank fields preserve the global default. `baseContextPreamble` is prepended to image-generation prompts for non-ComfyUI engines; ComfyUI receives type-specific prefixes without the base preamble.
 - `customSlopWords` extends active slop filtering. Single-token entries are treated as words; multi-token entries are normalized as ngrams. Invalid custom entries raise errors during slop collection.

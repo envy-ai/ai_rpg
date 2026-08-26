@@ -538,6 +538,26 @@ test('parseWhileYouWereAwayResponse reads optional proseForPlayer from response 
     );
 });
 
+test('parseWhileYouWereAwayResponse treats omitted or trimmed-empty proseForPlayer as absent', () => {
+    const { parseWhileYouWereAwayResponse } = loadWhileYouWereAwayHelpers();
+    const omitted = parseWhileYouWereAwayResponse(`
+<response>
+  <characterUpdates></characterUpdates>
+  <itemSceneryMoves></itemSceneryMoves>
+</response>
+`, { expectedNameKeys: new Set() });
+    const empty = parseWhileYouWereAwayResponse(`
+<response>
+  <proseForPlayer> \n\t </proseForPlayer>
+  <characterUpdates></characterUpdates>
+  <itemSceneryMoves></itemSceneryMoves>
+</response>
+`, { expectedNameKeys: new Set() });
+
+    assert.equal(omitted.proseForPlayer, null);
+    assert.equal(empty.proseForPlayer, null);
+});
+
 test('parseWhileYouWereAwayResponse reads itemSceneryMoves from response wrapper', () => {
     const { parseWhileYouWereAwayResponse } = loadWhileYouWereAwayHelpers();
     const parsed = parseWhileYouWereAwayResponse(`
@@ -580,7 +600,7 @@ test('runWhileYouWereAwayPrompt requires a complete response wrapper from LLMCli
     const gameLocations = new Map([[square.id, square]]);
     const capturedOptions = [];
 
-    const { runWhileYouWereAwayPrompt } = loadWhileYouWereAwayHelpers({
+    const { runWhileYouWereAwayPrompt, pushedEntries } = loadWhileYouWereAwayHelpers({
         currentPlayer: {
             id: 'player',
             name: 'Baato',
@@ -594,13 +614,12 @@ test('runWhileYouWereAwayPrompt requires a complete response wrapper from LLMCli
         llmResponse: `
 <response>
   <characterUpdates></characterUpdates>
-  <proseForPlayer>The square is quiet.</proseForPlayer>
 </response>
 `,
         captureChatCompletionOptions: options => capturedOptions.push(options)
     });
 
-    await runWhileYouWereAwayPrompt({
+    const result = await runWhileYouWereAwayPrompt({
         locationOverride: square,
         locationId: square.id,
         locationWasVisitedBeforeArrival: true,
@@ -610,6 +629,9 @@ test('runWhileYouWereAwayPrompt requires a complete response wrapper from LLMCli
     assert.equal(capturedOptions.length, 1);
     assert.equal(capturedOptions[0].metadataLabel, 'while_you_were_away');
     assert.equal(capturedOptions[0].validateXML, false);
+    assert.equal(result.hiddenEntry.type, 'while-you-were-away');
+    assert.equal(result.visibleEntry, null);
+    assert.equal(pushedEntries.some(entry => entry.type === 'while-you-were-away-player'), false);
     assert.equal(typeof capturedOptions[0].requiredRegex?.test, 'function');
     assert.match(
         '<response><characterUpdates></characterUpdates></response>',

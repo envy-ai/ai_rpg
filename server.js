@@ -14,9 +14,12 @@ const {
 } = require('./PromptRetryPolicy.js');
 const {
     TINY_BRAIN_PROMPT_METADATA_LABELS,
+    configureTinyBrainPromptContext,
     getTinyBrainPromptConfigurationErrors,
-    isTinyBrainPromptEnabled
+    isTinyBrainPromptEnabled,
+    runTinyBrainPromptProgram
 } = require('./TinyBrainPromptFamilies.js');
+const { buildSceneSummaryResult } = require('./TinyBrainResultBuilders.js');
 const attachAxiosMetricsLogger = require('./utils/axios-metrics.js');
 const bodyParser = require('body-parser');
 const nunjucks = require('nunjucks');
@@ -25,10 +28,30 @@ const fs = require('fs');
 const path = require('path');
 const sharp = require('sharp');
 const { randomUUID } = require('crypto');
+const { backupConfigFile } = require('./ConfigFileBackup.js');
+const { ImageWorkflowPresetStore } = require('./ImageWorkflowPresetStore.js');
+const {
+    resolveConfigSaveTarget,
+    formatConfigSaveTarget
+} = require('./ConfigSaveTarget.js');
+const {
+    usesLocalLlamaCppEndpoint,
+    listAdvertisedLocalLlamaModels
+} = require('./LocalLlamaModelOptions.js');
 const { spawn } = require('child_process');
 const { XMLSerializer } = require('@xmldom/xmldom');
 const Utils = require('./Utils.js');
 const { loadMergedConfig } = require('./ConfigLoader.js');
+const {
+    resolveStandardWorkflowTemplate,
+    resolveStandardBatchWorkflowTemplate,
+    isStandardImageWorkflow,
+    applyStandardImageWorkflowSettings
+} = require('./StandardImageWorkflows.js');
+
+const imageWorkflowPresetStore = new ImageWorkflowPresetStore(
+    path.join(__dirname, 'image-workflow-presets.yaml')
+);
 const {
     loadStartupGameFromPath,
     resolveCliStartupGamePath
@@ -51,6 +74,11 @@ const {
 } = require('./utils/critical-threshold-formulas.js');
 const FormulaEvaluator = require('./public/js/formula-evaluator.js');
 const Globals = require('./Globals.js');
+const {
+    normalizeLocationWeatherExposure,
+    resolveExplicitLocationWeatherExposure,
+    resolveEffectiveLocationWeatherExposure
+} = require('./LocationWeatherExposure.js');
 const SceneSummaries = require('./SceneSummaies.js');
 const {
     containsOmittedMarker,
@@ -141,6 +169,10 @@ const {
 const ImageGenerationModelLifecycle = require('./ImageGenerationModelLifecycle.js');
 const LlamaCppRouterClient = require('./LlamaCppRouterClient.js');
 const LocalLlamaServerProcess = require('./LocalLlamaServerProcess.js');
+const { installProcessOutputCapture } = require('./TerminalOutputBuffer.js');
+const airpgTerminalCapture = require.main === module
+    ? installProcessOutputCapture()
+    : null;
 const Events = require('./Events.js');
 const RealtimeHub = require('./RealtimeHub.js');
 const QuestConfirmationManager = require('./QuestConfirmationManager.js');
@@ -149,7 +181,8 @@ const ModExtensionRegistry = require('./ModExtensionRegistry.js');
 const { TinyBrainPromptExtension } = require('./TinyBrainPromptRunner.js');
 const {
     formatPlayerActionDestinationAbsence,
-    resolvePlayerActionDestinationContext
+    resolvePlayerActionDestinationContext,
+    resolvePlayerActionDestinationPreviewContext
 } = require('./PlayerActionDestinationContext.js');
 const {
     CHAT_TOOL_DEFINITIONS,
@@ -671,6 +704,7 @@ fs.readdirSync(logsDir)
 // Load configuration
 let config;
 let cliConfigOverridePath = null;
+let sessionConfigOverridePath = null;
 let cliStartupGamePath = null;
 let cliTestModes = new Set();
 let cliRegionExitDebug = false;
@@ -720,7 +754,8 @@ try {
 
 function reloadConfigAndDefs({
     gameConfigOverrideYaml = undefined,
-    needBarSentenceValidationMode = 'warn'
+    needBarSentenceValidationMode = 'warn',
+    configOverridePath = undefined
 } = {}) {
     if (!['warn', 'throw'].includes(needBarSentenceValidationMode)) {
         throw new Error(`Unsupported need-bar sentence validation mode "${needBarSentenceValidationMode}".`);
@@ -729,8 +764,19 @@ function reloadConfigAndDefs({
     const nextGameConfigOverrideYaml = gameConfigOverrideYaml === undefined
         ? Globals.getGameConfigOverrideYaml()
         : gameConfigOverrideYaml;
+    let nextSessionConfigOverridePath = sessionConfigOverridePath;
+    if (configOverridePath !== undefined) {
+        if (typeof configOverridePath !== 'string' || !configOverridePath.trim()) {
+            throw new Error('Config reload override path must be a non-empty string.');
+        }
+        const trimmedOverridePath = configOverridePath.trim();
+        nextSessionConfigOverridePath = path.isAbsolute(trimmedOverridePath)
+            ? path.normalize(trimmedOverridePath)
+            : path.resolve(__dirname, trimmedOverridePath);
+    }
     const merged = loadMergedConfig(__dirname, cliConfigOverridePath, {
-        runtimeOverrideYaml: nextGameConfigOverrideYaml
+        runtimeOverrideYaml: nextGameConfigOverrideYaml,
+        sessionOverridePath: nextSessionConfigOverridePath
     });
     validateDifficultyDcFormulas(merged, { formulaEvaluator: FormulaEvaluator });
     validateOutcomeMarginFormulas(merged, { formulaEvaluator: FormulaEvaluator });
@@ -752,6 +798,7 @@ function reloadConfigAndDefs({
 
     Globals.config = config;
     Globals.setGameConfigOverrideYaml(nextGameConfigOverrideYaml);
+    sessionConfigOverridePath = nextSessionConfigOverridePath;
 
     cachedBannedNpcWords = null;
     cachedBannedNpcRegexes = null;
@@ -782,11 +829,69 @@ function reloadConfigAndDefs({
         timestamp: new Date().toISOString(),
         modEnableDiff,
         warnings: Array.isArray(needBarSentenceWarnings) ? needBarSentenceWarnings : [],
-        gameConfigOverrideYaml: Globals.getGameConfigOverrideYaml()
+        gameConfigOverrideYaml: Globals.getGameConfigOverrideYaml(),
+        configOverridePath: sessionConfigOverridePath
     };
 }
 
 Globals.reloadConfigAndDefs = reloadConfigAndDefs;
+
+function getSystemConfigSaveTarget() {
+    return resolveConfigSaveTarget(__dirname, {
+        cliConfigOverridePath,
+        sessionConfigOverridePath
+    });
+}
+
+function getSystemConfigSaveTargetDisplay() {
+    return formatConfigSaveTarget(__dirname, getSystemConfigSaveTarget());
+}
+
+function normalizeImageWorkflowConfigForPersistence(configuration) {
+    if (!configuration || typeof configuration !== 'object' || Array.isArray(configuration)) {
+        throw new TypeError('System configuration must be a YAML object.');
+    }
+    const imagegen = configuration.imagegen;
+    if (!imagegen || typeof imagegen !== 'object' || Array.isArray(imagegen)) {
+        return configuration;
+    }
+    const {
+        api_template: _legacyGenerationTemplate,
+        location_variant_settings: _legacyLocationVariantSettings,
+        workflow,
+        ...imagegenWithoutLegacyTemplate
+    } = imagegen;
+    const normalizedWorkflow = workflow && typeof workflow === 'object' && !Array.isArray(workflow)
+        ? Object.fromEntries(Object.entries(workflow).filter(([key]) => key !== 'presets'))
+        : workflow;
+    return {
+        ...configuration,
+        imagegen: {
+            ...imagegenWithoutLegacyTemplate,
+            ...(normalizedWorkflow === undefined ? {} : { workflow: normalizedWorkflow })
+        }
+    };
+}
+
+async function persistSystemConfig(nextConfig) {
+    const persistedConfig = normalizeImageWorkflowConfigForPersistence(nextConfig);
+
+    const configPath = getSystemConfigSaveTarget();
+    const yamlString = yaml.dump(persistedConfig, {
+        defaultFlowStyle: false,
+        quotingType: '"',
+        forceQuotes: false
+    });
+    await backupConfigFile(configPath);
+    await fs.promises.writeFile(configPath, yamlString, 'utf8');
+    config = persistedConfig;
+    Globals.config = config;
+    return {
+        configPath,
+        displayPath: formatConfigSaveTarget(__dirname, configPath)
+    };
+}
+
 Globals.reloadLorebooks = async () => {
     const manager = getLorebookManager();
     if (manager) {
@@ -863,6 +968,58 @@ let comfyUIClient = null;
 let localLlamaServerProcess = null;
 const generatedImages = new Map(); // Store image metadata by ID
 
+function getTerminalOutputSnapshot(source, cursor = null) {
+    if (source === 'airpg') {
+        if (!airpgTerminalCapture) {
+            return {
+                source,
+                available: false,
+                running: false,
+                pid: null,
+                output: '',
+                cursor: 0,
+                startCursor: 0,
+                reset: true,
+                truncated: false,
+                message: 'AI RPG terminal capture is not active.'
+            };
+        }
+        return {
+            source,
+            available: true,
+            running: true,
+            pid: process.pid,
+            ...airpgTerminalCapture.outputBuffer.read(cursor)
+        };
+    }
+
+    if (source === 'llama') {
+        if (!localLlamaServerProcess) {
+            return {
+                source,
+                available: false,
+                running: false,
+                pid: null,
+                output: '',
+                cursor: 0,
+                startCursor: 0,
+                reset: true,
+                truncated: false,
+                message: 'llama.cpp was not started by AI RPG.'
+            };
+        }
+        return {
+            source,
+            available: true,
+            running: localLlamaServerProcess.isRunning(),
+            pid: localLlamaServerProcess.getPid(),
+            ...localLlamaServerProcess.getOutputSnapshot(cursor)
+        };
+    }
+
+    throw new Error(`Unsupported terminal output source "${source}".`);
+}
+
 // Image generation job queue and tracking
 const imageJobs = new Map(); // Store job status by ID
 const jobQueue = []; // Queue of pending jobs
@@ -897,27 +1054,44 @@ function isComfyModelCleanupModeConfigured(configuration = config) {
     ));
 }
 
-async function clearComfyVramBeforeLocalLlamaStartup({ preserveComfySystemCache = false } = {}) {
-    if (preserveComfySystemCache) {
-        if (!comfyUIClient || typeof comfyUIClient.releaseVram !== 'function') {
-            throw new Error('ComfyUI Cache Monitor VRAM release is unavailable before managed llama.cpp startup.');
-        }
-        const release = await comfyUIClient.releaseVram();
-        if (release?.fallbackUsed) {
-            console.warn(
-                `ComfyUI Cache Monitor VRAM release failed; used full /free cleanup before managed llama.cpp startup: ${release.cacheMonitorError}`
-            );
-            emitComfyCacheMonitorFallbackWarning(release.cacheMonitorError);
-        } else {
-            console.log('🎨 Released ComfyUI VRAM while preserving its system-memory cache immediately before managed llama.cpp startup.');
-        }
-        return;
+async function clearComfyVramBeforeLocalLlamaStartup() {
+    if (!comfyUIClient || typeof comfyUIClient.releaseVram !== 'function') {
+        throw new Error('ComfyUI Cache Monitor VRAM release is unavailable before managed llama.cpp startup.');
     }
-    if (!comfyUIClient || typeof comfyUIClient.unloadModels !== 'function') {
-        throw new Error('ComfyUI client is unavailable before managed llama.cpp startup.');
+    const release = await comfyUIClient.releaseVram();
+    if (release?.fallbackUsed) {
+        console.warn(
+            `ComfyUI Cache Monitor VRAM release failed; used full /free cleanup before managed llama.cpp startup: ${release.cacheMonitorError}`
+        );
+        emitComfyCacheMonitorFallbackWarning(release.cacheMonitorError);
+    } else {
+        console.log('🎨 Released ComfyUI VRAM while preserving its system-memory cache immediately before managed llama.cpp startup.');
     }
-    await comfyUIClient.unloadModels();
-    console.log('🎨 Cleared ComfyUI models and memory immediately before managed llama.cpp startup.');
+}
+
+function isComfyUiUnavailableError(error) {
+    const messages = [];
+    const collect = candidate => {
+        if (!candidate) return;
+        messages.push(candidate?.message || String(candidate));
+        if (candidate?.cause) collect(candidate.cause);
+        if (Array.isArray(candidate?.errors)) candidate.errors.forEach(collect);
+    };
+    collect(error);
+    return /ECONNREFUSED|ECONNRESET|ENOTFOUND|EHOSTUNREACH|ENETUNREACH|ETIMEDOUT/i.test(messages.join(' '));
+}
+
+async function clearComfyVramForManagedLocalLlamaStartup() {
+    try {
+        await clearComfyVramBeforeLocalLlamaStartup();
+    } catch (error) {
+        if (!isComfyUiUnavailableError(error)) {
+            throw error;
+        }
+        console.warn(
+            `⚠️ ComfyUI is unavailable before managed llama.cpp startup; continuing because there are no reachable ComfyUI models to release: ${error.message}`
+        );
+    }
 }
 
 function emitComfyCacheMonitorFallbackWarning(cacheMonitorError = '') {
@@ -928,12 +1102,19 @@ function emitComfyCacheMonitorFallbackWarning(cacheMonitorError = '') {
 }
 
 function configureComfyModelCleanupBeforePrompts() {
-    LLMClient.setComfyModelCleanupHandler(async ({ metadataLabel }) => {
-        if (!comfyUIClient || typeof comfyUIClient.unloadModels !== 'function') {
-            throw new Error('ComfyUI client is unavailable for pre-prompt model cleanup.');
+    LLMClient.setComfyModelCleanupHandler(async ({ metadataLabel, signal }) => {
+        if (!comfyUIClient || typeof comfyUIClient.releaseVram !== 'function') {
+            throw new Error('ComfyUI Cache Monitor VRAM release is unavailable for pre-prompt model cleanup.');
         }
-        await comfyUIClient.unloadModels();
-        console.log(`🎨 Unloaded ComfyUI models before LLM prompt "${metadataLabel}".`);
+        const release = await comfyUIClient.releaseVram({ signal });
+        if (release?.fallbackUsed) {
+            console.warn(
+                `ComfyUI Cache Monitor VRAM release failed; used full /free cleanup before LLM prompt "${metadataLabel}": ${release.cacheMonitorError}`
+            );
+            emitComfyCacheMonitorFallbackWarning(release.cacheMonitorError);
+        } else {
+            console.log(`🎨 Released ComfyUI VRAM before LLM prompt "${metadataLabel}" while preserving its system-memory cache.`);
+        }
     });
 }
 
@@ -1146,6 +1327,26 @@ function getImagePromptTemplateName(kind, fallback) {
         return template.trim();
     }
     return fallback;
+}
+
+function resolveImagePromptGenerationInstructions(kind, settingSnapshot = getActiveSettingSnapshot()) {
+    const normalizedKind = typeof kind === 'string' ? kind.trim().toLowerCase() : '';
+    const settingFieldByKind = {
+        character: 'imagePromptInstructionsCharacter',
+        location: 'imagePromptInstructionsLocation',
+        item: 'imagePromptInstructionsItem',
+        scenery: 'imagePromptInstructionsScenery'
+    };
+    const settingField = settingFieldByKind[normalizedKind];
+    const settingInstructions = settingField && typeof settingSnapshot?.[settingField] === 'string'
+        ? settingSnapshot[settingField].trim()
+        : '';
+    if (settingInstructions) {
+        return settingInstructions;
+    }
+
+    const configuredInstructions = config?.imagegen?.image_prompt_instructions?.[normalizedKind];
+    return typeof configuredInstructions === 'string' ? configuredInstructions.trim() : '';
 }
 
 function buildNegativePrompt(extra = '') {
@@ -1541,36 +1742,13 @@ function slugifyLocationVariantKeyPart(value, fallback = 'none') {
     return normalized || fallback;
 }
 
-function buildLocationWeatherVariantKey({ sourceImageId, lightingKey, weatherKey }) {
+function buildLocationWeatherVariantKey({ sourceImageId, seasonKey, lightingKey, weatherScope, weatherKey }) {
     const source = slugifyLocationVariantKeyPart(sourceImageId, 'no-source');
+    const season = slugifyLocationVariantKeyPart(seasonKey, 'seasonless');
     const lighting = slugifyLocationVariantKeyPart(lightingKey, 'ambient');
+    const scope = slugifyLocationVariantKeyPart(weatherScope, 'yes');
     const weather = slugifyLocationVariantKeyPart(weatherKey, 'none');
-    return `${source}__${lighting}__${weather}`;
-}
-
-function normalizeLocationWeatherExposure(value, fieldName = 'location hasWeather') {
-    if (value === null || value === undefined || value === '') {
-        return null;
-    }
-    if (typeof value === 'boolean') {
-        return value ? 'yes' : 'no';
-    }
-    if (typeof value === 'string') {
-        const lowered = value.trim().toLowerCase();
-        if (!lowered) {
-            return null;
-        }
-        if (['true', '1', 'yes'].includes(lowered)) {
-            return 'yes';
-        }
-        if (['false', '0', 'no'].includes(lowered)) {
-            return 'no';
-        }
-        if (lowered === 'sheltered' || lowered === 'outside') {
-            return 'sheltered';
-        }
-    }
-    throw new Error(`${fieldName} must be "yes", "no", "sheltered", true, false, or null (legacy "outside" is also accepted).`);
+    return `${source}__${season}__${lighting}__${scope}__${weather}`;
 }
 
 function resolveLocationWeatherVariantConditions(location, { sourceImageId = null } = {}) {
@@ -1594,18 +1772,18 @@ function resolveLocationWeatherVariantConditions(location, { sourceImageId = nul
                 : 'Ambient light'));
     const lightingKey = slugifyLocationVariantKeyPart(lightingLabel, 'ambient');
 
-    const weatherScope = normalizeLocationWeatherExposure(resolveLocationHasWeather(location)) || 'yes';
+    let region = null;
+    try {
+        region = findRegionByLocationId(location.id);
+    } catch (error) {
+        console.warn(`Failed to resolve region for location weather variant ${location.id}:`, error.message);
+    }
+    const weatherScope = resolveEffectiveLocationWeatherExposure(location, { region });
     const hasLocalWeather = weatherScope !== 'no';
     let weatherName = null;
     let weatherDescription = null;
     let weatherKey = 'sheltered';
     if (hasLocalWeather) {
-        let region = null;
-        try {
-            region = findRegionByLocationId(location.id);
-        } catch (error) {
-            console.warn(`Failed to resolve region for location weather variant ${location.id}:`, error.message);
-        }
         const regionalWeather = resolveRegionWeatherForPrompt({
             region,
             location,
@@ -1622,7 +1800,9 @@ function resolveLocationWeatherVariantConditions(location, { sourceImageId = nul
 
     const variantKey = buildLocationWeatherVariantKey({
         sourceImageId: resolvedSourceImageId,
+        seasonKey: worldTimeContext.season,
         lightingKey,
+        weatherScope,
         weatherKey
     });
 
@@ -1641,7 +1821,9 @@ function resolveLocationWeatherVariantConditions(location, { sourceImageId = nul
         segment: worldTimeContext.segment || null,
         timeLabel: worldTimeContext.timeLabel || null,
         dateLabel: worldTimeContext.dateLabel || null,
-        season: worldTimeContext.season || null
+        season: worldTimeContext.season || null,
+        seasonVegetationDescription: worldTimeContext.seasonVegetationDescription || null,
+        seasonInteriorDescription: worldTimeContext.seasonInteriorDescription || null
     };
 }
 
@@ -1672,9 +1854,12 @@ function buildLocationWeatherVariantPrompt(location, conditions, { sourceImageMe
             : conditions.weatherName;
     }
 
+    const promptTemplate = conditions.weatherScope === 'no'
+        ? 'location-weather-variant-interior-image-prompt.njk'
+        : 'location-weather-variant-image-prompt.njk';
     let renderedPrompt;
     try {
-        renderedPrompt = deterministicTemplateEnv.render('location-weather-variant-image-prompt.njk', {
+        renderedPrompt = deterministicTemplateEnv.render(promptTemplate, {
             location: {
                 name: locationName,
                 shortDescription,
@@ -1685,7 +1870,7 @@ function buildLocationWeatherVariantPrompt(location, conditions, { sourceImageMe
             weatherDetail
         });
     } catch (error) {
-        throw new Error(`Failed to render location weather variant image prompt template: ${error.message}`);
+        throw new Error(`Failed to render location weather variant image prompt template "${promptTemplate}": ${error.message}`);
     }
 
     const prompt = typeof renderedPrompt === 'string'
@@ -2294,15 +2479,27 @@ async function initializeManagedLocalLlamaServer() {
 
     localLlamaServerProcess = new LocalLlamaServerProcess({
         startupScriptPath: resolveLocalLlamaStartupScriptPathFromAiConfig(aiConfig),
-        beforeStart: async ({ preserveComfySystemCache = false } = {}) => {
+        beforeStart: async () => {
             if (resolveImageGenerationModelLifecycleMode() !== 'none') {
-                await clearComfyVramBeforeLocalLlamaStartup({ preserveComfySystemCache });
+                await clearComfyVramForManagedLocalLlamaStartup();
             }
         },
         waitUntilReady: readiness => waitForManagedLlamaServerReady({
             ...readiness,
             aiConfig
         }),
+        writeStdout: chunk => {
+            if (!airpgTerminalCapture) {
+                throw new Error('AI RPG terminal capture is unavailable while mirroring llama.cpp stdout.');
+            }
+            return airpgTerminalCapture.writeStdoutPassthrough(chunk);
+        },
+        writeStderr: chunk => {
+            if (!airpgTerminalCapture) {
+                throw new Error('AI RPG terminal capture is unavailable while mirroring llama.cpp stderr.');
+            }
+            return airpgTerminalCapture.writeStderrPassthrough(chunk);
+        },
         logger: console
     });
     await localLlamaServerProcess.start();
@@ -2332,18 +2529,63 @@ function imageRenderPromptBatchingIsEnabled(configuration = config) {
     return configuration?.imagegen?.batch_prompts === true;
 }
 
+function resolveEffectiveImageWorkflowSettings(mode, configuration = config) {
+    const normalizedMode = mode === 'edit' ? 'edit' : 'generation';
+    const setting = getActiveSettingSnapshot();
+    const useGlobal = normalizedMode === 'generation'
+        ? setting?.useGlobalImageGenerationSettings !== false
+        : setting?.useGlobalImageEditSettings !== false;
+    const profileSettings = normalizedMode === 'generation'
+        ? setting?.imageGenerationSettings
+        : setting?.imageEditSettings;
+    return !useGlobal && profileSettings && typeof profileSettings === 'object'
+        ? { ...(configuration?.imagegen?.workflow?.[normalizedMode] || {}), ...profileSettings }
+        : (configuration?.imagegen?.workflow?.[normalizedMode] || {});
+}
+
+function resolveImageJobResolutionType(job) {
+    const payload = job?.payload || {};
+    const entityType = String(payload.entityType || '').trim().toLowerCase();
+    if (payload.isPlayerPortrait || ['player', 'npc', 'character'].includes(entityType)) {
+        return 'character';
+    }
+    if (payload.isLocationScene || payload.isLocationExitImage || ['location', 'location-exit'].includes(entityType)) {
+        return 'location';
+    }
+    if (entityType === 'item') {
+        return 'item';
+    }
+    if (entityType === 'scenery') {
+        return 'scenery';
+    }
+    return null;
+}
+
 function resolveImageJobRenderDimensions(job, configuration = config) {
     const payload = job?.payload || {};
     const defaults = configuration?.imagegen?.default_settings?.image || {};
+    const mode = payload.isLocationWeatherVariant ? 'edit' : 'generation';
+    const resolutionType = mode === 'generation' ? resolveImageJobResolutionType(job) : null;
+    const workflowResolution = resolutionType
+        ? resolveEffectiveImageWorkflowSettings(mode, configuration)?.resolutions?.[resolutionType]
+        : null;
     return {
-        width: payload.width || defaults.width || 1024,
-        height: payload.height || defaults.height || 1024
+        width: workflowResolution?.width || payload.width || defaults.width || 1024,
+        height: workflowResolution?.height || payload.height || defaults.height || 1024
     };
 }
 
 function resolveImageJobWorkflowTemplate(job, configuration = config) {
-    const configuredTemplate = job?.payload?.api_template || configuration?.imagegen?.api_template;
-    return typeof configuredTemplate === 'string' ? configuredTemplate.trim() : '';
+    const mode = job?.payload?.isLocationWeatherVariant ? 'edit' : 'generation';
+    const workflowSettings = resolveEffectiveImageWorkflowSettings(mode, configuration);
+    if (typeof workflowSettings.custom_template === 'string' && workflowSettings.custom_template.trim()) {
+        return workflowSettings.custom_template.trim();
+    }
+    const family = workflowSettings.family || (mode === 'edit' ? 'flux_klein' : 'krea2');
+    if (mode === 'generation' && configuration?.imagegen?.batch_prompts === true) {
+        return resolveStandardBatchWorkflowTemplate(family);
+    }
+    return resolveStandardWorkflowTemplate(mode, family);
 }
 
 function buildImageRenderBatchKey(job, configuration = config) {
@@ -2862,12 +3104,22 @@ function buildImageWorkflowTemplateData(job) {
     ) || fallbackNegativePrompt || 'blurry, low quality, distorted';
     const effectiveMegapixels = resolveMegapixels(megapixels);
     const { width, height } = resolveImageJobRenderDimensions(job);
+    const mode = job?.payload?.isLocationWeatherVariant ? 'edit' : 'generation';
+    const workflowSettings = resolveEffectiveImageWorkflowSettings(mode, config);
     return {
         prompt: prompt.trim(),
         width,
         height,
-        steps: steps || config.imagegen.default_settings.sampling.steps || 20,
-        checkpoint: config.imagegen.checkpoint || 'sdxl.safetensors',
+        steps: workflowSettings.steps ?? steps ?? config.imagegen.default_settings.sampling.steps ?? 20,
+        cfg: workflowSettings.cfg,
+        sampler: workflowSettings.sampler,
+        scheduler: workflowSettings.scheduler,
+        denoise: workflowSettings.denoise,
+        fluxKvCacheEnabled: workflowSettings.flux_kv_cache !== false,
+        checkpoint: workflowSettings.model || '',
+        textEncoder: workflowSettings.text_encoder || '',
+        vae: workflowSettings.vae || '',
+        loras: Array.isArray(workflowSettings.loras) ? workflowSettings.loras : [],
         lora: config.imagegen.lora || null,
         lora_strength: config.imagegen.lora_strength || 1,
         seed: seed || config.imagegen.default_settings.image.seed || Math.floor(Math.random() * 1000000),
@@ -2936,6 +3188,93 @@ function updateBatchedImageJobs(jobs, updates, realtimePhase = null) {
     }
 }
 
+function createBatchedComfyProgressHandler(jobs, workflow) {
+    if (!Array.isArray(jobs) || jobs.length === 0) {
+        throw new Error('Batched ComfyUI progress requires at least one image job.');
+    }
+
+    const configuredSamplerNodeIds = new Set(
+        Object.entries(workflow || {})
+            .filter(([, node]) => {
+                const classType = typeof node?.class_type === 'string' ? node.class_type : '';
+                return /sampler/i.test(classType) && !/(samplerselect|scheduler)/i.test(classType);
+            })
+            .map(([nodeId]) => String(nodeId))
+    );
+    const trackedNodeStates = new Map();
+    let fallbackNodeId = null;
+    let lastOverallFraction = 0;
+
+    return progressEvent => {
+        const value = Number(progressEvent?.value);
+        const max = Number(progressEvent?.max);
+        const fraction = Number(progressEvent?.fraction);
+        if (
+            !Number.isFinite(value)
+            || !Number.isFinite(max)
+            || !Number.isFinite(fraction)
+            || max <= 0
+            || value < 0
+            || value > max
+            || fraction < 0
+            || fraction > 1
+        ) {
+            throw new Error(
+                `Invalid ComfyUI batched render progress: value=${progressEvent?.value}, max=${progressEvent?.max}.`
+            );
+        }
+
+        const nodeId = progressEvent?.nodeId === null || progressEvent?.nodeId === undefined
+            ? null
+            : String(progressEvent.nodeId);
+        if (configuredSamplerNodeIds.size > 0 && !configuredSamplerNodeIds.has(nodeId)) {
+            return;
+        }
+        if (configuredSamplerNodeIds.size === 0) {
+            if (fallbackNodeId === null) {
+                fallbackNodeId = nodeId;
+            } else if (nodeId !== fallbackNodeId) {
+                return;
+            }
+        }
+
+        const stateKey = nodeId ?? '__unnamed_progress_node__';
+        const nodeState = trackedNodeStates.get(stateKey) || {
+            completedItems: 0,
+            lastValue: null,
+            fraction: 0
+        };
+        if (nodeState.lastValue !== null && value < nodeState.lastValue) {
+            nodeState.completedItems = Math.min(nodeState.completedItems + 1, jobs.length - 1);
+        }
+        nodeState.lastValue = value;
+        nodeState.fraction = Math.max(
+            nodeState.fraction,
+            (nodeState.completedItems + fraction) / jobs.length
+        );
+        trackedNodeStates.set(stateKey, nodeState);
+
+        const expectedNodeCount = configuredSamplerNodeIds.size || 1;
+        const accumulatedNodeFraction = Array.from(trackedNodeStates.values())
+            .reduce((total, trackedState) => total + trackedState.fraction, 0);
+        const overallFraction = Math.max(
+            lastOverallFraction,
+            Math.min(1, accumulatedNodeFraction / expectedNodeCount)
+        );
+        lastOverallFraction = overallFraction;
+
+        const aggregateProgressEvent = {
+            ...progressEvent,
+            value: overallFraction,
+            max: 1,
+            fraction: overallFraction
+        };
+        for (const job of jobs) {
+            updateComfyRenderProgress(job, aggregateProgressEvent);
+        }
+    };
+}
+
 async function processBatchedImageGeneration(jobs) {
     if (!Array.isArray(jobs) || jobs.length === 0) {
         throw new Error('Batched image generation requires at least one job.');
@@ -2987,6 +3326,10 @@ async function processBatchedImageGeneration(jobs) {
     } catch (parseError) {
         throw new Error(`Invalid batched workflow JSON: ${parseError.message}`);
     }
+    if (isStandardImageWorkflow(workflowTemplate)) {
+        applyStandardImageWorkflowSettings(workflow, images[0]);
+    }
+    const handleBatchRenderProgress = createBatchedComfyProgressHandler(jobs, workflow);
 
     updateBatchedImageJobs(jobs, {
         progress: 30,
@@ -3022,11 +3365,7 @@ async function processBatchedImageGeneration(jobs) {
             2000,
             {
                 clientId: queueResult.clientId,
-                onProgress: progressEvent => {
-                    for (const job of jobs) {
-                        updateComfyRenderProgress(job, progressEvent);
-                    }
-                },
+                onProgress: handleBatchRenderProgress,
                 signal
             }
         );
@@ -3216,20 +3555,9 @@ async function processImageGeneration(job) {
                 });
             });
             templateVars.image.sourceFilename = uploadedSourceImage.imageReference;
+            templateVars.image.input_filename = uploadedSourceImage.imageReference;
             templateVars.image.sourceSubfolder = uploadedSourceImage.subfolder || '';
             templateVars.image.sourceType = uploadedSourceImage.type || 'input';
-            templateVars.image.denoise = Number.isFinite(Number(job.payload.denoise))
-                ? Number(job.payload.denoise)
-                : 0.45;
-            templateVars.image.cfg = Number.isFinite(Number(job.payload.cfg))
-                ? Number(job.payload.cfg)
-                : 6;
-            templateVars.image.sampler = typeof job.payload.sampler === 'string' && job.payload.sampler.trim()
-                ? job.payload.sampler.trim()
-                : 'dpmpp_2m';
-            templateVars.image.scheduler = typeof job.payload.scheduler === 'string' && job.payload.scheduler.trim()
-                ? job.payload.scheduler.trim()
-                : 'karras';
             templateVars.image.variantKey = job.payload.variantKey || null;
             console.log(
                 [
@@ -3240,17 +3568,11 @@ async function processImageGeneration(job) {
         }
 
         let workflowJson;
+        let workflowTemplate;
         try {
-            let workflowTemplate;
-            if (job.payload?.isLocationWeatherVariant) {
-                workflowTemplate = typeof job.payload?.api_template === 'string'
-                    ? job.payload.api_template.trim()
-                    : '';
-                if (!workflowTemplate) {
-                    throw new Error('Location weather image variant job is missing imagegen.location_variant_settings.api_template.');
-                }
-            } else {
-                workflowTemplate = job.payload?.api_template || config.imagegen.api_template;
+            workflowTemplate = resolveImageJobWorkflowTemplate(job);
+            if (!workflowTemplate) {
+                throw new Error(`Image job ${job.id} has no resolved workflow template.`);
             }
             workflowJson = await withRetry(() => {
                 return imagePromptEnv.render(workflowTemplate, templateVars);
@@ -3264,6 +3586,9 @@ async function processImageGeneration(job) {
             workflow = JSON.parse(workflowJson);
         } catch (parseError) {
             throw new Error(`Invalid workflow JSON: ${parseError.message}`);
+        }
+        if (isStandardImageWorkflow(workflowTemplate)) {
+            applyStandardImageWorkflowSettings(workflow, imageTemplateData);
         }
 
         job.progress = 30;
@@ -3440,12 +3765,7 @@ async function validateConfiguration() {
             }
         };
 
-        // Check template file exists
-        if (!config.imagegen.api_template) {
-            validationErrors.push('Image generation: api_template not specified');
-        } else {
-            validateTemplateFile('api_template', config.imagegen.api_template);
-        }
+        validateTemplateFile('selected generation workflow', resolveImageJobWorkflowTemplate(null, config));
 
         const usingComfyUI = config.imagegen.engine === 'comfyui' || !config.imagegen.engine;
         if (
@@ -3457,13 +3777,11 @@ async function validateConfiguration() {
         if (config.imagegen.batch_prompts === true && !usingComfyUI) {
             validationErrors.push('Image generation: batch_prompts requires the ComfyUI engine');
         }
-        const locationVariantTemplate = config.imagegen.location_variant_settings?.api_template;
         if (usingComfyUI) {
-            if (!locationVariantTemplate) {
-                validationErrors.push('Image generation: location_variant_settings.api_template not specified');
-            } else {
-                validateTemplateFile('location_variant_settings.api_template', locationVariantTemplate);
-            }
+            validateTemplateFile(
+                'selected location-variant edit workflow',
+                resolveImageJobWorkflowTemplate({ payload: { isLocationWeatherVariant: true } }, config)
+            );
         }
 
         // Validate default settings
@@ -3503,7 +3821,6 @@ async function validateConfiguration() {
         validateOptionalImageSizeOverrides('item', config.imagegen.item_settings?.image);
         validateOptionalImageSizeOverrides('scenery', config.imagegen.scenery_settings?.image);
         validateOptionalImageSizeOverrides('character', config.imagegen.character_settings?.image);
-        validateOptionalImageSizeOverrides('location variant', config.imagegen.location_variant_settings?.image);
 
         if (
             config.imagegen.prompt_generation_attempts !== undefined
@@ -3589,9 +3906,9 @@ async function validateConfiguration() {
         validationErrors.push('ai.tinybrain must be a boolean when provided');
     }
     validationErrors.push(...getTinyBrainPromptConfigurationErrors(config.ai));
-    if (config.ai?.xml_repetition_fix === true && config.ai?.tinybrain === true) {
+    if (config.ai?.xml_repetition_fix === true) {
         for (const [family, metadataLabel] of Object.entries(TINY_BRAIN_PROMPT_METADATA_LABELS)) {
-            if (!isTinyBrainPromptEnabled(config.ai, family)) {
+            if (!isTinyBrainPromptEnabled(config, family)) {
                 continue;
             }
             try {
@@ -3642,7 +3959,7 @@ async function validateConfiguration() {
         for (const [family, metadataLabel] of liveDeslopPromptLabels) {
             if (
                 !liveDeslopOneShotFamilies.has(family)
-                && !isTinyBrainPromptEnabled(config.ai, family)
+                && !isTinyBrainPromptEnabled(config, family)
             ) {
                 continue;
             }
@@ -3685,6 +4002,17 @@ async function validateConfiguration() {
             ) {
                 validationErrors.push(
                     `ai_model_overrides.${profileName}.terminate_during_image_generation must be a boolean when provided`
+                );
+            }
+            if (
+                profile
+                && typeof profile === 'object'
+                && !Array.isArray(profile)
+                && profile.router_slot_cache_enabled !== undefined
+                && typeof profile.router_slot_cache_enabled !== 'boolean'
+            ) {
+                validationErrors.push(
+                    `ai_model_overrides.${profileName}.router_slot_cache_enabled must be a boolean when provided`
                 );
             }
             if (
@@ -4199,6 +4527,10 @@ function buildNewGameDefaults(settingSnapshot = null) {
     defaults.startingLocation = typeof settingSnapshot.defaultStartingLocation === 'string'
         ? settingSnapshot.defaultStartingLocation.trim()
         : '';
+
+    defaults.startMonth = settingSnapshot.defaultStartMonth ?? defaults.startMonth;
+    defaults.startDay = settingSnapshot.defaultStartDay ?? defaults.startDay;
+    defaults.startTime = settingSnapshot.defaultStartTime ?? defaults.startTime;
 
     if (settingSnapshot.calendarDefinition !== null && settingSnapshot.calendarDefinition !== undefined) {
         const calendarDefinition = Globals.normalizeCalendarDefinition(settingSnapshot.calendarDefinition);
@@ -6966,48 +7298,19 @@ function buildNpcRepresentationSummaryForPrompt() {
 }
 
 function resolveLocationHasWeather(location) {
-    if (!location || typeof location !== 'object') {
-        return null;
-    }
-    const directScope = normalizeLocationWeatherExposure(location.hasWeather, `location "${location.id || location.name || 'unknown'}" hasWeather`);
-    if (directScope) {
-        return directScope;
-    }
+    return resolveExplicitLocationWeatherExposure(location);
+}
 
-    const details = typeof location.getDetails === 'function' ? location.getDetails() : location;
-    const detailsScope = normalizeLocationWeatherExposure(details?.hasWeather, `location "${location.id || location.name || 'unknown'}" details.hasWeather`);
-    if (detailsScope) {
-        return detailsScope;
+function resolveEffectiveLocationHasWeather(location, region = null) {
+    let resolvedRegion = region;
+    if (!resolvedRegion && location?.id) {
+        resolvedRegion = findRegionByLocationId(location.id);
     }
-
-    const metadata = location.stubMetadata && typeof location.stubMetadata === 'object'
-        ? location.stubMetadata
-        : (details?.stubMetadata && typeof details.stubMetadata === 'object' ? details.stubMetadata : null);
-    const hints = location.generationHints && typeof location.generationHints === 'object'
-        ? location.generationHints
-        : (details?.generationHints && typeof details.generationHints === 'object' ? details.generationHints : null);
-    if (metadata) {
-        const metadataScope = normalizeLocationWeatherExposure(metadata.hasWeather, `location "${location.id || location.name || 'unknown'}" stubMetadata.hasWeather`);
-        if (metadataScope) {
-            return metadataScope;
-        }
-        const locationMetadataScope = normalizeLocationWeatherExposure(metadata.locationHasWeather, `location "${location.id || location.name || 'unknown'}" stubMetadata.locationHasWeather`);
-        if (locationMetadataScope) {
-            return locationMetadataScope;
-        }
-    }
-    if (hints) {
-        const hintScope = normalizeLocationWeatherExposure(hints.hasWeather, `location "${location.id || location.name || 'unknown'}" generationHints.hasWeather`);
-        if (hintScope) {
-            return hintScope;
-        }
-    }
-
-    return null;
+    return resolveEffectiveLocationWeatherExposure(location, { region: resolvedRegion });
 }
 
 function resolveRegionWeatherForPrompt({ region, location, worldTimeContext }) {
-    const weatherScope = normalizeLocationWeatherExposure(resolveLocationHasWeather(location)) || 'yes';
+    const weatherScope = resolveEffectiveLocationHasWeather(location, region);
     if (weatherScope === 'no') {
         return {
             name: 'No local weather',
@@ -7288,12 +7591,23 @@ function buildBasePromptContext({
         return normalized;
     };
 
+    const normalizeLocationOrRegionName = value => typeof value === 'string'
+        ? value.trim().replace(/\s+/g, ' ').toLowerCase()
+        : '';
     const exitSummaries = [];
     if (locationDetails && typeof locationDetails.exits === 'object' && locationDetails.exits !== null) {
         for (const [directionKey, exitInfo] of Object.entries(locationDetails.exits)) {
             if (!exitInfo) {
                 continue;
             }
+
+            const locationExit = typeof location?.getExit === 'function'
+                ? location.getExit(directionKey)
+                : null;
+            const destinationRegion = locationExit?.region || null;
+            const destinationRegionName = typeof destinationRegion?.name === 'string'
+                ? destinationRegion.name.trim()
+                : null;
 
             let label = exitInfo.relativeName;
             if (!label) {
@@ -7312,6 +7626,7 @@ function buildBasePromptContext({
             }
             exitSummaries.push({
                 name: label || directionKey || 'Unknown Exit',
+                destinationRegionName,
                 isVehicle: Boolean(exitInfo.isVehicle),
                 vehicleType: typeof exitInfo.vehicleType === 'string' ? exitInfo.vehicleType : null
             });
@@ -7320,8 +7635,19 @@ function buildBasePromptContext({
     const currentLocationName = location
         ? (locationDetails?.name || location?.name || 'Unknown Location')
         : null;
+    const normalizedCurrentLocationName = normalizeLocationOrRegionName(currentLocationName);
+    const expectedInteriorRegionName = normalizedCurrentLocationName
+        ? `${normalizedCurrentLocationName} interior`
+        : '';
+    const currentLocationIsExterior = Boolean(normalizedCurrentLocationName) && (
+        normalizedCurrentLocationName.endsWith('exterior')
+        || exitSummaries.some(exit =>
+            normalizeLocationOrRegionName(exit.destinationRegionName) === expectedInteriorRegionName
+        )
+    );
     const currentLocationContext = location ? {
         name: currentLocationName,
+        isExterior: currentLocationIsExterior,
         description: locationDetails?.description || location?.description || 'No description available.',
         statusEffects: normalizeStatusEffects(location || locationDetails),
         exits: exitSummaries,
@@ -8923,7 +9249,7 @@ function buildBasePromptContext({
         factionSummaries.sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }));
     }
 
-    const weatherScope = normalizeLocationWeatherExposure(resolveLocationHasWeather(location)) || 'yes';
+    const weatherScope = resolveEffectiveLocationHasWeather(location, region);
     const hasLocalWeather = weatherScope !== 'no';
     const regionalWeather = resolveRegionWeatherForPrompt({
         region,
@@ -9064,9 +9390,6 @@ function buildBasePromptContext({
     }
     context.modEventPromptSchemas = modExtensionRegistry && typeof modExtensionRegistry.getXmlEventPromptSchemas === 'function'
         ? modExtensionRegistry.getXmlEventPromptSchemas()
-        : [];
-    context.modPlayerActionPromptSteps = modExtensionRegistry && typeof modExtensionRegistry.getPlayerActionPromptSteps === 'function'
-        ? modExtensionRegistry.getPlayerActionPromptSteps()
         : [];
 
     return context;
@@ -9675,6 +9998,7 @@ async function summarizeScenesForHistoryRange({ chatHistory, startIndex, endInde
         ? Math.ceil(rangeEntries.length / maxEntriesPerPrompt)
         : 1;
     const baseChunkSize = Math.ceil(rangeEntries.length / promptCount);
+    const useTinyBrainSceneSummary = isTinyBrainPromptEnabled(config, 'scene_summarize');
 
     const aggregatedScenes = [];
     let cursor = 0;
@@ -9692,9 +10016,19 @@ async function summarizeScenesForHistoryRange({ chatHistory, startIndex, endInde
             text: entry.text
         }));
 
+        const templateContext = {
+            fullHistoryLines,
+            modSceneSummarizeContributions: modExtensionRegistry.collectSceneSummarizeContributions({
+                fullHistoryLines
+            })
+        };
+        const tinyBrain = useTinyBrainSceneSummary
+            ? configureTinyBrainPromptContext(templateContext, 'scene_summarize')
+            : null;
+        let renderedTemplate;
         let parsedTemplate;
         try {
-            const renderedTemplate = promptEnv.render('scene-summarize.xml.njk', { fullHistoryLines });
+            renderedTemplate = promptEnv.render('scene-summarize.xml.njk', templateContext);
             parsedTemplate = parseXMLTemplate(renderedTemplate);
         } catch (error) {
             throw new Error(`Failed to render scene summary prompt: ${error.message}`);
@@ -9704,28 +10038,65 @@ async function summarizeScenesForHistoryRange({ chatHistory, startIndex, endInde
             throw new Error('Scene summary prompt missing system or generation content.');
         }
 
-        const messages = [
-            { role: 'system', content: parsedTemplate.systemPrompt },
-            { role: 'user', content: parsedTemplate.generationPrompt }
-        ];
-
         const chunkStart = chunkEntries[0]?.index ?? null;
         const chunkEnd = chunkEntries[chunkEntries.length - 1]?.index ?? null;
         console.log(`Scene summary prompt: range ${parsedStart}-${parsedEnd}, chunk ${chunkStart}-${chunkEnd}.`);
 
-        const requestOptions = {
-            messages,
-            metadataLabel: 'scene_summarize',
-            runInBackground: true,
-            // Scene summaries include deliberate non-XML reasoning before the final <scenes> block.
-            // parseSceneSummaryResponse extracts and validates that block after the model returns.
-            validateXML: false,
-            maxTokens: 20000
-        };
-
         let responseText = null;
         try {
-            responseText = await LLMClient.chatCompletion(requestOptions);
+            if (useTinyBrainSceneSummary) {
+                const configuredRetries = Number(config?.ai?.retryAttempts);
+                const retryAttempts = Number.isInteger(configuredRetries) && configuredRetries >= 0
+                    ? configuredRetries
+                    : 1;
+                const result = await runTinyBrainPromptProgram({
+                    initialRenderedTemplate: renderedTemplate,
+                    templateContext,
+                    tinyBrain,
+                    runnerOptions: {
+                        promptEnv,
+                        parseXMLTemplate,
+                        retryAttempts,
+                        metadataLabel: 'scene_summarize',
+                        logPrefix: 'scene_summarize_tinybrain',
+                        resultBuilders: {
+                            scene_summary_result: buildSceneSummaryResult
+                        },
+                        complete: async (stage) => {
+                            const response = await LLMClient.chatCompletion({
+                                messages: stage.messages,
+                                queueReservation: stage.queueReservation,
+                                metadataLabel: 'scene_summarize',
+                                runInBackground: true,
+                                validateXML: false
+                            });
+                            return {
+                                aiResponse: response,
+                                conversationMessages: [
+                                    ...stage.messages.map(message => ({ ...message })),
+                                    { role: 'assistant', content: response }
+                                ],
+                                toolInvocations: []
+                            };
+                        }
+                    }
+                });
+                responseText = result.aiResponse;
+            } else {
+                const messages = [
+                    { role: 'system', content: parsedTemplate.systemPrompt },
+                    { role: 'user', content: parsedTemplate.generationPrompt }
+                ];
+                responseText = await LLMClient.chatCompletion({
+                    messages,
+                    metadataLabel: 'scene_summarize',
+                    runInBackground: true,
+                    // Scene summaries include deliberate non-XML reasoning before the final <scenes> block.
+                    // parseSceneSummaryResponse extracts and validates that block after the model returns.
+                    validateXML: false,
+                    maxTokens: 20000
+                });
+            }
         } catch (error) {
             const chunkStart = chunkEntries[0]?.index ?? null;
             const chunkEnd = chunkEntries[chunkEntries.length - 1]?.index ?? null;
@@ -9741,15 +10112,17 @@ async function summarizeScenesForHistoryRange({ chatHistory, startIndex, endInde
             throw new Error('Scene summary response was empty.');
         }
 
-        LLMClient.logPrompt({
-            prefix: 'scene_summarize',
-            metadataLabel: 'scene_summarize',
-            systemPrompt: parsedTemplate.systemPrompt || '',
-            generationPrompt: parsedTemplate.generationPrompt || '',
-            response: responseText || '',
-            model: undefined,
-            endpoint: undefined
-        });
+        if (!useTinyBrainSceneSummary) {
+            LLMClient.logPrompt({
+                prefix: 'scene_summarize',
+                metadataLabel: 'scene_summarize',
+                systemPrompt: parsedTemplate.systemPrompt || '',
+                generationPrompt: parsedTemplate.generationPrompt || '',
+                response: responseText || '',
+                model: undefined,
+                endpoint: undefined
+            });
+        }
 
         const indexMap = chunkEntries.map((entry, idx) => ({
             localIndex: idx + 1,
@@ -13316,6 +13689,10 @@ async function expandRegionEntryStub(stubLocation) {
                     },
                     parse: responseText => {
                         const locationDefinitions = parseRegionStubLocations(responseText);
+                        const missingWeatherScope = locationDefinitions.find(definition => !definition?.hasWeather);
+                        if (missingWeatherScope) {
+                            throw new Error(`Generated region stub location "${missingWeatherScope.name || 'unknown'}" is missing required <hasWeather>.`);
+                        }
                         if (!locationDefinitions.length) {
                             throw new Error('Region stub generation response contained no locations.');
                         }
@@ -14462,8 +14839,21 @@ promptEnv.addGlobal(
     )
 );
 promptEnv.addGlobal(
+    'resolvePlayerActionDestinationPreviewContext',
+    (destination, originLocationId = null, currentWorldMinutes = undefined) => (
+        resolvePlayerActionDestinationPreviewContext(destination, {
+            originLocationId,
+            currentWorldMinutes
+        })
+    )
+);
+promptEnv.addGlobal(
     'formatPlayerActionDestinationAbsence',
     formatPlayerActionDestinationAbsence
+);
+promptEnv.addGlobal(
+    'modPlayerActionPromptSteps',
+    startStep => modExtensionRegistry.getPlayerActionPromptSteps({ startStep })
 );
 
 const rarityDefinitions = Thing.getAllRarityDefinitions();
@@ -14738,7 +15128,7 @@ function renderPlayerPortraitPrompt(player) {
             characterDescription,
             characterClass: player.class || '',
             characterRace: player.race || '',
-            additionalInstructions: Globals.config.imagegen?.image_prompt_instructions?.character || '',
+            additionalInstructions: resolveImagePromptGenerationInstructions('character', activeSetting),
             characterGear,
             location: locationPayload
         };
@@ -24350,12 +24740,17 @@ async function parseThingsXml(xmlContent, {
             //console.log('Processing node:');
             const nameNode = getDirectChildElement(node, 'name');
             if (!nameNode) {
-                console.warn('Skipping item node with no <name> child node.');
-                console.trace();
-                continue;
+                throw new Error('Thing entry is missing required <name>.');
             }
 
             const entryName = nameNode.textContent.trim();
+            if (!entryName) {
+                throw new Error('Thing entry has a blank <name> value.');
+            }
+            const description = getDirectChildText(node, 'description');
+            if (!description) {
+                throw new Error(`Thing "${entryName}" is missing a non-empty <description>.`);
+            }
             const attributeBonusesNode = getDirectChildElement(node, 'attributeBonuses');
             const attributeBonuses = attributeBonusesNode
                 ? Array.from(attributeBonusesNode.getElementsByTagName('attributeBonus'))
@@ -24577,7 +24972,7 @@ async function parseThingsXml(xmlContent, {
 
             const entry = {
                 name: entryName,
-                description: getDirectChildText(node, 'description'),
+                description,
                 shortDescription,
                 itemOrScenery: resolvedKind,
                 thingType: resolvedKind,
@@ -24890,8 +25285,8 @@ async function generateLocationThingsForLocation({ location } = {}) {
             'The preceding location item/scenery XML failed structured validation: '
             + `${error.message}\n`
             + 'Return a corrected, complete response as exactly one <things>...</things> block. '
-            + `Return exactly ${itemCount} item entries and ${sceneryCount} scenery entries, `
-            + 'with exactly the requested rarity mix. Close </things> immediately after those entries. '
+            + `Return at least ${itemCount} item entries and ${sceneryCount} scenery entries, `
+            + 'including at least the requested count of every listed rarity. '
             + 'Output XML only.'
         ),
         onAttempt: ({ attempt, maxAttempts, error }) => {
@@ -24978,7 +25373,7 @@ async function generateLocationThingsForLocation({ location } = {}) {
 
         const thing = new Thing({
             name: itemData.name,
-            description: itemData.description || 'An unspecified object.',
+            description: itemData.description,
             shortDescription: itemData.shortDescription ?? null,
             thingType,
             rarity: itemData.rarity || null,
@@ -27865,7 +28260,7 @@ function renderLocationImagePrompt(location) {
             locationDescription: location.description,
             locationBaseLevel: location.baseLevel,
             locationExits: location.exits ? Object.fromEntries(location.exits) : {},
-            additionalInstructions: Globals.config.imagegen?.image_prompt_instructions?.location || ''
+            additionalInstructions: resolveImagePromptGenerationInstructions('location')
         };
 
         // Render the template
@@ -27953,9 +28348,9 @@ function renderThingImagePrompt(thing) {
 
         let additionalInstructions = '';
         if (thing.thingType === 'item') {
-            additionalInstructions = Globals.config.imagegen?.image_prompt_instructions?.item || '';
+            additionalInstructions = resolveImagePromptGenerationInstructions('item', settingSnapshot);
         } else if (thing.thingType === 'scenery') {
-            additionalInstructions = Globals.config.imagegen?.image_prompt_instructions?.scenery || '';
+            additionalInstructions = resolveImagePromptGenerationInstructions('scenery', settingSnapshot);
         }
 
         const variables = {
@@ -28216,6 +28611,7 @@ async function renderLocationGeneratorPrompt(options = {}) {
             regionAverageLevel: options.regionAverageLevel ?? null,
             stubNumNpcs: options.stubNumNpcs ?? null,
             stubNumHostiles: options.stubNumHostiles ?? null,
+            stubWeatherScope: isStubExpansion ? (options.stubWeatherScope || null) : null,
             entryProse,
             originLocationName: isStubExpansion ? (options.originLocationName || null) : null,
             originDescription: isStubExpansion ? (options.originDescription || null) : null,
@@ -28232,6 +28628,7 @@ async function renderLocationGeneratorPrompt(options = {}) {
             stubHasRelativeLevel: isStubExpansion ? Boolean(options.stubHasRelativeLevel) : false,
             stubHasBaseLevel: isStubExpansion ? Boolean(options.stubHasBaseLevel) : false,
             stubHasControllingFaction: isStubExpansion ? Boolean(options.stubHasControllingFaction) : false,
+            stubHasWeather: isStubExpansion ? Boolean(options.stubHasWeather) : false,
             isStubExpansion,
             lorebookEntries,
             additionalLore: additionalLore,
@@ -28786,7 +29183,8 @@ function renderLocationFinalImagePrompt(location, promptText) {
         throw new Error('Location image prompt text is empty.');
     }
 
-    const weatherScope = normalizeLocationWeatherExposure(resolveLocationHasWeather(location)) || 'yes';
+    const region = location?.id ? findRegionByLocationId(location.id) : null;
+    const weatherScope = resolveEffectiveLocationHasWeather(location, region);
     let renderedPrompt;
     try {
         renderedPrompt = deterministicTemplateEnv.render('location-image-prompt.njk', {
@@ -29492,7 +29890,11 @@ async function generateLocationImage(location, options = {}) {
             const jobId = generateImageId();
             const locationImageSettings = config.imagegen.location_settings?.image || {};
             const defaultImageSettings = config.imagegen.default_settings?.image || {};
-            const locationNegative = buildNegativePrompt('blurry, low quality, modern elements, cars, technology, people, characters, portraits, indoor scenes only');
+            const baseLocationRegion = location?.id ? findRegionByLocationId(location.id) : null;
+            const baseLocationWeatherScope = resolveEffectiveLocationHasWeather(location, baseLocationRegion);
+            const locationNegative = baseLocationWeatherScope === 'no'
+                ? buildNegativePrompt('blurry, low quality, modern elements, cars, technology, people, characters, portraits, outdoor scene, exterior view, open sky, landscape, forest, outdoor trees, outdoor vegetation, precipitation indoors')
+                : buildNegativePrompt('blurry, low quality, modern elements, cars, technology, people, characters, portraits, enclosed room, indoor-only scene');
             const payload = {
                 prompt: finalImagePrompt,
                 width: locationImageSettings.width || defaultImageSettings.width || 1024,
@@ -29614,18 +30016,10 @@ async function generateLocationWeatherVariant(location, options = {}) {
             };
         }
 
-        const variantSettings = config.imagegen.location_variant_settings || {};
-        const variantTemplate = typeof variantSettings.api_template === 'string'
-            ? variantSettings.api_template.trim()
-            : '';
-        if (!variantTemplate) {
-            return {
-                success: false,
-                skipped: true,
-                reason: 'missing-variant-template',
-                sourceImageId
-            };
-        }
+        const variantTemplate = resolveImageJobWorkflowTemplate(
+            { payload: { isLocationWeatherVariant: true } },
+            config
+        );
         const variantTemplatePath = path.join(__dirname, 'imagegen', variantTemplate);
         if (!fs.existsSync(variantTemplatePath)) {
             return {
@@ -29694,22 +30088,16 @@ async function generateLocationWeatherVariant(location, options = {}) {
         const jobId = generateImageId();
         const locationImageSettings = config.imagegen.location_settings?.image || {};
         const defaultImageSettings = config.imagegen.default_settings?.image || {};
-        const variantImageSettings = variantSettings.image || {};
-        const variantSampling = variantSettings.sampling || {};
-        const locationNegative = buildNegativePrompt('new people, new characters, text, logos, signage, changed architecture, changed camera angle, distorted landmarks, low quality, blurry');
+        const locationNegative = conditions.weatherScope === 'no'
+            ? buildNegativePrompt('new people, new characters, text, logos, signage, changed architecture, changed camera angle, distorted landmarks, low quality, blurry, outdoor scene, exterior view, open sky, landscape, forest, outdoor trees, outdoor vegetation, rain indoors, snow indoors, precipitation indoors')
+            : buildNegativePrompt('new people, new characters, text, logos, signage, changed architecture, changed camera angle, distorted landmarks, low quality, blurry');
         const payload = {
             prompt,
-            width: variantImageSettings.width || sourceImageMetadata?.width || locationImageSettings.width || defaultImageSettings.width || 1024,
-            height: variantImageSettings.height || sourceImageMetadata?.height || locationImageSettings.height || defaultImageSettings.height || 1024,
+            width: sourceImageMetadata?.width || locationImageSettings.width || defaultImageSettings.width || 1024,
+            height: sourceImageMetadata?.height || locationImageSettings.height || defaultImageSettings.height || 1024,
             seed: Math.floor(Math.random() * 1000000),
-            steps: variantSampling.steps || config.imagegen.location_settings?.sampling?.steps || config.imagegen.default_settings?.sampling?.steps,
-            denoise: variantSampling.denoise,
-            cfg: variantSampling.cfg,
-            sampler: variantSampling.sampler,
-            scheduler: variantSampling.scheduler,
             negative_prompt: locationNegative,
-            megapixels: resolveMegapixels(variantImageSettings.megapixels || locationImageSettings.megapixels),
-            api_template: variantTemplate,
+            megapixels: resolveMegapixels(sourceImageMetadata?.megapixels || locationImageSettings.megapixels),
             locationId: location.id,
             sourceImageId,
             sourceImagePath,
@@ -30051,6 +30439,7 @@ async function generateLocationFromPrompt(options = {}) {
         if (isStubExpansion) {
             const stubNumNpcs = stubLocation?.generationHints?.numNpcs ?? stubMetadata.numNpcs ?? null;
             const stubNumHostiles = stubLocation?.generationHints?.numHostiles ?? stubMetadata.numHostiles ?? null;
+            const stubWeatherScope = resolveLocationHasWeather(stubLocation);
             const rawStubDescription = typeof stubMetadata.stubDescription === 'string' && stubMetadata.stubDescription.trim()
                 ? stubMetadata.stubDescription.trim()
                 : null;
@@ -30132,6 +30521,9 @@ async function generateLocationFromPrompt(options = {}) {
             if (templateOverrides.stubNumHostiles === undefined) {
                 templateOverrides.stubNumHostiles = stubNumHostiles;
             }
+            if (templateOverrides.stubWeatherScope === undefined) {
+                templateOverrides.stubWeatherScope = stubWeatherScope;
+            }
             if (templateOverrides.stubShortDescription === undefined) {
                 templateOverrides.stubShortDescription = stubShortDescription;
             }
@@ -30161,6 +30553,9 @@ async function generateLocationFromPrompt(options = {}) {
             }
             if (templateOverrides.stubHasControllingFaction === undefined) {
                 templateOverrides.stubHasControllingFaction = Boolean(stubControllingFactionId);
+            }
+            if (templateOverrides.stubHasWeather === undefined) {
+                templateOverrides.stubHasWeather = Boolean(stubWeatherScope);
             }
         } else if (!templateOverrides.playerLevel && currentPlayer?.level) {
             templateOverrides.playerLevel = currentPlayer.level;
@@ -30412,12 +30807,14 @@ async function generateLocationFromPrompt(options = {}) {
                 allowRename: Boolean(stubMetadata.allowRename),
                 baseLevelFallback: Number.isFinite(stubBaseLevel) ? stubBaseLevel : baseLevelFallback,
                 relativeLevelBase,
-                regionId: currentRegionContext?.id
+                regionId: currentRegionContext?.id,
+                requireHasWeather: true
             })
             : Location.fromXMLSnippet(aiResponse, {
                 baseLevelFallback,
                 relativeLevelBase,
-                regionId: currentRegionContext?.id
+                regionId: currentRegionContext?.id,
+                requireHasWeather: true
             });
 
         if (!location) {
@@ -33132,7 +33529,7 @@ async function generateRegionFromPrompt(options = {}) {
             response: aiResponse || ''
         });
 
-        const region = Region.fromXMLSnippet(aiResponse);
+        const region = Region.fromXMLSnippet(aiResponse, { requireLocationHasWeather: true });
         await ensureRegionNameAllowed(region);
         const controllingFactionName = extractXmlTagValue(aiResponse, {
             rootTag: 'region',
@@ -33286,7 +33683,65 @@ app.get('/new-game', (req, res) => {
 });
 
 // Configuration page routes
-app.get('/config', (req, res) => {
+app.get('/api/comfyui/workflow-options', async (_req, res) => {
+    try {
+        if (!comfyUIClient) {
+            throw new Error('ComfyUI is not initialized for the active image-generation configuration.');
+        }
+        const objectInfo = await comfyUIClient.getObjectInfo();
+        const valuesFor = (nodeNames, inputName) => Array.from(new Set(nodeNames.flatMap(nodeName => {
+            const input = objectInfo?.[nodeName]?.input?.required?.[inputName];
+            return Array.isArray(input?.[0]) ? input[0].filter(value => typeof value === 'string' && value.trim()) : [];
+        }))).sort((a, b) => a.localeCompare(b));
+        const workflows = fs.readdirSync(path.join(__dirname, 'imagegen'))
+            .filter(name => name.endsWith('.json.njk'))
+            .sort((a, b) => a.localeCompare(b));
+        res.json({
+            model: valuesFor(['CheckpointLoaderSimple'], 'ckpt_name')
+                .concat(valuesFor(['UNETLoader', 'UnetLoaderGGUF'], 'unet_name')),
+            text_encoder: valuesFor(['CLIPLoader', 'DualCLIPLoader', 'CLIPLoaderGGUF'], 'clip_name'),
+            vae: valuesFor(['VAELoader', 'VAEUtils_CustomVAELoader'], 'vae_name'),
+            loras: valuesFor(['LoraLoader', 'LoraLoaderModelOnly'], 'lora_name'),
+            workflows
+        });
+    } catch (error) {
+        res.status(503).json({ success: false, error: error?.message || String(error) });
+    }
+});
+
+app.get('/api/image-workflow-presets', async (_req, res) => {
+    try {
+        const presets = await imageWorkflowPresetStore.load();
+        res.json({ success: true, presets });
+    } catch (error) {
+        res.status(500).json({ success: false, error: error?.message || String(error) });
+    }
+});
+
+app.put('/api/image-workflow-presets/:mode', async (req, res) => {
+    try {
+        const result = await imageWorkflowPresetStore.savePreset({
+            mode: req.params.mode,
+            name: req.body?.name,
+            settings: req.body?.settings,
+            overwrite: req.body?.overwrite === true
+        });
+        return res.json({
+            success: true,
+            name: result.name,
+            mode: result.mode,
+            presets: result.presets,
+            presetSaveTarget: path.relative(__dirname, result.filePath) || path.basename(result.filePath)
+        });
+    } catch (error) {
+        const status = error?.code === 'PRESET_EXISTS'
+            ? 409
+            : (error?.code === 'INVALID_PRESET' ? 400 : 500);
+        return res.status(status).json({ success: false, error: error?.message || String(error) });
+    }
+});
+
+app.get('/config', async (req, res) => {
     const savedMessage = req.query.saved === '1'
         ? 'Configuration saved successfully! Restart the server for all changes to take effect.'
         : null;
@@ -33299,11 +33754,20 @@ app.get('/config', (req, res) => {
         throw new Error('Configuration error: model_swap_options must be an array.');
     }
 
-    const modelOptions = Array.isArray(rawModelOptions)
+    let modelOptions = Array.isArray(rawModelOptions)
         ? rawModelOptions.filter(option => typeof option === 'string' && option.trim())
         : [];
-
-    if (config?.ai?.model && !modelOptions.includes(config.ai.model)) {
+    const modelOptionsAreAdvertised = usesLocalLlamaCppEndpoint(config?.ai);
+    let modelOptionsError = null;
+    if (modelOptionsAreAdvertised) {
+        try {
+            modelOptions = await listAdvertisedLocalLlamaModels(config.ai, { httpClient: axios });
+        } catch (error) {
+            modelOptions = [];
+            modelOptionsError = error?.message || String(error);
+            console.warn(`Failed to populate local llama.cpp model choices: ${modelOptionsError}`);
+        }
+    } else if (config?.ai?.model && !modelOptions.includes(config.ai.model)) {
         modelOptions.push(config.ai.model);
     }
 
@@ -33312,9 +33776,12 @@ app.get('/config', (req, res) => {
         config: config,
         modConfigs: modLoader.getModConfigs(),
         modelOptions,
+        modelOptionsAreAdvertised,
+        modelOptionsError,
         currentPage: 'config',
         savedMessage,
         errorMessage,
+        configSaveTarget: getSystemConfigSaveTargetDisplay(),
         gameConfigOverrideYaml: typeof Globals.getGameConfigOverrideYaml === 'function'
             ? Globals.getGameConfigOverrideYaml()
             : '',
@@ -33579,17 +34046,7 @@ app.post('/config', async (req, res) => {
             }
         }
 
-        // Save to config.yaml file
-        const yamlString = yaml.dump(updatedConfig, {
-            defaultFlowStyle: false,
-            quotingType: '"',
-            forceQuotes: false
-        });
-
-        await fs.promises.writeFile(path.join(__dirname, 'config.yaml'), yamlString, 'utf8');
-
-        // Update in-memory config
-        config = updatedConfig;
+        const saveTarget = await persistSystemConfig(updatedConfig);
 
         const wantsJson = req.xhr
             || (typeof req.headers.accept === 'string' && req.headers.accept.includes('application/json'))
@@ -33598,7 +34055,8 @@ app.post('/config', async (req, res) => {
         if (wantsJson) {
             return res.json({
                 success: true,
-                message: 'Configuration saved successfully! Restart the server for all changes to take effect.'
+                message: `Configuration saved to ${saveTarget.displayPath}. The previous YAML was backed up; restart the server for all changes to take effect.`,
+                configSaveTarget: saveTarget.displayPath
             });
         }
 
@@ -33920,6 +34378,7 @@ const apiScope = {
     resolveSystemPromptPrefix,
     requestServerRestart,
     getLocalLlamaServerProcess: () => localLlamaServerProcess,
+    getTerminalOutputSnapshot,
 
 };
 

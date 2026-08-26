@@ -2,6 +2,7 @@ const { test, expect } = require('@playwright/test');
 
 test('tonal scale configuration exposes defaults and submits enabled and disabled values', async ({ page }) => {
     await page.goto('/config');
+    await page.locator('[data-config-tab-target="story"]').click();
 
     const enabled = page.locator('#tonal-scale-evaluation-enabled');
     const interval = page.locator('#tonal-scale-evaluation-interval');
@@ -28,14 +29,14 @@ test('tonal scale configuration exposes defaults and submits enabled and disable
 
     await enabled.uncheck();
     await interval.fill('7');
-    await page.locator('#configForm button[type="submit"]').click();
+    await page.locator('#config-tab-story button[type="submit"]').click();
     await expect.poll(() => submitted.length).toBe(1);
     expect(submitted[0].get('tonal_scale_evaluation.enabled::boolean')).toBe('false');
     expect(submitted[0].get('tonal_scale_evaluation.interval::int')).toBe('7');
 
     await enabled.check();
     await interval.fill('5');
-    await page.locator('#configForm button[type="submit"]').click();
+    await page.locator('#config-tab-story button[type="submit"]').click();
     await expect.poll(() => submitted.length).toBe(2);
     expect(submitted[1].get('tonal_scale_evaluation.enabled::boolean')).toBe('true');
     expect(submitted[1].get('tonal_scale_evaluation.interval::int')).toBe('5');

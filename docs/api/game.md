@@ -10,8 +10,8 @@ Start a game from the active world setting.
 
 Request:
 - Body supports: `playerName`, `playerDescription`, `playerClass`, `playerRace`, `playerLevel`, `startMonth`, `startDay`, `startTime`, `startingLocation`, `startingCurrency`, `attributes`, `skills`, `clientId`, `requestId`
-  - `startMonth` is a one-based month position and `startDay` is a one-based day within that month. Both default to `1` for omitted/legacy requests.
-  - `startTime` must be an integer hour from `0` through `23`. Omitted values fall back to the active setting/default flow, then to `9`.
+  - `startMonth` is a one-based month position and `startDay` is a one-based day within that month. Omitted values use the active world profile's `defaultStartMonth` and `defaultStartDay`, then fall back to `1` for legacy profiles.
+  - `startTime` must be an integer hour from `0` through `23`. Omitted values use the active world profile's `defaultStartTime`, then fall back to `9` for legacy profiles.
   - `attributes` and `skills` are optional starting player value maps. Available skill definitions come from the active setting's configured skill list, not from the request body.
 - `numSkills` and `existingSkills` are rejected with 400; configure available skills in Game Settings.
 - `unspentSkillPoints` and `unspentAttributePoints` are rejected with 400 because point pools are formula-derived at read time.
@@ -47,9 +47,9 @@ Behavior:
   - A target count of `0` disables faction setup.
   - When the target exceeds available drafts, the remainder is generated through faction prompts.
   - Each faction receives relation entries for every other active faction; missing or invalid relation entries normalize to neutral.
-- Calendar setup uses the active setting's `calendarDefinition` when present. Otherwise the server runs the `calendar_generation` prompt and falls back to the built-in Gregorian-style calendar if generation fails.
+- Calendar setup uses the active setting's `calendarDefinition` when present. Otherwise the server runs the `calendar_generation` prompt and falls back to the built-in Gregorian-style calendar if generation fails. Each season carries separate two-sentence `vegetationDescription` and `interiorDescription` fields for exterior and enclosed-interior image editing. Legacy calendars missing either field are backfilled together by the logged `season_image_descriptions` prompt on load.
 - The selected month/day is validated against that resolved calendar before the previous game's runtime state is cleared. Invalid month positions or days return `400` without destroying the loaded game. The valid date becomes canonical `worldTime.dayIndex`, and the selected hour becomes `worldTime.timeMinutes`.
-- The generated calendar prompt requires Gregorian output for reasonably Earth-like settings and asks for seasons, seasonal time-of-day lighting descriptions, and holiday descriptions.
+- The generated calendar prompt requires Gregorian output for reasonably Earth-like settings and asks for seasons, separate two-sentence exterior-vegetation and enclosed-interior image descriptions, seasonal time-of-day lighting descriptions, and holiday descriptions.
 - The selected start hour is applied through the minute-based world-time path.
 - Startup ability-selection state is resolved before the opening scene.
 - If startup ability choices are pending, the game-loaded gate is set and the intro is deferred until the final ability-selection submission.
@@ -152,7 +152,7 @@ Behavior:
 - ComfyUI loads delete this server's known queued prompt ids and call ComfyUI's `/interrupt` endpoint for active rendering. OpenAI- and NanoGPT-backed image HTTP requests receive an abort signal. A cancellation or drain failure aborts the load with an explicit error rather than hydrating alongside stale work.
 - Hydration includes compatibility migrations for hour-based world-time/status-duration data, pre-`1.1` need-bar scale values, and pre-`1.2` compact domain-object IDs such as `char_n`, `thing_n`, and `loc_n`.
 - The in-memory save metadata version is normalized to the current save version after hydration so the next save persists upgraded data.
-- Missing saved `calendarDefinition` data is filled from the loaded setting's `calendarDefinition` when available, otherwise through `calendar_generation` with Gregorian fallback.
+- Missing saved `calendarDefinition` data is filled from the loaded setting's `calendarDefinition` when available, otherwise through `calendar_generation` with Gregorian fallback. Seasons missing either exterior `vegetationDescription` or enclosed `interiorDescription` guidance are completed by the logged `season_image_descriptions` backfill before the loaded game is persisted.
 - If the loaded setting lacks required hide/perception selections, the `setting_hide_perception` prompt fills them from defined attributes and optional setting skills. Invalid required prompt results fail load; successful backfills update the setting and rewrite the loaded save.
 - Faction references are reconciled before restoring the current player. Invalid faction IDs are cleared from player faction fields, player standings, location/region/pending-stub controlling faction IDs, and faction relation edges.
 - Party members are removed from explicit location NPC lists and have direct location state cleared while remaining in the player's party.
@@ -161,6 +161,24 @@ Behavior:
 - Chat backlog summaries run when `summaryConfig.summarize_on_load` is not `false`.
 - Short-description backfill planning runs after hydration. When `clientId` is present and missing short descriptions exist, `/api/short-descriptions/pending` can report the plan for that client.
 - Pending player level-up ability draft state is resolved without generating option text; option generation runs from `/api/player/ability-selection` when requested.
+
+## GET /api/terminal-output
+
+Read a bounded tail of terminal output captured by the running AI RPG server.
+
+Query:
+- `source=airpg|llama` is required.
+- `cursor=<non-negative integer>` is optional. Omitting it requests the full retained tail; subsequent requests can pass the returned cursor for deltas.
+
+Behavior:
+- `airpg` captures AI RPG stdout/stderr. Managed llama chunks are mirrored to the real server terminal through uncaptured passthrough writers, so they do not contaminate this source.
+- `llama` captures stdout/stderr only for a `LocalLlamaServerProcess` owned by this AI RPG process. An externally started llama is never adopted. A configured managed process remains available with `running: false` while stopped for image rendering.
+- Each source retains at most one million characters in memory. Cursors remain monotonic across managed llama restarts: a cursor at the prior run boundary receives the whole new-run delta, while a cursor older than that boundary receives `reset: true` with the current full tail.
+
+Response:
+- 200: `{ success: true, source, available, running, pid, output, cursor, startCursor, reset, truncated, message? }`
+- 400 for an invalid source or cursor.
+- 500 with `error` and `stack` when terminal capture fails.
 
 ## POST /api/turn/cancel-and-rollback
 
@@ -171,6 +189,7 @@ Request:
 
 Behavior:
 - Runs the same mandatory runtime cancellation barrier as every other load.
+- Text cancellation reaches streamed, non-stream, silent, queued/pre-transport, ComfyUI-cleanup, and llama.cpp model-switch attempts. It propagates as a terminal cancellation so staged parser retries cannot relaunch work after Stop & Undo.
 - Selects the newest autosave by `metadata.timestamp` only after active turn work has stopped, then hydrates that autosave.
 - Returns `404` when no autosave exists, `408` when a turn/prompt drain times out, `409` for a concurrent load or mod mismatch, and `500` for cancellation/hydration failures. Error responses include `stack` for the client error popup.
 
@@ -267,6 +286,7 @@ Behavior:
 - Invalid calendars fail without mutating the active calendar.
 - The current `{ dayIndex, timeMinutes }` is preserved; only date/season/holiday/light interpretation changes.
 - The returned `calendarDefinition` is the normalized version persisted on the next save.
+- A successful replacement clears every cached location seasonal variant so edited descriptions cannot reuse images generated from the previous calendar text.
 
 ## PUT /api/game-config-override
 

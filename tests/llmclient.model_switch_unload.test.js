@@ -66,6 +66,7 @@ function buildConfig({ enabled = true, local = false, stream = false } = {}) {
     }
     if (local) {
         config.ai.local_startup_script_path = '/fake/start-router.sh';
+        config.ai.router_slot_cache_enabled = true;
         config.ai.router_slot_cache_directory = SLOT_CACHE_TEST_DIRECTORY;
     }
     return config;
@@ -126,17 +127,76 @@ test('unload_model_on_switch defaults off and rejects non-boolean values', () =>
         'utf8'
     ));
     assert.equal(defaultConfig.unload_model_on_switch, false);
+    assert.equal(defaultConfig.ai.router_slot_cache_enabled, false);
     assert.equal(defaultConfig.ai.router_slot_cache_directory, '/dev/shm');
     assert.equal(LLMClient.resolveUnloadModelOnSwitch({}), false);
+    assert.equal(LLMClient.resolveRouterSlotCacheEnabled({}), false);
     assert.equal(LLMClient.resolveRouterSlotCacheDirectory({}), '/dev/shm');
     assert.throws(
         () => LLMClient.resolveUnloadModelOnSwitch({ unload_model_on_switch: 'yes' }),
         /unload_model_on_switch must be a boolean/
     );
     assert.throws(
+        () => LLMClient.resolveRouterSlotCacheEnabled({ router_slot_cache_enabled: 'yes' }),
+        /must be a boolean/
+    );
+    assert.throws(
         () => LLMClient.resolveRouterSlotCacheDirectory({ router_slot_cache_directory: 'relative' }),
         /must be a nonblank absolute path/
     );
+});
+
+test('disabled local-router slot cache skips save and restore while preserving model unloads', { concurrency: false }, async () => {
+    const originalConfig = Globals.config;
+    const originalGet = axios.get;
+    const originalPost = axios.post;
+    const events = [];
+    const statuses = new Map([
+        ['base-model', 'unloaded'],
+        ['alternate-model', 'unloaded']
+    ]);
+
+    Globals.config = buildConfig({ local: true });
+    Globals.config.ai.router_slot_cache_enabled = false;
+    LLMClient.resetModelSwitchTracking();
+    axios.get = async () => ({
+        data: {
+            data: Array.from(statuses, ([id, value]) => ({ id, status: { value } }))
+        }
+    });
+    axios.post = async (url, payload) => {
+        if (url.endsWith('/models/unload')) {
+            events.push(`unload:${payload.model}`);
+            statuses.set(payload.model, 'unloaded');
+            return { data: { success: true } };
+        }
+        if (url.includes('/slots/0?action=')) {
+            events.push(`slot:${payload.model}`);
+            throw new Error('slot cache endpoint must not be called while disabled');
+        }
+        events.push(`prompt:${payload.model}`);
+        statuses.set(payload.model, 'loaded');
+        return responseFor(payload);
+    };
+
+    try {
+        await runPrompt('base_prompt');
+        await runPrompt('alternate_prompt');
+        await runPrompt('base_prompt');
+
+        assert.deepEqual(events, [
+            'prompt:base-model',
+            'unload:base-model',
+            'prompt:alternate-model',
+            'unload:alternate-model',
+            'prompt:base-model'
+        ]);
+    } finally {
+        LLMClient.resetModelSwitchTracking();
+        axios.get = originalGet;
+        axios.post = originalPost;
+        Globals.config = originalConfig;
+    }
 });
 
 test('managed local router switches save, unload, router-queued restore, and prompt in order', { concurrency: false }, async () => {
@@ -286,6 +346,104 @@ test('visible prompt progress starts before a router-queued cache restore finish
         assert.equal(events.some(event => event.startsWith('load:')), false);
     } finally {
         releaseRestore.resolve();
+        removeSlotCacheIfPresent('base-model');
+        removeSlotCacheIfPresent('alternate-model');
+        LLMClient.resetPromptOutputCharacterStatsForTests();
+        LLMClient.resetModelSwitchTracking();
+        axios.get = originalGet;
+        axios.post = originalPost;
+        Globals.realtimeHub = originalRealtimeHub;
+        Globals.baseDir = originalBaseDir;
+        Globals.config = originalConfig;
+    }
+});
+
+test('cancel-all aborts a router-queued cache restore and never launches the replacement prompt', { concurrency: false }, async () => {
+    const originalConfig = Globals.config;
+    const originalBaseDir = Globals.baseDir;
+    const originalRealtimeHub = Globals.realtimeHub;
+    const originalGet = axios.get;
+    const originalPost = axios.post;
+    const restoreStarted = deferred();
+    const restoreCancelled = deferred();
+    const events = [];
+    const statuses = new Map([
+        ['base-model', 'unloaded'],
+        ['alternate-model', 'unloaded']
+    ]);
+    fs.mkdirSync(SLOT_CACHE_TEST_DIRECTORY, { recursive: true });
+    removeSlotCacheIfPresent('base-model');
+    removeSlotCacheIfPresent('alternate-model');
+
+    Globals.baseDir = fs.mkdtempSync(path.join(__dirname, '..', 'tmp', 'model-switch-cancel-'));
+    Globals.config = buildConfig({ local: true, stream: true });
+    Globals.realtimeHub = { emit() {} };
+    LLMClient.resetPromptOutputCharacterStatsForTests();
+    LLMClient.resetModelSwitchTracking();
+    axios.get = async () => ({
+        data: {
+            data: Array.from(statuses, ([id, value]) => ({ id, status: { value } }))
+        }
+    });
+    axios.post = async (url, payload, options = {}) => {
+        if (url.includes('/slots/0?action=save')) {
+            events.push(`save:${payload.model}`);
+            fs.writeFileSync(slotCachePath(payload.model), `cache:${payload.model}`);
+            return { data: { id_slot: 0, filename: payload.filename, n_saved: 1 } };
+        }
+        if (url.endsWith('/models/unload')) {
+            events.push(`unload:${payload.model}`);
+            statuses.set(payload.model, 'unloaded');
+            return { data: { success: true } };
+        }
+        if (url.includes('/slots/0?action=restore')) {
+            events.push(`restore:${payload.model}`);
+            restoreStarted.resolve();
+            return await new Promise((resolve, reject) => {
+                const onAbort = () => {
+                    restoreCancelled.resolve();
+                    reject(options.signal?.reason || new Error('restore cancelled'));
+                };
+                if (options.signal?.aborted) {
+                    onAbort();
+                    return;
+                }
+                options.signal?.addEventListener('abort', onAbort, { once: true });
+            });
+        }
+        events.push(`prompt:${payload.model}`);
+        statuses.set(payload.model, 'loaded');
+        return streamResponseFor(payload);
+    };
+
+    try {
+        await runVisiblePrompt('base_prompt');
+        await runVisiblePrompt('alternate_prompt');
+
+        const switchedPrompt = runVisiblePrompt('base_prompt');
+        await restoreStarted.promise;
+        const cancellation = LLMClient.cancelAllPrompts('Stop & Undo requested.');
+
+        await restoreCancelled.promise;
+        await assert.rejects(
+            switchedPrompt,
+            error => {
+                assert.equal(error.code, 'PROMPT_CANCELLED');
+                assert.match(error.message, /Stop & Undo requested/);
+                return true;
+            }
+        );
+        await LLMClient.waitForPromptDrain({ timeoutMs: 1000, pollIntervalMs: 5 });
+
+        assert.equal(cancellation.canceledCount, 1);
+        assert.equal(events.at(-1), 'restore:base-model');
+        assert.equal(
+            events.filter(event => event === 'prompt:base-model').length,
+            1,
+            'the only base-model transport should be the initial setup prompt'
+        );
+        assert.equal(fs.existsSync(slotCachePath('base-model')), true);
+    } finally {
         removeSlotCacheIfPresent('base-model');
         removeSlotCacheIfPresent('alternate-model');
         LLMClient.resetPromptOutputCharacterStatsForTests();

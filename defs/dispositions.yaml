@@ -41,7 +41,7 @@ dispositions:
       80: close friend (+7 to relevant circumstance modifier)
       120: best friend (+10 to relevant circumstance modifier)
   romantic:
-    description: Represents a character's level of romantic interest or affection towards the player character.
+    description: "Represents a character's level of romantic interest or affection towards the player character. NOTE: Characters can and should occasionally take romantic interest in the player even if the player doesn't flirt with them first!"
     icon: ❤️
     hostile_value: -15
     move_up:

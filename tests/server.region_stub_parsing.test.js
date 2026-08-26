@@ -407,6 +407,7 @@ test('pending-region generation uses parser-guided retries before consuming the 
     assert.match(expansionSource, /runPromptWithParseRetries\(\{/);
     assert.match(expansionSource, /maxAttempts:\s*resolveConfiguredPromptMaxAttempts\(config\?\.ai/);
     assert.match(expansionSource, /parse:\s*responseText\s*=>\s*\{[\s\S]*parseRegionStubLocations\(responseText\)/);
+    assert.match(expansionSource, /Generated region stub location[\s\S]*missing required <hasWeather>/);
     assert.match(expansionSource, /retainRejectedResponse:\s*false/);
     assert.match(expansionSource, /buildRetryInstruction:\s*error\s*=>/);
     assert.doesNotMatch(expansionSource, /Region stub generation returned no locations/);

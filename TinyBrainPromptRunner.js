@@ -14,13 +14,16 @@ const {
     parsePlayerActionAccompanyingCharacters,
     parsePlayerActionHiddenContests,
     parsePlayerActionHiddenNotes,
-    parsePlayerActionMoreInfoOrNa,
+    parsePlayerActionDestinationNameOrNa,
     parsePlayerActionMovement,
+    parsePlayerActionOptionalProse,
     parsePlayerActionProseScope,
     parsePlayerActionRequiredProse,
     parsePlayerActionTimeReasoning,
     parsePlayerActionVehicleDecision,
     parseRevisionDecision,
+    parseSceneSummaryBoundaries,
+    parseSceneSummaryEntry,
     parseScheduledEventApplicability,
     parseScheduledEventToolPlan,
     parseScheduledEventToolExecution,
@@ -224,8 +227,22 @@ class TinyBrainPromptExtension {
     parse(parser, nodes) {
         const token = parser.nextToken();
         if (token.value === 'llm_dummy_action') {
+            let target = null;
+            if (parser.skipSymbol('as')) {
+                const targetNode = parser.parsePrimary();
+                if (!(targetNode instanceof nodes.Symbol)) {
+                    parser.fail(
+                        'llm_dummy_action assignment target must be a variable name.',
+                        targetNode.lineno,
+                        targetNode.colno
+                    );
+                }
+                target = targetNode.value;
+            }
             parser.advanceAfterBlockEnd(token.value);
-            return new nodes.CallExtension(this, 'renderDummyCheckpoint');
+            const args = new nodes.NodeList(token.lineno, token.colno);
+            args.addChild(new nodes.Literal(token.lineno, token.colno, target));
+            return new nodes.CallExtension(this, 'renderDummyCheckpoint', args);
         }
 
         if (token.value === 'llmresult') {
@@ -248,12 +265,12 @@ class TinyBrainPromptExtension {
         return new nodes.CallExtension(this, 'renderParserCheckpoint', args);
     }
 
-    renderDummyCheckpoint(context) {
+    renderDummyCheckpoint(context, target = null) {
         return this.#renderCheckpoint(context, {
             kind: 'dummy',
             parserName: null,
             parserArgs: [],
-            target: null
+            target
         });
     }
 
@@ -411,8 +428,9 @@ class TinyBrainPromptRunner {
             player_action_accompanying_characters: parsePlayerActionAccompanyingCharacters,
             player_action_hidden_contests: parsePlayerActionHiddenContests,
             player_action_hidden_notes: parsePlayerActionHiddenNotes,
-            player_action_more_info_or_na: parsePlayerActionMoreInfoOrNa,
+            player_action_destination_name_or_na: parsePlayerActionDestinationNameOrNa,
             player_action_movement: parsePlayerActionMovement,
+            player_action_optional_prose: parsePlayerActionOptionalProse,
             player_action_prose_scope: parsePlayerActionProseScope,
             player_action_required_prose: parsePlayerActionRequiredProse,
             player_action_time_reasoning: parsePlayerActionTimeReasoning,
@@ -420,6 +438,8 @@ class TinyBrainPromptRunner {
             player_is_traveling: parsePlayerIsTraveling,
             response_or_na: parseResponseOrNa,
             revision_decision: parseRevisionDecision,
+            scene_summary_boundaries: parseSceneSummaryBoundaries,
+            scene_summary_entry: parseSceneSummaryEntry,
             scheduled_event_applicability: parseScheduledEventApplicability,
             scheduled_event_tool_plan: parseScheduledEventToolPlan,
             scheduled_event_tool_execution: parseScheduledEventToolExecution,
@@ -877,7 +897,10 @@ class TinyBrainPromptRunner {
                     }
                 }
                 return {
-                    value: requireNonWhitespaceResponse(response, `Tiny-brain checkpoint ${checkpoint.index + 1}`)
+                    value: requireNonWhitespaceResponse(
+                        response,
+                        `Tiny-brain checkpoint ${checkpoint.index + 1}`
+                    ).trim()
                 };
             };
         }

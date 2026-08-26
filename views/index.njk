@@ -85,6 +85,7 @@
                                             <button type="button" class="entity-context-menu-item location-image-menu-item" id="locationImageRegenerateButton">Regenerate Image</button>
                                             <button type="button" class="entity-context-menu-item location-image-menu-item" id="locationImageRegenerateSamePromptButton">Regenerate Image (same prompt)</button>
                                             <button type="button" class="entity-context-menu-item location-image-menu-item" id="locationImageRegeneratePromptButton">Regenerate Image +</button>
+                                            <button type="button" class="entity-context-menu-item location-image-menu-item" id="locationImageRegenerateSeasonalButton">Regenerate Seasonal Image</button>
                                         </div>
                                     </div>
                                     <div class="location-info" id="locationInfo">
@@ -239,6 +240,22 @@
 
                         <div class="chat-wrapper">
                             <div class="chat-container">
+                                <button
+                                    type="button"
+                                    class="terminal-output-button"
+                                    id="terminalOutputButton"
+                                    aria-label="Open AI RPG and llama.cpp terminal output"
+                                    title="Open terminal output"
+                                    aria-haspopup="dialog"
+                                    aria-expanded="false"
+                                >
+                                    <img
+                                        class="terminal-output-icon"
+                                        src="/assets/material-icons/misc/terminal.svg"
+                                        alt=""
+                                        aria-hidden="true"
+                                    >
+                                </button>
                                 <button
                                     type="button"
                                     class="abort-turn-button"
@@ -497,7 +514,9 @@
                     </div>
                 </section>
                 <div class="map-location-context-menu entity-context-menu location-image-menu" id="mapLocationContextMenu" hidden>
+                    <button type="button" class="entity-context-menu-item location-image-menu-item" id="mapLocationMenuTeleportPlayerButton">Teleport Player Here</button>
                     <button type="button" class="entity-context-menu-item location-image-menu-item" id="mapLocationMenuUnstubButton" hidden>Unstub Location</button>
+                    <button type="button" class="entity-context-menu-item location-image-menu-item" id="mapLocationMenuFavoriteButton" hidden>Add to Favorites</button>
                     <button type="button" class="entity-context-menu-item location-image-menu-item" id="mapLocationMenuEditButton">Edit Location</button>
                     <button type="button" class="entity-context-menu-item location-image-menu-item" id="mapLocationMenuRegionButton">Edit Region</button>
                     <button type="button" class="entity-context-menu-item location-image-menu-item" id="mapLocationMenuWeatherButton">Edit Weather</button>
@@ -509,6 +528,7 @@
                     <button type="button" class="entity-context-menu-item location-image-menu-item" id="mapLocationMenuRegenerateImageButton">Regenerate Image</button>
                     <button type="button" class="entity-context-menu-item location-image-menu-item" id="mapLocationMenuRegenerateSamePromptButton">Regenerate Image (same prompt)</button>
                     <button type="button" class="entity-context-menu-item location-image-menu-item" id="mapLocationMenuRegeneratePromptButton">Regenerate Image +</button>
+                    <button type="button" class="entity-context-menu-item location-image-menu-item" id="mapLocationMenuRegenerateSeasonalButton">Regenerate Seasonal Image</button>
                     <button type="button" class="entity-context-menu-item location-image-menu-item" id="mapLocationMenuDeleteButton">Delete Location</button>
                 </div>
                 <div id="setLastSeenModal" class="modal" role="dialog" aria-modal="true" aria-labelledby="setLastSeenModalTitle" aria-hidden="true" hidden>
@@ -9256,6 +9276,49 @@
             }
         }
 
+        async function refreshAfterThingCurrencyConversion({ thingId, card = null, options = {}, result = {} } = {}) {
+            if (typeof thingId !== 'string' || !thingId.trim()) {
+                throw new Error('Converted item id is required for the UI refresh.');
+            }
+
+            thingDataCache.delete(thingId);
+            if (result?.player && typeof updateChatPlayerPanel === 'function') {
+                updateChatPlayerPanel(result.player);
+            }
+
+            await window.refreshInventory?.();
+
+            const context = options.context || 'general';
+            if ((context === 'container-player-inventory' || context === 'container-contents') && currentThingContainerId) {
+                const payload = await fetchThingContainerPayload(currentThingContainerId);
+                applyThingContainerPayload(payload);
+            } else if (context === 'npc-inventory') {
+                if (Array.isArray(currentNpcInventory)) {
+                    currentNpcInventory = currentNpcInventory.filter(item => item && item.id !== thingId);
+                    renderNpcInventory(currentNpcInventory);
+                }
+                await window.loadCurrentLocation?.();
+            } else if (context === 'npc-equipment') {
+                if (card && card.parentElement) {
+                    card.remove();
+                }
+                await window.loadCurrentLocation?.();
+            } else if (context === 'location') {
+                await window.loadCurrentLocation?.();
+            } else if (card && card.parentElement) {
+                card.remove();
+            }
+
+            const npcHintId = typeof options.npcId === 'string' ? options.npcId : '';
+            if (npcHintId && currentNpcViewId === npcHintId) {
+                const updatedNpc = window.currentNpcData?.get(npcHintId);
+                if (updatedNpc) {
+                    showNpcViewModal(updatedNpc);
+                }
+            }
+            window.refreshParty?.();
+        }
+
         function registerThingContextMenu(card, thing, options = {}) {
             if (!card || !thing || !thing.id) {
                 return;
@@ -9366,6 +9429,15 @@
                 mergeStacksButton.className = 'entity-context-menu-item thing-card-menu-item';
                 mergeStacksButton.textContent = 'Merge Stacks';
                 menu.appendChild(mergeStacksButton);
+            }
+
+            let convertToCurrencyButton = null;
+            if (isItemThing) {
+                convertToCurrencyButton = document.createElement('button');
+                convertToCurrencyButton.type = 'button';
+                convertToCurrencyButton.className = 'entity-context-menu-item thing-card-menu-item';
+                convertToCurrencyButton.textContent = 'Convert to Currency';
+                menu.appendChild(convertToCurrencyButton);
             }
 
             const modThingContextActions = getModThingContextActions(thing, options);
@@ -9572,6 +9644,72 @@
                         alert(`Failed to merge stacks: ${error?.message || error}`);
                     } finally {
                         mergeStacksButton.disabled = false;
+                    }
+                });
+            }
+
+            if (convertToCurrencyButton) {
+                convertToCurrencyButton.addEventListener('click', async (event) => {
+                    event.stopPropagation();
+                    closeThingContextMenu();
+                    convertToCurrencyButton.disabled = true;
+
+                    try {
+                        const previewResponse = await fetch(
+                            `/api/things/${encodeURIComponent(thing.id)}/currency-conversion`,
+                            { cache: 'no-store' }
+                        );
+                        const previewResult = await previewResponse.json().catch(() => ({}));
+                        if (!previewResponse.ok || !previewResult?.success || !previewResult?.conversion) {
+                            throw new Error(previewResult?.error || `HTTP ${previewResponse.status}`);
+                        }
+
+                        const conversion = previewResult.conversion;
+                        const itemLabel = conversion.count === 1
+                            ? conversion.thingName
+                            : `${conversion.thingName} (x${conversion.count})`;
+                        const confirmed = window.confirm([
+                            'Warning: convert this item to currency?',
+                            `Item being deleted: ${itemLabel}`,
+                            `You will receive ${conversion.totalValue} ${conversion.currencyLabel}.`,
+                            'The entire stack will be deleted. This cannot be undone.'
+                        ].join('\n\n'));
+                        if (!confirmed) {
+                            return;
+                        }
+
+                        const response = await fetch(
+                            `/api/things/${encodeURIComponent(thing.id)}/convert-to-currency`,
+                            {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({
+                                    expected: {
+                                        count: conversion.count,
+                                        unitValue: conversion.unitValue,
+                                        totalValue: conversion.totalValue
+                                    }
+                                })
+                            }
+                        );
+                        const result = await response.json().catch(() => ({}));
+                        if (!response.ok || !result?.success) {
+                            throw new Error(result?.error || `HTTP ${response.status}`);
+                        }
+
+                        await refreshAfterThingCurrencyConversion({
+                            thingId: thing.id,
+                            card,
+                            options,
+                            result
+                        });
+                    } catch (error) {
+                        console.warn('Failed to convert item to currency:', error);
+                        window.alert(`Failed to convert item to currency: ${error?.message || 'Unknown error'}`);
+                    } finally {
+                        if (convertToCurrencyButton.isConnected) {
+                            convertToCurrencyButton.disabled = false;
+                        }
                     }
                 });
             }
@@ -10907,10 +11045,13 @@
         const locationImageRegenerateButton = document.getElementById('locationImageRegenerateButton');
         const locationImageRegenerateSamePromptButton = document.getElementById('locationImageRegenerateSamePromptButton');
         const locationImageRegeneratePromptButton = document.getElementById('locationImageRegeneratePromptButton');
+        const locationImageRegenerateSeasonalButton = document.getElementById('locationImageRegenerateSeasonalButton');
         const mapLocationContextMenu = document.getElementById('mapLocationContextMenu');
         const worldMapReloadButton = document.getElementById('worldMapReloadButton');
         const favoritesList = document.getElementById('favoritesList');
+        const mapLocationMenuTeleportPlayerButton = document.getElementById('mapLocationMenuTeleportPlayerButton');
         const mapLocationMenuUnstubButton = document.getElementById('mapLocationMenuUnstubButton');
+        const mapLocationMenuFavoriteButton = document.getElementById('mapLocationMenuFavoriteButton');
         const mapLocationMenuEditButton = document.getElementById('mapLocationMenuEditButton');
         const mapLocationMenuRegionButton = document.getElementById('mapLocationMenuRegionButton');
         const mapLocationMenuWeatherButton = document.getElementById('mapLocationMenuWeatherButton');
@@ -10922,6 +11063,7 @@
         const mapLocationMenuRegenerateImageButton = document.getElementById('mapLocationMenuRegenerateImageButton');
         const mapLocationMenuRegenerateSamePromptButton = document.getElementById('mapLocationMenuRegenerateSamePromptButton');
         const mapLocationMenuRegeneratePromptButton = document.getElementById('mapLocationMenuRegeneratePromptButton');
+        const mapLocationMenuRegenerateSeasonalButton = document.getElementById('mapLocationMenuRegenerateSeasonalButton');
         const mapLocationMenuDeleteButton = document.getElementById('mapLocationMenuDeleteButton');
         const entityImageUploadModal = document.getElementById('entityImageUploadModal');
         const entityImageUploadForm = document.getElementById('entityImageUploadForm');
@@ -11754,10 +11896,16 @@
             const targetLocation = getLocationMenuContext();
             const isStub = Boolean(targetLocation && targetLocation.isStub);
             const isRegionStub = Boolean(targetLocation && targetLocation.stubMetadata?.isRegionEntryStub);
+            const isExplored = Boolean(targetLocation && targetLocation.visited === true && !isStub);
 
             if (mapLocationMenuUnstubButton) {
                 mapLocationMenuUnstubButton.hidden = !isStub;
                 mapLocationMenuUnstubButton.textContent = isRegionStub ? 'Unstub Region' : 'Unstub Location';
+            }
+            if (mapLocationMenuFavoriteButton) {
+                const favorite = isLocationFavorite(targetLocation);
+                mapLocationMenuFavoriteButton.hidden = !isExplored;
+                mapLocationMenuFavoriteButton.textContent = favorite ? 'Remove from Favorites' : 'Add to Favorites';
             }
             [mapLocationMenuRegionButton, mapLocationMenuWeatherButton, mapLocationMenuCalendarButton].forEach(button => {
                 if (!button) {
@@ -11773,6 +11921,9 @@
             }
             if (mapLocationMenuRegeneratePromptButton) {
                 mapLocationMenuRegeneratePromptButton.hidden = isStub;
+            }
+            if (mapLocationMenuRegenerateSeasonalButton) {
+                mapLocationMenuRegenerateSeasonalButton.hidden = isStub;
             }
             if (mapLocationMenuDeleteButton) {
                 mapLocationMenuDeleteButton.hidden = isStub;
@@ -29480,6 +29631,24 @@
             locationFavoriteToggleIcon.src = favorite ? LOCATION_FAVORITE_ICON_SOLID : LOCATION_FAVORITE_ICON_OUTLINE;
         }
 
+        async function updateLocationFavorite(locationId, nextFavorite) {
+            locationId = typeof locationId === 'string' ? locationId.trim() : '';
+            if (!locationId) {
+                throw new Error('Location is unavailable.');
+            }
+
+            const response = await fetch(`/api/locations/${encodeURIComponent(locationId)}/favorite`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ favorite: Boolean(nextFavorite) })
+            });
+            const result = await response.json().catch(() => ({}));
+            if (!response.ok || !result?.success || !result?.location) {
+                throw new Error(result?.error || `HTTP ${response.status}`);
+            }
+            return JSON.parse(JSON.stringify(result.location));
+        }
+
         async function setCurrentLocationFavorite(nextFavorite) {
             const activeLocation = lastRenderedLocation || window.lastRenderedLocation || null;
             const locationId = activeLocation?.id || null;
@@ -29492,17 +29661,7 @@
             }
 
             try {
-                const response = await fetch(`/api/locations/${encodeURIComponent(locationId)}/favorite`, {
-                    method: 'PUT',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ favorite: Boolean(nextFavorite) })
-                });
-                const result = await response.json().catch(() => ({}));
-                if (!response.ok || !result?.success || !result?.location) {
-                    throw new Error(result?.error || `HTTP ${response.status}`);
-                }
-
-                const locationSnapshot = JSON.parse(JSON.stringify(result.location));
+                const locationSnapshot = await updateLocationFavorite(locationId, nextFavorite);
                 lastRenderedLocation = locationSnapshot;
                 window.lastRenderedLocation = JSON.parse(JSON.stringify(locationSnapshot));
                 window.AIRPG_LAST_LOCATION_ID = locationSnapshot.id || null;
@@ -29520,6 +29679,47 @@
                 return locationSnapshot;
             } finally {
                 syncLocationFavoriteToggle(lastRenderedLocation || window.lastRenderedLocation || null);
+            }
+        }
+
+        async function toggleSelectedMapLocationFavorite() {
+            const targetLocation = getLocationMenuContext();
+            const locationId = typeof targetLocation?.id === 'string' ? targetLocation.id.trim() : '';
+            if (!locationId) {
+                throw new Error('Selected map location is unavailable.');
+            }
+            if (targetLocation.isStub === true || targetLocation.visited !== true) {
+                throw new Error('Only explored locations can be added to Favorites.');
+            }
+
+            if (mapLocationMenuFavoriteButton) {
+                mapLocationMenuFavoriteButton.disabled = true;
+            }
+
+            try {
+                const locationSnapshot = await updateLocationFavorite(
+                    locationId,
+                    !isLocationFavorite(targetLocation)
+                );
+                if (lastRenderedLocation?.id === locationId) {
+                    lastRenderedLocation = locationSnapshot;
+                    window.lastRenderedLocation = JSON.parse(JSON.stringify(locationSnapshot));
+                    window.AIRPG_LAST_LOCATION_ID = locationSnapshot.id || null;
+                    window.AIRPG_LAST_LOCATION = JSON.parse(JSON.stringify(locationSnapshot));
+                    syncLocationFavoriteToggle(locationSnapshot);
+                } else {
+                    setLocationMenuContext(locationSnapshot);
+                }
+
+                if (isFavoritesTabActive()) {
+                    await refreshFavoriteLocations({ silent: true });
+                }
+                return locationSnapshot;
+            } finally {
+                if (mapLocationMenuFavoriteButton) {
+                    mapLocationMenuFavoriteButton.disabled = false;
+                }
+                syncMapLocationContextMenuActions();
             }
         }
 
@@ -34596,6 +34796,8 @@
             return Array.from(calendarEditSeasonPanels?.querySelectorAll('.calendar-edit-season-panel') || []).map((panel) => ({
                 name: (panel.querySelector('.calendar-edit-season-name')?.value ?? '').trim(),
                 description: (panel.querySelector('.calendar-edit-season-description')?.value ?? '').trim() || null,
+                vegetationDescription: (panel.querySelector('.calendar-edit-season-vegetation-description')?.value ?? '').trim() || null,
+                interiorDescription: (panel.querySelector('.calendar-edit-season-interior-description')?.value ?? '').trim() || null,
                 startMonth: (panel.querySelector('.calendar-edit-season-start-month')?.value ?? '').trim() || null,
                 startDay: parseCalendarNumberInput(panel.querySelector('.calendar-edit-season-start-day')),
                 dayLengthMinutes: parseCalendarNumberInput(panel.querySelector('.calendar-edit-season-day-length'), { optional: true }),
@@ -34614,6 +34816,8 @@
                 : [{
                     name: '',
                     description: '',
+                    vegetationDescription: '',
+                    interiorDescription: '',
                     startMonth: '',
                     startDay: 1,
                     dayLengthMinutes: null,
@@ -34706,6 +34910,18 @@
                 rows: 3,
                 fieldClass: 'calendar-edit-field-wide'
             });
+            const vegetationDescription = createCalendarTextField('Vegetation Description', 'calendar-edit-season-vegetation-description', season.vegetationDescription || '', {
+                textarea: true,
+                rows: 3,
+                placeholder: 'Two sentences describing visible seasonal vegetation changes for location image edits.',
+                fieldClass: 'calendar-edit-field-wide'
+            });
+            const interiorDescription = createCalendarTextField('Interior Description', 'calendar-edit-season-interior-description', season.interiorDescription || '', {
+                textarea: true,
+                rows: 3,
+                placeholder: 'Two sentences describing visible seasonal changes inside enclosed spaces.',
+                fieldClass: 'calendar-edit-field-wide'
+            });
             const startMonth = createCalendarTextField('Start Month', 'calendar-edit-season-start-month', season.startMonth || '');
             const startDay = createCalendarTextField('Start Day', 'calendar-edit-season-start-day', season.startDay ?? 1, {
                 type: 'number'
@@ -34714,7 +34930,7 @@
                 type: 'number',
                 placeholder: 'Optional'
             });
-            basics.append(name.field, description.field, startMonth.field, startDay.field, dayLength.field);
+            basics.append(name.field, description.field, vegetationDescription.field, interiorDescription.field, startMonth.field, startDay.field, dayLength.field);
 
             const timeSection = document.createElement('section');
             timeSection.className = 'calendar-edit-time-section';
@@ -35052,6 +35268,57 @@
             }
         }
 
+        async function regenerateSeasonalLocationImage(options = {}) {
+            const targetLocation = options.targetLocation || getLocationMenuContext();
+            const locationId = typeof targetLocation?.id === 'string' ? targetLocation.id.trim() : '';
+            const sourceImageId = typeof targetLocation?.imageId === 'string' ? targetLocation.imageId.trim() : '';
+            const affectsCurrentLocation = isCurrentLocationContext(targetLocation);
+            const manager = window.AIRPG?.imageManager;
+            if (!locationId) {
+                alert('No location is currently loaded.');
+                clearLocationMenuContext();
+                return;
+            }
+            if (!locationImageGenerationEnabled || !manager || typeof manager.ensureLocationVariant !== 'function') {
+                alert('Seasonal image generation is unavailable.');
+                clearLocationMenuContext();
+                return;
+            }
+            if (!sourceImageId) {
+                alert('Generate a base location image before regenerating its seasonal image.');
+                clearLocationMenuContext();
+                return;
+            }
+
+            try {
+                const result = await manager.ensureLocationVariant({
+                    locationId,
+                    sourceImageId,
+                    force: true
+                });
+                if (result?.skipped) {
+                    alert(result.message || 'Seasonal image regeneration was skipped.');
+                    return;
+                }
+                if (result?.imageId && affectsCurrentLocation) {
+                    applyLocationVariantImageIfCurrent({
+                        locationId,
+                        sourceImageId,
+                        imageId: result.imageId,
+                        imageUrl: result.imageUrl,
+                        altText: targetLocation.name || 'Location image'
+                    });
+                }
+            } catch (error) {
+                console.warn('Failed to regenerate seasonal location image:', error);
+                alert(`Failed to regenerate seasonal image: ${error?.message || 'Unknown error'}`);
+            } finally {
+                if (options.clearLocationMenuContext !== false) {
+                    clearLocationMenuContext();
+                }
+            }
+        }
+
         async function openLocationImagePromptModal() {
             const targetLocation = getLocationMenuContext();
             if (!targetLocation || !targetLocation.id) {
@@ -35146,6 +35413,80 @@
             } catch (error) {
                 console.warn('Failed to delete location:', error);
                 alert(`Failed to delete location: ${error?.message || 'Unknown error'}`);
+            } finally {
+                if (overlayVisible) {
+                    hideLocationOverlay();
+                }
+                clearLocationMenuContext();
+            }
+        }
+
+        async function teleportPlayerToSelectedMapLocation() {
+            const targetLocation = getLocationMenuContext();
+            if (!targetLocation || !targetLocation.id) {
+                alert('No location is currently selected.');
+                clearLocationMenuContext();
+                return;
+            }
+
+            const playerRecord = (window.currentPlayerData && window.currentPlayerData.id)
+                ? window.currentPlayerData
+                : null;
+            if (!playerRecord || !playerRecord.id) {
+                alert('Player data is unavailable.');
+                clearLocationMenuContext();
+                return;
+            }
+
+            const playerLocationId = playerRecord.locationId || playerRecord.currentLocation || null;
+            if (playerLocationId === targetLocation.id) {
+                alert('The player is already at this location.');
+                clearLocationMenuContext();
+                return;
+            }
+
+            const targetName = targetLocation.name
+                || targetLocation.stubMetadata?.targetRegionName
+                || targetLocation.stubMetadata?.shortDescription
+                || targetLocation.id;
+            const expansionNote = targetLocation.isStub ? ' It will be expanded first.' : '';
+            const confirmed = window.confirm(`Teleport the player to "${targetName}"?${expansionNote}`);
+            if (!confirmed) {
+                clearLocationMenuContext();
+                return;
+            }
+
+            let overlayVisible = false;
+            try {
+                showLocationOverlay(`Teleporting player to ${targetName}...`);
+                overlayVisible = true;
+            } catch (_) {
+                // Ignore overlay failures.
+            }
+
+            try {
+                await teleportNpcToLocation(playerRecord, targetLocation.id, { storyToolTeleport: true });
+
+                const mapTab = document.querySelector('[data-tab="map"]');
+                if (mapTab?.classList.contains('active')) {
+                    try {
+                        await window.loadRegionMap?.();
+                    } catch (mapError) {
+                        console.warn('Failed to refresh region map after player teleport:', mapError);
+                    }
+                }
+
+                const worldMapTab = document.querySelector('[data-tab="world-map"]');
+                if (worldMapTab?.classList.contains('active')) {
+                    try {
+                        await window.loadWorldMap?.({ silent: true });
+                    } catch (worldMapError) {
+                        console.warn('Failed to refresh world map after player teleport:', worldMapError);
+                    }
+                }
+            } catch (error) {
+                console.warn('Failed to teleport player from map context menu:', error);
+                alert(`Failed to teleport player: ${error?.message || 'Unknown error'}`);
             } finally {
                 if (overlayVisible) {
                     hideLocationOverlay();
@@ -35353,6 +35694,14 @@
             });
         }
 
+        if (locationImageRegenerateSeasonalButton) {
+            locationImageRegenerateSeasonalButton.addEventListener('click', async (event) => {
+                event.stopPropagation();
+                closeLocationImageMenu({ preserveContext: true });
+                await regenerateSeasonalLocationImage();
+            });
+        }
+
         if (entityImageUploadFile) {
             entityImageUploadFile.addEventListener('change', () => {
                 const file = entityImageUploadFile.files?.[0] || null;
@@ -35401,11 +35750,34 @@
             });
         }
 
+        if (mapLocationMenuTeleportPlayerButton) {
+            mapLocationMenuTeleportPlayerButton.addEventListener('click', async (event) => {
+                event.stopPropagation();
+                closeMapLocationContextMenu({ preserveContext: true });
+                await teleportPlayerToSelectedMapLocation();
+            });
+        }
+
         if (mapLocationMenuUnstubButton) {
             mapLocationMenuUnstubButton.addEventListener('click', async (event) => {
                 event.stopPropagation();
                 closeMapLocationContextMenu({ preserveContext: true });
                 await expandSelectedMapStub();
+            });
+        }
+
+        if (mapLocationMenuFavoriteButton) {
+            mapLocationMenuFavoriteButton.addEventListener('click', async (event) => {
+                event.stopPropagation();
+                closeMapLocationContextMenu({ preserveContext: true });
+                try {
+                    await toggleSelectedMapLocationFavorite();
+                } catch (error) {
+                    console.warn('Failed to update selected map location favorite:', error);
+                    alert(`Failed to update favorite: ${error?.message || error}`);
+                } finally {
+                    clearLocationMenuContext();
+                }
             });
         }
 
@@ -35500,6 +35872,14 @@
                 event.stopPropagation();
                 closeMapLocationContextMenu({ preserveContext: true });
                 await openLocationImagePromptModal();
+            });
+        }
+
+        if (mapLocationMenuRegenerateSeasonalButton) {
+            mapLocationMenuRegenerateSeasonalButton.addEventListener('click', async (event) => {
+                event.stopPropagation();
+                closeMapLocationContextMenu({ preserveContext: true });
+                await regenerateSeasonalLocationImage();
             });
         }
 
@@ -35691,6 +36071,8 @@
                 seasons.push({
                     name: '',
                     description: '',
+                    vegetationDescription: '',
+                    interiorDescription: '',
                     startMonth: '',
                     startDay: 1,
                     dayLengthMinutes: null,

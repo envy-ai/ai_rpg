@@ -91,6 +91,16 @@ test('quest reward and while-away builders assemble already accepted structured 
     assert.match(whileAwayXml, /<characterName>Mira<\/characterName>/);
     assert.match(whileAwayXml, /<characterName>Ada<\/characterName>/);
     assert.match(whileAwayXml, /<itemName>Toolbox<\/itemName>/);
+
+    const whileAwayWithoutProseXml = buildWhileYouWereAwayResult({
+        checkpointValues: [
+            checkpoint('while_away_arrival_updates', '<characterUpdates/>'),
+            checkpoint('exact_xml_root', '<itemSceneryMoves/>', { parserArgs: ['itemSceneryMoves'] }),
+            checkpoint('player_action_optional_prose', null)
+        ]
+    });
+    assert.doesNotMatch(whileAwayWithoutProseXml, /<proseForPlayer>/);
+    assert.match(whileAwayWithoutProseXml, /<characterUpdates>[\s\S]*<\/characterUpdates>/);
 });
 
 test('scheduled-event builders handle no-event, visible event, and interruption merge branches', () => {

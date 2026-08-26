@@ -1,0 +1,176 @@
+{
+  "1": {
+    "inputs": {
+      "text": ["100", 0],
+      "clip": ["5", 0]
+    },
+    "class_type": "CLIPTextEncode",
+    "_meta": {
+      "title": "CLIP Text Encode (Prompt List)"
+    }
+  },
+  "2": {
+    "inputs": {
+      "width": {{ images[0].width }},
+      "height": {{ images[0].height }},
+      "batch_size": 1
+    },
+    "class_type": "EmptyLatentImage",
+    "_meta": {
+      "title": "Empty Latent Image"
+    }
+  },
+  "3": {
+    "inputs": {
+      "upscale": -1,
+      "tile": false,
+      "tile_size": 512,
+      "overlap": 64,
+      "temporal_size": 4096,
+      "temporal_overlap": 64,
+      "samples": ["17", 0],
+      "vae": ["6", 0]
+    },
+    "class_type": "VAEUtils_VAEDecodeTiled",
+    "_meta": {
+      "title": "VAE Decode (Latent List)"
+    }
+  },
+  "4": {
+    "inputs": {
+      "unet_name": "krea2_turbo_unfiltered_int8_convrot.safetensors",
+      "weight_dtype": "default"
+    },
+    "class_type": "UNETLoader",
+    "_meta": {
+      "title": "Load Diffusion Model"
+    }
+  },
+  "5": {
+    "inputs": {
+      "clip_name": "d/text_encoders/qwen3vl_4b_fp8_scaled.safetensors",
+      "type": "krea2",
+      "device": "default"
+    },
+    "class_type": "CLIPLoader",
+    "_meta": {
+      "title": "Load CLIP"
+    }
+  },
+  "6": {
+    "inputs": {
+      "vae_name": "Wan2.1_VAE_upscale2x_imageonly_real_v1.safetensors",
+      "disable_offload": false
+    },
+    "class_type": "VAEUtils_CustomVAELoader",
+    "_meta": {
+      "title": "Load VAE (VAE Utils)"
+    }
+  },
+  "7": {
+    "inputs": {
+      "conditioning": ["1", 0]
+    },
+    "class_type": "ConditioningZeroOut",
+    "_meta": {
+      "title": "ConditioningZeroOut (Prompt List)"
+    }
+  },
+  "17": {
+    "inputs": {
+      "seed": ["101", 0],
+      "steps": 8,
+      "cfg": 1,
+      "sampler_name": "euler",
+      "scheduler": "simple",
+      "denoise": 1,
+      "model": ["4", 0],
+      "positive": ["1", 0],
+      "negative": ["7", 0],
+      "latent_image": ["2", 0]
+    },
+    "class_type": "KSampler",
+    "_meta": {
+      "title": "KSampler (Conditioning and Seed Lists)"
+    }
+  },
+  "22": {
+    "inputs": {
+      "format": "%Y-%m-%d/ComfyUI"
+    },
+    "class_type": "JWDatetimeString",
+    "_meta": {
+      "title": "Datetime String"
+    }
+  },
+  "23": {
+    "inputs": {
+      "filename_prefix": ["22", 0],
+      "subdirectory_name": "",
+      "output_format": "webp",
+      "quality": "high",
+      "metadata_scope": "full",
+      "include_batch_num": true,
+      "prefer_nearest": true,
+      "images": ["3", 0]
+    },
+    "class_type": "SaveImageWithMetaData",
+    "_meta": {
+      "title": "Save Image List With MetaData"
+    }
+  },
+  "100": {
+    "inputs": {
+{% for image in images %}
+      "value{{ loop.index }}": ["{{ 1000 + loop.index0 }}", 0]{% if not loop.last %},{% endif %}
+{% endfor %}
+    },
+    "class_type": "ImpactMakeAnyList",
+    "_meta": {
+      "title": "Make Prompt List"
+    }
+  },
+  "101": {
+    "inputs": {
+{% for image in images %}
+      "value{{ loop.index }}": ["{{ 2000 + loop.index0 }}", 0]{% if not loop.last %},{% endif %}
+{% endfor %}
+    },
+    "class_type": "ImpactMakeAnyList",
+    "_meta": {
+      "title": "Make Seed List"
+    }
+  },
+{% for image in images %}
+  "{{ 1000 + loop.index0 }}": {
+    "inputs": {
+      "value": "{{ image.prompt | json }}"
+    },
+    "class_type": "PrimitiveStringMultiline",
+    "_meta": {
+      "title": "Input Prompt {{ loop.index }}"
+    }
+  },
+  "{{ 2000 + loop.index0 }}": {
+    "inputs": {
+      "value": {{ image.seed }}
+    },
+    "class_type": "PrimitiveInt",
+    "_meta": {
+      "title": "Input Seed {{ loop.index }}"
+    }
+  },
+{% endfor %}
+  "3000": {
+    "inputs": {
+      "any_value": ["100", 0],
+      "console": true,
+      "display": true,
+      "prefix": "Final Prompt"
+    },
+    "class_type": "Show any [Crystools]",
+    "_meta": {
+      "title": "🪛 Show any value to console/display"
+    }
+  }
+}

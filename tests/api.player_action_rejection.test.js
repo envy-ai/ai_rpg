@@ -116,6 +116,55 @@ test('player action XML parser extracts turnResult timePassed without exposing i
     assert.equal(parsed.timePassedMinutes, 12);
 });
 
+test('player action XML parser tolerates timePassed nested directly inside turnResult prose', async () => {
+    const context = loadPlayerActionXmlParser();
+    const parsed = await context.parsePlayerActionProseFromXml(
+        '<turnResult><prose>Final prose.'
+        + '<timePassed><reasoning>A short exchange.</reasoning><duration>7 minutes</duration></timePassed>'
+        + '<hidden>Nested note.</hidden></prose></turnResult>'
+    );
+
+    assert.equal(parsed.prose, 'Final prose.<hidden>Nested note.</hidden>');
+    assert.equal(parsed.travel, null);
+    assert.equal(parsed.timePassedMinutes, 7);
+});
+
+test('player action XML parser preserves CDATA prose while removing nested timePassed', async () => {
+    const context = loadPlayerActionXmlParser();
+    const parsed = await context.parsePlayerActionProseFromXml(
+        '<turnResult><prose><![CDATA[Visible <literal> prose.]]>'
+        + '<timePassed><reasoning>A short exchange.</reasoning><duration>2 minutes</duration></timePassed>'
+        + '</prose></turnResult>'
+    );
+
+    assert.equal(parsed.prose, 'Visible <literal> prose.');
+    assert.equal(parsed.timePassedMinutes, 2);
+});
+
+test('player action XML parser does not strip literal timePassed text inside CDATA', async () => {
+    const context = loadPlayerActionXmlParser();
+    const parsed = await context.parsePlayerActionProseFromXml(
+        '<turnResult><prose><![CDATA[The inscription reads <timePassed> forever.]]></prose>'
+        + '<timePassed><duration>1 minute</duration></timePassed></turnResult>'
+    );
+
+    assert.equal(parsed.prose, 'The inscription reads <timePassed> forever.');
+    assert.equal(parsed.timePassedMinutes, 1);
+});
+
+test('player action XML parser rejects duplicate direct and prose-nested timePassed blocks', async () => {
+    const context = loadPlayerActionXmlParser();
+
+    await assert.rejects(
+        () => context.parsePlayerActionProseFromXml(
+            '<turnResult><prose>Final prose.'
+            + '<timePassed><duration>2 minutes</duration></timePassed></prose>'
+            + '<timePassed><duration>3 minutes</duration></timePassed></turnResult>'
+        ),
+        /may contain at most one <timePassed> block/
+    );
+});
+
 test('player action XML parser preserves hidden notes inside prose child', async () => {
     const context = loadPlayerActionXmlParser();
     const parsed = await context.parsePlayerActionProseFromXml(
@@ -157,6 +206,43 @@ test('player action XML parser chooses final moveTurnResult after earlier draft 
         betweenProse: null,
         destinationProse: 'Destination beat.'
     });
+});
+
+test('player action XML parser strips and validates timePassed nested inside move prose without applying it', async () => {
+    const context = loadPlayerActionXmlParser();
+    const parsed = await context.parsePlayerActionProseFromXml(
+        '<moveTurnResult>'
+        + '<playerDestination><location>Market Gate</location><travelTime>5 minutes</travelTime></playerDestination>'
+        + '<originProse>You leave the inn.</originProse>'
+        + '<destinationProse>The market opens before you.'
+        + '<hidden>The guard noticed you.</hidden>'
+        + '<timePassed><reasoning>Brief arrival exchange.</reasoning><duration>1 minute</duration></timePassed>'
+        + '</destinationProse>'
+        + '</moveTurnResult>'
+    );
+
+    assert.equal(
+        parsed.prose,
+        'You leave the inn.\n\nThe market opens before you.<hidden>The guard noticed you.</hidden>'
+    );
+    assert.equal(
+        parsed.travel.destinationProse,
+        'The market opens before you.<hidden>The guard noticed you.</hidden>'
+    );
+    assert.equal(parsed.timePassedMinutes, undefined);
+});
+
+test('player action XML parser rejects malformed timePassed nested inside move prose', async () => {
+    const context = loadPlayerActionXmlParser();
+
+    await assert.rejects(
+        () => context.parsePlayerActionProseFromXml(
+            '<moveTurnResult><destinationProse>The market opens before you.'
+            + '<timePassed><reasoning>Brief arrival exchange.</reasoning></timePassed>'
+            + '</destinationProse></moveTurnResult>'
+        ),
+        /must include a direct <duration> child/
+    );
 });
 
 test('player action XML parser preserves direct move-result hidden notes outside event prose', async () => {

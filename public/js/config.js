@@ -18,7 +18,11 @@ class ConfigManager {
         this.addModelConfirm = null;
         this.addModelCancel = null;
         this.gameConfigOverrideTextarea = null;
+        this.gameConfigOverrideSaveButton = null;
+        this.gameConfigOverrideSaveState = null;
+        this.gameConfigOverrideSaving = false;
         this.lastSavedGameConfigOverrideYaml = '';
+        this.aiProviderSectionTitle = null;
         this.init();
     }
     
@@ -26,6 +30,7 @@ class ConfigManager {
         this.bindEvents();
         this.initializeTabs();
         this.initializeModelSelector();
+        this.initializeAiSections();
         this.initializeAiBackendFields();
         this.initializeGameConfigOverride();
         this.validateForm();
@@ -98,8 +103,9 @@ class ConfigManager {
             }
         });
         
-        const submitButton = this.form.querySelector('button[type="submit"]');
-        submitButton.disabled = !allValid;
+        this.form.querySelectorAll('button[type="submit"]').forEach((submitButton) => {
+            submitButton.disabled = !allValid;
+        });
         
         return allValid;
     }
@@ -112,7 +118,10 @@ class ConfigManager {
             return;
         }
         
-        const submitButton = this.form.querySelector('button[type="submit"]');
+        const submitButton = e.submitter || this.form.querySelector('button[type="submit"]');
+        if (!submitButton) {
+            throw new Error('Configuration form has no save button.');
+        }
         const originalText = submitButton.textContent;
         
         try {
@@ -143,8 +152,8 @@ class ConfigManager {
         } catch (error) {
             this.showMessage(`Error saving configuration: ${error.message}`, 'error');
         } finally {
-            submitButton.disabled = false;
             submitButton.textContent = originalText;
+            this.validateForm();
         }
     }
     
@@ -177,6 +186,26 @@ class ConfigManager {
                 const target = button.dataset.configTabTarget;
                 this.activateTab(target);
             });
+            button.addEventListener('keydown', (event) => {
+                const currentIndex = this.tabButtons.indexOf(button);
+                let nextIndex = null;
+                if (event.key === 'ArrowRight') {
+                    nextIndex = (currentIndex + 1) % this.tabButtons.length;
+                } else if (event.key === 'ArrowLeft') {
+                    nextIndex = (currentIndex - 1 + this.tabButtons.length) % this.tabButtons.length;
+                } else if (event.key === 'Home') {
+                    nextIndex = 0;
+                } else if (event.key === 'End') {
+                    nextIndex = this.tabButtons.length - 1;
+                }
+                if (nextIndex === null) {
+                    return;
+                }
+                event.preventDefault();
+                const nextButton = this.tabButtons[nextIndex];
+                this.activateTab(nextButton.dataset.configTabTarget);
+                nextButton.focus();
+            });
         });
 
         const activeButton = this.tabButtons.find(button => button.classList.contains('active'));
@@ -192,6 +221,7 @@ class ConfigManager {
             const isActive = button.dataset.configTabTarget === targetName;
             button.classList.toggle('active', isActive);
             button.setAttribute('aria-selected', isActive ? 'true' : 'false');
+            button.tabIndex = isActive ? 0 : -1;
         });
 
         this.tabPanels.forEach((panel) => {
@@ -292,6 +322,80 @@ class ConfigManager {
         this.updateAiBackendVisibility();
     }
 
+    initializeAiSections() {
+        const section = document.querySelector('[data-ai-configuration]');
+        const sourceGrid = section?.querySelector('[data-ai-settings-grid]');
+        if (!section || !sourceGrid) {
+            return;
+        }
+
+        const groups = Array.from(sourceGrid.children).filter((child) => child.classList.contains('form-group'));
+        const sections = document.createDocumentFragment();
+
+        const createSection = ({ title, description }) => {
+            const container = document.createElement('div');
+            container.className = 'config-section';
+            const heading = document.createElement('h2');
+            heading.textContent = title;
+            const helpText = document.createElement('p');
+            helpText.className = 'help-text';
+            helpText.textContent = description;
+
+            const body = document.createElement('div');
+            body.className = 'form-grid';
+            container.append(heading, helpText, body);
+            sections.append(container);
+            return { heading, body };
+        };
+
+        const essentials = createSection({
+            title: 'Essentials',
+            description: 'Choose the active backend and primary model.'
+        });
+        const provider = createSection({
+            title: 'Provider Connection',
+            description: 'Connection settings for the selected backend.'
+        });
+        const lifecycle = createSection({
+            title: 'Local Model Lifecycle',
+            description: 'Control local llama.cpp startup and image-generation handoff.'
+        });
+        const prompting = createSection({
+            title: 'Prompt Context',
+            description: 'Model list and system-prompt additions.'
+        });
+        const tuning = createSection({
+            title: 'Generation & Reliability',
+            description: 'Sampling, streaming, timeout, retry, and diagnostic controls.'
+        });
+
+        const lifecycleIds = new Set([
+            'ai-unload-during-image-generation',
+            'ai-terminate-during-image-generation',
+            'ai-local-startup-script-path'
+        ]);
+        const promptingIds = new Set(['model-options', 'ai-syspromptAppend']);
+
+        groups.forEach((group) => {
+            const control = group.querySelector('[id]');
+            const controlId = control?.id || '';
+            if (group.dataset.aiBackendSection) {
+                provider.body.append(group);
+            } else if (controlId === 'ai-backend' || controlId === 'ai-model') {
+                essentials.body.append(group);
+            } else if (lifecycleIds.has(controlId)) {
+                lifecycle.body.append(group);
+            } else if (promptingIds.has(controlId)) {
+                prompting.body.append(group);
+            } else {
+                tuning.body.append(group);
+            }
+        });
+
+        sourceGrid.replaceWith(sections);
+        this.aiProviderSectionTitle = provider.heading;
+    }
+
     updateAiBackendVisibility() {
         const backend = this.aiBackendSelect?.value || 'openai_compatible';
         const codexSessionMode = this.codexSessionModeSelect?.value || 'fresh';
@@ -311,6 +415,16 @@ class ConfigManager {
                 && (!requiredMode || requiredMode === codexSessionMode);
             section.hidden = !isVisible;
         });
+
+        const providerLabels = {
+            openai_compatible: 'OpenAI-Compatible Connection',
+            codex_cli_bridge: 'Codex Bridge Connection',
+            cline_cli_bridge: 'Cline Bridge Connection',
+            kimi_cli_bridge: 'Kimi Bridge Connection'
+        };
+        if (this.aiProviderSectionTitle) {
+            this.aiProviderSectionTitle.textContent = providerLabels[backend] || 'Provider Connection';
+        }
 
         const backendRequiredFields = this.form
             ? Array.from(this.form.querySelectorAll('[data-required-backend]'))
@@ -434,14 +548,16 @@ class ConfigManager {
 
     initializeGameConfigOverride() {
         this.gameConfigOverrideTextarea = document.getElementById('game-config-override-yaml');
+        this.gameConfigOverrideSaveButton = document.getElementById('save-game-config-override');
+        this.gameConfigOverrideSaveState = document.getElementById('game-config-save-state');
         if (!this.gameConfigOverrideTextarea) {
             return;
         }
 
         this.lastSavedGameConfigOverrideYaml = this.normalizeYaml(this.gameConfigOverrideTextarea.value);
-        this.gameConfigOverrideTextarea.addEventListener('change', () => {
-            this.handleGameConfigOverrideChange();
-        });
+        this.gameConfigOverrideTextarea.addEventListener('input', () => this.updateGameConfigOverrideSaveState());
+        this.gameConfigOverrideSaveButton?.addEventListener('click', () => this.handleGameConfigOverrideSave());
+        this.updateGameConfigOverrideSaveState();
     }
 
     normalizeYaml(value) {
@@ -451,7 +567,35 @@ class ConfigManager {
         return value.replace(/\r\n/g, '\n');
     }
 
-    async handleGameConfigOverrideChange() {
+    updateGameConfigOverrideSaveState({ error = false } = {}) {
+        if (!this.gameConfigOverrideSaveButton || !this.gameConfigOverrideTextarea) {
+            return;
+        }
+
+        if (this.gameConfigOverrideTextarea.disabled) {
+            this.gameConfigOverrideSaveButton.disabled = true;
+            if (this.gameConfigOverrideSaveState) {
+                this.gameConfigOverrideSaveState.textContent = 'Load a game to edit these settings.';
+                this.gameConfigOverrideSaveState.className = 'game-config-save-state';
+            }
+            return;
+        }
+
+        const dirty = this.normalizeYaml(this.gameConfigOverrideTextarea.value) !== this.lastSavedGameConfigOverrideYaml;
+        this.gameConfigOverrideSaveButton.disabled = this.gameConfigOverrideSaving || !dirty;
+        if (this.gameConfigOverrideSaveState) {
+            this.gameConfigOverrideSaveState.textContent = this.gameConfigOverrideSaving
+                ? 'Saving changes…'
+                : error
+                    ? 'Save failed — changes have not been saved.'
+                    : dirty
+                        ? 'Unsaved changes'
+                        : 'All changes saved';
+            this.gameConfigOverrideSaveState.className = `game-config-save-state${dirty ? ' is-dirty' : ''}${error ? ' is-error' : ''}`;
+        }
+    }
+
+    async handleGameConfigOverrideSave() {
         if (!this.gameConfigOverrideTextarea || this.gameConfigOverrideTextarea.disabled) {
             return;
         }
@@ -461,11 +605,11 @@ class ConfigManager {
             return;
         }
 
-        const originalDisabled = this.gameConfigOverrideTextarea.disabled;
-
+        let saveFailed = false;
         try {
-            this.gameConfigOverrideTextarea.disabled = true;
-            this.showMessage('Reloading per-game configuration...', 'info');
+            this.gameConfigOverrideSaving = true;
+            this.updateGameConfigOverrideSaveState();
+            this.showMessage('Saving per-game configuration...', 'info');
 
             const response = await fetch('/api/game-config-override', {
                 method: 'PUT',
@@ -486,9 +630,11 @@ class ConfigManager {
             this.gameConfigOverrideTextarea.value = savedYaml;
             this.showMessage(result.message || 'Per-game configuration override saved.', 'success');
         } catch (error) {
+            saveFailed = true;
             this.showMessage(`Error updating per-game configuration: ${error.message}`, 'error');
         } finally {
-            this.gameConfigOverrideTextarea.disabled = originalDisabled;
+            this.gameConfigOverrideSaving = false;
+            this.updateGameConfigOverrideSaveState({ error: saveFailed });
         }
     }
 }

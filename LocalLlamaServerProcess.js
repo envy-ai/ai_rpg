@@ -1,5 +1,7 @@
 const path = require('path');
 const { spawn } = require('child_process');
+const { StringDecoder } = require('string_decoder');
+const { TerminalOutputBuffer } = require('./TerminalOutputBuffer.js');
 
 class LocalLlamaServerProcess {
     constructor({
@@ -9,6 +11,9 @@ class LocalLlamaServerProcess {
         spawnProcess = spawn,
         signalProcessGroup = (pid, signal) => process.kill(-pid, signal),
         terminationTimeoutMs = 10000,
+        outputBuffer = new TerminalOutputBuffer(),
+        writeStdout = chunk => process.stdout.write(chunk),
+        writeStderr = chunk => process.stderr.write(chunk),
         logger = console
     } = {}) {
         if (typeof startupScriptPath !== 'string' || !startupScriptPath.trim()) {
@@ -29,6 +34,12 @@ class LocalLlamaServerProcess {
         if (!Number.isFinite(terminationTimeoutMs) || terminationTimeoutMs <= 0) {
             throw new Error('LocalLlamaServerProcess terminationTimeoutMs must be a positive number.');
         }
+        if (!(outputBuffer instanceof TerminalOutputBuffer)) {
+            throw new Error('LocalLlamaServerProcess outputBuffer must be a TerminalOutputBuffer.');
+        }
+        if (typeof writeStdout !== 'function' || typeof writeStderr !== 'function') {
+            throw new Error('LocalLlamaServerProcess output mirrors must be functions.');
+        }
 
         this.startupScriptPath = path.resolve(startupScriptPath.trim());
         this.beforeStart = beforeStart;
@@ -36,6 +47,9 @@ class LocalLlamaServerProcess {
         this.spawnProcess = spawnProcess;
         this.signalProcessGroup = signalProcessGroup;
         this.terminationTimeoutMs = terminationTimeoutMs;
+        this.outputBuffer = outputBuffer;
+        this.writeStdout = writeStdout;
+        this.writeStderr = writeStderr;
         this.logger = logger;
         this.child = null;
         this.pid = null;
@@ -50,6 +64,10 @@ class LocalLlamaServerProcess {
         return this.startupScriptPath;
     }
 
+    getOutputSnapshot(cursor = null) {
+        return this.outputBuffer.read(cursor);
+    }
+
     isRunning() {
         return Boolean(
             this.child
@@ -57,6 +75,36 @@ class LocalLlamaServerProcess {
             && this.child.exitCode === null
             && this.child.signalCode === null
         );
+    }
+
+    captureChildOutput(child) {
+        if (!child?.stdout || typeof child.stdout.on !== 'function') {
+            throw new Error('Managed llama.cpp stdout pipe is unavailable.');
+        }
+        if (!child?.stderr || typeof child.stderr.on !== 'function') {
+            throw new Error('Managed llama.cpp stderr pipe is unavailable.');
+        }
+
+        const bindStream = (stream, mirrorWrite) => {
+            const decoder = new StringDecoder('utf8');
+            stream.on('data', chunk => {
+                const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+                const decoded = decoder.write(buffer);
+                if (decoded) {
+                    this.outputBuffer.append(decoded);
+                }
+                mirrorWrite(chunk);
+            });
+            stream.once('end', () => {
+                const remainder = decoder.end();
+                if (remainder) {
+                    this.outputBuffer.append(remainder);
+                }
+            });
+        };
+
+        bindStream(child.stdout, this.writeStdout);
+        bindStream(child.stderr, this.writeStderr);
     }
 
     async start({ beforeStartOptions = {} } = {}) {
@@ -72,13 +120,14 @@ class LocalLlamaServerProcess {
         }
 
         await this.beforeStart(beforeStartOptions);
+        this.outputBuffer.clear();
 
         let child;
         try {
             child = this.spawnProcess(this.startupScriptPath, [], {
                 cwd: path.dirname(this.startupScriptPath),
                 detached: true,
-                stdio: 'inherit'
+                stdio: ['inherit', 'pipe', 'pipe']
             });
         } catch (cause) {
             throw new Error(
@@ -123,6 +172,7 @@ class LocalLlamaServerProcess {
         });
 
         try {
+            this.captureChildOutput(child);
             await Promise.race([spawned, exitedBeforeReady]);
             await Promise.race([
                 this.waitUntilReady({ child, pid: child.pid }),

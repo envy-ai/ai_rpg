@@ -1,0 +1,41 @@
+<template>
+  <description>Generate image-edit-ready exterior vegetation and interior descriptions for existing calendar seasons.</description>
+  <systemPrompt>You are an expert setting designer. Return only valid XML matching the required schema, with no markdown fences or commentary.</systemPrompt>
+  <generationPrompt>
+Write two distinct descriptions for each listed season. Each description must contain exactly two concise sentences and will be passed directly to an image-edit workflow.
+
+The vegetation description explains visible seasonal effects on outdoor plants, groundcover, trees, crops, flowers, and leaves. Do not describe people, buildings, camera framing, or general weather except where it directly explains visible vegetation.
+
+The interior description explains visible seasonal effects inside enclosed spaces. Focus on interior lighting, color, textiles, heating or cooling, ventilation, decor, and stored materials appropriate to the setting. Keep the view indoors; do not add outdoor vegetation, open sky, or precipitation to rooms. Exterior conditions may be mentioned only as something visible through an already existing window, door, or opening.
+
+Keep both descriptions coherent with this setting. Use every season name exactly as provided.
+
+<setting>
+  <name>{{ setting.name | default('Unknown Setting', true) }}</name>
+  <description>{{ setting.description | default('', true) }}</description>
+  <theme>{{ setting.theme | default('', true) }}</theme>
+  <genre>{{ setting.genre | default('', true) }}</genre>
+  <magicLevel>{{ setting.magicLevel | default('', true) }}</magicLevel>
+  <techLevel>{{ setting.techLevel | default('', true) }}</techLevel>
+</setting>
+
+<seasons>
+{% for season in seasons %}
+  <season>
+    <name>{{ season.name }}</name>
+    <description>{{ season.description | default('', true) }}</description>
+  </season>
+{% endfor %}
+</seasons>
+
+Schema:
+<seasonImageDescriptions>
+  <season>
+    <name>Exact supplied season name</name>
+    <vegetationDescription>Exactly two concise sentences about visible outdoor seasonal vegetation.</vegetationDescription>
+    <interiorDescription>Exactly two concise sentences about visible seasonal changes inside enclosed spaces.</interiorDescription>
+  </season>
+  <!-- Repeat once for every supplied season. -->
+</seasonImageDescriptions>
+  </generationPrompt>
+</template>

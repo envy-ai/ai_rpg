@@ -12,7 +12,7 @@ Stored scene records include:
 - `details`: array of trimmed detail strings.
 - `quotes`: array of `{ character, text }` notable quote records.
 
-There are no browser routes for creating or deleting scene summaries. Generation and range rebuilds run through the scene summarizer and chat/slash-command paths.
+There are no browser routes for creating or deleting scene summaries. Generation and range rebuilds run through the scene summarizer and chat/slash-command paths. When the `scene_summarize` TinyBrain family is enabled, that same summarizer uses staged boundary proposal/correction and per-completed-scene validation before local result assembly; disabling the family preserves the one-shot prompt path.
 
 ## GET /api/scene-summaries
 

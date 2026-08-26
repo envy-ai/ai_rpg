@@ -54,7 +54,7 @@ test('TinyBrain NPC turns pre-resolve attacks before staged narration', () => {
 
     assert.match(
         npcAttackBlock,
-        /tinyBrainNpcActionEnabled\s*=\s*isTinyBrainPromptEnabled\(Globals\.config\?\.ai,\s*'npc_action'\)/
+        /tinyBrainNpcActionEnabled\s*=\s*isTinyBrainPromptEnabled\(Globals\.config,\s*'npc_action'\)/
     );
     assert.match(
         npcAttackBlock,

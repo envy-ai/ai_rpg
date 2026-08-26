@@ -7,7 +7,8 @@ const nunjucks = require('nunjucks');
 const { TinyBrainPromptExtension, TinyBrainPromptRunner } = require('../TinyBrainPromptRunner.js');
 const {
     formatPlayerActionDestinationAbsence,
-    resolvePlayerActionDestinationContext
+    resolvePlayerActionDestinationContext,
+    resolvePlayerActionDestinationPreviewContext
 } = require('../PlayerActionDestinationContext.js');
 
 function addPlayerActionDestinationGlobals(promptEnv) {
@@ -15,6 +16,15 @@ function addPlayerActionDestinationGlobals(promptEnv) {
         'resolvePlayerActionDestinationContext',
         (destination, originLocationId = null, currentWorldMinutes = 0) => (
             resolvePlayerActionDestinationContext(destination, {
+                originLocationId,
+                currentWorldMinutes
+            })
+        )
+    );
+    promptEnv.addGlobal(
+        'resolvePlayerActionDestinationPreviewContext',
+        (destination, originLocationId = null, currentWorldMinutes = 0) => (
+            resolvePlayerActionDestinationPreviewContext(destination, {
                 originLocationId,
                 currentWorldMinutes
             })
@@ -56,7 +66,7 @@ test('chat API suppresses visible WYWA prose only for TinyBrain destination pros
     const apiSource = fs.readFileSync(path.join(__dirname, '..', 'api.js'), 'utf8');
     assert.match(
         apiSource,
-        /const suppressTinyBrainWhileAwayVisibleProse = Boolean\([\s\S]*useTinyBrainPlayerAction[\s\S]*promptType === 'player-action'[\s\S]*moveTurnResultPayload\?\.destinationProse[\s\S]*isTinyBrainPromptEnabled\(Globals\.config\?\.ai, 'while_you_were_away'\)/
+        /const suppressTinyBrainWhileAwayVisibleProse = Boolean\([\s\S]*useTinyBrainPlayerAction[\s\S]*promptType === 'player-action'[\s\S]*moveTurnResultPayload\?\.destinationProse[\s\S]*isTinyBrainPromptEnabled\(Globals\.config, 'while_you_were_away'\)/
     );
     assert.match(
         apiSource,
@@ -103,7 +113,7 @@ test('tiny-brain exterior branch renders the resolved travel target name and des
         },
         isAttack: false,
         isExterior: true,
-        modPlayerActionPromptSteps: [],
+        modPlayerActionPromptSteps: () => [],
         npcs: [],
         party: [],
         playerActionAccompanyingCharacters: [],
@@ -155,7 +165,7 @@ test('tiny-brain vehicle arrival guidance preserves onboard occupancy and player
         },
         isAttack: false,
         isExterior: false,
-        modPlayerActionPromptSteps: [],
+        modPlayerActionPromptSteps: () => [],
         npcs: [],
         party: [],
         playerActionAccompanyingCharacters: [],
@@ -199,7 +209,7 @@ test('player-action actor roster excludes mechanically dead NPCs and party membe
         currentVehicle: null,
         isAttack: false,
         isExterior: false,
-        modPlayerActionPromptSteps: [],
+        modPlayerActionPromptSteps: () => [],
         npcs: [
             { name: 'Living Local', race: 'Human', class: 'Scout', isDead: false, aiNotes: 'Keep watch.' },
             { name: 'Dead Local', race: 'Human', class: 'Scout', isDead: true, aiNotes: 'Cannot act.' }
@@ -249,7 +259,7 @@ test('tiny-brain player-action does not freeze checked-action actors before draf
         currentVehicle: null,
         isAttack: false,
         isExterior: false,
-        modPlayerActionPromptSteps: [],
+        modPlayerActionPromptSteps: () => [],
         npcs: [{ name: 'QA Loud Decoy', race: 'Harpy', class: 'Guard', isDead: false }],
         party: [],
         playerActionAccompanyingCharacters: [],
@@ -286,7 +296,7 @@ test('tiny-brain committed travel uses authoritative destination without a movem
         currentVehicle: null,
         isAttack: false,
         isExterior: false,
-        modPlayerActionPromptSteps: [],
+        modPlayerActionPromptSteps: () => [],
         npcs: [],
         party: [],
         playerActionTravelDestination: {

@@ -46,7 +46,8 @@ function buildEventsContext(overrides = {}) {
         config: {},
         tinyBrainEventSectionKind: 'current',
         tinyBrainEventSectionLabel: 'CURRENT',
-        tinyBrainEventStages: Events._buildTinyBrainEventStages(),
+        eventCheckHiddenNpcNames: [],
+        tinyBrainEventStages: Events._buildTinyBrainEventStages({ hiddenNpcNames: [] }),
         ...overrides
     };
 }
@@ -89,6 +90,39 @@ test('stage manifest separates current, transit, tracker, and suppressed stages'
         eventMode: 'trackers'
     });
     assert.deepEqual(trackers.map((stage) => stage.id), ['trackers']);
+
+    const withoutHiddenNpc = Events._buildTinyBrainEventStages({
+        hiddenNpcNames: []
+    });
+    assert.ok(withoutHiddenNpc.every((stage) =>
+        !stage.allowedTags.includes('revealHiddenNpc')
+    ));
+    const withHiddenNpc = Events._buildTinyBrainEventStages({
+        hiddenNpcNames: ['Veiled Scout']
+    });
+    assert.ok(withHiddenNpc.find((stage) => stage.id === 'characters')
+        .allowedTags.includes('revealHiddenNpc'));
+    assert.match(
+        withHiddenNpc.find((stage) => stage.id === 'characters').instructions,
+        /exact present hidden NPC names: Veiled Scout/
+    );
+    assert.match(
+        withoutHiddenNpc.find((stage) => stage.id === 'characters').instructions,
+        /use npcFirstAppearance when the prose reveals a hidden NPC.*name or alias.*revealed instead of duplicated/i
+    );
+});
+
+test('event checks derive exact living hidden NPC names from the current location', () => {
+    const names = Events._getEventCheckHiddenNpcNames({
+        getNPCs: () => [
+            { name: 'Veiled Scout', isNPC: true, isDead: false, hiddenFromPlayer: true },
+            { name: 'Visible Courier', isNPC: true, isDead: false, hiddenFromPlayer: false },
+            { name: 'Hidden Corpse', isNPC: true, isDead: true, hiddenFromPlayer: true },
+            { name: 'Veiled Scout', isNPC: true, isDead: false, hiddenFromPlayer: true }
+        ]
+    });
+
+    assert.deepEqual(names, ['Veiled Scout']);
 });
 
 test('tiny-brain event stage parser validates allowlists, semantics, trackers, and duplicates', () => {
@@ -277,6 +311,61 @@ test('tiny-brain event stage parser rejects empty and malformed responses', () =
         }),
         /non-whitespace/
     );
+});
+
+test('tiny-brain reveal events require an exact present hidden NPC name', () => {
+    const previousDeps = Events._deps;
+    const visibleCourier = {
+        id: 'npc-courier',
+        name: 'Visible Courier',
+        isNPC: true,
+        hiddenFromPlayer: false
+    };
+    const hiddenScout = {
+        id: 'npc-scout',
+        name: 'Veiled Scout',
+        isNPC: true,
+        hiddenFromPlayer: true
+    };
+    Events._deps = {
+        ...previousDeps,
+        findActorByName: (name) => {
+            const normalized = String(name || '').trim().toLowerCase();
+            if (normalized === visibleCourier.name.toLowerCase()) return visibleCourier;
+            if (normalized === hiddenScout.name.toLowerCase()) return hiddenScout;
+            return null;
+        }
+    };
+
+    const revealXml = (name) => `<events><revealHiddenNpc><npcName>${name}</npcName><description>They step into view.</description><useOpposedCheck>false</useOpposedCheck></revealHiddenNpc></events>`;
+
+    try {
+        assert.throws(
+            () => Events.parseTinyBrainEventXmlStage(revealXml('Nyx'), {
+                stageId: 'characters',
+                allowedTags: ['npcFirstAppearance', 'npcArrival'],
+                hiddenNpcNames: []
+            }),
+            /NPC "Nyx" does not exist in the game data.*<npcFirstAppearance>.*<npcArrival>.*no present hidden NPCs/
+        );
+        assert.throws(
+            () => Events.parseTinyBrainEventXmlStage(revealXml('Visible Courier'), {
+                stageId: 'characters',
+                allowedTags: ['revealHiddenNpc', 'npcFirstAppearance', 'npcArrival'],
+                hiddenNpcNames: ['Veiled Scout']
+            }),
+            /not listed as present and hidden.*exact present hidden NPC names are: Veiled Scout/
+        );
+
+        const accepted = Events.parseTinyBrainEventXmlStage(revealXml('Veiled Scout'), {
+            stageId: 'characters',
+            allowedTags: ['revealHiddenNpc'],
+            hiddenNpcNames: ['Veiled Scout']
+        });
+        assert.match(accepted.value.xml, /<npcName>Veiled Scout<\/npcName>/);
+    } finally {
+        Events._deps = previousDeps;
+    }
 });
 
 test('tiny-brain thing arrival duplicates are safely suppressed for owned and contained things', () => {
@@ -642,6 +731,7 @@ test('events tiny-brain template registers category checkpoints and local result
         assert.equal(checkpoint.kind, 'parse');
         assert.equal(checkpoint.parserName, 'event_xml_stage');
         assert.equal(checkpoint.parserArgs[0], 'current');
+        assert.deepEqual(checkpoint.parserArgs[5], []);
     }
     assert.deepEqual(
         state.checkpoints.map((checkpoint) => checkpoint.parserArgs[1]),
@@ -656,7 +746,7 @@ test('events tiny-brain template registers category checkpoints and local result
     );
     assert.match(
         full,
-        /Player movement is handled before event extraction and must not be emitted here/,
+        /Player and party movement is handled by the prose response and must not be emitted during event extraction/,
         'staged schema must explain that movement is handled before event extraction'
     );
     assert.doesNotMatch(
@@ -686,15 +776,22 @@ test('events tiny-brain template registers category checkpoints and local result
     );
     assert.match(
         full,
-        /physically places a named character in the current scene[\s\S]*emit npcArrival even if the character arrives or remains hidden/,
-        'character-presence stage must require hidden arrivals that differ from current membership'
+        /absent from Characters at location is not represented at this location in game data[\s\S]*npcFirstAppearance[\s\S]*npcArrival/,
+        'character-presence stage must distinguish new NPC creation from arrivals'
     );
     assert.match(
         full,
         /A plan, memory, dialogue mention, or offscreen action alone is not physical presence/,
         'character-presence stage must not turn mere references into arrivals'
     );
+    assert.match(
+        full,
+        /recovery path when the prose reveals a hidden NPC.*name or alias.*no duplicate is generated/i,
+        'first appearances must recover hidden NPCs omitted from prompt data'
+    );
     assert.match(full, /drops, places, or sets down an inventory item into the current scene/);
+    assert.doesNotMatch(full, /reveal_hidden_npc|<revealHiddenNpc>/);
+    assert.doesNotMatch(full, /exact present hidden NPC names/);
     assert.doesNotMatch(full, /authoritative player-movement companions for this turn/);
     assert.doesNotMatch(full, /Do not write any XML in this first step/);
 
@@ -725,12 +822,59 @@ test('base-context render without the tiny-brain flag keeps the monolithic event
     assert.equal(state.checkpoints.length, 0);
     assert.match(rendered, /Output only one `<events>\.\.\.<\/events>` XML block/);
     assert.match(rendered, /<trackerUpdates>/);
-    assert.match(rendered, /<moveLocation>/);
-    assert.match(rendered, /<moveNewLocation>/);
-    assert.match(rendered, /<arriveAtLocation\/>/);
-    assert.match(rendered, /## Travel Boundary/);
+    assert.doesNotMatch(
+        rendered,
+        /<moveLocation>|<moveNewLocation>|<arriveAtLocation\s*\/>|## Travel Boundary/,
+        'monolithic event schema must not document movement XML owned by prose parsing'
+    );
+    assert.match(
+        rendered,
+        /Player and party movement is handled by the prose response and must not be emitted during event extraction/,
+        'monolithic schema must explain that prose parsing owns movement'
+    );
     assert.match(rendered, /### `in_combat` \(REQUIRED FIELD, 1x ONLY\)/);
     assert.match(rendered, /### `anyQuestObjectivesCompleted` \(REQUIRED FIELD, 1x ONLY\)/);
+    assert.doesNotMatch(rendered, /reveal_hidden_npc|<revealHiddenNpc>/);
+});
+
+test('tiny-brain event stages include the exterior warning from current-location context', () => {
+    const env = createEventsPromptEnv();
+    const state = createTinyBrainRenderState();
+    const rendered = env.render('_includes/events-xml.tinybrain.njk', {
+        ...buildEventsContext({
+            currentLocation: {
+                name: 'Moon Gate',
+                isExterior: true
+            }
+        }),
+        __tinyBrainState: state
+    });
+
+    assert.match(rendered, /IMPORTANT NOTE: This is an exterior location\./);
+});
+
+test('event prompt lists exact present hidden NPCs and enables reveal guidance only then', () => {
+    const env = createEventsPromptEnv();
+    const hiddenNpcNames = ['Veiled Scout', 'Hidden Archer'];
+    const ctx = buildEventsContext({
+        eventCheckHiddenNpcNames: hiddenNpcNames,
+        tinyBrainEventStages: Events._buildTinyBrainEventStages({ hiddenNpcNames })
+    });
+    const templateContext = { ...ctx };
+    const tinyBrain = configureTinyBrainPromptContext(templateContext, 'event_checks');
+    const rendered = env.render('base-context.xml.njk', templateContext);
+
+    assert.match(rendered, /exact present hidden NPC names: Veiled Scout, Hidden Archer/);
+    assert.match(rendered, /- Veiled Scout/);
+    assert.match(rendered, /- Hidden Archer/);
+    assert.match(rendered, /### `reveal_hidden_npc`/);
+    assert.match(rendered, /<revealHiddenNpc>/);
+    assert.deepEqual(
+        tinyBrain.renderState.checkpoints.find((checkpoint) =>
+            checkpoint.parserArgs[1] === 'characters'
+        ).parserArgs[5],
+        hiddenNpcNames
+    );
 });
 
 test('staged tiny-brain run retries one malformed checkpoint and assembles validated XML locally', async () => {

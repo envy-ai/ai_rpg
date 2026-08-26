@@ -36,7 +36,7 @@ Defaults:
 - manifest: `tests/followup_api_playtest/model_benchmark_manifest.json`;
 - base override: `config.yaml.qwen-combo-router`;
 - port: `7777`;
-- output: a timestamped directory under `tmp/model-benchmarks/`;
+- output: a timestamped directory under `benchmarks/model/`;
 - image generation disabled;
 - live verification only, with no completion recording or forced-output cassette;
 - managed game-server lifecycle, with no startup save;
@@ -147,7 +147,7 @@ The report must escape all generated content and render long prose in readable p
 
 ## Reports and interruption safety
 
-Write into `tmp/model-benchmarks/<run-id>/`:
+Write into `benchmarks/model/<run-id>/`:
 
 - `manifest.json`: resolved suite/model/options/coverage;
 - `progress.json`: atomically updated after each scenario;

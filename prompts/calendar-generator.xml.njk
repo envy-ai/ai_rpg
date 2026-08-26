@@ -23,14 +23,16 @@ Requirements:
 4. Include 4 seasons under &lt;seasons&gt;.
 5. Include exactly 10 holidays under &lt;holidays&gt;.
 6. Each season must include a &lt;description&gt; field (1-2 concise sentences describing climate/atmosphere/typical conditions).
-7. Each holiday must include a &lt;description&gt; field (1-2 concise sentences describing what it commemorates and how it is observed).
-8. Ensure each month has seasonName matching one of the season names.
-9. If the setting can reasonably be assumed to be on Earth (modern, historical, or near-future Earth), use a standard Gregorian calendar:
+7. Each season must include a &lt;vegetationDescription&gt; field with exactly two concise sentences explaining how the season visibly affects vegetation. For example, winter may make small plants die off and deciduous trees become bare. This text will guide image edits, so focus on visible plant life rather than people, architecture, or general weather.
+8. Each season must include an &lt;interiorDescription&gt; field with exactly two concise, image-edit-ready sentences explaining how the season visibly affects enclosed interiors. Focus on interior lighting, color, textiles, heating or cooling, ventilation, decor, and stored materials. Do not introduce outdoor vegetation, open sky, or precipitation into rooms.
+9. Each holiday must include a &lt;description&gt; field (1-2 concise sentences describing what it commemorates and how it is observed).
+10. Ensure each month has seasonName matching one of the season names.
+11. If the setting can reasonably be assumed to be on Earth (modern, historical, or near-future Earth), use a standard Gregorian calendar:
    - Months exactly: January (31), February (28), March (31), April (30), May (31), June (30), July (31), August (31), September (30), October (31), November (30), December (31).
    - Weekdays exactly: Monday, Tuesday, Wednesday, Thursday, Friday, Saturday, Sunday.
    - Seasons exactly: Spring, Summer, Autumn, Winter.
-10. If the setting is not reasonably Earth-based, keep names thematically appropriate to the setting.
-11. Ensure all output is setting-coherent and internally consistent.
+12. If the setting is not reasonably Earth-based, keep names thematically appropriate to the setting.
+13. Ensure all output is setting-coherent and internally consistent.
 
 Schema:
 <calendarDefinition>
@@ -49,6 +51,8 @@ Schema:
     <season>
       <name>...</name>
       <description>...</description>
+      <vegetationDescription>...</vegetationDescription>
+      <interiorDescription>...</interiorDescription>
       <startMonth>...</startMonth>
       <startDay>1</startDay>
       <dayLengthMinutes><!-- minutes of sunlight --></dayLengthMinutes>

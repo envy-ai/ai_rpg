@@ -1,0 +1,144 @@
+{
+  "1": {
+    "class_type": "LoadImage",
+    "inputs": { "image": "{{ image.input_filename | json }}" },
+    "_meta": { "title": "Source Image" }
+  },
+  "2": {
+    "class_type": "GetImageSize",
+    "inputs": { "image": ["1", 0] },
+    "_meta": { "title": "Get Source Image Size" }
+  },
+  "3": {
+    "class_type": "UNETLoader",
+    "inputs": {
+      "unet_name": "d/krea2_turbo_unfiltered_int8_convrot.safetensors",
+      "weight_dtype": "default"
+    },
+    "_meta": { "title": "Krea 2 Turbo" }
+  },
+  "4": {
+    "class_type": "LoraLoaderModelOnly",
+    "inputs": {
+      "model": ["3", 0],
+      "lora_name": "d/krea2_identity_edit_v1_2.safetensors",
+      "strength_model": 1
+    },
+    "_meta": { "title": "Required Krea 2 Identity Edit v1.2" }
+  },
+  "5": {
+    "class_type": "CLIPLoader",
+    "inputs": {
+      "clip_name": "d/text_encoders/qwen3vl_4b_fp8_scaled.safetensors",
+      "type": "krea2",
+      "device": "default"
+    },
+    "_meta": { "title": "Krea 2 Qwen3-VL Encoder" }
+  },
+  "6": {
+    "class_type": "VAELoader",
+    "inputs": { "vae_name": "qwen_image_vae.safetensors" },
+    "_meta": { "title": "Krea 2 VAE" }
+  },
+  "7": {
+    "class_type": "VAEEncode",
+    "inputs": { "pixels": ["1", 0], "vae": ["6", 0] },
+    "_meta": { "title": "Encode Source Reference" }
+  },
+  "8": {
+    "class_type": "EmptySD3LatentImage",
+    "inputs": { "width": ["2", 0], "height": ["2", 1], "batch_size": 1 },
+    "_meta": { "title": "Source-Sized Edit Canvas" }
+  },
+  "9": {
+    "class_type": "Krea2EditModelPatch",
+    "inputs": {
+      "model": ["4", 0],
+      "source_latent": ["7", 0],
+      "ref_boost": 4,
+      "ref_boost_a": 1,
+      "fit_mode": "fit",
+      "vae": ["6", 0],
+      "source_image": ["1", 0],
+      "target_latent": ["8", 0]
+    },
+    "_meta": { "title": "Krea 2 Identity Edit v1.2 Source Patch" }
+  },
+  "10": {
+    "class_type": "PrimitiveStringMultiline",
+    "inputs": { "value": "{{ image.prompt | json }}" },
+    "_meta": { "title": "Edit Instruction" }
+  },
+  "11": {
+    "class_type": "Show any [Crystools]",
+    "inputs": {
+      "any_value": ["10", 0],
+      "console": true,
+      "display": true,
+      "prefix": "Final Prompt"
+    },
+    "_meta": { "title": "🪛 Show any value to console/display" }
+  },
+  "12": {
+    "class_type": "Krea2EditGroundedEncode",
+    "inputs": {
+      "clip": ["5", 0],
+      "prompt": ["10", 0],
+      "image": ["1", 0],
+      "grounding_px": 768,
+      "system_prompt": ""
+    },
+    "_meta": { "title": "Image-Grounded Edit Instruction" }
+  },
+  "13": {
+    "class_type": "Krea2EditGroundedEncode",
+    "inputs": {
+      "clip": ["5", 0],
+      "prompt": "",
+      "image": ["1", 0],
+      "grounding_px": 768,
+      "system_prompt": ""
+    },
+    "_meta": { "title": "Training-Matched Empty Negative" }
+  },
+  "14": {
+    "class_type": "KSampler",
+    "inputs": {
+      "model": ["9", 0],
+      "positive": ["12", 0],
+      "negative": ["13", 0],
+      "latent_image": ["8", 0],
+      "seed": {{ image.seed }},
+      "steps": 10,
+      "cfg": 1,
+      "sampler_name": "euler",
+      "scheduler": "simple",
+      "denoise": 1
+    },
+    "_meta": { "title": "Krea 2 Identity Edit Sampling" }
+  },
+  "15": {
+    "class_type": "VAEDecode",
+    "inputs": { "samples": ["14", 0], "vae": ["6", 0] },
+    "_meta": { "title": "Decode Edit" }
+  },
+  "16": {
+    "class_type": "ImageScale",
+    "inputs": {
+      "image": ["15", 0],
+      "upscale_method": "lanczos",
+      "width": ["2", 0],
+      "height": ["2", 1],
+      "crop": "disabled"
+    },
+    "_meta": { "title": "Preserve Source Resolution" }
+  },
+  "17": {
+    "class_type": "SaveImage",
+    "inputs": {
+      "images": ["16", 0],
+      "filename_prefix": "airpg/krea2-identity-edit-v1_2"
+    },
+    "_meta": { "title": "Save Krea 2 Edit" }
+  }
+}

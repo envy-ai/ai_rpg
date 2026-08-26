@@ -62,7 +62,7 @@ NEED-7 and REL-7 are deterministic parser/lifecycle contracts. Their scenario de
 
 ## Reports
 
-The default output is `tmp/model-benchmarks/<run-id>/`:
+The default output is `benchmarks/model/<run-id>/`:
 
 - `manifest.json`: resolved model, options, expected inventory, selected variants, and fixture hashes;
 - `progress.json`: atomically refreshed after every scenario;

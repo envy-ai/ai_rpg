@@ -112,14 +112,15 @@ test('while-you-were-away include renders need bar prompt notes from definitions
     }
 });
 
-test('while-you-were-away include still requests return prose when no NPCs are supplied', () => {
+test('while-you-were-away include allows return prose to be omitted when no NPCs are supplied', () => {
     const promptEnv = createPromptEnv();
     const rendered = promptEnv.render('_includes/while-you-were-away.njk', {
         whileYouWereAwayNpcs: []
     });
 
     assert.match(rendered, /No current-location NPCs require individual while-you-were-away character updates\./);
-    assert.match(rendered, /Always write proseForPlayer/);
+    assert.match(rendered, /Otherwise omit proseForPlayer or leave it empty\./);
+    assert.doesNotMatch(rendered, /Always write proseForPlayer/);
     assert.match(rendered, /<characterUpdates>/);
     assert.doesNotMatch(rendered, /<name>[^<]+<\/name>/);
 });
@@ -139,6 +140,8 @@ test('while-you-were-away tiny-brain uses strict structured parsers and allows o
         'itemSceneryMoves',
         { allowEmptyRoot: true }
     ]);
+    assert.equal(state.checkpoints[2].kind, 'dummy');
+    assert.equal(state.checkpoints[3].parserName, 'player_action_optional_prose');
 });
 
 test('while-you-were-away tiny-brain requires the canonical character update schema', () => {

@@ -441,11 +441,11 @@ const EVENT_PROMPT_ORDER = [
         },
         {
             key: "npc_first_appearance",
-            prompt: `List all physically present entities (NPCs, animals, monsters, robots, etc., including those without proper names) mentioned in textToCheck except those only mentioned in dialogue. This is to catch any characters who are present that the system isn't already aware of. Separate entries with vertical bars. For instance, "Android 609|Bob|Dire Wolf". Capitalize them as proper nouns if they aren't already capitalized. DO NOT include entites that are not present (mentioned in conversation, on the telephone, on a TV, in a crystal ball, or whatever), even if they are able to communicate with people at the location. If none, answer N/A.`,
+            prompt: `List all physically present entities (NPCs, animals, monsters, robots, etc., including those without proper names) mentioned in textToCheck except those only mentioned in dialogue. This is to catch any characters who are present that the system isn't already aware of. This event is also the recovery path when the prose reveals a hidden NPC that is not exposed in the supplied character data: use the name or alias from the prose, and the runtime will reveal a matching hidden NPC instead of creating a duplicate. Separate entries with vertical bars. For instance, "Android 609|Bob|Dire Wolf". Capitalize them as proper nouns if they aren't already capitalized. DO NOT include entites that are not present (mentioned in conversation, on the telephone, on a TV, in a crystal ball, or whatever), even if they are able to communicate with people at the location. If none, answer N/A.`,
         },
         {
             key: "npc_first_appearance",
-            prompt: `List all physically present entities (NPCs, animals, monsters, robots, etc.) that acted (interacted with the player, spoke, or did anything else) in textToCheck which aren't already listed in your answers above, in the player's party, or in the list of present entities. Separate entries with vertical bars. DO NOT include entites that are not present (mentioned in conversation, on the telephone, on a TV, in a crystal ball, or whatever), even if they are able to communicate with people at the location. For instance, "Android 609|Bob|Dire Wolf". If none, answer N/A.`,
+            prompt: `List all physically present entities (NPCs, animals, monsters, robots, etc.) that acted (interacted with the player, spoke, or did anything else) in textToCheck which aren't already listed in your answers above, in the player's party, or in the list of present entities. This also includes a hidden NPC revealed in the prose when that NPC is missing from the supplied character data; use its prose name or alias so the runtime can reveal a matching hidden NPC instead of generating a duplicate. Separate entries with vertical bars. DO NOT include entites that are not present (mentioned in conversation, on the telephone, on a TV, in a crystal ball, or whatever), even if they are able to communicate with people at the location. For instance, "Android 609|Bob|Dire Wolf". If none, answer N/A.`,
         },
         {
             key: "party_change",
@@ -3130,7 +3130,7 @@ class Events {
         }
 
         const useTinyBrainNeedBarChecks = isTinyBrainPromptEnabled(
-            Globals.config?.ai,
+            Globals.config,
             "need_bar_event_checks",
         );
         const templateContext = {
@@ -3567,6 +3567,7 @@ class Events {
             timeoutMs: this._baseTimeout,
             temperature: 0,
             validateXML: true,
+            expectedXmlRootTag: "quests",
             dumpReasoningToConsole: true,
         };
 
@@ -3820,7 +3821,7 @@ class Events {
         const normalizedIgnoredEventKeys =
             this._normalizeIgnoredEventKeys(ignoredEventKeys);
         const useTinyBrainEventChecks = isTinyBrainPromptEnabled(
-            Globals.config?.ai,
+            Globals.config,
             "event_checks",
         );
         const eventSequence = tinyBrainEventSequence
@@ -3834,6 +3835,7 @@ class Events {
         const sequentialAcceptedEventXml = this._buildTinyBrainAcceptedEventXml(
             eventSequence,
         );
+        const eventCheckHiddenNpcNames = this._getEventCheckHiddenNpcNames(location);
         const templateContext = {
             ...baseContext,
             promptType: "events-xml",
@@ -3858,6 +3860,7 @@ class Events {
                     : sequentialAcceptedEventXml,
             tinyBrainAuthoritativeMovementCompanionNames:
                 authoritativeMovementCompanionNames,
+            eventCheckHiddenNpcNames,
             omitGameHistory: true,
         };
         if (useTinyBrainEventChecks) {
@@ -3869,6 +3872,7 @@ class Events {
                 suppressTrackerUpdates,
                 hasRegisteredModEvents: Array.isArray(baseContext?.modEventPromptSchemas)
                     && baseContext.modEventPromptSchemas.length > 0,
+                hiddenNpcNames: eventCheckHiddenNpcNames,
             });
         }
         const tinyBrain = useTinyBrainEventChecks
@@ -5536,7 +5540,7 @@ class Events {
 
             let rewardProse = "";
             const useTinyBrainQuestReward = isTinyBrainPromptEnabled(
-                Globals.config?.ai,
+                Globals.config,
                 "quest_reward_prose",
             );
             const fallbackList = [
@@ -5973,6 +5977,29 @@ class Events {
         return sectionKind;
     }
 
+    static _getEventCheckHiddenNpcNames(location) {
+        if (!location || typeof location.getNPCs !== "function") {
+            return [];
+        }
+
+        const seen = new Set();
+        return location.getNPCs()
+            .filter((npc) => npc?.isNPC === true
+                && npc?.isDead !== true
+                && npc?.hiddenFromPlayer === true
+                && typeof npc?.name === "string"
+                && npc.name.trim())
+            .map((npc) => npc.name.trim())
+            .filter((name) => {
+                const key = name.toLowerCase();
+                if (seen.has(key)) {
+                    return false;
+                }
+                seen.add(key);
+                return true;
+            });
+    }
+
     static _buildTinyBrainEventStages({
         eventSectionKind = "current",
         eventMode = "events",
@@ -5980,6 +6007,7 @@ class Events {
         suppressTimeAdvance = false,
         suppressTrackerUpdates = false,
         hasRegisteredModEvents = false,
+        hiddenNpcNames = null,
     } = {}) {
         const sectionKind = this._normalizeTinyBrainEventSectionKind(
             eventSectionKind,
@@ -5992,10 +6020,26 @@ class Events {
                 `Unknown tiny-brain event extraction mode "${eventMode}".`,
             );
         }
+        if (hiddenNpcNames !== null && !Array.isArray(hiddenNpcNames)) {
+            throw new Error("Tiny-brain event hiddenNpcNames must be an array or null.");
+        }
+        const hasAuthoritativeHiddenNpcList = Array.isArray(hiddenNpcNames);
+        const normalizedHiddenNpcNames = hasAuthoritativeHiddenNpcList
+            ? hiddenNpcNames
+                .map((name) => typeof name === "string" ? name.trim() : "")
+                .filter(Boolean)
+            : [];
         const ignoredKeys = this._normalizeIgnoredEventKeys(ignoredEventKeys);
         const tagIsAllowed = (tagName) => {
             const eventKey = TINY_BRAIN_EVENT_TAG_TO_KEY[tagName];
             if (!eventKey || ignoredKeys.has(eventKey)) {
+                return false;
+            }
+            if (
+                tagName === "revealHiddenNpc"
+                && hasAuthoritativeHiddenNpcList
+                && normalizedHiddenNpcNames.length === 0
+            ) {
                 return false;
             }
             if (tagName === "timePassed" && suppressTimeAdvance) {
@@ -6066,7 +6110,21 @@ class Events {
             if (definition.id === "final") {
                 continue;
             }
-            const stage = makeStage(definition);
+            const stageDefinition = definition.id === "characters"
+                ? {
+                    ...definition,
+                    instructions: [
+                        "Extract changes to characters, visibility, status effects, presence, party membership, trade availability, and first physical appearances.",
+                        "A physically present character absent from Characters at location is not represented at this location in game data. Use npcFirstAppearance to create a newly introduced NPC, or npcArrival when an existing NPC arrives or newly appears in the scene.",
+                        "Also use npcFirstAppearance when the prose reveals a hidden NPC that is missing from the supplied character and reveal-target lists. Use the name or alias from the prose; a matching hidden NPC stored by the runtime will be revealed instead of duplicated.",
+                        "A plan, memory, dialogue mention, or offscreen action alone is not physical presence and does not qualify. A private mystery note also does not create an NPC record.",
+                        ...(normalizedHiddenNpcNames.length
+                            ? [`Use revealHiddenNpc only for these exact present hidden NPC names: ${normalizedHiddenNpcNames.join(", ")}.`]
+                            : []),
+                    ].join(" "),
+                }
+                : definition;
+            const stage = makeStage(stageDefinition);
             if (!stage) {
                 continue;
             }
@@ -6147,6 +6205,7 @@ class Events {
         acceptedItemStatusApplications = [],
         authoritativeMovementCompanionNames = [],
         eventLocation = null,
+        hiddenNpcNames = null,
     } = {}) {
         const normalizedSectionKind = this._normalizeTinyBrainEventSectionKind(
             sectionKind,
@@ -6179,6 +6238,19 @@ class Events {
         const authoritativeMovementCompanionNameSet = new Set(
             authoritativeMovementCompanionNames.map((name) => name.trim().toLowerCase()),
         );
+        if (hiddenNpcNames !== null && !Array.isArray(hiddenNpcNames)) {
+            throw new Error(
+                `Tiny-brain ${normalizedSectionKind}/${normalizedStageId} hiddenNpcNames must be an array or null.`,
+            );
+        }
+        const authoritativeHiddenNpcNames = Array.isArray(hiddenNpcNames)
+            ? hiddenNpcNames
+                .map((name) => typeof name === "string" ? name.trim() : "")
+                .filter(Boolean)
+            : null;
+        const authoritativeHiddenNpcNameSet = authoritativeHiddenNpcNames
+            ? new Set(authoritativeHiddenNpcNames.map((name) => name.toLowerCase()))
+            : null;
         const hasDoneTag = /<done\b/i.test(normalized);
         const hasEventsTag = /<events\b/i.test(normalized);
         if (hasDoneTag && !hasEventsTag) {
@@ -6328,6 +6400,25 @@ class Events {
                 && typeof registry.getXmlEventByTagName === "function"
                 ? registry.getXmlEventByTagName(tagName)
                 : null;
+            if (tagName === "revealHiddenNpc" && authoritativeHiddenNpcNameSet) {
+                const emittedName = this._getXmlDirectChildText(node, "npcName");
+                if (!authoritativeHiddenNpcNameSet.has(emittedName.toLowerCase())) {
+                    const existingActor = typeof this._deps?.findActorByName === "function"
+                        ? this._deps.findActorByName(emittedName)
+                        : null;
+                    const availableNames = authoritativeHiddenNpcNames.length
+                        ? `The exact present hidden NPC names are: ${authoritativeHiddenNpcNames.join(", ")}.`
+                        : "There are no present hidden NPCs, so <revealHiddenNpc> cannot apply.";
+                    if (!existingActor) {
+                        throw new Error(
+                            `Tiny-brain ${normalizedSectionKind}/${normalizedStageId} NPC "${emittedName}" does not exist in the game data. Use <npcFirstAppearance> to create a newly introduced NPC, or <npcArrival> when an existing NPC arrives or newly appears. ${availableNames}`,
+                        );
+                    }
+                    throw new Error(
+                        `Tiny-brain ${normalizedSectionKind}/${normalizedStageId} NPC "${emittedName}" is not listed as present and hidden at this location. Use <npcFirstAppearance> for a new NPC, <npcArrival> for an NPC arriving here, or <revealHiddenNpc> with an exact listed hidden name. ${availableNames}`,
+                    );
+                }
+            }
             if (!allowedTagSet.has(tagName) && !registeredEvent) {
                 const allowedDescription = [
                     ...allowedTagSet,
@@ -6770,6 +6861,7 @@ class Events {
                         allowedTags,
                         requiredTags,
                         allowRegisteredXmlEvents,
+                        hiddenNpcNames,
                     ) => {
                         const acceptedSignatures = Object.values(
                             tinyBrain.renderState.completedCheckpoints || {},
@@ -6801,6 +6893,7 @@ class Events {
                             authoritativeMovementCompanionNames:
                                 templateContext.tinyBrainAuthoritativeMovementCompanionNames,
                             eventLocation,
+                            hiddenNpcNames,
                         });
                     },
                 },
@@ -8593,6 +8686,57 @@ class Events {
 
         const rawEntries = parsedEvents.rawEntries || {};
         const namesToEnsure = new Map();
+        const firstAppearanceNameKeys = new Set(
+            (Array.isArray(parsed.npc_first_appearance)
+                ? parsed.npc_first_appearance
+                : [])
+                .map((name) => normalizeString(name).toLowerCase())
+                .filter(Boolean),
+        );
+        const trackedActorReferences = new Set();
+        const trackedActorIds = new Set();
+        if (this.players instanceof Map) {
+            for (const actor of this.players.values()) {
+                if (!actor) {
+                    continue;
+                }
+                trackedActorReferences.add(actor);
+                const actorId = normalizeString(actor.id);
+                if (actorId) {
+                    trackedActorIds.add(actorId);
+                }
+            }
+        }
+        const wasTrackedBeforeEnsure = (actor) => {
+            if (!actor) {
+                return false;
+            }
+            if (trackedActorReferences.has(actor)) {
+                return true;
+            }
+            const actorId = normalizeString(actor.id);
+            return Boolean(actorId && trackedActorIds.has(actorId));
+        };
+        const hiddenFirstAppearanceMatches = new Map();
+        const recordHiddenFirstAppearanceMatch = (sourceKey, actor, { tracked = false } = {}) => {
+            if (
+                !firstAppearanceNameKeys.has(sourceKey)
+                || !tracked
+                || actor?.isNPC !== true
+                || actor?.isDead === true
+                || actor?.hiddenFromPlayer !== true
+            ) {
+                return false;
+            }
+            const canonicalName = normalizeString(actor.name);
+            if (!canonicalName) {
+                throw new Error(
+                    `Hidden NPC matched by first appearance "${sourceKey}" has no name.`,
+                );
+            }
+            hiddenFirstAppearanceMatches.set(sourceKey, canonicalName);
+            return true;
+        };
         const playerAliases = new Set([
             "player",
             "the player",
@@ -8712,6 +8856,7 @@ class Events {
                 if (existingName && existingName !== originalName) {
                     resolvedNameMap.set(key, existingName);
                 }
+                recordHiddenFirstAppearanceMatch(key, existing, { tracked: true });
                 continue;
             }
 
@@ -8731,11 +8876,17 @@ class Events {
                 resolvedNameMap.set(key, ensuredName);
             }
 
+            if (recordHiddenFirstAppearanceMatch(key, ensuredNpc, {
+                tracked: wasTrackedBeforeEnsure(ensuredNpc),
+            })) {
+                continue;
+            }
+
             this.newCharacters.add(ensuredName);
             this.arrivedCharacters.add(ensuredName);
         }
 
-        if (!resolvedNameMap.size) {
+        if (!resolvedNameMap.size && !hiddenFirstAppearanceMatches.size) {
             return;
         }
 
@@ -8846,6 +8997,62 @@ class Events {
         updateArrayEntries(parsed.received_quest, (entry) => {
             entry.giver = resolveName(entry.giver);
         });
+
+        if (hiddenFirstAppearanceMatches.size) {
+            const revealMatchesByCanonicalName = new Map();
+            for (const [sourceKey, canonicalName] of hiddenFirstAppearanceMatches.entries()) {
+                const canonicalKey = canonicalName.toLowerCase();
+                if (!revealMatchesByCanonicalName.has(canonicalKey)) {
+                    revealMatchesByCanonicalName.set(canonicalKey, {
+                        canonicalName,
+                        matchKeys: new Set(),
+                    });
+                }
+                const match = revealMatchesByCanonicalName.get(canonicalKey);
+                match.matchKeys.add(sourceKey);
+                match.matchKeys.add(canonicalKey);
+            }
+
+            const convertedNameKeys = new Set();
+            for (const match of revealMatchesByCanonicalName.values()) {
+                for (const matchKey of match.matchKeys) {
+                    convertedNameKeys.add(matchKey);
+                }
+            }
+
+            parsed.npc_first_appearance = Array.isArray(parsed.npc_first_appearance)
+                ? parsed.npc_first_appearance.filter(
+                    (name) => !convertedNameKeys.has(normalizeString(name).toLowerCase()),
+                )
+                : parsed.npc_first_appearance;
+            parsed.npc_arrival_departure = Array.isArray(parsed.npc_arrival_departure)
+                ? parsed.npc_arrival_departure.filter((entry) => (
+                    entry?.firstAppearance !== true
+                    || !convertedNameKeys.has(normalizeString(entry?.name).toLowerCase())
+                ))
+                : parsed.npc_arrival_departure;
+
+            if (!Array.isArray(parsed.reveal_hidden_npc)) {
+                parsed.reveal_hidden_npc = [];
+            }
+            for (const match of revealMatchesByCanonicalName.values()) {
+                const existingReveal = parsed.reveal_hidden_npc.find((entry) =>
+                    match.matchKeys.has(normalizeString(entry?.name).toLowerCase()),
+                );
+                if (existingReveal) {
+                    existingReveal.name = match.canonicalName;
+                    existingReveal.useOpposedCheck = false;
+                    existingReveal.convertedFromFirstAppearance = true;
+                    continue;
+                }
+                parsed.reveal_hidden_npc.push({
+                    name: match.canonicalName,
+                    description: `${match.canonicalName} is revealed in the scene.`,
+                    useOpposedCheck: false,
+                    convertedFromFirstAppearance: true,
+                });
+            }
+        }
     }
 
     static _parseBooleanish(value, { defaultValue = null } = {}) {

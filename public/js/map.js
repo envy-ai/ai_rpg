@@ -507,7 +507,8 @@ function renderMap(region, options = {}) {
             id: `${loc.id}_${exitNodeId}`,
             source: loc.id,
             target: exitNodeId,
-            regionName
+            regionName,
+            forwardExitId: exit.id || null
           },
           classes: 'region-exit-edge'
         });
@@ -1218,6 +1219,12 @@ function renderMap(region, options = {}) {
     const targetId = edge.data('target');
     const forwardExitId = edge.data('forwardExitId') || null;
     const reverseExitId = edge.data('reverseExitId') || null;
+    const targetNode = targetId ? cyInstance.getElementById(targetId) : null;
+    const targetIsRegionIndicator = Boolean(
+      targetNode
+      && targetNode.nonempty()
+      && targetNode.hasClass('region-exit')
+    );
 
     const performDelete = async (originId, exitId) => {
       if (!originId || !exitId) return;
@@ -1246,6 +1253,13 @@ function renderMap(region, options = {}) {
     }
 
     cyInstance.remove(edge);
+    if (targetIsRegionIndicator && targetNode.connectedEdges().empty()) {
+      const vehicleOverlay = cyInstance.getElementById(getVehicleOverlayNodeId(targetId));
+      if (vehicleOverlay && vehicleOverlay.nonempty()) {
+        cyInstance.remove(vehicleOverlay);
+      }
+      cyInstance.remove(targetNode);
+    }
     runLayout();
   };
 

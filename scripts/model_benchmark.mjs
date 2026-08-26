@@ -82,9 +82,9 @@ function usage() {
         '  --endpoint <url>         Override every benchmark AI endpoint',
         '  --manifest <json>        Benchmark manifest path',
         '  --port <number>          Managed game-server port (default: 7777)',
-        '  --output <directory>     Output directory under tmp/',
+        '  --output <directory>     Output directory under benchmarks/model/',
         '  --run-id <id>            Stable report/localStorage id',
-        '  --resume <run-id>         Continue an existing tmp/model-benchmarks session',
+        '  --resume <run-id>         Continue an existing benchmarks/model session',
         '  --family <PREFIX,...>    Limit families; repeatable',
         '  --case <PREFIX-N,...>    Limit cases or exact scenario case names; repeatable',
         '  --no-router-preload      Leave router_preload_model blank unless the profile owns it',
@@ -108,11 +108,11 @@ async function main() {
     const resumeId = options.resume ? safeRunId(options.resume) : null;
     const newRunId = resumeId ? null : safeRunId(options['run-id']);
     const outputDirectory = resumeId
-        ? path.join(ROOT, 'tmp', 'model-benchmarks', resumeId)
-        : path.resolve(ROOT, options.output || path.join('tmp', 'model-benchmarks', newRunId));
-    const relativeOutput = path.relative(path.join(ROOT, 'tmp'), outputDirectory);
+        ? path.join(ROOT, 'benchmarks', 'model', resumeId)
+        : path.resolve(ROOT, options.output || path.join('benchmarks', 'model', newRunId));
+    const relativeOutput = path.relative(path.join(ROOT, 'benchmarks', 'model'), outputDirectory);
     if (relativeOutput.startsWith('..') || path.isAbsolute(relativeOutput)) {
-        throw new Error('Benchmark output must stay under the project tmp directory.');
+        throw new Error('Benchmark output must stay under benchmarks/model/.');
     }
     let savedState = null;
     let savedManifest = null;

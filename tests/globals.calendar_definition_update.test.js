@@ -15,6 +15,8 @@ function buildCalendar(overrides = {}) {
             {
                 name: 'Dawnseason',
                 description: 'The early season.',
+                vegetationDescription: 'Silver moss spreads across the ash ground. New buds brighten the low trees.',
+                interiorDescription: 'Pale daylight reaches established windows. Light woven hangings replace heavy covers.',
                 startMonth: 'Ash',
                 startDay: 1,
                 dayLengthMinutes: null,
@@ -26,6 +28,8 @@ function buildCalendar(overrides = {}) {
             {
                 name: 'Brightseason',
                 description: 'The bright season.',
+                vegetationDescription: 'Tall grasses thicken along the paths. Broad leaves shade the flowering shrubs.',
+                interiorDescription: 'Bright light fills established openings. Ventilation and lighter fabrics suit the warm rooms.',
                 startMonth: 'Bloom',
                 startDay: 1,
                 dayLengthMinutes: null,
@@ -71,10 +75,22 @@ test('setCalendarDefinition normalizes calendar data and preserves current world
         assert.equal(context.dateLabel, 'Secondday, Ash 2, Test Reckoning 1');
         assert.equal(context.lightLevelDescription, 'Clear afternoon light.');
         assert.equal(context.holidayName, 'Ash Wake');
+        assert.equal(context.seasonVegetationDescription, 'Silver moss spreads across the ash ground. New buds brighten the low trees.');
+        assert.equal(context.seasonInteriorDescription, 'Pale daylight reaches established windows. Light woven hangings replace heavy covers.');
     } finally {
         Globals.config = previousConfig;
         Globals.worldTime = previousWorldTime;
         Globals.calendarDefinition = previousCalendarDefinition;
+    }
+});
+
+test('the built-in Gregorian calendar provides seasonal exterior and interior image descriptions', () => {
+    const calendar = Globals.generateCalendarDefinition();
+    for (const season of calendar.seasons) {
+        assert.equal(typeof season.vegetationDescription, 'string');
+        assert.ok(season.vegetationDescription.trim());
+        assert.equal(typeof season.interiorDescription, 'string');
+        assert.ok(season.interiorDescription.trim());
     }
 });
 

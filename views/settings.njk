@@ -1,9 +1,12 @@
 <!DOCTYPE html>
 <html lang="en">
 {% set pageTitleValue = title | default("World Profiles") %}
+{% from "_includes/image-workflow-editor.njk" import workflowTab %}
 <head>
     {% include "_includes/head-common.njk" %}
     <link rel="stylesheet" href="/css/settings.css">
+    <script defer src="/js/widgets/searchable-select.js"></script>
+    <script defer src="/js/image-workflow-editor.js"></script>
 </head>
 <body>
     {% set startingLocationPlaceholder -%}Region name: [name]
@@ -114,6 +117,8 @@ Region exits: [comma-separated list of connected regions]{%- endset %}
                     {% endfor %}
                     {% endif %}
                     <button type="button" class="editor-tab-btn" data-editor-tab="calendar" aria-selected="false">Calendar</button>
+                    <button type="button" class="editor-tab-btn" data-editor-tab="image-prompt-generation" aria-selected="false">Image Prompt Generation</button>
+                    <button type="button" class="editor-tab-btn" data-editor-tab="image-workflows" aria-selected="false">Image Workflows</button>
                     <button type="button" class="editor-tab-btn" data-editor-tab="images" aria-selected="false">Image Prefixes</button>
                 </div>
 
@@ -209,6 +214,28 @@ Region exits: [comma-separated list of connected regions]{%- endset %}
                                 <label for="defaultStartingCurrency">Default Starting Currency</label>
                                 <input type="number" id="defaultStartingCurrency" name="defaultStartingCurrency" min="0" value="0">
                                 <div class="help-text">Prefills the Starting Currency field on the New Game screen.</div>
+                            </div>
+
+                            <div class="form-group">
+                                <label for="defaultStartMonth">Default Start Month</label>
+                                <select id="defaultStartMonth" name="defaultStartMonth">
+                                    <option value="1">Month 1</option>
+                                </select>
+                                <div class="help-text">Uses this profile's calendar and prefills the starting month on the New Game screen.</div>
+                            </div>
+
+                            <div class="form-group">
+                                <label for="defaultStartDay">Default Start Day</label>
+                                <select id="defaultStartDay" name="defaultStartDay">
+                                    <option value="1">1</option>
+                                </select>
+                                <div class="help-text">Available days follow the selected default month.</div>
+                            </div>
+
+                            <div class="form-group">
+                                <label for="defaultStartTime">Default Start Time</label>
+                                <input type="number" id="defaultStartTime" name="defaultStartTime" min="0" max="23" step="1" value="9">
+                                <div class="help-text">Hour of day from 0 through 23; defaults to 9 (9:00 AM).</div>
                             </div>
 
                             <div class="form-group full-width">
@@ -586,6 +613,49 @@ Region exits: [comma-separated list of connected regions]{%- endset %}
                                 <textarea id="imagePromptPrefixScenery" name="imagePromptPrefixScenery" rows="4" placeholder="Short guidance for scenery/establishing shot art..."></textarea>
                                 <div class="help-text">Optional text prepended to scenery/background prompts.</div>
                             </div>
+                        </div>
+                    </section>
+
+                    <section class="editor-tab-panel" data-editor-panel="image-prompt-generation">
+                        <div class="field-grid">
+                            <div class="form-group full-width">
+                                <h3>Image Prompt Generation Instructions</h3>
+                                <div class="help-text">These guide the LLM that writes image prompts for this world profile. A nonblank field overrides the matching global <code>imagegen.image_prompt_instructions</code> value; leave it blank to use that global default.</div>
+                            </div>
+
+                            <div class="form-group full-width">
+                                <label for="imagePromptInstructionsCharacter">Character Prompt Instructions</label>
+                                <textarea id="imagePromptInstructionsCharacter" name="imagePromptInstructionsCharacter" rows="5" placeholder="World-specific instructions for generating character image prompts..."></textarea>
+                            </div>
+
+                            <div class="form-group full-width">
+                                <label for="imagePromptInstructionsLocation">Location Prompt Instructions</label>
+                                <textarea id="imagePromptInstructionsLocation" name="imagePromptInstructionsLocation" rows="5" placeholder="World-specific instructions for generating location image prompts..."></textarea>
+                            </div>
+
+                            <div class="form-group full-width">
+                                <label for="imagePromptInstructionsItem">Item Prompt Instructions</label>
+                                <textarea id="imagePromptInstructionsItem" name="imagePromptInstructionsItem" rows="5" placeholder="World-specific instructions for generating item image prompts..."></textarea>
+                            </div>
+
+                            <div class="form-group full-width">
+                                <label for="imagePromptInstructionsScenery">Scenery Prompt Instructions</label>
+                                <textarea id="imagePromptInstructionsScenery" name="imagePromptInstructionsScenery" rows="5" placeholder="World-specific instructions for generating scenery image prompts..."></textarea>
+                            </div>
+                        </div>
+                    </section>
+
+                    <section class="editor-tab-panel" data-editor-panel="image-workflows">
+                        <div class="image-workflow-editor">
+                            <div class="config-section">
+                                <h2>Image Workflows</h2>
+                                <div class="image-workflow-subtabs" role="tablist">
+                                    <button type="button" class="image-workflow-subtab is-active" data-image-workflow-subtab="generation">Image Generation</button>
+                                    <button type="button" class="image-workflow-subtab" data-image-workflow-subtab="edit">Image Edit</button>
+                                </div>
+                            </div>
+                            {{ workflowTab('generation', 'imageGenerationSettings', 'useGlobalImageGenerationSettings', true, {}, true) }}
+                            {{ workflowTab('edit', 'imageEditSettings', 'useGlobalImageEditSettings', true, {}, true) }}
                         </div>
                     </section>
 
@@ -1229,10 +1299,27 @@ Region exits: [comma-separated list of connected regions]{%- endset %}
             assignValue('customSlopWords', joinLines(setting.customSlopWords));
             applyUnifiedTonalScaleToForm(setting.unifiedTonalScale);
             applyCalendarDefinitionToForm(setting.calendarDefinition || null);
+            populateDefaultStartDateControls(
+                setting.defaultStartMonth ?? 1,
+                setting.defaultStartDay ?? 1
+            );
+            assignValue('defaultStartTime', setting.defaultStartTime ?? 9);
             assignValue('imagePromptPrefixCharacter', setting.imagePromptPrefixCharacter || '');
             assignValue('imagePromptPrefixLocation', setting.imagePromptPrefixLocation || '');
             assignValue('imagePromptPrefixItem', setting.imagePromptPrefixItem || '');
             assignValue('imagePromptPrefixScenery', setting.imagePromptPrefixScenery || '');
+            assignValue('imagePromptInstructionsCharacter', setting.imagePromptInstructionsCharacter || '');
+            assignValue('imagePromptInstructionsLocation', setting.imagePromptInstructionsLocation || '');
+            assignValue('imagePromptInstructionsItem', setting.imagePromptInstructionsItem || '');
+            assignValue('imagePromptInstructionsScenery', setting.imagePromptInstructionsScenery || '');
+            const generationSettingsField = document.querySelector('[name="imageGenerationSettings"]');
+            const editSettingsField = document.querySelector('[name="imageEditSettings"]');
+            if (generationSettingsField) generationSettingsField.value = JSON.stringify(setting.imageGenerationSettings || {});
+            if (editSettingsField) editSettingsField.value = JSON.stringify(setting.imageEditSettings || {});
+            const useGlobalGeneration = document.querySelector('[name="useGlobalImageGenerationSettings"]');
+            const useGlobalEdit = document.querySelector('[name="useGlobalImageEditSettings"]');
+            if (useGlobalGeneration) useGlobalGeneration.checked = setting.useGlobalImageGenerationSettings !== false;
+            if (useGlobalEdit) useGlobalEdit.checked = setting.useGlobalImageEditSettings !== false;
             applyModSettingsToForm(setting);
             if (settingsFactionEditor) {
                 settingsFactionEditor.load(Array.isArray(setting.defaultFactions) ? setting.defaultFactions : []);
@@ -1451,6 +1538,11 @@ Region exits: [comma-separated list of connected regions]{%- endset %}
             }
             clearUnifiedTonalScaleForm();
             applyCalendarDefinitionToForm(null);
+            populateDefaultStartDateControls(1, 1);
+            const defaultStartTimeField = document.getElementById('defaultStartTime');
+            if (defaultStartTimeField) {
+                defaultStartTimeField.value = '9';
+            }
             if (settingsFactionEditor) {
                 settingsFactionEditor.clear();
             }
@@ -1958,6 +2050,8 @@ Region exits: [comma-separated list of connected regions]{%- endset %}
                 startDay: row.querySelector('.settings-calendar-season-start-day')?.value?.trim() || '',
                 dayLengthMinutes: row.querySelector('.settings-calendar-season-day-length')?.value?.trim() || '',
                 description: row.querySelector('.settings-calendar-season-description')?.value?.trim() || '',
+                vegetationDescription: row.querySelector('.settings-calendar-season-vegetation-description')?.value?.trim() || '',
+                interiorDescription: row.querySelector('.settings-calendar-season-interior-description')?.value?.trim() || '',
                 timeDescriptions: Array.from(row.querySelectorAll('.settings-calendar-time-row')).map(timeRow => ({
                     timeOfDay: timeRow.querySelector('.settings-calendar-time-of-day')?.value?.trim() || '',
                     description: timeRow.querySelector('.settings-calendar-time-description')?.value?.trim() || ''
@@ -2057,6 +2151,110 @@ Region exits: [comma-separated list of connected regions]{%- endset %}
                     lengthDays: Number.isInteger(lengthDays) && lengthDays > 0 ? lengthDays : null
                 };
             }).filter(month => month.name);
+        }
+
+        function getDefaultStartCalendarMonths() {
+            const configuredMonths = getSettingsCalendarMonthDefinitions();
+            if (configuredMonths.length > 0) {
+                return configuredMonths;
+            }
+            return Array.from({ length: 12 }, (_entry, index) => ({
+                name: `Month ${index + 1}`,
+                lengthDays: 31
+            }));
+        }
+
+        function populateDefaultStartDateControls(preferredMonth, preferredDay) {
+            const monthSelect = document.getElementById('defaultStartMonth');
+            const daySelect = document.getElementById('defaultStartDay');
+            if (!monthSelect || !daySelect) {
+                return;
+            }
+
+            const months = getDefaultStartCalendarMonths();
+            const parsedMonth = Number(preferredMonth);
+            const validMonth = Number.isInteger(parsedMonth) && parsedMonth >= 1 && parsedMonth <= months.length;
+            monthSelect.dataset.preferredValue = preferredMonth === null || preferredMonth === undefined
+                ? ''
+                : String(preferredMonth);
+            monthSelect.replaceChildren();
+            if (!validMonth) {
+                const placeholder = document.createElement('option');
+                placeholder.value = '';
+                placeholder.textContent = 'Select a valid month';
+                placeholder.disabled = true;
+                placeholder.selected = true;
+                monthSelect.appendChild(placeholder);
+            }
+            months.forEach((month, index) => {
+                const option = document.createElement('option');
+                option.value = String(index + 1);
+                option.textContent = `${index + 1} — ${month.name}`;
+                option.selected = validMonth && parsedMonth === index + 1;
+                monthSelect.appendChild(option);
+            });
+
+            const selectedMonthIndex = Number(monthSelect.value) - 1;
+            const monthLength = months[selectedMonthIndex]?.lengthDays;
+            const usableMonthLength = Number.isInteger(monthLength) && monthLength > 0 ? monthLength : 31;
+            const parsedDay = Number(preferredDay);
+            const validDay = validMonth
+                && Number.isInteger(parsedDay)
+                && parsedDay >= 1
+                && parsedDay <= usableMonthLength;
+            daySelect.dataset.preferredValue = preferredDay === null || preferredDay === undefined
+                ? ''
+                : String(preferredDay);
+            daySelect.replaceChildren();
+            if (!validDay) {
+                const placeholder = document.createElement('option');
+                placeholder.value = '';
+                placeholder.textContent = 'Select a valid day';
+                placeholder.disabled = true;
+                placeholder.selected = true;
+                daySelect.appendChild(placeholder);
+            }
+            for (let day = 1; day <= usableMonthLength; day += 1) {
+                const option = document.createElement('option');
+                option.value = String(day);
+                option.textContent = String(day);
+                option.selected = validDay && day === parsedDay;
+                daySelect.appendChild(option);
+            }
+        }
+
+        function collectDefaultStartDateFromForm(calendarDefinition) {
+            const monthInput = document.getElementById('defaultStartMonth');
+            const dayInput = document.getElementById('defaultStartDay');
+            const timeInput = document.getElementById('defaultStartTime');
+            const month = Number(monthInput?.value);
+            const day = Number(dayInput?.value);
+            const time = Number(timeInput?.value);
+            const months = calendarDefinition?.months?.length
+                ? calendarDefinition.months
+                : getDefaultStartCalendarMonths();
+
+            const fail = (message, focusTarget) => {
+                const error = new Error(message);
+                error.editorTab = 'defaults';
+                error.focusTarget = focusTarget;
+                throw error;
+            };
+            if (!Number.isInteger(month) || month < 1 || month > months.length) {
+                fail(`Default start month must be between 1 and ${months.length}.`, monthInput);
+            }
+            const monthLength = Number(months[month - 1]?.lengthDays);
+            if (!Number.isInteger(day) || day < 1 || !Number.isInteger(monthLength) || day > monthLength) {
+                fail(`Default start day must be valid for ${months[month - 1]?.name || `month ${month}`}.`, dayInput);
+            }
+            if (!Number.isInteger(time) || time < 0 || time > 23) {
+                fail('Default start time must be an integer from 0 through 23.', timeInput);
+            }
+            return {
+                defaultStartMonth: month,
+                defaultStartDay: day,
+                defaultStartTime: time
+            };
         }
 
         function getSettingsCalendarSeasonNames() {
@@ -2258,12 +2456,24 @@ Region exits: [comma-separated list of connected regions]{%- endset %}
                 rows: 2,
                 fieldClass: 'settings-calendar-field-wide'
             });
+            const vegetationDescription = createSettingsCalendarField('Vegetation Description', 'settings-calendar-season-vegetation-description', season.vegetationDescription || '', {
+                textarea: true,
+                rows: 2,
+                placeholder: 'Two sentences describing visible seasonal vegetation changes.',
+                fieldClass: 'settings-calendar-field-wide'
+            });
+            const interiorDescription = createSettingsCalendarField('Interior Description', 'settings-calendar-season-interior-description', season.interiorDescription || '', {
+                textarea: true,
+                rows: 2,
+                placeholder: 'Two sentences describing visible seasonal changes inside enclosed spaces.',
+                fieldClass: 'settings-calendar-field-wide'
+            });
             name.input.addEventListener('input', refreshCalendarReferenceControls);
             startMonth.input.addEventListener('change', () => {
                 populateSettingsCalendarDaySelect(startDay.input, startMonth.input.value, startDay.input.value);
             });
             populateSettingsCalendarDaySelect(startDay.input, startMonth.input.value, season.startDay ?? 1);
-            basics.append(name.field, startMonth.field, startDay.field, dayLength.field, description.field);
+            basics.append(name.field, startMonth.field, startDay.field, dayLength.field, description.field, vegetationDescription.field, interiorDescription.field);
 
             const timeSection = document.createElement('div');
             timeSection.className = 'settings-calendar-time-section';
@@ -2336,6 +2546,12 @@ Region exits: [comma-separated list of connected regions]{%- endset %}
                 const daySelect = row.querySelector('.settings-calendar-holiday-day');
                 populateSettingsCalendarDaySelect(daySelect, monthSelect?.value || '', daySelect?.value || '');
             });
+            const defaultStartMonth = document.getElementById('defaultStartMonth');
+            const defaultStartDay = document.getElementById('defaultStartDay');
+            populateDefaultStartDateControls(
+                defaultStartMonth?.value || defaultStartMonth?.dataset?.preferredValue || 1,
+                defaultStartDay?.value || defaultStartDay?.dataset?.preferredValue || 1
+            );
             updateCalendarSummary(null);
         }
 
@@ -2506,6 +2722,8 @@ Region exits: [comma-separated list of connected regions]{%- endset %}
                 return {
                     name,
                     description: row.querySelector('.settings-calendar-season-description')?.value?.trim() || null,
+                    vegetationDescription: row.querySelector('.settings-calendar-season-vegetation-description')?.value?.trim() || null,
+                    interiorDescription: row.querySelector('.settings-calendar-season-interior-description')?.value?.trim() || null,
                     startMonth,
                     startDay,
                     dayLengthMinutes: parseSettingsCalendarOptionalNumber(
@@ -3141,6 +3359,8 @@ Region exits: [comma-separated list of connected regions]{%- endset %}
             const settingsCalendarAddSeasonBtn = document.getElementById('settingsCalendarAddSeasonBtn');
             const settingsCalendarAddHolidayBtn = document.getElementById('settingsCalendarAddHolidayBtn');
             const defaultExistingSkillsField = document.getElementById('defaultExistingSkills');
+            const defaultStartMonthField = document.getElementById('defaultStartMonth');
+            const defaultStartDayField = document.getElementById('defaultStartDay');
 
             if (!settingsListEl || !settingsSearchEl || !settingsSortEl || !newSettingBtn) {
                 throw new Error('Library controls are missing from the settings page.');
@@ -3219,10 +3439,17 @@ Region exits: [comma-separated list of connected regions]{%- endset %}
                 }
                 try {
                     settingData.calendarDefinition = collectCalendarDefinitionFromForm();
+                    Object.assign(
+                        settingData,
+                        collectDefaultStartDateFromForm(settingData.calendarDefinition)
+                    );
                 } catch (error) {
+                    const targetTab = error?.editorTab || 'calendar';
                     showMessage(error?.message || 'Calendar definition is invalid.', 'error');
-                    setActiveEditorTab('calendar');
-                    setSettingsCalendarStatus(error?.message || 'Calendar definition is invalid.', 'error');
+                    setActiveEditorTab(targetTab);
+                    if (targetTab === 'calendar') {
+                        setSettingsCalendarStatus(error?.message || 'Calendar definition is invalid.', 'error');
+                    }
                     error?.focusTarget?.focus?.();
                     return;
                 }
@@ -3436,6 +3663,17 @@ Region exits: [comma-separated list of connected regions]{%- endset %}
                     refreshHidePerceptionSkillOptions();
                 });
             }
+            if (defaultStartMonthField && defaultStartDayField) {
+                defaultStartMonthField.addEventListener('change', () => {
+                    populateDefaultStartDateControls(
+                        defaultStartMonthField.value,
+                        defaultStartDayField.value || defaultStartDayField.dataset.preferredValue || 1
+                    );
+                });
+                defaultStartDayField.addEventListener('change', () => {
+                    defaultStartDayField.dataset.preferredValue = defaultStartDayField.value;
+                });
+            }
 
             const generateBtn = document.getElementById('generateBtn');
             if (generateBtn) {
@@ -3638,6 +3876,7 @@ Region exits: [comma-separated list of connected regions]{%- endset %}
                     defaultPlayerName: filled.defaultPlayerName,
                     defaultPlayerDescription: filled.defaultPlayerDescription,
                     defaultStartingLocation: filled.defaultStartingLocation,
+                    defaultStartTime: filled.defaultStartTime,
                     defaultStartingCurrency: filled.defaultStartingCurrency,
                     defaultExistingSkills: filled.defaultExistingSkills,
                     hidingAttribute: filled.hidingAttribute,
@@ -3653,7 +3892,11 @@ Region exits: [comma-separated list of connected regions]{%- endset %}
                     imagePromptPrefixCharacter: filled.imagePromptPrefixCharacter,
                     imagePromptPrefixLocation: filled.imagePromptPrefixLocation,
                     imagePromptPrefixItem: filled.imagePromptPrefixItem,
-                    imagePromptPrefixScenery: filled.imagePromptPrefixScenery
+                    imagePromptPrefixScenery: filled.imagePromptPrefixScenery,
+                    imagePromptInstructionsCharacter: filled.imagePromptInstructionsCharacter,
+                    imagePromptInstructionsLocation: filled.imagePromptInstructionsLocation,
+                    imagePromptInstructionsItem: filled.imagePromptInstructionsItem,
+                    imagePromptInstructionsScenery: filled.imagePromptInstructionsScenery
                 }).forEach(([fieldId, value]) => applyText(fieldId, value));
                 if (settingsFactionEditor && Array.isArray(filled.defaultFactions)) {
                     settingsFactionEditor.load(filled.defaultFactions);
@@ -3665,6 +3908,10 @@ Region exits: [comma-separated list of connected regions]{%- endset %}
                 if (Object.prototype.hasOwnProperty.call(filled, 'calendarDefinition')) {
                     applyCalendarDefinitionToForm(filled.calendarDefinition || null);
                 }
+                populateDefaultStartDateControls(
+                    filled.defaultStartMonth ?? document.getElementById('defaultStartMonth')?.value ?? 1,
+                    filled.defaultStartDay ?? document.getElementById('defaultStartDay')?.value ?? 1
+                );
 
                 showMessage('Blank fields populated successfully.', 'success');
                 updatePreview();
@@ -3687,5 +3934,6 @@ Region exits: [comma-separated list of connected regions]{%- endset %}
             }, 5000);
         }
     </script>
+    {% include "_includes/image-workflow-preset-modal.njk" %}
 </body>
 </html>
