@@ -618,7 +618,6 @@ class AIRPGChat {
         this.promptProgressRenderTimer = null;
         this.promptProgressPendingEntries = null;
         this.promptProgressLastRenderTs = 0;
-        this.promptProgressMinTableWidth = null;
         this.promptProgressTableWrap = null;
         this.promptProgressTable = null;
         this.promptProgressTableBody = null;
@@ -1833,6 +1832,33 @@ class AIRPGChat {
                 })
                 .filter(Boolean)
             : [];
+        const rewardBenefits = Array.isArray(questSource.rewardBenefits)
+            ? questSource.rewardBenefits
+                .map(entry => {
+                    if (!entry || typeof entry !== 'object') {
+                        return null;
+                    }
+                    const id = safeText(entry.id);
+                    const type = safeText(entry.type);
+                    const targetId = safeText(entry.targetId);
+                    const label = safeText(entry.label);
+                    if (!id || !type || !targetId || !label) {
+                        return null;
+                    }
+                    return {
+                        id,
+                        type,
+                        targetId,
+                        label,
+                        description: safeText(entry.description) || null,
+                        role: safeText(entry.role) || null
+                    };
+                })
+                .filter(Boolean)
+            : [];
+        const rewardNotes = Array.isArray(questSource.rewardNotes)
+            ? questSource.rewardNotes.map(safeText).filter(Boolean)
+            : [];
 
         return {
             confirmationId,
@@ -1847,7 +1873,9 @@ class AIRPGChat {
                 rewardCurrency,
                 rewardXp,
                 rewardFactionReputation,
-                rewardNpcDispositions
+                rewardNpcDispositions,
+                rewardBenefits,
+                rewardNotes
             }
         };
     }
@@ -2045,6 +2073,17 @@ class AIRPGChat {
                         rewardLines.push(`${npcName}: ${disposition.type} ${signed}${reason}`);
                     });
                 });
+            }
+            if (Array.isArray(quest.rewardBenefits) && quest.rewardBenefits.length) {
+                quest.rewardBenefits.forEach(entry => {
+                    if (entry.type === 'party-member') {
+                        const role = entry.role ? ` (${entry.role})` : '';
+                        rewardLines.push(`Party member: ${entry.label}${role}`);
+                    }
+                });
+            }
+            if (Array.isArray(quest.rewardNotes) && quest.rewardNotes.length) {
+                quest.rewardNotes.forEach(note => rewardLines.push(`Promise: ${note}`));
             }
             if (!rewardLines.length) {
                 rewardLines.push('No guaranteed rewards listed.');
@@ -6475,35 +6514,6 @@ class AIRPGChat {
         this.renderPromptProgress(entriesToRender);
     }
 
-    applyPromptProgressMinTableWidth(table) {
-        if (!table || !Number.isFinite(this.promptProgressMinTableWidth) || this.promptProgressMinTableWidth <= 0) {
-            return;
-        }
-        table.style.minWidth = `${Math.ceil(this.promptProgressMinTableWidth)}px`;
-    }
-
-    updatePromptProgressMinTableWidth(table) {
-        if (!table || !table.isConnected) {
-            return;
-        }
-        const rowCount = table.tBodies?.[0]?.rows?.length || 0;
-        if (rowCount <= 0) {
-            return;
-        }
-        const rectWidth = table.getBoundingClientRect().width;
-        const measuredWidth = Math.ceil(Math.max(
-            Number.isFinite(rectWidth) ? rectWidth : 0,
-            Number.isFinite(table.scrollWidth) ? table.scrollWidth : 0
-        ));
-        if (measuredWidth <= 0) {
-            return;
-        }
-        if (!Number.isFinite(this.promptProgressMinTableWidth) || measuredWidth > this.promptProgressMinTableWidth) {
-            this.promptProgressMinTableWidth = measuredWidth;
-            table.style.minWidth = `${measuredWidth}px`;
-        }
-    }
-
     ensurePromptProgressTable(tableHeaderHtml) {
         if (!this.promptProgressTableWrap || !this.promptProgressTable || !this.promptProgressTableBody) {
             const table = document.createElement('table');
@@ -6535,8 +6545,6 @@ class AIRPGChat {
         if (!this.promptProgressTableBody.parentNode) {
             this.promptProgressTable.appendChild(this.promptProgressTableBody);
         }
-        this.applyPromptProgressMinTableWidth(this.promptProgressTable);
-
         return {
             tableWrap: this.promptProgressTableWrap,
             table: this.promptProgressTable,
@@ -6902,7 +6910,7 @@ class AIRPGChat {
         const contentDiv = document.createElement('div');
         contentDiv.className = 'prompt-progress-dock__content';
 
-        const { table, tableWrap, tbody } = this.ensurePromptProgressTable(tableHeaderHtml);
+        const { tableWrap, tbody } = this.ensurePromptProgressTable(tableHeaderHtml);
         const rowsFragment = document.createDocumentFragment();
         const rows = entries.length ? entries : [this.createIdlePromptProgressEntry()];
         rows.forEach(entry => {
@@ -6915,7 +6923,6 @@ class AIRPGChat {
         tbody.replaceChildren(rowsFragment);
         contentDiv.appendChild(tableWrap);
         dock.replaceChildren(headerDiv, contentDiv);
-        this.updatePromptProgressMinTableWidth(table);
     }
 
     renderPromptProgress(entries = []) {
@@ -10938,6 +10945,21 @@ class AIRPGChat {
                 const result = this.processChatPayload(requestId, data, { fromStream: false });
                 shouldRefreshLocation = result.shouldRefreshLocation || shouldRefreshLocation;
                 skipHistoryRefresh = skipHistoryRefresh || Boolean(result.skipHistoryRefresh);
+
+                if (Array.isArray(data.questCompletionErrors) && data.questCompletionErrors.length) {
+                    const questErrorMessage = data.questCompletionErrors
+                        .map((entry) => {
+                            const message = typeof entry?.message === 'string' && entry.message.trim()
+                                ? entry.message.trim()
+                                : 'A completed quest has rewards that remain pending.';
+                            const stack = typeof entry?.stack === 'string' && entry.stack.trim()
+                                ? entry.stack.trim()
+                                : '';
+                            return stack ? `${message}\n\n${stack}` : message;
+                        })
+                        .join('\n\n');
+                    this.showChatErrorPopup(questErrorMessage);
+                }
 
                 if (!context.streamMeta || context.streamMeta.enabled === false) {
                     finalizeMode = 'afterRefresh';

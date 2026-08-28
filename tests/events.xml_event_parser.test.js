@@ -52,6 +52,28 @@ test('XML event parser aggregates repeated tags through legacy parser shapes', (
     assert.equal(parsed.structured.rawEntries.currency, '5 | -2');
 });
 
+test('XML event parser warns, ignores unknown tags, and preserves valid siblings', () => {
+    const warnings = [];
+    const originalWarn = console.warn;
+    console.warn = (...args) => warnings.push(args.join(' '));
+    try {
+        const parsed = Events._parseXmlEventCheckResponse(`
+<events>
+  <currency><amount>5</amount></currency>
+  <questUpdate><questName>Lost Dog</questName></questUpdate>
+  <currency><amount>-2</amount></currency>
+</events>
+`);
+
+        assert.equal(parsed.structured.parsed.currency, 3);
+        assert.equal(Object.hasOwn(parsed.structured.parsed, 'quest_update'), false);
+    } finally {
+        console.warn = originalWarn;
+    }
+
+    assert.deepEqual(warnings, ['Ignoring unknown event XML tag <questUpdate>.']);
+});
+
 test('XML event parser converts core camelCase tags to existing event keys', () => {
     const previousConfig = Globals.config;
     Globals.config = {

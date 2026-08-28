@@ -25,20 +25,23 @@ test('player-action scheduling starts plot analysis before awaiting the player-a
 });
 
 test('tiny-brain player action delegates shared queue and progress lifecycle to the runner', () => {
-    const tinyBrainBranchStart = apiSource.indexOf('if (useTinyBrainPlayerAction) {');
-    const regularToolLoopBranch = apiSource.indexOf('} else if (Array.isArray(enabledChatTools)', tinyBrainBranchStart);
+    const promptAwaitIndex = apiSource.indexOf("stream.status('player_action:prompt', 'Awaiting response from AI...');");
+    const tinyBrainBranchStart = apiSource.indexOf('if (useTinyBrainPlayerAction) {', promptAwaitIndex);
+    const regularToolLoopBranch = apiSource.indexOf('} else if (Array.isArray(promptChatTools)', tinyBrainBranchStart);
     assert.notEqual(tinyBrainBranchStart, -1, 'Unable to locate tiny-brain player-action branch.');
     assert.notEqual(regularToolLoopBranch, -1, 'Unable to locate the end of the tiny-brain player-action branch.');
 
     const tinyBrainBranch = apiSource.slice(tinyBrainBranchStart, regularToolLoopBranch);
-    assert.match(tinyBrainBranch, /configureTinyBrainPromptContext\(/);
+    const configureIndex = apiSource.indexOf('tinyBrainPromptConfig = configureTinyBrainPromptContext(');
+    assert.notEqual(configureIndex, -1, 'Unable to locate tiny-brain player-action context configuration.');
+    assert.ok(configureIndex < tinyBrainBranchStart, 'tiny-brain context must be configured while rendering, before execution.');
     assert.match(
         tinyBrainBranch,
         /complete: async \(\{[\s\S]*?queueReservation[\s\S]*?\}\) => \{/
     );
     assert.match(
         tinyBrainBranch,
-        /const stageRequestOptions = \{[\s\S]*?messages,[\s\S]*?queueReservation[\s\S]*?\};/
+        /let stageRequestOptions = \{[\s\S]*?messages,[\s\S]*?queueReservation[\s\S]*?\};/
     );
     assert.match(tinyBrainBranch, /const tinyBrainResult = await runTinyBrainPromptProgram\(\{/);
     assert.doesNotMatch(tinyBrainBranch, /clearPromptProgressGroup|recordPromptProgressGroupFailure/);

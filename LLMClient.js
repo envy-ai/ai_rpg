@@ -5717,6 +5717,7 @@ class LLMClient {
         validateXML = true,
         validateXMLStrict = false,
         expectedXmlRootTag = null,
+        expectedXmlRootTags = null,
         requiredTags = [],
         requiredRegex = null,
         waitAfterError = null,
@@ -5769,21 +5770,30 @@ class LLMClient {
         const errorLog = (...args) => {
             console.error(...args);
         };
-        const normalizedExpectedXmlRootTag = (() => {
-            if (expectedXmlRootTag === null || expectedXmlRootTag === undefined) {
-                return null;
+        const normalizedExpectedXmlRootTags = (() => {
+            const hasSingular = expectedXmlRootTag !== null && expectedXmlRootTag !== undefined;
+            const hasPlural = expectedXmlRootTags !== null && expectedXmlRootTags !== undefined;
+            if (hasSingular && hasPlural) {
+                throw new Error('Provide expectedXmlRootTag or expectedXmlRootTags, not both.');
             }
-            if (typeof expectedXmlRootTag !== 'string' || !expectedXmlRootTag.trim()) {
-                throw new TypeError('expectedXmlRootTag must be a non-empty XML tag name when provided.');
+            const rawTags = hasPlural ? expectedXmlRootTags : (hasSingular ? [expectedXmlRootTag] : []);
+            if (!Array.isArray(rawTags)) {
+                throw new TypeError('expectedXmlRootTags must be a non-empty array of XML tag names when provided.');
             }
-            const normalized = expectedXmlRootTag.trim();
-            if (!/^[A-Za-z_][A-Za-z0-9_.:-]*$/.test(normalized)) {
-                throw new Error(`Invalid expected XML root tag name: ${normalized}`);
+            if (hasPlural && rawTags.length === 0) {
+                throw new TypeError('expectedXmlRootTags must contain at least one XML tag name.');
             }
-            if (validateXML === false) {
-                throw new Error('expectedXmlRootTag requires validateXML to be enabled.');
-            }
-            return normalized;
+            const normalizedTags = rawTags.map((tag) => {
+                if (typeof tag !== 'string' || !tag.trim()) {
+                    throw new TypeError('Expected XML root tags must be non-empty strings.');
+                }
+                const normalized = tag.trim();
+                if (!/^[A-Za-z_][A-Za-z0-9_.:-]*$/.test(normalized)) {
+                    throw new Error(`Invalid expected XML root tag name: ${normalized}`);
+                }
+                return normalized;
+            });
+            return Array.from(new Set(normalizedTags));
         })();
         const resolvedErrorLogLabel = (() => {
             if (typeof errorLogLabel === 'string' && errorLogLabel.trim()) {
@@ -5834,7 +5844,7 @@ class LLMClient {
                 additionalPayload,
                 validateXML,
                 validateXMLStrict,
-                expectedXmlRootTag: normalizedExpectedXmlRootTag,
+                expectedXmlRootTags: normalizedExpectedXmlRootTags,
                 requiredTags,
                 requiredRegex,
                 waitAfterError,
@@ -6087,7 +6097,7 @@ class LLMClient {
                 multimodal,
                 validateXML,
                 validateXMLStrict,
-                expectedXmlRootTag: normalizedExpectedXmlRootTag,
+                expectedXmlRootTags: normalizedExpectedXmlRootTags,
                 requiredTags,
                 requiredRegex: normalizedRequiredRegexForCassette
             });
@@ -7509,7 +7519,7 @@ class LLMClient {
                                     waitAfterNetworkError: waitAfterNetworkErrorSeconds,
                                     validateXML,
                                     validateXMLStrict,
-                                    expectedXmlRootTag: normalizedExpectedXmlRootTag,
+                                    expectedXmlRootTags: normalizedExpectedXmlRootTags,
                                     requiredTags,
                                     requiredRegex: resolvedRequiredRegex ? resolvedRequiredRegex.toString() : requiredRegex,
                                     dumpReasoningToConsole
@@ -7527,31 +7537,35 @@ class LLMClient {
                         }
                     }
 
-                    if (validateXML && !hasToolCalls) {
-                        const responseXmlContent = normalizedExpectedXmlRootTag
+                    if ((validateXML || normalizedExpectedXmlRootTags.length > 0) && !hasToolCalls) {
+                        const responseXmlContent = normalizedExpectedXmlRootTags.length > 0
                             ? Utils.extractFinalXmlRootBlock(
                                 responseContent,
-                                normalizedExpectedXmlRootTag
+                                normalizedExpectedXmlRootTags
                             )
                             : (Utils.extractFinalXmlBlockFromResponse(responseContent) || responseContent);
                         try {
-                            if (normalizedExpectedXmlRootTag && !responseXmlContent) {
+                            if (normalizedExpectedXmlRootTags.length > 0 && !responseXmlContent) {
+                                const expectedRootDescription = normalizedExpectedXmlRootTags
+                                    .map((tag) => `<${tag}>...</${tag}>`)
+                                    .join(' or ');
                                 throw new Error(
-                                    `Expected one complete <${normalizedExpectedXmlRootTag}>...</${normalizedExpectedXmlRootTag}> XML root block.`,
+                                    `Expected one complete ${expectedRootDescription} XML root block.`,
                                 );
                             }
                             let parsedXmlDocument = null;
-                            if (validateXMLStrict) {
+                            if (validateXML && validateXMLStrict) {
                                 parsedXmlDocument = Utils.parseXmlDocumentStrict(responseXmlContent);
-                            } else {
+                            } else if (validateXML) {
                                 parsedXmlDocument = Utils.parseXmlDocument(responseXmlContent);
                             }
                             if (
-                                normalizedExpectedXmlRootTag
-                                && parsedXmlDocument?.documentElement?.nodeName !== normalizedExpectedXmlRootTag
+                                validateXML
+                                && normalizedExpectedXmlRootTags.length > 0
+                                && !normalizedExpectedXmlRootTags.includes(parsedXmlDocument?.documentElement?.nodeName)
                             ) {
                                 throw new Error(
-                                    `Expected XML root <${normalizedExpectedXmlRootTag}> but received <${parsedXmlDocument?.documentElement?.nodeName || 'unknown'}>.`,
+                                    `Expected XML root ${normalizedExpectedXmlRootTags.map((tag) => `<${tag}>`).join(' or ')} but received <${parsedXmlDocument?.documentElement?.nodeName || 'unknown'}>.`,
                                 );
                             }
                         } catch (xmlError) {
@@ -7570,7 +7584,7 @@ class LLMClient {
                         }
 
                         // use regex to check for required tags
-                        for (const tag of requiredTags) {
+                        for (const tag of validateXML ? requiredTags : []) {
                             const tagPattern = new RegExp(`<${tag}[\s\S]*?>[\s\S]*?<\/${tag}>`, 'i');
                             if (!tagPattern.test(responseXmlContent)) {
                                 const errorMsg = `Required XML tag <${tag}> is missing in the response (attempt ${attempt + 1}).`;

@@ -314,11 +314,27 @@ test('scene summary parser extracts the final scenes block from prose-heavy resp
     assert.equal(scenes[0].summary, 'The party regroups and plans.');
 });
 
-test('scene summary requests disable whole-response XML validation', () => {
+test('scene summary requests disable whole-response validation but require a complete scenes root', () => {
     const source = fs.readFileSync(require.resolve('../server.js'), 'utf8');
-    const sceneRequestStart = source.indexOf("metadataLabel: 'scene_summarize'");
-    assert.notEqual(sceneRequestStart, -1);
-    const requestBlock = source.slice(sceneRequestStart, sceneRequestStart + 1200);
+    const validationCommentStart = source.indexOf('// Scene summaries include deliberate non-XML reasoning');
+    assert.notEqual(validationCommentStart, -1);
+    const requestBlock = source.slice(validationCommentStart - 300, validationCommentStart + 500);
 
     assert.match(requestBlock, /validateXML:\s*false/);
+    assert.match(requestBlock, /expectedXmlRootTag:\s*'scenes'/);
+});
+
+test('NPC generators declare the actual outer root emitted by each prompt family', () => {
+    const source = fs.readFileSync(require.resolve('../server.js'), 'utf8');
+
+    const singleStart = source.indexOf("metadataLabel: 'npc_generation_single'");
+    const locationStart = source.indexOf("metadataLabel: 'location_npc_generation'");
+    const regionStart = source.indexOf("metadataLabel: 'region_npc_generation'");
+    assert.notEqual(singleStart, -1);
+    assert.notEqual(locationStart, -1);
+    assert.notEqual(regionStart, -1);
+
+    assert.match(source.slice(singleStart, singleStart + 300), /expectedXmlRootTag:\s*'npcInfo'/);
+    assert.match(source.slice(locationStart, locationStart + 300), /expectedXmlRootTag:\s*'response'/);
+    assert.match(source.slice(regionStart, regionStart + 300), /expectedXmlRootTag:\s*'response'/);
 });

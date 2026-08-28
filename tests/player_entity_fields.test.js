@@ -82,10 +82,12 @@ test('registered Player fields extend createNpc and character field update tools
     const tools = getChatToolDefinitions({ modExtensionRegistry: registry });
     const createNpc = tools.find(entry => entry?.function?.name === 'createNpc')?.function;
     const updateCharacterFields = tools.find(entry => entry?.function?.name === 'updateCharacterFields')?.function;
+    const bulkUpdateCharacterFields = tools.find(entry => entry?.function?.name === 'bulkUpdateCharacterFields')?.function;
     const updateObjectFields = tools.find(entry => entry?.function?.name === 'updateObjectFields')?.function;
 
     assert.equal(createNpc.parameters.properties.sexualTraits.type, 'string');
     assert.match(updateCharacterFields.description, /sexualTraits/);
+    assert.match(bulkUpdateCharacterFields.description, /sexualTraits/);
     assert.match(updateObjectFields.description, /Registered Player fields.*sexualTraits/);
 });
 

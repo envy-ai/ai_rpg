@@ -82,7 +82,7 @@ The bundled Krea 2 templates use `d/text_encoders/qwen3vl_4b_fp8_scaled.safetens
 
 `imagegen/test_krea_2_any_lora.json.njk` loads its first Krea 2 LoRA from `config.imagegen.lora`, then chains an additional model-only LoRA loader for `krea2/realism_engine_krea2_v2.safetensors` before passing the model into the sampler. Those LoRA files must exist in ComfyUI's LoRA search path when run.
 
-The bundled Qwen workflows use `SaveImageWithMetaData` with plain output formats such as `png`. `*_with_json` output formats from that extension require workflow metadata that this client does not send.
+The bundled Qwen workflows use `SaveImageWithMetaData` with plain output formats such as `png`. `*_with_json` output formats from that extension require workflow metadata that this client does not send. The standard Qwen image-edit workflow routes its rendered edit instruction through `PrimitiveStringMultiline` into both `TextEncodeQwenImageEditPlus` and Crystools `Show any [Crystools]`, printing/displaying it with the `Final Prompt` prefix in the ComfyUI console.
 
 ## Error Behavior
 

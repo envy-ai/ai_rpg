@@ -75,7 +75,7 @@ Responses:
 Notes:
 - Fetching the active player location queues image generation for things at that location when possible.
 - Ordinary location-stub expansion failures clear their in-flight expansion dedupe entry and propagate to the calling route/chat request as an error response; they should not leave an unhandled rejection that terminates the server process.
-- Stub-expansion item/scenery generation creates no `Thing` records until one strict XML response provides nonblank names and descriptions and passes minimum item/scenery entry-count and per-kind rarity validation. Extra valid entries remain allowed. Rejected responses stay in a parser-guided retry conversation; exhausted retries propagate as a 500.
+- Stub-expansion item/scenery generation requires one complete `<things>...</things>` root and creates no `Thing` records until that strict XML response provides nonblank names and descriptions and passes minimum item/scenery entry-count and per-kind rarity validation. Extra valid entries remain allowed. Rejected responses stay in a parser-guided retry conversation; exhausted retries propagate as a 500.
 
 ## PUT /api/locations/:id
 

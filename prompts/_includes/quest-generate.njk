@@ -34,7 +34,7 @@ Here is some information about the quest:
   </objectives>
   <rewards>
     <item>
-      <description><!--Description of the reward item or benefit. If modifying an existing request, list all existing rewards unless there's a very good reason to remove one or more of them. It is okay to add additional rewards.--></description>
+      <description><!--Description of a physical reward item transferred into the player's inventory. Do not list recruited allies, their equipment, services, access, promises, information, titles, or other non-item benefits here. If modifying an existing request, list all existing item rewards unless there's a very good reason to remove one or more of them. It is okay to add additional item rewards.--></description>
     </item>
     ... more items as needed ...
     <currency>
@@ -65,5 +65,20 @@ Here is some information about the quest:
       </npc>
       ... repeat for each NPC whose disposition will change as a result of this quest ...
     </npcDispositions>
+    <benefits>
+      <!--Optional. The only currently supported mechanical benefit is recruiting an existing living NPC as a party member. Use the NPC's exact name from context. Their inventory and equipped gear remain theirs. Omit this section when no NPC joins the party. Do not invent other benefit types.-->
+      <partyMember>
+        <npcName><!--Exact existing NPC name.--></npcName>
+        <label><!--Short player-facing label for this recruitment reward.--></label>
+        <description><!--One sentence describing the NPC joining the party and their role.--></description>
+        <role><!--Optional short party role or context.--></role>
+      </partyMember>
+      ... more partyMember entries only when multiple NPCs join ...
+    </benefits>
+    <notes>
+      <!--Optional narrative-only promises or benefits that have no authoritative game mechanic. Each note is displayed with the quest but performs no mutation. Do not put party recruitment here.-->
+      <note><!--One concise player-facing note.--></note>
+      ... more notes as needed ...
+    </notes>
   </rewards>
 </quest>

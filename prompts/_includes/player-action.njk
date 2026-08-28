@@ -76,7 +76,7 @@ You will now perform a self-correction and brainstorming process, then write a f
 
 Follow these steps:
 
-1. Draft Response: Generate a preliminary {{ config.prose_length }} paragraph that continues the story based on the current context, strictly adhering to the attack outcome above (hit/miss, damage, defeat status). This is just a first attempt.
+1. Draft Response: Generate a preliminary {{ config.prose_length }} paragraph that continues the story based on the current context, strictly adhering to the attack outcome above (hit/miss, damage, defeat status). This is just a first attempt.{% if (currentPlayer.currentQuests | length) > config.soft_quest_limit %} Note that the current player's active quest count of {{ currentPlayer.currentQuests | length }} exceeds the soft quest limit of {{ config.soft_quest_limit }}, so if possible, refrain from giving the player additional tasks that could be interpreted as quests unless they specifically request them.{% endif %}
 
 2. Analysis and planning. Don't view these points of analysis as conflicting; understand that they're a balancing act, and sometimes you need to use the context of the story and the scene to decide which ones win out to maximize writing quality and depth. Do the following analysis on your draft response, in whatever format feels the most comfortable: 
 - **Repetitive patterns:** Identify specific words, phrases, concepts, or story beats from your **Draft Response** that are repetitive when compared to the recent story. Also, note any other repetitive patterns in the preceding text that should be avoided.

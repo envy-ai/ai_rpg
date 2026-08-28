@@ -322,11 +322,17 @@ class ModExtensionRegistry {
         };
     }
 
-    static #resolveDynamicEntityFieldText(provider, fallback, context, field, label) {
+    static #resolveDynamicEntityFieldText(provider, fallback, context, field, label, providerResults = null) {
         if (typeof provider !== 'function') {
             return fallback;
         }
-        const value = provider(context || {}, field);
+        let value;
+        if (providerResults?.has(provider)) {
+            value = providerResults.get(provider);
+        } else {
+            value = provider(context || {}, field);
+            providerResults?.set(provider, value);
+        }
         if (value === null || value === undefined) {
             return fallback;
         }
@@ -340,6 +346,7 @@ class ModExtensionRegistry {
         if (!field) {
             return null;
         }
+        const providerResults = new Map();
         const cloned = {
             ...field,
             edit: field.edit ? { ...field.edit } : null,
@@ -351,7 +358,8 @@ class ModExtensionRegistry {
             field.description,
             descriptionContext,
             field,
-            'description'
+            'description',
+            providerResults
         );
         if (cloned.xmlPrompt) {
             cloned.xmlPrompt.placeholder = ModExtensionRegistry.#resolveDynamicEntityFieldText(
@@ -359,7 +367,8 @@ class ModExtensionRegistry {
                 field.xmlPrompt.placeholder,
                 descriptionContext,
                 field,
-                'xmlPrompt.placeholder'
+                'xmlPrompt.placeholder',
+                providerResults
             );
             delete cloned.xmlPrompt.placeholderProvider;
         }

@@ -27,7 +27,7 @@ Behavior:
 - `QuestConfirmationManager` owns pending confirmations, keyed by `confirmationId`.
 - A response must come from the same `clientId` that received the websocket request.
 - Resolving the confirmation completes the pending server-side promise. Accepted generated quests enter the player's quest list through the event pipeline; declined quests are ignored.
-- The confirmation request payload contains a safe quest preview: `id`, `name`, `summary`, `description`, `giver`, `objectives`, `rewardItems`, `rewardCurrency`, `rewardXp`, and `rewardNpcDispositions`. Generated quest previews also include display-ready faction reward entries.
+- The confirmation request payload contains a safe quest preview: `id`, `name`, `summary`, `description`, `giver`, `objectives`, `rewardItems`, `rewardCurrency`, `rewardXp`, `rewardNpcDispositions`, typed `rewardBenefits`, and narrative `rewardNotes`. Generated quest previews also include display-ready faction reward entries.
 - Each `rewardNpcDispositions[].dispositions[]` entry carries both the authored `intensity` and a resolved `delta` (the actual disposition change, `intensity` scaled by the disposition definitions' `typicalStep`/`typicalBigStep`). The preview computes `delta` with `resolveQuestDispositionRewardDelta(intensity, Player.getDispositionDefinitions())` — the same shared resolver `Events._resolveQuestDispositionDelta` uses on completion — so the value shown when accepting a quest matches what the quest list shows and what is actually applied. The client accept dialog displays `delta`, falling back to `intensity` only if no delta is available. Faction reputation rewards are applied as authored (no multiplier), so their displayed value already equals the applied change. The first-impression multiplier is intentionally excluded from the preview because it depends on runtime disposition state known only at award time.
 
 ## POST /api/quest/edit
@@ -37,7 +37,7 @@ Request:
 - Body:
   - `questId` (required)
   - Optional scalar fields: `name`, `description`, `secretNotes`, `rewardCurrency`, `rewardXp`, `rewardClaimed`, `paused`, `giverName`
-  - Optional collection fields: `rewardItems`, `rewardFactionReputation`, `rewardNpcDispositions`, `objectives`
+  - Optional collection fields: `rewardItems`, `rewardFactionReputation`, `rewardNpcDispositions`, `rewardBenefits`, `rewardNotes`, `objectives`
 
 Field behavior:
 - `questId` must identify a quest on the current player.
@@ -49,6 +49,8 @@ Field behavior:
 - `rewardClaimed` is stored as a boolean. Setting it true prevents the completion pipeline from granting that quest's completion rewards.
 - `giverName`, when supplied, is trimmed and stored as display metadata. The edit route does not resolve or rewrite `giverId`.
 - `objectives`, when supplied, replaces the quest objective list. Each entry must include a non-empty `description` and may include `id`, `completed`, and `optional`.
+- `rewardBenefits` must be an array of registered typed entries. The initial supported type is `party-member`, requiring `{ id, type: "party-member", targetId, label }` with optional `description` and `role`. The target must resolve to a living NPC. Unsupported types and missing targets fail with 400. An already-applied benefit cannot be removed or retargeted.
+- `rewardNotes` accepts an array of non-empty strings or newline-separated text. Notes are narrative-only and perform no mutation.
 
 `rewardFactionReputation` formats:
 - Object map: `{ "factionIdOrName": integerDelta }`
@@ -70,6 +72,16 @@ Field behavior:
 Response:
 - 200: `{ success: true, quest: Quest, player: NpcProfile }`, where `quest` is `Quest.toJSON()`
 - 400/404 with `{ success: false, error }`
+
+## POST /api/quests/:questId/retry-rewards
+
+Explicitly retry pending direct rewards for a completed quest.
+
+- The quest must exist, be complete, and have `rewardClaimed: false`.
+- Successfully applied benefit ids are skipped, while their authoritative summaries remain in the final reward presentation.
+- Success returns the serialized quest/player, reward summaries, benefit results, and conventional change arrays.
+- A still-pending application returns 409 with structured completion errors and a server stack. Unexpected failures return 500 with a stack.
+- Successful reward prose is stored as a visible `quest-reward` chat entry. The completed-quest UI provides a **Retry Pending Rewards** action and surfaces failures through the stack-bearing chat error popup.
 
 ## DELETE /api/player/quests/:questId
 Remove a quest from the current player.
@@ -106,7 +118,12 @@ Objective completion:
 - A quest is complete when every objective is completed or optional.
 
 Completion rewards:
-- Rewards are processed once per completed quest. `rewardClaimed` is set to true when rewards are processed.
+- Objective completion is committed before reward processing. A reward exception does not reject or roll back the completed objective.
+- Rewards are processed once per completed quest. `rewardClaimed` is set to true only after the direct reward mutations succeed; reward-prose generation is presentation-only and does not undo that claimed state.
+- A failed reward application remains pending with `rewardClaimed: false`. The processor appends a `QUEST_REWARD_APPLICATION_FAILED` object to `questCompletionErrors`, including the quest identity, cause, claimed state, and stack. A later presentation-only failure uses `QUEST_REWARD_PRESENTATION_FAILED` and retains `rewardClaimed: true`. Chat responses carry these errors to the client, which displays an error popup while preserving the successful turn and objective update.
+- Completed quests are filtered out of subsequent automatic quest checks, so pending rewards are not retried automatically. The explicit retry endpoint resolves them.
+- Typed reward benefits are applied before conventional rewards. Each successful benefit id is persisted immediately. The initial `party-member` handler validates an existing living NPC and calls the player's authoritative party-membership API; an already-present NPC is an idempotent success, and the NPC's inventory/equipment stays with the NPC.
+- Narrative `rewardNotes` add presentation lines but no mutation. `rewardNotesPresented` is set after direct reward application succeeds.
 - Reward item names are generated directly into the player's inventory. Each generated item carries its quest id and reward index in metadata and remains a distinct stack, allowing retries to recognize an already-created reward without merging it into unrelated inventory.
 - Currency rewards call `player.adjustCurrency(...)` and append `currencyChanges`.
 - XP rewards call `player.addExperience(...)` and append `experienceAwards`.
@@ -123,6 +140,8 @@ Completion rewards:
 - `rewardItems`, `rewardCurrency`, `rewardXp`
 - `rewardFactionReputation`: object map of `factionId -> integerDelta`
 - `rewardNpcDispositions`: array of `{ npcId, npcName, dispositions: [{ type, intensity, reason }] }`
+- `rewardBenefits`: validated typed benefit entries.
+- `rewardNotes`, `appliedRewardBenefitIds`, `rewardNotesPresented`
 - `secretNotes`, `rewardClaimed`, `paused`
 - `giverId`, `giverName`, `giver`
 - `completed`

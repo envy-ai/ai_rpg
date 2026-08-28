@@ -345,6 +345,21 @@ test('base-context honors inventory, ability, and quest omissions when prompt_us
     assert.doesNotMatch(rendered, /Cache Quest/);
 });
 
+test('base-context exposes active quest capacity even when detailed quest entries are omitted', () => {
+    const promptEnv = createPromptEnv();
+    const context = buildRenderContext({
+        promptUsesCaching: false,
+        omitGameHistory: false,
+        suppressQuestList: true
+    });
+    context.config.soft_quest_limit = 3;
+    const rendered = promptEnv.render('base-context.xml.njk', context);
+
+    assert.match(rendered, /<activeQuestCount>1<\/activeQuestCount>/);
+    assert.match(rendered, /<softQuestLimit>3<\/softQuestLimit>/);
+    assert.doesNotMatch(rendered, /<quests>/);
+});
+
 test('base-context includes inventory, abilities, and quests when prompt_uses_caching is true', () => {
     const promptEnv = createPromptEnv();
     const rendered = promptEnv.render('base-context.xml.njk', buildRenderContext({

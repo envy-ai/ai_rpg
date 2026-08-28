@@ -1378,6 +1378,7 @@ plausibility_checks:
   enabled: true
 quest_completion_prose:
   enabled: true
+soft_quest_limit: 10
 regions:
   minLocations: 2
   maxLocations: 3
@@ -1400,6 +1401,7 @@ base_context:
 
 - `plausibility_checks.enabled: false` disables plausibility/combat activation checks; event checks can still apply damage and world mutations when `event_checks.enabled` is true.
 - `quest_completion_prose.enabled: false` suppresses prose generated for completed quests without disabling quest checks or rewards.
+- `soft_quest_limit` is the root-level threshold supplied with the active incomplete-quest count in base-context prompts, so quest-offering generation can avoid overloading the player with tasks.
 - `regions.*` and `locations.*` set generation count limits and location level variation for generated worlds.
 - `events_to_check_concurrently` limits event-check batching; omit it or leave it blank to check all event categories together.
 - `check_move_plausibility` accepts `never`, `unexplored_regions`, `unexplored_locations`, or `always`.

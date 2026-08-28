@@ -14,8 +14,10 @@ The prompt description is:
 2-5 traits, comma separated, from the sexualTraits list above. Traits from the same category are allowed as long as they don't conflict. Then, a sentence or two worth of note, like: 'switch, romantic, intense - [a note about what makes them unique]'
 ```
 
+Whenever a prompt-facing field snapshot is assembled, the mod's dynamic entity-field provider rolls one d6. Rolls 1–4 append nothing. A 5 appends the instruction to choose interesting, non-obvious traits. A 6 instead appends the instruction to choose traits contrary to the character's outward personality. The same result supplies both the tool description and XML placeholder in that snapshot, so the two rare instructions are mutually exclusive and the next prompt can reroll.
+
 ## Prompt Context
-- `mods/nsfw-boost/defs/sexual_traits.yaml` supplies the category list used by the mod. It is a mod-owned definition file and does not require a matching root `defs/sexual_traits.yaml` placeholder.
+- `mods/nsfw-boost/defs/sexual_traits.yaml` supplies the category list used by the mod. `sexual_traits_and_preferences` is a flat category map: each category directly contains its trait list. It is a mod-owned definition file and does not require a matching root `defs/sexual_traits.yaml` placeholder.
 - The mod contributes a `<sexualTraits>` block to base prompt context. The block is a markdown list by category:
 
 ```text

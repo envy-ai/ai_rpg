@@ -231,6 +231,7 @@ test('completed quest directly grants item and currency rewards without event-ch
     const previousChatCompletion = LLMClient.chatCompletion;
     const previousLogPrompt = LLMClient.logPrompt;
     const previousRunEventChecks = Events.runEventChecks;
+    const previousError = console.error;
 
     const inventory = [];
     const experienceAwards = [];
@@ -248,6 +249,7 @@ test('completed quest directly grants item and currency rewards without event-ch
         Player.reloadDefinitionCaches({ refreshInstances: false });
         LLMClient.chatCompletion = async () => 'The configured quest rewards were granted.';
         LLMClient.logPrompt = () => {};
+        console.error = () => {};
         Events.runEventChecks = async () => {
             eventCheckCalls += 1;
             throw new Error('Quest reward prose must not be event-checked.');
@@ -327,6 +329,7 @@ test('completed quest directly grants item and currency rewards without event-ch
             player,
             completedQuestObjectives: [],
             questCompletionRewards: [],
+            questCompletionErrors: [],
             experienceAwards: [],
             currencyChanges: [],
             factionStandingChanges: [],
@@ -341,16 +344,19 @@ test('completed quest directly grants item and currency rewards without event-ch
             statusReason: 'The delivery was reported.'
         };
 
-        await assert.rejects(
-            Events.processQuestObjectiveCompletionEntries([completionEntry], context),
-            /Temporary Archive Seal generation failure/,
-        );
+        await Events.processQuestObjectiveCompletionEntries([completionEntry], context);
         assert.equal(quest.completed, true);
         assert.equal(quest.rewardClaimed, false);
         assert.equal(currency, 7);
         assert.deepEqual(experienceAwards, []);
         assert.deepEqual(inventory.map(item => item.name), ['Archivist Token']);
         assert.equal(context.completedQuestObjectives.length, 1);
+        assert.equal(context.questCompletionErrors.length, 1);
+        assert.equal(context.questCompletionErrors[0].code, 'QUEST_REWARD_APPLICATION_FAILED');
+        assert.equal(context.questCompletionErrors[0].questId, 'quest_reward_test');
+        assert.match(context.questCompletionErrors[0].message, /rewards remain pending/);
+        assert.match(context.questCompletionErrors[0].cause, /Temporary Archive Seal generation failure/);
+        assert.match(context.questCompletionErrors[0].stack, /Temporary Archive Seal generation failure/);
 
         await Events.processQuestObjectiveCompletionEntries([completionEntry], context);
 
@@ -380,6 +386,7 @@ test('completed quest directly grants item and currency rewards without event-ch
         assert.equal(inventory.length, 2);
     } finally {
         Events.runEventChecks = previousRunEventChecks;
+        console.error = previousError;
         LLMClient.chatCompletion = previousChatCompletion;
         LLMClient.logPrompt = previousLogPrompt;
         Events._deps = previousDeps;

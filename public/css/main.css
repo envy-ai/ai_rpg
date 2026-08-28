@@ -9888,6 +9888,33 @@ body.modal-open {
   grid-area: remove;
 }
 
+.quest-edit-reward-row--party-member {
+  align-items: start;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 0.8fr) auto;
+  grid-template-areas: "npc label role remove" "description description description description";
+}
+
+.quest-edit-reward-row--party-member .quest-edit-reward-party-member-select {
+  grid-area: npc;
+}
+
+.quest-edit-reward-row--party-member .quest-edit-reward-benefit-label {
+  grid-area: label;
+}
+
+.quest-edit-reward-row--party-member .quest-edit-reward-benefit-role {
+  grid-area: role;
+}
+
+.quest-edit-reward-row--party-member .quest-edit-reward-benefit-description {
+  grid-area: description;
+}
+
+.quest-edit-reward-row--party-member .quest-edit-reward-remove {
+  align-self: center;
+  grid-area: remove;
+}
+
 .quest-edit-reward-row .btn {
   justify-self: flex-end;
 }
@@ -13857,6 +13884,9 @@ body.modal-open {
   }
   .quest-edit-reward-row--npc-disposition {
     grid-template-areas: "npc" "type" "intensity" "reason" "remove";
+  }
+  .quest-edit-reward-row--party-member {
+    grid-template-areas: "npc" "label" "role" "description" "remove";
   }
   .quest-edit-reward-row .btn,
   .quest-edit-objective-row .btn {

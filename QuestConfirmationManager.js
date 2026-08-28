@@ -223,6 +223,30 @@ class QuestConfirmationManager {
                 dispositions
             };
         });
+        const rewardBenefits = mapArray(quest.rewardBenefits, entry => {
+            if (!entry || typeof entry !== 'object') {
+                return null;
+            }
+            const id = safeString(entry.id);
+            const type = safeString(entry.type);
+            const targetId = safeString(entry.targetId);
+            const label = safeString(entry.label);
+            if (!id || !type || !targetId || !label) {
+                return null;
+            }
+            return {
+                id,
+                type,
+                targetId,
+                label,
+                description: safeString(entry.description) || null,
+                role: safeString(entry.role) || null
+            };
+        });
+        const rewardNotes = mapArray(quest.rewardNotes, entry => {
+            const note = safeString(entry);
+            return note || null;
+        });
 
         return {
             id: safeString(quest.id),
@@ -234,6 +258,8 @@ class QuestConfirmationManager {
             rewardXp,
             rewardItems,
             rewardNpcDispositions,
+            rewardBenefits,
+            rewardNotes,
             objectives
         };
     }

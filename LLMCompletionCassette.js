@@ -293,6 +293,7 @@ class LLMCompletionCassette {
         validateXML = true,
         validateXMLStrict = false,
         expectedXmlRootTag = null,
+        expectedXmlRootTags = null,
         requiredTags = [],
         requiredRegex = null
     } = {}) {
@@ -341,8 +342,15 @@ class LLMCompletionCassette {
                     : (requiredRegex === null || requiredRegex === undefined ? null : String(requiredRegex))
             }
         };
-        if (typeof expectedXmlRootTag === 'string' && expectedXmlRootTag.trim()) {
-            descriptor.validation.expectedXmlRootTag = expectedXmlRootTag.trim();
+        const normalizedExpectedXmlRootTags = Array.isArray(expectedXmlRootTags)
+            ? expectedXmlRootTags.map(String).map(tag => tag.trim()).filter(Boolean)
+            : (typeof expectedXmlRootTag === 'string' && expectedXmlRootTag.trim()
+                ? [expectedXmlRootTag.trim()]
+                : []);
+        if (normalizedExpectedXmlRootTags.length) {
+            descriptor.validation.expectedXmlRootTags = Array.from(
+                new Set(normalizedExpectedXmlRootTags),
+            );
         }
         return Object.freeze(descriptor);
     }

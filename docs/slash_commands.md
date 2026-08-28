@@ -62,6 +62,7 @@ This guide covers the runtime slash-command path: registration, request parsing,
 - `interaction.runPlotSummaryPrompt({ parentEntryId?, locationId? })`: runs the plot-summary prompt for a resolved location.
 - `interaction.runPlotExpanderPrompt({ parentEntryId?, locationId?, specificPlot? })`: runs the plot-expander prompt for a resolved location.
 - `interaction.runHousekeepingPrompt({ instructions? })`: runs the parser-based housekeeping prompt with optional manual `housekeepingInstructions`. The helper requires an active `clientId` so realtime status, quest confirmation, and tool-call debug updates can target the invoking browser tab.
+- `interaction.runQuestCheckPrompt()`: immediately runs the dedicated quest-check prompt for active, unpaused quests, bypasses its configured turn interval, parses objective completions, applies completion rewards, and resets the quest-check cadence counter after a successful prompt.
 - `interaction.runMysteryBoxCleanupPrompt()`: runs the mystery cleanup prompt immediately, applies resolved/revealed results, persists mystery state when possible, and returns both newly applied records and prompt-candidate decision summaries with model thoughts.
 - `interaction.runTonalScaleEvaluationPrompt({ storeChatEntry? })`: runs the tonal-scale evaluation prompt immediately, extracts the `<tonalScaleEvaluation>` body, stores it as the latest save-metadata evaluation, and returns the extracted text. When `storeChatEntry: true`, it also stores a visible prompt-excluded `tonal-scale-evaluation` assistant chat entry and emits a chat-history refresh for the invoking client.
 - `interaction.generateSkillsByNames(options)`: shared skill metadata generation helper.
@@ -139,6 +140,7 @@ Helpers that can be unavailable are exposed as `null`. Commands should check req
 | `/orphaned_locations` | - | Lists locations missing valid region links or usable exits. |
 | `/plot_analysis` | - | Displays the latest background plot analysis. |
 | `/promptstats` | - | Displays or clears prompt output-character averages. |
+| `/quest_check` | - | Runs the quest checker immediately and applies objective completions and rewards. |
 | `/random` | - | Triggers a configured random event type. |
 | `/refill_needs` | - | Refills stored need bars for one NPC or every NPC. |
 | `/regen_party_images` | - | Queues forced portrait regeneration for current party NPCs. |

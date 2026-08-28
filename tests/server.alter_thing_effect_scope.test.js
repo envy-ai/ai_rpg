@@ -189,6 +189,16 @@ test('alterThingByPrompt treats parsed target/equipper effect scopes as authorit
     assert.notEqual(end, -1, 'Could not locate function after alterThingByPrompt');
 
     const functionSource = source.slice(start, end);
+    assert.match(
+        functionSource,
+        /metadataLabel:\s*'alter_thing',[\s\S]*?expectedXmlRootTag:\s*'item'/,
+        'the single-item alteration prompt must validate the <item> root it requests'
+    );
+    assert.doesNotMatch(
+        functionSource,
+        /metadataLabel:\s*'alter_thing',[\s\S]*?expectedXmlRootTag:\s*'items'/,
+        'alterThingByPrompt must not require the plural multi-item root'
+    );
     assert.match(functionSource, /causeStatusEffectOnTarget:\s*effectiveTargetStatusEffect/);
     assert.match(functionSource, /causeStatusEffectOnEquipper:\s*effectiveEquipperStatusEffect/);
     assert.match(functionSource, /await enrichAlteredThingStatusEffects\(\{/);

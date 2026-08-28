@@ -518,6 +518,9 @@ plausibility_checks:
 quest_completion_prose:
   enabled: true
 
+# This limit discourages the AI from giving the player more tasks if they already have more than this threshold of incomplete quests:
+soft_quest_limit: 10
+
 regions:
   minLocations: 2
   maxLocations: 3

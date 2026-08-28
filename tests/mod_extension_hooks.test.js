@@ -350,6 +350,41 @@ test('player-action prompt renders mod-registered steps at stages 1 and 3', () =
     );
 });
 
+test('standard player-action quest guidance renders only above the soft quest limit', () => {
+    const promptEnv = createPromptEnv();
+    const renderPrompt = activeQuestCount => promptEnv.render('_includes/player-action.njk', {
+        setting: { writingStyleNotes: '' },
+        config: {
+            prose_length: '2 paragraphs',
+            repetition_buster: true,
+            soft_quest_limit: 1
+        },
+        actionText: 'I strike the training dummy.',
+        characterName: 'The player',
+        currentPlayer: {
+            currentQuests: Array.from({ length: activeQuestCount }, (_, index) => ({ id: `quest-${index}` }))
+        },
+        isAttack: true,
+        attacker: {
+            name: 'The player',
+            weapon: 'Practice Sword'
+        },
+        attackOutcome: {
+            hit: true,
+            target: {
+                name: 'Training Dummy',
+                defeated: false,
+                healthLostPercent: 10,
+                remainingHealthPercent: 90
+            }
+        }
+    });
+    const questGuidance = /active quest count exceeds the soft quest limit/;
+
+    assert.match(renderPrompt(2), questGuidance);
+    assert.doesNotMatch(renderPrompt(1), questGuidance);
+});
+
 test('nsfw-boost mod registers tiny-brain stage 1 player-action prompt steps', () => {
     const registry = new ModExtensionRegistry();
     const lustMod = require('../mods/nsfw-boost/mod.js');

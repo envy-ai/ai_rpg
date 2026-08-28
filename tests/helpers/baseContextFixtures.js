@@ -47,7 +47,8 @@ function buildBaseRenderContext({
     return {
         config: config || {
             extra_system_instructions: '',
-            prompt_uses_caching: promptUsesCaching
+            prompt_uses_caching: promptUsesCaching,
+            soft_quest_limit: 10
         },
         promptType: 'question',
         question,

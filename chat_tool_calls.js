@@ -13,8 +13,11 @@ const MysteryBox = require('./MysteryBox.js');
 const MysteryThread = require('./MysteryThread.js');
 const Faction = require('./Faction.js');
 const Tracker = require('./Tracker.js');
+const Utils = require('./Utils.js');
 const { normalizeWeatherExposure } = require('./location_region_utils.js');
 const { applyRegexReplace } = require('./regex_replace_runtime.js');
+const Quest = require('./Quest.js');
+const { questRewardBenefitRegistry } = require('./QuestRewardBenefitRegistry.js');
 
 const MORE_INFO_MAX_MATCHES = 50;
 const CACHED_CHECK_TOOL_CALL_NOTE = 'You already made this tool call. Do not re-run tool calls for the same checks that you made in earlier drafts.';
@@ -29,6 +32,7 @@ const CHAT_TOOLS_THAT_MAY_LAUNCH_PROMPTS = new Set([
     'createQuest',
     'createThing',
     'rerunSceneSummary',
+    'bulkUpdateCharacterFields',
     'updateCharacterFields',
     'updateObjectFields',
     'upsertFactionFields'
@@ -247,6 +251,8 @@ const ADMIN_UPDATE_OBJECT_FIELD_NAMES_BY_TYPE = Object.freeze({
         'rewardXp',
         'rewardFactionReputation',
         'rewardNpcDispositions',
+        'rewardBenefits',
+        'rewardNotes',
         'rewardClaimed',
         'secretNotes',
         'giverId',
@@ -1575,6 +1581,25 @@ const CHAT_TOOL_DEFINITIONS = Object.freeze([
     {
         type: 'function',
         function: {
+            name: 'bulkUpdateCharacterFields',
+            description: `Bulk-update allowed persisted fields on one or more NPCs from one strict XML document. Generic-prompt mutation tool only. The document must have one <characters> root, with one <character> per exact full NPC name and one or more <field><key>...</key><value>...</value></field> entries. Each value is parsed as JSON when valid JSON and otherwise used as text. All targets and fields are validated before mutation. Allowed fields: ${ADMIN_UPDATE_CHARACTER_FIELD_NAMES.join(', ')}.`,
+            parameters: {
+                type: 'object',
+                properties: {
+                    xml: {
+                        type: 'string',
+                        minLength: 1,
+                        description: 'Strict XML document in the form <characters><character><name>Full NPC Name</name><field><key>fieldName</key><value>value</value></field></character></characters>. Escape XML-special characters in text values. Use JSON syntax inside <value> for numbers, booleans, null, arrays, or objects.'
+                    }
+                },
+                required: ['xml'],
+                additionalProperties: false
+            }
+        }
+    },
+    {
+        type: 'function',
+        function: {
             name: 'updateObjectFields',
             description: `Directly update allowed persisted fields on a specific object without running alter prompts. Prefer this tool when exact replacement values are known, and include only the fields that should change so all unrelated state is preserved. Identify by exact ID when possible; names and aliases are accepted where applicable, but ambiguous names return candidate JSON and must be retried by ID. Character updates are NPC-only. For locations, hasWeather accepts "yes", "no", "sheltered", or null; legacy "outside" is accepted as "sheltered". Allowed object types: ${UPDATE_OBJECT_TYPE_VALUES.join(', ')}.`,
             parameters: {
@@ -2168,7 +2193,7 @@ const applyRegisteredThingFieldsToToolDefinition = (toolDefinition, {
         return toolDefinition;
     }
 
-    if (functionName === 'updateCharacterFields') {
+    if (functionName === 'updateCharacterFields' || functionName === 'bulkUpdateCharacterFields') {
         const updateFields = getRegisteredPlayerFields(
             modExtensionRegistry,
             { exposeToUpdateTool: true },
@@ -2229,11 +2254,16 @@ const applyDirectShortDescriptionToolPolicy = (
         throw new TypeError('allowDirectShortDescriptionUpdates must be a boolean.');
     }
     if (allowDirectShortDescriptionUpdates) {
+        if (toolDefinition?.function?.name === 'updateCharacterFields') {
+            toolDefinition.function.description = `${toolDefinition.function.description} When updating fields on multiple NPCs, prefer one bulkUpdateCharacterFields call instead of repeated updateCharacterFields calls.`;
+        }
         return toolDefinition;
     }
     const functionName = toolDefinition?.function?.name;
     if (functionName === 'updateCharacterFields') {
         toolDefinition.function.description = `Directly update allowed persisted fields on an NPC without running the alter_npc event flow. Only use simple character fields from this allowlist: ${UPDATE_CHARACTER_FIELD_NAMES.join(', ')}. Changing description automatically refreshes the NPC's concise summary. Do not use this for equipment, inventory, barter inventory, party membership, quests, location, dispositions, or other object-graph state.`;
+    } else if (functionName === 'bulkUpdateCharacterFields') {
+        toolDefinition.function.description = `Bulk-update allowed persisted fields on one or more NPCs from one strict XML document. Generic-prompt mutation tool only. The document must have one <characters> root, with one <character> per exact full NPC name and one or more <field><key>...</key><value>...</value></field> entries. Each value is parsed as JSON when valid JSON and otherwise used as text. All targets and fields are validated before mutation. Allowed fields: ${UPDATE_CHARACTER_FIELD_NAMES.join(', ')}. Changing description automatically refreshes the NPC's concise summary.`;
     } else if (functionName === 'updateObjectFields') {
         toolDefinition.function.description = `${toolDefinition.function.description} Changing an entity's description automatically refreshes its concise summary when that entity type has one.`;
     } else if (functionName === 'upsertFactionFields') {
@@ -6664,6 +6694,8 @@ const createChatToolRuntime = ({
             'goals',
             'rewardItems',
             'rewardNpcDispositions',
+            'rewardBenefits',
+            'rewardNotes',
             'attributes',
             'skills',
             'needBars'
@@ -6722,6 +6754,16 @@ const createChatToolRuntime = ({
                     `${functionName} "${fieldName}" must be an array.`,
                     { code: 'invalid_arguments' }
                 );
+            }
+            if (objectType === 'quest' && fieldName === 'rewardBenefits') {
+                const currentPlayer = getCurrentPlayer();
+                return questRewardBenefitRegistry.validateAll(rawValue, {
+                    player: currentPlayer,
+                    findActorById: id => getAllCharacters().find(actor => toTrimmedString(actor?.id) === id) || null
+                });
+            }
+            if (objectType === 'quest' && fieldName === 'rewardNotes') {
+                return Quest.normalizeRewardNotes(rawValue);
             }
             return rawValue;
         }
@@ -6831,6 +6873,20 @@ const createChatToolRuntime = ({
                 } else if (fieldName === 'statusEffects' && typeof target.record.setStatusEffects === 'function') {
                     target.record.setStatusEffects(value);
                 } else {
+                    if (objectType === 'quest' && fieldName === 'rewardBenefits') {
+                        const existingById = new Map(
+                            Quest.normalizeRewardBenefits(target.record.rewardBenefits || [])
+                                .map(entry => [entry.id, entry])
+                        );
+                        const updatedById = new Map(value.map(entry => [entry.id, entry]));
+                        for (const appliedId of Quest.normalizeAppliedRewardBenefitIds(target.record.appliedRewardBenefitIds)) {
+                            const existing = existingById.get(appliedId);
+                            const updated = updatedById.get(appliedId);
+                            if (!existing || !updated || existing.type !== updated.type || existing.targetId !== updated.targetId) {
+                                throw new Error(`Applied reward benefit "${appliedId}" cannot be removed or retargeted.`);
+                            }
+                        }
+                    }
                     target.record[fieldName] = value;
                 }
                 if (typeof target.applyReplacement === 'function') {
@@ -7590,6 +7646,310 @@ const createChatToolRuntime = ({
                         ? { shortDescription: regeneratedShortDescription }
                         : {})
                 }))
+            }
+        };
+    };
+
+    const directXmlElementChildren = node => Array.from(node?.childNodes || [])
+        .filter(child => child?.nodeType === 1);
+
+    const requireNoXmlAttributes = (node, label, functionName) => {
+        if (Number(node?.attributes?.length || 0) > 0) {
+            throw new ToolVisibleError(
+                `${functionName} ${label} must not have XML attributes.`,
+                { code: 'invalid_xml' }
+            );
+        }
+    };
+
+    const readBulkCharacterScalarNode = (node, label, functionName, { requireNonEmpty = false } = {}) => {
+        requireNoXmlAttributes(node, label, functionName);
+        if (directXmlElementChildren(node).length > 0) {
+            throw new ToolVisibleError(
+                `${functionName} ${label} must contain text, CDATA, or escaped XML characters, not nested elements.`,
+                { code: 'invalid_xml' }
+            );
+        }
+        const value = String(node?.textContent || '').trim();
+        if (requireNonEmpty && !value) {
+            throw new ToolVisibleError(
+                `${functionName} ${label} must be non-empty.`,
+                { code: 'invalid_xml' }
+            );
+        }
+        return value;
+    };
+
+    const parseBulkCharacterFieldValue = (valueText) => {
+        if (!valueText) {
+            return '';
+        }
+        try {
+            return JSON.parse(valueText);
+        } catch (_) {
+            return valueText;
+        }
+    };
+
+    const parseBulkCharacterFieldsXml = (xml) => {
+        const functionName = 'bulkUpdateCharacterFields';
+        if (typeof xml !== 'string' || !xml.trim()) {
+            throw new ToolVisibleError(
+                `${functionName} requires a non-empty "xml" string.`,
+                { code: 'invalid_arguments' }
+            );
+        }
+
+        let document;
+        try {
+            document = Utils.parseXmlDocumentStrict(xml, 'text/xml');
+        } catch (error) {
+            throw new ToolVisibleError(
+                `${functionName} received malformed XML: ${error?.message || error}`,
+                { code: 'invalid_xml' }
+            );
+        }
+
+        const root = document?.documentElement;
+        if (!root || root.tagName !== 'characters') {
+            throw new ToolVisibleError(
+                `${functionName} requires exactly one <characters> root element.`,
+                { code: 'invalid_xml' }
+            );
+        }
+        requireNoXmlAttributes(root, '<characters>', functionName);
+
+        const characterNodes = directXmlElementChildren(root);
+        const invalidRootChild = characterNodes.find(node => node.tagName !== 'character');
+        if (invalidRootChild) {
+            throw new ToolVisibleError(
+                `${functionName} does not allow <${invalidRootChild.tagName}> directly inside <characters>; expected only <character>.`,
+                { code: 'invalid_xml' }
+            );
+        }
+        if (!characterNodes.length) {
+            throw new ToolVisibleError(
+                `${functionName} requires at least one <character>.`,
+                { code: 'invalid_xml' }
+            );
+        }
+
+        const seenCharacterNames = new Set();
+        return characterNodes.map((characterNode, characterIndex) => {
+            requireNoXmlAttributes(characterNode, `<character> #${characterIndex + 1}`, functionName);
+            const children = directXmlElementChildren(characterNode);
+            const unexpectedChild = children.find(node => node.tagName !== 'name' && node.tagName !== 'field');
+            if (unexpectedChild) {
+                throw new ToolVisibleError(
+                    `${functionName} does not allow <${unexpectedChild.tagName}> inside <character> #${characterIndex + 1}; expected one <name> and one or more <field> elements.`,
+                    { code: 'invalid_xml' }
+                );
+            }
+            const nameNodes = children.filter(node => node.tagName === 'name');
+            const fieldNodes = children.filter(node => node.tagName === 'field');
+            if (nameNodes.length !== 1) {
+                throw new ToolVisibleError(
+                    `${functionName} <character> #${characterIndex + 1} must contain exactly one <name>.`,
+                    { code: 'invalid_xml' }
+                );
+            }
+            if (!fieldNodes.length) {
+                throw new ToolVisibleError(
+                    `${functionName} <character> #${characterIndex + 1} must contain at least one <field>.`,
+                    { code: 'invalid_xml' }
+                );
+            }
+
+            const name = readBulkCharacterScalarNode(
+                nameNodes[0],
+                `<character> #${characterIndex + 1} <name>`,
+                functionName,
+                { requireNonEmpty: true }
+            );
+            const normalizedName = name.toLowerCase();
+            if (seenCharacterNames.has(normalizedName)) {
+                throw new ToolVisibleError(
+                    `${functionName} contains duplicate <character> entries for "${name}". Combine that character's fields into one entry.`,
+                    { code: 'duplicate_character' }
+                );
+            }
+            seenCharacterNames.add(normalizedName);
+
+            const fields = {};
+            for (const [fieldIndex, fieldNode] of fieldNodes.entries()) {
+                requireNoXmlAttributes(
+                    fieldNode,
+                    `<field> #${fieldIndex + 1} for "${name}"`,
+                    functionName
+                );
+                const fieldChildren = directXmlElementChildren(fieldNode);
+                const unexpectedFieldChild = fieldChildren.find(node => node.tagName !== 'key' && node.tagName !== 'value');
+                if (unexpectedFieldChild) {
+                    throw new ToolVisibleError(
+                        `${functionName} does not allow <${unexpectedFieldChild.tagName}> in <field> #${fieldIndex + 1} for "${name}"; expected one <key> and one <value>.`,
+                        { code: 'invalid_xml' }
+                    );
+                }
+                const keyNodes = fieldChildren.filter(node => node.tagName === 'key');
+                const valueNodes = fieldChildren.filter(node => node.tagName === 'value');
+                if (keyNodes.length !== 1 || valueNodes.length !== 1 || fieldChildren.length !== 2) {
+                    throw new ToolVisibleError(
+                        `${functionName} <field> #${fieldIndex + 1} for "${name}" must contain exactly one <key> and one <value>.`,
+                        { code: 'invalid_xml' }
+                    );
+                }
+                const key = readBulkCharacterScalarNode(
+                    keyNodes[0],
+                    `<field> #${fieldIndex + 1} <key> for "${name}"`,
+                    functionName,
+                    { requireNonEmpty: true }
+                );
+                if (Object.prototype.hasOwnProperty.call(fields, key)) {
+                    throw new ToolVisibleError(
+                        `${functionName} contains duplicate field "${key}" for "${name}".`,
+                        { code: 'duplicate_field' }
+                    );
+                }
+                const valueText = readBulkCharacterScalarNode(
+                    valueNodes[0],
+                    `<field> #${fieldIndex + 1} <value> for "${name}"`,
+                    functionName
+                );
+                fields[key] = parseBulkCharacterFieldValue(valueText);
+            }
+
+            return { name, fields };
+        });
+    };
+
+    const resolveBulkCharacterByFullName = (fullName) => {
+        const functionName = 'bulkUpdateCharacterFields';
+        const lowerName = fullName.toLowerCase();
+        const matches = getAllCharacters().filter(character => (
+            toTrimmedString(character?.name).toLowerCase() === lowerName
+        ));
+        if (!matches.length) {
+            throw new ToolVisibleError(
+                `${functionName} found no character with the exact full name "${fullName}".`,
+                { code: 'character_not_found' }
+            );
+        }
+        if (matches.length > 1) {
+            throw new ToolVisibleError(
+                `${functionName} found multiple characters with the exact full name "${fullName}"; full names must be unique for this XML format.`,
+                {
+                    code: 'ambiguous_character',
+                    candidates: matches.map(describeCharacterCandidate).sort(candidateSort)
+                }
+            );
+        }
+        if (!isNpcEntity(matches[0])) {
+            throw new ToolVisibleError(
+                `${functionName} can only update NPCs; "${fullName}" is a player character.`,
+                { code: 'invalid_target' }
+            );
+        }
+        return matches[0];
+    };
+
+    const executeBulkUpdateCharacterFieldsTool = async ({ xml } = {}, {
+        allowDirectShortDescriptionUpdates = false
+    } = {}) => {
+        const functionName = 'bulkUpdateCharacterFields';
+        const parsedCharacters = parseBulkCharacterFieldsXml(xml);
+        const preparedUpdates = parsedCharacters.map(parsed => {
+            const targetNpc = resolveBulkCharacterByFullName(parsed.name);
+            const operations = makeUpdateCharacterFieldOperations(targetNpc, parsed.fields, {
+                functionName,
+                allowDirectShortDescriptionUpdates
+            });
+            return {
+                ...parsed,
+                targetNpc,
+                operations,
+                shouldRegenerateShortDescription: Object.prototype.hasOwnProperty.call(parsed.fields, 'description')
+                    && !Object.prototype.hasOwnProperty.call(parsed.fields, 'shortDescription'),
+                regeneratedShortDescription: null
+            };
+        });
+
+        await Promise.all(preparedUpdates.map(async prepared => {
+            if (!prepared.shouldRegenerateShortDescription) {
+                return;
+            }
+            prepared.regeneratedShortDescription = await regenerateConciseSummary({
+                objectType: 'character',
+                record: prepared.targetNpc,
+                description: normalizeCharacterFieldString(prepared.fields.description, {
+                    functionName,
+                    fieldName: 'description'
+                }),
+                functionName,
+                updates: prepared.fields
+            });
+        }));
+
+        const updatedCharacters = [];
+        let totalUpdatedFields = 0;
+        for (const prepared of preparedUpdates) {
+            const updatedFields = [];
+            for (const operation of prepared.operations) {
+                try {
+                    operation.apply();
+                    updatedFields.push(operation.fieldName);
+                    totalUpdatedFields += 1;
+                } catch (error) {
+                    throw new ToolVisibleError(
+                        `${functionName} failed to update "${operation.fieldName}" on "${prepared.name}" after ${totalUpdatedFields} field update(s) had been applied: ${error?.message || error}`,
+                        { code: 'field_update_failed' }
+                    );
+                }
+            }
+            if (prepared.shouldRegenerateShortDescription) {
+                try {
+                    prepared.targetNpc.shortDescription = prepared.regeneratedShortDescription;
+                    updatedFields.push('shortDescription');
+                    totalUpdatedFields += 1;
+                } catch (error) {
+                    throw new ToolVisibleError(
+                        `${functionName} failed to refresh the concise summary on "${prepared.name}" after ${totalUpdatedFields} field update(s) had been applied: ${error?.message || error}`,
+                        { code: 'field_update_failed' }
+                    );
+                }
+            }
+            updatedCharacters.push({
+                npcId: normalizeOptionalString(prepared.targetNpc?.id),
+                npcName: normalizeOptionalString(prepared.targetNpc?.name) || prepared.name,
+                requestedName: prepared.name,
+                updatedFields,
+                updatedValues: JSON.parse(JSON.stringify({
+                    ...prepared.fields,
+                    ...(prepared.shouldRegenerateShortDescription
+                        ? { shortDescription: prepared.regeneratedShortDescription }
+                        : {})
+                }))
+            });
+        }
+
+        const lines = [
+            '<bulkUpdateCharacterFieldsResult>',
+            '  <status>success</status>',
+            `  <charactersUpdated>${updatedCharacters.length}</charactersUpdated>`,
+            `  <fieldsUpdated>${totalUpdatedFields}</fieldsUpdated>`,
+            ...renderXmlNode('characters', updatedCharacters.map(character => ({
+                id: character.npcId,
+                name: character.npcName,
+                updatedFields: character.updatedFields
+            })), 1, { count: updatedCharacters.length }),
+            '</bulkUpdateCharacterFieldsResult>'
+        ];
+        return {
+            content: lines.join('\n'),
+            metadata: {
+                status: 'success',
+                charactersUpdated: updatedCharacters.length,
+                fieldsUpdated: totalUpdatedFields,
+                characters: updatedCharacters
             }
         };
     };
@@ -11576,6 +11936,8 @@ const createChatToolRuntime = ({
                 toolResult = executeAlterNpcTool(argumentsObject);
             } else if (toolCall.functionName === 'updateCharacterFields') {
                 toolResult = executeUpdateCharacterFieldsTool(argumentsObject, { allowDirectShortDescriptionUpdates });
+            } else if (toolCall.functionName === 'bulkUpdateCharacterFields') {
+                toolResult = executeBulkUpdateCharacterFieldsTool(argumentsObject, { allowDirectShortDescriptionUpdates });
             } else if (toolCall.functionName === 'updateObjectFields') {
                 toolResult = executeUpdateObjectFieldsTool(argumentsObject, { allowDirectShortDescriptionUpdates });
             } else if (toolCall.functionName === 'upsertFactionFields') {
@@ -11959,12 +12321,17 @@ const createChatToolRuntime = ({
 
             if (streamEmitter?.isEnabled) {
                 const toolStatusStage = `${metadataLabel || 'chat'}:tool_calls`;
+                const toolNames = toolCalls.map(toolCall => toolCall.functionName);
+                const toolNameSummary = toolNames.join(', ');
                 streamEmitter.status(toolStatusStage, {
                     round: rounds,
                     toolCallCount: toolCalls.length,
+                    toolNames,
                     message: toolCallsExhausted
-                        ? `Tool call attempts exhausted; returning ${toolCalls.length} tool error${toolCalls.length === 1 ? '' : 's'}...`
-                        : `Running ${toolCalls.length} tool call${toolCalls.length === 1 ? '' : 's'}...`
+                        ? `Tool call attempts exhausted; returning ${toolCalls.length} error${toolCalls.length === 1 ? '' : 's'} for ${toolNameSummary}...`
+                        : (toolCalls.length === 1
+                            ? `Running tool: ${toolNameSummary}...`
+                            : `Running ${toolCalls.length} tools: ${toolNameSummary}...`)
                 });
             }
 

@@ -4782,7 +4782,11 @@ const npcGenerationPromises = new Map(); // Track in-flight NPC generations by n
 const levelUpAbilityPromises = new Map(); // Track in-flight level-up ability generations per character
 const playerAbilitySelectionPromises = new Map(); // Track in-flight player ability option generation per level
 
-const GENERATION_RANDOM_TOOL_NAMES = new Set(['generateRandomInteger']);
+const GENERATION_RANDOM_TOOL_NAMES = new Set([
+    // Disabled: generation models were repeatedly calling this instead of
+    // completing their requested structured response.
+    // 'generateRandomInteger',
+]);
 let generationPromptToolRuntime = null;
 
 function getGenerationPromptToolDefinitions() {
@@ -4855,6 +4859,21 @@ async function runGenerationPromptCompletion({
     const existingAdditionalPayload = requestOptions.additionalPayload && typeof requestOptions.additionalPayload === 'object'
         ? requestOptions.additionalPayload
         : {};
+    const generationToolDefinitions = getGenerationPromptToolDefinitions();
+    if (!generationToolDefinitions.length) {
+        const toolFreeAdditionalPayload = { ...existingAdditionalPayload };
+        delete toolFreeAdditionalPayload.tools;
+        delete toolFreeAdditionalPayload.functions;
+        delete toolFreeAdditionalPayload.parallel_tool_calls;
+        delete toolFreeAdditionalPayload.tool_choice;
+        delete toolFreeAdditionalPayload.function_call;
+        return LLMClient.chatCompletion({
+            ...requestOptions,
+            preserveBaseContextToolDefinitions: true,
+            additionalPayload: toolFreeAdditionalPayload
+        });
+    }
+
     const toolChoice = requestOptions.tool_choice || existingAdditionalPayload.tool_choice || 'auto';
     const toolLoopResult = await getGenerationPromptToolRuntime().runChatCompletionWithToolLoop({
         requestOptions: {
@@ -4863,7 +4882,7 @@ async function runGenerationPromptCompletion({
             preserveBaseContextToolDefinitions: true,
             additionalPayload: {
                 ...existingAdditionalPayload,
-                tools: getGenerationPromptToolDefinitions(),
+                tools: generationToolDefinitions,
                 tool_choice: toolChoice
             }
         },
@@ -9655,6 +9674,7 @@ function kickOffChooseImportantMemoriesJob({ actors, maxMemories, baseContext, t
             responseText = await LLMClient.chatCompletion({
                 messages,
                 metadataLabel: 'choose_important_memories',
+                expectedXmlRootTag: 'memoriesToRecall',
                 runInBackground: true
             });
         } catch (error) {
@@ -10094,6 +10114,7 @@ async function summarizeScenesForHistoryRange({ chatHistory, startIndex, endInde
                     // Scene summaries include deliberate non-XML reasoning before the final <scenes> block.
                     // parseSceneSummaryResponse extracts and validates that block after the model returns.
                     validateXML: false,
+                    expectedXmlRootTag: 'scenes',
                     maxTokens: 20000
                 });
             }
@@ -11222,7 +11243,8 @@ async function runPlausibilityCheck({ actionText, locationId, attackContext = nu
         const requestStart = Date.now();
         const requestOptions = {
             messages,
-            metadataLabel: 'plausibility_check'
+            metadataLabel: 'plausibility_check',
+            expectedXmlRootTag: 'plausibility'
         };
         const plausibilityResponse = await LLMClient.chatCompletion(requestOptions);
 
@@ -13666,6 +13688,7 @@ async function expandRegionEntryStub(stubLocation) {
                             requestOptions: {
                                 messages: completionMessages,
                                 metadataLabel: 'region_stub_locations',
+                                expectedXmlRootTag: 'region',
                                 multimodal: Boolean(resolvedImageDataUrl)
                             },
                             metadataLabel: 'region_stub_locations'
@@ -15320,7 +15343,8 @@ async function generateInventoryForCharacter({
             requestOptions: {
                 messages,
                 timeoutScale,
-                metadataLabel: inventoryMetadataLabel
+                metadataLabel: inventoryMetadataLabel,
+                expectedXmlRootTag: 'items'
             },
             metadataLabel: inventoryMetadataLabel
         });
@@ -15824,6 +15848,7 @@ async function generateItemsByNames({
                         requestOptions: {
                             messages,
                             metadataLabel: generationMetadataLabel,
+                            expectedXmlRootTag: 'items',
                             captureRequestPayload: (payload) => { requestPayloadForLog = payload; }
                         },
                         metadataLabel: generationMetadataLabel
@@ -16152,6 +16177,7 @@ async function generateContainerContentsForThing({
                 metadataLabel: contentsMetadataLabel,
                 validateXML: true,
                 validateXMLStrict: true,
+                expectedXmlRootTag: 'items',
                 requiredRegex: /<items\b[\s\S]*<\/items>\s*$/i,
                 captureRequestPayload: (payload) => { requestPayloadForLog = payload; }
             },
@@ -16509,6 +16535,7 @@ async function separateThingByPrompt({
         messages,
         temperature: parsedTemplate.temperature,
         metadataLabel: 'separate_thing',
+        expectedXmlRootTags: ['items', 'stack'],
         captureRequestPayload: (payload) => { requestPayloadForLog = payload; }
     });
 
@@ -16750,6 +16777,7 @@ async function alterThingByPrompt({
         messages,
         temperature: parsedTemplate.temperature,
         metadataLabel: 'alter_thing',
+        expectedXmlRootTag: 'item',
         captureRequestPayload: (payload) => { requestPayloadForLog = payload; }
     });
 
@@ -17537,7 +17565,8 @@ async function runShortDescriptionPrompt({
 
     const response = await LLMClient.chatCompletion({
         messages,
-        metadataLabel: `short_description_${itemType}`
+        metadataLabel: `short_description_${itemType}`,
+        expectedXmlRootTag: itemType === 'location' ? 'regions' : itemTypePlural
     });
 
     if (!response || !response.trim()) {
@@ -18532,6 +18561,7 @@ async function generateNpcFromEvent({
             requestOptions: {
                 messages,
                 metadataLabel: 'npc_generation_single',
+                expectedXmlRootTag: 'npcInfo',
                 multimodal: Boolean(normalizedImageDataUrl)
             },
             metadataLabel: 'npc_generation_single'
@@ -19185,7 +19215,8 @@ async function equipBestGearForCharacter({
         equipResponse = await LLMClient.chatCompletion({
             messages,
             timeoutScale,
-            metadataLabel: 'equip_best'
+            metadataLabel: 'equip_best',
+            expectedXmlRootTag: 'items'
         });
     } catch (error) {
         console.warn('Equip-best API call failed:', error.message || error);
@@ -20581,7 +20612,8 @@ async function requestNpcSkillAssignments({
             messages: promptRequest.messages,
             temperature: promptRequest.temperature,
             timeoutScale,
-            metadataLabel: `npc_progression_assignments${labelSuffix}`
+            metadataLabel: `npc_progression_assignments${labelSuffix}`,
+            expectedXmlRootTag: 'npcs'
         });
 
         if (!skillResponse || !skillResponse.trim()) {
@@ -21216,7 +21248,8 @@ async function requestNpcAbilityAssignments({
             messages: promptRequest.messages,
             temperature: promptRequest.temperature,
             timeoutScale: timeoutScale,
-            metadataLabel: `npc_ability_assignments${labelSuffix}`
+            metadataLabel: `npc_ability_assignments${labelSuffix}`,
+            expectedXmlRootTag: 'npcs'
         });
 
         if (!abilityResponse || !abilityResponse.trim()) {
@@ -21292,7 +21325,8 @@ async function requestNpcAliasAssignments({ timeoutScale = 1, npcNames = [] } = 
         const aliasResponse = await LLMClient.chatCompletion({
             messages,
             timeoutScale: Math.max(1, Number(timeoutScale) || 1),
-            metadataLabel: `npc_alias_assignments${labelSuffix}`
+            metadataLabel: `npc_alias_assignments${labelSuffix}`,
+            expectedXmlRootTag: 'npcs'
         });
 
         if (!aliasResponse || !aliasResponse.trim()) {
@@ -21864,7 +21898,8 @@ async function requestLevelUpAbilityAssignmentsForCharacter({
     const abilityResponse = await LLMClient.chatCompletion({
         messages: request.messages,
         temperature: request.temperature,
-        metadataLabel
+        metadataLabel,
+        expectedXmlRootTag: 'npcs'
     });
 
     const normalizedResponse = typeof abilityResponse === 'string' ? abilityResponse.trim() : '';
@@ -23641,7 +23676,8 @@ async function enforceBannedNpcNames({
         const regenResponse = await LLMClient.chatCompletion({
             messages,
             temperature: 1,
-            metadataLabel: 'npc_name_regen'
+            metadataLabel: 'npc_name_regen',
+            expectedXmlRootTag: 'npcs'
         });
 
         // Log the interaction
@@ -23889,7 +23925,8 @@ while (attempts < maxAttempts && npcsNeedingRegen.some(npc => !isNameValid(npc.n
         const regenResponse = await LLMClient.chatCompletion({
             messages,
             temperature: 1,
-            metadataLabel: 'npc_name_regen'
+            metadataLabel: 'npc_name_regen',
+            expectedXmlRootTag: 'npcs'
         });
 
         const durationSeconds = (Date.now() - requestStart) / 1000;
@@ -24285,7 +24322,8 @@ async function ensureUniqueNpcNames({
             regenText = await LLMClient.chatCompletion({
                 messages: regenMessages,
                 temperature: 1,
-                metadataLabel: 'npc_name_regen_duplicate'
+                metadataLabel: 'npc_name_regen_duplicate',
+                expectedXmlRootTag: 'npcs'
             });
         } catch (error) {
             console.warn('NPC duplicate name regeneration failed:', error.message);
@@ -25245,7 +25283,8 @@ async function generateLocationThingsForLocation({ location } = {}) {
                 requestOptions: {
                     messages: completionMessages,
                     temperature: parsedTemplate.temperature,
-                    metadataLabel: 'location_things_generation'
+                    metadataLabel: 'location_things_generation',
+                    expectedXmlRootTag: 'things'
                 },
                 metadataLabel: 'location_things_generation'
             });
@@ -26137,7 +26176,8 @@ async function ensureThingNamesAllowed({
             responseText = await LLMClient.chatCompletion({
                 messages,
                 temperature: parsedTemplate.temperature,
-                metadataLabel: 'thing_name_regen'
+                metadataLabel: 'thing_name_regen',
+                expectedXmlRootTag: 'items'
             });
         } catch (error) {
             throw new Error(`Item name regeneration request failed: ${error.message}`);
@@ -26344,7 +26384,8 @@ async function ensureUniqueThingNames({ things: candidateThings = [], location =
         responseText = await LLMClient.chatCompletion({
             messages,
             temperature: parsedTemplate.temperature,
-            metadataLabel: 'thing_name_regen'
+            metadataLabel: 'thing_name_regen',
+            expectedXmlRootTag: 'items'
         });
     } catch (error) {
         console.warn('Thing name regeneration request failed:', error.message);
@@ -26474,7 +26515,8 @@ async function regenerateLocationName(location) {
         responseText = await LLMClient.chatCompletion({
             messages,
             temperature: parsedTemplate.temperature,
-            metadataLabel: 'location_name_regen'
+            metadataLabel: 'location_name_regen',
+            expectedXmlRootTag: 'locationNames'
         });
     } catch (error) {
         throw new Error(`Location name regeneration request failed: ${error.message}`);
@@ -26798,7 +26840,8 @@ async function regenerateRegionNames(regions) {
             responseText = await LLMClient.chatCompletion({
                 messages,
                 temperature: parsedTemplate.temperature,
-                metadataLabel: 'region_name_regen'
+                metadataLabel: 'region_name_regen',
+                expectedXmlRootTag: 'regionNames'
             });
         } catch (error) {
             throw new Error(`Region name regeneration request failed: ${error.message}`);
@@ -26957,7 +27000,8 @@ async function generateSkillsList({ count, settingDescription, existingSkills = 
         const skillResponse = await LLMClient.chatCompletion({
             messages,
             temperature: parsedTemplate.temperature,
-            metadataLabel: 'skill_generation'
+            metadataLabel: 'skill_generation',
+            expectedXmlRootTag: 'skills'
         });
 
         logSkillGeneration({
@@ -27016,6 +27060,7 @@ async function generateFactionsList({ count, settingDescription, generationNotes
     const runFactionPromptStageWithRetries = async ({
         stageLabel,
         metadataLabel,
+        expectedXmlRootTag,
         renderTemplate,
         parseResponse,
         logResponse,
@@ -27042,7 +27087,8 @@ async function generateFactionsList({ count, settingDescription, generationNotes
                     ],
                     maxTokens: parsedTemplate.maxTokens || 30000,
                     temperature: parsedTemplate.temperature,
-                    metadataLabel
+                    metadataLabel,
+                    expectedXmlRootTag
                 });
 
                 logResponse({
@@ -27069,6 +27115,7 @@ async function generateFactionsList({ count, settingDescription, generationNotes
     const parsedCoreFactions = await runFactionPromptStageWithRetries({
         stageLabel: 'core generation',
         metadataLabel: 'faction_generation',
+        expectedXmlRootTag: 'factions',
         renderTemplate: () => renderFactionsPrompt({
             settingDescription: resolvedSettingDescription,
             generationNotes,
@@ -27099,6 +27146,7 @@ async function generateFactionsList({ count, settingDescription, generationNotes
     const parsedRelationshipsByFaction = await runFactionPromptStageWithRetries({
         stageLabel: 'relationship generation',
         metadataLabel: 'faction_relationship_generation',
+        expectedXmlRootTag: 'factionRelationships',
         renderTemplate: () => renderFactionRelationshipsPrompt({
             settingDescription: resolvedSettingDescription,
             generationNotes,
@@ -27116,6 +27164,7 @@ async function generateFactionsList({ count, settingDescription, generationNotes
     const parsedReputationByFaction = await runFactionPromptStageWithRetries({
         stageLabel: 'reputation generation',
         metadataLabel: 'faction_reputation_generation',
+        expectedXmlRootTag: 'factionReputationTiers',
         renderTemplate: () => renderFactionReputationPrompt({
             settingDescription: resolvedSettingDescription,
             generationNotes,
@@ -27307,7 +27356,8 @@ async function generateSkillsByNames({ skillNames = [], settingDescription }) {
         const skillResponse = await LLMClient.chatCompletion({
             messages,
             temperature: parsedTemplate.temperature,
-            metadataLabel: 'skill_generation_by_name'
+            metadataLabel: 'skill_generation_by_name',
+            expectedXmlRootTag: 'skills'
         });
 
         logSkillGeneration({
@@ -27429,7 +27479,8 @@ async function generateLocationNPCs({ location, systemPrompt, generationPrompt, 
             requestOptions: {
                 messages,
                 timeoutScale: npcCountHint,
-                metadataLabel: 'location_npc_generation'
+                metadataLabel: 'location_npc_generation',
+                expectedXmlRootTag: 'response'
             },
             metadataLabel: 'location_npc_generation'
         });
@@ -27862,7 +27913,8 @@ async function generateRegionNPCs({ region, systemPrompt, generationPrompt, aiRe
             requestOptions: {
                 messages,
                 timeoutScale: regionLocations.length,
-                metadataLabel: 'region_npc_generation'
+                metadataLabel: 'region_npc_generation',
+                expectedXmlRootTag: 'response'
             },
             metadataLabel: 'region_npc_generation'
         });
@@ -29487,6 +29539,7 @@ async function processImagePromptBatchGroup(requests) {
             const responseText = await LLMClient.chatCompletion({
                 messages,
                 metadataLabel: 'image_prompt_generation',
+                expectedXmlRootTag: 'imagePrompts',
                 requiredRegex: /<imagePrompts[\s\S]*<\/imagePrompts>/i,
                 validateXML: false,
                 waitAfterError: 20,
@@ -30768,6 +30821,7 @@ async function generateLocationFromPrompt(options = {}) {
             requestOptions: {
                 messages,
                 metadataLabel: 'location_generation',
+                expectedXmlRootTag: 'location',
                 multimodal: Boolean(resolvedImageDataUrl)
             },
             metadataLabel: 'location_generation'
@@ -31094,7 +31148,8 @@ async function chooseExistingRegionExit({
 
         const aiResponse = await LLMClient.chatCompletion({
             messages,
-            metadataLabel: 'existing_region_exit'
+            metadataLabel: 'existing_region_exit',
+            expectedXmlRootTag: 'remoteExit'
         });
         const normalizedResponse = typeof aiResponse === 'string' ? aiResponse.trim() : '';
         LLMClient.logPrompt({
@@ -31462,7 +31517,8 @@ async function backfillRegionExitTravelTimes({ region = null, regionId = null, f
                 { role: 'system', content: prompt.systemPrompt },
                 { role: 'user', content: prompt.generationPrompt }
             ],
-            metadataLabel: 'set_travel_times'
+            metadataLabel: 'set_travel_times',
+            expectedXmlRootTag: 'response'
         });
         const normalizedResponse = typeof aiResponse === 'string' ? aiResponse.trim() : '';
         if (!normalizedResponse) {
@@ -33289,7 +33345,8 @@ async function chooseRegionEntrance({
         console.log('🚪 Requesting region entrance selection...');
         const entranceResponse = await LLMClient.chatCompletion({
             messages: entranceMessages,
-            metadataLabel: 'region_entrance_selection'
+            metadataLabel: 'region_entrance_selection',
+            expectedXmlRootTag: 'entrance'
         });
 
         const entranceMessage = typeof entranceResponse === 'string' ? entranceResponse.trim() : '';
@@ -33423,7 +33480,8 @@ async function chooseArrivalLocationForEntryStub({ region, originContext = {} } 
             { role: 'system', content: systemPrompt },
             { role: 'user', content: userPrompt }
         ],
-        metadataLabel: 'region_arrival_selection'
+        metadataLabel: 'region_arrival_selection',
+        expectedXmlRootTag: 'arrival'
     });
 
     LLMClient.logPrompt({
@@ -33509,6 +33567,7 @@ async function generateRegionFromPrompt(options = {}) {
                 messages,
                 //temperature: parsedTemplate.temperature,
                 metadataLabel: 'region_generation',
+                expectedXmlRootTag: 'region',
                 multimodal: Boolean(normalizedImageDataUrl)
             },
             metadataLabel: 'region_generation'

@@ -67,6 +67,8 @@ Emitted quest preview fields:
 - `rewardXp`: finite numeric value from `quest.rewardXp`, otherwise `0`.
 - `rewardItems`: strings become `{ name }`; object entries use `name`, `description`, or `label`; finite quantities are rounded to whole numbers, forced to at least `1`, and omitted when the value is `1`.
 - `rewardNpcDispositions`: array of `{ npcName, dispositions }`, where each disposition includes `{ type, intensity, reason }`; intensity must be a non-zero integer and `reason` is `null` when omitted.
+- `rewardBenefits`: sanitized `{ id, type, targetId, label, description, role }` entries.
+- `rewardNotes`: trimmed non-empty strings.
 
 Fields not emitted by this manager include `secretNotes`, `rewardClaimed`, `paused`, `completed`, full giver objects, and `rewardFactionReputation`. The chat client can render faction reward previews if they are present in a confirmation payload, but the manager's normalized websocket payload does not include faction reputation entries.
 
@@ -74,7 +76,7 @@ Fields not emitted by this manager include `secretNotes`, `rewardClaimed`, `paus
 
 - `public/js/chat.js` handles `quest_confirmation_request` in `AIRPGChat.handleQuestConfirmationRequest(...)`.
 - The chat client normalizes the incoming payload again, queues requests per browser tab, and presents one runtime-only modal at a time.
-- The modal renders giver, summary, description, objectives, item/currency/XP rewards, faction rewards if present, and NPC disposition rewards.
+- The modal renders giver, summary, description, objectives, item/currency/XP rewards, faction rewards if present, NPC disposition rewards, typed party-member rewards, and narrative reward notes.
 - Accept and Decline buttons post to `/api/quests/confirm`; pressing `Escape` submits a decline when the modal is visible and idle.
 - The POST body includes `confirmationId`, the browser's `clientId`, and a decision string of `accept` or `decline`.
 - `/api/quests/confirm` also accepts `accepted` as a boolean and legacy-style `accept` strings.

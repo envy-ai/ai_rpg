@@ -131,6 +131,61 @@ test('tiny-brain exterior branch renders the resolved travel target name and des
     );
 });
 
+test('tiny-brain player-action quest guidance renders only above the soft quest limit', () => {
+    const promptEnv = new nunjucks.Environment(
+        new nunjucks.FileSystemLoader(path.join(__dirname, '..', 'prompts'), { noCache: true }),
+        { autoescape: false }
+    );
+    promptEnv.addExtension('TinyBrainPromptExtension', new TinyBrainPromptExtension());
+    addPlayerActionDestinationGlobals(promptEnv);
+    promptEnv.addGlobal('getLocationInfo', () => ({
+        name: 'Market Exterior',
+        description: 'An open market entrance.'
+    }));
+
+    const renderPrompt = activeQuestCount => promptEnv.render('_includes/player-action.tinybrain.njk', {
+        __tinyBrainState: TinyBrainPromptRunner.createRenderState(),
+        actionText: 'Wait near the market entrance.',
+        characterName: 'The player',
+        config: {
+            prose_instructions: 'Write clear prose.',
+            prose_length: 'three paragraphs',
+            prose_prompt_suffix: '',
+            repetition_buster: true,
+            soft_quest_limit: 1,
+            use_legacy_prompt_checks: false
+        },
+        currentLocationLastSeenNpcs: [],
+        currentPlayer: {
+            currentQuests: Array.from({ length: activeQuestCount }, (_, index) => ({ id: `quest-${index}` }))
+        },
+        currentVehicle: {
+            destination: '',
+            name: '',
+            timeToDestination: '',
+            vehicleInfo: {
+                hasArrived: false,
+                isUnderway: false
+            }
+        },
+        isAttack: false,
+        isExterior: true,
+        modPlayerActionPromptSteps: () => [],
+        npcs: [],
+        party: [],
+        playerActionAccompanyingCharacters: [],
+        setting: {
+            writingStyleNotes: 'Keep it concrete.'
+        },
+        travelTargetLocationId: 'market-exterior',
+        travelTargetLocationName: 'Market Exterior'
+    });
+    const questGuidance = /active quest count exceeds the soft quest limit/;
+
+    assert.match(renderPrompt(2), questGuidance);
+    assert.doesNotMatch(renderPrompt(1), questGuidance);
+});
+
 test('tiny-brain vehicle arrival guidance preserves onboard occupancy and player location', () => {
     const promptEnv = new nunjucks.Environment(
         new nunjucks.FileSystemLoader(path.join(__dirname, '..', 'prompts'), { noCache: true }),

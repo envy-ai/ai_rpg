@@ -4,6 +4,7 @@ const SanitizedStringMap = require('./SanitizedStringMap.js');
 const { findPackageJSON } = require('module');
 const Globals = require('./Globals.js');
 const IdGenerator = require('./IdGenerator.js');
+const { questRewardBenefitRegistry } = require('./QuestRewardBenefitRegistry.js');
 
 
 class QuestObjective {
@@ -56,6 +57,10 @@ class Quest {
   rewardXp = 0;
   rewardFactionReputation = {};
   rewardNpcDispositions = [];
+  rewardBenefits = [];
+  rewardNotes = [];
+  appliedRewardBenefitIds = [];
+  rewardNotesPresented = false;
   rewardClaimed = false;
   secretNotes = '';
   giverId = null;
@@ -201,6 +206,47 @@ class Quest {
       .filter(Boolean);
   }
 
+  static normalizeRewardBenefits(value, context = {}) {
+    return questRewardBenefitRegistry.normalizeAll(value, context);
+  }
+
+  static normalizeRewardNotes(value) {
+    if (value === null || value === undefined || value === '') {
+      return [];
+    }
+    if (!Array.isArray(value)) {
+      throw new Error('rewardNotes must be an array.');
+    }
+    const seen = new Set();
+    return value.map((entry) => {
+      if (typeof entry !== 'string' || !entry.trim()) {
+        throw new Error('rewardNotes entries must be non-empty strings.');
+      }
+      return entry.trim();
+    }).filter((entry) => {
+      if (seen.has(entry)) {
+        return false;
+      }
+      seen.add(entry);
+      return true;
+    });
+  }
+
+  static normalizeAppliedRewardBenefitIds(value) {
+    if (value === null || value === undefined || value === '') {
+      return [];
+    }
+    if (!Array.isArray(value)) {
+      throw new Error('appliedRewardBenefitIds must be an array.');
+    }
+    return Array.from(new Set(value.map((entry) => {
+      if (typeof entry !== 'string' || !entry.trim()) {
+        throw new Error('appliedRewardBenefitIds entries must be non-empty strings.');
+      }
+      return entry.trim();
+    })));
+  }
+
   constructor(options = {}) {
     const providedId = typeof options.id === 'string' && options.id.trim() ? options.id.trim() : null;
     this.#id = providedId || IdGenerator.next('quest');
@@ -257,6 +303,12 @@ class Quest {
     this.rewardNpcDispositions = Quest.normalizeRewardNpcDispositions(
       options.rewardNpcDispositions,
     );
+    this.rewardBenefits = Quest.normalizeRewardBenefits(options.rewardBenefits);
+    this.rewardNotes = Quest.normalizeRewardNotes(options.rewardNotes);
+    this.appliedRewardBenefitIds = Quest.normalizeAppliedRewardBenefitIds(
+      options.appliedRewardBenefitIds,
+    );
+    this.rewardNotesPresented = Boolean(options.rewardNotesPresented);
 
     this.rewardClaimed = Boolean(options.rewardClaimed);
     this.paused = Boolean(options.paused);
@@ -351,6 +403,10 @@ class Quest {
       rewardXp: this.rewardXp,
       rewardFactionReputation: { ...this.rewardFactionReputation },
       rewardNpcDispositions: Quest.normalizeRewardNpcDispositions(this.rewardNpcDispositions),
+      rewardBenefits: Quest.normalizeRewardBenefits(this.rewardBenefits),
+      rewardNotes: Quest.normalizeRewardNotes(this.rewardNotes),
+      appliedRewardBenefitIds: Quest.normalizeAppliedRewardBenefitIds(this.appliedRewardBenefitIds),
+      rewardNotesPresented: Boolean(this.rewardNotesPresented),
       secretNotes: this.secretNotes || null,
       rewardClaimed: Boolean(this.rewardClaimed),
       paused: Boolean(this.paused),
@@ -393,6 +449,10 @@ class Quest {
       rewardXp: data.rewardXp,
       rewardFactionReputation: data.rewardFactionReputation,
       rewardNpcDispositions: data.rewardNpcDispositions,
+      rewardBenefits: data.rewardBenefits,
+      rewardNotes: data.rewardNotes,
+      appliedRewardBenefitIds: data.appliedRewardBenefitIds,
+      rewardNotesPresented: Boolean(data.rewardNotesPresented),
       secretNotes: typeof data.secretNotes === 'string' ? data.secretNotes : '',
       giverId,
       giverName,

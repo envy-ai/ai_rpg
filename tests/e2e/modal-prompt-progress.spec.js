@@ -108,6 +108,45 @@ test.describe('modal prompt-progress bar', () => {
         await pushPromptProgress(page, []);
     });
 
+    test('full prompt table releases widths from earlier progress renders', async ({ page }) => {
+        const measurements = await page.evaluate(() => {
+            const chat = window.AIRPG_CHAT;
+            chat.setPromptProgressDockState('table', { persist: false });
+
+            const renderAndMeasure = (label) => {
+                chat.renderPromptProgress([{
+                    id: 'stable-width-prompt',
+                    label,
+                    model: 'test-model',
+                    promptText: 'Keep the prompt tracker width stable.',
+                    previewText: 'Streaming update',
+                    receivedCount: 100,
+                    progressFraction: 0.4,
+                    seconds: 12,
+                    timeoutSeconds: 48,
+                    latencyMs: 350,
+                    retries: 0
+                }]);
+
+                const dock = document.querySelector('#promptProgressDock');
+                const table = dock.querySelector('.prompt-progress-table');
+                return {
+                    dock: dock.getBoundingClientRect().width,
+                    table: table.getBoundingClientRect().width
+                };
+            };
+
+            const initial = renderAndMeasure('stable-width-test');
+            const widest = renderAndMeasure(`stable-width-${'unbroken'.repeat(40)}`);
+            const final = renderAndMeasure('stable-width-test');
+            return { initial, widest, final };
+        });
+
+        expect(measurements.widest.table).toBeGreaterThan(measurements.initial.table);
+        expect(measurements.final.dock).toBeCloseTo(measurements.initial.dock, 1);
+        expect(measurements.final.table).toBeCloseTo(measurements.initial.table, 1);
+    });
+
     test('retains the final streamed token when completion is immediately cleared', async ({ page }) => {
         const promptId = 'final-token-prompt';
         await pushPromptProgress(page, [{

@@ -24,6 +24,7 @@ const SlashCommandRegistry = require('./SlashCommandRegistry.js');
 const SanitizedStringSet = require('./SanitizedStringSet.js');
 const Events = require('./Events.js');
 const Quest = require('./Quest.js');
+const { questRewardBenefitRegistry } = require('./QuestRewardBenefitRegistry.js');
 const Faction = require('./Faction.js');
 const MysteryBox = require('./MysteryBox.js');
 const MysteryThread = require('./MysteryThread.js');
@@ -310,6 +311,7 @@ const TINY_BRAIN_NPC_LOOKUP_TOOL_NAMES = new Set([
 const GENERIC_PROMPT_ONLY_BUILT_IN_CHAT_TOOL_NAMES = new Set([
     'editChatLogEntry',
     'regexReplace',
+    'bulkUpdateCharacterFields',
     'rerunSceneSummary',
     'editSceneSummary'
 ]);
@@ -3702,6 +3704,7 @@ module.exports = function registerApiRoutes(scope) {
                     { role: 'user', content: parsedTemplate.generationPrompt }
                 ],
                 metadataLabel: 'housekeeping',
+                expectedXmlRootTag: 'housekeeping',
                 validateXML: false
             };
             if (typeof parsedTemplate.temperature === 'number') {
@@ -4497,6 +4500,7 @@ module.exports = function registerApiRoutes(scope) {
                     { role: 'user', content: parsedTemplate.generationPrompt }
                 ],
                 metadataLabel: 'barter_prices',
+                expectedXmlRootTag: 'barterPrices',
                 requiredRegex: /<barterPrices[\s\S]*<\/barterPrices>/i,
                 validateXML: false
             };
@@ -5694,6 +5698,10 @@ module.exports = function registerApiRoutes(scope) {
                             validateXML: false
                         };
                         delete stageRequestOptions.requiredRegex;
+                        if (!stage.isFinal) {
+                            delete stageRequestOptions.expectedXmlRootTag;
+                            delete stageRequestOptions.expectedXmlRootTags;
+                        }
                         const proseMode = liveDeslopController
                             ? resolveTinyBrainLiveDeslopProseMode({
                                 messages: stage.messages,
@@ -5996,9 +6004,10 @@ module.exports = function registerApiRoutes(scope) {
 
                     slopResponse = await LLMClient.chatCompletion({
                         messages,
-                        metadataLabel: 'slop_remover',
-                        validateXML: true,
-                        validateXMLStrict: true
+                    metadataLabel: 'slop_remover',
+                    validateXML: true,
+                    validateXMLStrict: true,
+                    expectedXmlRootTag: 'editedText'
                     });
                     parsedSlopResponse = parseSlopRemoverEditedTextResponse(slopResponse);
                 } catch (error) {
@@ -6579,6 +6588,7 @@ module.exports = function registerApiRoutes(scope) {
                     ],
                     metadataLabel: 'xml_fix',
                     validateXML: false,
+                    expectedXmlRootTags: playerActionXmlRootTags,
                     requiredRegex: playerActionProseRegex
                 };
                 if (typeof promptData.temperature === 'number') {
@@ -8764,6 +8774,7 @@ module.exports = function registerApiRoutes(scope) {
                 ],
                 metadataLabel: 'while_you_were_away',
                 validateXML: false,
+                expectedXmlRootTag: 'response',
                 requiredRegex: /<response[\s\S]*<\/response>/i
             };
             if (typeof parsedTemplate.temperature === 'number') {
@@ -9188,6 +9199,7 @@ module.exports = function registerApiRoutes(scope) {
                     { role: 'user', content: parsedTemplate.generationPrompt }
                 ],
                 metadataLabel: 'scheduled_event_resolution',
+                expectedXmlRootTag: 'scheduledEventResult',
                 validateXML: false,
                 additionalPayload: {
                     tools: scheduledEventTools,
@@ -9621,6 +9633,7 @@ module.exports = function registerApiRoutes(scope) {
                 ],
                 metadataLabel: 'player_action_interruption_rewrite',
                 validateXML: false,
+                expectedXmlRootTags: playerActionXmlRootTags,
                 requiredRegex: playerActionProseRegex
             };
             if (typeof parsedTemplate.temperature === 'number') {
@@ -10123,7 +10136,8 @@ module.exports = function registerApiRoutes(scope) {
                         { role: 'user', content: parsedTemplate.generationPrompt }
                     ],
                     metadataLabel,
-                    validateXML: false
+                    validateXML: false,
+                    expectedXmlRootTag: 'npcActivityReport'
                 };
                 if (typeof parsedTemplate.temperature === 'number') {
                     requestOptions.temperature = parsedTemplate.temperature;
@@ -10676,6 +10690,7 @@ module.exports = function registerApiRoutes(scope) {
                     sourceRequestId: sourceRequestId || null
                 },
                 validateXML: false,
+                expectedXmlRootTag: 'tonalScaleEvaluation',
                 requiredRegex: /<tonalScaleEvaluation[\s>]/
             };
             if (runInBackground) {
@@ -10837,6 +10852,7 @@ module.exports = function registerApiRoutes(scope) {
                     sourceRequestId: sourceRequestId || null
                 },
                 validateXML: false,
+                expectedXmlRootTag: 'mysteryThreads',
                 requiredRegex: /<mysteryThreads[\s>]/
             };
             if (runInBackground) {
@@ -11090,6 +11106,7 @@ module.exports = function registerApiRoutes(scope) {
                         { role: 'user', content: parsedTemplate.generationPrompt }
                     ],
                     metadataLabel: 'supplemental_story_info',
+                    expectedXmlRootTag: 'storyNotes',
                     validateXML: false
                 };
 
@@ -11174,6 +11191,7 @@ module.exports = function registerApiRoutes(scope) {
                     { role: 'user', content: parsedTemplate.generationPrompt }
                 ],
                 metadataLabel: 'game_intro',
+                expectedXmlRootTag: 'gameIntro',
                 validateXML: false
             };
 
@@ -12738,6 +12756,7 @@ module.exports = function registerApiRoutes(scope) {
                     { role: 'user', content: parsedTemplate.generationPrompt }
                 ],
                 metadataLabel: 'location_modify_success_degree',
+                expectedXmlRootTag: 'response',
                 requiredRegex: /<response>[\s\S]*<\/response>/i
             };
 
@@ -12809,6 +12828,7 @@ module.exports = function registerApiRoutes(scope) {
                     { role: 'user', content: parsedTemplate.generationPrompt }
                 ],
                 metadataLabel: `craft_success_degree_${mode || 'craft'}`,
+                expectedXmlRootTag: 'response',
                 requiredRegex: /<response>[\s\S]*<\/response>/i
             };
 
@@ -13037,7 +13057,8 @@ module.exports = function registerApiRoutes(scope) {
 
             const requestOptions = {
                 messages,
-                metadataLabel: `random_event_seed_${mode}`
+                metadataLabel: `random_event_seed_${mode}`,
+                expectedXmlRootTag: 'randomStoryEvents'
             };
 
             if (typeof parsedTemplate.temperature === 'number') {
@@ -14901,6 +14922,7 @@ module.exports = function registerApiRoutes(scope) {
                 const requestOptions = {
                     messages,
                     metadataLabel: 'summarize_batch',
+                    expectedXmlRootTag: 'summaries',
                     runInBackground: true
                 };
 
@@ -19661,6 +19683,7 @@ module.exports = function registerApiRoutes(scope) {
                 const requestOptions = {
                     messages,
                     metadataLabel: 'random_event',
+                    expectedXmlRootTags: playerActionXmlRootTags,
                     validateXML: false,
                 };
 
@@ -20542,7 +20565,8 @@ module.exports = function registerApiRoutes(scope) {
 
                 const requestOptions = {
                     messages,
-                    metadataLabel: 'attack_check'
+                    metadataLabel: 'attack_check',
+                    expectedXmlRootTag: 'attack'
                 };
 
                 if (typeof parsedTemplate.temperature === 'number') {
@@ -20664,7 +20688,8 @@ module.exports = function registerApiRoutes(scope) {
 
                 const requestOptions = {
                     messages,
-                    metadataLabel: 'attack_precheck'
+                    metadataLabel: 'attack_precheck',
+                    expectedXmlRootTag: 'response'
                 };
 
                 if (typeof parsedTemplate.temperature === 'number') {
@@ -22474,6 +22499,7 @@ module.exports = function registerApiRoutes(scope) {
                         { role: 'user', content: parsedTemplate.generationPrompt }
                     ],
                     metadataLabel: 'next_npc_list',
+                    expectedXmlRootTag: 'npcActionInfo',
                 };
 
                 if (typeof parsedTemplate.temperature === 'number') {
@@ -22754,7 +22780,8 @@ module.exports = function registerApiRoutes(scope) {
                         { role: 'system', content: parsedTemplate.systemPrompt },
                         { role: 'user', content: parsedTemplate.generationPrompt }
                     ],
-                    metadataLabel: 'disposition_check'
+                    metadataLabel: 'disposition_check',
+                    expectedXmlRootTag: 'npcDispositions'
                 };
 
                 if (typeof parsedTemplate.temperature === 'number') {
@@ -23064,7 +23091,8 @@ module.exports = function registerApiRoutes(scope) {
                         { role: 'system', content: parsedTemplate.systemPrompt },
                         { role: 'user', content: parsedTemplate.generationPrompt }
                     ],
-                    metadataLabel: 'npc_plausibility'
+                    metadataLabel: 'npc_plausibility',
+                    expectedXmlRootTag: 'npcAction'
                 };
 
                 if (typeof parsedTemplate.temperature === 'number') {
@@ -23301,6 +23329,7 @@ module.exports = function registerApiRoutes(scope) {
                     ],
                     metadataLabel: `npc_memories_${npc.name.replace(/[^a-zA-Z0-9]/g, '_') || 'unknown'}`,
                     timeoutMs: baseTimeoutMilliseconds * timeoutScale,
+                    expectedXmlRootTag: 'response',
                     runInBackground: true
                 };
 
@@ -24278,6 +24307,7 @@ module.exports = function registerApiRoutes(scope) {
                         clientId: stream?.clientId || null
                     },
                     timeoutMs: baseTimeoutMilliseconds,
+                    expectedXmlRootTags: playerActionXmlRootTags,
                     validateXML: false,
                 };
                 if (Globals.config.repetition_buster) {
@@ -25124,7 +25154,8 @@ module.exports = function registerApiRoutes(scope) {
                         { role: 'system', content: parsedTemplate.systemPrompt },
                         { role: 'user', content: parsedTemplate.generationPrompt }
                     ],
-                    metadataLabel: 'region_secrets'
+                    metadataLabel: 'region_secrets',
+                    expectedXmlRootTag: 'secrets'
                 });
 
                 LLMClient.logPrompt({
@@ -27384,6 +27415,7 @@ module.exports = function registerApiRoutes(scope) {
                     liveTokenStreamFallbackDiagnostics.push({ ...diagnostic });
                 };
                 if (shouldUseRepetitionBusterXml) {
+                    requestOptions.expectedXmlRootTags = playerActionXmlRootTags;
                     requestOptions.requiredRegex = playerActionProseRegex;
                 }
 
@@ -28573,6 +28605,7 @@ module.exports = function registerApiRoutes(scope) {
                                     dispositionChanges: [],
                                     factionReputationChanges: [],
                                     questCompletionRewards: [],
+                                    questCompletionErrors: [],
                                     completedQuestObjectives: [],
                                     followupResults: [],
                                     allowEnvironmentalEffects: false,
@@ -28607,6 +28640,7 @@ module.exports = function registerApiRoutes(scope) {
                                 appendArray('needBarChanges', questProcessingContext.needBarChanges);
                                 appendArray('dispositionChanges', questProcessingContext.dispositionChanges);
                                 appendArray('factionReputationChanges', questProcessingContext.factionReputationChanges);
+                                appendArray('questCompletionErrors', questProcessingContext.questCompletionErrors);
 
                                 if (Array.isArray(questProcessingContext.followupResults) && questProcessingContext.followupResults.length) {
                                     if (!Array.isArray(responseData.followupEventChecks)) {
@@ -31124,6 +31158,39 @@ module.exports = function registerApiRoutes(scope) {
                     }
                     return parseQuestNpcDispositionRewardsInput(payload.rewardNpcDispositions);
                 })();
+                const rewardBenefits = (() => {
+                    const hasInput = Object.prototype.hasOwnProperty.call(payload, 'rewardBenefits');
+                    const source = hasInput ? payload.rewardBenefits : (quest.rewardBenefits || []);
+                    const normalized = questRewardBenefitRegistry.validateAll(source, {
+                        player: currentPlayer,
+                        findActorById: id => players.get(id) || null
+                    });
+                    const existingById = new Map(
+                        Quest.normalizeRewardBenefits(quest.rewardBenefits || [])
+                            .map(entry => [entry.id, entry])
+                    );
+                    const updatedById = new Map(normalized.map(entry => [entry.id, entry]));
+                    for (const appliedId of Quest.normalizeAppliedRewardBenefitIds(quest.appliedRewardBenefitIds)) {
+                        const existing = existingById.get(appliedId);
+                        const updated = updatedById.get(appliedId);
+                        if (!existing || !updated) {
+                            throw new Error(`Applied reward benefit "${appliedId}" cannot be removed.`);
+                        }
+                        if (existing.type !== updated.type || existing.targetId !== updated.targetId) {
+                            throw new Error(`Applied reward benefit "${appliedId}" cannot change type or target.`);
+                        }
+                    }
+                    return normalized;
+                })();
+                const rewardNotes = (() => {
+                    if (!Object.prototype.hasOwnProperty.call(payload, 'rewardNotes')) {
+                        return Quest.normalizeRewardNotes(quest.rewardNotes || []);
+                    }
+                    const source = typeof payload.rewardNotes === 'string'
+                        ? payload.rewardNotes.split(/\r?\n/)
+                        : payload.rewardNotes;
+                    return Quest.normalizeRewardNotes(source);
+                })();
 
                 let updatedPaused = quest.paused;
                 if (Object.prototype.hasOwnProperty.call(payload, 'paused')) {
@@ -31164,6 +31231,8 @@ module.exports = function registerApiRoutes(scope) {
                 quest.rewardItems = rewardItems;
                 quest.rewardFactionReputation = rewardFactionReputation;
                 quest.rewardNpcDispositions = rewardNpcDispositions;
+                quest.rewardBenefits = rewardBenefits;
+                quest.rewardNotes = rewardNotes;
                 if (updatedObjectives !== null) {
                     quest.objectives = updatedObjectives;
                 }
@@ -31180,6 +31249,130 @@ module.exports = function registerApiRoutes(scope) {
                 res.status(400).json({
                     success: false,
                     error: error?.message || 'Failed to update quest.'
+                });
+            }
+        });
+
+        app.post('/api/quests/:questId/retry-rewards', async (req, res) => {
+            if (!currentPlayer) {
+                return res.status(404).json({ success: false, error: 'No current player found' });
+            }
+
+            const questId = typeof req.params?.questId === 'string' ? req.params.questId.trim() : '';
+            const quest = questId ? currentPlayer.getQuestById(questId) : null;
+            if (!quest) {
+                return res.status(404).json({ success: false, error: `Quest with id '${questId}' not found` });
+            }
+            if (!quest.completed) {
+                return res.status(409).json({ success: false, error: `Quest "${quest.name}" is not complete.` });
+            }
+            if (quest.rewardClaimed) {
+                return res.status(409).json({ success: false, error: `Quest "${quest.name}" rewards are already claimed.` });
+            }
+            if (!Array.isArray(quest.objectives) || !quest.objectives.length) {
+                return res.status(409).json({ success: false, error: `Quest "${quest.name}" has no objective to anchor reward recovery.` });
+            }
+
+            try {
+                let questIndex = -1;
+                for (let index = 0; ; index += 1) {
+                    const candidate = currentPlayer.getQuestByIndex(index);
+                    if (!candidate) {
+                        break;
+                    }
+                    if (candidate.id === quest.id) {
+                        questIndex = index;
+                        break;
+                    }
+                }
+                if (questIndex < 0) {
+                    throw new Error(`Quest "${quest.name}" is not in the player's canonical quest list.`);
+                }
+
+                const location = currentPlayer.currentLocation
+                    ? (Location.get(currentPlayer.currentLocation) || null)
+                    : null;
+                const regionReference = location?.regionId || location?.region || null;
+                const region = regionReference && typeof regionReference === 'object'
+                    ? regionReference
+                    : (regionReference ? (Region.get(regionReference) || null) : null);
+                const processingContext = {
+                    player: currentPlayer,
+                    location,
+                    region,
+                    stream: null,
+                    experienceAwards: [],
+                    currencyChanges: [],
+                    environmentalDamageEvents: [],
+                    needBarChanges: [],
+                    dispositionChanges: [],
+                    factionStandingChanges: [],
+                    questCompletionRewards: [],
+                    questCompletionErrors: [],
+                    questRewardBenefitResults: [],
+                    completedQuestObjectives: [],
+                    followupResults: [],
+                    allowEnvironmentalEffects: false,
+                    isNpcTurn: false
+                };
+
+                await Events.processQuestObjectiveCompletionEntries([{
+                    questIndex: questIndex + 1,
+                    objectiveIndex: 1,
+                    statusReason: 'Explicit pending quest reward retry.'
+                }], processingContext);
+
+                if (!quest.rewardClaimed || processingContext.questCompletionErrors.length) {
+                    const firstError = processingContext.questCompletionErrors[0] || null;
+                    return res.status(409).json({
+                        success: false,
+                        error: firstError?.message || `Quest "${quest.name}" rewards remain pending.`,
+                        stack: firstError?.stack || null,
+                        errors: processingContext.questCompletionErrors,
+                        quest: quest.toJSON(),
+                        player: serializeNpcForClient(currentPlayer)
+                    });
+                }
+
+                const locationId = location?.id || currentPlayer.currentLocation || null;
+                for (const rewardEntry of processingContext.questCompletionRewards) {
+                    if (!rewardEntry || typeof rewardEntry.message !== 'string' || !rewardEntry.message.trim()) {
+                        continue;
+                    }
+                    const chatEntry = pushChatEntry({
+                        role: 'assistant',
+                        content: rewardEntry.message,
+                        type: 'quest-reward',
+                        locationId,
+                        metadata: {
+                            questId: rewardEntry.questId || quest.id,
+                            questName: rewardEntry.questName || quest.name
+                        }
+                    }, null, locationId);
+                    notifyVisibleProseEntryStored(chatEntry, {
+                        clientId: typeof req.body?.clientId === 'string' ? req.body.clientId : null,
+                        requestId: typeof req.body?.requestId === 'string' ? req.body.requestId : null,
+                        proseType: 'quest-reward'
+                    });
+                }
+
+                return res.json({
+                    success: true,
+                    quest: quest.toJSON(),
+                    player: serializeNpcForClient(currentPlayer),
+                    rewards: processingContext.questCompletionRewards,
+                    benefitResults: processingContext.questRewardBenefitResults,
+                    experienceAwards: processingContext.experienceAwards,
+                    currencyChanges: processingContext.currencyChanges,
+                    dispositionChanges: processingContext.dispositionChanges,
+                    factionStandingChanges: processingContext.factionStandingChanges
+                });
+            } catch (error) {
+                console.error(`Failed to retry rewards for quest "${quest.name}":`, error);
+                return res.status(500).json({
+                    success: false,
+                    error: error?.message || 'Failed to retry quest rewards.',
+                    stack: typeof error?.stack === 'string' ? error.stack : null
                 });
             }
         });
@@ -36172,7 +36365,8 @@ module.exports = function registerApiRoutes(scope) {
 
             const requestOptions = {
                 messages,
-                metadataLabel: 'faction_inbound_relationship_generation'
+                metadataLabel: 'faction_inbound_relationship_generation',
+                expectedXmlRootTag: 'factionRelationships'
             };
             if (typeof promptData.temperature === 'number') {
                 requestOptions.temperature = promptData.temperature;
@@ -41711,7 +41905,8 @@ module.exports = function registerApiRoutes(scope) {
                         { role: 'system', content: plausibilityTemplate.systemPrompt },
                         { role: 'user', content: plausibilityTemplate.generationPrompt }
                     ],
-                    metadataLabel: 'craft_plausibility'
+                    metadataLabel: 'craft_plausibility',
+                    expectedXmlRootTag: 'response'
                 });
 
                 LLMClient.logPrompt({
@@ -42241,7 +42436,8 @@ module.exports = function registerApiRoutes(scope) {
                                 __codexQuotaTurnKey: (typeof payload.requestId === 'string' && payload.requestId.trim())
                                     ? payload.requestId.trim()
                                     : `craft_turn_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`
-                            }
+                            },
+                            expectedXmlRootTag: 'result'
                         };
                         if (useTinyBrainCraftNarrative) {
                             const tinyBrainRun = await runTinyBrainNarrativePrompt({
@@ -42952,7 +43148,8 @@ module.exports = function registerApiRoutes(scope) {
                         { role: 'system', content: plausibilityTemplate.systemPrompt },
                         { role: 'user', content: plausibilityTemplate.generationPrompt }
                     ],
-                    metadataLabel: 'location_modify_plausibility'
+                    metadataLabel: 'location_modify_plausibility',
+                    expectedXmlRootTag: 'response'
                 });
 
                 LLMClient.logPrompt({
@@ -43177,7 +43374,8 @@ module.exports = function registerApiRoutes(scope) {
                                 __codexQuotaTurnKey: (typeof payload.requestId === 'string' && payload.requestId.trim())
                                     ? payload.requestId.trim()
                                     : `location_modify_turn_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`
-                            }
+                            },
+                            expectedXmlRootTag: 'result'
                         };
                         if (useTinyBrainLocationModifyNarrative) {
                             const tinyBrainRun = await runTinyBrainNarrativePrompt({
@@ -44115,6 +44313,7 @@ module.exports = function registerApiRoutes(scope) {
                     temperature: parsedTemplate.temperature,
                     metadataLabel,
                     validateXML: false,
+                    expectedXmlRootTag: 'results',
                     requiredRegex: /<results[\s\S]*<\/results>/i
                 });
 
@@ -44555,6 +44754,7 @@ module.exports = function registerApiRoutes(scope) {
                     temperature: parsedTemplate.temperature,
                     metadataLabel,
                     validateXML: false,
+                    expectedXmlRootTag: 'combinationGroups',
                     requiredRegex: /<combinationGroups[\s\S]*<\/combinationGroups>/i
                 });
 
@@ -46279,6 +46479,7 @@ module.exports = function registerApiRoutes(scope) {
                         { role: 'user', content: parsedTemplate.generationPrompt }
                     ],
                     metadataLabel: 'player_action_open_container',
+                    expectedXmlRootTag: 'containerOpenResult',
                     validateXML: false
                 };
                 if (typeof parsedTemplate.temperature === 'number') {
@@ -47711,7 +47912,8 @@ module.exports = function registerApiRoutes(scope) {
 
             const requestOptions = {
                 messages,
-                metadataLabel: 'setting_hide_perception'
+                metadataLabel: 'setting_hide_perception',
+                expectedXmlRootTag: 'settingMechanics'
             };
             if (typeof promptData.temperature === 'number') {
                 requestOptions.temperature = promptData.temperature;
@@ -48347,6 +48549,7 @@ module.exports = function registerApiRoutes(scope) {
                 const requestOptions = {
                     messages,
                     metadataLabel: 'setting_autofill',
+                    expectedXmlRootTag: 'setting',
                     multimodal: Boolean(imageDataUrl)
                 };
 
@@ -49326,7 +49529,8 @@ module.exports = function registerApiRoutes(scope) {
                     { role: 'system', content: systemPrompt },
                     { role: 'user', content: generationPrompt }
                 ],
-                metadataLabel: 'season_image_descriptions'
+                metadataLabel: 'season_image_descriptions',
+                expectedXmlRootTag: 'seasonImageDescriptions'
             };
             if (typeof parsedTemplate.temperature === 'number') {
                 requestOptions.temperature = parsedTemplate.temperature;
@@ -49382,7 +49586,8 @@ module.exports = function registerApiRoutes(scope) {
                     { role: 'system', content: systemPrompt },
                     { role: 'user', content: generationPrompt }
                 ],
-                metadataLabel: 'calendar_generation'
+                metadataLabel: 'calendar_generation',
+                expectedXmlRootTag: 'calendarDefinition'
             };
             if (typeof parsedTemplate.temperature === 'number') {
                 requestOptions.temperature = parsedTemplate.temperature;
@@ -52916,6 +53121,82 @@ module.exports = function registerApiRoutes(scope) {
             });
         }
 
+        async function runSlashCommandQuestCheckPrompt() {
+            if (Globals.config?.quest_checks?.enabled !== true) {
+                throw new Error('Quest checks are disabled in the current configuration.');
+            }
+            if (!currentPlayer) {
+                throw new Error('Quest checking requires an active player.');
+            }
+
+            const activeQuests = Quest.filterActiveQuests(currentPlayer.currentQuests, {
+                includePaused: false
+            });
+            if (!activeQuests.length) {
+                throw new Error('There are no active, unpaused quests to check.');
+            }
+
+            const response = await Events.runQuestChecks({
+                allowWithoutEventChecks: true,
+                bypassInterval: true
+            });
+            if (typeof response !== 'string' || !response.trim()) {
+                throw new Error('Quest check prompt did not produce a response.');
+            }
+            Events.resetQuestCheckTurnCounter();
+
+            const parsedEntries = Events.parseQuestObjectiveStatusXml(response);
+            if (!Array.isArray(parsedEntries)) {
+                throw new Error('Quest check response did not parse into an objective list.');
+            }
+
+            const location = currentPlayer.currentLocation
+                ? (Location.get(currentPlayer.currentLocation) || null)
+                : null;
+            const regionReference = location?.regionId || location?.region || null;
+            const region = regionReference && typeof regionReference === 'object'
+                ? regionReference
+                : (regionReference ? (Region.get(regionReference) || null) : null);
+            const processingContext = {
+                player: currentPlayer,
+                location,
+                region,
+                stream: null,
+                experienceAwards: [],
+                currencyChanges: [],
+                environmentalDamageEvents: [],
+                needBarChanges: [],
+                dispositionChanges: [],
+                factionStandingChanges: [],
+                questCompletionRewards: [],
+                questCompletionErrors: [],
+                completedQuestObjectives: [],
+                followupResults: [],
+                allowEnvironmentalEffects: false,
+                isNpcTurn: false
+            };
+
+            if (parsedEntries.length) {
+                await Events.processQuestObjectiveCompletionEntries(
+                    parsedEntries,
+                    processingContext
+                );
+            }
+
+            return {
+                response,
+                parsedEntries,
+                completedObjectives: processingContext.completedQuestObjectives,
+                rewards: processingContext.questCompletionRewards,
+                errors: processingContext.questCompletionErrors,
+                experienceAwards: processingContext.experienceAwards,
+                currencyChanges: processingContext.currencyChanges,
+                dispositionChanges: processingContext.dispositionChanges,
+                factionStandingChanges: processingContext.factionStandingChanges,
+                followupResults: processingContext.followupResults
+            };
+        }
+
         function buildSlashCommandInteractionContext({ userId = null, clientId = null, argsText = '', replies = [] } = {}) {
             const getChatHistory = () => chatHistory;
             const getHistory = (query, startIndexOrOptions = null, countArg = null) => {
@@ -52999,6 +53280,7 @@ module.exports = function registerApiRoutes(scope) {
                         housekeepingInstructions: instructions
                     });
                 },
+                runQuestCheckPrompt: runSlashCommandQuestCheckPrompt,
                 runMysteryBoxCleanupPrompt: async () => runMysteryBoxCleanupPrompt({
                     locationOverride: currentPlayer?.currentLocation
                         ? (Location.get(currentPlayer.currentLocation) || null)

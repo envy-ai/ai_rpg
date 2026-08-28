@@ -628,6 +628,7 @@ test('LLMCompletionCassette fingerprints data URLs without copying them into sum
     try {
         const descriptor = LLMCompletionCassette.createRequestDescriptor({
             metadataLabel: 'image_prompt',
+            expectedXmlRootTags: ['turnResult', 'rejected'],
             messages: [{
                 role: 'user',
                 content: [{ type: 'image_url', image_url: { url: 'data:image/png;base64,secretpixels' } }]
@@ -635,6 +636,7 @@ test('LLMCompletionCassette fingerprints data URLs without copying them into sum
         });
         const fingerprint = LLMCompletionCassette.fingerprintRequest(descriptor);
         assert.match(fingerprint, /^sha256:[a-f0-9]{64}$/);
+        assert.deepEqual(descriptor.validation.expectedXmlRootTags, ['turnResult', 'rejected']);
         assert.doesNotMatch(JSON.stringify(LLMCompletionCassette.summarizeRequest(descriptor)), /secretpixels/);
 
         const toolResultDescriptor = createdAt => LLMCompletionCassette.createRequestDescriptor({

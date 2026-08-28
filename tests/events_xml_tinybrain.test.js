@@ -43,7 +43,7 @@ function buildEventsContext(overrides = {}) {
         party: [],
         characterName: 'Exis',
         experiencePointValues: [],
-        config: {},
+        config: { soft_quest_limit: 10 },
         tinyBrainEventSectionKind: 'current',
         tinyBrainEventSectionLabel: 'CURRENT',
         eventCheckHiddenNpcNames: [],
@@ -217,13 +217,34 @@ test('tiny-brain event stage parser validates allowlists, semantics, trackers, a
     );
     assert.equal(repeatedCurrency.value.xml, '');
     assert.deepEqual(repeatedCurrency.value.signatures, []);
-    assert.throws(
-        () => Events.parseTinyBrainEventXmlStage(
+    const warnings = [];
+    const originalWarn = console.warn;
+    console.warn = (...args) => warnings.push(args.join(' '));
+    try {
+        const ignoredUnknown = Events.parseTinyBrainEventXmlStage(
             '<events><updateTracker><trackerName>Alarm</trackerName></updateTracker></events>',
             { sectionKind: 'tracker', stageId: 'trackers', allowedTags: ['trackerUpdates'] }
-        ),
-        /does not allow <updateTracker>/
-    );
+        );
+        assert.equal(ignoredUnknown.value.xml, '');
+
+        assert.throws(
+            () => Events.parseTinyBrainEventXmlStage(
+                '<events><in_combat><value>false</value></in_combat><anyQuestObjectivesCompleted><value>false</value></anyQuestObjectivesCompleted></events>',
+                {
+                    stageId: 'final',
+                    allowedTags: ['inCombat', 'anyQuestObjectivesCompleted'],
+                    requiredTags: ['inCombat', 'anyQuestObjectivesCompleted']
+                }
+            ),
+            /missing required tags: inCombat/
+        );
+    } finally {
+        console.warn = originalWarn;
+    }
+    assert.deepEqual(warnings, [
+        'Ignoring unknown event XML tag <updateTracker>.',
+        'Ignoring unknown event XML tag <in_combat>.'
+    ]);
 
     const tracker = Events.parseTinyBrainEventXmlStage(
         '<events><trackerUpdates><trackerUpdate><trackerName>Alarm</trackerName><type>numerical_count</type><action>add</action><newValue>2</newValue><reason>Two guards remain.</reason></trackerUpdate></trackerUpdates></events>',
@@ -738,6 +759,8 @@ test('events tiny-brain template registers category checkpoints and local result
         ['scene', 'items', 'characters', 'combat', 'progression', 'final', 'trackers']
     );
     assert.match(full, /# Events XML Event Schema/, 'schema include missing');
+    assert.match(full, /<activeQuestCount>0<\/activeQuestCount>/);
+    assert.match(full, /<softQuestLimit>10<\/softQuestLimit>/);
     assert.match(full, /<trackerUpdates>/, 'tracker schema should be documented');
     assert.doesNotMatch(
         full,
@@ -898,7 +921,7 @@ test('staged tiny-brain run retries one malformed checkpoint and assembles valid
         '<done/>',
         '<done/>',
         '<events><inCombat><value>false</value></inCombat><anyQuestObjectivesCompleted><value>false</value></anyQuestObjectivesCompleted></events>',
-        '<events><updateTracker><trackerName>Alarm</trackerName></updateTracker></events>',
+        '<events><currency><amount>3</amount></currency></events>',
         '<done/>'
     ];
     let calls = 0;

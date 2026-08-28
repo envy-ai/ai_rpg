@@ -308,6 +308,7 @@ function makeQuest(overrides = {}) {
 
 function makeRuntime({
     npc = makeNpc(),
+    npcs = null,
     firstResponse,
     player = null,
     things = [],
@@ -323,6 +324,7 @@ function makeRuntime({
     const location = locationList[0];
     const region = regionList[0];
     const currentPlayer = player || { id: 'player-1', name: 'Player', isNPC: false, currentLocation: location.id };
+    const npcList = Array.isArray(npcs) ? npcs : [npc];
     const llmResponses = [
         firstResponse,
         {
@@ -362,7 +364,7 @@ function makeRuntime({
                 return JSON.stringify(messages);
             }
         },
-        Player: { getAll: () => [currentPlayer, npc].filter(Boolean) },
+        Player: { getAll: () => [currentPlayer, ...npcList].filter(Boolean) },
         Thing: { getAll: () => things },
         Location: { get: id => locationList.find(entry => entry.id === id) || null, getAll: () => locationList },
         Region: { getAll: () => regionList },
@@ -402,6 +404,15 @@ test('updateCharacterFields tool schema exists', () => {
     assert.deepEqual(tool.parameters.required, ['character', 'fields']);
     assert.equal(tool.parameters.properties.character.type, 'string');
     assert.equal(tool.parameters.properties.fields.type, 'object');
+});
+
+test('bulkUpdateCharacterFields tool schema accepts one XML document', () => {
+    const tool = findToolDefinition('bulkUpdateCharacterFields');
+    assert.ok(tool, 'bulkUpdateCharacterFields tool definition should exist');
+    assert.deepEqual(tool.parameters.required, ['xml']);
+    assert.equal(tool.parameters.properties.xml.type, 'string');
+    assert.match(tool.description, /one <characters> root/);
+    assert.match(tool.description, /exact full NPC name/);
 });
 
 test('updateObjectFields tool schema exists', () => {
@@ -556,6 +567,110 @@ test('updateCharacterFields applies allowed scalar and map fields directly to an
         'willingToTrade',
         'shortDescription'
     ]);
+});
+
+test('bulkUpdateCharacterFields validates then applies multiple NPC field updates from strict XML', async () => {
+    const neka = makeNpc({ id: 'npc-neka', name: 'Neka Voss' });
+    const ragna = makeNpc({ id: 'npc-ragna', name: 'Ragna Kaen' });
+    const xml = [
+        '<characters>',
+        '  <character>',
+        '    <name>Neka Voss</name>',
+        '    <field><key>description</key><value>Now carries salves &amp; clean bandages.</value></field>',
+        '    <field><key>level</key><value>4</value></field>',
+        '    <field><key>aliases</key><value>["Patch", "Medic"]</value></field>',
+        '  </character>',
+        '  <character>',
+        '    <name>Ragna Kaen</name>',
+        '    <field><key>aiNotes</key><value>Provides raid-certified combat support.</value></field>',
+        '    <field><key>willingToTrade</key><value>false</value></field>',
+        '  </character>',
+        '</characters>'
+    ].join('\n');
+    const runtime = makeRuntime({
+        npcs: [neka, ragna],
+        firstResponse: toolResponse({ xml }, 'bulkUpdateCharacterFields')
+    });
+
+    const result = await runtime.runChatCompletionWithToolLoop({
+        requestOptions: { messages: [{ role: 'user', content: '@Update both NPCs.' }] },
+        metadataLabel: 'test_bulk_update_character_fields',
+        allowDirectShortDescriptionUpdates: true
+    });
+
+    assert.equal(neka.description, 'Now carries salves & clean bandages.');
+    assert.equal(neka.shortDescription, 'Generated character summary.');
+    assert.equal(neka.level, 4);
+    assert.deepEqual(neka.aliases, ['Patch', 'Medic']);
+    assert.equal(ragna.aiNotes, 'Provides raid-certified combat support.');
+    assert.equal(ragna.willingToTrade, false);
+    assert.equal(result.toolInvocations[0].metadata.status, 'success');
+    assert.equal(result.toolInvocations[0].metadata.charactersUpdated, 2);
+    assert.equal(result.toolInvocations[0].metadata.fieldsUpdated, 6);
+    const toolMessage = result.conversationMessages.find(message => message.role === 'tool');
+    assert.match(toolMessage.content, /<bulkUpdateCharacterFieldsResult>/);
+});
+
+test('bulkUpdateCharacterFields rejects an invalid later field before changing any NPC', async () => {
+    const neka = makeNpc({ id: 'npc-neka', name: 'Neka Voss' });
+    const ragna = makeNpc({ id: 'npc-ragna', name: 'Ragna Kaen' });
+    const xml = [
+        '<characters>',
+        '  <character>',
+        '    <name>Neka Voss</name>',
+        '    <field><key>aiNotes</key><value>This must not be applied.</value></field>',
+        '  </character>',
+        '  <character>',
+        '    <name>Ragna Kaen</name>',
+        '    <field><key>inventory</key><value>[]</value></field>',
+        '  </character>',
+        '</characters>'
+    ].join('\n');
+    const runtime = makeRuntime({
+        npcs: [neka, ragna],
+        firstResponse: toolResponse({ xml }, 'bulkUpdateCharacterFields')
+    });
+
+    const result = await runtime.runChatCompletionWithToolLoop({
+        requestOptions: { messages: [{ role: 'user', content: '@Update both NPCs.' }] },
+        metadataLabel: 'test_bulk_update_character_fields_prevalidation',
+        allowDirectShortDescriptionUpdates: true
+    });
+
+    assert.equal(neka.aiNotes, '');
+    assert.equal(ragna.aiNotes, '');
+    assert.equal(result.toolInvocations[0].metadata.code, 'unsupported_field');
+});
+
+test('bulkUpdateCharacterFields requires exact full names and rejects malformed field structure', async () => {
+    const npc = makeNpc({ id: 'npc-neka', name: 'Neka Voss' });
+    const runtimeForName = makeRuntime({
+        npc,
+        firstResponse: toolResponse({
+            xml: '<characters><character><name>Neka</name><field><key>aiNotes</key><value>Wrong target.</value></field></character></characters>'
+        }, 'bulkUpdateCharacterFields')
+    });
+    const nameResult = await runtimeForName.runChatCompletionWithToolLoop({
+        requestOptions: { messages: [{ role: 'user', content: '@Update Neka.' }] },
+        metadataLabel: 'test_bulk_update_character_fields_exact_name',
+        allowDirectShortDescriptionUpdates: true
+    });
+    assert.equal(nameResult.toolInvocations[0].metadata.code, 'character_not_found');
+    assert.equal(npc.aiNotes, '');
+
+    const runtimeForXml = makeRuntime({
+        npc,
+        firstResponse: toolResponse({
+            xml: '<characters><character><name>Neka Voss</name><field><key>aiNotes</key></field></character></characters>'
+        }, 'bulkUpdateCharacterFields')
+    });
+    const xmlResult = await runtimeForXml.runChatCompletionWithToolLoop({
+        requestOptions: { messages: [{ role: 'user', content: '@Update Neka.' }] },
+        metadataLabel: 'test_bulk_update_character_fields_invalid_xml',
+        allowDirectShortDescriptionUpdates: true
+    });
+    assert.equal(xmlResult.toolInvocations[0].metadata.code, 'invalid_xml');
+    assert.equal(npc.aiNotes, '');
 });
 
 test('description updates remain atomic when short-description generation fails', async () => {

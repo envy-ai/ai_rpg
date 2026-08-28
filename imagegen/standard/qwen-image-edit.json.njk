@@ -19,7 +19,7 @@
   "7": { "class_type": "VAELoader", "inputs": { "vae_name": "qwen_image_vae.safetensors" } },
   "8": {
     "class_type": "TextEncodeQwenImageEditPlus",
-    "inputs": { "clip": ["6", 0], "vae": ["7", 0], "image1": ["1", 0], "prompt": "{{ image.prompt | json }}" }
+    "inputs": { "clip": ["6", 0], "vae": ["7", 0], "image1": ["1", 0], "prompt": ["18", 0] }
   },
   "9": {
     "class_type": "TextEncodeQwenImageEditPlus",
@@ -53,5 +53,20 @@
       "crop": "disabled"
     },
     "_meta": { "title": "Preserve Source Resolution" }
+  },
+  "18": {
+    "class_type": "PrimitiveStringMultiline",
+    "inputs": { "value": "{{ image.prompt | json }}" },
+    "_meta": { "title": "Edit Instruction" }
+  },
+  "19": {
+    "class_type": "Show any [Crystools]",
+    "inputs": {
+      "any_value": ["18", 0],
+      "console": true,
+      "display": true,
+      "prefix": "Final Prompt"
+    },
+    "_meta": { "title": "🪛 Show any value to console/display" }
   }
 }

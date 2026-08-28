@@ -111,6 +111,7 @@ test('chat history mutation tools are generic-prompt-only built-ins', () => {
     assert.ok(infoToolBlock, 'information-gathering tool allowlist should be present');
     assert.doesNotMatch(infoToolBlock, /editChatLogEntry/);
     assert.doesNotMatch(infoToolBlock, /regexReplace/);
+    assert.doesNotMatch(infoToolBlock, /bulkUpdateCharacterFields/);
     assert.doesNotMatch(infoToolBlock, /rerunSceneSummary/);
     assert.doesNotMatch(infoToolBlock, /editSceneSummary/);
 
@@ -118,6 +119,7 @@ test('chat history mutation tools are generic-prompt-only built-ins', () => {
     assert.ok(genericOnlyBlock, 'generic-prompt-only built-in tool denylist should be present');
     assert.match(genericOnlyBlock, /editChatLogEntry/);
     assert.match(genericOnlyBlock, /regexReplace/);
+    assert.match(genericOnlyBlock, /bulkUpdateCharacterFields/);
     assert.match(genericOnlyBlock, /rerunSceneSummary/);
     assert.match(genericOnlyBlock, /editSceneSummary/);
     assert.match(apiSource, /includeGenericPromptOnly:\s*false/);

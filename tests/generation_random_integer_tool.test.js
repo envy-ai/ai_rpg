@@ -151,7 +151,7 @@ test('tool loop disables additionalPayload tools after attempts are exhausted', 
   assert.strictEqual(seenRequestOptions[2].additionalPayload.tool_choice, 'none');
 });
 
-test('generation prompt completions are wired to the random integer tool loop', () => {
+test('generation prompt completions leave the random integer tool disabled', () => {
   const serverSource = fs.readFileSync(
     path.join(__dirname, '..', 'server.js'),
     'utf8',
@@ -163,19 +163,24 @@ test('generation prompt completions are wired to the random integer tool loop', 
   );
   assert.match(
     serverSource,
-    /const GENERATION_RANDOM_TOOL_NAMES = new Set\(\[\s*'generateRandomInteger'\s*\]\);/,
+    /const GENERATION_RANDOM_TOOL_NAMES = new Set\(\[\s*\/\/ Disabled:[\s\S]*?\/\/ 'generateRandomInteger',\s*\]\);/,
   );
   assert.match(serverSource, /function getGenerationPromptToolDefinitions\(\)/);
   assert.match(serverSource, /async function runGenerationPromptCompletion\(/);
   assert.match(
     serverSource,
-    /additionalPayload:\s*\{[\s\S]{0,300}tools:\s*getGenerationPromptToolDefinitions\(\)[\s\S]{0,120}tool_choice:\s*toolChoice/,
-    'generation helper should expose tools through LLMClient additionalPayload',
+    /if \(!generationToolDefinitions\.length\)\s*\{[\s\S]{0,800}return LLMClient\.chatCompletion\(/,
+    'generation helper should use a direct completion while generation tools are disabled',
+  );
+  assert.match(
+    serverSource,
+    /delete toolFreeAdditionalPayload\.tools;[\s\S]{0,300}delete toolFreeAdditionalPayload\.tool_choice;/,
+    'generation helper should remove inherited tool definitions and tool choice',
   );
   assert.match(
     serverSource,
     /preserveBaseContextToolDefinitions:\s*true/,
-    'generation helper should keep its restricted random-only tool schema',
+    'generation helper should prevent base-context policy from restoring the shared tool schema',
   );
   assert.match(
     serverSource,
@@ -237,6 +242,16 @@ test('location thing generation retries strict responses with parser feedback an
     /maxAttempts:\s*resolveConfiguredPromptMaxAttempts\(config\?\.ai,\s*\{\s*fallbackMaxAttempts:\s*3\s*\}\)/,
   );
   assert.match(generationSource, /messages:\s*completionMessages/);
+  assert.match(
+    generationSource,
+    /expectedXmlRootTag:\s*'things'/,
+    'location thing generation must validate the <things> root emitted by its prompt',
+  );
+  assert.doesNotMatch(
+    generationSource,
+    /expectedXmlRootTag:\s*'items'/,
+    'location thing generation must not reject its <things> response as an <items> response',
+  );
   assert.match(generationSource, /The preceding location item\/scenery XML failed structured validation:/);
   assert.match(generationSource, /exactly one <things>\.\.\.<\/things> block/);
   assert.match(generationSource, /strictXml:\s*true/);

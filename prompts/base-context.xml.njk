@@ -525,6 +525,10 @@ This is a list of all characters in the story and a short description of each.
       {% endfor %}
     {% endif %}</inventory>
     {% endif %}
+    <questCapacity>
+      <activeQuestCount>{{ currentPlayer.currentQuests | length }}</activeQuestCount>
+      <softQuestLimit>{{ config.soft_quest_limit }}</softQuestLimit>
+    </questCapacity>
     <needs>
 {% for sentence in currentPlayer.needs %}      - {{ sentence }}
 {% endfor %}    </needs>
@@ -561,6 +565,23 @@ This is a list of all characters in the story and a short description of each.
           <objective completed="{{ objective.completed }}" optional="{{ objective.optional }}" index="{{ loop.index }}">{{ objective.description }}</objective>
           {% endfor -%}
         </objectives>
+        {% if quest.rewardBenefits and quest.rewardBenefits.length %}
+        <rewardBenefits>
+          {% for benefit in quest.rewardBenefits %}
+          <benefit id="{{ benefit.id }}" type="{{ benefit.type }}">
+            <label>{{ benefit.label }}</label>
+            <targetId>{{ benefit.targetId }}</targetId>
+            {% if benefit.description %}<description>{{ benefit.description }}</description>{% endif %}
+            {% if benefit.role %}<role>{{ benefit.role }}</role>{% endif %}
+          </benefit>
+          {% endfor %}
+        </rewardBenefits>
+        {% endif %}
+        {% if quest.rewardNotes and quest.rewardNotes.length %}
+        <rewardNotes>
+          {% for note in quest.rewardNotes %}<note>{{ note }}</note>{% endfor %}
+        </rewardNotes>
+        {% endif %}
         <giver>{{ quest.giver }}</giver>
       </quest>
       {% endfor %}

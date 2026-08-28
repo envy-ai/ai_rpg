@@ -238,7 +238,8 @@ class StatusEffect {
 
         const response = await LLMClient.chatCompletion({
             messages,
-            metadataLabel: 'status_effect_generate'
+            metadataLabel: 'status_effect_generate',
+            expectedXmlRootTag: 'statusEffects'
         });
 
         if (typeof LLMClient.logPrompt === 'function') {

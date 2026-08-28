@@ -63,4 +63,9 @@ test('chat request failures show an error popup instead of only adding a system 
         /catch\s*\(error\)\s*\{[\s\S]*?const errorMessage\s*=\s*`Connection error: \$\{error\.message\}`;[\s\S]*?this\.showChatErrorPopup\(errorMessage\);/,
         'network failures should open the popup'
     );
+    assert.match(
+        submitSource,
+        /Array\.isArray\(data\.questCompletionErrors\)[\s\S]*?this\.showChatErrorPopup\(questErrorMessage\);/,
+        'quest reward failures should open the popup without rejecting the completed objective response'
+    );
 });

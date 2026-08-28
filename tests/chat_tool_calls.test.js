@@ -101,6 +101,72 @@ test('moreInfo tool description discourages redundant lookups for visible full X
     assert.match(definition.description, /do not call.*items or characters.*full XML.*redundant information/i);
 });
 
+test('tool loop status identifies the tool being called', async () => {
+    const statusEvents = [];
+    const randomIntegerTool = CHAT_TOOL_DEFINITIONS.find(
+        definition => definition?.function?.name === 'generateRandomInteger'
+    );
+    assert.ok(randomIntegerTool, 'Expected the generateRandomInteger chat tool definition.');
+
+    const runtime = createMinimalRuntime({
+        llmResponses: [
+            {
+                data: {
+                    choices: [{
+                        message: {
+                            content: '',
+                            tool_calls: [{
+                                id: 'call-random-status',
+                                type: 'function',
+                                function: {
+                                    name: 'generateRandomInteger',
+                                    arguments: JSON.stringify({ min: 4, max: 4 })
+                                }
+                            }]
+                        }
+                    }]
+                }
+            },
+            {
+                data: {
+                    choices: [{
+                        message: {
+                            content: 'Done.',
+                            tool_calls: []
+                        }
+                    }]
+                }
+            }
+        ]
+    });
+
+    const result = await runtime.runChatCompletionWithToolLoop({
+        requestOptions: {
+            messages: [{ role: 'user', content: 'Roll exactly four.' }],
+            additionalPayload: {
+                tools: [randomIntegerTool],
+                tool_choice: 'auto'
+            }
+        },
+        metadataLabel: 'named_tool_status_test',
+        streamEmitter: {
+            isEnabled: true,
+            status: (stage, payload) => statusEvents.push({ stage, payload })
+        }
+    });
+
+    assert.equal(result.aiResponse, 'Done.');
+    assert.deepEqual(statusEvents, [{
+        stage: 'named_tool_status_test:tool_calls',
+        payload: {
+            round: 1,
+            toolCallCount: 1,
+            toolNames: ['generateRandomInteger'],
+            message: 'Running tool: generateRandomInteger...'
+        }
+    }]);
+});
+
 test('regexReplace tool is declared and mutates allowlisted text through the shared runtime', async () => {
     const definition = findToolDefinition('regexReplace');
     assert.ok(definition, 'Expected regexReplace chat tool definition.');

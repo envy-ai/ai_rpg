@@ -14,6 +14,7 @@ const MysteryThread = require("./MysteryThread.js");
 const Tracker = require("./Tracker.js");
 const { CHAT_TOOL_DEFINITIONS, createChatToolRuntime } = require("./chat_tool_calls.js");
 const { resolveQuestDispositionRewardDelta } = require("./quest_disposition_reward_delta.js");
+const { questRewardBenefitRegistry } = require("./QuestRewardBenefitRegistry.js");
 const {
     createTinyBrainContinuationState,
     requireNonWhitespaceResponse,
@@ -3173,6 +3174,7 @@ class Events {
                 timeoutMs: this._baseTimeout,
                 temperature: 0,
                 validateXML: false,
+                expectedXmlRootTag: "characters",
                 requiredRegex: /<characters>[\s\S]*<\/characters>/i,
                 dumpReasoningToConsole: true,
                 stream: true,
@@ -3908,6 +3910,7 @@ class Events {
                 timeoutMs: this._baseTimeout,
                 temperature: 0,
                 validateXML: false,
+                expectedXmlRootTag: "events",
                 requiredRegex: /<events\b[\s\S]*<\/events>/i,
                 dumpReasoningToConsole: true,
                 stream: true,
@@ -4504,6 +4507,7 @@ class Events {
                     timeoutMs: this._baseTimeout,
                     temperature: 0,
                     validateXML: false,
+                    expectedXmlRootTag: "final",
                     requiredRegex: /<final>[\s\S]*\S[\s\S]*<\/final>/i,
                     dumpReasoningToConsole: true,
                     stream: true,
@@ -5223,6 +5227,12 @@ class Events {
         if (!Array.isArray(context.questCompletionRewards)) {
             context.questCompletionRewards = [];
         }
+        if (!Array.isArray(context.questCompletionErrors)) {
+            context.questCompletionErrors = [];
+        }
+        if (!Array.isArray(context.questRewardBenefitResults)) {
+            context.questRewardBenefitResults = [];
+        }
         if (!Array.isArray(context.experienceAwards)) {
             context.experienceAwards = [];
         }
@@ -5249,15 +5259,6 @@ class Events {
             parseXMLTemplate,
             prepareBasePromptContext,
         } = this._deps;
-        if (
-            typeof promptEnv?.render !== "function" ||
-            typeof parseXMLTemplate !== "function" ||
-            typeof prepareBasePromptContext !== "function"
-        ) {
-            throw new Error(
-                "completed_quest_objective handler is missing prompt dependencies.",
-            );
-        }
         const currencyContext = this.config?.setting || Globals.config || {};
         const rewardLabel = (amount) => {
             if (typeof getCurrencyLabel === "function") {
@@ -5347,280 +5348,304 @@ class Events {
 
             rewardedQuestIds.add(quest.id);
 
-            const rewardItems = Array.isArray(quest.rewardItems)
-                ? quest.rewardItems.filter(Boolean)
-                : [];
-            const rewardCurrency = Number.isFinite(quest.rewardCurrency)
-                ? Math.max(0, quest.rewardCurrency)
-                : 0;
-            const rewardXp = Number.isFinite(quest.rewardXp)
-                ? Math.max(0, quest.rewardXp)
-                : 0;
-            const rewardFactionReputationRaw =
-                quest.rewardFactionReputation && typeof quest.rewardFactionReputation === "object"
-                    ? quest.rewardFactionReputation
-                    : {};
-            const rewardFactionReputation = {};
-            for (const [rawFactionId, rawAmount] of Object.entries(rewardFactionReputationRaw)) {
-                const factionId = typeof rawFactionId === "string" ? rawFactionId.trim() : "";
-                if (!factionId) {
-                    continue;
-                }
-                const amount = Number(rawAmount);
-                if (!Number.isFinite(amount) || !Number.isInteger(amount) || amount === 0) {
-                    continue;
-                }
-                rewardFactionReputation[factionId] = amount;
-            }
-
-            const grantedItems = [];
-            if (rewardItems.length && typeof generateItemsByNames !== "function") {
-                throw new Error(
-                    `Quest "${quest.name}" has item rewards, but generateItemsByNames is unavailable.`,
-                );
-            }
-            for (let rewardIndex = 0; rewardIndex < rewardItems.length; rewardIndex += 1) {
-                const requestedItemName = typeof rewardItems[rewardIndex] === "string"
-                    ? rewardItems[rewardIndex].trim()
-                    : "";
-                if (!requestedItemName) {
-                    continue;
-                }
-                const existingRewardItem = typeof player.getInventoryItems === "function"
-                    ? player.getInventoryItems().find((item) => (
-                        item?.metadata?.questRewardQuestId === quest.id
-                        && Number(item?.metadata?.questRewardIndex) === rewardIndex
-                    )) || null
-                    : null;
-                if (existingRewardItem) {
-                    grantedItems.push(existingRewardItem.name || requestedItemName);
-                    continue;
-                }
-
-                const createdItems = await generateItemsByNames({
-                    itemNames: [requestedItemName],
-                    owner: player,
-                    seeds: [{
-                        name: requestedItemName,
-                        itemOrScenery: "item",
-                    }],
-                    options: {
-                        mergeStacks: false,
-                        creationMetadata: {
-                            questRewardQuestId: quest.id,
-                            questRewardIndex: rewardIndex,
-                        },
-                    },
-                });
-                if (!Array.isArray(createdItems) || createdItems.length !== 1) {
-                    throw new Error(
-                        `Quest "${quest.name}" reward item "${requestedItemName}" did not generate exactly once.`,
-                    );
-                }
-                const createdItemName = typeof createdItems[0]?.name === "string"
-                    ? createdItems[0].name.trim()
-                    : "";
-                if (!createdItemName) {
-                    throw new Error(
-                        `Quest "${quest.name}" generated a reward item without a canonical name.`,
-                    );
-                }
-                grantedItems.push(createdItemName);
-            }
-
-            if (rewardCurrency > 0) {
-                if (typeof player.adjustCurrency !== "function") {
-                    throw new Error(
-                        `Quest "${quest.name}" has a currency reward, but player.adjustCurrency is unavailable.`,
-                    );
-                }
-                const before = typeof player.getCurrency === "function"
-                    ? player.getCurrency()
-                    : Number(player.currency) || 0;
-                const after = player.adjustCurrency(rewardCurrency);
-                context.currencyChanges.push({
-                    amount: rewardCurrency,
-                    before,
-                    after,
-                    reason: `Completed quest: ${quest.name}`,
-                });
-            }
-            if (rewardXp > 0 && typeof player.addExperience === "function") {
-                player.addExperience(rewardXp);
-                context.experienceAwards.push({
-                    amount: rewardXp,
-                    reason: `Completed quest: ${quest.name}`,
-                });
-            }
-
-            const appliedFactionStandingChanges = [];
-            for (const [factionId, delta] of Object.entries(rewardFactionReputation)) {
-                const normalizedFactionId = typeof factionId === "string" ? factionId.trim() : "";
-                if (!normalizedFactionId) {
-                    continue;
-                }
-                const faction = typeof Faction.getById === "function"
-                    ? Faction.getById(normalizedFactionId)
-                    : null;
-                if (!faction) {
-                    console.warn(
-                        `Quest "${quest.name}" has reputation reward for unknown faction "${normalizedFactionId}"; skipping entry.`,
-                    );
-                    continue;
-                }
-                if (typeof player.getFactionStanding !== "function" || typeof player.setFactionStanding !== "function") {
-                    console.warn(
-                        `Quest "${quest.name}" has faction reputation rewards, but player standing helpers are unavailable.`,
-                    );
-                    break;
-                }
-
-                const beforeRaw = player.getFactionStanding(normalizedFactionId);
-                const before = Number.isFinite(beforeRaw) ? beforeRaw : 0;
-                const after = before + delta;
-                try {
-                    player.setFactionStanding(normalizedFactionId, after);
-                } catch (error) {
-                    console.warn(
-                        `Failed to apply quest faction standing reward for faction "${normalizedFactionId}":`,
-                        error?.message || error,
-                    );
-                    continue;
-                }
-
-                appliedFactionStandingChanges.push({
-                    factionId: normalizedFactionId,
-                    factionName: faction.name || normalizedFactionId,
-                    amount: delta,
-                    before,
-                    after
-                });
-            }
-
-            if (appliedFactionStandingChanges.length) {
-                context.factionStandingChanges.push(...appliedFactionStandingChanges);
-            }
-
-            const appliedNpcDispositionRewards = Events._applyQuestNpcDispositionRewards(
-                quest,
-                context,
-            );
-
-            quest.rewardClaimed = true;
-
-            const rewardLines = [];
-            grantedItems.filter(Boolean).forEach((itemName) => {
-                rewardLines.push(itemName);
-            });
-            if (rewardXp > 0) {
-                rewardLines.push(`${rewardXp} XP`);
-            }
-            if (rewardCurrency > 0) {
-                rewardLines.push(`${rewardCurrency} ${rewardLabel(rewardCurrency)}`);
-            }
-            for (const change of appliedFactionStandingChanges) {
-                const amount = Number(change.amount);
-                const signed = amount > 0 ? `+${amount}` : `${amount}`;
-                rewardLines.push(`${signed} reputation with ${change.factionName}`);
-            }
-            for (const change of appliedNpcDispositionRewards) {
-                const amount = Number(change.delta);
-                if (!Number.isFinite(amount) || amount === 0) {
-                    continue;
-                }
-                const signed = amount > 0 ? `+${Math.round(amount)}` : `${Math.round(amount)}`;
-                const typeLabel = change.typeLabel || change.typeKey || "disposition";
-                const npcName = change.npcName || change.npcId || "NPC";
-                rewardLines.push(`${signed} ${typeLabel} disposition with ${npcName}`);
-            }
-
-            if (!rewardLines.length) {
-                continue;
-            }
-
-            let rewardProse = "";
-            const useTinyBrainQuestReward = isTinyBrainPromptEnabled(
-                Globals.config,
-                "quest_reward_prose",
-            );
-            const fallbackList = [
-                "Received item summary (shorten these item names to a reasonable size):",
-                ...rewardLines.map((line) => `* ${line}`),
-            ].join("\n");
+            let rewardApplicationComplete = false;
             try {
-                if (!rewardPromptContext) {
-                    const rewardLocation = context.location || null;
-                    rewardPromptContext = await prepareBasePromptContext({
-                        locationOverride: rewardLocation,
-                    });
-                    context._questRewardPromptContext = rewardPromptContext;
-                }
-                const rewardTemplateContext = {
-                    ...rewardPromptContext,
-                    promptType: "quest-reward-prose",
-                    questRewards: rewardLines,
-                };
-                const tinyBrain = useTinyBrainQuestReward
-                    ? configureTinyBrainPromptContext(
-                        rewardTemplateContext,
-                        "quest_reward_prose",
-                    )
-                    : null;
-                const renderedRewardPrompt = promptEnv.render(
-                    "base-context.xml.njk",
-                    rewardTemplateContext,
+                const rewardBenefits = Quest.normalizeRewardBenefits(quest.rewardBenefits);
+                const appliedBenefitIds = new Set(
+                    Quest.normalizeAppliedRewardBenefitIds(quest.appliedRewardBenefitIds),
                 );
-                const parsedRewardTemplate = parseXMLTemplate(renderedRewardPrompt);
+                const appliedBenefitResults = [];
+                for (const rewardBenefit of rewardBenefits) {
+                    if (appliedBenefitIds.has(rewardBenefit.id)) {
+                        appliedBenefitResults.push(
+                            questRewardBenefitRegistry.summarize(
+                                rewardBenefit,
+                                { alreadySatisfied: true },
+                                { player, quest, findActorById: this._deps?.findActorById },
+                            ),
+                        );
+                        continue;
+                    }
+                    const applied = questRewardBenefitRegistry.apply(rewardBenefit, {
+                        player,
+                        quest,
+                        findActorById: this._deps?.findActorById,
+                    });
+                    appliedBenefitIds.add(rewardBenefit.id);
+                    quest.appliedRewardBenefitIds = Array.from(appliedBenefitIds);
+                    appliedBenefitResults.push(applied.summary);
+                    context.questRewardBenefitResults.push(applied.summary);
+                }
+
+                const rewardItems = Array.isArray(quest.rewardItems)
+                    ? quest.rewardItems.filter(Boolean)
+                    : [];
+                const rewardCurrency = Number.isFinite(quest.rewardCurrency)
+                    ? Math.max(0, quest.rewardCurrency)
+                    : 0;
+                const rewardXp = Number.isFinite(quest.rewardXp)
+                    ? Math.max(0, quest.rewardXp)
+                    : 0;
+                const rewardFactionReputationRaw =
+                    quest.rewardFactionReputation && typeof quest.rewardFactionReputation === "object"
+                        ? quest.rewardFactionReputation
+                        : {};
+                const rewardFactionReputation = {};
+                for (const [rawFactionId, rawAmount] of Object.entries(rewardFactionReputationRaw)) {
+                    const factionId = typeof rawFactionId === "string" ? rawFactionId.trim() : "";
+                    if (!factionId) {
+                        continue;
+                    }
+                    const amount = Number(rawAmount);
+                    if (!Number.isFinite(amount) || !Number.isInteger(amount) || amount === 0) {
+                        continue;
+                    }
+                    rewardFactionReputation[factionId] = amount;
+                }
+    
+                const grantedItems = [];
+                if (rewardItems.length && typeof generateItemsByNames !== "function") {
+                    throw new Error(
+                        `Quest "${quest.name}" has item rewards, but generateItemsByNames is unavailable.`,
+                    );
+                }
+                for (let rewardIndex = 0; rewardIndex < rewardItems.length; rewardIndex += 1) {
+                    const requestedItemName = typeof rewardItems[rewardIndex] === "string"
+                        ? rewardItems[rewardIndex].trim()
+                        : "";
+                    if (!requestedItemName) {
+                        continue;
+                    }
+                    const existingRewardItem = typeof player.getInventoryItems === "function"
+                        ? player.getInventoryItems().find((item) => (
+                            item?.metadata?.questRewardQuestId === quest.id
+                            && Number(item?.metadata?.questRewardIndex) === rewardIndex
+                        )) || null
+                        : null;
+                    if (existingRewardItem) {
+                        grantedItems.push(existingRewardItem.name || requestedItemName);
+                        continue;
+                    }
+    
+                    const createdItems = await generateItemsByNames({
+                        itemNames: [requestedItemName],
+                        owner: player,
+                        seeds: [{
+                            name: requestedItemName,
+                            itemOrScenery: "item",
+                        }],
+                        options: {
+                            mergeStacks: false,
+                            creationMetadata: {
+                                questRewardQuestId: quest.id,
+                                questRewardIndex: rewardIndex,
+                            },
+                        },
+                    });
+                    if (!Array.isArray(createdItems) || createdItems.length !== 1) {
+                        throw new Error(
+                            `Quest "${quest.name}" reward item "${requestedItemName}" did not generate exactly once.`,
+                        );
+                    }
+                    const createdItemName = typeof createdItems[0]?.name === "string"
+                        ? createdItems[0].name.trim()
+                        : "";
+                    if (!createdItemName) {
+                        throw new Error(
+                            `Quest "${quest.name}" generated a reward item without a canonical name.`,
+                        );
+                    }
+                    grantedItems.push(createdItemName);
+                }
+    
+                if (rewardCurrency > 0) {
+                    if (typeof player.adjustCurrency !== "function") {
+                        throw new Error(
+                            `Quest "${quest.name}" has a currency reward, but player.adjustCurrency is unavailable.`,
+                        );
+                    }
+                    const before = typeof player.getCurrency === "function"
+                        ? player.getCurrency()
+                        : Number(player.currency) || 0;
+                    const after = player.adjustCurrency(rewardCurrency);
+                    context.currencyChanges.push({
+                        amount: rewardCurrency,
+                        before,
+                        after,
+                        reason: `Completed quest: ${quest.name}`,
+                    });
+                }
+                if (rewardXp > 0 && typeof player.addExperience === "function") {
+                    player.addExperience(rewardXp);
+                    context.experienceAwards.push({
+                        amount: rewardXp,
+                        reason: `Completed quest: ${quest.name}`,
+                    });
+                }
+    
+                const appliedFactionStandingChanges = [];
+                for (const [factionId, delta] of Object.entries(rewardFactionReputation)) {
+                    const normalizedFactionId = typeof factionId === "string" ? factionId.trim() : "";
+                    if (!normalizedFactionId) {
+                        continue;
+                    }
+                    const faction = typeof Faction.getById === "function"
+                        ? Faction.getById(normalizedFactionId)
+                        : null;
+                    if (!faction) {
+                        console.warn(
+                            `Quest "${quest.name}" has reputation reward for unknown faction "${normalizedFactionId}"; skipping entry.`,
+                        );
+                        continue;
+                    }
+                    if (typeof player.getFactionStanding !== "function" || typeof player.setFactionStanding !== "function") {
+                        console.warn(
+                            `Quest "${quest.name}" has faction reputation rewards, but player standing helpers are unavailable.`,
+                        );
+                        break;
+                    }
+    
+                    const beforeRaw = player.getFactionStanding(normalizedFactionId);
+                    const before = Number.isFinite(beforeRaw) ? beforeRaw : 0;
+                    const after = before + delta;
+                    try {
+                        player.setFactionStanding(normalizedFactionId, after);
+                    } catch (error) {
+                        console.warn(
+                            `Failed to apply quest faction standing reward for faction "${normalizedFactionId}":`,
+                            error?.message || error,
+                        );
+                        continue;
+                    }
+    
+                    appliedFactionStandingChanges.push({
+                        factionId: normalizedFactionId,
+                        factionName: faction.name || normalizedFactionId,
+                        amount: delta,
+                        before,
+                        after
+                    });
+                }
+    
+                if (appliedFactionStandingChanges.length) {
+                    context.factionStandingChanges.push(...appliedFactionStandingChanges);
+                }
+    
+                const appliedNpcDispositionRewards = Events._applyQuestNpcDispositionRewards(
+                    quest,
+                    context,
+                );
+                rewardApplicationComplete = true;
+                quest.rewardClaimed = true;
+                quest.rewardNotesPresented = true;
+    
+                const rewardLines = [];
+                appliedBenefitResults.forEach((benefit) => {
+                    if (typeof benefit?.rewardLine === "string" && benefit.rewardLine.trim()) {
+                        rewardLines.push(benefit.rewardLine.trim());
+                    }
+                });
+                grantedItems.filter(Boolean).forEach((itemName) => {
+                    rewardLines.push(itemName);
+                });
+                if (rewardXp > 0) {
+                    rewardLines.push(`${rewardXp} XP`);
+                }
+                if (rewardCurrency > 0) {
+                    rewardLines.push(`${rewardCurrency} ${rewardLabel(rewardCurrency)}`);
+                }
+                for (const change of appliedFactionStandingChanges) {
+                    const amount = Number(change.amount);
+                    const signed = amount > 0 ? `+${amount}` : `${amount}`;
+                    rewardLines.push(`${signed} reputation with ${change.factionName}`);
+                }
+                for (const change of appliedNpcDispositionRewards) {
+                    const amount = Number(change.delta);
+                    if (!Number.isFinite(amount) || amount === 0) {
+                        continue;
+                    }
+                    const signed = amount > 0 ? `+${Math.round(amount)}` : `${Math.round(amount)}`;
+                    const typeLabel = change.typeLabel || change.typeKey || "disposition";
+                    const npcName = change.npcName || change.npcId || "NPC";
+                    rewardLines.push(`${signed} ${typeLabel} disposition with ${npcName}`);
+                }
+                Quest.normalizeRewardNotes(quest.rewardNotes).forEach((note) => {
+                    rewardLines.push(note);
+                });
+    
+                if (!rewardLines.length) {
+                    continue;
+                }
+    
                 if (
-                    !parsedRewardTemplate?.systemPrompt ||
-                    !parsedRewardTemplate?.generationPrompt
+                    typeof promptEnv?.render !== "function" ||
+                    typeof parseXMLTemplate !== "function" ||
+                    typeof prepareBasePromptContext !== "function"
                 ) {
                     throw new Error(
-                        "Quest reward prose template did not produce prompts.",
+                        "completed_quest_objective handler is missing prompt dependencies.",
                     );
                 }
-                if (useTinyBrainQuestReward) {
-                    const configuredRetries = Number(Globals.config?.ai?.retryAttempts);
-                    const retryAttempts = Number.isInteger(configuredRetries) && configuredRetries >= 0
-                        ? configuredRetries
-                        : 1;
-                    let result;
-                    if (Globals.config?.ai?.live_deslop === true) {
-                        if (typeof Globals.runTinyBrainNarrativePrompt !== "function") {
-                            throw new Error(
-                                "Shared live-deslop tiny-brain runner is unavailable for quest reward prose.",
-                            );
-                        }
-                        const tinyBrainRun = await Globals.runTinyBrainNarrativePrompt({
-                            family: "quest_reward_prose",
-                            initialRenderedTemplate: renderedRewardPrompt,
-                            templateContext: rewardTemplateContext,
-                            tinyBrain,
-                            metadataLabel: "quest_reward_prose",
-                            resultBuilders: {
-                                quest_reward_result: buildQuestRewardResult,
-                            },
-                            finalParser: response => parseQuestRewardResult(
-                                response,
-                                rewardLines,
-                            ),
-                            requestOptions: {
-                                metadataLabel: "quest_reward_prose",
-                                validateXML: false,
-                            },
+    
+                let rewardProse = "";
+                const useTinyBrainQuestReward = isTinyBrainPromptEnabled(
+                    Globals.config,
+                    "quest_reward_prose",
+                );
+                const fallbackList = [
+                    "Received item summary (shorten these item names to a reasonable size):",
+                    ...rewardLines.map((line) => `* ${line}`),
+                ].join("\n");
+                try {
+                    if (!rewardPromptContext) {
+                        const rewardLocation = context.location || null;
+                        rewardPromptContext = await prepareBasePromptContext({
+                            locationOverride: rewardLocation,
                         });
-                        result = tinyBrainRun.result;
-                    } else {
-                        result = await runTinyBrainPromptProgram({
-                            initialRenderedTemplate: renderedRewardPrompt,
-                            templateContext: rewardTemplateContext,
-                            tinyBrain,
-                            runnerOptions: {
-                                promptEnv,
-                                parseXMLTemplate,
-                                retryAttempts,
+                        context._questRewardPromptContext = rewardPromptContext;
+                    }
+                    const rewardTemplateContext = {
+                        ...rewardPromptContext,
+                        promptType: "quest-reward-prose",
+                        questRewards: rewardLines,
+                    };
+                    const tinyBrain = useTinyBrainQuestReward
+                        ? configureTinyBrainPromptContext(
+                            rewardTemplateContext,
+                            "quest_reward_prose",
+                        )
+                        : null;
+                    const renderedRewardPrompt = promptEnv.render(
+                        "base-context.xml.njk",
+                        rewardTemplateContext,
+                    );
+                    const parsedRewardTemplate = parseXMLTemplate(renderedRewardPrompt);
+                    if (
+                        !parsedRewardTemplate?.systemPrompt ||
+                        !parsedRewardTemplate?.generationPrompt
+                    ) {
+                        throw new Error(
+                            "Quest reward prose template did not produce prompts.",
+                        );
+                    }
+                    if (useTinyBrainQuestReward) {
+                        const configuredRetries = Number(Globals.config?.ai?.retryAttempts);
+                        const retryAttempts = Number.isInteger(configuredRetries) && configuredRetries >= 0
+                            ? configuredRetries
+                            : 1;
+                        let result;
+                        if (Globals.config?.ai?.live_deslop === true) {
+                            if (typeof Globals.runTinyBrainNarrativePrompt !== "function") {
+                                throw new Error(
+                                    "Shared live-deslop tiny-brain runner is unavailable for quest reward prose.",
+                                );
+                            }
+                            const tinyBrainRun = await Globals.runTinyBrainNarrativePrompt({
+                                family: "quest_reward_prose",
+                                initialRenderedTemplate: renderedRewardPrompt,
+                                templateContext: rewardTemplateContext,
+                                tinyBrain,
                                 metadataLabel: "quest_reward_prose",
-                                logPrefix: "quest_reward_prose_tinybrain",
                                 resultBuilders: {
                                     quest_reward_result: buildQuestRewardResult,
                                 },
@@ -5628,98 +5653,147 @@ class Events {
                                     response,
                                     rewardLines,
                                 ),
-                                complete: async ({ messages, queueReservation }) => {
-                                    const response = await LLMClient.chatCompletion({
-                                        messages,
-                                        queueReservation,
-                                        metadataLabel: "quest_reward_prose",
-                                        validateXML: false,
-                                    });
-                                    return {
-                                        aiResponse: response,
-                                        conversationMessages: [
-                                            ...messages.map(message => ({ ...message })),
-                                            { role: "assistant", content: response },
-                                        ],
-                                        toolInvocations: [],
-                                    };
+                                requestOptions: {
+                                    metadataLabel: "quest_reward_prose",
+                                    validateXML: false,
                                 },
-                            },
+                            });
+                            result = tinyBrainRun.result;
+                        } else {
+                            result = await runTinyBrainPromptProgram({
+                                initialRenderedTemplate: renderedRewardPrompt,
+                                templateContext: rewardTemplateContext,
+                                tinyBrain,
+                                runnerOptions: {
+                                    promptEnv,
+                                    parseXMLTemplate,
+                                    retryAttempts,
+                                    metadataLabel: "quest_reward_prose",
+                                    logPrefix: "quest_reward_prose_tinybrain",
+                                    resultBuilders: {
+                                        quest_reward_result: buildQuestRewardResult,
+                                    },
+                                    finalParser: response => parseQuestRewardResult(
+                                        response,
+                                        rewardLines,
+                                    ),
+                                    complete: async ({ messages, queueReservation }) => {
+                                        const response = await LLMClient.chatCompletion({
+                                            messages,
+                                            queueReservation,
+                                            metadataLabel: "quest_reward_prose",
+                                            validateXML: false,
+                                        });
+                                        return {
+                                            aiResponse: response,
+                                            conversationMessages: [
+                                                ...messages.map(message => ({ ...message })),
+                                                { role: "assistant", content: response },
+                                            ],
+                                            toolInvocations: [],
+                                        };
+                                    },
+                                },
+                            });
+                        }
+                        rewardProse = parseQuestRewardResult(
+                            result.aiResponse,
+                            rewardLines,
+                        ).value.prose;
+                    } else {
+                        const rewardMessages = [
+                            { role: "system", content: parsedRewardTemplate.systemPrompt },
+                            { role: "user", content: parsedRewardTemplate.generationPrompt },
+                        ];
+                        const rewardResponse = await LLMClient.chatCompletion({
+                            messages: rewardMessages,
+                            metadataLabel: "quest_reward_prose",
+                            validateXML: false,
                         });
+                        LLMClient.logPrompt({
+                            prefix: "quest_reward_prose",
+                            metadataLabel: "quest_reward_prose",
+                            systemPrompt: parsedRewardTemplate.systemPrompt,
+                            generationPrompt: parsedRewardTemplate.generationPrompt,
+                            response: rewardResponse,
+                        });
+                        if (typeof rewardResponse === "string" && rewardResponse.trim()) {
+                            rewardProse = rewardResponse.trim();
+                        }
                     }
-                    rewardProse = parseQuestRewardResult(
-                        result.aiResponse,
-                        rewardLines,
-                    ).value.prose;
-                } else {
-                    const rewardMessages = [
-                        { role: "system", content: parsedRewardTemplate.systemPrompt },
-                        { role: "user", content: parsedRewardTemplate.generationPrompt },
-                    ];
-                    const rewardResponse = await LLMClient.chatCompletion({
-                        messages: rewardMessages,
-                        metadataLabel: "quest_reward_prose",
-                        validateXML: false,
-                    });
-                    LLMClient.logPrompt({
-                        prefix: "quest_reward_prose",
-                        metadataLabel: "quest_reward_prose",
-                        systemPrompt: parsedRewardTemplate.systemPrompt,
-                        generationPrompt: parsedRewardTemplate.generationPrompt,
-                        response: rewardResponse,
-                    });
-                    if (typeof rewardResponse === "string" && rewardResponse.trim()) {
-                        rewardProse = rewardResponse.trim();
+                } catch (error) {
+                    if (useTinyBrainQuestReward) {
+                        throw error;
                     }
+                    console.warn("Failed to generate quest reward prose:", error.message);
+                    console.debug(error);
                 }
+    
+                if (!rewardProse) {
+                    rewardProse = fallbackList;
+                }
+    
+                if (Globals.config?.slop_buster === true) {
+                    const slopRemover = Globals.applySlopRemoval;
+                    if (typeof slopRemover !== "function") {
+                        throw new Error("Slop remover is unavailable for quest reward prose.");
+                    }
+                    rewardProse = await slopRemover(rewardProse);
+                }
+    
+                context.questCompletionRewards.push({
+                    questId: quest.id,
+                    questName: quest.name,
+                    items: grantedItems.slice(),
+                    xp: rewardXp,
+                    currency: rewardCurrency,
+                    factionReputation: appliedFactionStandingChanges.map((entry) => ({
+                        factionId: entry.factionId,
+                        factionName: entry.factionName,
+                        amount: entry.amount,
+                        before: entry.before,
+                        after: entry.after
+                    })),
+                    npcDispositions: appliedNpcDispositionRewards.map((entry) => ({
+                        npcId: entry.npcId || null,
+                        npcName: entry.npcName || null,
+                        typeKey: entry.typeKey || null,
+                        typeLabel: entry.typeLabel || null,
+                        typeIcon: entry.typeIcon || null,
+                        intensity: Number.isFinite(entry.intensity) ? entry.intensity : null,
+                        delta: Number.isFinite(entry.delta) ? entry.delta : null,
+                        previousValue: Number.isFinite(entry.previousValue) ? entry.previousValue : null,
+                        newValue: Number.isFinite(entry.newValue) ? entry.newValue : null,
+                        reason: entry.reason || null
+                    })),
+                    benefits: appliedBenefitResults.map((entry) => ({ ...entry })),
+                    notes: Quest.normalizeRewardNotes(quest.rewardNotes),
+                    message: rewardProse,
+                    rewards: rewardLines.slice(),
+                });
             } catch (error) {
-                if (useTinyBrainQuestReward) {
-                    throw error;
+                if (!rewardApplicationComplete) {
+                    quest.rewardClaimed = false;
                 }
-                console.warn("Failed to generate quest reward prose:", error.message);
-                console.debug(error);
+                const causeMessage = error?.message || String(error);
+                const errorCode = rewardApplicationComplete
+                    ? "QUEST_REWARD_PRESENTATION_FAILED"
+                    : "QUEST_REWARD_APPLICATION_FAILED";
+                const message = rewardApplicationComplete
+                    ? `Quest "${quest.name}" completed and its rewards were applied, but reward presentation failed: ${causeMessage}`
+                    : `Quest "${quest.name}" completed, but its rewards remain pending: ${causeMessage}`;
+                const rewardError = {
+                    code: errorCode,
+                    questId: quest.id || null,
+                    questName: quest.name || null,
+                    message,
+                    cause: causeMessage,
+                    rewardClaimed: quest.rewardClaimed === true,
+                    stack: typeof error?.stack === "string" ? error.stack : null,
+                };
+                context.questCompletionErrors.push(rewardError);
+                console.error(message, error);
             }
-
-            if (!rewardProse) {
-                rewardProse = fallbackList;
-            }
-
-            if (Globals.config?.slop_buster === true) {
-                const slopRemover = Globals.applySlopRemoval;
-                if (typeof slopRemover !== "function") {
-                    throw new Error("Slop remover is unavailable for quest reward prose.");
-                }
-                rewardProse = await slopRemover(rewardProse);
-            }
-
-            context.questCompletionRewards.push({
-                questId: quest.id,
-                questName: quest.name,
-                items: grantedItems.slice(),
-                xp: rewardXp,
-                currency: rewardCurrency,
-                factionReputation: appliedFactionStandingChanges.map((entry) => ({
-                    factionId: entry.factionId,
-                    factionName: entry.factionName,
-                    amount: entry.amount,
-                    before: entry.before,
-                    after: entry.after
-                })),
-                npcDispositions: appliedNpcDispositionRewards.map((entry) => ({
-                    npcId: entry.npcId || null,
-                    npcName: entry.npcName || null,
-                    typeKey: entry.typeKey || null,
-                    typeLabel: entry.typeLabel || null,
-                    typeIcon: entry.typeIcon || null,
-                    intensity: Number.isFinite(entry.intensity) ? entry.intensity : null,
-                    delta: Number.isFinite(entry.delta) ? entry.delta : null,
-                    previousValue: Number.isFinite(entry.previousValue) ? entry.previousValue : null,
-                    newValue: Number.isFinite(entry.newValue) ? entry.newValue : null,
-                    reason: entry.reason || null
-                })),
-                message: rewardProse,
-                rewards: rewardLines.slice(),
-            });
         }
     }
 
@@ -6394,11 +6468,16 @@ class Events {
         const seenTags = new Set();
         for (const node of eventElements) {
             const tagName = node?.tagName || "";
-            seenTags.add(tagName);
-            const registeredEvent = allowRegisteredXmlEvents
-                && registry
+            const knownCoreEvent = Object.prototype.hasOwnProperty.call(
+                TINY_BRAIN_EVENT_TAG_TO_KEY,
+                tagName,
+            );
+            const knownRegisteredEvent = registry
                 && typeof registry.getXmlEventByTagName === "function"
                 ? registry.getXmlEventByTagName(tagName)
+                : null;
+            const registeredEvent = allowRegisteredXmlEvents
+                ? knownRegisteredEvent
                 : null;
             if (tagName === "revealHiddenNpc" && authoritativeHiddenNpcNameSet) {
                 const emittedName = this._getXmlDirectChildText(node, "npcName");
@@ -6420,6 +6499,10 @@ class Events {
                 }
             }
             if (!allowedTagSet.has(tagName) && !registeredEvent) {
+                if (!knownCoreEvent && !knownRegisteredEvent) {
+                    this._warnUnknownXmlEventTag(tagName);
+                    continue;
+                }
                 const allowedDescription = [
                     ...allowedTagSet,
                     ...(allowRegisteredXmlEvents ? ["registered mod event tags"] : []),
@@ -6428,6 +6511,7 @@ class Events {
                     `Tiny-brain ${normalizedSectionKind}/${normalizedStageId} event stage does not allow <${tagName}>; allowed: ${allowedDescription || "none"}.`,
                 );
             }
+            seenTags.add(tagName);
             if (singletonTags.has(tagName)) {
                 if (seenSingletonTags.has(tagName)) {
                     throw new Error(
@@ -6603,7 +6687,11 @@ class Events {
                     continue;
                 }
             }
-            const { key, raw } = this._mapXmlEventNodeToLegacyRaw(node);
+            const mappedEvent = this._mapXmlEventNodeToLegacyRaw(node);
+            if (!mappedEvent) {
+                continue;
+            }
+            const { key, raw } = mappedEvent;
             const normalizedRaw = typeof raw === "string" ? raw.trim() : "";
             if (!normalizedRaw || NO_EVENT_TOKENS.has(normalizedRaw.toLowerCase())) {
                 throw new Error(
@@ -8080,8 +8168,14 @@ class Events {
                         };
                     }
                 }
-                throw new Error(`Unknown event XML tag <${tagName}>.`);
+                this._warnUnknownXmlEventTag(tagName);
+                return null;
         }
+    }
+
+    static _warnUnknownXmlEventTag(tagName) {
+        const normalizedTagName = normalizeString(tagName) || "unknown";
+        console.warn(`Ignoring unknown event XML tag <${normalizedTagName}>.`);
     }
 
     static _appendXmlRawEvent(rawEventLists, key, raw) {
@@ -8402,7 +8496,11 @@ class Events {
                 }
                 hasTravelBoundary = true;
                 phase = "during";
-                const { key, raw } = this._mapXmlEventNodeToLegacyRaw(child);
+                const mappedEvent = this._mapXmlEventNodeToLegacyRaw(child);
+                if (!mappedEvent) {
+                    continue;
+                }
+                const { key, raw } = mappedEvent;
                 if (ignoredEventKeys.has(key)) {
                     ignoredDuringEvents.push({ tagName, key, raw, ignored: true });
                     continue;
@@ -8411,7 +8509,11 @@ class Events {
                 continue;
             }
 
-            const { key, raw } = this._mapXmlEventNodeToLegacyRaw(child);
+            const mappedEvent = this._mapXmlEventNodeToLegacyRaw(child);
+            if (!mappedEvent) {
+                continue;
+            }
+            const { key, raw } = mappedEvent;
             if (ignoredEventKeys.has(key)) {
                 ignoredDuringEvents.push({ tagName, key, raw, ignored: true });
                 continue;
@@ -11207,6 +11309,7 @@ class Events {
             timeoutMs: this._baseTimeout,
             temperature: 0,
             validateXML: false,
+            expectedXmlRootTag: "resolvedMysteries",
             requiredRegex: /<resolvedMysteries[\s>]/,
         });
 
@@ -11277,6 +11380,7 @@ class Events {
                 timeoutMs: this._baseTimeout,
                 temperature: 0,
                 validateXML: false,
+                expectedXmlRootTag: "mysteryBoxUpdate",
                 additionalPayload: {
                     tools: MYSTERY_BOX_UPDATE_CHAT_TOOLS,
                     tool_choice: "auto",
@@ -11583,6 +11687,7 @@ class Events {
                             messages,
                             metadataLabel: "alter_location",
                             timeoutMs: this._baseTimeout,
+                            expectedXmlRootTag: "location",
                         };
 
                         if (typeof parsedTemplate.temperature === "number") {
@@ -11847,6 +11952,7 @@ class Events {
                         messages: questMessages,
                         metadataLabel: "quest_generate",
                         timeoutMs: baseTimeout,
+                        expectedXmlRootTag: "quest",
                     };
 
                     if (
@@ -11918,6 +12024,15 @@ class Events {
                             contextLabel: `Generated quest "${questName}" NPC disposition reward`
                         },
                     );
+                    const rewardBenefits = Events._resolveQuestRewardBenefits(
+                        questData.rewardBenefits || [],
+                        {
+                            player,
+                            findActorByName,
+                            contextLabel: `Generated quest "${questName}" reward benefit`,
+                        },
+                    );
+                    const rewardNotes = Quest.normalizeRewardNotes(questData.rewardNotes);
 
                     const questOptions = {
                         name: questName,
@@ -11928,6 +12043,8 @@ class Events {
                         rewardXp,
                         rewardFactionReputation,
                         rewardNpcDispositions,
+                        rewardBenefits,
+                        rewardNotes,
                     };
 
                     const effectiveGiverName = questData.giver || questGiverName;
@@ -11979,6 +12096,8 @@ class Events {
                         existingQuest.rewardNpcDispositions = Quest.normalizeRewardNpcDispositions(
                             rewardNpcDispositions,
                         );
+                        existingQuest.rewardBenefits = Quest.normalizeRewardBenefits(rewardBenefits);
+                        existingQuest.rewardNotes = Quest.normalizeRewardNotes(rewardNotes);
                         if (questOptions.giver) {
                             existingQuest.giver = questOptions.giver;
                         } else if (questOptions.giverName) {
@@ -12122,6 +12241,8 @@ class Events {
                             rewardFactionReputation,
                         ),
                         rewardNpcDispositions,
+                        rewardBenefits,
+                        rewardNotes,
                         objectives: Array.isArray(quest.objectives)
                             ? quest.objectives
                                 .map((entry) => ({
@@ -16306,6 +16427,7 @@ class Events {
                 messages,
                 metadataLabel: "alter_npc",
                 timeoutMs: this._baseTimeout,
+                expectedXmlRootTag: "npc",
                 requiredRegex: /<npc\b[\s\S]*?<\/npc>/i,
                 captureRequestPayload: (payload) => {
                     requestPayloadForLog = payload;
@@ -17035,6 +17157,67 @@ class Events {
         return resolveQuestDispositionRewardDelta(intensityValue, definitions);
     }
 
+    static _resolveQuestRewardBenefits(rawBenefits, {
+        player = null,
+        findActorByName = null,
+        contextLabel = "Quest reward benefit",
+    } = {}) {
+        if (rawBenefits === null || rawBenefits === undefined || rawBenefits === "") {
+            return [];
+        }
+        if (!Array.isArray(rawBenefits)) {
+            throw new Error(`${contextLabel} entries must be an array.`);
+        }
+
+        const targetsById = new Map();
+        const resolved = rawBenefits.map((entry, index) => {
+            if (!entry || typeof entry !== "object") {
+                throw new Error(`${contextLabel} entry ${index + 1} must be an object.`);
+            }
+            const type = typeof entry.type === "string" ? entry.type.trim() : "";
+            if (type !== "party-member") {
+                throw new Error(`${contextLabel} entry ${index + 1} has unsupported type "${type || "missing"}".`);
+            }
+            const targetName = typeof entry.targetName === "string"
+                ? entry.targetName.trim()
+                : (typeof entry.npcName === "string" ? entry.npcName.trim() : "");
+            const target = targetName && typeof findActorByName === "function"
+                ? findActorByName(targetName)
+                : null;
+            if (!target?.id) {
+                throw new Error(`${contextLabel} references unknown NPC "${targetName || "missing"}".`);
+            }
+            targetsById.set(target.id, target);
+            return {
+                id: `party-member:${target.id}`,
+                type,
+                targetId: target.id,
+                label: typeof entry.label === "string" && entry.label.trim()
+                    ? entry.label.trim()
+                    : (target.name || targetName),
+                description: typeof entry.description === "string" && entry.description.trim()
+                    ? entry.description.trim()
+                    : null,
+                role: typeof entry.role === "string" && entry.role.trim()
+                    ? entry.role.trim()
+                    : null,
+            };
+        });
+
+        return questRewardBenefitRegistry.validateAll(resolved, {
+            player,
+            findActorById: (id) => {
+                if (targetsById.has(id)) {
+                    return targetsById.get(id);
+                }
+                if (typeof Player.getById === "function") {
+                    return Player.getById(id);
+                }
+                return null;
+            },
+        });
+    }
+
     static _applyQuestNpcDispositionRewards(quest, context = {}) {
         const rewards = Array.isArray(quest?.rewardNpcDispositions)
             ? quest.rewardNpcDispositions
@@ -17338,6 +17521,35 @@ class Events {
                 }
             }
 
+            const rewardBenefits = [];
+            const benefitsNode = rewardsNode
+                ? rewardsNode.getElementsByTagName("benefits")[0] || null
+                : null;
+            if (benefitsNode) {
+                for (const partyMemberNode of Array.from(benefitsNode.getElementsByTagName("partyMember"))) {
+                    const npcName = partyMemberNode.getElementsByTagName("npcName")[0]?.textContent?.trim() || "";
+                    if (!npcName) {
+                        throw new Error("Quest party-member reward is missing <npcName>.");
+                    }
+                    rewardBenefits.push({
+                        type: "party-member",
+                        targetName: npcName,
+                        label: partyMemberNode.getElementsByTagName("label")[0]?.textContent?.trim() || npcName,
+                        description: partyMemberNode.getElementsByTagName("description")[0]?.textContent?.trim() || null,
+                        role: partyMemberNode.getElementsByTagName("role")[0]?.textContent?.trim() || null,
+                    });
+                }
+            }
+
+            const notesNode = rewardsNode
+                ? rewardsNode.getElementsByTagName("notes")[0] || null
+                : null;
+            const rewardNotes = notesNode
+                ? Array.from(notesNode.getElementsByTagName("note"))
+                    .map(node => node.textContent?.trim() || "")
+                    .filter(Boolean)
+                : [];
+
             const objectives = Array.from(questNode.getElementsByTagName("objective"))
                 .map((node) => {
                     const descriptionNode = node.getElementsByTagName("description")[0];
@@ -17370,6 +17582,8 @@ class Events {
                 rewardXp,
                 rewardFactionReputation,
                 rewardNpcDispositions,
+                rewardBenefits,
+                rewardNotes,
             };
         } catch (error) {
             console.warn("Failed to parse quest XML:", error.message);

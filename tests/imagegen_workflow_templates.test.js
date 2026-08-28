@@ -108,6 +108,33 @@ test('flux2 edit workflow prints the rendered image prompt to the ComfyUI consol
     assert.deepEqual(positivePromptNode.node.inputs.text, [promptTextNode.id, 0]);
 });
 
+test('standard Qwen edit workflow prints the rendered image prompt to the ComfyUI console', () => {
+    const workflow = renderImagegenWorkflow('standard/qwen-image-edit.json.njk');
+
+    const promptTextNode = findWorkflowNode(workflow, node =>
+        node.class_type === 'PrimitiveStringMultiline'
+        && node.inputs?.value === 'Shift the scene to a rainy midnight atmosphere.'
+    );
+    assert.ok(promptTextNode, 'expected a vanilla edit-instruction node containing the rendered prompt');
+
+    const consoleNode = findWorkflowNode(workflow, node =>
+        node.class_type === 'Show any [Crystools]'
+        && node._meta?.title === '🪛 Show any value to console/display'
+    );
+    assert.ok(consoleNode, 'expected a Crystools Show any output node');
+    assert.deepEqual(consoleNode.node.inputs.any_value, [promptTextNode.id, 0]);
+    assert.equal(consoleNode.node.inputs.console, true);
+    assert.equal(consoleNode.node.inputs.display, true);
+    assert.equal(consoleNode.node.inputs.prefix, 'Final Prompt');
+
+    const positivePromptNode = findWorkflowNode(workflow, node =>
+        node.class_type === 'TextEncodeQwenImageEditPlus'
+        && node.inputs?.prompt?.[0] === promptTextNode.id
+    );
+    assert.ok(positivePromptNode, 'expected the Qwen edit encoder to use the displayed prompt node');
+    assert.deepEqual(positivePromptNode.node.inputs.prompt, [promptTextNode.id, 0]);
+});
+
 test('standard edit workflows preserve source dimensions with ComfyUI nodes', () => {
     for (const templateName of [
         'standard/krea2-identity-edit.json.njk',

@@ -802,7 +802,7 @@ test('LLMClient rejects adjacent or misplaced internal message boundaries', () =
     );
 });
 
-test('LLMClient.chatCompletion supports forceOutput tool calls and skips regex validation for tool rounds', async () => {
+test('LLMClient.chatCompletion supports forceOutput tool calls and skips terminal text validation for tool rounds', async () => {
     const originalAxiosPost = axios.post;
     const originalConfig = Globals.config;
     let onResponsePayload = null;
@@ -833,6 +833,7 @@ test('LLMClient.chatCompletion supports forceOutput tool calls and skips regex v
                 }
             },
             requiredRegex: /<final>[\s\S]*?<\/final>/,
+            expectedXmlRootTag: 'final',
             output: 'silent',
             retryAttempts: 0,
             onResponse: (response) => {
@@ -948,5 +949,58 @@ test('LLMClient.chatCompletion retries when the expected XML root is not closed'
         axios.post = originalAxiosPost;
         Globals.config = originalConfig;
         Globals.baseDir = originalBaseDir;
+    }
+});
+
+test('LLMClient.chatCompletion validates any configured complete XML root inside surrounding text', async () => {
+    const originalAxiosPost = axios.post;
+    const originalConfig = Globals.config;
+
+    axios.post = async () => {
+        throw new Error('axios.post should not be called when forceOutput is provided.');
+    };
+    Globals.config = { strictXMLParsing: false };
+
+    try {
+        const response = 'Analysis first.\n<rejected><reason>No action.</reason></rejected>\nTrailing note.';
+        const result = await LLMClient.chatCompletion({
+            messages: [{ role: 'user', content: 'Return one player-action result.' }],
+            forceOutput: response,
+            validateXML: true,
+            expectedXmlRootTags: ['turnResult', 'moveTurnResult', 'rejected'],
+            output: 'silent',
+            retryAttempts: 0
+        });
+
+        assert.equal(result, response);
+    } finally {
+        axios.post = originalAxiosPost;
+        Globals.config = originalConfig;
+    }
+});
+
+test('LLMClient.chatCompletion rejects an incomplete expected XML root even when whole-response XML validation is disabled', async () => {
+    const originalAxiosPost = axios.post;
+    const originalConfig = Globals.config;
+
+    axios.post = async () => {
+        throw new Error('axios.post should not be called when forceOutput is provided.');
+    };
+    Globals.config = null;
+
+    try {
+        const result = await LLMClient.chatCompletion({
+            messages: [{ role: 'user', content: 'Return housekeeping XML.' }],
+            forceOutput: '<housekeeping><updates></updates>',
+            validateXML: false,
+            expectedXmlRootTag: 'housekeeping',
+            output: 'silent',
+            retryAttempts: 0
+        });
+
+        assert.equal(result, '');
+    } finally {
+        axios.post = originalAxiosPost;
+        Globals.config = originalConfig;
     }
 });
