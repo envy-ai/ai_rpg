@@ -123,6 +123,7 @@ test('ModExtensionRegistry maps XML tags to parser and handler records', () => {
     assert.equal(registry.getXmlEventByTagName('implantEquipped').eventKey, 'implant_equipped');
     assert.equal(registry.getXmlEventByTagName('implantequipped').eventKey, 'implant_equipped');
     assert.equal(registry.getXmlEventByKey('implant_equipped').tagName, 'implantEquipped');
+    assert.equal(registry.getXmlEventByTagName('implant_equipped').eventKey, 'implant_equipped');
     assert.deepEqual(registry.getXmlEventParsers(), { implant_equipped: parser });
     assert.deepEqual(registry.getXmlEventHandlers(), { implant_equipped: handler });
     assert.deepEqual(registry.getXmlEventPromptSchemas(), [{
@@ -954,11 +955,11 @@ test('XML event parser accepts registered mod event tags', () => {
     try {
         const parsed = Events._parseXmlEventCheckResponse(`
 <events>
-  <implantEquipped>
+  <implant_equipped>
     <actorName>Baato</actorName>
     <itemName>Mnemonic Lattice</itemName>
     <implantSlot>neural</implantSlot>
-  </implantEquipped>
+  </implant_equipped>
 </events>
 `);
         assert.deepEqual(parsed.structured.parsed.implant_equipped, [{

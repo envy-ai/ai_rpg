@@ -94,6 +94,7 @@ const {
 } = require('./housekeeping_update_log.js');
 const {
     normalizeTurnId: normalizeHousekeepingTurnId,
+    normalizeTurnTimestamp: normalizeHousekeepingTurnTimestamp,
     collectHousekeepingPlayerTurns,
     buildHousekeepingTurnHistory
 } = require('./housekeeping_history.js');
@@ -103,7 +104,8 @@ const {
     parseScheduledEventResultXml
 } = require('./scheduled_event_runtime.js');
 const {
-    countSceneSummaryIndexEntries
+    countSceneSummaryIndexEntries,
+    findDeletedCoveredSceneSummaryEntryIds
 } = require('./scene_summary_index.js');
 const { normalizeUnifiedTonalScaleSelections } = require('./UnifiedTonalScale.js');
 const { loadMergedDefinitionFile } = require('./DefinitionLoader.js');
@@ -111,6 +113,14 @@ const {
     resolveConfiguredPromptMaxAttempts,
     runPromptWithParseRetries
 } = require('./PromptRetryPolicy.js');
+
+function filterNeedBarChangesForHistory(changes) {
+    if (!Array.isArray(changes)) {
+        return [];
+    }
+    return changes.filter(entry => entry && entry.hideFromHistory !== true);
+}
+
 const {
     buildModManagerState,
     clearPendingLoadIntent,
@@ -153,6 +163,59 @@ const INFORMATION_GATHERING_CHAT_TOOL_NAMES = new Set([
 ]);
 
 const PLAYER_ACTION_INVALID_VEHICLE_ROUTE = 'PLAYER_ACTION_INVALID_VEHICLE_ROUTE';
+
+function logQuestRewardStorageTrace(stage, {
+    origin,
+    rewardEntry = null,
+    requestId = null,
+    clientId = null,
+    chatEntry = null,
+    reason = null
+} = {}) {
+    Events.logQuestRewardTrace(stage, {
+        origin,
+        requestId: typeof requestId === 'string' && requestId.trim() ? requestId.trim() : null,
+        clientId: typeof clientId === 'string' && clientId.trim() ? clientId.trim() : null,
+        questId: rewardEntry?.questId || null,
+        questName: rewardEntry?.questName || null,
+        proseCharacters: typeof rewardEntry?.message === 'string'
+            ? rewardEntry.message.length
+            : null,
+        chatEntryId: chatEntry?.id || null,
+        reason
+    });
+}
+
+function buildManualQuestCompletionEntries(quest, questIndex) {
+    if (!quest || typeof quest !== 'object') {
+        throw new TypeError('Manual quest completion requires a quest.');
+    }
+    if (!Number.isInteger(questIndex) || questIndex < 0) {
+        throw new TypeError('Manual quest completion requires a zero-based canonical quest index.');
+    }
+    if (!Array.isArray(quest.objectives) || !quest.objectives.length) {
+        throw new Error(`Quest "${quest.name || quest.id || 'Unknown'}" has no objectives to complete.`);
+    }
+
+    const incompleteObjectives = quest.objectives
+        .map((objective, objectiveIndex) => ({ objective, objectiveIndex }))
+        .filter(({ objective }) => objective && objective.completed !== true);
+    if (!incompleteObjectives.length) {
+        throw new Error(`Quest "${quest.name || quest.id || 'Unknown'}" has no incomplete objectives.`);
+    }
+
+    incompleteObjectives.sort((left, right) => {
+        const leftRequired = left.objective.optional === true ? 0 : 1;
+        const rightRequired = right.objective.optional === true ? 0 : 1;
+        return leftRequired - rightRequired || left.objectiveIndex - right.objectiveIndex;
+    });
+
+    return incompleteObjectives.map(({ objectiveIndex }) => ({
+        questIndex: questIndex + 1,
+        objectiveIndex: objectiveIndex + 1,
+        statusReason: 'Marked complete manually from the quest list.'
+    }));
+}
 
 function createPlayerActionInvalidVehicleRouteError(message) {
     if (typeof message !== 'string' || !message.trim()) {
@@ -3564,6 +3627,7 @@ module.exports = function registerApiRoutes(scope) {
         }
 
         const HOUSEKEEPING_DEFERRED_ERROR = Symbol('housekeeping_deferred_error');
+        const warnedDeletedHousekeepingBoundaries = new Set();
 
         function wrapHousekeepingDeferredError(error) {
             return {
@@ -3593,7 +3657,39 @@ module.exports = function registerApiRoutes(scope) {
             return normalizedTurnId;
         }
 
-        function advanceLastHousekeepingTurnId(turnId) {
+        function getLastHousekeepingTurnTimestamp() {
+            const metadata = (typeof Globals.getSaveMetadata === 'function'
+                ? Globals.getSaveMetadata()
+                : Globals.saveMetadata) || {};
+            const rawTimestamp = metadata?.lastHousekeepingTurnTimestamp;
+            if (rawTimestamp === undefined || rawTimestamp === null || rawTimestamp === '') {
+                return null;
+            }
+            const normalizedTimestamp = normalizeHousekeepingTurnTimestamp(rawTimestamp);
+            if (!normalizedTimestamp) {
+                throw new Error(
+                    'Save metadata lastHousekeepingTurnTimestamp must be a valid timestamp string.'
+                );
+            }
+            return normalizedTimestamp;
+        }
+
+        function warnAboutDeletedHousekeepingBoundary({ turnId, timestamp, mode }) {
+            const warningKey = `${turnId || ''}|${timestamp || ''}|${mode || ''}`;
+            if (warnedDeletedHousekeepingBoundaries.has(warningKey)) {
+                return;
+            }
+            warnedDeletedHousekeepingBoundaries.add(warningKey);
+            const recoveryDescription = mode === 'since-deleted-boundary'
+                ? `continuing after its saved timestamp (${timestamp})`
+                : 'using the configured recent-turn window once because this legacy cursor has no timestamp';
+            console.warn(
+                `Housekeeping history boundary turn ${turnId} was deleted from chat history; `
+                + `${recoveryDescription}.`
+            );
+        }
+
+        function advanceLastHousekeepingTurnId(turnId, turnTimestamp = null) {
             const normalizedTurnId = normalizeHousekeepingTurnId(turnId);
             if (!normalizedTurnId) {
                 return null;
@@ -3605,16 +3701,33 @@ module.exports = function registerApiRoutes(scope) {
                     `Cannot advance housekeeping history boundary to missing turn ${normalizedTurnId}.`
                 );
             }
+            const normalizedTurnTimestamp = turnTimestamp
+                ? normalizeHousekeepingTurnTimestamp(turnTimestamp)
+                : turns[nextIndex].timestamp;
+            if (turnTimestamp && !normalizedTurnTimestamp) {
+                throw new Error('Housekeeping history target timestamp must be a valid timestamp string.');
+            }
 
             const currentTurnId = getLastHousekeepingTurnId();
+            const currentTurnTimestamp = getLastHousekeepingTurnTimestamp();
             if (currentTurnId) {
                 const currentIndex = turns.findIndex(turn => turn.turnId === currentTurnId);
-                if (currentIndex === -1) {
-                    throw new Error(
-                        `The current housekeeping history boundary (${currentTurnId}) is missing from chat history.`
-                    );
-                }
                 if (currentIndex >= nextIndex) {
+                    if (!currentTurnTimestamp && turns[currentIndex].timestamp) {
+                        const currentMetadata = (typeof Globals.getSaveMetadata === 'function'
+                            ? Globals.getSaveMetadata()
+                            : Globals.saveMetadata) || {};
+                        Globals.setSaveMetadata({
+                            ...currentMetadata,
+                            lastHousekeepingTurnTimestamp: turns[currentIndex].timestamp
+                        });
+                    }
+                    return currentTurnId;
+                }
+                if (currentIndex === -1
+                    && currentTurnTimestamp
+                    && normalizedTurnTimestamp
+                    && Date.parse(currentTurnTimestamp) >= Date.parse(normalizedTurnTimestamp)) {
                     return currentTurnId;
                 }
             }
@@ -3622,10 +3735,16 @@ module.exports = function registerApiRoutes(scope) {
             const currentMetadata = (typeof Globals.getSaveMetadata === 'function'
                 ? Globals.getSaveMetadata()
                 : Globals.saveMetadata) || {};
-            Globals.setSaveMetadata({
+            const nextMetadata = {
                 ...currentMetadata,
                 lastHousekeepingTurnId: normalizedTurnId
-            });
+            };
+            if (normalizedTurnTimestamp) {
+                nextMetadata.lastHousekeepingTurnTimestamp = normalizedTurnTimestamp;
+            } else {
+                delete nextMetadata.lastHousekeepingTurnTimestamp;
+            }
+            Globals.setSaveMetadata(nextMetadata);
             return normalizedTurnId;
         }
 
@@ -3675,12 +3794,20 @@ module.exports = function registerApiRoutes(scope) {
             const housekeepingInterval = Events.resolveHousekeepingInterval(config);
             const housekeepingHistory = buildHousekeepingTurnHistory(chatHistory, {
                 lastRunTurnId: getLastHousekeepingTurnId(),
+                lastRunTurnTimestamp: getLastHousekeepingTurnTimestamp(),
                 interval: housekeepingInterval,
                 currentTurnId: stream?.requestId || null,
                 currentActionText: actionText,
                 currentProse: textToCheck,
                 currentEventText: formatHousekeepingCurrentEventText(eventResult)
             });
+            if (housekeepingHistory.missingBoundaryTurnId) {
+                warnAboutDeletedHousekeepingBoundary({
+                    turnId: housekeepingHistory.missingBoundaryTurnId,
+                    timestamp: getLastHousekeepingTurnTimestamp(),
+                    mode: housekeepingHistory.mode
+                });
+            }
 
             const baseContext = await prepareBasePromptContext({
                 locationOverride: locationOverride || null
@@ -3723,7 +3850,8 @@ module.exports = function registerApiRoutes(scope) {
                 stream,
                 entryCollector,
                 parentEntryId,
-                housekeepingLastIncludedTurnId: housekeepingHistory.lastIncludedTurnId
+                housekeepingLastIncludedTurnId: housekeepingHistory.lastIncludedTurnId,
+                housekeepingLastIncludedTurnTimestamp: housekeepingHistory.lastIncludedTurnTimestamp
             };
         }
 
@@ -3848,7 +3976,8 @@ module.exports = function registerApiRoutes(scope) {
                     : null
             });
             const lastHousekeepingTurnId = advanceLastHousekeepingTurnId(
-                pending.housekeepingLastIncludedTurnId
+                pending.housekeepingLastIncludedTurnId,
+                pending.housekeepingLastIncludedTurnTimestamp
             );
             const updateLogEntries = recordHousekeepingUpdateLogEntries({
                 toolInvocations: housekeepingXmlResult.toolInvocations,
@@ -3870,6 +3999,23 @@ module.exports = function registerApiRoutes(scope) {
         async function runHousekeepingPrompt(options = {}) {
             const pending = await startHousekeepingPrompt(options);
             return finishHousekeepingPrompt(pending, options);
+        }
+
+        async function runAutomaticHousekeepingPrompt(options = {}) {
+            try {
+                return await runHousekeepingPrompt(options);
+            } catch (error) {
+                const postProcessingError = Events.appendEventPostProcessingError(
+                    options.eventResult,
+                    {
+                        code: 'HOUSEKEEPING_AFTER_EVENT_CHECKS_FAILED',
+                        stage: 'automatic housekeeping',
+                        error
+                    }
+                );
+                console.error(postProcessingError.message, error);
+                return { error: postProcessingError };
+            }
         }
 
         Events.setHousekeepingPromptRunner(runHousekeepingPrompt);
@@ -14836,6 +14982,26 @@ module.exports = function registerApiRoutes(scope) {
             return countSceneSummaryIndexEntries(entries);
         };
 
+        const invalidateSceneSummariesForDeletedHistoryEntries = (reason) => {
+            const sceneSummaries = Globals.getSceneSummaries();
+            if (!sceneSummaries || typeof sceneSummaries.clear !== 'function') {
+                throw new Error('Scene summary store is unavailable for chat-history deletion recovery.');
+            }
+            const deletedCoveredEntryIds = findDeletedCoveredSceneSummaryEntryIds(
+                chatHistory,
+                sceneSummaries
+            );
+            if (!deletedCoveredEntryIds.length) {
+                return [];
+            }
+            sceneSummaries.clear();
+            console.warn(
+                `Cleared derived scene summaries after ${reason}; deleted covered chat entries: `
+                + deletedCoveredEntryIds.join(', ')
+            );
+            return deletedCoveredEntryIds;
+        };
+
         const parseBatchSummaryResponse = (xmlContent, expectedCount) => {
             const result = new Map();
             if (!xmlContent || typeof xmlContent !== 'string') {
@@ -15131,6 +15297,9 @@ module.exports = function registerApiRoutes(scope) {
                 if (!sceneSummaries || typeof sceneSummaries.getFirstUnsummarizedIndex !== 'function') {
                     throw new Error('Scene summary store is unavailable.');
                 }
+                invalidateSceneSummariesForDeletedHistoryEntries(
+                    'detecting manually deleted history during scheduled summarization'
+                );
                 const totalEntries = countSceneSummaryEntries(chatHistory);
                 if (!totalEntries) {
                     return;
@@ -16171,10 +16340,7 @@ module.exports = function registerApiRoutes(scope) {
             }
 
             if (Array.isArray(needBarChanges)) {
-                needBarChanges.forEach(entry => {
-                    if (!entry) {
-                        return;
-                    }
+                filterNeedBarChangesForHistory(needBarChanges).forEach(entry => {
                     const actorName = safeSummaryName(entry.actorName || entry.actorId || 'Unknown');
                     const rawBarName = entry.needBarName || entry.needBar || entry.bar || entry.needBarId || 'Need Bar';
                     const barName = safeSummaryItem(rawBarName);
@@ -18472,7 +18638,7 @@ module.exports = function registerApiRoutes(scope) {
                     }));
                     combinedEventResult = mergeEventResults(sectionResults);
                     if (Events.shouldRunAutomaticHousekeepingThisTurn()) {
-                        await runHousekeepingPrompt({
+                        await runAutomaticHousekeepingPrompt({
                             textToCheck: combinedProse,
                             actionText: (includePlayerActionForEventChecks && userInput)
                                 ? userInput
@@ -18586,7 +18752,7 @@ module.exports = function registerApiRoutes(scope) {
                 splitEventResult.timeProgress = { ...playerMoveTimeAdjustment.timeProgress };
             }
             if (combinedProse && Events.shouldRunAutomaticHousekeepingThisTurn()) {
-                await runHousekeepingPrompt({
+                await runAutomaticHousekeepingPrompt({
                     textToCheck: combinedProse,
                     actionText: (includePlayerActionForEventChecks && userInput)
                         ? userInput
@@ -28471,6 +28637,10 @@ module.exports = function registerApiRoutes(scope) {
                     if (eventResult) {
                         console.debug('[QuestDebug] runEventChecks returned quests:', eventResult.questsAwarded);
                         markEventsProcessed();
+                        if (Array.isArray(eventResult.postProcessingErrors)
+                            && eventResult.postProcessingErrors.length) {
+                            responseData.postProcessingErrors = eventResult.postProcessingErrors.slice();
+                        }
                         if (eventResult.html) {
                             responseData.eventChecks = eventResult.html;
                         }
@@ -28608,6 +28778,9 @@ module.exports = function registerApiRoutes(scope) {
                                     questCompletionErrors: [],
                                     completedQuestObjectives: [],
                                     followupResults: [],
+                                    questRewardTraceOrigin: 'player-action',
+                                    questRewardTraceRequestId: stream?.requestId || null,
+                                    questRewardTraceClientId: stream?.clientId || null,
                                     allowEnvironmentalEffects: false,
                                     isNpcTurn: false
                                 };
@@ -28617,6 +28790,14 @@ module.exports = function registerApiRoutes(scope) {
                                     questCompletionEntries,
                                     questProcessingContext
                                 );
+                                Events.logQuestRewardTrace('handoff:processing-returned', {
+                                    origin: 'player-action',
+                                    requestId: stream?.requestId || null,
+                                    clientId: stream?.clientId || null,
+                                    rewardCount: questProcessingContext.questCompletionRewards.length,
+                                    completionCount: questProcessingContext.completedQuestObjectives.length,
+                                    errorCount: questProcessingContext.questCompletionErrors.length
+                                });
 
                                 const appendArray = (key, values) => {
                                     if (!Array.isArray(values) || !values.length) {
@@ -28685,6 +28866,13 @@ module.exports = function registerApiRoutes(scope) {
                                         eventResult.questRewards = [];
                                     }
                                     eventResult.questRewards.push(...questProcessingContext.questCompletionRewards);
+                                    Events.logQuestRewardTrace('handoff:event-result:complete', {
+                                        origin: 'player-action',
+                                        requestId: stream?.requestId || null,
+                                        clientId: stream?.clientId || null,
+                                        addedRewardCount: questProcessingContext.questCompletionRewards.length,
+                                        eventResultRewardCount: eventResult.questRewards.length
+                                    });
                                 }
 
                                 if (questProcessingContext.questCompletionRewards.length
@@ -28981,8 +29169,22 @@ module.exports = function registerApiRoutes(scope) {
                         responseData.questRewards = eventResult.questRewards;
                         for (const rewardEntry of eventResult.questRewards) {
                             if (!rewardEntry || typeof rewardEntry.message !== 'string') {
+                                logQuestRewardStorageTrace('chat-storage:skipped', {
+                                    origin: 'player-action',
+                                    rewardEntry,
+                                    requestId: stream?.requestId || null,
+                                    clientId: stream?.clientId || null,
+                                    reason: 'missing-string-message'
+                                });
                                 continue;
                             }
+
+                            logQuestRewardStorageTrace('chat-storage:start', {
+                                origin: 'player-action',
+                                rewardEntry,
+                                requestId: stream?.requestId || null,
+                                clientId: stream?.clientId || null
+                            });
 
                             const parsedReward = parseQuestRewardMessage(rewardEntry.message);
                             if (parsedReward?.rewards?.length) {
@@ -29016,6 +29218,13 @@ module.exports = function registerApiRoutes(scope) {
 	                            notifyVisibleProseEntryStored(questRewardEntry, {
 	                                stream,
 	                                proseType: 'quest-reward'
+	                            });
+	                            logQuestRewardStorageTrace('chat-storage:complete', {
+	                                origin: 'player-action',
+	                                rewardEntry,
+	                                requestId: stream?.requestId || null,
+	                                clientId: stream?.clientId || null,
+	                                chatEntry: questRewardEntry
 	                            });
 	                        }
 	                    }
@@ -30368,6 +30577,7 @@ module.exports = function registerApiRoutes(scope) {
         // Clear chat history API endpoint (for testing/reset)
         app.delete('/api/chat/history', (req, res) => {
             chatHistory = [];
+            invalidateSceneSummariesForDeletedHistoryEntries('clearing chat history');
             res.json({
                 message: 'Chat history cleared',
                 count: chatHistory.length
@@ -30490,6 +30700,8 @@ module.exports = function registerApiRoutes(scope) {
                     }
                 }
             }
+
+            invalidateSceneSummariesForDeletedHistoryEntries('manually deleting a chat item');
 
             res.json(filterHiddenNotesForAdventurePayload({
                 success: true,
@@ -31030,17 +31242,15 @@ module.exports = function registerApiRoutes(scope) {
 
                 const rewardItems = (() => {
                     if (Array.isArray(payload.rewardItems)) {
-                        return payload.rewardItems
-                            .map(item => (typeof item === 'string' ? item.trim() : ''))
-                            .filter(Boolean);
+                        return Quest.normalizeRewardItems(payload.rewardItems);
                     }
                     if (typeof payload.rewardItems === 'string') {
-                        return payload.rewardItems
+                        return Quest.normalizeRewardItems(payload.rewardItems
                             .split(/[\n,]/)
                             .map(item => item.trim())
-                            .filter(Boolean);
+                            .filter(Boolean));
                     }
-                    return Array.isArray(quest.rewardItems) ? quest.rewardItems.slice() : [];
+                    return Quest.normalizeRewardItems(quest.rewardItems);
                 })();
                 const rewardFactionReputation = (() => {
                     const hasInput = Object.prototype.hasOwnProperty.call(payload, 'rewardFactionReputation');
@@ -31253,6 +31463,192 @@ module.exports = function registerApiRoutes(scope) {
             }
         });
 
+        app.post('/api/quests/:questId/complete', async (req, res) => {
+            if (!currentPlayer) {
+                return res.status(404).json({ success: false, error: 'No current player found' });
+            }
+
+            const questId = typeof req.params?.questId === 'string' ? req.params.questId.trim() : '';
+            const quest = questId ? currentPlayer.getQuestById(questId) : null;
+            if (!quest) {
+                return res.status(404).json({ success: false, error: `Quest with id '${questId}' not found` });
+            }
+            if (quest.completed) {
+                return res.status(409).json({ success: false, error: `Quest "${quest.name}" is already complete.` });
+            }
+
+            try {
+                let questIndex = -1;
+                for (let index = 0; ; index += 1) {
+                    const candidate = currentPlayer.getQuestByIndex(index);
+                    if (!candidate) {
+                        break;
+                    }
+                    if (candidate.id === quest.id) {
+                        questIndex = index;
+                        break;
+                    }
+                }
+                if (questIndex < 0) {
+                    throw new Error(`Quest "${quest.name}" is not in the player's canonical quest list.`);
+                }
+
+                const completionEntries = buildManualQuestCompletionEntries(quest, questIndex);
+                const location = currentPlayer.currentLocation
+                    ? (Location.get(currentPlayer.currentLocation) || null)
+                    : null;
+                const locationId = requireLocationId(
+                    location?.id || currentPlayer.currentLocation,
+                    'manual quest completion'
+                );
+                const regionReference = location?.regionId || location?.region || null;
+                const region = regionReference && typeof regionReference === 'object'
+                    ? regionReference
+                    : (regionReference ? (Region.get(regionReference) || null) : null);
+                const requestId = typeof req.body?.requestId === 'string' ? req.body.requestId : null;
+                const clientId = typeof req.body?.clientId === 'string' ? req.body.clientId : null;
+                const processingContext = {
+                    player: currentPlayer,
+                    location,
+                    region,
+                    stream: null,
+                    experienceAwards: [],
+                    currencyChanges: [],
+                    environmentalDamageEvents: [],
+                    needBarChanges: [],
+                    dispositionChanges: [],
+                    factionStandingChanges: [],
+                    questCompletionRewards: [],
+                    questCompletionErrors: [],
+                    questRewardBenefitResults: [],
+                    completedQuestObjectives: [],
+                    followupResults: [],
+                    questRewardTraceOrigin: 'quest-manual-completion',
+                    questRewardTraceRequestId: requestId,
+                    questRewardTraceClientId: clientId,
+                    allowEnvironmentalEffects: false,
+                    isNpcTurn: false
+                };
+
+                await Events.processQuestObjectiveCompletionEntries(
+                    completionEntries,
+                    processingContext
+                );
+
+                if (!quest.completed) {
+                    throw new Error(`Quest "${quest.name}" did not become complete after completing every objective.`);
+                }
+
+                let firstRewardChatEntry = null;
+                for (const rewardEntry of processingContext.questCompletionRewards) {
+                    if (!rewardEntry || typeof rewardEntry.message !== 'string' || !rewardEntry.message.trim()) {
+                        logQuestRewardStorageTrace('chat-storage:skipped', {
+                            origin: 'quest-manual-completion',
+                            rewardEntry,
+                            requestId,
+                            clientId,
+                            reason: 'missing-nonempty-message'
+                        });
+                        continue;
+                    }
+                    logQuestRewardStorageTrace('chat-storage:start', {
+                        origin: 'quest-manual-completion',
+                        rewardEntry,
+                        requestId,
+                        clientId
+                    });
+                    const chatEntry = pushChatEntry({
+                        role: 'assistant',
+                        content: rewardEntry.message,
+                        type: 'quest-reward',
+                        locationId,
+                        metadata: {
+                            questId: rewardEntry.questId || quest.id,
+                            questName: rewardEntry.questName || quest.name
+                        }
+                    }, null, locationId);
+                    if (!firstRewardChatEntry) {
+                        firstRewardChatEntry = chatEntry;
+                    }
+                    notifyVisibleProseEntryStored(chatEntry, {
+                        clientId,
+                        requestId,
+                        proseType: 'quest-reward'
+                    });
+                    logQuestRewardStorageTrace('chat-storage:complete', {
+                        origin: 'quest-manual-completion',
+                        rewardEntry,
+                        requestId,
+                        clientId,
+                        chatEntry
+                    });
+                }
+
+                recordEventSummaryEntry({
+                    label: `✅ Quest Marked Complete – ${quest.name}`,
+                    events: processingContext.completedQuestObjectives.map(objective => ({
+                        description: `Objective ${objective.objectiveNumber}: ${objective.objectiveDescription || 'Objective completed'}`,
+                        icon: '✅',
+                        category: 'quest_reward',
+                        sourceType: 'completed_quest_objective'
+                    })),
+                    timestamp: firstRewardChatEntry?.timestamp || new Date().toISOString(),
+                    parentId: firstRewardChatEntry?.id || null,
+                    locationId
+                });
+
+                if (clientId) {
+                    try {
+                        Globals.emitToClient(clientId, 'chat_history_updated', {
+                            reason: 'quest_manual_completion'
+                        });
+                    } catch (emitError) {
+                        console.warn(
+                            'Failed to notify client about manual quest completion:',
+                            emitError?.message || emitError
+                        );
+                    }
+                }
+
+                if (processingContext.questCompletionErrors.length) {
+                    const firstError = processingContext.questCompletionErrors[0];
+                    return res.status(409).json({
+                        success: false,
+                        objectivesCompleted: true,
+                        error: firstError?.message || `Quest "${quest.name}" reward processing failed.`,
+                        stack: firstError?.stack || null,
+                        errors: processingContext.questCompletionErrors,
+                        quest: quest.toJSON(),
+                        player: serializeNpcForClient(currentPlayer)
+                    });
+                }
+
+                return res.json({
+                    success: true,
+                    objectivesCompleted: true,
+                    quest: quest.toJSON(),
+                    player: serializeNpcForClient(currentPlayer),
+                    completedObjectives: processingContext.completedQuestObjectives,
+                    rewards: processingContext.questCompletionRewards,
+                    benefitResults: processingContext.questRewardBenefitResults,
+                    experienceAwards: processingContext.experienceAwards,
+                    currencyChanges: processingContext.currencyChanges,
+                    dispositionChanges: processingContext.dispositionChanges,
+                    factionStandingChanges: processingContext.factionStandingChanges
+                });
+            } catch (error) {
+                console.error(`Failed to mark quest "${quest.name}" complete:`, error);
+                return res.status(500).json({
+                    success: false,
+                    objectivesCompleted: quest.completed,
+                    error: error?.message || 'Failed to mark quest complete.',
+                    stack: typeof error?.stack === 'string' ? error.stack : null,
+                    quest: quest.toJSON(),
+                    player: serializeNpcForClient(currentPlayer)
+                });
+            }
+        });
+
         app.post('/api/quests/:questId/retry-rewards', async (req, res) => {
             if (!currentPlayer) {
                 return res.status(404).json({ success: false, error: 'No current player found' });
@@ -31312,6 +31708,13 @@ module.exports = function registerApiRoutes(scope) {
                     questRewardBenefitResults: [],
                     completedQuestObjectives: [],
                     followupResults: [],
+                    questRewardTraceOrigin: 'quest-reward-retry',
+                    questRewardTraceRequestId: typeof req.body?.requestId === 'string'
+                        ? req.body.requestId
+                        : null,
+                    questRewardTraceClientId: typeof req.body?.clientId === 'string'
+                        ? req.body.clientId
+                        : null,
                     allowEnvironmentalEffects: false,
                     isNpcTurn: false
                 };
@@ -31337,8 +31740,21 @@ module.exports = function registerApiRoutes(scope) {
                 const locationId = location?.id || currentPlayer.currentLocation || null;
                 for (const rewardEntry of processingContext.questCompletionRewards) {
                     if (!rewardEntry || typeof rewardEntry.message !== 'string' || !rewardEntry.message.trim()) {
+                        logQuestRewardStorageTrace('chat-storage:skipped', {
+                            origin: 'quest-reward-retry',
+                            rewardEntry,
+                            requestId: req.body?.requestId || null,
+                            clientId: req.body?.clientId || null,
+                            reason: 'missing-nonempty-message'
+                        });
                         continue;
                     }
+                    logQuestRewardStorageTrace('chat-storage:start', {
+                        origin: 'quest-reward-retry',
+                        rewardEntry,
+                        requestId: req.body?.requestId || null,
+                        clientId: req.body?.clientId || null
+                    });
                     const chatEntry = pushChatEntry({
                         role: 'assistant',
                         content: rewardEntry.message,
@@ -31353,6 +31769,13 @@ module.exports = function registerApiRoutes(scope) {
                         clientId: typeof req.body?.clientId === 'string' ? req.body.clientId : null,
                         requestId: typeof req.body?.requestId === 'string' ? req.body.requestId : null,
                         proseType: 'quest-reward'
+                    });
+                    logQuestRewardStorageTrace('chat-storage:complete', {
+                        origin: 'quest-reward-retry',
+                        rewardEntry,
+                        requestId: req.body?.requestId || null,
+                        clientId: req.body?.clientId || null,
+                        chatEntry
                     });
                 }
 
@@ -42806,6 +43229,9 @@ module.exports = function registerApiRoutes(scope) {
                                 questCompletionRewards: [],
                                 completedQuestObjectives: [],
                                 followupResults: [],
+                                questRewardTraceOrigin: 'crafting',
+                                questRewardTraceRequestId: payload.requestId || null,
+                                questRewardTraceClientId: payload.clientId || null,
                                 allowEnvironmentalEffects: false,
                                 isNpcTurn: false
                             };
@@ -42819,8 +43245,22 @@ module.exports = function registerApiRoutes(scope) {
                                 && questProcessingContext.questCompletionRewards.length) {
                                 for (const rewardEntry of questProcessingContext.questCompletionRewards) {
                                     if (!rewardEntry || typeof rewardEntry.message !== 'string') {
+                                        logQuestRewardStorageTrace('chat-storage:skipped', {
+                                            origin: 'crafting',
+                                            rewardEntry,
+                                            requestId: payload.requestId,
+                                            clientId: payload.clientId,
+                                            reason: 'missing-string-message'
+                                        });
                                         continue;
                                     }
+
+                                    logQuestRewardStorageTrace('chat-storage:start', {
+                                        origin: 'crafting',
+                                        rewardEntry,
+                                        requestId: payload.requestId,
+                                        clientId: payload.clientId
+                                    });
 
                                     const parsedReward = parseQuestRewardMessage(rewardEntry.message);
                                     if (parsedReward?.rewards?.length) {
@@ -42855,6 +43295,13 @@ module.exports = function registerApiRoutes(scope) {
 	                                        clientId: payload.clientId,
 	                                        requestId: payload.requestId,
 	                                        proseType: 'quest-reward'
+	                                    });
+	                                    logQuestRewardStorageTrace('chat-storage:complete', {
+	                                        origin: 'crafting',
+	                                        rewardEntry,
+	                                        requestId: payload.requestId,
+	                                        clientId: payload.clientId,
+	                                        chatEntry: questRewardEntry
 	                                    });
 	                                }
 	                            }
@@ -43632,6 +44079,9 @@ module.exports = function registerApiRoutes(scope) {
                                 questCompletionRewards: [],
                                 completedQuestObjectives: [],
                                 followupResults: [],
+                                questRewardTraceOrigin: 'location-modification',
+                                questRewardTraceRequestId: payload.requestId || null,
+                                questRewardTraceClientId: payload.clientId || null,
                                 allowEnvironmentalEffects: false,
                                 isNpcTurn: false
                             };
@@ -43645,8 +44095,22 @@ module.exports = function registerApiRoutes(scope) {
                                 && questProcessingContext.questCompletionRewards.length) {
                                 for (const rewardEntry of questProcessingContext.questCompletionRewards) {
                                     if (!rewardEntry || typeof rewardEntry.message !== 'string') {
+                                        logQuestRewardStorageTrace('chat-storage:skipped', {
+                                            origin: 'location-modification',
+                                            rewardEntry,
+                                            requestId: payload.requestId,
+                                            clientId: payload.clientId,
+                                            reason: 'missing-string-message'
+                                        });
                                         continue;
                                     }
+
+                                    logQuestRewardStorageTrace('chat-storage:start', {
+                                        origin: 'location-modification',
+                                        rewardEntry,
+                                        requestId: payload.requestId,
+                                        clientId: payload.clientId
+                                    });
 
                                     const parsedReward = parseQuestRewardMessage(rewardEntry.message);
                                     if (parsedReward?.rewards?.length) {
@@ -43681,6 +44145,13 @@ module.exports = function registerApiRoutes(scope) {
 	                                        clientId: payload.clientId,
 	                                        requestId: payload.requestId,
 	                                        proseType: 'quest-reward'
+	                                    });
+	                                    logQuestRewardStorageTrace('chat-storage:complete', {
+	                                        origin: 'location-modification',
+	                                        rewardEntry,
+	                                        requestId: payload.requestId,
+	                                        clientId: payload.clientId,
+	                                        chatEntry: questRewardEntry
 	                                    });
 	                                }
 	                            }
@@ -50798,6 +51269,12 @@ module.exports = function registerApiRoutes(scope) {
             } else {
                 delete metadata.lastHousekeepingTurnId;
             }
+            const lastHousekeepingTurnTimestamp = getLastHousekeepingTurnTimestamp();
+            if (lastHousekeepingTurnTimestamp) {
+                metadata.lastHousekeepingTurnTimestamp = lastHousekeepingTurnTimestamp;
+            } else {
+                delete metadata.lastHousekeepingTurnTimestamp;
+            }
             metadata.offscreenNpcActivityState = normalizeOffscreenNpcActivityState(offscreenNpcActivityState);
             const currentLocationId = currentPlayer.currentLocation || null;
             const currentLocation = currentLocationId
@@ -53172,6 +53649,7 @@ module.exports = function registerApiRoutes(scope) {
                 questCompletionErrors: [],
                 completedQuestObjectives: [],
                 followupResults: [],
+                questRewardTraceOrigin: 'quest-check-command',
                 allowEnvironmentalEffects: false,
                 isNpcTurn: false
             };
@@ -54696,3 +55174,5 @@ module.exports.createPlayerActionInvalidVehicleRouteError = createPlayerActionIn
 module.exports.shouldPropagatePlayerActionEventCheckError = shouldPropagatePlayerActionEventCheckError;
 module.exports.resolveThingStandardValueDetails = resolveThingStandardValueDetails;
 module.exports.resolveThingCurrencyConversion = resolveThingCurrencyConversion;
+module.exports.filterNeedBarChangesForHistory = filterNeedBarChangesForHistory;
+module.exports.buildManualQuestCompletionEntries = buildManualQuestCompletionEntries;

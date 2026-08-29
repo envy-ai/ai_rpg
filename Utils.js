@@ -53,12 +53,15 @@ class Utils {
     }
 
     const children = Array.from(node.childNodes || []);
-    const hasCdataChild = children.some((child) => child?.nodeType === 4);
-    if (hasCdataChild) {
-      return (node.textContent || '').trim();
-    }
-
-    return this.innerXML(node).trim();
+    const serializer = new XMLSerializer();
+    return children
+      .map((child) => (
+        child?.nodeType === 4
+          ? (child.data || '')
+          : serializer.serializeToString(child)
+      ))
+      .join('')
+      .trim();
   }
 
   static extractFinalXmlRootBlock(input, rootTags) {

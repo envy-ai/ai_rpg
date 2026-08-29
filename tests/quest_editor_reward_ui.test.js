@@ -26,6 +26,8 @@ test('quest editor gathers structured reward payloads from row editors', () => {
     assert.match(viewSource, /function addQuestFactionRewardRow/);
     assert.match(viewSource, /function addQuestNpcDispositionRewardRow/);
     assert.match(viewSource, /const gatherQuestRewardItems = \(\) =>/);
+    assert.match(viewSource, /quest-edit-reward-item-name/);
+    assert.match(viewSource, /quest-edit-reward-item-description/);
     assert.match(viewSource, /const gatherQuestFactionRewards = \(\) =>/);
     assert.match(viewSource, /const gatherQuestNpcDispositionRewards = \(\) =>/);
     assert.match(viewSource, /rewardItems: gatherQuestRewardItems\(\)/);

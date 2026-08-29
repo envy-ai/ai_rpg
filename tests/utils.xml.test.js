@@ -99,6 +99,22 @@ test('extractXmlNodeContent preserves inner XML for non-CDATA prompt nodes', () 
     );
 });
 
+test('extractXmlNodeContent unwraps CDATA without flattening sibling XML', () => {
+    const doc = Utils.parseXmlDocumentStrict([
+        '<template><generationPrompt>',
+        '<things><!-- preserve this schema --><item><description><!-- required prose --></description></item></things>',
+        '<![CDATA[Return at least one <item> and close </things>.]]>',
+        '</generationPrompt></template>'
+    ].join(''), 'text/xml');
+    const node = doc.getElementsByTagName('generationPrompt')[0];
+
+    assert.equal(
+        Utils.extractXmlNodeContent(node),
+        '<things><!-- preserve this schema --><item><description><!-- required prose --></description></item></things>'
+            + 'Return at least one <item> and close </things>.'
+    );
+});
+
 test('extractFinalXmlRootBlock returns the last complete requested root block', () => {
     const response = [
         'Draft:',

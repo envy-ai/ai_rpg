@@ -313,7 +313,7 @@ Core fields:
 Fields:
 - `id`, `name`, `description`
 - `objectives` (array of `{ id, description, completed, optional }`)
-- `rewardItems`, `rewardCurrency`, `rewardXp`
+- `rewardItems` (array of `{ name, description }` physical reward descriptors), `rewardCurrency`, `rewardXp`
 - `rewardFactionReputation` (object map of `factionId -> integerDelta`, may include negative values)
 - `rewardNpcDispositions` (array of `{ npcId, npcName, dispositions: [{ type, intensity, reason }] }`)
 - `secretNotes`, `rewardClaimed`, `paused`

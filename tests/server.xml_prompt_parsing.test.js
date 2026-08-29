@@ -73,6 +73,26 @@ test('parseXMLTemplate preserves literal CDATA terminators inside generation pro
     assert.equal(parsed.generationPrompt, 'before ]]> after');
 });
 
+test('parseXMLTemplate unwraps CDATA without stripping sibling XML schemas', () => {
+    Globals.config = { strictXMLParsing: true };
+    const parseXMLTemplate = loadServerFunction('parseXMLTemplate');
+    const parsed = parseXMLTemplate([
+        '<template>',
+        '<systemPrompt>system</systemPrompt>',
+        '<generationPrompt>',
+        '<things><!-- schema guidance --><item><description><!-- required --></description></item></things>',
+        '<![CDATA[Return one <item> and close </things>.]]>',
+        '</generationPrompt>',
+        '</template>'
+    ].join(''));
+
+    assert.equal(
+        parsed.generationPrompt,
+        '<things><!-- schema guidance --><item><description><!-- required --></description></item></things>'
+            + 'Return one <item> and close </things>.'
+    );
+});
+
 test('parseXMLTemplate logs malformed rendered templates through prompt logger', () => {
     Globals.config = { strictXMLParsing: true };
     const logs = [];

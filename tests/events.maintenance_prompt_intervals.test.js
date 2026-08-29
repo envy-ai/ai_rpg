@@ -129,6 +129,8 @@ test('maintenance prompt counters are wired into new-game reset and save/load me
     assert.match(apiSource, /metadata\.housekeepingTurnCounter = maintenancePromptTurnCounters\.housekeepingTurnCounter;/);
     assert.match(apiSource, /metadata\.questCheckTurnCounter = maintenancePromptTurnCounters\.questCheckTurnCounter;/);
     assert.match(apiSource, /metadata\.lastHousekeepingTurnId = lastHousekeepingTurnId;/);
+    assert.match(apiSource, /metadata\.lastHousekeepingTurnTimestamp = lastHousekeepingTurnTimestamp;/);
     assert.match(apiSource, /lastRunTurnId:\s*getLastHousekeepingTurnId\(\)/);
+    assert.match(apiSource, /lastRunTurnTimestamp:\s*getLastHousekeepingTurnTimestamp\(\)/);
     assert.match(apiSource, /Events\.hydrateMaintenancePromptTurnCounters\(metadata\);/);
 });

@@ -20,6 +20,14 @@ function normalizeTurnId(value) {
     return typeof value === 'string' && value.trim() ? value.trim() : null;
 }
 
+function normalizeTurnTimestamp(value) {
+    if (typeof value !== 'string' || !value.trim()) {
+        return null;
+    }
+    const timestampMs = Date.parse(value.trim());
+    return Number.isFinite(timestampMs) ? new Date(timestampMs).toISOString() : null;
+}
+
 function normalizeEntryType(entry) {
     return typeof entry?.type === 'string' ? entry.type.trim().toLowerCase() : '';
 }
@@ -61,6 +69,7 @@ function collectHousekeepingPlayerTurns(chatHistory) {
             }
             currentTurn = {
                 turnId,
+                timestamp: normalizeTurnTimestamp(entry.timestamp),
                 playerAction: normalizeHistoryText(entry.content),
                 prose: [],
                 eventText: [],
@@ -97,6 +106,7 @@ function resolveInitialTurnCount(interval) {
 
 function buildHousekeepingTurnHistory(chatHistory, {
     lastRunTurnId = null,
+    lastRunTurnTimestamp = null,
     interval = 1,
     currentTurnId = null,
     currentActionText = '',
@@ -105,19 +115,39 @@ function buildHousekeepingTurnHistory(chatHistory, {
 } = {}) {
     const allTurns = collectHousekeepingPlayerTurns(chatHistory);
     const normalizedLastRunTurnId = normalizeTurnId(lastRunTurnId);
+    const normalizedLastRunTurnTimestamp = normalizeTurnTimestamp(lastRunTurnTimestamp);
+    if (lastRunTurnTimestamp !== null
+        && lastRunTurnTimestamp !== undefined
+        && !normalizedLastRunTurnTimestamp) {
+        throw new Error('Housekeeping history boundary timestamp must be a valid timestamp string.');
+    }
     const normalizedCurrentTurnId = normalizeTurnId(currentTurnId);
     let selectedTurns;
     let mode;
+    let missingBoundaryTurnId = null;
 
     if (normalizedLastRunTurnId) {
         const boundaryIndex = allTurns.findIndex(turn => turn.turnId === normalizedLastRunTurnId);
         if (boundaryIndex === -1) {
-            throw new Error(
-                `The last housekeeping turn (${normalizedLastRunTurnId}) is missing from chat history.`
-            );
+            missingBoundaryTurnId = normalizedLastRunTurnId;
+            if (normalizedLastRunTurnTimestamp) {
+                const boundaryTimestampMs = Date.parse(normalizedLastRunTurnTimestamp);
+                const firstTurnAfterBoundaryIndex = allTurns.findIndex(turn => (
+                    turn.timestamp && Date.parse(turn.timestamp) > boundaryTimestampMs
+                ));
+                selectedTurns = firstTurnAfterBoundaryIndex === -1
+                    ? []
+                    : allTurns.slice(firstTurnAfterBoundaryIndex);
+                mode = 'since-deleted-boundary';
+            } else {
+                const initialTurnCount = resolveInitialTurnCount(interval);
+                selectedTurns = allTurns.slice(-initialTurnCount);
+                mode = 'deleted-boundary-fallback';
+            }
+        } else {
+            selectedTurns = allTurns.slice(boundaryIndex + 1);
+            mode = 'since-last-run';
         }
-        selectedTurns = allTurns.slice(boundaryIndex + 1);
-        mode = 'since-last-run';
     } else {
         const initialTurnCount = resolveInitialTurnCount(interval);
         selectedTurns = allTurns.slice(-initialTurnCount);
@@ -162,6 +192,7 @@ function buildHousekeepingTurnHistory(chatHistory, {
         }
         currentTurn = {
             turnId: normalizedCurrentTurnId,
+            timestamp: null,
             playerAction: '',
             prose: [],
             eventText: [],
@@ -193,7 +224,9 @@ function buildHousekeepingTurnHistory(chatHistory, {
     return {
         mode,
         turns: selectedTurns,
-        lastIncludedTurnId: lastPersistedTurn?.turnId || null
+        lastIncludedTurnId: lastPersistedTurn?.turnId || null,
+        lastIncludedTurnTimestamp: lastPersistedTurn?.timestamp || null,
+        missingBoundaryTurnId
     };
 }
 
@@ -201,6 +234,7 @@ module.exports = {
     HOUSEKEEPING_PROSE_ENTRY_TYPES,
     HOUSEKEEPING_EVENT_ENTRY_TYPES,
     normalizeTurnId,
+    normalizeTurnTimestamp,
     isHousekeepingPlayerTurnStart,
     collectHousekeepingPlayerTurns,
     buildHousekeepingTurnHistory

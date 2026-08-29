@@ -11,6 +11,29 @@ const LLMClient = require('../LLMClient.js');
 
 const rootDir = path.join(__dirname, '..');
 
+test('Quest stores reward item names separately from descriptions and upgrades legacy strings', () => {
+    const quest = new Quest({
+        name: 'Separate Rewards',
+        rewardItems: [
+            'Legacy Token',
+            {
+                name: 'Moonlit Compass',
+                description: 'Its needle points toward the bearer\'s sworn destination.'
+            },
+            '   '
+        ]
+    });
+
+    assert.deepEqual(quest.rewardItems, [
+        { name: 'Legacy Token', description: '' },
+        {
+            name: 'Moonlit Compass',
+            description: "Its needle points toward the bearer's sworn destination."
+        }
+    ]);
+    assert.deepEqual(Quest.fromJSON(quest.toJSON()).rewardItems, quest.rewardItems);
+});
+
 test('Quest serializes NPC disposition rewards', () => {
     const quest = new Quest({
         name: 'Win Mira Over',
@@ -43,7 +66,7 @@ test('Quest serializes NPC disposition rewards', () => {
     assert.deepEqual(restored.rewardNpcDispositions, quest.rewardNpcDispositions);
 });
 
-test('quest XML parser reads npcDispositions rewards with reasons', () => {
+test('quest XML parser reads structured item and npcDispositions rewards', () => {
     const previousConfig = Globals.config;
     try {
         Globals.config = previousConfig || {};
@@ -56,6 +79,10 @@ test('quest XML parser reads npcDispositions rewards with reasons', () => {
     <objective><description>Pay Mira's debt.</description></objective>
   </objectives>
   <rewards>
+    <item>
+      <name>Debtkeeper's Signet</name>
+      <description>A silver signet engraved with Mira's restored house mark.</description>
+    </item>
     <npcDispositions>
       <npc>
         <name>Mira</name>
@@ -71,6 +98,10 @@ test('quest XML parser reads npcDispositions rewards with reasons', () => {
   </rewards>
 </quest>`);
 
+        assert.deepEqual(parsed.rewardItems, [{
+            name: "Debtkeeper's Signet",
+            description: "A silver signet engraved with Mira's restored house mark."
+        }]);
         assert.deepEqual(parsed.rewardNpcDispositions, [{
             npcName: 'Mira',
             dispositions: [{
@@ -81,6 +112,25 @@ test('quest XML parser reads npcDispositions rewards with reasons', () => {
         }]);
     } finally {
         Globals.config = previousConfig;
+    }
+});
+
+test('quest XML parser rejects reward items that conflate description with name', () => {
+    const previousWarn = console.warn;
+    try {
+        console.warn = () => {};
+        const parsed = Events._parseQuestXml(`
+<quest>
+  <name>Malformed Reward</name>
+  <description>Verify reward item structure.</description>
+  <objectives><objective><description>Finish the task.</description></objective></objectives>
+  <rewards>
+    <item><description>An ornate token with an overly detailed label.</description></item>
+  </rewards>
+</quest>`);
+        assert.equal(parsed, null);
+    } finally {
+        console.warn = previousWarn;
     }
 });
 
@@ -232,9 +282,12 @@ test('completed quest directly grants item and currency rewards without event-ch
     const previousLogPrompt = LLMClient.logPrompt;
     const previousRunEventChecks = Events.runEventChecks;
     const previousError = console.error;
+    const previousInfo = console.info;
+    const previousApplySlopRemoval = Globals.applySlopRemoval;
 
     const inventory = [];
     const experienceAwards = [];
+    const questRewardTraceLines = [];
     let currency = 7;
     let eventCheckCalls = 0;
     let archiveSealAttempts = 0;
@@ -243,13 +296,17 @@ test('completed quest directly grants item and currency rewards without event-ch
         Globals.baseDir = rootDir;
         Globals.config = {
             baseHealthPerLevel: 10,
-            slop_buster: false,
+            slop_buster: true,
             ai: { tinybrain: false }
         };
         Player.reloadDefinitionCaches({ refreshInstances: false });
         LLMClient.chatCompletion = async () => 'The configured quest rewards were granted.';
         LLMClient.logPrompt = () => {};
         console.error = () => {};
+        console.info = (...args) => {
+            questRewardTraceLines.push(args.map(value => String(value)).join(' '));
+        };
+        Globals.applySlopRemoval = async prose => prose;
         Events.runEventChecks = async () => {
             eventCheckCalls += 1;
             throw new Error('Quest reward prose must not be event-checked.');
@@ -258,7 +315,7 @@ test('completed quest directly grants item and currency rewards without event-ch
         Events._deps = {
             ...(previousDeps || {}),
             getConfig: () => Globals.config,
-            generateItemsByNames: async ({ itemNames, options }) => {
+            generateItemsByNames: async ({ itemNames, seeds, options }) => {
                 assert.equal(itemNames.length, 1);
                 assert.equal(options.mergeStacks, false);
                 assert.equal(options.creationMetadata.questRewardQuestId, 'quest_reward_test');
@@ -266,6 +323,14 @@ test('completed quest directly grants item and currency rewards without event-ch
                 assert.ok(rewardIndex === 0 || rewardIndex === 1);
                 const expectedName = rewardIndex === 0 ? 'Archivist Token' : 'Archive Seal';
                 assert.deepEqual(itemNames, [expectedName]);
+                const expectedDescription = rewardIndex === 0
+                    ? 'A brass token stamped with the archive crest.'
+                    : 'A wax seal carrying the chief archivist\'s mark.';
+                assert.deepEqual(seeds, [{
+                    name: expectedName,
+                    description: expectedDescription,
+                    itemOrScenery: 'item'
+                }]);
                 if (rewardIndex === 1) {
                     archiveSealAttempts += 1;
                     if (archiveSealAttempts === 1) {
@@ -298,7 +363,16 @@ test('completed quest directly grants item and currency rewards without event-ch
             id: 'quest_reward_test',
             name: 'Archive Delivery',
             objectives: ['Report completion'],
-            rewardItems: ['Archivist Token', 'Archive Seal'],
+            rewardItems: [
+                {
+                    name: 'Archivist Token',
+                    description: 'A brass token stamped with the archive crest.'
+                },
+                {
+                    name: 'Archive Seal',
+                    description: "A wax seal carrying the chief archivist's mark."
+                }
+            ],
             rewardCurrency: 10,
             rewardXp: 25
         });
@@ -375,6 +449,15 @@ test('completed quest directly grants item and currency rewards without event-ch
         }]);
         assert.deepEqual(context.questCompletionRewards[0].items, ['Archivist Token', 'Archive Seal']);
         assert.equal(eventCheckCalls, 0);
+        const questRewardTrace = questRewardTraceLines.join('\n');
+        assert.match(questRewardTrace, /"stage":"application:start"/);
+        assert.match(questRewardTrace, /"stage":"application:complete"/);
+        assert.match(questRewardTrace, /"stage":"presentation:generation:complete"/);
+        assert.match(questRewardTrace, /"stage":"presentation:slop-removal:start"/);
+        assert.match(questRewardTrace, /"stage":"presentation:slop-removal:complete"/);
+        assert.match(questRewardTrace, /"stage":"presentation:accumulator:complete"/);
+        assert.match(questRewardTrace, /"stage":"batch:complete"/);
+        assert.match(questRewardTrace, /"errorCode":"QUEST_REWARD_APPLICATION_FAILED"/);
 
         await Events.processQuestObjectiveCompletionEntries([{
             questIndex: 1,
@@ -387,6 +470,8 @@ test('completed quest directly grants item and currency rewards without event-ch
     } finally {
         Events.runEventChecks = previousRunEventChecks;
         console.error = previousError;
+        console.info = previousInfo;
+        Globals.applySlopRemoval = previousApplySlopRemoval;
         LLMClient.chatCompletion = previousChatCompletion;
         LLMClient.logPrompt = previousLogPrompt;
         Events._deps = previousDeps;
@@ -404,6 +489,7 @@ test('quest disposition rewards are exposed through editor and API source hooks'
 
     assert.match(promptSource, /<npcDispositions>/);
     assert.match(promptSource, /<reason>/);
+    assert.match(promptSource, /<item>\s*<name>/);
     assert.match(apiSource, /rewardNpcDispositions/);
     assert.match(apiSource, /parseQuestNpcDispositionRewardsInput/);
     assert.match(viewSource, /questEditRewardNpcDispositionRows/);

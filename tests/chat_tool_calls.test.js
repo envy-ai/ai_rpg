@@ -17,6 +17,8 @@ function createMinimalRuntime({
     llmResponses = [],
     capturedMessagesByRound = [],
     promptLogCalls = [],
+    promptProgressEvents = [],
+    inheritedPromptProgressGroup = null,
     debugEvents = [],
     chatHistory = [],
     isAssistantProseLikeEntry = () => true,
@@ -31,6 +33,9 @@ function createMinimalRuntime({
 } = {}) {
     const locationMap = new Map(locations.map(location => [location.id, location]));
     const regionMap = new Map(regions.map(region => [region.id, region]));
+    let activePromptProgressGroup = inheritedPromptProgressGroup
+        ? { ...inheritedPromptProgressGroup }
+        : null;
     return createChatToolRuntime({
         getConfig: () => ({ ai: { max_tool_rounds: 4 } }),
         getChatHistory: () => chatHistory,
@@ -51,11 +56,35 @@ function createMinimalRuntime({
         findRegionByLocationId: () => null,
         LLMClient: {
             chatCompletion: async (options) => {
+                if (activePromptProgressGroup) {
+                    promptProgressEvents.push({
+                        type: 'completion',
+                        progressGroupId: activePromptProgressGroup.progressGroupId
+                    });
+                }
                 capturedMessagesByRound.push(structuredClone(options.messages));
                 const response = llmResponses.shift();
                 assert.ok(response, 'Expected a queued LLM response for this round.');
                 options.onResponse?.(response);
                 return response.data.choices[0].message.content || '';
+            },
+            hasActivePromptProgressGroup: () => Boolean(activePromptProgressGroup),
+            withPromptProgressGroup: async (group, callback) => {
+                assert.equal(activePromptProgressGroup, null);
+                activePromptProgressGroup = { ...group };
+                promptProgressEvents.push({ type: 'started', ...group });
+                try {
+                    return await callback();
+                } finally {
+                    activePromptProgressGroup = null;
+                }
+            },
+            clearPromptProgressGroup: (progressGroupId, options) => {
+                promptProgressEvents.push({
+                    type: 'cleared',
+                    progressGroupId,
+                    recordOutputCharacters: options?.recordOutputCharacters === true
+                });
             },
             logPrompt: (options) => {
                 promptLogCalls.push(options);
@@ -103,12 +132,14 @@ test('moreInfo tool description discourages redundant lookups for visible full X
 
 test('tool loop status identifies the tool being called', async () => {
     const statusEvents = [];
+    const promptProgressEvents = [];
     const randomIntegerTool = CHAT_TOOL_DEFINITIONS.find(
         definition => definition?.function?.name === 'generateRandomInteger'
     );
     assert.ok(randomIntegerTool, 'Expected the generateRandomInteger chat tool definition.');
 
     const runtime = createMinimalRuntime({
+        promptProgressEvents,
         llmResponses: [
             {
                 data: {
@@ -164,6 +195,51 @@ test('tool loop status identifies the tool being called', async () => {
             toolNames: ['generateRandomInteger'],
             message: 'Running tool: generateRandomInteger...'
         }
+    }]);
+    assert.equal(promptProgressEvents[0].type, 'started');
+    assert.equal(promptProgressEvents[0].progressGroupTargetLabel, 'named_tool_status_test');
+    assert.deepEqual(
+        promptProgressEvents.filter(event => event.type === 'completion').map(event => event.progressGroupId),
+        [promptProgressEvents[0].progressGroupId, promptProgressEvents[0].progressGroupId]
+    );
+    assert.deepEqual(promptProgressEvents.at(-1), {
+        type: 'cleared',
+        progressGroupId: promptProgressEvents[0].progressGroupId,
+        recordOutputCharacters: true
+    });
+});
+
+test('tool loop joins an inherited prompt progress group without nesting or clearing it', async () => {
+    const promptProgressEvents = [];
+    const runtime = createMinimalRuntime({
+        promptProgressEvents,
+        inheritedPromptProgressGroup: {
+            progressGroupId: 'existing-tinybrain-group',
+            progressGroupTargetLabel: 'player_action_tinybrain'
+        },
+        llmResponses: [{
+            data: {
+                choices: [{
+                    message: {
+                        content: 'Finished inside the existing group.',
+                        tool_calls: []
+                    }
+                }]
+            }
+        }]
+    });
+
+    const result = await runtime.runChatCompletionWithToolLoop({
+        requestOptions: {
+            messages: [{ role: 'user', content: 'Continue.' }]
+        },
+        metadataLabel: 'player_action'
+    });
+
+    assert.equal(result.aiResponse, 'Finished inside the existing group.');
+    assert.deepEqual(promptProgressEvents, [{
+        type: 'completion',
+        progressGroupId: 'existing-tinybrain-group'
     }]);
 });
 
@@ -1547,11 +1623,13 @@ test('runChatCompletionWithToolLoop reports tool-call debug lifecycle events', a
 
 test('runChatCompletionWithToolLoop terminates lifecycle records before propagating fatal tool errors', async () => {
     const lifecycleEvents = [];
+    const promptProgressEvents = [];
     const fatalError = new Error('Prompt canceled by user.');
     fatalError.code = 'user_input_cancelled';
     fatalError.fatalToolExecution = true;
 
     const runtime = createMinimalRuntime({
+        promptProgressEvents,
         llmResponses: [{
             data: {
                 choices: [{
@@ -1593,6 +1671,12 @@ test('runChatCompletionWithToolLoop terminates lifecycle records before propagat
     assert.deepEqual(lifecycleEvents[1].error, {
         message: 'Prompt canceled by user.',
         code: 'user_input_cancelled'
+    });
+    assert.equal(promptProgressEvents[0].type, 'started');
+    assert.deepEqual(promptProgressEvents.at(-1), {
+        type: 'cleared',
+        progressGroupId: promptProgressEvents[0].progressGroupId,
+        recordOutputCharacters: false
     });
 });
 

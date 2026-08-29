@@ -39054,6 +39054,95 @@
                 }
             }
 
+            async function refreshAfterManualQuestCompletion() {
+                const refreshes = [];
+                const enqueueRefresh = (operation, label) => {
+                    try {
+                        const value = operation();
+                        if (value && typeof value.then === 'function') {
+                            refreshes.push(value.catch(error => {
+                                console.warn(`Manual quest completion refresh (${label}) failed:`, error);
+                            }));
+                        }
+                    } catch (error) {
+                        console.warn(`Manual quest completion refresh (${label}) failed:`, error);
+                    }
+                };
+                enqueueRefresh(() => refreshQuestPanel(), 'quests');
+                enqueueRefresh(() => window.AIRPG_CHAT?.refreshChatHistory?.(), 'chat');
+                enqueueRefresh(() => window.refreshInventory?.(), 'inventory');
+                enqueueRefresh(() => window.refreshParty?.(), 'party');
+                enqueueRefresh(() => window.loadCurrentLocation?.(), 'location');
+                if (refreshes.length) {
+                    await Promise.allSettled(refreshes);
+                }
+            }
+
+            async function handleCompleteQuest(quest, trigger) {
+                if (!quest || !quest.id) {
+                    return;
+                }
+
+                const questName = quest.name || 'this quest';
+                const confirmed = window.confirm(
+                    `Mark every objective in "${questName}" complete and process its rewards? This cannot be undone.`
+                );
+                if (!confirmed) {
+                    return;
+                }
+
+                const button = trigger instanceof HTMLButtonElement ? trigger : null;
+                const originalLabel = button ? button.textContent : null;
+                if (button) {
+                    button.disabled = true;
+                    button.textContent = 'Completing...';
+                }
+
+                let objectivesCompleted = false;
+                try {
+                    const response = await fetch(`/api/quests/${encodeURIComponent(quest.id)}/complete`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            clientId: window.AIRPG_CHAT?.clientId || null
+                        })
+                    });
+                    const result = await response.json().catch(() => ({}));
+                    objectivesCompleted = result?.objectivesCompleted === true;
+                    if (!response.ok || !result?.success) {
+                        const error = new Error(result?.error || 'Failed to mark quest complete.');
+                        error.serverStack = typeof result?.stack === 'string' ? result.stack : '';
+                        throw error;
+                    }
+
+                    await refreshAfterManualQuestCompletion();
+                    if (typeof window.activateTab === 'function') {
+                        window.activateTab('adventure');
+                    }
+                    if (window.location.hash !== '#tab-adventure') {
+                        window.location.hash = '#tab-adventure';
+                    }
+                } catch (error) {
+                    if (objectivesCompleted) {
+                        await refreshAfterManualQuestCompletion();
+                    }
+                    const stack = typeof error?.serverStack === 'string' && error.serverStack.trim()
+                        ? error.serverStack.trim()
+                        : (error?.stack || error?.message || String(error));
+                    console.error('Failed to mark quest complete:', stack);
+                    const message = `Failed to mark quest complete:\n\n${stack}`;
+                    if (typeof window.AIRPG_CHAT?.showChatErrorPopup === 'function') {
+                        window.AIRPG_CHAT.showChatErrorPopup(message);
+                    } else {
+                        window.alert(message);
+                    }
+                    if (button && button.isConnected) {
+                        button.disabled = false;
+                        button.textContent = originalLabel || 'Mark Complete';
+                    }
+                }
+            }
+
             async function handleRetryQuestRewards(quest, trigger) {
                 if (!quest || !quest.id) {
                     return;
@@ -39138,10 +39227,13 @@
                 return removeBtn;
             }
 
-            function addQuestRewardItemRow(itemName = '') {
+            function addQuestRewardItemRow(rewardItem = {}) {
                 if (!questEditRewardItemsRows) {
                     return;
                 }
+                const normalizedRewardItem = typeof rewardItem === 'string'
+                    ? { name: rewardItem, description: '' }
+                    : (rewardItem && typeof rewardItem === 'object' ? rewardItem : {});
                 const row = document.createElement('div');
                 row.className = 'quest-edit-reward-row quest-edit-reward-row--item';
 
@@ -39149,9 +39241,20 @@
                 nameInput.type = 'text';
                 nameInput.className = 'quest-edit-reward-item-name';
                 nameInput.placeholder = 'Item reward name';
-                nameInput.value = typeof itemName === 'string' ? itemName : '';
+                nameInput.value = typeof normalizedRewardItem.name === 'string'
+                    ? normalizedRewardItem.name
+                    : '';
+
+                const descriptionInput = document.createElement('input');
+                descriptionInput.type = 'text';
+                descriptionInput.className = 'quest-edit-reward-item-description';
+                descriptionInput.placeholder = 'Item reward description';
+                descriptionInput.value = typeof normalizedRewardItem.description === 'string'
+                    ? normalizedRewardItem.description
+                    : '';
 
                 row.appendChild(nameInput);
+                row.appendChild(descriptionInput);
                 row.appendChild(createQuestRewardRemoveButton(row));
                 questEditRewardItemsRows.appendChild(row);
             }
@@ -39381,7 +39484,7 @@
                     questEditRewardItemsRows.innerHTML = '';
                     const items = Array.isArray(quest.rewardItems) ? quest.rewardItems : [];
                     if (items.length) {
-                        items.forEach(itemName => addQuestRewardItemRow(itemName));
+                        items.forEach(item => addQuestRewardItemRow(item));
                     } else {
                         addQuestRewardItemRow();
                     }
@@ -39480,7 +39583,20 @@
 
                 const rewardCurrency = Number.isFinite(quest.rewardCurrency) ? Math.max(0, quest.rewardCurrency) : 0;
                 const rewardXp = Number.isFinite(quest.rewardXp) ? Math.max(0, quest.rewardXp) : 0;
-                const rewardItems = Array.isArray(quest.rewardItems) ? quest.rewardItems.filter(Boolean) : [];
+                const rewardItems = Array.isArray(quest.rewardItems)
+                    ? quest.rewardItems.map(entry => {
+                        if (typeof entry === 'string') {
+                            return { name: entry, description: '' };
+                        }
+                        if (!entry || typeof entry !== 'object') {
+                            return null;
+                        }
+                        return {
+                            name: typeof entry.name === 'string' ? entry.name : '',
+                            description: typeof entry.description === 'string' ? entry.description : ''
+                        };
+                    }).filter(entry => entry?.name)
+                    : [];
                 const rewardFactionReputation = normalizeQuestFactionRewards(quest.rewardFactionReputation || {});
                 const rewardNpcDispositions = normalizeQuestNpcDispositionRewards(quest.rewardNpcDispositions || []);
                 const rewardBenefits = Array.isArray(quest.rewardBenefits) ? quest.rewardBenefits.filter(Boolean) : [];
@@ -39585,9 +39701,11 @@
                         xpItem.textContent = `${rewardXp} experience`;
                         list.appendChild(xpItem);
                     }
-                    rewardItems.forEach(label => {
+                    rewardItems.forEach(rewardItem => {
                         const item = document.createElement('li');
-                        item.textContent = label;
+                        item.textContent = rewardItem.description
+                            ? `${rewardItem.name} — ${rewardItem.description}`
+                            : rewardItem.name;
                         list.appendChild(item);
                     });
                     rewardFactionReputation.forEach(entry => {
@@ -39670,8 +39788,19 @@
                         handleToggleQuestPause(quest, event.currentTarget);
                     });
 
+                    const completeButton = document.createElement('button');
+                    completeButton.type = 'button';
+                    completeButton.className = 'quest-abandon-button quest-complete-button';
+                    completeButton.textContent = 'Mark Complete';
+                    completeButton.addEventListener('click', (event) => {
+                        event.preventDefault();
+                        event.stopPropagation();
+                        handleCompleteQuest(quest, event.currentTarget);
+                    });
+
                     actions.appendChild(editButton);
                     actions.appendChild(pauseButton);
+                    actions.appendChild(completeButton);
                     actions.appendChild(abandonButton);
                     content.appendChild(actions);
                 }
@@ -39826,7 +39955,16 @@
                 }
                 const rows = Array.from(questEditRewardItemsRows.querySelectorAll('.quest-edit-reward-row--item'));
                 return rows
-                    .map(row => row.querySelector('.quest-edit-reward-item-name')?.value?.trim() || '')
+                    .map(row => {
+                        const name = row.querySelector('.quest-edit-reward-item-name')?.value?.trim() || '';
+                        if (!name) {
+                            return null;
+                        }
+                        return {
+                            name,
+                            description: row.querySelector('.quest-edit-reward-item-description')?.value?.trim() || ''
+                        };
+                    })
                     .filter(Boolean);
             };
 

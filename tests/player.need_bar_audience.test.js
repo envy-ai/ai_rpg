@@ -52,6 +52,7 @@ need_bars:
     change_per_minute: 3
   stamina:
     name: Stamina
+    hide_increase_to_max: true
     player: true
     party: true
     non_party: true
@@ -171,6 +172,54 @@ test('player actors only store and expose player-audience plus shared need bars'
 
         assert.deepEqual(storedIds, ['player_focus', 'stamina']);
         assert.deepEqual(activeIds, ['player_focus', 'stamina']);
+    } finally {
+        Player.clearRuntimeRegistries();
+        Globals.baseDir = previousBaseDir;
+        Globals.config = previousConfig;
+        Player.reloadDefinitionCaches({ refreshInstances: false });
+        fs.rmSync(tempBaseDir, { recursive: true, force: true });
+    }
+});
+
+test('configured full need-bar increases mutate state but are marked hidden from history', () => {
+    const previousBaseDir = Globals.baseDir;
+    const previousConfig = Globals.config;
+    const tempBaseDir = createTempNeedBarDefs();
+
+    Player.clearRuntimeRegistries();
+    Globals.baseDir = tempBaseDir;
+    Globals.config = withBaseHealthAndFormulas(previousConfig);
+    Player.reloadDefinitionCaches({ refreshInstances: false });
+
+    try {
+        const player = new Player({
+            id: 'need-hidden-fill-player',
+            name: 'Baato'
+        });
+
+        player.setNeedBarValue('stamina', 25);
+        const fullIncrease = player.applyNeedBarChange('stamina', {
+            direction: 'increase',
+            magnitude: 'full',
+            reason: 'rested completely'
+        });
+
+        assert.equal(player.getNeedBarValue('stamina'), 100);
+        assert.equal(fullIncrease.newValue, 100);
+        assert.equal(fullIncrease.hideFromHistory, true);
+
+        player.setNeedBarValue('stamina', 25);
+        const partialIncrease = player.applyNeedBarChange('stamina', {
+            direction: 'increase',
+            magnitude: 'small'
+        });
+        assert.equal(partialIncrease.hideFromHistory, false);
+
+        const fullDecrease = player.applyNeedBarChange('stamina', {
+            direction: 'decrease',
+            magnitude: 'empty'
+        });
+        assert.equal(fullDecrease.hideFromHistory, false);
     } finally {
         Player.clearRuntimeRegistries();
         Globals.baseDir = previousBaseDir;

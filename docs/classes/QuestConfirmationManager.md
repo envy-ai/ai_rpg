@@ -65,7 +65,7 @@ Emitted quest preview fields:
 - `objectives`: array of `{ description, optional }` entries with non-empty descriptions.
 - `rewardCurrency`: finite numeric value from `quest.rewardCurrency`, otherwise `0`.
 - `rewardXp`: finite numeric value from `quest.rewardXp`, otherwise `0`.
-- `rewardItems`: strings become `{ name }`; object entries use `name`, `description`, or `label`; finite quantities are rounded to whole numbers, forced to at least `1`, and omitted when the value is `1`.
+- `rewardItems`: legacy strings become `{ name, description: "" }`; object entries preserve a distinct `name` (or legacy `label`) and `description`. Finite quantities are rounded to whole numbers, forced to at least `1`, and omitted when the value is `1`.
 - `rewardNpcDispositions`: array of `{ npcName, dispositions }`, where each disposition includes `{ type, intensity, reason }`; intensity must be a non-zero integer and `reason` is `null` when omitted.
 - `rewardBenefits`: sanitized `{ id, type, targetId, label, description, role }` entries.
 - `rewardNotes`: trimmed non-empty strings.

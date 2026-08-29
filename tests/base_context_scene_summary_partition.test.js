@@ -93,3 +93,36 @@ test('scene-mode base context keeps every uncovered entry raw instead of sliding
     assert.match(after, /Newest event summary\./);
     assert.match(after, /Newest uncovered prose\./);
 });
+
+test('deleted scene-summary boundary leaves all remaining history uncovered', () => {
+    const historyEntries = createHistory().filter(entry => entry.id !== 'story-2');
+    const result = partitionBaseContextHistoryBySceneCoverage({
+        historyEntries,
+        relevantHistory: historyEntries,
+        sceneSummaries: createSceneSummaryStore(),
+        maxSummarizedEntries: 100
+    });
+
+    assert.equal(result.boundaryWasDeleted, true);
+    assert.equal(result.coverageHasDeletedEntries, true);
+    assert.equal(result.storedSummarizedThroughEntryId, 'story-2');
+    assert.equal(result.summarizedThroughEntryId, null);
+    assert.deepEqual(result.summaryCandidates, []);
+    assert.deepEqual(result.tailEntries, historyEntries);
+});
+
+test('deleting every covered scene-summary entry leaves all remaining history uncovered', () => {
+    const historyEntries = createHistory().filter(entry => !['story-1', 'story-2'].includes(entry.id));
+    const result = partitionBaseContextHistoryBySceneCoverage({
+        historyEntries,
+        relevantHistory: historyEntries,
+        sceneSummaries: createSceneSummaryStore(),
+        maxSummarizedEntries: 100
+    });
+
+    assert.equal(result.boundaryWasDeleted, true);
+    assert.equal(result.coverageHasDeletedEntries, true);
+    assert.equal(result.summarizedThroughEntryId, null);
+    assert.deepEqual(result.summaryCandidates, []);
+    assert.deepEqual(result.tailEntries, historyEntries);
+});

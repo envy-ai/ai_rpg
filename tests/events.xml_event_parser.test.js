@@ -74,6 +74,44 @@ test('XML event parser warns, ignores unknown tags, and preserves valid siblings
     assert.deepEqual(warnings, ['Ignoring unknown event XML tag <questUpdate>.']);
 });
 
+test('XML event parser accepts camelCase, snake_case, and flatcase tag styles', () => {
+    const parsed = Events._parseXmlEventCheckResponse(`
+<events>
+  <party_change>
+    <npc_name>Luma Wickwood</npc_name>
+    <action>joined</action>
+  </party_change>
+  <incombat><value>true</value></incombat>
+  <any_quest_objectives_completed><value>false</value></any_quest_objectives_completed>
+  <tracker_updates>
+    <trackerupdate>
+      <tracker_name>Departure Clock</tracker_name>
+      <type>countdown</type>
+      <action>remove</action>
+      <new_value>none</new_value>
+      <reason>The party departed.</reason>
+    </trackerupdate>
+  </tracker_updates>
+</events>
+`);
+
+    assert.deepEqual(parsed.structured.parsed.party_change[0], {
+        name: 'Luma Wickwood',
+        action: 'joined'
+    });
+    assert.equal(parsed.structured.parsed.in_combat, true);
+    assert.equal(parsed.structured.parsed.any_quest_objectives_completed, false);
+    assert.equal(parsed.structured.parsed.tracker_updates[0].trackerName, 'Departure Clock');
+});
+test('XML event parser accepts snake_case and flatcase travel markers', () => {
+    const parsed = Events._parseXmlEventCheckResponse(`
+<events><move_location><destination_name>Town Square</destination_name></move_location><arriveatlocation/></events>
+`);
+
+    assert.equal(parsed.hasTravelBoundary, true);
+    assert.equal(parsed.travelMove.structured.parsed.move_location[0], 'Town Square');
+});
+
 test('XML event parser converts core camelCase tags to existing event keys', () => {
     const previousConfig = Globals.config;
     Globals.config = {
@@ -270,6 +308,36 @@ test('XML event parser strictly parses and aggregates anyQuestObjectivesComplete
 </events>
 `),
         /anyQuestObjectivesCompleted\.value must be exactly true or false/
+    );
+});
+
+test('XML event parser can require exactly one final combat and quest signal', () => {
+    const parsed = Events._parseXmlEventCheckResponse(`
+<events>
+  <in_combat><value>false</value></in_combat>
+  <anyquestobjectivescompleted><value>true</value></anyquestobjectivescompleted>
+</events>
+`, { requireFinalStateTags: true });
+
+    assert.equal(parsed.structured.parsed.in_combat, false);
+    assert.equal(parsed.structured.parsed.any_quest_objectives_completed, true);
+
+    assert.throws(
+        () => Events._parseXmlEventCheckResponse(`
+<events><inCombat><value>false</value></inCombat></events>
+`, { requireFinalStateTags: true }),
+        /missing required top-level tags: anyQuestObjectivesCompleted/i
+    );
+
+    assert.throws(
+        () => Events._parseXmlEventCheckResponse(`
+<events>
+  <inCombat><value>false</value></inCombat>
+  <anyQuestObjectivesCompleted><value>false</value></anyQuestObjectivesCompleted>
+  <any_quest_objectives_completed><value>true</value></any_quest_objectives_completed>
+</events>
+`, { requireFinalStateTags: true }),
+        /duplicate required top-level tags: anyQuestObjectivesCompleted/i
     );
 });
 
@@ -638,6 +706,8 @@ test('XML runEventChecks forwards a pre-resolved hidden NPC check into event out
     <description>Baato spots the hidden scout.</description>
     <useOpposedCheck>true</useOpposedCheck>
   </revealHiddenNpc>
+  <inCombat><value>false</value></inCombat>
+  <anyQuestObjectivesCompleted><value>false</value></anyQuestObjectivesCompleted>
 </events>`;
         LLMClient.logPrompt = () => {};
         Events.initialize({
@@ -1537,7 +1607,11 @@ test('runEventChecks defaults to XML events plus dedicated need-bar prompt witho
             }
             await new Promise(resolve => setImmediate(resolve));
             eventCheckResolved = true;
-            return '<events><currency><amount>7</amount></currency></events>';
+            return `<events>
+  <currency><amount>7</amount></currency>
+  <inCombat><value>false</value></inCombat>
+  <anyQuestObjectivesCompleted><value>false</value></anyQuestObjectivesCompleted>
+</events>`;
         };
         LLMClient.logPrompt = (entry) => {
             loggedPrefixes.push(entry?.prefix || null);
@@ -1654,6 +1728,8 @@ test('runEventChecks can suppress need-bar checks and hard-ignore selected XML e
     <destinationRegion>Town</destinationRegion>
     <destinationLocation>Stable Yard</destinationLocation>
   </thingDeparture>
+  <inCombat><value>false</value></inCombat>
+  <anyQuestObjectivesCompleted><value>false</value></anyQuestObjectivesCompleted>
 </events>`;
         };
         LLMClient.logPrompt = () => {};
@@ -1858,6 +1934,8 @@ test('XML runEventChecks applies origin, movement, and destination phases while 
   <arriveAtLocation/>
   <sceneryAppear><sceneryName>Gatehouse</sceneryName><description>A guarded entry.</description></sceneryAppear>
   <timePassed><reasoning>Looking around the gate.</reasoning><duration>5 minutes</duration></timePassed>
+  <inCombat><value>false</value></inCombat>
+  <anyQuestObjectivesCompleted><value>false</value></anyQuestObjectivesCompleted>
 </events>`;
         LLMClient.logPrompt = () => {};
         Events.initialize({
@@ -2063,6 +2141,8 @@ test('XML runEventChecks can apply suppressed travel arrival phase at explicit d
   <arriveAtLocation/>
   <thingArrival><thingName>Wall-Mounted Display Screen</thingName></thingArrival>
   <sceneryAppear><sceneryName>Arrival Marker</sceneryName><description>Records arrival context.</description></sceneryAppear>
+  <inCombat><value>false</value></inCombat>
+  <anyQuestObjectivesCompleted><value>false</value></anyQuestObjectivesCompleted>
 </events>`;
         LLMClient.logPrompt = () => {};
         Events.initialize({
@@ -2197,6 +2277,8 @@ test('XML runEventChecks suppresses in-motion vehicle destination moves but keep
   <moveLocation><destinationName>Main Street and Town Square</destinationName></moveLocation>
   <arriveAtLocation/>
   <timePassed><reasoning>The shuttle ride finished.</reasoning><duration>8 minutes</duration></timePassed>
+  <inCombat><value>false</value></inCombat>
+  <anyQuestObjectivesCompleted><value>false</value></anyQuestObjectivesCompleted>
 </events>`;
         LLMClient.logPrompt = () => {};
         Events.initialize({
@@ -2295,6 +2377,8 @@ test('XML runEventChecks suppressTimeAdvance suppresses movement and timePassed 
   <moveLocation><destinationName>North Gate</destinationName></moveLocation>
   <arriveAtLocation/>
   <timePassed><reasoning>Looking around.</reasoning><duration>5 minutes</duration></timePassed>
+  <inCombat><value>false</value></inCombat>
+  <anyQuestObjectivesCompleted><value>false</value></anyQuestObjectivesCompleted>
 </events>`;
         LLMClient.logPrompt = () => {};
         Events.initialize({

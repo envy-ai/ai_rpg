@@ -6,7 +6,7 @@ This is the informal XML schema for the default single-prompt event pipeline (`e
 
 The same schema drives the staged tiny-brain variant (`ai.tinybrain: true`), but TinyBrain does not ask for a monolithic chronological block. `prompts/_includes/events-xml.tinybrain.njk` asks category-specific questions for one explicit prose section (`CURRENT`, `ORIGIN`, `BETWEEN`, `DESTINATION`, or tracker-only), validates each `<events>` fragment at its own checkpoint, and locally assembles the accepted fragments into the single `<events>` block described here. An empty TinyBrain category uses `<events><done/></events>`; the parser strips that sole sentinel rather than assembling it as an event, and still accepts the older bare `<done/>` form. A wrapped sentinel mixed with events or used where required tags are missing is rejected. `BETWEEN` permits only `thingMoveWithCharacter`; authoritative player-action movement is never regenerated as event XML. Both templates share this schema text via `prompts/_includes/events-xml-schema.njk`. In staged rendering, the schema omits the one-shot global-required annotations from `inCombat` and `anyQuestObjectivesCompleted`; only the final ordinary-event checkpoint marks those tags required.
 
-The XML element names use camelCase. Section headings use snake_case labels for readability; the XML examples show the exact tag names the model should emit. Unknown built-in tags throw parse errors unless an enabled mod has registered the tag.
+The XML examples use canonical camelCase, while the parser accepts camelCase, snake_case, or flatcase for every built-in event element, movement marker, tracker entry, and nested field. Matching is case-insensitive after underscores are removed, so `partyChange`, `party_change`, and `partychange` are equivalent. TinyBrain allowlists and required-tag checks use the same equivalence. Genuinely unknown direct event tags emit a terminal warning and are omitted while valid siblings continue parsing.
 
 ## Top-Level Shape
 
@@ -20,7 +20,7 @@ The response is a flat chronological list of event elements. Travel is the only 
 
 Rules:
 
-- Omit event tags when that event did not occur, except required state/signal fields such as `inCombat` and `anyQuestObjectivesCompleted`, which report `false` when inactive.
+- Omit event tags when that event did not occur, except required state/signal fields such as `inCombat` and `anyQuestObjectivesCompleted`, which report `false` when inactive. The one-shot event checker accepts the document only when each required field appears exactly once; malformed XML, semantic errors, and missing or duplicate required fields use the configured correction-retry budget before any event is applied.
 - Repeat event tags for multiple instances.
 - If no player/party travel occurred, all event elements remain direct children of `<events>` and belong to the active location.
 - The first `<moveLocation>` or `<moveNewLocation>` element is the travel boundary. Events before it happened at the origin; events after `<arriveAtLocation/>` happened after arrival at the destination. List events in chronological order.

@@ -2,9 +2,11 @@ const fs = require('fs');
 const path = require('path');
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const SceneSummaries = require('../SceneSummaies.js');
 
 const {
     countSceneSummaryIndexEntries,
+    findDeletedCoveredSceneSummaryEntryIds,
     shouldIncludeEntryInSceneSummaryIndex
 } = require('../scene_summary_index.js');
 
@@ -64,4 +66,29 @@ test('scene summary index excludes system and diagnostic entries', () => {
 test('automatic scene-summary threshold counter uses the shared scene-summary index', () => {
     const apiSource = fs.readFileSync(path.join(__dirname, '..', 'api.js'), 'utf8');
     assert.match(apiSource, /countSceneSummaryIndexEntries\(entries\)/);
+    assert.match(apiSource, /invalidateSceneSummariesForDeletedHistoryEntries/);
+});
+
+test('scene summary deletion check reports missing entries only inside contiguous coverage', () => {
+    const sceneSummaries = new SceneSummaries();
+    sceneSummaries.addSummaryResult({
+        summarizedRange: { start: 1, end: 2 },
+        entryIndexMap: [
+            { entryId: 'covered-1', index: 1 },
+            { entryId: 'covered-2', index: 2 },
+            { entryId: 'future-3', index: 3 }
+        ],
+        scenes: [{
+            startIndex: 1,
+            endIndex: 2,
+            startEntryId: 'covered-1',
+            endEntryId: 'covered-2',
+            summary: 'Covered scene.'
+        }]
+    });
+
+    assert.deepEqual(findDeletedCoveredSceneSummaryEntryIds([
+        { id: 'covered-1' },
+        { id: 'future-3' }
+    ], sceneSummaries), ['covered-2']);
 });

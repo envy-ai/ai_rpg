@@ -15,6 +15,8 @@ const PROMPT_DIAGNOSTIC_ENTRY_TYPES = new Set([
     'tool-call-debug'
 ]);
 
+const warnedDeletedSceneSummaryCoverage = new Set();
+
 function isDiagnosticHistoryText(text) {
     if (typeof text !== 'string') {
         return false;
@@ -180,8 +182,8 @@ function partitionBaseContextHistoryBySceneCoverage({
         throw new Error('Scene summary store is missing its entry index mapping.');
     }
     const boundaryMapping = serialized.entryIndexMap.find(entry => Number(entry?.index) === summarizedEndIndex);
-    const summarizedThroughEntryId = normalizeEntryId({ id: boundaryMapping?.entryId });
-    if (!summarizedThroughEntryId) {
+    const storedSummarizedThroughEntryId = normalizeEntryId({ id: boundaryMapping?.entryId });
+    if (!storedSummarizedThroughEntryId) {
         throw new Error(`Scene summary entry mapping is missing contiguous boundary index ${summarizedEndIndex}.`);
     }
 
@@ -200,10 +202,35 @@ function partitionBaseContextHistoryBySceneCoverage({
         historyPositionById.set(entryId, index);
     }
 
-    const summarizedThroughHistoryPosition = historyPositionById.get(summarizedThroughEntryId);
-    if (!Number.isInteger(summarizedThroughHistoryPosition)) {
-        throw new Error(`Scene summary boundary entry '${summarizedThroughEntryId}' is missing from chat history.`);
+    const deletedCoveredEntryIds = serialized.entryIndexMap
+        .filter(entry => (
+            Number(entry?.index) <= summarizedEndIndex
+            && !historyPositionById.has(normalizeEntryId({ id: entry?.entryId }))
+        ))
+        .map(entry => normalizeEntryId({ id: entry?.entryId }))
+        .filter(Boolean);
+    if (deletedCoveredEntryIds.length) {
+        const warningKey = deletedCoveredEntryIds.slice().sort().join('|');
+        if (!warnedDeletedSceneSummaryCoverage.has(warningKey)) {
+            warnedDeletedSceneSummaryCoverage.add(warningKey);
+            console.warn(
+                `Scene summary source entries were deleted from chat history (${deletedCoveredEntryIds.join(', ')}); `
+                + 'treating all remaining history as uncovered until summaries are rebuilt.'
+            );
+        }
+        return {
+            summaryCandidates: [],
+            tailEntries: relevantHistory.slice(),
+            summarizedEndIndex,
+            summarizedThroughEntryId: null,
+            storedSummarizedThroughEntryId,
+            boundaryWasDeleted: deletedCoveredEntryIds.includes(storedSummarizedThroughEntryId),
+            coverageHasDeletedEntries: true,
+            deletedCoveredEntryIds
+        };
     }
+    const summarizedThroughEntryId = storedSummarizedThroughEntryId;
+    const summarizedThroughHistoryPosition = historyPositionById.get(summarizedThroughEntryId);
 
     const coveredEntries = [];
     const uncoveredEntries = [];
@@ -230,7 +257,11 @@ function partitionBaseContextHistoryBySceneCoverage({
         summaryCandidates,
         tailEntries: uncoveredEntries,
         summarizedEndIndex,
-        summarizedThroughEntryId
+        summarizedThroughEntryId,
+        storedSummarizedThroughEntryId,
+        boundaryWasDeleted: false,
+        coverageHasDeletedEntries: false,
+        deletedCoveredEntryIds: []
     };
 }
 

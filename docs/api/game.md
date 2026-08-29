@@ -103,7 +103,7 @@ Behavior:
 - Metadata includes totals for players, things, locations, exits, regions, factions, mystery boxes, mystery threads, generated images, and skills.
 - Metadata includes `enabledMods`, the startup-frozen active enabled mod directory names.
 - Metadata includes `npcAliasesGenerated`, normalized to `true` only when runtime metadata explicitly has `true`.
-- Metadata includes current setting identifiers, current location identifiers, summary style, prompt counters, independent housekeeping/quest-check interval counters, `lastHousekeepingTurnId` for the successful-run chat-history boundary, plot analysis, offscreen NPC activity state, save-file version, and ID counters.
+- Metadata includes current setting identifiers, current location identifiers, summary style, prompt counters, independent housekeeping/quest-check interval counters, `lastHousekeepingTurnId` plus `lastHousekeepingTurnTimestamp` for the deletion-resistant successful-run chat-history cursor, plot analysis, offscreen NPC activity state, save-file version, and ID counters.
 - `gameConfigOverride.yaml` persists the active per-game YAML override exactly as normalized by `Globals.setGameConfigOverrideYaml`.
 - Manual saves use `saves/`. Autosaves use `autosaves/` through the shared save helper and may omit a duplicate final chat entry when it matches the last autosave.
 

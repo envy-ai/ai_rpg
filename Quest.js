@@ -206,6 +206,35 @@ class Quest {
       .filter(Boolean);
   }
 
+  static normalizeRewardItems(value) {
+    if (value === null || value === undefined || value === '') {
+      return [];
+    }
+
+    const entries = Array.isArray(value) ? value : [value];
+    return entries.map((entry) => {
+      if (typeof entry === 'string') {
+        const name = entry.trim();
+        if (!name) {
+          return null;
+        }
+        return { name, description: '' };
+      }
+      if (!entry || typeof entry !== 'object' || Array.isArray(entry)) {
+        throw new Error('rewardItems entries must be strings or objects.');
+      }
+
+      const name = typeof entry.name === 'string' ? entry.name.trim() : '';
+      if (!name) {
+        throw new Error('rewardItems entries must have a non-empty name.');
+      }
+      const description = typeof entry.description === 'string'
+        ? entry.description.trim()
+        : '';
+      return { name, description };
+    }).filter(Boolean);
+  }
+
   static normalizeRewardBenefits(value, context = {}) {
     return questRewardBenefitRegistry.normalizeAll(value, context);
   }
@@ -282,15 +311,7 @@ class Quest {
     this.description = typeof options.description === 'string' ? options.description : '';
     this.secretNotes = typeof options.secretNotes === 'string' ? options.secretNotes : '';
 
-    if (Array.isArray(options.rewardItems)) {
-      this.rewardItems = options.rewardItems
-        .map(item => (typeof item === 'string' ? item.trim() : ''))
-        .filter(Boolean);
-    } else if (typeof options.rewardItems === 'string' && options.rewardItems.trim()) {
-      this.rewardItems = [options.rewardItems.trim()];
-    } else {
-      this.rewardItems = [];
-    }
+    this.rewardItems = Quest.normalizeRewardItems(options.rewardItems);
 
     const currencyValue = Number(options.rewardCurrency);
     this.rewardCurrency = Number.isFinite(currencyValue) ? Math.max(0, Math.floor(currencyValue)) : 0;
@@ -398,7 +419,7 @@ class Quest {
       name: this.name,
       description: this.description,
       objectives: this.objectives.map(obj => (obj.toJSON())),
-      rewardItems: Array.isArray(this.rewardItems) ? this.rewardItems.slice() : [],
+      rewardItems: Quest.normalizeRewardItems(this.rewardItems),
       rewardCurrency: this.rewardCurrency,
       rewardXp: this.rewardXp,
       rewardFactionReputation: { ...this.rewardFactionReputation },

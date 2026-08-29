@@ -99,6 +99,8 @@ need_bars:
     initial: 1000
     change_per_minute: 50
     relative_to_level: false
+    # This value is specifically here because fill completely is such a common thing that it's pure noise.
+    hide_increase_to_max: true
     large_increase:
       - non-strenuous activity (such as walking)
       - light exercise

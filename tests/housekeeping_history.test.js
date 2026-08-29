@@ -6,9 +6,9 @@ const {
     buildHousekeepingTurnHistory
 } = require('../housekeeping_history.js');
 
-function playerTurn(id, action, prose, eventText = null) {
+function playerTurn(id, action, prose, eventText = null, timestamp = '2026-08-29T12:00:00.000Z') {
     const entries = [
-        { id, role: 'user', content: action },
+        { id, role: 'user', content: action, timestamp },
         { id: `${id}-prose`, role: 'assistant', type: 'player-action', content: prose }
     ];
     if (eventText) {
@@ -32,6 +32,7 @@ test('housekeeping history groups player actions, prose, and event text by turn'
 
     assert.deepEqual(collectHousekeepingPlayerTurns(history), [{
         turnId: 'turn-1',
+        timestamp: '2026-08-29T12:00:00.000Z',
         playerAction: 'Open the gate.',
         prose: ['The gate groans open.', 'Mira steps through.'],
         eventText: ['📋 Events\n• 🚪 The gate opened.', '🌀 Status\n• Mira is alert.'],
@@ -51,6 +52,7 @@ test('first housekeeping run uses only the configured interval worth of recent t
     assert.equal(result.mode, 'initial-interval');
     assert.deepEqual(result.turns.map(turn => turn.turnId), ['turn-2', 'turn-3']);
     assert.equal(result.lastIncludedTurnId, 'turn-3');
+    assert.equal(result.lastIncludedTurnTimestamp, '2026-08-29T12:00:00.000Z');
 });
 
 test('later housekeeping runs include every player turn after the persisted boundary', () => {
@@ -88,6 +90,7 @@ test('current turn supplements add finalized prose and events without duplicatin
     assert.equal(result.turns.length, 1);
     assert.deepEqual(result.turns[0], {
         turnId: 'turn-2',
+        timestamp: '2026-08-29T12:00:00.000Z',
         playerAction: 'Search the desk.',
         prose: ['A brass key lies under the ledger.'],
         eventText: ['📋 Events – Current Turn\n• 🎒 Brass key was picked up.'],
@@ -148,15 +151,45 @@ test('non-player prompt entries do not create housekeeping turns', () => {
     assert.deepEqual(turns[0].prose, ['The camp settles.']);
 });
 
-test('missing persisted housekeeping boundary fails loudly', () => {
+test('deleted legacy housekeeping boundary falls back to the configured recent window', () => {
     const history = playerTurn('turn-2', 'Continue.', 'The road continues.');
 
+    const result = buildHousekeepingTurnHistory(history, {
+        lastRunTurnId: 'missing-turn',
+        interval: 2
+    });
+
+    assert.equal(result.mode, 'deleted-boundary-fallback');
+    assert.equal(result.missingBoundaryTurnId, 'missing-turn');
+    assert.deepEqual(result.turns.map(turn => turn.turnId), ['turn-2']);
+});
+
+test('deleted housekeeping boundary with a timestamp resumes after that timestamp', () => {
+    const history = [
+        ...playerTurn('turn-1', 'First.', 'First prose.', null, '2026-08-29T12:00:00.000Z'),
+        ...playerTurn('turn-3', 'Third.', 'Third prose.', null, '2026-08-29T12:02:00.000Z'),
+        ...playerTurn('turn-4', 'Fourth.', 'Fourth prose.', null, '2026-08-29T12:03:00.000Z')
+    ];
+
+    const result = buildHousekeepingTurnHistory(history, {
+        lastRunTurnId: 'deleted-turn-2',
+        lastRunTurnTimestamp: '2026-08-29T12:01:00.000Z',
+        interval: 1
+    });
+
+    assert.equal(result.mode, 'since-deleted-boundary');
+    assert.equal(result.missingBoundaryTurnId, 'deleted-turn-2');
+    assert.deepEqual(result.turns.map(turn => turn.turnId), ['turn-3', 'turn-4']);
+    assert.equal(result.lastIncludedTurnTimestamp, '2026-08-29T12:03:00.000Z');
+});
+
+test('invalid saved housekeeping boundary timestamp fails explicitly', () => {
     assert.throws(
-        () => buildHousekeepingTurnHistory(history, {
-            lastRunTurnId: 'missing-turn',
-            interval: 2
+        () => buildHousekeepingTurnHistory([], {
+            lastRunTurnId: 'deleted-turn',
+            lastRunTurnTimestamp: 'not-a-timestamp'
         }),
-        /last housekeeping turn \(missing-turn\) is missing from chat history/i
+        /boundary timestamp must be a valid timestamp string/i
     );
 });
 
@@ -171,4 +204,5 @@ test('synthetic current context does not create an unresolvable persisted bounda
     assert.equal(result.turns.length, 1);
     assert.equal(result.turns[0].isSynthetic, true);
     assert.equal(result.lastIncludedTurnId, null);
+    assert.equal(result.lastIncludedTurnTimestamp, null);
 });

@@ -152,17 +152,18 @@ class QuestConfirmationManager {
         const rewardItems = mapArray(quest.rewardItems, item => {
             if (typeof item === 'string') {
                 const normalized = safeString(item);
-                return normalized ? { name: normalized } : null;
+                return normalized ? { name: normalized, description: '' } : null;
             }
             if (item && typeof item === 'object') {
-                const name = safeString(item.name || item.description || item.label);
+                const name = safeString(item.name || item.label);
                 if (!name) {
                     return null;
                 }
+                const description = safeString(item.description);
                 const quantity = Number.isFinite(item.quantity) ? item.quantity : null;
                 return quantity && quantity !== 1
-                    ? { name, quantity: Math.max(1, Math.round(quantity)) }
-                    : { name };
+                    ? { name, description, quantity: Math.max(1, Math.round(quantity)) }
+                    : { name, description };
             }
             return null;
         });

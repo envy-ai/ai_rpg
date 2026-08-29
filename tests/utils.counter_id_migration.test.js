@@ -323,7 +323,10 @@ test('old saves migrate domain object ids and structured references to compact c
     assert.deepEqual(player.toJSON().partyMembers, ['char_2']);
     assert.equal(player.toJSON().quests[0].id, 'quest_1');
     assert.equal(player.toJSON().quests[0].giverId, 'char_2');
-    assert.equal(player.toJSON().quests[0].rewardItems[0], 'thing_1');
+    assert.deepEqual(player.toJSON().quests[0].rewardItems[0], {
+      name: 'thing_1',
+      description: ''
+    });
     assert.equal(player.toJSON().quests[0].objectives[0].id, 'obj_1');
     assert.equal(npc.toJSON().statusEffects[0].id, 'status_1');
 

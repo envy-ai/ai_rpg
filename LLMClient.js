@@ -3023,6 +3023,10 @@ class LLMClient {
         }), callback);
     }
 
+    static hasActivePromptProgressGroup() {
+        return Boolean(LLMClient.#promptProgressGroupContext.getStore());
+    }
+
     static isTinyBrainXmlRepetitionFixEnabled() {
         return Globals?.config?.ai?.xml_repetition_fix === true;
     }

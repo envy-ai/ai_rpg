@@ -217,6 +217,21 @@ test('tiny-brain event stage parser validates allowlists, semantics, trackers, a
     );
     assert.equal(repeatedCurrency.value.xml, '');
     assert.deepEqual(repeatedCurrency.value.signatures, []);
+    const snakeParty = Events.parseTinyBrainEventXmlStage(
+        '<events><party_change><npc_name>Luma</npc_name><action>joined</action></party_change></events>',
+        { stageId: 'characters', allowedTags: ['partyChange'] }
+    );
+    const repeatedFlatParty = Events.parseTinyBrainEventXmlStage(
+        '<events><partychange><npcname>Luma</npcname><action>joined</action></partychange></events>',
+        {
+            stageId: 'final',
+            allowedTags: ['partyChange'],
+            acceptedSignatures: snakeParty.value.signatures
+        }
+    );
+    assert.equal(repeatedFlatParty.value.xml, '');
+    assert.deepEqual(repeatedFlatParty.value.signatures, []);
+
     const warnings = [];
     const originalWarn = console.warn;
     console.warn = (...args) => warnings.push(args.join(' '));
@@ -227,24 +242,20 @@ test('tiny-brain event stage parser validates allowlists, semantics, trackers, a
         );
         assert.equal(ignoredUnknown.value.xml, '');
 
-        assert.throws(
-            () => Events.parseTinyBrainEventXmlStage(
-                '<events><in_combat><value>false</value></in_combat><anyQuestObjectivesCompleted><value>false</value></anyQuestObjectivesCompleted></events>',
-                {
-                    stageId: 'final',
-                    allowedTags: ['inCombat', 'anyQuestObjectivesCompleted'],
-                    requiredTags: ['inCombat', 'anyQuestObjectivesCompleted']
-                }
-            ),
-            /missing required tags: inCombat/
+        const forgivingTags = Events.parseTinyBrainEventXmlStage(
+            '<events><in_combat><value>false</value></in_combat><anyquestobjectivescompleted><value>false</value></anyquestobjectivescompleted></events>',
+            {
+                stageId: 'final',
+                allowedTags: ['inCombat', 'anyQuestObjectivesCompleted'],
+                requiredTags: ['inCombat', 'anyQuestObjectivesCompleted']
+            }
         );
+        assert.match(forgivingTags.value.xml, /<in_combat>/);
+        assert.match(forgivingTags.value.xml, /<anyquestobjectivescompleted>/);
     } finally {
         console.warn = originalWarn;
     }
-    assert.deepEqual(warnings, [
-        'Ignoring unknown event XML tag <updateTracker>.',
-        'Ignoring unknown event XML tag <in_combat>.'
-    ]);
+    assert.deepEqual(warnings, ['Ignoring unknown event XML tag <updateTracker>.']);
 
     const tracker = Events.parseTinyBrainEventXmlStage(
         '<events><trackerUpdates><trackerUpdate><trackerName>Alarm</trackerName><type>numerical_count</type><action>add</action><newValue>2</newValue><reason>Two guards remain.</reason></trackerUpdate></trackerUpdates></events>',

@@ -99,6 +99,7 @@ test('runEventChecks applies dedicated need-bar prompt changes with reason and i
 
     const loggedPrefixes = [];
     const capturedPromptTypes = [];
+    let needBarRequestOptions = null;
 
     try {
         LLMClient.logPrompt = (entry) => {
@@ -110,7 +111,7 @@ test('runEventChecks applies dedicated need-bar prompt changes with reason and i
             capturedPromptTypes.push(payload.promptType || null);
 
             if (payload.promptType === 'need-bars') {
-                return `Planning:
+                const responseText = `Planning:
 - Wanderer: stamina decreases from swinging a weapon.
 
 <characters>
@@ -126,6 +127,12 @@ test('runEventChecks applies dedicated need-bar prompt changes with reason and i
     </affectedNeedBars>
   </character>
 </characters>`;
+                needBarRequestOptions = options;
+                assert.equal(typeof options.onResponse, 'function');
+                options.onResponse({
+                    data: { choices: [{ message: { content: responseText } }] }
+                });
+                return responseText;
             }
 
             const questionCount = Array.isArray(payload.eventQuestions)
@@ -180,6 +187,18 @@ test('runEventChecks applies dedicated need-bar prompt changes with reason and i
         assert.equal(player.getNeedBarValue('stamina'), 90);
         assert.deepEqual(capturedPromptTypes.sort(), ['event-checks', 'event-checks', 'need-bars'].sort());
         assert.equal(loggedPrefixes.includes('need_bar_event_checks'), true);
+        assert.equal(needBarRequestOptions.validateXML, true);
+        assert.equal(needBarRequestOptions.validateXMLStrict, true);
+        assert.equal(needBarRequestOptions.expectedXmlRootTag, 'characters');
+        assert.match('<characters></characters>', needBarRequestOptions.requiredRegex);
+        assert.throws(
+            () => needBarRequestOptions.onResponse({
+                data: {
+                    choices: [{ message: { content: 'Planning only, with no XML.' } }]
+                }
+            }),
+            /missing a <characters> block/
+        );
     } finally {
         Events._deps = previousDeps;
         Events._baseTimeout = previousTimeout;

@@ -418,11 +418,13 @@ test('grouped prompt progress reuses one entry across stages and waits until gro
 
     try {
         LLMClient.recordPromptOutputCharacters('player_action_tinybrain', 120);
+        assert.equal(LLMClient.hasActivePromptProgressGroup(), false);
 
         await LLMClient.withPromptProgressGroup({
             progressGroupId: 'tinybrain-test-run',
             progressGroupTargetLabel: 'player_action_tinybrain'
         }, async () => {
+            assert.equal(LLMClient.hasActivePromptProgressGroup(), true);
             const result = await LLMClient.chatCompletion({
                 messages: [{ role: 'user', content: 'Use inherited average progress target.' }],
                 metadataLabel: 'player_action',
@@ -443,6 +445,7 @@ test('grouped prompt progress reuses one entry across stages and waits until gro
             });
             assert.equal(secondResult, 'abcd');
         });
+        assert.equal(LLMClient.hasActivePromptProgressGroup(), false);
 
         const entriesBeforeClear = emittedEvents
             .filter(event => event.type === 'prompt_progress')

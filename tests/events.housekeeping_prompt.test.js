@@ -55,7 +55,11 @@ function initializeEventsForHousekeepingTest({
         const message = Array.isArray(options.messages) ? options.messages[1]?.content : null;
         const payload = typeof message === 'string' ? JSON.parse(message) : {};
         if (payload.promptType === 'events-xml') {
-            return '<events><currency><amount>7</amount></currency></events>';
+            return `<events>
+  <currency><amount>7</amount></currency>
+  <inCombat><value>false</value></inCombat>
+  <anyQuestObjectivesCompleted><value>false</value></anyQuestObjectivesCompleted>
+</events>`;
         }
         if (payload.promptType === 'event-checks') {
             const questionCount = Array.isArray(payload.eventQuestions)
@@ -272,6 +276,60 @@ test('runEventChecks suppressHousekeeping skips silent housekeeping', async () =
         assert.equal(player.currency, 7);
         assert.equal(housekeepingCalls.length, 0);
     } finally {
+        restoreEventsState(snapshot);
+    }
+});
+
+test('automatic housekeeping failure preserves applied events and quest-completion signal', async () => {
+    const snapshot = snapshotEventsState();
+    const housekeepingCalls = [];
+    const previousConsoleError = console.error;
+    const loggedErrors = [];
+    const player = {
+        isNPC: false,
+        name: 'Wanderer',
+        currency: 0,
+        getCurrency() {
+            return this.currency;
+        },
+        adjustCurrency(amount) {
+            this.currency += amount;
+        }
+    };
+
+    try {
+        initializeEventsForHousekeepingTest({ useXml: true, player, housekeepingCalls });
+        LLMClient.chatCompletion = async () => [
+            '<events>',
+            '<currency><amount>7</amount></currency>',
+            '<anyQuestObjectivesCompleted><value>true</value></anyQuestObjectivesCompleted>',
+            '<inCombat><value>false</value></inCombat>',
+            '</events>'
+        ].join('');
+        Events.setHousekeepingPromptRunner(async () => {
+            throw new Error('The saved housekeeping boundary is missing.');
+        });
+        console.error = (...args) => {
+            loggedErrors.push(args.map(value => String(value)).join(' '));
+        };
+
+        const result = await Events.runEventChecks({
+            textToCheck: 'Wanderer receives seven coins and completes an objective.',
+            suppressNeedBarEventChecks: true
+        });
+
+        assert.equal(player.currency, 7);
+        assert.equal(result.currencyChanges[0].amount, 7);
+        assert.equal(Events.eventResultIndicatesAnyQuestObjectivesCompleted(result), true);
+        assert.equal(result.postProcessingErrors.length, 1);
+        assert.equal(
+            result.postProcessingErrors[0].code,
+            'HOUSEKEEPING_AFTER_EVENT_CHECKS_FAILED'
+        );
+        assert.match(result.postProcessingErrors[0].stack, /saved housekeeping boundary is missing/);
+        assert.match(loggedErrors.join('\n'), /automatic housekeeping failed/i);
+    } finally {
+        console.error = previousConsoleError;
         restoreEventsState(snapshot);
     }
 });

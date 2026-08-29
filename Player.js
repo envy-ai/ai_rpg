@@ -903,6 +903,11 @@ class Player {
             return null;
         }
 
+        if (config.hide_increase_to_max !== undefined
+            && typeof config.hide_increase_to_max !== 'boolean') {
+            throw new Error(`need_bars.${id}.hide_increase_to_max must be a boolean when provided.`);
+        }
+
         const name = typeof config.name === 'string' ? config.name : id;
         const description = typeof config.description === 'string' ? config.description : '';
         const whileYouWereAwayPromptNotes = typeof config.while_you_were_away_prompt_notes === 'string'
@@ -953,6 +958,7 @@ class Player {
             max,
             changePerMinute,
             relativeToLevel,
+            hideIncreaseToMax: config.hide_increase_to_max === true,
             player: audience.player,
             party: audience.party,
             nonParty: audience.nonParty,
@@ -5849,6 +5855,11 @@ class Player {
             player: Boolean(bar.player),
             party: Boolean(bar.party),
             nonParty: Boolean(bar.nonParty),
+            hideFromHistory: Boolean(
+                bar.hideIncreaseToMax
+                && direction === 'increase'
+                && magnitude === 'all'
+            ),
             previousThreshold,
             currentThreshold: bar.currentThreshold ? { ...bar.currentThreshold } : null
         };

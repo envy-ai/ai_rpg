@@ -6765,6 +6765,9 @@ const createChatToolRuntime = ({
             if (objectType === 'quest' && fieldName === 'rewardNotes') {
                 return Quest.normalizeRewardNotes(rawValue);
             }
+            if (objectType === 'quest' && fieldName === 'rewardItems') {
+                return Quest.normalizeRewardItems(rawValue);
+            }
             return rawValue;
         }
         if (objectFields.has(fieldName)) {
@@ -12218,333 +12221,383 @@ const createChatToolRuntime = ({
             }
         };
 
-        while (!completed) {
-            rounds += 1;
-            if (toolsDisabledAfterExhaustion && exhaustionErrorRounds > 3) {
-                throw new Error(`Tool-call loop kept returning tool calls after attempts were exhausted for ${metadataLabel}.`);
-            }
-
-            let roundResponse = null;
-            const roundOptions = {
-                ...requestOptions,
-                messages,
-                onResponse: (response) => {
-                    roundResponse = response;
-                    if (originalOnResponse) {
-                        originalOnResponse(response);
-                    }
+        const runToolLoop = async () => {
+            while (!completed) {
+                rounds += 1;
+                if (toolsDisabledAfterExhaustion && exhaustionErrorRounds > 3) {
+                    throw new Error(`Tool-call loop kept returning tool calls after attempts were exhausted for ${metadataLabel}.`);
                 }
-            };
-            if (toolsDisabledAfterExhaustion) {
-                delete roundOptions.tools;
-                delete roundOptions.functions;
-                delete roundOptions.parallel_tool_calls;
-                roundOptions.tool_choice = 'none';
-                roundOptions.function_call = 'none';
-                if (
-                    roundOptions.additionalPayload
-                    && typeof roundOptions.additionalPayload === 'object'
-                    && !Array.isArray(roundOptions.additionalPayload)
-                ) {
-                    roundOptions.additionalPayload = {
-                        ...roundOptions.additionalPayload
-                    };
-                    delete roundOptions.additionalPayload.tools;
-                    delete roundOptions.additionalPayload.functions;
-                    delete roundOptions.additionalPayload.parallel_tool_calls;
-                    roundOptions.additionalPayload.tool_choice = 'none';
-                    roundOptions.additionalPayload.function_call = 'none';
-                }
-            }
-
-            aiResponse = await LLMClient.chatCompletion(roundOptions);
-            lastResponse = roundResponse;
-
-            const assistantMessage = roundResponse?.data?.choices?.[0]?.message || null;
-            lastAssistantMessage = assistantMessage;
-            const rawToolCalls = Array.isArray(assistantMessage?.tool_calls)
-                ? assistantMessage.tool_calls
-                : [];
-            const toolCalls = normalizeToolCallsForExecution(rawToolCalls, {
-                sourceLabel: `${metadataLabel} round ${rounds}`
-            });
-
-            if ((promptLogFile && toolCalls.length) || (!promptLogFile && (toolLoopActivated || toolCalls.length))) {
-                const roundLabel = `${metadataLabel}_tool_loop_round`;
-                const toolCallSummary = toolCalls.length
-                    ? toolCalls.map((call, index) => {
-                        const argumentText = typeof call.argumentsText === 'string' && call.argumentsText.trim()
-                            ? call.argumentsText.trim()
-                            : '{}';
-                        return [
-                            `${index + 1}. ${call.functionName}`,
-                            `   id: ${call.id || '(none)'}`,
-                            `   arguments: ${argumentText}`
-                        ].join('\n');
-                    }).join('\n\n')
-                    : 'No tool calls returned this round.';
-                const toolRoundLogPath = LLMClient.logPrompt({
-                    prefix: roundLabel,
-                    metadataLabel: roundLabel,
-                    systemPrompt: '',
-                    generationPrompt: LLMClient.formatMessagesForErrorLog(messages),
-                    response: aiResponse || '',
-                    responseLabel: `${metadataLabel} tool round ${rounds} LLM response`,
-                    markResponseBoundaries: Boolean(promptLogFile),
-                    sections: [
-                        {
-                            title: 'TOOL CALLS',
-                            content: toolCallSummary
+    
+                let roundResponse = null;
+                const roundOptions = {
+                    ...requestOptions,
+                    messages,
+                    onResponse: (response) => {
+                        roundResponse = response;
+                        if (originalOnResponse) {
+                            originalOnResponse(response);
                         }
-                    ],
-                    filePath: promptLogFile || null,
-                    append: Boolean(promptLogFile),
-                    output: promptLogFile ? 'silent' : 'stdout'
-                });
-                if (promptLogFile && toolRoundLogPath !== promptLogFile) {
-                    throw new Error(`Failed to append tool round ${rounds} to prompt log ${promptLogFile}.`);
-                }
-            }
-
-            if (!toolCalls.length) {
-                completed = true;
-                continue;
-            }
-            toolLoopActivated = true;
-            const toolCallsExhausted = toolRoundsUsed >= maxRounds;
-            if (toolCallsExhausted) {
-                exhaustionErrorRounds += 1;
-                toolsDisabledAfterExhaustion = true;
-            } else {
-                toolRoundsUsed += 1;
-            }
-
-            if (streamEmitter?.isEnabled) {
-                const toolStatusStage = `${metadataLabel || 'chat'}:tool_calls`;
-                const toolNames = toolCalls.map(toolCall => toolCall.functionName);
-                const toolNameSummary = toolNames.join(', ');
-                streamEmitter.status(toolStatusStage, {
-                    round: rounds,
-                    toolCallCount: toolCalls.length,
-                    toolNames,
-                    message: toolCallsExhausted
-                        ? `Tool call attempts exhausted; returning ${toolCalls.length} error${toolCalls.length === 1 ? '' : 's'} for ${toolNameSummary}...`
-                        : (toolCalls.length === 1
-                            ? `Running tool: ${toolNameSummary}...`
-                            : `Running ${toolCalls.length} tools: ${toolNameSummary}...`)
-                });
-            }
-
-            messages.push({
-                role: 'assistant',
-                content: typeof assistantMessage?.content === 'string' ? assistantMessage.content : (aiResponse || ''),
-                tool_calls: toolCalls.map(call => ({
-                    id: call.id,
-                    type: 'function',
-                    function: {
-                        name: call.functionName,
-                        arguments: call.argumentsText
                     }
-                }))
-            });
-
-            for (const toolCall of toolCalls) {
-                toolInvocationSequence += 1;
-                const debugBase = {
-                    metadataLabel,
-                    round: rounds,
-                    sequence: toolInvocationSequence,
-                    id: toolCall.id,
-                    name: toolCall.functionName,
-                    parameters: toolCall.argumentsObject,
-                    argumentsText: toolCall.argumentsText
                 };
-                await notifyToolCallLifecycle({
-                    ...debugBase,
-                    phase: 'started'
-                });
-
-                let toolResult = null;
-                try {
-                    const executeTool = async () => {
-                        if (validateToolCall) {
-                            await validateToolCall({
-                                name: toolCall.functionName,
-                                functionName: toolCall.functionName,
-                                argumentsObject: JSON.parse(JSON.stringify(toolCall.argumentsObject || {}))
-                            });
-                        }
-                        if (resolvePreResolvedToolCall) {
-                            const preResolvedResult = await resolvePreResolvedToolCall({
-                                name: toolCall.functionName,
-                                functionName: toolCall.functionName,
-                                argumentsObject: JSON.parse(JSON.stringify(toolCall.argumentsObject || {}))
-                            });
-                            if (preResolvedResult !== null && preResolvedResult !== undefined) {
-                                return preResolvedResult;
-                            }
-                        }
-                        return executeChatToolCall(toolCall, {
-                            resultCache,
-                            defaultActorName,
-                            requireExplicitSkillCheckActor,
-                            allowedSkillCheckActors: allowedSkillCheckActorNames,
-                            includeAllHistoryEntryTypes,
-                            requestUserInputHandler,
-                            forcedSkillCheckRoll,
-                            dieRollOverride,
-                            promptStream: streamEmitter,
-                            allowDirectShortDescriptionUpdates
-                        });
-                    };
-                    if (toolCallsExhausted) {
-                        toolResult = buildToolCallAttemptsExhaustedResult(
-                            toolCall.functionName,
-                            maxRounds
-                        );
-                    } else if (!declaredToolNames.has(toolCall.functionName)) {
-                        toolResult = buildUndeclaredToolCallResult(
-                            toolCall.functionName,
-                            declaredToolNames
-                        );
-                    } else if (
-                        requestOptions.queueReservation
-                        && CHAT_TOOLS_THAT_MAY_LAUNCH_PROMPTS.has(toolCall.functionName)
+                if (toolsDisabledAfterExhaustion) {
+                    delete roundOptions.tools;
+                    delete roundOptions.functions;
+                    delete roundOptions.parallel_tool_calls;
+                    roundOptions.tool_choice = 'none';
+                    roundOptions.function_call = 'none';
+                    if (
+                        roundOptions.additionalPayload
+                        && typeof roundOptions.additionalPayload === 'object'
+                        && !Array.isArray(roundOptions.additionalPayload)
                     ) {
-                        if (typeof LLMClient.withPromptQueueReservationYield !== 'function') {
-                            throw new Error(
-                                `Tool "${toolCall.functionName}" requires prompt queue reservation yielding, but LLMClient does not provide it.`
-                            );
-                        }
-                        toolResult = await LLMClient.withPromptQueueReservationYield(
-                            requestOptions.queueReservation,
-                            executeTool
-                        );
-                    } else {
-                        toolResult = await executeTool();
+                        roundOptions.additionalPayload = {
+                            ...roundOptions.additionalPayload
+                        };
+                        delete roundOptions.additionalPayload.tools;
+                        delete roundOptions.additionalPayload.functions;
+                        delete roundOptions.additionalPayload.parallel_tool_calls;
+                        roundOptions.additionalPayload.tool_choice = 'none';
+                        roundOptions.additionalPayload.function_call = 'none';
                     }
-                    if (!toolResult || typeof toolResult.content !== 'string' || !toolResult.content.trim()) {
-                        throw new Error(`Tool "${toolCall.functionName}" returned empty content.`);
-                    }
-                } catch (error) {
-                    if (isFatalToolExecutionError(error)) {
-                        await notifyToolCallLifecycle({
-                            ...debugBase,
-                            phase: 'error',
-                            error: {
-                                message: error?.message || String(error),
-                                code: toTrimmedString(error?.code) || 'fatal_tool_execution_error'
-                            }
-                        });
-                        throw error;
-                    }
-                    toolResult = buildToolExecutionErrorResult(toolCall.functionName, error);
                 }
-
-                try {
-                    const cacheHit = Boolean(toolResult.metadata?.cached);
-                    const toolErrored = Boolean(toolResult.metadata?.error);
-                    if (toolErrored) {
-                        logToolCallError({ toolCall, toolResult });
-                        await notifyToolCallLifecycle({
-                            ...debugBase,
-                            phase: 'error',
-                            error: {
-                                message: toolResult.metadata?.message || `Tool "${toolCall.functionName}" failed.`,
-                                code: toolResult.metadata?.code || 'tool_error',
+    
+                aiResponse = await LLMClient.chatCompletion(roundOptions);
+                lastResponse = roundResponse;
+    
+                const assistantMessage = roundResponse?.data?.choices?.[0]?.message || null;
+                lastAssistantMessage = assistantMessage;
+                const rawToolCalls = Array.isArray(assistantMessage?.tool_calls)
+                    ? assistantMessage.tool_calls
+                    : [];
+                const toolCalls = normalizeToolCallsForExecution(rawToolCalls, {
+                    sourceLabel: `${metadataLabel} round ${rounds}`
+                });
+    
+                if ((promptLogFile && toolCalls.length) || (!promptLogFile && (toolLoopActivated || toolCalls.length))) {
+                    const roundLabel = `${metadataLabel}_tool_loop_round`;
+                    const toolCallSummary = toolCalls.length
+                        ? toolCalls.map((call, index) => {
+                            const argumentText = typeof call.argumentsText === 'string' && call.argumentsText.trim()
+                                ? call.argumentsText.trim()
+                                : '{}';
+                            return [
+                                `${index + 1}. ${call.functionName}`,
+                                `   id: ${call.id || '(none)'}`,
+                                `   arguments: ${argumentText}`
+                            ].join('\n');
+                        }).join('\n\n')
+                        : 'No tool calls returned this round.';
+                    const toolRoundLogPath = LLMClient.logPrompt({
+                        prefix: roundLabel,
+                        metadataLabel: roundLabel,
+                        systemPrompt: '',
+                        generationPrompt: LLMClient.formatMessagesForErrorLog(messages),
+                        response: aiResponse || '',
+                        responseLabel: `${metadataLabel} tool round ${rounds} LLM response`,
+                        markResponseBoundaries: Boolean(promptLogFile),
+                        sections: [
+                            {
+                                title: 'TOOL CALLS',
+                                content: toolCallSummary
+                            }
+                        ],
+                        filePath: promptLogFile || null,
+                        append: Boolean(promptLogFile),
+                        output: promptLogFile ? 'silent' : 'stdout'
+                    });
+                    if (promptLogFile && toolRoundLogPath !== promptLogFile) {
+                        throw new Error(`Failed to append tool round ${rounds} to prompt log ${promptLogFile}.`);
+                    }
+                }
+    
+                if (!toolCalls.length) {
+                    completed = true;
+                    continue;
+                }
+                toolLoopActivated = true;
+                const toolCallsExhausted = toolRoundsUsed >= maxRounds;
+                if (toolCallsExhausted) {
+                    exhaustionErrorRounds += 1;
+                    toolsDisabledAfterExhaustion = true;
+                } else {
+                    toolRoundsUsed += 1;
+                }
+    
+                if (streamEmitter?.isEnabled) {
+                    const toolStatusStage = `${metadataLabel || 'chat'}:tool_calls`;
+                    const toolNames = toolCalls.map(toolCall => toolCall.functionName);
+                    const toolNameSummary = toolNames.join(', ');
+                    streamEmitter.status(toolStatusStage, {
+                        round: rounds,
+                        toolCallCount: toolCalls.length,
+                        toolNames,
+                        message: toolCallsExhausted
+                            ? `Tool call attempts exhausted; returning ${toolCalls.length} error${toolCalls.length === 1 ? '' : 's'} for ${toolNameSummary}...`
+                            : (toolCalls.length === 1
+                                ? `Running tool: ${toolNameSummary}...`
+                                : `Running ${toolCalls.length} tools: ${toolNameSummary}...`)
+                    });
+                }
+    
+                messages.push({
+                    role: 'assistant',
+                    content: typeof assistantMessage?.content === 'string' ? assistantMessage.content : (aiResponse || ''),
+                    tool_calls: toolCalls.map(call => ({
+                        id: call.id,
+                        type: 'function',
+                        function: {
+                            name: call.functionName,
+                            arguments: call.argumentsText
+                        }
+                    }))
+                });
+    
+                for (const toolCall of toolCalls) {
+                    toolInvocationSequence += 1;
+                    const debugBase = {
+                        metadataLabel,
+                        round: rounds,
+                        sequence: toolInvocationSequence,
+                        id: toolCall.id,
+                        name: toolCall.functionName,
+                        parameters: toolCall.argumentsObject,
+                        argumentsText: toolCall.argumentsText
+                    };
+                    await notifyToolCallLifecycle({
+                        ...debugBase,
+                        phase: 'started'
+                    });
+    
+                    let toolResult = null;
+                    try {
+                        const executeTool = async () => {
+                            if (validateToolCall) {
+                                await validateToolCall({
+                                    name: toolCall.functionName,
+                                    functionName: toolCall.functionName,
+                                    argumentsObject: JSON.parse(JSON.stringify(toolCall.argumentsObject || {}))
+                                });
+                            }
+                            if (resolvePreResolvedToolCall) {
+                                const preResolvedResult = await resolvePreResolvedToolCall({
+                                    name: toolCall.functionName,
+                                    functionName: toolCall.functionName,
+                                    argumentsObject: JSON.parse(JSON.stringify(toolCall.argumentsObject || {}))
+                                });
+                                if (preResolvedResult !== null && preResolvedResult !== undefined) {
+                                    return preResolvedResult;
+                                }
+                            }
+                            return executeChatToolCall(toolCall, {
+                                resultCache,
+                                defaultActorName,
+                                requireExplicitSkillCheckActor,
+                                allowedSkillCheckActors: allowedSkillCheckActorNames,
+                                includeAllHistoryEntryTypes,
+                                requestUserInputHandler,
+                                forcedSkillCheckRoll,
+                                dieRollOverride,
+                                promptStream: streamEmitter,
+                                allowDirectShortDescriptionUpdates
+                            });
+                        };
+                        if (toolCallsExhausted) {
+                            toolResult = buildToolCallAttemptsExhaustedResult(
+                                toolCall.functionName,
+                                maxRounds
+                            );
+                        } else if (!declaredToolNames.has(toolCall.functionName)) {
+                            toolResult = buildUndeclaredToolCallResult(
+                                toolCall.functionName,
+                                declaredToolNames
+                            );
+                        } else if (
+                            requestOptions.queueReservation
+                            && CHAT_TOOLS_THAT_MAY_LAUNCH_PROMPTS.has(toolCall.functionName)
+                        ) {
+                            if (typeof LLMClient.withPromptQueueReservationYield !== 'function') {
+                                throw new Error(
+                                    `Tool "${toolCall.functionName}" requires prompt queue reservation yielding, but LLMClient does not provide it.`
+                                );
+                            }
+                            toolResult = await LLMClient.withPromptQueueReservationYield(
+                                requestOptions.queueReservation,
+                                executeTool
+                            );
+                        } else {
+                            toolResult = await executeTool();
+                        }
+                        if (!toolResult || typeof toolResult.content !== 'string' || !toolResult.content.trim()) {
+                            throw new Error(`Tool "${toolCall.functionName}" returned empty content.`);
+                        }
+                    } catch (error) {
+                        if (isFatalToolExecutionError(error)) {
+                            await notifyToolCallLifecycle({
+                                ...debugBase,
+                                phase: 'error',
+                                error: {
+                                    message: error?.message || String(error),
+                                    code: toTrimmedString(error?.code) || 'fatal_tool_execution_error'
+                                }
+                            });
+                            throw error;
+                        }
+                        toolResult = buildToolExecutionErrorResult(toolCall.functionName, error);
+                    }
+    
+                    try {
+                        const cacheHit = Boolean(toolResult.metadata?.cached);
+                        const toolErrored = Boolean(toolResult.metadata?.error);
+                        if (toolErrored) {
+                            logToolCallError({ toolCall, toolResult });
+                            await notifyToolCallLifecycle({
+                                ...debugBase,
+                                phase: 'error',
+                                error: {
+                                    message: toolResult.metadata?.message || `Tool "${toolCall.functionName}" failed.`,
+                                    code: toolResult.metadata?.code || 'tool_error',
+                                    result: {
+                                        content: toolResult.content,
+                                        metadata: toolResult.metadata || null
+                                    }
+                                }
+                            });
+                        } else {
+                            await notifyToolCallLifecycle({
+                                ...debugBase,
+                                phase: 'completed',
+                                cacheHit,
+                                cacheKey: typeof toolResult.metadata?.cacheKey === 'string'
+                                    ? toolResult.metadata.cacheKey
+                                    : null,
                                 result: {
                                     content: toolResult.content,
                                     metadata: toolResult.metadata || null
                                 }
-                            }
+                            });
+                        }
+                        toolInvocations.push({
+                            id: toolCall.id,
+                            name: toolCall.functionName,
+                            argumentsObject: JSON.parse(JSON.stringify(toolCall.argumentsObject || {})),
+                            metadata: toolResult.metadata || null
                         });
-                    } else {
+                        messages.push({
+                            role: 'tool',
+                            tool_call_id: toolCall.id,
+                            name: toolCall.functionName,
+                            content: toolResult.content
+                        });
+                        if (promptLogFile) {
+                            const toolResultLogPath = LLMClient.logPrompt({
+                                filePath: promptLogFile,
+                                append: true,
+                                sections: [{
+                                    title: `${metadataLabel} tool result ${toolCall.functionName}`,
+                                    content: toolResult.content
+                                }],
+                                output: 'silent'
+                            });
+                            if (toolResultLogPath !== promptLogFile) {
+                                throw new Error(`Failed to append tool result "${toolCall.functionName}" to prompt log ${promptLogFile}.`);
+                            }
+                        }
+                    } catch (error) {
                         await notifyToolCallLifecycle({
                             ...debugBase,
-                            phase: 'completed',
-                            cacheHit,
-                            cacheKey: typeof toolResult.metadata?.cacheKey === 'string'
-                                ? toolResult.metadata.cacheKey
-                                : null,
-                            result: {
-                                content: toolResult.content,
-                                metadata: toolResult.metadata || null
+                            phase: 'error',
+                            error: {
+                                message: error?.message || String(error)
                             }
                         });
+                        throw error;
                     }
-                    toolInvocations.push({
-                        id: toolCall.id,
-                        name: toolCall.functionName,
-                        argumentsObject: JSON.parse(JSON.stringify(toolCall.argumentsObject || {})),
-                        metadata: toolResult.metadata || null
+                }
+                if (typeof terminalResponseAfterToolCalls === 'function') {
+                    const terminalResponse = await terminalResponseAfterToolCalls({
+                        toolInvocations: toolInvocations.map(invocation => JSON.parse(JSON.stringify(invocation))),
+                        messages: messages.map(message => JSON.parse(JSON.stringify(message)))
                     });
-                    messages.push({
-                        role: 'tool',
-                        tool_call_id: toolCall.id,
-                        name: toolCall.functionName,
-                        content: toolResult.content
-                    });
-                    if (promptLogFile) {
-                        const toolResultLogPath = LLMClient.logPrompt({
-                            filePath: promptLogFile,
-                            append: true,
-                            sections: [{
-                                title: `${metadataLabel} tool result ${toolCall.functionName}`,
-                                content: toolResult.content
-                            }],
-                            output: 'silent'
-                        });
-                        if (toolResultLogPath !== promptLogFile) {
-                            throw new Error(`Failed to append tool result "${toolCall.functionName}" to prompt log ${promptLogFile}.`);
+                    if (terminalResponse !== null && terminalResponse !== undefined) {
+                        if (typeof terminalResponse !== 'string' || !terminalResponse.trim()) {
+                            throw new Error('terminalResponseAfterToolCalls must return null or a non-empty string.');
                         }
+                        aiResponse = terminalResponse.trim();
+                        lastAssistantMessage = { role: 'assistant', content: aiResponse };
+                        completed = true;
                     }
-                } catch (error) {
-                    await notifyToolCallLifecycle({
-                        ...debugBase,
-                        phase: 'error',
-                        error: {
-                            message: error?.message || String(error)
-                        }
-                    });
-                    throw error;
                 }
             }
-            if (typeof terminalResponseAfterToolCalls === 'function') {
-                const terminalResponse = await terminalResponseAfterToolCalls({
-                    toolInvocations: toolInvocations.map(invocation => JSON.parse(JSON.stringify(invocation))),
-                    messages: messages.map(message => JSON.parse(JSON.stringify(message)))
-                });
-                if (terminalResponse !== null && terminalResponse !== undefined) {
-                    if (typeof terminalResponse !== 'string' || !terminalResponse.trim()) {
-                        throw new Error('terminalResponseAfterToolCalls must return null or a non-empty string.');
-                    }
-                    aiResponse = terminalResponse.trim();
-                    lastAssistantMessage = { role: 'assistant', content: aiResponse };
-                    completed = true;
-                }
-            }
+    
+            const conversationMessages = messages.map(message => (
+                message && typeof message === 'object'
+                    ? JSON.parse(JSON.stringify(message))
+                    : message
+            ));
+            const terminalAssistantMessage = lastAssistantMessage && typeof lastAssistantMessage === 'object'
+                ? JSON.parse(JSON.stringify(lastAssistantMessage))
+                : { role: 'assistant', content: aiResponse };
+            terminalAssistantMessage.role = 'assistant';
+            terminalAssistantMessage.content = aiResponse;
+            delete terminalAssistantMessage.tool_calls;
+            conversationMessages.push(terminalAssistantMessage);
+    
+            return {
+                aiResponse,
+                response: lastResponse,
+                rounds,
+                toolInvocations,
+                conversationMessages
+            };
+        };
+
+        const progressGroupMethods = [
+            LLMClient?.withPromptProgressGroup,
+            LLMClient?.clearPromptProgressGroup,
+            LLMClient?.hasActivePromptProgressGroup
+        ];
+        const availableProgressGroupMethodCount = progressGroupMethods
+            .filter(method => typeof method === 'function')
+            .length;
+        if (availableProgressGroupMethodCount !== 0 && availableProgressGroupMethodCount !== progressGroupMethods.length) {
+            throw new Error('LLMClient prompt progress grouping support is incomplete.');
         }
 
-        const conversationMessages = messages.map(message => (
-            message && typeof message === 'object'
-                ? JSON.parse(JSON.stringify(message))
-                : message
-        ));
-        const terminalAssistantMessage = lastAssistantMessage && typeof lastAssistantMessage === 'object'
-            ? JSON.parse(JSON.stringify(lastAssistantMessage))
-            : { role: 'assistant', content: aiResponse };
-        terminalAssistantMessage.role = 'assistant';
-        terminalAssistantMessage.content = aiResponse;
-        delete terminalAssistantMessage.tool_calls;
-        conversationMessages.push(terminalAssistantMessage);
+        const callerOwnsProgressGroup = (
+            requestOptions.progressGroupId !== null
+            && requestOptions.progressGroupId !== undefined
+        ) || (
+            requestOptions.progressGroupTargetLabel !== null
+            && requestOptions.progressGroupTargetLabel !== undefined
+        );
+        const hasInheritedProgressGroup = availableProgressGroupMethodCount === progressGroupMethods.length
+            ? LLMClient.hasActivePromptProgressGroup()
+            : false;
+        if (
+            availableProgressGroupMethodCount === 0
+            || callerOwnsProgressGroup
+            || hasInheritedProgressGroup
+        ) {
+            return await runToolLoop();
+        }
 
-        return {
-            aiResponse,
-            response: lastResponse,
-            rounds,
-            toolInvocations,
-            conversationMessages
-        };
+        const progressGroupTargetLabel = normalizeOptionalString(metadataLabel) || 'chat';
+        const progressGroupId = `tool_loop_${progressGroupTargetLabel.replace(/[^a-z0-9]+/gi, '_')}_${randomBytes(8).toString('hex')}`;
+        return await LLMClient.withPromptProgressGroup({
+            progressGroupId,
+            progressGroupTargetLabel
+        }, async () => {
+            let recordOutputCharacters = false;
+            try {
+                const result = await runToolLoop();
+                recordOutputCharacters = true;
+                return result;
+            } finally {
+                LLMClient.clearPromptProgressGroup(progressGroupId, {
+                    recordOutputCharacters
+                });
+            }
+        });
     };
 
     return {

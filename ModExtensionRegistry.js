@@ -724,7 +724,7 @@ class ModExtensionRegistry {
         if (typeof handler !== 'function') {
             throw new Error(`Mod "${normalizedModName}" XML event "${normalizedEventKey}" requires a handler function.`);
         }
-        const normalizedTagLookup = normalizedTagName.toLowerCase();
+        const normalizedTagLookup = normalizedTagName.replace(/_/g, '').toLowerCase();
         if (this.#xmlEventsByTag.has(normalizedTagLookup)) {
             throw new Error(`XML event tag "${normalizedTagName}" is already registered.`);
         }
@@ -747,7 +747,9 @@ class ModExtensionRegistry {
     }
 
     getXmlEventByTagName(tagName) {
-        const normalizedTagName = typeof tagName === 'string' ? tagName.trim().toLowerCase() : '';
+        const normalizedTagName = typeof tagName === 'string'
+            ? tagName.trim().replace(/_/g, '').toLowerCase()
+            : '';
         return normalizedTagName ? (this.#xmlEventsByTag.get(normalizedTagName) || null) : null;
     }
 

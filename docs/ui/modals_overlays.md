@@ -66,6 +66,7 @@ Most modals live in `views/index.njk` and are wired up by the inline script or `
 - `#questEditModal` + `#questEditBackdrop`
 - Edits quest name, quest giver display name, paused/reward-claimed flags, description, secret notes, rewards, and objectives. The quest giver field is free text with current NPC names offered through a datalist. Item, faction reputation, and NPC disposition rewards use repeatable row editors; faction rows use faction selectors, and NPC disposition rows use NPC selectors plus disposition-type dropdowns from configured disposition definitions, with existing values preserved when option loading fails or a custom saved type is not in the definitions. NPC disposition reward reasons occupy a full-width second row.
 - Save uses `/api/quest/edit`.
+- Active quest cards also provide **Edit**, **Pause/Resume**, **Mark Complete**, and **Abandon Quest** actions. **Mark Complete** confirms the operation, posts to `/api/quests/:questId/complete`, and returns to the Adventure tab only after reward processing succeeds. Stack-bearing reward failures remain on the quest tab and refresh it to expose **Retry Pending Rewards**.
 
 ## Faction creation
 

@@ -96,6 +96,43 @@ function countSceneSummaryIndexEntries(entries, options = {}) {
     return count;
 }
 
+function findDeletedCoveredSceneSummaryEntryIds(entries, sceneSummaries) {
+    if (!Array.isArray(entries)) {
+        throw new Error('Chat history is unavailable for scene summary deletion checks.');
+    }
+    if (!sceneSummaries || typeof sceneSummaries.getContiguousSummarizedEndIndex !== 'function') {
+        throw new Error('Scene summary store cannot resolve contiguous summary coverage.');
+    }
+    if (typeof sceneSummaries.serialize !== 'function') {
+        throw new Error('Scene summary store cannot serialize its entry mapping.');
+    }
+
+    const summarizedEndIndex = sceneSummaries.getContiguousSummarizedEndIndex();
+    if (!Number.isInteger(summarizedEndIndex) || summarizedEndIndex < 0) {
+        throw new Error('Scene summary store returned an invalid contiguous coverage boundary.');
+    }
+    if (summarizedEndIndex === 0) {
+        return [];
+    }
+
+    const serialized = sceneSummaries.serialize();
+    if (!Array.isArray(serialized?.entryIndexMap)) {
+        throw new Error('Scene summary store is missing its entry index mapping.');
+    }
+    const existingEntryIds = new Set(
+        entries.map(resolveEntryRecordId).filter(Boolean)
+    );
+    return serialized.entryIndexMap
+        .filter(mapping => (
+            Number.isInteger(Number(mapping?.index))
+            && Number(mapping.index) <= summarizedEndIndex
+            && typeof mapping?.entryId === 'string'
+            && mapping.entryId.trim()
+            && !existingEntryIds.has(mapping.entryId.trim())
+        ))
+        .map(mapping => mapping.entryId.trim());
+}
+
 function normalizeSceneSummaryIntervals(scenes, totalEntries, { requirePositiveStart = false } = {}) {
     const total = Number(totalEntries);
     if (!Number.isInteger(total) || total <= 0 || !Array.isArray(scenes)) {
@@ -150,6 +187,7 @@ function walkSceneSummaryIntervals(intervals, totalEntries) {
 module.exports = {
     HIDDEN_SCENE_SUMMARY_ENTRY_TYPES,
     countSceneSummaryIndexEntries,
+    findDeletedCoveredSceneSummaryEntryIds,
     getSceneSummaryIndexText,
     isHiddenSceneSummaryEntry,
     normalizeSceneSummaryIntervals,

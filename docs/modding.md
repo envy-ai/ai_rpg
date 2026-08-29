@@ -143,6 +143,8 @@ Examples:
 
 Need bars can include `while_you_were_away_prompt_notes`; those notes are exposed to the blocking while-you-were-away reunion prompt for bar-specific offscreen guidance.
 
+Need bars can also set optional `hide_increase_to_max: true`. A configured bar still fills normally when a `fill_completely` trigger produces a full increase, but that particular change is omitted from persisted event-summary history and from the chat window. Partial increases and all decreases remain visible. The value must be a YAML boolean when present.
+
 Need bars can override root `need_values` magnitudes per bar:
 
 ```yaml

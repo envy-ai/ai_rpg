@@ -1731,19 +1731,20 @@ class AIRPGChat {
                     }
                     if (typeof entry === 'string') {
                         const name = safeText(entry);
-                        return name ? { name } : null;
+                        return name ? { name, description: '' } : null;
                     }
                     if (typeof entry === 'object') {
                         const name = safeText(entry.name || entry.label);
                         if (!name) {
                             return null;
                         }
+                        const description = safeText(entry.description);
                         const quantity = Number.isFinite(entry.quantity)
                             ? Math.max(1, Math.round(entry.quantity))
                             : null;
                         return quantity && quantity !== 1
-                            ? { name, quantity }
-                            : { name };
+                            ? { name, description, quantity }
+                            : { name, description };
                     }
                     return null;
                 })
@@ -2037,9 +2038,12 @@ class AIRPGChat {
             }
             if (Array.isArray(quest.rewardItems) && quest.rewardItems.length) {
                 quest.rewardItems.forEach(entry => {
-                    const line = entry.quantity && entry.quantity !== 1
+                    let line = entry.quantity && entry.quantity !== 1
                         ? `${entry.quantity} × ${entry.name}`
                         : entry.name;
+                    if (entry.description) {
+                        line += ` — ${entry.description}`;
+                    }
                     rewardLines.push(line);
                 });
             }
@@ -7917,7 +7921,7 @@ class AIRPGChat {
             return;
         }
 
-        const items = changes.filter(Boolean);
+        const items = changes.filter(change => change && change.hideFromHistory !== true);
         if (!items.length) {
             return;
         }
@@ -10959,6 +10963,21 @@ class AIRPGChat {
                         })
                         .join('\n\n');
                     this.showChatErrorPopup(questErrorMessage);
+                }
+
+                if (Array.isArray(data.postProcessingErrors) && data.postProcessingErrors.length) {
+                    const postProcessingErrorMessage = data.postProcessingErrors
+                        .map((entry) => {
+                            const message = typeof entry?.message === 'string' && entry.message.trim()
+                                ? entry.message.trim()
+                                : 'Turn post-processing failed after event outcomes were applied.';
+                            const stack = typeof entry?.stack === 'string' && entry.stack.trim()
+                                ? entry.stack.trim()
+                                : '';
+                            return stack ? `${message}\n\n${stack}` : message;
+                        })
+                        .join('\n\n');
+                    this.showChatErrorPopup(postProcessingErrorMessage);
                 }
 
                 if (!context.streamMeta || context.streamMeta.enabled === false) {

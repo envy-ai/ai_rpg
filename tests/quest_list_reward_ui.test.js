@@ -30,3 +30,15 @@ test('quest list disposition rewards preview configured quest disposition deltas
     assert.match(viewSource, /const scaled = intensityValue \* typicalStep;/);
     assert.match(viewSource, /const scaled = \(intensityValue \/ 2\) \* typicalStep;/);
 });
+
+test('active quest cards expose manual completion and return to Adventure after success', () => {
+    const questCardSource = extractQuestCardSource();
+
+    assert.match(viewSource, /async function handleCompleteQuest\(quest, trigger\)/);
+    assert.match(viewSource, /\/api\/quests\/\$\{encodeURIComponent\(quest\.id\)\}\/complete/);
+    assert.match(viewSource, /await refreshAfterManualQuestCompletion\(\);/);
+    assert.match(viewSource, /window\.activateTab\('adventure'\)/);
+    assert.match(viewSource, /window\.location\.hash = '#tab-adventure'/);
+    assert.match(questCardSource, /completeButton\.textContent = 'Mark Complete';/);
+    assert.match(questCardSource, /actions\.appendChild\(completeButton\);/);
+});

@@ -30,6 +30,10 @@ const {
     parseQuestRewardResult,
 } = require("./TinyBrainPromptParsers.js");
 const { buildQuestRewardResult } = require("./TinyBrainResultBuilders.js");
+const {
+    resolveConfiguredPromptMaxAttempts,
+    runPromptWithParseRetries,
+} = require("./PromptRetryPolicy.js");
 
 const BASE_TIMEOUT_MS = 120000;
 const DEFAULT_STATUS_DURATION = 3;
@@ -93,6 +97,28 @@ const TINY_BRAIN_EVENT_TAG_TO_KEY = Object.freeze({
     anyQuestObjectivesCompleted: "any_quest_objectives_completed",
     trackerUpdates: "tracker_updates",
 });
+
+const CORE_XML_EVENT_TAGS = Object.freeze([
+    ...Object.keys(TINY_BRAIN_EVENT_TAG_TO_KEY),
+    "moveLocation",
+    "moveNewLocation",
+    "arriveAtLocation",
+    "npcArrivalDeparture",
+    "dispositionCheck",
+    "needBarChange",
+    "trackerUpdate",
+    "done",
+]);
+
+function normalizeXmlTagStyle(tagName) {
+    return typeof tagName === "string"
+        ? tagName.trim().replace(/_/g, "").toLowerCase()
+        : "";
+}
+
+const CORE_XML_EVENT_TAG_BY_STYLE = new Map(
+    CORE_XML_EVENT_TAGS.map((tagName) => [normalizeXmlTagStyle(tagName), tagName]),
+);
 
 const TINY_BRAIN_IGNORED_MOVEMENT_EVENT_TAGS = new Set([
     "moveLocation",
@@ -2907,7 +2933,9 @@ class Events {
 
     static _parseNeedBarPromptResponse(responseText) {
         if (typeof responseText !== "string" || !responseText.trim()) {
-            return [];
+            throw new Error(
+                "Need-bar event check response is missing a <characters> block.",
+            );
         }
 
         const charactersBlockMatch = responseText.match(
@@ -3173,9 +3201,14 @@ class Events {
                 metadataLabel: "need_bar_event_checks",
                 timeoutMs: this._baseTimeout,
                 temperature: 0,
-                validateXML: false,
+                validateXML: true,
+                validateXMLStrict: true,
                 expectedXmlRootTag: "characters",
                 requiredRegex: /<characters>[\s\S]*<\/characters>/i,
+                onResponse: (response) => {
+                    const content = response?.data?.choices?.[0]?.message?.content;
+                    this._parseNeedBarPromptResponse(typeof content === "string" ? content : "");
+                },
                 dumpReasoningToConsole: true,
                 stream: true,
                 // captureRequestPayload: (payload) => { requestPayloadForLog = payload; },
@@ -3393,6 +3426,36 @@ class Events {
                 : null);
     }
 
+    static appendEventPostProcessingError(eventResult, {
+        code,
+        stage,
+        error,
+    } = {}) {
+        if (!eventResult || typeof eventResult !== "object" || Array.isArray(eventResult)) {
+            throw new TypeError("Event post-processing errors require an event-result object.");
+        }
+        if (typeof code !== "string" || !code.trim()) {
+            throw new TypeError("Event post-processing errors require a non-empty code.");
+        }
+        if (typeof stage !== "string" || !stage.trim()) {
+            throw new TypeError("Event post-processing errors require a non-empty stage.");
+        }
+
+        const cause = error?.message || String(error);
+        const entry = {
+            code: code.trim(),
+            stage: stage.trim(),
+            message: `Event outcomes were applied, but ${stage.trim()} failed: ${cause}`,
+            cause,
+            stack: typeof error?.stack === "string" ? error.stack : null,
+        };
+        if (!Array.isArray(eventResult.postProcessingErrors)) {
+            eventResult.postProcessingErrors = [];
+        }
+        eventResult.postProcessingErrors.push(entry);
+        return entry;
+    }
+
     static _scheduleHousekeepingForEventChecks({
         depth = 0,
         suppressHousekeeping = false,
@@ -3425,14 +3488,24 @@ class Events {
         if (!runner) {
             return null;
         }
-        return runner({
-            textToCheck,
-            actionText,
-            stream,
-            locationOverride: location || null,
-            eventResult,
-            entryCollector,
-        });
+        try {
+            return await runner({
+                textToCheck,
+                actionText,
+                stream,
+                locationOverride: location || null,
+                eventResult,
+                entryCollector,
+            });
+        } catch (error) {
+            const postProcessingError = this.appendEventPostProcessingError(eventResult, {
+                code: "HOUSEKEEPING_AFTER_EVENT_CHECKS_FAILED",
+                stage: "automatic housekeeping",
+                error,
+            });
+            console.error(postProcessingError.message, error);
+            return { error: postProcessingError };
+        }
     }
 
     static async runQuestChecks({
@@ -3889,6 +3962,11 @@ class Events {
 
         let requestPayloadForLog = null;
         let responsePayloadForLog = null;
+        let parsedXmlEventsFromRetry = null;
+        const standardEventMessages = [
+            { role: "system", content: parsedTemplate.systemPrompt },
+            { role: "user", content: parsedTemplate.generationPrompt },
+        ];
         const eventCheckPromise = useTinyBrainEventChecks
             ? this._runTinyBrainEventXmlPrompt({
                 initialRenderedTemplate: rendered,
@@ -3899,23 +3977,68 @@ class Events {
                 tinyBrainEventSequence: eventSequence,
                 eventLocation: location,
             })
-            : LLMClient.chatCompletion({
-                messages: [
-                    { role: "system", content: parsedTemplate.systemPrompt },
-                    { role: "user", content: parsedTemplate.generationPrompt },
-                ],
-                metadataLabel: "event_checks",
-                errorLogLabel: "events-xml",
-                metadata: { eventPipeline: "xml", promptType: "events-xml" },
-                timeoutMs: this._baseTimeout,
-                temperature: 0,
-                validateXML: false,
-                expectedXmlRootTag: "events",
-                requiredRegex: /<events\b[\s\S]*<\/events>/i,
-                dumpReasoningToConsole: true,
-                stream: true,
-                // captureRequestPayload: (payload) => { requestPayloadForLog = payload; },
-                // captureResponsePayload: (payload) => { responsePayloadForLog = payload; }
+            : runPromptWithParseRetries({
+                messages: standardEventMessages,
+                maxAttempts: resolveConfiguredPromptMaxAttempts(this.config?.ai, {
+                    fallbackMaxAttempts: 3,
+                }),
+                complete: ({ messages }) => LLMClient.chatCompletion({
+                    messages,
+                    metadataLabel: "event_checks",
+                    errorLogLabel: "events-xml",
+                    metadata: { eventPipeline: "xml", promptType: "events-xml" },
+                    timeoutMs: this._baseTimeout,
+                    temperature: 0,
+                    validateXML: false,
+                    expectedXmlRootTag: "events",
+                    requiredRegex: /<events\b[\s\S]*<\/events>/i,
+                    dumpReasoningToConsole: true,
+                    stream: true,
+                    // captureRequestPayload: (payload) => { requestPayloadForLog = payload; },
+                    // captureResponsePayload: (payload) => { responsePayloadForLog = payload; }
+                }),
+                parse: (response) => this._parseXmlEventCheckResponse(response, {
+                    ignoredEventKeys: normalizedIgnoredEventKeys,
+                    requireFinalStateTags: true,
+                }),
+                buildRetryInstruction: (error) => [
+                    `The previous <events> response could not be accepted: ${error?.message || error}`,
+                    "Correct the XML while preserving every valid event from the previous response.",
+                    "Return one complete, well-formed <events>...</events> block and no other text.",
+                    "Include exactly one <inCombat> and one <anyQuestObjectivesCompleted> top-level element.",
+                ].join("\n"),
+                onAttempt: ({ attempt, maxAttempts, response, error, accepted }) => {
+                    this.logEventCheck({
+                        systemPrompt: parsedTemplate.systemPrompt,
+                        generationPrompt: parsedTemplate.generationPrompt,
+                        responseText: response,
+                        metadataLabel: "event_checks",
+                        prefix: "event_checks_xml",
+                        requestPayload: requestPayloadForLog,
+                        responsePayload: responsePayloadForLog,
+                        sections: [
+                            {
+                                title: "Structured response attempt",
+                                content: `${attempt}/${maxAttempts}`,
+                            },
+                            {
+                                title: "Structured response validation",
+                                content: accepted
+                                    ? "accepted"
+                                    : `rejected: ${error?.stack || error?.message || error}`,
+                            },
+                        ],
+                    });
+                    if (!accepted) {
+                        console.warn(
+                            `Event-check response attempt ${attempt}/${maxAttempts} failed validation: `
+                            + `${error?.message || error}`,
+                        );
+                    }
+                },
+            }).then((promptAttempt) => {
+                parsedXmlEventsFromRetry = promptAttempt.value;
+                return promptAttempt.response;
             });
         const promptLaunchStaggerMs = this.resolvePromptLaunchStaggerMs();
         const needBarEventCheckPromise = suppressNeedBarEventChecks
@@ -3933,19 +4056,25 @@ class Events {
             needBarEventCheckPromise,
         ]);
 
-        this.logEventCheck({
-            systemPrompt: parsedTemplate.systemPrompt,
-            generationPrompt: parsedTemplate.generationPrompt,
-            responseText,
-            metadataLabel: "event_checks",
-            prefix: "event_checks_xml",
-            requestPayload: requestPayloadForLog,
-            responsePayload: responsePayloadForLog,
-        });
+        if (useTinyBrainEventChecks) {
+            this.logEventCheck({
+                systemPrompt: parsedTemplate.systemPrompt,
+                generationPrompt: parsedTemplate.generationPrompt,
+                responseText,
+                metadataLabel: "event_checks",
+                prefix: "event_checks_xml",
+                requestPayload: requestPayloadForLog,
+                responsePayload: responsePayloadForLog,
+            });
+        }
 
-        const xmlEvents = this._parseXmlEventCheckResponse(responseText, {
-            ignoredEventKeys: normalizedIgnoredEventKeys,
-        });
+        const xmlEvents = parsedXmlEventsFromRetry || this._parseXmlEventCheckResponse(
+            responseText,
+            {
+                ignoredEventKeys: normalizedIgnoredEventKeys,
+                requireFinalStateTags: true,
+            },
+        );
         const needBarPromptEntries = Array.isArray(needBarEventCheck?.entries)
             ? needBarEventCheck.entries
             : [];
@@ -5205,6 +5334,21 @@ class Events {
         );
     }
 
+    static logQuestRewardTrace(stage, details = {}) {
+        if (typeof stage !== "string" || !stage.trim()) {
+            throw new TypeError("Quest reward trace stage must be a non-empty string.");
+        }
+        if (!details || typeof details !== "object" || Array.isArray(details)) {
+            throw new TypeError("Quest reward trace details must be an object.");
+        }
+
+        console.info(`[QuestRewardTrace] ${JSON.stringify({
+            timestamp: new Date().toISOString(),
+            ...details,
+            stage: stage.trim(),
+        })}`);
+    }
+
     static async processQuestObjectiveCompletionEntries(
         entries = [],
         context = {},
@@ -5273,6 +5417,28 @@ class Events {
 
         const rewardedQuestIds = new Set();
         let rewardPromptContext = context._questRewardPromptContext || null;
+        const traceContext = {
+            origin:
+                typeof context.questRewardTraceOrigin === "string" &&
+                context.questRewardTraceOrigin.trim()
+                    ? context.questRewardTraceOrigin.trim()
+                    : "event-processing",
+            requestId:
+                typeof context.questRewardTraceRequestId === "string" &&
+                context.questRewardTraceRequestId.trim()
+                    ? context.questRewardTraceRequestId.trim()
+                    : null,
+            clientId:
+                typeof context.questRewardTraceClientId === "string" &&
+                context.questRewardTraceClientId.trim()
+                    ? context.questRewardTraceClientId.trim()
+                    : null,
+        };
+        this.logQuestRewardTrace("batch:start", {
+            ...traceContext,
+            entryCount: entries.length,
+            existingRewardCount: context.questCompletionRewards.length,
+        });
 
         for (const entry of entries) {
             const questIndexValue = Number(entry?.questIndex) - 1;
@@ -5348,6 +5514,13 @@ class Events {
 
             rewardedQuestIds.add(quest.id);
 
+            const questTrace = {
+                ...traceContext,
+                questId: quest.id || null,
+                questName: quest.name || null,
+            };
+            let rewardStage = "application:start";
+            this.logQuestRewardTrace(rewardStage, questTrace);
             let rewardApplicationComplete = false;
             try {
                 const rewardBenefits = Quest.normalizeRewardBenefits(quest.rewardBenefits);
@@ -5377,9 +5550,7 @@ class Events {
                     context.questRewardBenefitResults.push(applied.summary);
                 }
 
-                const rewardItems = Array.isArray(quest.rewardItems)
-                    ? quest.rewardItems.filter(Boolean)
-                    : [];
+                const rewardItems = Quest.normalizeRewardItems(quest.rewardItems);
                 const rewardCurrency = Number.isFinite(quest.rewardCurrency)
                     ? Math.max(0, quest.rewardCurrency)
                     : 0;
@@ -5410,12 +5581,8 @@ class Events {
                     );
                 }
                 for (let rewardIndex = 0; rewardIndex < rewardItems.length; rewardIndex += 1) {
-                    const requestedItemName = typeof rewardItems[rewardIndex] === "string"
-                        ? rewardItems[rewardIndex].trim()
-                        : "";
-                    if (!requestedItemName) {
-                        continue;
-                    }
+                    const rewardItem = rewardItems[rewardIndex];
+                    const requestedItemName = rewardItem.name;
                     const existingRewardItem = typeof player.getInventoryItems === "function"
                         ? player.getInventoryItems().find((item) => (
                             item?.metadata?.questRewardQuestId === quest.id
@@ -5432,6 +5599,7 @@ class Events {
                         owner: player,
                         seeds: [{
                             name: requestedItemName,
+                            description: rewardItem.description,
                             itemOrScenery: "item",
                         }],
                         options: {
@@ -5538,6 +5706,16 @@ class Events {
                 rewardApplicationComplete = true;
                 quest.rewardClaimed = true;
                 quest.rewardNotesPresented = true;
+                rewardStage = "application:complete";
+                this.logQuestRewardTrace(rewardStage, {
+                    ...questTrace,
+                    itemCount: grantedItems.length,
+                    xp: rewardXp,
+                    currency: rewardCurrency,
+                    benefitCount: appliedBenefitResults.length,
+                    factionReputationCount: appliedFactionStandingChanges.length,
+                    npcDispositionCount: appliedNpcDispositionRewards.length,
+                });
     
                 const rewardLines = [];
                 appliedBenefitResults.forEach((benefit) => {
@@ -5574,9 +5752,15 @@ class Events {
                 });
     
                 if (!rewardLines.length) {
+                    rewardStage = "presentation:skipped";
+                    this.logQuestRewardTrace(rewardStage, {
+                        ...questTrace,
+                        reason: "no-reward-lines",
+                    });
                     continue;
                 }
     
+                rewardStage = "presentation:dependencies";
                 if (
                     typeof promptEnv?.render !== "function" ||
                     typeof parseXMLTemplate !== "function" ||
@@ -5597,6 +5781,12 @@ class Events {
                     ...rewardLines.map((line) => `* ${line}`),
                 ].join("\n");
                 try {
+                    rewardStage = "presentation:prompt-context:start";
+                    this.logQuestRewardTrace(rewardStage, {
+                        ...questTrace,
+                        rewardLineCount: rewardLines.length,
+                        tinyBrain: useTinyBrainQuestReward,
+                    });
                     if (!rewardPromptContext) {
                         const rewardLocation = context.location || null;
                         rewardPromptContext = await prepareBasePromptContext({
@@ -5628,6 +5818,11 @@ class Events {
                             "Quest reward prose template did not produce prompts.",
                         );
                     }
+                    rewardStage = "presentation:generation:start";
+                    this.logQuestRewardTrace(rewardStage, {
+                        ...questTrace,
+                        tinyBrain: useTinyBrainQuestReward,
+                    });
                     if (useTinyBrainQuestReward) {
                         const configuredRetries = Number(Globals.config?.ai?.retryAttempts);
                         const retryAttempts = Number.isInteger(configuredRetries) && configuredRetries >= 0
@@ -5721,27 +5916,61 @@ class Events {
                             rewardProse = rewardResponse.trim();
                         }
                     }
+                    rewardStage = "presentation:generation:complete";
+                    this.logQuestRewardTrace(rewardStage, {
+                        ...questTrace,
+                        proseCharacters: rewardProse.length,
+                    });
                 } catch (error) {
                     if (useTinyBrainQuestReward) {
                         throw error;
                     }
+                    this.logQuestRewardTrace("presentation:generation:fallback", {
+                        ...questTrace,
+                        failedStage: rewardStage,
+                        error: error?.message || String(error),
+                    });
                     console.warn("Failed to generate quest reward prose:", error.message);
                     console.debug(error);
                 }
     
+                const usedFallbackList = !rewardProse;
                 if (!rewardProse) {
                     rewardProse = fallbackList;
                 }
+                rewardStage = "presentation:prose-ready";
+                this.logQuestRewardTrace(rewardStage, {
+                    ...questTrace,
+                    proseCharacters: rewardProse.length,
+                    usedFallbackList,
+                });
     
                 if (Globals.config?.slop_buster === true) {
                     const slopRemover = Globals.applySlopRemoval;
                     if (typeof slopRemover !== "function") {
                         throw new Error("Slop remover is unavailable for quest reward prose.");
                     }
+                    rewardStage = "presentation:slop-removal:start";
+                    this.logQuestRewardTrace(rewardStage, {
+                        ...questTrace,
+                        proseCharacters: rewardProse.length,
+                    });
                     rewardProse = await slopRemover(rewardProse);
+                    rewardStage = "presentation:slop-removal:complete";
+                    this.logQuestRewardTrace(rewardStage, {
+                        ...questTrace,
+                        proseCharacters: typeof rewardProse === "string"
+                            ? rewardProse.length
+                            : null,
+                    });
                 }
     
-                context.questCompletionRewards.push({
+                rewardStage = "presentation:accumulator:start";
+                this.logQuestRewardTrace(rewardStage, {
+                    ...questTrace,
+                    rewardCountBefore: context.questCompletionRewards.length,
+                });
+                const accumulatedReward = {
                     questId: quest.id,
                     questName: quest.name,
                     items: grantedItems.slice(),
@@ -5770,6 +5999,15 @@ class Events {
                     notes: Quest.normalizeRewardNotes(quest.rewardNotes),
                     message: rewardProse,
                     rewards: rewardLines.slice(),
+                };
+                context.questCompletionRewards.push(accumulatedReward);
+                rewardStage = "presentation:accumulator:complete";
+                this.logQuestRewardTrace(rewardStage, {
+                    ...questTrace,
+                    rewardCountAfter: context.questCompletionRewards.length,
+                    proseCharacters: typeof accumulatedReward.message === "string"
+                        ? accumulatedReward.message.length
+                        : null,
                 });
             } catch (error) {
                 if (!rewardApplicationComplete) {
@@ -5792,9 +6030,23 @@ class Events {
                     stack: typeof error?.stack === "string" ? error.stack : null,
                 };
                 context.questCompletionErrors.push(rewardError);
+                this.logQuestRewardTrace("quest:error", {
+                    ...questTrace,
+                    failedStage: rewardStage,
+                    errorCode,
+                    rewardClaimed: quest.rewardClaimed === true,
+                    error: causeMessage,
+                });
                 console.error(message, error);
             }
         }
+
+        this.logQuestRewardTrace("batch:complete", {
+            ...traceContext,
+            rewardCount: context.questCompletionRewards.length,
+            completionCount: context.completedQuestObjectives.length,
+            errorCount: context.questCompletionErrors.length,
+        });
     }
 
     static _parseEventPromptResponse(responseText, { isFinalBlock = false } = {}) {
@@ -5995,7 +6247,8 @@ class Events {
             }
 
             for (const node of this._getXmlElementChildren(doc?.documentElement)) {
-                if (node?.tagName !== "itemInflict" && node?.tagName !== "itemIngest") {
+                const canonicalTagName = this._resolveCoreXmlEventTag(node?.tagName);
+                if (canonicalTagName !== "itemInflict" && canonicalTagName !== "itemIngest") {
                     continue;
                 }
                 const itemName = this._getXmlDirectChildText(
@@ -6004,7 +6257,7 @@ class Events {
                 );
                 const targetName = this._getXmlDirectChildText(
                     node,
-                    node.tagName === "itemIngest" ? "consumerName" : "targetName",
+                    canonicalTagName === "itemIngest" ? "consumerName" : "targetName",
                 );
                 const item = itemName ? findThingByName(itemName) : null;
                 if (!item || !targetName) {
@@ -6029,7 +6282,7 @@ class Events {
                         itemName,
                         effectName,
                         effectDescription,
-                        sourceTag: node.tagName,
+                        sourceTag: canonicalTagName,
                     });
                 }
             }
@@ -6241,13 +6494,18 @@ class Events {
     static _normalizeTinyBrainXmlEventSignature(node) {
         return node
             .toString()
+            .replace(
+                /(<\/?)([A-Za-z_][A-Za-z0-9_.:-]*)/g,
+                (_match, prefix, tagName) => `${prefix}${normalizeXmlTagStyle(tagName)}`,
+            )
             .replace(/>\s+</g, "><")
             .replace(/\s+/g, " ")
             .trim();
     }
 
     static _requireTinyBrainXmlEventFields(node, sectionKind, stageId) {
-        const requiredFields = TINY_BRAIN_EVENT_REQUIRED_FIELDS[node?.tagName] || [];
+        const canonicalTagName = this._resolveCoreXmlEventTag(node?.tagName);
+        const requiredFields = TINY_BRAIN_EVENT_REQUIRED_FIELDS[canonicalTagName] || [];
         for (const fieldPath of requiredFields) {
             const parts = fieldPath.split(".");
             let currentNode = node;
@@ -6299,7 +6557,8 @@ class Events {
         const normalizedRequiredTags = Array.from(new Set(
             requiredTags
                 .map((tagName) => typeof tagName === "string" ? tagName.trim() : "")
-                .filter(Boolean),
+                .filter(Boolean)
+                .map((tagName) => this._resolveCoreXmlEventTag(tagName) || tagName),
         ));
         if (!Array.isArray(authoritativeMovementCompanionNames)
             || authoritativeMovementCompanionNames.some((name) => (
@@ -6361,7 +6620,8 @@ class Events {
         const allowedTagSet = new Set(
             allowedTags
                 .map((tagName) => typeof tagName === "string" ? tagName.trim() : "")
-                .filter(Boolean),
+                .filter(Boolean)
+                .map((tagName) => this._resolveCoreXmlEventTag(tagName) || tagName),
         );
 
         let xml;
@@ -6372,7 +6632,9 @@ class Events {
             try {
                 const bareDoc = Utils.parseXmlDocumentStrict(normalized, "text/xml");
                 const candidateRoot = bareDoc?.documentElement || null;
-                if (candidateRoot && allowedTagSet.has(candidateRoot.tagName)) {
+                const candidateTagName = this._resolveCoreXmlEventTag(candidateRoot?.tagName)
+                    || candidateRoot?.tagName;
+                if (candidateRoot && allowedTagSet.has(candidateTagName)) {
                     bareRoot = candidateRoot;
                 }
             } catch (_error) {
@@ -6397,14 +6659,16 @@ class Events {
             );
         }
         const root = doc?.documentElement;
-        if (!root || root.tagName !== "events") {
+        if (!root || !this._xmlTagNamesMatch(root.tagName, "events")) {
             throw new Error(
                 `Tiny-brain ${normalizedSectionKind}/${normalizedStageId} event stage must have an <events> root element.`,
             );
         }
         const rawEventElements = this._getXmlElementChildren(root);
         const eventElements = rawEventElements.filter(
-            (node) => !TINY_BRAIN_IGNORED_MOVEMENT_EVENT_TAGS.has(node?.tagName),
+            (node) => !TINY_BRAIN_IGNORED_MOVEMENT_EVENT_TAGS.has(
+                this._resolveCoreXmlEventTag(node?.tagName) || node?.tagName,
+            ),
         );
         if (eventElements.length === 0) {
             if (rawEventElements.length > 0) {
@@ -6423,7 +6687,7 @@ class Events {
             );
         }
         const wrappedDoneElements = eventElements.filter(
-            (node) => node?.tagName === "done",
+            (node) => this._xmlTagNamesMatch(node?.tagName, "done"),
         );
         if (wrappedDoneElements.length) {
             const wrappedDone = wrappedDoneElements[0];
@@ -6467,14 +6731,15 @@ class Events {
         const seenSingletonTags = new Set();
         const seenTags = new Set();
         for (const node of eventElements) {
-            const tagName = node?.tagName || "";
+            const sourceTagName = node?.tagName || "";
+            const tagName = this._resolveCoreXmlEventTag(sourceTagName) || sourceTagName;
             const knownCoreEvent = Object.prototype.hasOwnProperty.call(
                 TINY_BRAIN_EVENT_TAG_TO_KEY,
                 tagName,
             );
             const knownRegisteredEvent = registry
                 && typeof registry.getXmlEventByTagName === "function"
-                ? registry.getXmlEventByTagName(tagName)
+                ? registry.getXmlEventByTagName(sourceTagName)
                 : null;
             const registeredEvent = allowRegisteredXmlEvents
                 ? knownRegisteredEvent
@@ -6500,7 +6765,7 @@ class Events {
             }
             if (!allowedTagSet.has(tagName) && !registeredEvent) {
                 if (!knownCoreEvent && !knownRegisteredEvent) {
-                    this._warnUnknownXmlEventTag(tagName);
+                    this._warnUnknownXmlEventTag(sourceTagName);
                     continue;
                 }
                 const allowedDescription = [
@@ -6508,7 +6773,7 @@ class Events {
                     ...(allowRegisteredXmlEvents ? ["registered mod event tags"] : []),
                 ].join(", ");
                 throw new Error(
-                    `Tiny-brain ${normalizedSectionKind}/${normalizedStageId} event stage does not allow <${tagName}>; allowed: ${allowedDescription || "none"}.`,
+                    `Tiny-brain ${normalizedSectionKind}/${normalizedStageId} event stage does not allow <${sourceTagName}>; allowed: ${allowedDescription || "none"}.`,
                 );
             }
             seenTags.add(tagName);
@@ -6538,7 +6803,7 @@ class Events {
                 }
                 const trackerUpdateSignatures = new Set();
                 for (const trackerUpdateNode of trackerUpdateNodes) {
-                    if (trackerUpdateNode.tagName !== "trackerUpdate") {
+                    if (!this._xmlTagNamesMatch(trackerUpdateNode.tagName, "trackerUpdate")) {
                         throw new Error(
                             "<trackerUpdates> may only contain <trackerUpdate> entries.",
                         );
@@ -7392,6 +7657,16 @@ class Events {
         );
     }
 
+    static _xmlTagNamesMatch(leftTagName, rightTagName) {
+        const left = normalizeXmlTagStyle(leftTagName);
+        const right = normalizeXmlTagStyle(rightTagName);
+        return Boolean(left && right && left === right);
+    }
+
+    static _resolveCoreXmlEventTag(tagName) {
+        return CORE_XML_EVENT_TAG_BY_STYLE.get(normalizeXmlTagStyle(tagName)) || "";
+    }
+
     static _getXmlDirectChildText(node, tagName) {
         if (!node || typeof tagName !== "string" || !tagName.trim()) {
             return "";
@@ -7406,7 +7681,7 @@ class Events {
             return null;
         }
         return this._getXmlElementChildren(node).find(
-            (child) => child.tagName === tagName,
+            (child) => this._xmlTagNamesMatch(child.tagName, tagName),
         ) || null;
     }
 
@@ -7651,7 +7926,8 @@ class Events {
     }
 
     static _mapXmlEventNodeToLegacyRaw(node) {
-        const tagName = node?.tagName;
+        const sourceTagName = node?.tagName;
+        const tagName = this._resolveCoreXmlEventTag(sourceTagName) || sourceTagName;
         switch (tagName) {
             case "newExitDiscovered": {
                 const destinationNode = this._getXmlDirectChildNode(node, "destination");
@@ -8126,7 +8402,7 @@ class Events {
             case "trackerUpdates": {
                 const entries = [];
                 for (const child of this._getXmlElementChildren(node)) {
-                    if (child.tagName !== "trackerUpdate") {
+                    if (!this._xmlTagNamesMatch(child.tagName, "trackerUpdate")) {
                         this._logTrackerUpdateEntryError(
                             child?.tagName || child,
                             new Error("<trackerUpdates> may only contain <trackerUpdate> entries."),
@@ -8159,7 +8435,7 @@ class Events {
                 {
                     const registry = Globals.modExtensionRegistry || this._deps?.modExtensionRegistry || null;
                     const registeredEvent = registry && typeof registry.getXmlEventByTagName === "function"
-                        ? registry.getXmlEventByTagName(tagName)
+                        ? registry.getXmlEventByTagName(sourceTagName)
                         : null;
                     if (registeredEvent) {
                         return {
@@ -8168,7 +8444,7 @@ class Events {
                         };
                     }
                 }
-                this._warnUnknownXmlEventTag(tagName);
+                this._warnUnknownXmlEventTag(sourceTagName);
                 return null;
         }
     }
@@ -8451,8 +8727,37 @@ class Events {
         }
 
         const root = doc?.documentElement;
-        if (!root || root.tagName !== "events") {
+        if (!root || !this._xmlTagNamesMatch(root.tagName, "events")) {
             throw new Error("Event XML response did not parse into an <events> document.");
+        }
+
+        if (options?.requireFinalStateTags === true) {
+            const requiredFinalStateTags = ["inCombat", "anyQuestObjectivesCompleted"];
+            const finalStateTagCounts = new Map(
+                requiredFinalStateTags.map((tagName) => [tagName, 0]),
+            );
+            for (const child of this._getXmlElementChildren(root)) {
+                const tagName = this._resolveCoreXmlEventTag(child?.tagName) || child?.tagName;
+                if (finalStateTagCounts.has(tagName)) {
+                    finalStateTagCounts.set(tagName, finalStateTagCounts.get(tagName) + 1);
+                }
+            }
+            const missingTags = requiredFinalStateTags.filter(
+                (tagName) => finalStateTagCounts.get(tagName) === 0,
+            );
+            if (missingTags.length) {
+                throw new Error(
+                    `Event XML is missing required top-level tags: ${missingTags.join(", ")}.`,
+                );
+            }
+            const duplicateTags = requiredFinalStateTags.filter(
+                (tagName) => finalStateTagCounts.get(tagName) > 1,
+            );
+            if (duplicateTags.length) {
+                throw new Error(
+                    `Event XML contains duplicate required top-level tags: ${duplicateTags.join(", ")}.`,
+                );
+            }
         }
 
         const beforeRawLists = {};
@@ -8464,7 +8769,8 @@ class Events {
         let hasArrived = false;
 
         for (const child of this._getXmlElementChildren(root)) {
-            const tagName = child.tagName;
+            const sourceTagName = child.tagName;
+            const tagName = this._resolveCoreXmlEventTag(sourceTagName) || sourceTagName;
             if (tagName === "arriveAtLocation") {
                 if (!hasTravelBoundary) {
                     throw new Error(
@@ -8502,7 +8808,7 @@ class Events {
                 }
                 const { key, raw } = mappedEvent;
                 if (ignoredEventKeys.has(key)) {
-                    ignoredDuringEvents.push({ tagName, key, raw, ignored: true });
+                    ignoredDuringEvents.push({ tagName: sourceTagName, key, raw, ignored: true });
                     continue;
                 }
                 this._appendXmlRawEvent(travelMoveRawLists, key, raw);
@@ -8515,7 +8821,7 @@ class Events {
             }
             const { key, raw } = mappedEvent;
             if (ignoredEventKeys.has(key)) {
-                ignoredDuringEvents.push({ tagName, key, raw, ignored: true });
+                ignoredDuringEvents.push({ tagName: sourceTagName, key, raw, ignored: true });
                 continue;
             }
             if (phase === "before") {
@@ -8524,7 +8830,7 @@ class Events {
                 if (key === "thing_move_with_character") {
                     this._appendXmlRawEvent(afterRawLists, key, raw);
                 } else {
-                    ignoredDuringEvents.push({ tagName, key, raw });
+                    ignoredDuringEvents.push({ tagName: sourceTagName, key, raw });
                 }
             } else {
                 this._appendXmlRawEvent(afterRawLists, key, raw);
@@ -17391,14 +17697,15 @@ class Events {
             const rewardItems = rewardsNode
                 ? Array.from(rewardsNode.getElementsByTagName("item"))
                     .map((node) => {
-                        const descriptionNode =
-                            node.getElementsByTagName("description")[0];
-                        const value = descriptionNode
-                            ? descriptionNode.textContent
-                            : node.textContent;
-                        return value ? value.trim() : "";
+                        const name = node.getElementsByTagName("name")[0]?.textContent?.trim() || "";
+                        const description = node.getElementsByTagName("description")[0]?.textContent?.trim() || "";
+                        if (!name || !description) {
+                            throw new Error(
+                                "Each quest reward <item> must contain non-empty <name> and <description> tags.",
+                            );
+                        }
+                        return { name, description };
                     })
-                    .filter(Boolean)
                 : [];
 
             let rewardCurrency = 0;
@@ -17577,7 +17884,9 @@ class Events {
                 giver: getText("giver"),
                 secretNotes: getText("secretNotes"),
                 objectives,
-                rewardItems: Array.from(new Set(rewardItems)),
+                rewardItems: Array.from(new Map(
+                    rewardItems.map(item => [`${item.name}\u0000${item.description}`, item]),
+                ).values()),
                 rewardCurrency,
                 rewardXp,
                 rewardFactionReputation,
@@ -18759,6 +19068,7 @@ class Events {
         prefix = null,
         requestPayload = null,
         responsePayload = null,
+        sections = null,
     }) {
         const resolvedMetadataLabel =
             typeof metadataLabel === "string" && metadataLabel.trim()
@@ -18778,6 +19088,7 @@ class Events {
             response: responseText || "",
             requestPayload,
             responsePayload,
+            sections: Array.isArray(sections) ? sections : undefined,
         });
     }
 

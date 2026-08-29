@@ -30,6 +30,8 @@ Hidden story-note entries remain eligible when they carry narrative content. Thi
 
 Indexed text comes from `content` or, if content is empty, `summary`. Normalization strips scene-illustration markdown lines, removes leading `!`, `!!`, or `#` markers from lines, compacts blank lines, and requires every indexed entry to have a non-empty persisted id.
 
+`findDeletedCoveredSceneSummaryEntryIds(...)` compares the contiguous stored entry mapping with live chat IDs. Manual deletion of a covered source entry clears the derived scene-summary store and logs a warning; the next automatic threshold run can rebuild from the remaining history. Directly edited or legacy saves are also checked before scheduled summarization. Until rebuilding, base-context rendering exposes all remaining history raw so deleted text cannot survive through a stale derived summary and the missing chat item is not treated as corruption.
+
 ## Generation Flow
 `Globals.summarizeScenesForHistoryRange({ chatHistory, startIndex, endIndex, redo })` is the server-side scene summarizer.
 

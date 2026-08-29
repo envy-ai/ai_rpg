@@ -35,16 +35,18 @@ test('player-action event, need-bar, and quest checks launch concurrently with s
 
 test('XML event path schedules need-bar prompt after configured stagger', () => {
     const eventsSource = fs.readFileSync(path.join(__dirname, '..', 'Events.js'), 'utf8');
+    const start = eventsSource.indexOf('    static async _runXmlEventChecks({');
     const source = eventsSource.slice(
-        eventsSource.indexOf('    static async _runXmlEventChecks({'),
-        eventsSource.indexOf('        this.logEventCheck({', eventsSource.indexOf('    static async _runXmlEventChecks({'))
+        start,
+        eventsSource.indexOf('        const xmlEvents =', start)
     );
 
     assert.match(eventsSource, /static PROMPT_LAUNCH_STAGGER_MS = 4000;/);
     assert.match(eventsSource, /static resolvePromptLaunchStaggerMs\(configOverride = Globals\?\.config\)/);
     assert.match(eventsSource, /static runAfterPromptLaunchDelay\(delayMs, task\)/);
     assert.match(source, /const eventCheckPromise = useTinyBrainEventChecks/);
-    assert.match(source, /: LLMClient\.chatCompletion\(\{/);
+    assert.match(source, /runPromptWithParseRetries\(\{/);
+    assert.match(source, /complete:\s*\(\{ messages \}\)\s*=>\s*LLMClient\.chatCompletion\(\{/);
     assert.match(source, /const promptLaunchStaggerMs = this\.resolvePromptLaunchStaggerMs\(\);/);
     assert.match(source, /const needBarEventCheckPromise = suppressNeedBarEventChecks[\s\S]*?this\.runAfterPromptLaunchDelay\(\s*promptLaunchStaggerMs,/);
     assert.match(source, /const \[responseText, needBarEventCheck\] = await Promise\.all\(\[/);
@@ -92,6 +94,7 @@ test('event housekeeping prompt is silent, logged, and mutation-capable', () => 
     assert.doesNotMatch(source, /runHousekeepingPrompt\.start/);
     assert.doesNotMatch(source, /runHousekeepingPrompt\.finish/);
     assert.match(source, /buildHousekeepingTurnHistory\(chatHistory,/);
+    assert.match(source, /lastRunTurnTimestamp:\s*getLastHousekeepingTurnTimestamp\(\)/);
     assert.match(source, /currentEventText:\s*formatHousekeepingCurrentEventText\(eventResult\)/);
     assert.match(source, /housekeepingTurnHistory:\s*housekeepingHistory\.turns/);
     assert.match(source, /advanceLastHousekeepingTurnId/);
@@ -110,7 +113,9 @@ test('event checks schedule housekeeping before checks and run it with finalized
     assert.match(source, /housekeepingScheduled,/);
     assert.match(eventsSource, /static async _runHousekeepingAfterEventChecks\(\{\s*[\s\S]*?housekeepingScheduled = false,/);
     assert.match(eventsSource, /if \(depth > 0 \|\| suppressHousekeeping \|\| !housekeepingScheduled\)/);
-    assert.match(eventsSource, /return runner\(\{[\s\S]*?eventResult,/);
+    assert.match(eventsSource, /return await runner\(\{[\s\S]*?eventResult,/);
+    assert.match(eventsSource, /HOUSEKEEPING_AFTER_EVENT_CHECKS_FAILED/);
+    assert.match(eventsSource, /appendEventPostProcessingError\(eventResult,/);
     assert.doesNotMatch(eventsSource, /_startHousekeepingForEventChecks/);
 });
 
@@ -169,11 +174,21 @@ test('split moveTurnResult runs origin, transit, destination, tracker, then one 
     assert.match(trackerCall, /tinyBrainEventSequence/);
     assert.match(source, /const tinyBrainEventSequence = useTinyBrainSectionedEventChecks[\s\S]*?Events\.createTinyBrainEventSequence\(\)/);
     assert.match(postMerge, /combinedProse && Events\.shouldRunAutomaticHousekeepingThisTurn\(\)/);
-    assert.match(postMerge, /await runHousekeepingPrompt\(\{/);
+    assert.match(postMerge, /await runAutomaticHousekeepingPrompt\(\{/);
     assert.match(postMerge, /textToCheck:\s*combinedProse,/);
     assert.match(postMerge, /eventResult:\s*splitEventResult,/);
     assert.match(postMerge, /locationOverride:\s*destinationLocation \|\| location \|\| null,/);
     assert.match(postMerge, /entryCollector/);
+});
+
+test('post-event housekeeping failures remain visible without discarding event results', () => {
+    const chatSource = fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'chat.js'), 'utf8');
+
+    assert.match(apiSource, /async function runAutomaticHousekeepingPrompt\(options = \{\}\)/);
+    assert.match(apiSource, /Events\.appendEventPostProcessingError\(\s*options\.eventResult,/);
+    assert.match(apiSource, /responseData\.postProcessingErrors = eventResult\.postProcessingErrors\.slice\(\)/);
+    assert.match(chatSource, /Array\.isArray\(data\.postProcessingErrors\)/);
+    assert.match(chatSource, /this\.showChatErrorPopup\(postProcessingErrorMessage\)/);
 });
 
 test('slash command context exposes housekeeping prompt runner with instructions and stream', () => {

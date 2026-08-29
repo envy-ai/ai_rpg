@@ -4,7 +4,7 @@ Common payloads: see `docs/api/common.md`.
 
 Quest state lives on the current player. There is no standalone quest-list route; the quest panel reads `/api/player`, using the serialized player's `quests` array for active quests and `completedQuests` array for completed quests.
 
-Quest creation normally comes from the chat event pipeline. Generated quest offers are sent to the client as `quest_confirmation_request` websocket messages and are resolved through `/api/quests/confirm`. Quest edits and abandon actions use the routes below.
+Quest creation normally comes from the chat event pipeline. Generated quest offers are sent to the client as `quest_confirmation_request` websocket messages and are resolved through `/api/quests/confirm`. Quest edits, manual completion, reward retry, and abandon actions use the routes below.
 
 ## POST /api/quests/confirm
 Resolve a pending quest confirmation prompt for the websocket client that received it.
@@ -27,7 +27,7 @@ Behavior:
 - `QuestConfirmationManager` owns pending confirmations, keyed by `confirmationId`.
 - A response must come from the same `clientId` that received the websocket request.
 - Resolving the confirmation completes the pending server-side promise. Accepted generated quests enter the player's quest list through the event pipeline; declined quests are ignored.
-- The confirmation request payload contains a safe quest preview: `id`, `name`, `summary`, `description`, `giver`, `objectives`, `rewardItems`, `rewardCurrency`, `rewardXp`, `rewardNpcDispositions`, typed `rewardBenefits`, and narrative `rewardNotes`. Generated quest previews also include display-ready faction reward entries.
+- The confirmation request payload contains a safe quest preview: `id`, `name`, `summary`, `description`, `giver`, `objectives`, `rewardItems`, `rewardCurrency`, `rewardXp`, `rewardNpcDispositions`, typed `rewardBenefits`, and narrative `rewardNotes`. Each physical `rewardItems` entry carries its item `name` separately from its `description`. Generated quest previews also include display-ready faction reward entries.
 - Each `rewardNpcDispositions[].dispositions[]` entry carries both the authored `intensity` and a resolved `delta` (the actual disposition change, `intensity` scaled by the disposition definitions' `typicalStep`/`typicalBigStep`). The preview computes `delta` with `resolveQuestDispositionRewardDelta(intensity, Player.getDispositionDefinitions())` — the same shared resolver `Events._resolveQuestDispositionDelta` uses on completion — so the value shown when accepting a quest matches what the quest list shows and what is actually applied. The client accept dialog displays `delta`, falling back to `intensity` only if no delta is available. Faction reputation rewards are applied as authored (no multiplier), so their displayed value already equals the applied change. The first-impression multiplier is intentionally excluded from the preview because it depends on runtime disposition state known only at award time.
 
 ## POST /api/quest/edit
@@ -44,7 +44,7 @@ Field behavior:
 - `name`, when supplied, must trim to a non-empty string.
 - `description` and `secretNotes` are accepted as strings; omitted fields keep the existing values.
 - `rewardCurrency` and `rewardXp` are converted with `Number(...)`; finite values are floored to non-negative integers. Non-finite or omitted values keep the existing values.
-- `rewardItems` accepts an array of strings or a string split on newlines/commas. Blank item names are discarded. Omitted `rewardItems` keeps the existing list.
+- `rewardItems` accepts an array of `{ name, description }` objects, an array of legacy name strings, or a legacy string split on newlines/commas. Names are required for object entries; descriptions are trimmed and may be empty for legacy/manual rewards. Blank legacy item names are discarded. Omitted `rewardItems` keeps the existing list.
 - `paused`, when supplied, must be a boolean. Paused quests remain on the player but are excluded from quest-check prompts.
 - `rewardClaimed` is stored as a boolean. Setting it true prevents the completion pipeline from granting that quest's completion rewards.
 - `giverName`, when supplied, is trimmed and stored as display metadata. The edit route does not resolve or rewrite `giverId`.
@@ -82,6 +82,17 @@ Explicitly retry pending direct rewards for a completed quest.
 - Success returns the serialized quest/player, reward summaries, benefit results, and conventional change arrays.
 - A still-pending application returns 409 with structured completion errors and a server stack. Unexpected failures return 500 with a stack.
 - Successful reward prose is stored as a visible `quest-reward` chat entry. The completed-quest UI provides a **Retry Pending Rewards** action and surfaces failures through the stack-bearing chat error popup.
+
+## POST /api/quests/:questId/complete
+
+Manually complete an active quest from the quest list and run its normal reward pipeline.
+
+- The route resolves the quest in the current player's canonical quest list and rejects an already-completed or unknown quest.
+- It submits every incomplete objective to `Events.processQuestObjectiveCompletionEntries(...)`, including optional objectives. Optional objectives are processed first so every objective is committed before the final required objective can trigger asynchronous reward generation.
+- Direct rewards, typed benefits, reward prose, retry metadata, and reward errors use the same authoritative processing as model-detected quest completion. Successful reward prose is stored as a visible `quest-reward` chat entry, and a persisted event summary records the manually completed objectives.
+- Success returns `objectivesCompleted: true`, the updated quest/player, completed-objective records, rewards, benefit results, and conventional change arrays.
+- If reward processing fails after objective mutation, the response preserves `objectivesCompleted: true`, the completed quest, and structured stack-bearing errors. The quest remains complete with unclaimed direct rewards available through **Retry Pending Rewards** when applicable.
+- The quest-list button confirms the irreversible action. On success it refreshes chat/player/party/location state and activates the Adventure tab; after a reward failure it refreshes the quest panel but stays there so the pending-reward action is visible.
 
 ## DELETE /api/player/quests/:questId
 Remove a quest from the current player.
@@ -137,7 +148,7 @@ Completion rewards:
 `Quest.toJSON()` returns:
 - `id`, `name`, `description`
 - `objectives`: array of `{ id, description, completed, optional }`
-- `rewardItems`, `rewardCurrency`, `rewardXp`
+- `rewardItems` as `{ name, description }` entries, plus `rewardCurrency`, `rewardXp`
 - `rewardFactionReputation`: object map of `factionId -> integerDelta`
 - `rewardNpcDispositions`: array of `{ npcId, npcName, dispositions: [{ type, intensity, reason }] }`
 - `rewardBenefits`: validated typed benefit entries.
