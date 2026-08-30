@@ -37,7 +37,8 @@ test('container contents generator uses the dedicated contents prompt and clears
     assert.match(functionSource, /validateGeneratedContainerContentsAgainstSeeds\(parsed, pendingContents/);
     assert.match(functionSource, /resolveConfiguredPromptMaxAttempts\(config\?\.ai/);
     assert.match(functionSource, /thing_generator_contents_validation_failure/);
-    assert.match(functionSource, /container\.addInventoryItem\(thing\)/);
+    assert.match(functionSource, /commitCreateBatch\(preparedThingEntries/);
+    assert.match(functionSource, /container\.addInventoryItem\(thing, \{ mergeStacks: false \}\)/);
     assert.match(functionSource, /container\.clearContainerContents\(\)/);
     assert.match(functionSource, /LLMClient\.logPrompt/);
 });

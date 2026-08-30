@@ -45,6 +45,7 @@ class Thing {
   #shortDescription;
   #count;
   #extensionFields;
+  #registered = false;
   static #booleanFlagMap = Object.freeze({
     isVehicle: 'vehicle',
     isCraftingStation: 'crafting_station',
@@ -591,8 +592,12 @@ class Thing {
     containedThingIds = [],
     flags = new SanitizedStringSet(),
     enrichStatusEffects = true,
+    register = true,
     ...extensionFieldInputs
   } = {}) {
+    if (typeof register !== 'boolean') {
+      throw new TypeError('Thing register option must be a boolean.');
+    }
     // Validate required parameters
     if (!name || typeof name !== 'string') {
       throw new Error('Thing name is required and must be a string');
@@ -619,8 +624,10 @@ class Thing {
     }
 
     // Initialize private fields
-    this.#id = id || Thing.#generateId();
-    IdGenerator.register('thing', this.#id);
+    this.#id = id || (register ? Thing.#generateId() : null);
+    if (register) {
+      IdGenerator.register('thing', this.#id);
+    }
     this.#name = Utils.capitalizeProperNoun(name.trim());
     this.#description = description.trim();
     this.#thingType = thingType.toLowerCase();
@@ -698,8 +705,11 @@ class Thing {
     this.#triggerStatusEffectEnrichment();
 
     // Add to static indexes
-    Thing.#indexByID.set(this.#id, this);
-    Thing.#addThingToNameIndex(this);
+    if (register) {
+      Thing.#indexByID.set(this.#id, this);
+      Thing.#addThingToNameIndex(this);
+      this.#registered = true;
+    }
   }
 
   // Getter methods
@@ -900,11 +910,15 @@ class Thing {
   }
 
   set metadata(newMetadata) {
-    Thing.#removeThingFromNameIndex(this, this.#name);
+    if (this.#registered) {
+      Thing.#removeThingFromNameIndex(this, this.#name);
+    }
     this.#metadata = newMetadata && typeof newMetadata === 'object' ? { ...newMetadata } : {};
     this.#applyMetadataFieldsFromMetadata();
     this.#lastUpdated = new Date().toISOString();
-    Thing.#addThingToNameIndex(this);
+    if (this.#registered) {
+      Thing.#addThingToNameIndex(this);
+    }
   }
 
   get slot() {
@@ -1333,13 +1347,17 @@ class Thing {
     }
 
     // Remove from name index with old name
-    Thing.#removeThingFromNameIndex(this, this.#name);
+    if (this.#registered) {
+      Thing.#removeThingFromNameIndex(this, this.#name);
+    }
 
     this.#name = Utils.capitalizeProperNoun(newName.trim());
     this.#lastUpdated = new Date().toISOString();
 
     // Add to name index with new name
-    Thing.#addThingToNameIndex(this);
+    if (this.#registered) {
+      Thing.#addThingToNameIndex(this);
+    }
   }
 
   set description(newDescription) {
@@ -1810,6 +1828,9 @@ class Thing {
 
   // Instance methods
   delete() {
+    if (!this.#registered) {
+      throw new Error('Cannot delete an unregistered Thing candidate.');
+    }
     if (this.isContainer && this.#containedThingIds.size > 0) {
       throw new Error(`Cannot delete non-empty container "${this.#name}". Empty it first.`);
     }
@@ -1817,6 +1838,54 @@ class Thing {
     Thing.#forgetFromRuntimeRegistries(this.#id);
     Thing.#indexByID.delete(this.#id);
     Thing.#removeThingFromNameIndex(this, this.#name);
+    this.#registered = false;
+  }
+
+  replaceStateFrom(candidate, { preserveCreatedAt = true } = {}) {
+    if (!(candidate instanceof Thing)) {
+      throw new TypeError('Thing.replaceStateFrom requires a Thing candidate.');
+    }
+    if (typeof preserveCreatedAt !== 'boolean') {
+      throw new TypeError('Thing.replaceStateFrom preserveCreatedAt must be a boolean.');
+    }
+
+    const previousName = this.#name;
+    const previousCreatedAt = this.#createdAt;
+    if (this.#registered) {
+      Thing.#removeThingFromNameIndex(this, previousName);
+    }
+
+    this.#name = candidate.#name;
+    this.#description = candidate.#description;
+    this.#shortDescription = candidate.#shortDescription;
+    this.#thingType = candidate.#thingType;
+    this.#imageId = candidate.#imageId;
+    this.#imagePrompt = candidate.#imagePrompt;
+    this.#rarity = candidate.#rarity;
+    this.#itemTypeDetail = candidate.#itemTypeDetail;
+    this.#metadata = { ...candidate.#metadata };
+    this.#statusEffects = [...candidate.#statusEffects];
+    this.#slot = candidate.#slot;
+    this.#attributeBonuses = candidate.#attributeBonuses.map(entry => ({ ...entry }));
+    this.#unscaledAttributeBonuses = candidate.#unscaledAttributeBonuses.map(entry => ({ ...entry }));
+    this.#causeStatusEffect = [...candidate.#causeStatusEffect];
+    this.#enableStatusEffectEnrichment = candidate.#enableStatusEffectEnrichment;
+    this.#level = candidate.#level;
+    this.#relativeLevel = candidate.#relativeLevel;
+    this.#previouslyHarvestedItems = [...candidate.#previouslyHarvestedItems];
+    this.#lastHarvested = candidate.#lastHarvested;
+    this.#containedThingIds = new Set(candidate.#containedThingIds);
+    this.#containerContents = candidate.#containerContents.map(entry => ({ ...entry }));
+    this.#flags = new SanitizedStringSet(Array.from(candidate.#flags));
+    this.#extensionFields = JSON.parse(JSON.stringify(candidate.#extensionFields || {}));
+    this.#createdAt = preserveCreatedAt ? previousCreatedAt : candidate.#createdAt;
+    this.#lastUpdated = new Date().toISOString();
+    this.#syncFieldsToMetadata();
+
+    if (this.#registered) {
+      Thing.#addThingToNameIndex(this);
+    }
+    return this;
   }
 
   // Serialization methods
@@ -1867,7 +1936,7 @@ class Thing {
     };
   }
 
-  static fromJSON(data) {
+  static fromJSON(data, { register = true } = {}) {
     if (!data || typeof data !== 'object') {
       throw new Error('Invalid data provided to Thing.fromJSON');
     }
@@ -1927,7 +1996,8 @@ class Thing {
       flags: Array.isArray(data.flags) ? data.flags : (Array.isArray(data.metadata?.flags) ? data.metadata.flags : []),
       ...booleanFlagOptions,
       ...extensionFieldOptions,
-      enrichStatusEffects: false
+      enrichStatusEffects: false,
+      register
     });
 
     if (data.createdAt && typeof data.createdAt === 'string') {

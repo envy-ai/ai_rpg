@@ -141,6 +141,19 @@ test('bundled modules mod registers settings, Thing fields, badges, actions, too
         () => installedModuleIdsField.validateValue([1201], { entity: { name: 'Broken Visor' } }),
         /installedModuleIds\[0\].*non-empty string/i
     );
+    assert.doesNotThrow(() => registry.validateEntity('thing', item({
+        name: 'Configured Core Visor',
+        slot: 'head',
+        moduleSlots: [{ type: 'core' }]
+    })));
+    assert.throws(
+        () => registry.validateEntity('thing', item({
+            name: 'Unknown Slot Visor',
+            slot: 'head',
+            moduleSlots: [{ type: 'unknown' }]
+        })),
+        /unknown module slot type/i
+    );
 
     assert.ok(registry.getThingImageBadges().some(badge => badge.fullId === 'modules:module-compatible'));
     assert.ok(registry.getThingImageBadges().some(badge => badge.fullId === 'modules:module-type'));

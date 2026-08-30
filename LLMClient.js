@@ -5938,6 +5938,7 @@ class LLMClient {
         let completionCassetteReplayLease = null;
         let completionCassetteRecordingLease = null;
         let completionCassetteRequestDescriptor = null;
+        let streamTrackerId = null;
         let currentTime = Date.now();
         try {
             if (completionCassetteSerializationEnabled) {
@@ -6595,7 +6596,7 @@ class LLMClient {
 
             let attempt = 0;
             let responseContent = '';
-            let streamTrackerId = null;
+            streamTrackerId = null;
             let startTimer = null;
             let lastTotalTokens = null;
             let finalResponseToolCalls = [];
@@ -8013,6 +8014,14 @@ class LLMClient {
             }
             return responseContent;
         } finally {
+            if (streamTrackerId) {
+                // Every grouped request must release active-stage ownership before a
+                // tool-launched prompt can inherit and resume the same group. Stream
+                // transports normally release this on their end event; this finalizer
+                // also covers nonstandard/error completion paths.
+                LLMClient.#trackStreamEnd(streamTrackerId);
+                streamTrackerId = null;
+            }
             LLMCompletionCassette.endReplay(completionCassetteReplayLease);
             LLMCompletionCassette.endRecording(completionCassetteRecordingLease);
             LLMClient.#endPromptQueueReservationRequest(promptQueueReservationState);

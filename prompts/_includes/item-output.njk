@@ -5,7 +5,11 @@
   <itemOrScenery>{{ item.itemOrScenery }}</itemOrScenery>
   <type>{{ item.type }}</type>
   <slot>{% if item.slot %}{{ item.slot | join(", ") }}{% else %}N/A{% endif %}</slot>
-  {% if item.extensionXmlFields %}{% for field in item.extensionXmlFields %}<{{ field.tagName }}>{{ field.value }}</{{ field.tagName }}>
+  {% if item.extensionXmlFields %}{% for field in item.extensionXmlFields %}{% if field.collection %}<{{ field.tagName }}>{% for entry in field.value %}
+    <{{ field.collection.itemTagName }}>{% for child in field.collection.fields %}{% if entry[child.fieldName] is defined and entry[child.fieldName] != null %}
+      <{{ child.tagName }}>{{ entry[child.fieldName] }}</{{ child.tagName }}>{% endif %}{% endfor %}
+    </{{ field.collection.itemTagName }}>{% endfor %}
+  </{{ field.tagName }}>{% else %}<{{ field.tagName }}>{{ field.renderedValue }}</{{ field.tagName }}>{% endif %}
   {% endfor %}{% endif %}
   <rarity>{{ item.rarity }}</rarity>
   <value>{{ item.value }}</value>

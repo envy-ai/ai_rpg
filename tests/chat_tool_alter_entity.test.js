@@ -71,12 +71,17 @@ function makeBaseRuntime(overrides = {}) {
     });
 }
 
-test('alterThing, alterNpc, and alterLocation tool schemas exist', () => {
+test('alterThing, recreateThing, alterNpc, and alterLocation tool schemas exist', () => {
     const alterThing = findToolDefinition('alterThing');
     assert.ok(alterThing, 'alterThing tool definition should exist');
     assert.deepEqual(alterThing.parameters.required, ['thing', 'alteration']);
     assert.equal(alterThing.parameters.properties.thing.type, 'string');
     assert.equal(alterThing.parameters.properties.alteration.type, 'string');
+
+    const recreateThing = findToolDefinition('recreateThing');
+    assert.ok(recreateThing, 'recreateThing tool definition should exist');
+    assert.deepEqual(recreateThing.parameters.required, ['thing', 'instructions']);
+    assert.match(recreateThing.description, /original stable id and placement are preserved/i);
 
     const alterNpc = findToolDefinition('alterNpc');
     assert.ok(alterNpc, 'alterNpc tool definition should exist');
@@ -90,6 +95,98 @@ test('alterThing, alterNpc, and alterLocation tool schemas exist', () => {
     assert.equal(alterLocation.parameters.properties.location.type, 'string');
     assert.equal(alterLocation.parameters.properties.region.type, 'string');
     assert.equal(alterLocation.parameters.properties.alteration.type, 'string');
+});
+
+test('recreateThing performs one alteration operation and preserves the stable id', async () => {
+    const thing = { id: 'thing-1', name: 'Warped Study Desk', thingType: 'scenery', metadata: { locationId: 'loc-1' } };
+    let alterationCalls = 0;
+    let capturedArgs = null;
+    const runtime = makeBaseRuntime({
+        thing,
+        firstResponse: {
+            data: {
+                choices: [{
+                    message: {
+                        content: '',
+                        tool_calls: [{
+                            id: 'call-recreate-thing',
+                            type: 'function',
+                            function: {
+                                name: 'recreateThing',
+                                arguments: JSON.stringify({
+                                    thing: thing.id,
+                                    instructions: 'Rebuild it as a pristine rune-carved writing desk.'
+                                })
+                            }
+                        }]
+                    }
+                }]
+            }
+        },
+        alterThingByPrompt: async args => {
+            alterationCalls += 1;
+            capturedArgs = args;
+            thing.name = 'Rune-Carved Writing Desk';
+            return {
+                originalName: 'Warped Study Desk',
+                newName: thing.name,
+                thing,
+                mutationReceipt: {
+                    operation: 'recreate',
+                    thingId: thing.id,
+                    committed: true
+                }
+            };
+        }
+    });
+
+    const result = await runtime.runChatCompletionWithToolLoop({
+        requestOptions: { messages: [{ role: 'user', content: '@Recreate the desk.' }] },
+        metadataLabel: 'test_recreate_thing_tool'
+    });
+
+    assert.equal(alterationCalls, 1);
+    assert.equal(capturedArgs.thing, thing);
+    assert.equal(capturedArgs.changeDescription, 'Rebuild it as a pristine rune-carved writing desk.');
+    assert.equal(result.toolInvocations[0].metadata.thingId, 'thing-1');
+    assert.equal(result.toolInvocations[0].metadata.mutationReceipt.operation, 'recreate');
+});
+
+test('recreateThing rejects an alteration helper that changes the stable id', async () => {
+    const thing = { id: 'thing-1', name: 'Warped Study Desk', thingType: 'scenery', metadata: { locationId: 'loc-1' } };
+    const runtime = makeBaseRuntime({
+        thing,
+        firstResponse: {
+            data: {
+                choices: [{
+                    message: {
+                        content: '',
+                        tool_calls: [{
+                            id: 'call-recreate-thing-invalid-id',
+                            type: 'function',
+                            function: {
+                                name: 'recreateThing',
+                                arguments: JSON.stringify({ thing: thing.id, instructions: 'Rebuild it.' })
+                            }
+                        }]
+                    }
+                }]
+            }
+        },
+        alterThingByPrompt: async () => ({
+            originalName: thing.name,
+            newName: 'Replacement Desk',
+            thing: { ...thing, id: 'thing-2', name: 'Replacement Desk' }
+        })
+    });
+
+    const result = await runtime.runChatCompletionWithToolLoop({
+        requestOptions: { messages: [{ role: 'user', content: '@Recreate the desk.' }] },
+        metadataLabel: 'test_recreate_thing_reject_changed_id'
+    });
+
+    assert.equal(result.toolInvocations[0].metadata.error, true);
+    assert.match(result.toolInvocations[0].metadata.message, /did not preserve the target Thing id/i);
 });
 
 test('alterThing forwards resolved thing and alteration to existing alteration helper', async () => {

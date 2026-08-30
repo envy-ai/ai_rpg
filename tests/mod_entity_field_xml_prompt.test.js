@@ -70,6 +70,27 @@ function registerImplantField(registry) {
     });
 }
 
+function registerStructuredModuleSlotsField(registry) {
+    registry.registerEntityField({
+        modName: 'modules',
+        entityType: 'thing',
+        fieldName: 'moduleSlots',
+        type: 'array',
+        exposeToGeneratorPrompt: true,
+        exposeToXmlParser: true,
+        xmlPrompt: {
+            placeholder: 'Add one moduleSlot per configured slot.',
+            collection: {
+                itemTagName: 'moduleSlot',
+                fields: [
+                    { fieldName: 'type', tagName: 'type', type: 'string', required: true },
+                    { fieldName: 'label', tagName: 'label', type: 'string' }
+                ]
+            }
+        }
+    });
+}
+
 test('item XML prompt renders registered generator fields with placeholders and seed values', () => {
     const registry = new ModExtensionRegistry();
     registerImplantField(registry);
@@ -121,6 +142,67 @@ test('item XML prompt renders registered array seed values as JSON', () => {
 
     assert.match(rendered, /<moduleSlots>\[\{"type":"module","label":"Top Rail"\}\]<\/moduleSlots>/);
     assert.doesNotMatch(rendered, /\[object Object\]/);
+});
+
+test('item XML prompt renders structured module slots as nested XML', () => {
+    const registry = new ModExtensionRegistry();
+    registerStructuredModuleSlotsField(registry);
+    const promptEnv = createPromptEnv();
+    const rendered = promptEnv.render('_includes/item.njk', {
+        thingSeed: {
+            moduleSlots: [{ type: 'mod', label: 'Receiver' }]
+        },
+        thingGeneratorPromptFields: registry.getEntityFields('thing', { exposeToGeneratorPrompt: true }),
+        equipmentSlots: ['hand'],
+        rarityDefinitions: [{ label: 'Common' }],
+        attributes: ['strength']
+    });
+
+    assert.match(rendered, /<moduleSlots>[\s\S]*<moduleSlot>[\s\S]*<type>mod<\/type>[\s\S]*<label>Receiver<\/label>[\s\S]*<\/moduleSlot>[\s\S]*<\/moduleSlots>/);
+    assert.doesNotMatch(rendered, /\{"type":"mod"/);
+});
+
+test('item XML prompt preserves seeded core structured fields', () => {
+    const promptEnv = createPromptEnv();
+    const rendered = promptEnv.render('_includes/item.njk', {
+        thingSeed: {
+            shortDescription: 'locked chest of marked keys',
+            count: 2,
+            containerContents: [{ name: 'Brass Key', count: 1 }],
+            attributeBonuses: [{ attribute: 'luck', bonus: 2 }],
+            causeStatusEffectOnTarget: {
+                name: 'Marked',
+                description: 'The target glows.',
+                duration: '5 minutes',
+                attributes: [{ name: 'dexterity', modifier: -1 }],
+                skills: [{ name: 'Stealth', modifier: -2 }],
+                needBars: [{ name: 'energy', delta: -5 }]
+            },
+            causeStatusEffectOnEquipper: {
+                name: 'Keyed In',
+                description: 'The equipper senses nearby locks.',
+                duration: 'permanent'
+            },
+            properties: 'The lock remembers failed keys.'
+        },
+        thingGeneratorPromptFields: [],
+        equipmentSlots: ['hands'],
+        rarityDefinitions: [{ label: 'Common' }],
+        attributes: ['luck', 'dexterity']
+    });
+
+    assert.match(rendered, /<count>2<\/count>/);
+    assert.match(rendered, /<name>Brass Key<\/name>\s*<count>1<\/count>/);
+    assert.match(rendered, /<attribute>luck<\/attribute>\s*<bonus>2<\/bonus>/);
+    assert.match(rendered, /<name>Marked<\/name>/);
+    assert.match(rendered, /<attribute><name>dexterity<\/name><modifier>-1<\/modifier><\/attribute>/);
+    assert.match(rendered, /<skill><name>Stealth<\/name><modifier>-2<\/modifier><\/skill>/);
+    assert.match(rendered, /<needBar><name>energy<\/name><delta>-5<\/delta><\/needBar>/);
+    assert.match(rendered, /<name>Keyed In<\/name>/);
+    assert.match(rendered, /<duration>permanent<\/duration>/);
+    assert.match(rendered, /<properties>The lock remembers failed keys\.<\/properties>/);
+    assert.match(rendered, /<shortDescription>locked chest of marked keys<\/shortDescription>/);
+    assert.doesNotThrow(() => Utils.parseXmlDocumentStrict(`<items>${rendered}</items>`, 'text/xml'));
 });
 
 test('base prompt context exposes registered generator fields to crafting item XML prompts', () => {
@@ -247,6 +329,77 @@ test('thing XML parser rejects nested XML emitted for a registered array field',
 </items>`),
             /<moduleSlots> must be a valid JSON array/
         );
+    } finally {
+        Globals.modExtensionRegistry = previousRegistry;
+        Globals.config = previousConfig;
+    }
+});
+
+test('thing XML parser accepts only the registered nested module-slot structure', async () => {
+    const registry = new ModExtensionRegistry();
+    registerStructuredModuleSlotsField(registry);
+    const previousRegistry = Globals.modExtensionRegistry;
+    const previousConfig = Globals.config;
+    Globals.modExtensionRegistry = registry;
+    Globals.config = { ...(previousConfig || {}), strictXMLParsing: false };
+    try {
+        const parseThingsXml = loadParseThingsXml();
+        const parsed = await parseThingsXml(`
+<items>
+  <item>
+    <name>Socketed Carbine</name>
+    <description>A carbine with two receiver sockets.</description>
+    <shortDescription>Two-socket receiver carbine</shortDescription>
+    <itemOrScenery>item</itemOrScenery>
+    <type>weapon</type>
+    <slot>hand</slot>
+    <moduleSlots>
+      <moduleSlot><type>mod</type><label>Upper</label></moduleSlot>
+      <moduleSlot><type>mod</type></moduleSlot>
+    </moduleSlots>
+  </item>
+</items>`);
+        assert.deepEqual(JSON.parse(JSON.stringify(parsed[0].moduleSlots)), [
+            { type: 'mod', label: 'Upper' },
+            { type: 'mod' }
+        ]);
+
+        const empty = await parseThingsXml(`
+<items><item>
+  <name>Plain Carbine</name>
+  <description>A carbine without module sockets.</description>
+  <itemOrScenery>item</itemOrScenery>
+  <type>weapon</type><slot>hand</slot>
+  <moduleSlots></moduleSlots>
+</item></items>`);
+        assert.deepEqual(JSON.parse(JSON.stringify(empty[0].moduleSlots)), []);
+
+        await assert.rejects(parseThingsXml(`
+<items><item>
+  <name>Malformed Carbine</name>
+  <description>A malformed carbine.</description>
+  <itemOrScenery>item</itemOrScenery>
+  <type>weapon</type><slot>hand</slot>
+  <moduleSlots>[{"type":"mod"}]</moduleSlots>
+</item></items>`), /must contain <moduleSlot> child elements/);
+
+        await assert.rejects(parseThingsXml(`
+<items><item>
+  <name>Typeless Carbine</name>
+  <description>A malformed carbine.</description>
+  <itemOrScenery>item</itemOrScenery>
+  <type>weapon</type><slot>hand</slot>
+  <moduleSlots><moduleSlot><label>Upper</label></moduleSlot></moduleSlots>
+</item></items>`), /requires .*<type>/);
+
+        await assert.rejects(parseThingsXml(`
+<items><item>
+  <name>Overdescribed Carbine</name>
+  <description>A malformed carbine.</description>
+  <itemOrScenery>item</itemOrScenery>
+  <type>weapon</type><slot>hand</slot>
+  <moduleSlots><moduleSlot><type>mod</type><capacity>2</capacity></moduleSlot></moduleSlots>
+</item></items>`), /unexpected <capacity>/);
     } finally {
         Globals.modExtensionRegistry = previousRegistry;
         Globals.config = previousConfig;

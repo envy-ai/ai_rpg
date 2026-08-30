@@ -14,6 +14,7 @@ class ModExtensionRegistry {
     #settingFields = new Map();
     #settingTabs = new Map();
     #entityFieldsByType = new Map();
+    #entityValidatorsByType = new Map();
     #thingImageBadges = new Map();
     #thingContextActions = new Map();
     #playerActionPromptSteps = new Map();
@@ -241,6 +242,7 @@ class ModExtensionRegistry {
         const rawPrompt = xmlPrompt === undefined ? null : xmlPrompt;
         let rawTagName = fieldName;
         let rawPlaceholder = '';
+        let rawCollection = null;
 
         if (typeof rawPrompt === 'string') {
             rawPlaceholder = rawPrompt.trim();
@@ -250,6 +252,9 @@ class ModExtensionRegistry {
             }
             if (typeof rawPrompt.placeholder === 'string') {
                 rawPlaceholder = rawPrompt.placeholder.trim();
+            }
+            if (rawPrompt.collection !== undefined && rawPrompt.collection !== null) {
+                rawCollection = rawPrompt.collection;
             }
         } else if (rawPrompt !== null && rawPrompt !== undefined && rawPrompt !== '') {
             throw new Error(`Entity field "${entityType}.${fieldName}" xmlPrompt must be a string or object.`);
@@ -270,10 +275,52 @@ class ModExtensionRegistry {
             throw new Error(`Entity field "thing.${fieldName}" xmlPrompt tag "${tagName}" conflicts with a built-in item XML tag.`);
         }
 
+        let collection = null;
+        if (rawCollection !== null) {
+            if (!rawCollection || typeof rawCollection !== 'object' || Array.isArray(rawCollection)) {
+                throw new Error(`Entity field "${entityType}.${fieldName}" xmlPrompt.collection must be an object.`);
+            }
+            const itemTagName = ModExtensionRegistry.#normalizeXmlPromptTagName(
+                rawCollection.itemTagName,
+                `entity field "${entityType}.${fieldName}" xmlPrompt.collection.itemTagName`
+            );
+            if (!Array.isArray(rawCollection.fields) || !rawCollection.fields.length) {
+                throw new Error(`Entity field "${entityType}.${fieldName}" xmlPrompt.collection.fields must be a non-empty array.`);
+            }
+            const seenFieldNames = new Set();
+            const seenTagNames = new Set();
+            const fields = rawCollection.fields.map((child, index) => {
+                if (!child || typeof child !== 'object' || Array.isArray(child)) {
+                    throw new Error(`Entity field "${entityType}.${fieldName}" xmlPrompt.collection.fields[${index}] must be an object.`);
+                }
+                const childFieldName = ModExtensionRegistry.#normalizeFieldName(
+                    child.fieldName,
+                    `entity field "${entityType}.${fieldName}" xmlPrompt.collection.fields[${index}].fieldName`
+                );
+                const childTagName = ModExtensionRegistry.#normalizeXmlPromptTagName(
+                    child.tagName || child.fieldName,
+                    `entity field "${entityType}.${fieldName}" xmlPrompt.collection.fields[${index}].tagName`
+                );
+                if (seenFieldNames.has(childFieldName) || seenTagNames.has(childTagName)) {
+                    throw new Error(`Entity field "${entityType}.${fieldName}" xmlPrompt.collection contains a duplicate child field or tag.`);
+                }
+                seenFieldNames.add(childFieldName);
+                seenTagNames.add(childTagName);
+                return {
+                    fieldName: childFieldName,
+                    tagName: childTagName,
+                    type: ModExtensionRegistry.#normalizeEntityFieldType(child.type || 'string'),
+                    required: child.required === true
+                };
+            });
+            collection = { itemTagName, fields };
+        }
+
         return {
             tagName,
             placeholder: rawPlaceholder,
-            placeholderProvider: xmlPromptPlaceholderProvider || null
+            placeholderProvider: xmlPromptPlaceholderProvider || null,
+            ...(collection ? { collection } : {})
         };
     }
 
@@ -350,7 +397,13 @@ class ModExtensionRegistry {
         const cloned = {
             ...field,
             edit: field.edit ? { ...field.edit } : null,
-            xmlPrompt: field.xmlPrompt ? { ...field.xmlPrompt } : null,
+            xmlPrompt: field.xmlPrompt ? {
+                ...field.xmlPrompt,
+                ...(field.xmlPrompt.collection ? { collection: {
+                    ...field.xmlPrompt.collection,
+                    fields: field.xmlPrompt.collection.fields.map(child => ({ ...child }))
+                } } : {})
+            } : null,
             toolSchema: field.toolSchema ? ModExtensionRegistry.#cloneJsonish(field.toolSchema) : null
         };
         cloned.description = ModExtensionRegistry.#resolveDynamicEntityFieldText(
@@ -651,6 +704,7 @@ class ModExtensionRegistry {
         this.#settingFields.clear();
         this.#settingTabs.clear();
         this.#entityFieldsByType.clear();
+        this.#entityValidatorsByType.clear();
         this.#thingImageBadges.clear();
         this.#thingContextActions.clear();
         this.#playerActionPromptSteps.clear();
@@ -1345,6 +1399,55 @@ class ModExtensionRegistry {
             })
         };
         fields.set(normalizedFieldName, record);
+    }
+
+    registerEntityValidator({ modName, entityType, name, validator } = {}) {
+        const normalizedModName = ModExtensionRegistry.#normalizeModName(modName);
+        const normalizedEntityType = ModExtensionRegistry.#normalizeEntityType(entityType);
+        const normalizedName = ModExtensionRegistry.#normalizeIdentifier(
+            name || `${normalizedModName}-${normalizedEntityType}-validator`,
+            'entity validator name'
+        );
+        if (typeof validator !== 'function') {
+            throw new Error(`Entity validator "${normalizedName}" must be a function.`);
+        }
+        if (!this.#entityValidatorsByType.has(normalizedEntityType)) {
+            this.#entityValidatorsByType.set(normalizedEntityType, new Map());
+        }
+        const validators = this.#entityValidatorsByType.get(normalizedEntityType);
+        if (validators.has(normalizedName)) {
+            throw new Error(`Entity validator "${normalizedEntityType}.${normalizedName}" is already registered.`);
+        }
+        validators.set(normalizedName, {
+            modName: normalizedModName,
+            entityType: normalizedEntityType,
+            name: normalizedName,
+            validator
+        });
+    }
+
+    getEntityValidators(entityType) {
+        const normalizedEntityType = typeof entityType === 'string' ? entityType.trim().toLowerCase() : '';
+        if (!normalizedEntityType) {
+            return [];
+        }
+        return Array.from(this.#entityValidatorsByType.get(normalizedEntityType)?.values() || [])
+            .map(record => ({ ...record }));
+    }
+
+    validateEntity(entityType, entity, context = {}) {
+        for (const record of this.getEntityValidators(entityType)) {
+            try {
+                record.validator(entity, context);
+            } catch (error) {
+                throw new Error(
+                    `Entity validator "${record.name}" from mod "${record.modName}" rejected `
+                    + `${entityType} "${entity?.name || entity?.id || 'unknown'}": ${error?.message || error}`,
+                    { cause: error }
+                );
+            }
+        }
+        return entity;
     }
 
     getEntityField(entityType, fieldName) {

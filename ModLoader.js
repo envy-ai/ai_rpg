@@ -360,6 +360,16 @@ class ModLoader {
                 });
             },
 
+            registerEntityValidator: (options = {}) => {
+                if (!modExtensionRegistry || typeof modExtensionRegistry.registerEntityValidator !== 'function') {
+                    throw new Error(`Mod "${modName}" cannot register entity validators because no ModExtensionRegistry is available.`);
+                }
+                return modExtensionRegistry.registerEntityValidator({
+                    ...options,
+                    modName
+                });
+            },
+
             registerThingImageBadge: (options = {}) => {
                 if (!modExtensionRegistry || typeof modExtensionRegistry.registerThingImageBadge !== 'function') {
                     throw new Error(`Mod "${modName}" cannot register Thing image badges because no ModExtensionRegistry is available.`);

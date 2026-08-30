@@ -7,6 +7,9 @@ const {
     getChatToolDefinitions
 } = require('../chat_tool_calls.js');
 const ModExtensionRegistry = require('../ModExtensionRegistry.js');
+const Globals = require('../Globals.js');
+const Thing = require('../Thing.js');
+const ItemModuleSystem = require('../mods/modules/ItemModuleSystem.js');
 
 function findToolDefinition(name) {
     return CHAT_TOOL_DEFINITIONS.find(entry => entry?.function?.name === name)?.function || null;
@@ -316,6 +319,7 @@ function makeRuntime({
     regions = null,
     factions = [],
     modExtensionRegistry = null,
+    ThingModel = null,
     onChatCompletionOptions = null,
     regenerateShortDescription = async ({ objectType }) => `Generated ${objectType} summary.`
 }) {
@@ -365,7 +369,7 @@ function makeRuntime({
             }
         },
         Player: { getAll: () => [currentPlayer, ...npcList].filter(Boolean) },
-        Thing: { getAll: () => things },
+        Thing: ThingModel || { getAll: () => things },
         Location: { get: id => locationList.find(entry => entry.id === id) || null, getAll: () => locationList },
         Region: { getAll: () => regionList },
         getGameLocations: () => new Map(locationList.map(entry => [entry.id, entry])),
@@ -970,6 +974,75 @@ test('updateObjectFields applies registered first-class Thing fields', async () 
     assert.equal(thing.extensionFields.implantSlot, 'neural');
     assert.equal(result.toolInvocations[0].metadata.status, 'success');
     assert.deepEqual(result.toolInvocations[0].metadata.updatedFields, ['implantSlot']);
+});
+
+test('updateObjectFields rejects an invalid whole-Thing patch without changing any live field', async () => {
+    const registry = new ModExtensionRegistry();
+    const moduleSystem = new ItemModuleSystem();
+    for (const field of [
+        { fieldName: 'moduleSlots', type: 'array', defaultValue: [] },
+        { fieldName: 'moduleType', type: 'string', defaultValue: null },
+        { fieldName: 'installedModuleIds', type: 'array', defaultValue: [] }
+    ]) {
+        registry.registerEntityField({
+            modName: 'modules',
+            entityType: 'thing',
+            exposeToUpdateTool: true,
+            ...field
+        });
+    }
+    registry.registerEntityValidator({
+        modName: 'modules',
+        entityType: 'thing',
+        name: 'module-invariants',
+        validator: thing => moduleSystem.validateItemModuleFields(thing, {
+            slotTypes: [{ id: 'core', label: 'Core', description: '' }]
+        })
+    });
+
+    const previousRegistry = Globals.modExtensionRegistry;
+    Globals.modExtensionRegistry = registry;
+    Thing.clear();
+    try {
+        const thing = new Thing({
+            name: 'Arc Pistol',
+            description: 'A compact electrical sidearm.',
+            thingType: 'item',
+            slot: 'hand',
+            moduleSlots: [],
+            moduleType: null,
+            installedModuleIds: []
+        });
+        const before = thing.toJSON();
+        const runtime = makeRuntime({
+            firstResponse: toolResponse({
+                objectType: 'thing',
+                object: thing.id,
+                fields: {
+                    description: 'This description must not commit.',
+                    moduleSlots: [{ type: 'core' }],
+                    moduleType: 'core'
+                }
+            }, 'updateObjectFields'),
+            things: [thing],
+            modExtensionRegistry: registry,
+            ThingModel: Thing
+        });
+
+        const result = await runtime.runChatCompletionWithToolLoop({
+            requestOptions: { messages: [{ role: 'user', content: '@Apply an invalid recursive module update.' }] },
+            metadataLabel: 'test_atomic_thing_update_failure'
+        });
+
+        assert.equal(result.toolInvocations[0].metadata.error, true);
+        assert.equal(result.toolInvocations[0].metadata.code, 'field_update_failed');
+        assert.match(result.toolInvocations[0].metadata.message, /must not have module slots/i);
+        assert.deepEqual(thing.toJSON(), before);
+        assert.equal(Thing.getAll().length, 1);
+    } finally {
+        Thing.clear();
+        Globals.modExtensionRegistry = previousRegistry;
+    }
 });
 
 test('updateObjectFields can update player-owned quests, objectives, and status effects by id', async () => {

@@ -14,11 +14,24 @@
 - `installedModuleIds`: non-empty unique installed module Thing ids on a base item.
 - `moduleInstalledOnItemId`: backlink from an installed module item to its base item.
 
-These fields are registered first-class Thing extension fields, serialize at top level, and are available through `Thing.getExtensionField(...)` / `Thing.setExtensionField(...)`. They are exposed to item XML prompts/parsing, `createThing`, `updateObjectFields`, and the item editor. Prompt/tool descriptions list the active configured slot types. `moduleSlots` also supplies a structured `createThing` schema requiring only the `type` key, and seeded array values render into item XML as JSON instead of JavaScript object strings.
+These fields are registered first-class Thing extension fields, serialize at top level, and are available through `Thing.getExtensionField(...)` / `Thing.setExtensionField(...)`. They are exposed to item XML prompts/parsing, `createThing`, `updateObjectFields`, and the item editor. Prompt/tool descriptions list the active configured slot types. `moduleSlots` supplies a structured `createThing` schema requiring only the `type` key and uses nested XML exclusively:
+
+```xml
+<moduleSlots>
+  <moduleSlot>
+    <type>module</type>
+    <label>Optional display label</label>
+  </moduleSlot>
+</moduleSlots>
+```
+
+`<type>` is required, `<label>` is optional, and an empty `<moduleSlots>` means `[]`. Text containing JSON or any unexpected child structure fails ordinary XML structural validation; there is no legacy JSON-text compatibility branch.
 
 Validation rejects module slots on non-item or non-equippable Things, unknown slot types, malformed slot entries, malformed installed-id arrays, duplicate installed ids, and module items that also define module slots. Install/remove operations reject missing owners, missing stable ids, self-installation, equipped module items, already-installed modules, wrong requested slot types, full slots, missing inventory/location ownership, and stale installed-module references.
 
 The `installedModuleIds` registered field validates every entry at the Thing persistence boundary. Non-string, blank, and duplicate ids therefore fail during Thing construction, save hydration, or field updates instead of remaining latent until a base-context prompt tries to render the item.
+
+The mod also registers `ItemModuleSystem.validateItemModuleFields(...)` as a whole-Thing validator. The validator resolves slot types through the same active-setting accessor used by prompts and tools, so validation follows the setting's configured module vocabulary. Candidate creation, update, alteration, and recreation therefore reject contradictory module state before commit. Save hydration runs the same validator as a read-only audit and warns about invalid legacy records without repairing them.
 
 ## Prompt, Tool, And Event Hooks
 - The mod registers a dynamic item-generation prompt instruction. Item-generation prompts count persisted Things with non-empty `moduleSlots` as modular items and persisted Things with a meaningful `moduleType` as module items, including installed modules because they remain real Things.

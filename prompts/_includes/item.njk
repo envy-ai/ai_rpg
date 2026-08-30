@@ -8,7 +8,14 @@
 <slot>{% if thingSeed.slot %}{{ thingSeed.slot }}{% else %}<!--Available gear slots: {% for slot in equipmentSlots %}{{ slot }}{% if not loop.last %}, {% endif %}{% endfor %}
     N/A if not equippable -->{% endif %}</slot>
 {% if thingGeneratorPromptFields %}{% for field in thingGeneratorPromptFields %}
-<{{ field.xmlPrompt.tagName }}>{% if thingSeed[field.fieldName] is defined and thingSeed[field.fieldName] != null and thingSeed[field.fieldName] != '' %}{% if field.type == 'array' or field.type == 'object' %}{{ thingSeed[field.fieldName] | dump }}{% else %}{{ thingSeed[field.fieldName] }}{% endif %}{% else %}<!--{{ field.xmlPrompt.placeholder }}-->{% endif %}</{{ field.xmlPrompt.tagName }}>
+{% if field.xmlPrompt.collection %}<{{ field.xmlPrompt.tagName }}>{% if thingSeed[field.fieldName] is defined and thingSeed[field.fieldName] != null %}{% for entry in thingSeed[field.fieldName] %}
+  <{{ field.xmlPrompt.collection.itemTagName }}>{% for child in field.xmlPrompt.collection.fields %}{% if entry[child.fieldName] is defined and entry[child.fieldName] != null %}
+    <{{ child.tagName }}>{{ entry[child.fieldName] }}</{{ child.tagName }}>{% elif child.required %}
+    <{{ child.tagName }}><!--required {{ child.type }}--></{{ child.tagName }}>{% endif %}{% endfor %}
+  </{{ field.xmlPrompt.collection.itemTagName }}>{% endfor %}
+</{{ field.xmlPrompt.tagName }}>{% else %}<{{ field.xmlPrompt.tagName }}>
+  <!--{{ field.xmlPrompt.placeholder }} Expected child structure: <{{ field.xmlPrompt.collection.itemTagName }}>{% for child in field.xmlPrompt.collection.fields %}<{{ child.tagName }}>{{ child.type }}{% if child.required %}, required{% endif %}</{{ child.tagName }}>{% endfor %}</{{ field.xmlPrompt.collection.itemTagName }}>.-->
+</{{ field.xmlPrompt.tagName }}>{% endif %}{% else %}<{{ field.xmlPrompt.tagName }}>{% if thingSeed[field.fieldName] is defined and thingSeed[field.fieldName] != null and thingSeed[field.fieldName] != '' %}{% if field.type == 'array' or field.type == 'object' %}{{ thingSeed[field.fieldName] | dump }}{% else %}{{ thingSeed[field.fieldName] }}{% endif %}{% else %}<!--{{ field.xmlPrompt.placeholder }}-->{% endif %}</{{ field.xmlPrompt.tagName }}>{% endif %}
 {% endfor %}{% endif %}
 <rarity>{% if thingSeed.rarity %}{{ thingSeed.rarity }}{% else %}<!--{%- for rarity in rarityDefinitions -%}{{ rarity.label or rarity.key }}{%- if not loop.last -%}, {% endif %}{%- endfor -%}
 -->{% endif %}</rarity>
@@ -23,32 +30,81 @@
 <isContainer>{% if thingSeed.isContainer is defined %}{{ thingSeed.isContainer }}{% else %}<!--true or false. Mark true for item or scenery containers that can visibly hold item stacks, such as chests, shelves, crates, satchels, desk drawers, and cabinets.--> {% endif %}</isContainer>
 <requiresCheckToOpen>{% if thingSeed.requiresCheckToOpen is defined %}{{ thingSeed.requiresCheckToOpen }}{% else %}<!--true or false. Mark true for containers that require a check to open, such as locked chests, safes, etc. False otherwise. Omit if not a container. --> {% endif %}</requiresCheckToOpen>
 <containerContents>
+{% if thingSeed.containerContents is defined and thingSeed.containerContents != null %}
+{% for containedItem in thingSeed.containerContents %}
+    <containedItem>
+        <name>{{ containedItem.name }}</name>
+        <count>{{ containedItem.count }}</count>
+    </containedItem>
+{% endfor %}
+{% else %}
     <!-- For containers only, generate the contents of the container now, in this format, even if the contents are unknown to the player. They will be instantiated at the time the container is opened or inspected. Leave this blank if the container is empty. Omit if this item is not a container. Containers with more than 8 unique items should be marked as harvestable in addition to being marked as containers; in the case of harvestable containers, leave containerContents blank. -->
     <containedItem>
         <name><!--Name of item in container--></name>
         <count><!--Count of how many of that item are in the container--></count>
     </containedItem>
     ... repeat for each known item in the container ...
+{% endif %}
 </containerContents>
 <isHarvestable>{% if thingSeed.isHarvestable is defined %}{{ thingSeed.isHarvestable }}{% else %}<!--true or false. Note that an item/scenery is considered harvestable if you can take items from it and it will still be there, such as a berry bush, an herb patch, a well-stocked pantry, etc. Single items that you can pick up, such as a berry, an herb, etc, are not considered harvestable. They're just items to be picked up. Containers with more than 8 unique items should be marked as harvestable in addition to being marked as containers--> {% endif %}</isHarvestable>
 <attributeBonuses>
+{% if thingSeed.attributeBonuses is defined and thingSeed.attributeBonuses != null %}
+{% for attributeBonus in thingSeed.attributeBonuses %}
+    <attributeBonus>
+        <attribute>{{ attributeBonus.attribute }}</attribute>
+        <bonus>{{ attributeBonus.bonus }}</bonus>
+    </attributeBonus>
+{% endfor %}
+{% else %}
     <!-- optional; all uncommon or rarer items should have at least one attribute bonus; junk items should have some small negatives; common items should have none or a mix of small positives and negatives, and uncommon+ items should have progressively better stats; make them appropriate to the weapon; omit any attribute bonuses that are zero; scenery and items that cannot be equipped should not have any attribute bonuses -->
     <attributeBonus>
         <attribute><!--one of: {% for attribute in attributes %}{{ attribute }}{% if not loop.last %}, {% endif %}{% endfor %}--></attribute>
         <bonus><!--Bonus value (between -4 and +4)--></bonus>
     </attributeBonus>
+{% endif %}
 </attributeBonuses>
 <causeStatusEffectOnTarget>
     <!-- optional; only for uncommon or rarer items; never for scenery or items that cannot be equipped or consumed. Leave this block empty when there is no target status effect; do not write N/A or another placeholder. -->
-    <name><!--Name of the status effect (e.g., "Poisoned", "Blessed", etc.)--></name>
-    <description><!--1-2 sentence description of the status effect--></description>
-    <duration><!-- Duration for status effect timing. Use HH:MM, integer minutes, or explicit units like "2 hours", "45 minutes", "1 day, 2 hours". Use "1 minute" for instant effects and "permanent" only when truly indefinite. N/A if equippable. --></duration>
+    <name>{% if thingSeed.causeStatusEffectOnTarget and thingSeed.causeStatusEffectOnTarget.name %}{{ thingSeed.causeStatusEffectOnTarget.name }}{% else %}<!--Name of the status effect (e.g., "Poisoned", "Blessed", etc.)-->{% endif %}</name>
+    <description>{% if thingSeed.causeStatusEffectOnTarget and thingSeed.causeStatusEffectOnTarget.description %}{{ thingSeed.causeStatusEffectOnTarget.description }}{% else %}<!--1-2 sentence description of the status effect-->{% endif %}</description>
+    <duration>{% if thingSeed.causeStatusEffectOnTarget and thingSeed.causeStatusEffectOnTarget.duration %}{{ thingSeed.causeStatusEffectOnTarget.duration }}{% else %}<!-- Duration for status effect timing. Use HH:MM, integer minutes, or explicit units like "2 hours", "45 minutes", "1 day, 2 hours". Use "1 minute" for instant effects and "permanent" only when truly indefinite. N/A if equippable. -->{% endif %}</duration>
+    <attributes>
+{% if thingSeed.causeStatusEffectOnTarget and thingSeed.causeStatusEffectOnTarget.attributes is defined %}{% for attribute in thingSeed.causeStatusEffectOnTarget.attributes %}
+        <attribute><name>{{ attribute.name or attribute.attribute }}</name><modifier>{{ attribute.modifier }}</modifier></attribute>
+{% endfor %}{% else %}        <!-- Optional attribute modifiers: repeat <attribute><name>attribute name</name><modifier>numeric modifier</modifier></attribute> as needed. -->{% endif %}
+    </attributes>
+    <skills>
+{% if thingSeed.causeStatusEffectOnTarget and thingSeed.causeStatusEffectOnTarget.skills is defined %}{% for skill in thingSeed.causeStatusEffectOnTarget.skills %}
+        <skill><name>{{ skill.name or skill.skill }}</name><modifier>{{ skill.modifier }}</modifier></skill>
+{% endfor %}{% else %}        <!-- Optional skill modifiers: repeat <skill><name>skill name</name><modifier>numeric modifier</modifier></skill> as needed. -->{% endif %}
+    </skills>
+    <needBars>
+{% if thingSeed.causeStatusEffectOnTarget and thingSeed.causeStatusEffectOnTarget.needBars is defined %}{% for needBar in thingSeed.causeStatusEffectOnTarget.needBars %}
+        <needBar><name>{{ needBar.name }}</name><delta>{{ needBar.delta }}</delta></needBar>
+{% endfor %}{% else %}        <!-- Optional need-bar changes: repeat <needBar><name>need name</name><delta>numeric change</delta></needBar> as needed. -->{% endif %}
+    </needBars>
 </causeStatusEffectOnTarget>
 <causeStatusEffectOnEquipper>
     <!-- optional; only for uncommon or rarer items; never for scenery or items that cannot be equipped. Leave this block empty when there is no equipper status effect; do not write N/A or another placeholder. -->
-    <name><!--Name of the status effect (e.g., "Poisoned", "Blessed", etc.)--></name>
-    <description><!--1-2 sentence description of the status effect--></description>
+    <name>{% if thingSeed.causeStatusEffectOnEquipper and thingSeed.causeStatusEffectOnEquipper.name %}{{ thingSeed.causeStatusEffectOnEquipper.name }}{% else %}<!--Name of the status effect (e.g., "Poisoned", "Blessed", etc.)-->{% endif %}</name>
+    <description>{% if thingSeed.causeStatusEffectOnEquipper and thingSeed.causeStatusEffectOnEquipper.description %}{{ thingSeed.causeStatusEffectOnEquipper.description }}{% else %}<!--1-2 sentence description of the status effect-->{% endif %}</description>
+    <duration>{% if thingSeed.causeStatusEffectOnEquipper and thingSeed.causeStatusEffectOnEquipper.duration %}{{ thingSeed.causeStatusEffectOnEquipper.duration }}{% else %}<!-- Duration for status effect timing. Use HH:MM, integer minutes, or explicit units like "2 hours", "45 minutes", "1 day, 2 hours". Use "1 minute" for instant effects and "permanent" only when truly indefinite. -->{% endif %}</duration>
+    <attributes>
+{% if thingSeed.causeStatusEffectOnEquipper and thingSeed.causeStatusEffectOnEquipper.attributes is defined %}{% for attribute in thingSeed.causeStatusEffectOnEquipper.attributes %}
+        <attribute><name>{{ attribute.name or attribute.attribute }}</name><modifier>{{ attribute.modifier }}</modifier></attribute>
+{% endfor %}{% else %}        <!-- Optional attribute modifiers: repeat <attribute><name>attribute name</name><modifier>numeric modifier</modifier></attribute> as needed. -->{% endif %}
+    </attributes>
+    <skills>
+{% if thingSeed.causeStatusEffectOnEquipper and thingSeed.causeStatusEffectOnEquipper.skills is defined %}{% for skill in thingSeed.causeStatusEffectOnEquipper.skills %}
+        <skill><name>{{ skill.name or skill.skill }}</name><modifier>{{ skill.modifier }}</modifier></skill>
+{% endfor %}{% else %}        <!-- Optional skill modifiers: repeat <skill><name>skill name</name><modifier>numeric modifier</modifier></skill> as needed. -->{% endif %}
+    </skills>
+    <needBars>
+{% if thingSeed.causeStatusEffectOnEquipper and thingSeed.causeStatusEffectOnEquipper.needBars is defined %}{% for needBar in thingSeed.causeStatusEffectOnEquipper.needBars %}
+        <needBar><name>{{ needBar.name }}</name><delta>{{ needBar.delta }}</delta></needBar>
+{% endfor %}{% else %}        <!-- Optional need-bar changes: repeat <needBar><name>need name</name><delta>numeric change</delta></needBar> as needed. -->{% endif %}
+    </needBars>
 </causeStatusEffectOnEquipper>
-<properties><!--Any special properties or effects of the item--></properties>
-<shortDescription><!--5-10 word summary to reduce context vs full XML. Try to get the essence of the item across clearly and concisely. Don't mention any numbers, rarities, or specific values. Don't mention the item by name, as this wastes tokens.--></shortDescription>
+<properties>{% if thingSeed.properties %}{{ thingSeed.properties }}{% else %}<!--Any special properties or effects of the item-->{% endif %}</properties>
+<shortDescription>{% if thingSeed.shortDescription %}{{ thingSeed.shortDescription }}{% else %}<!--5-10 word summary to reduce context vs full XML. Try to get the essence of the item across clearly and concisely. Don't mention any numbers, rarities, or specific values. Don't mention the item by name, as this wastes tokens.-->{% endif %}</shortDescription>
 </item>

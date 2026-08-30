@@ -178,6 +178,7 @@ const RealtimeHub = require('./RealtimeHub.js');
 const QuestConfirmationManager = require('./QuestConfirmationManager.js');
 const ModLoader = require('./ModLoader.js');
 const ModExtensionRegistry = require('./ModExtensionRegistry.js');
+const ThingMutationService = require('./ThingMutationService.js');
 const { TinyBrainPromptExtension } = require('./TinyBrainPromptRunner.js');
 const {
     formatPlayerActionDestinationAbsence,
@@ -206,6 +207,10 @@ const modExtensionRegistry = new ModExtensionRegistry({
         .filter(Boolean)
 });
 Globals.modExtensionRegistry = modExtensionRegistry;
+const thingMutationService = new ThingMutationService({
+    ThingClass: Thing,
+    getModExtensionRegistry: () => Globals.modExtensionRegistry || modExtensionRegistry
+});
 
 attachAxiosMetricsLogger(axios);
 
@@ -15368,9 +15373,14 @@ async function generateInventoryForCharacter({
                 + `expected ${normalizedInventoryGeneration.expectedItemCount}.`
             );
         }
+        validateParsedThingCandidateBatch(items, {
+            label: `inventory generation for "${character.name || character.id}"`,
+            forcedThingType: 'item'
+        });
 
         const createdThings = [];
-        for (const item of items) {
+        const preparedInventoryEntries = [];
+        for (const [itemIndex, item] of items.entries()) {
             if (!item.name) continue;
             const relativeLevel = Number.isFinite(item.relativeLevel)
                 ? Math.max(-10, Math.min(10, Math.round(item.relativeLevel)))
@@ -15406,92 +15416,84 @@ async function generateInventoryForCharacter({
                 ? item.description.trim()
                 : 'Inventory item';
 
-            try {
-                const metadata = sanitizeMetadataObject({
-                    rarity: item.rarity || null,
-                    itemType: item.type || null,
-                    value: item.value || null,
-                    weight: item.weight || null,
-                    properties: item.properties || null,
-                    slot: item.slot || null,
-                    attributeBonuses: scaledAttributeBonuses.length ? scaledAttributeBonuses : null,
-                    unscaledAttributeBonuses: rawAttributeBonuses.length ? rawAttributeBonuses : null,
-                    causeStatusEffectOnTarget: item.causeStatusEffectOnTarget || null,
-                    causeStatusEffectOnEquipper: item.causeStatusEffectOnEquipper || null,
-                    relativeLevel,
-                    level: computedLevel
-                });
-                const booleanFlags = extractThingBooleanFlags(item);
-                const extensionFieldInputs = getThingExtensionFieldInputsFromSource(
-                    item,
-                    getThingXmlParserFields(),
-                    `generated inventory item "${item.name || 'unknown'}"`
-                );
-                Object.assign(metadata, booleanFlags);
-                if (
-                    normalizedInventoryGeneration.mode === 'barterStock'
-                    && normalizedInventoryGeneration.requestedItems[createdThings.length]
-                ) {
-                    const seed = normalizedInventoryGeneration.requestedItems[createdThings.length];
-                    if (seed.reason) {
-                        metadata.barterReason = seed.reason;
-                    }
-                    metadata.barterGenerated = true;
+            const metadata = sanitizeMetadataObject({
+                rarity: item.rarity || null,
+                itemType: item.type || null,
+                value: item.value || null,
+                weight: item.weight || null,
+                properties: item.properties || null,
+                slot: item.slot || null,
+                attributeBonuses: scaledAttributeBonuses.length ? scaledAttributeBonuses : null,
+                unscaledAttributeBonuses: rawAttributeBonuses.length ? rawAttributeBonuses : null,
+                causeStatusEffectOnTarget: item.causeStatusEffectOnTarget || null,
+                causeStatusEffectOnEquipper: item.causeStatusEffectOnEquipper || null,
+                relativeLevel,
+                level: computedLevel
+            });
+            const booleanFlags = extractThingBooleanFlags(item);
+            const extensionFieldInputs = getThingExtensionFieldInputsFromSource(
+                item,
+                getThingXmlParserFields(),
+                `generated inventory item "${item.name || 'unknown'}"`
+            );
+            Object.assign(metadata, booleanFlags);
+            if (
+                normalizedInventoryGeneration.mode === 'barterStock'
+                && normalizedInventoryGeneration.requestedItems[itemIndex]
+            ) {
+                const seed = normalizedInventoryGeneration.requestedItems[itemIndex];
+                if (seed.reason) {
+                    metadata.barterReason = seed.reason;
                 }
-
-                const thing = new Thing({
-                    name: item.name,
-                    description: itemDescription,
-                    shortDescription: item.shortDescription ?? null,
-                    thingType: 'item',
-                    rarity: item.rarity || null,
-                    itemTypeDetail: item.type || null,
-                    slot: item.slot || null,
-                    attributeBonuses: scaledAttributeBonuses,
-                    unscaledAttributeBonuses: rawAttributeBonuses,
-                    causeStatusEffect: item.causeStatusEffect,
-                    count: item.count,
-                    level: computedLevel,
-                    relativeLevel,
-                    containerContents: item.containerContents,
-                    metadata,
-                    ...extensionFieldInputs,
-                    ...booleanFlags
-                });
-                things.set(thing.id, thing);
-                if (attachToInventory) {
-                    character.addInventoryItem(thing, { suppressNpcEquip: true });
-                }
-                try {
-                    const metadata = thing.metadata || {};
-                    let metadataChanged = false;
-                    if (attachToInventory && character?.id && metadata.ownerId !== character.id) {
-                        metadata.ownerId = character.id;
-                        metadataChanged = true;
-                    }
-                    const locationId = resolvedLocation?.id || null;
-                    if (locationId && metadata.locationId !== locationId) {
-                        metadata.locationId = locationId;
-                        metadataChanged = true;
-                    }
-                    if (metadataChanged) {
-                        thing.metadata = metadata;
-                    }
-
-                    if (shouldGenerateThingImage(thing)) {
-                        if (!thing.imageId || !hasExistingImage(thing.imageId)) {
-                            thing.imageId = null;
-                        }
-                    } else {
-                        //console.log(`🎒 Skipping image generation for item ${thing.name} (${thing.id}) - not in player inventory`);
-                    }
-                } catch (imageError) {
-                    console.warn('Failed to schedule thing image generation:', imageError.message);
-                }
-                createdThings.push(thing);
-            } catch (error) {
-                console.warn(`Failed to create Thing for inventory item "${item.name}":`, error.message);
+                metadata.barterGenerated = true;
             }
+
+            preparedInventoryEntries.push(thingMutationService.prepareCreate({
+                name: item.name,
+                description: itemDescription,
+                shortDescription: item.shortDescription ?? null,
+                thingType: 'item',
+                rarity: item.rarity || null,
+                itemTypeDetail: item.type || null,
+                slot: item.slot || null,
+                attributeBonuses: scaledAttributeBonuses,
+                unscaledAttributeBonuses: rawAttributeBonuses,
+                causeStatusEffect: item.causeStatusEffect,
+                count: item.count,
+                level: computedLevel,
+                relativeLevel,
+                containerContents: item.containerContents,
+                metadata,
+                ...extensionFieldInputs,
+                ...booleanFlags
+            }));
+        }
+
+        const committedInventoryEntries = thingMutationService.commitCreateBatch(preparedInventoryEntries, {
+            runtimeRegistry: things
+        });
+        for (const { thing } of committedInventoryEntries) {
+            if (attachToInventory) {
+                character.addInventoryItem(thing, { suppressNpcEquip: true });
+            }
+            const committedMetadata = thing.metadata || {};
+            let metadataChanged = false;
+            if (attachToInventory && character?.id && committedMetadata.ownerId !== character.id) {
+                committedMetadata.ownerId = character.id;
+                metadataChanged = true;
+            }
+            const locationId = resolvedLocation?.id || null;
+            if (locationId && committedMetadata.locationId !== locationId) {
+                committedMetadata.locationId = locationId;
+                metadataChanged = true;
+            }
+            if (metadataChanged) {
+                thing.metadata = committedMetadata;
+            }
+            if (shouldGenerateThingImage(thing) && (!thing.imageId || !hasExistingImage(thing.imageId))) {
+                thing.imageId = null;
+            }
+            createdThings.push(thing);
         }
 
         if (createdThings.length) {
@@ -15561,6 +15563,227 @@ function restoreCharacterHealthToMaximum(character) {
     }
 }
 
+function normalizeThingGenerationSeed(seed = {}) {
+    if (!seed || typeof seed !== 'object' || Array.isArray(seed)) {
+        return null;
+    }
+
+    const normalizedSeed = {};
+    for (const fieldName of [
+        'name',
+        'shortDescription',
+        'description',
+        'notes',
+        'type',
+        'slot',
+        'rarity',
+        'properties'
+    ]) {
+        if (typeof seed[fieldName] !== 'string') {
+            continue;
+        }
+        const trimmedValue = seed[fieldName].trim();
+        if (trimmedValue) {
+            normalizedSeed[fieldName] = trimmedValue;
+        }
+    }
+
+    for (const fieldName of ['value', 'weight']) {
+        if (seed[fieldName] === undefined || seed[fieldName] === null || seed[fieldName] === '') {
+            continue;
+        }
+        const numericValue = Number(seed[fieldName]);
+        normalizedSeed[fieldName] = Number.isFinite(numericValue) ? numericValue : seed[fieldName];
+    }
+
+    if (seed.relativeLevel !== undefined && seed.relativeLevel !== null && seed.relativeLevel !== '') {
+        const numericRelative = Number(seed.relativeLevel);
+        if (Number.isFinite(numericRelative)) {
+            const clampedRelative = Math.max(-10, Math.min(10, Math.round(numericRelative)));
+            normalizedSeed.relativeLevel = clampedRelative;
+        }
+    }
+
+    if (seed.count !== undefined && seed.count !== null && seed.count !== '') {
+        const numericCount = Number(seed.count);
+        if (!Number.isInteger(numericCount) || numericCount < 0) {
+            throw new Error('Thing generation seed count must be an integer zero or greater.');
+        }
+        normalizedSeed.count = numericCount;
+    }
+
+    if (typeof seed.itemOrScenery === 'string') {
+        const normalizedType = seed.itemOrScenery.trim().toLowerCase();
+        normalizedSeed.itemOrScenery = normalizedType === 'scenery' ? 'scenery' : 'item';
+    }
+
+    const normalizeNamedNumericEntries = (entries, {
+        fieldName,
+        nameKeys,
+        valueKey
+    }) => {
+        if (!Array.isArray(entries)) {
+            throw new Error(`Thing generation seed ${fieldName} must be an array.`);
+        }
+        return entries.map((entry, index) => {
+            if (!entry || typeof entry !== 'object' || Array.isArray(entry)) {
+                throw new Error(`Thing generation seed ${fieldName}[${index}] must be an object.`);
+            }
+            const rawName = nameKeys
+                .map(nameKey => entry[nameKey])
+                .find(value => typeof value === 'string' && value.trim());
+            const name = typeof rawName === 'string' ? rawName.trim() : '';
+            if (!name) {
+                throw new Error(`Thing generation seed ${fieldName}[${index}] is missing a name.`);
+            }
+            const numericValue = Number(entry[valueKey]);
+            if (!Number.isFinite(numericValue)) {
+                throw new Error(`Thing generation seed ${fieldName}[${index}].${valueKey} must be a finite number.`);
+            }
+            return { name, [valueKey]: numericValue };
+        });
+    };
+
+    if (seed.attributeBonuses !== undefined && seed.attributeBonuses !== null) {
+        normalizedSeed.attributeBonuses = normalizeNamedNumericEntries(seed.attributeBonuses, {
+            fieldName: 'attributeBonuses',
+            nameKeys: ['attribute', 'name'],
+            valueKey: 'bonus'
+        }).map(entry => ({ attribute: entry.name, bonus: entry.bonus }));
+    }
+
+    if (seed.containerContents !== undefined && seed.containerContents !== null) {
+        if (!Array.isArray(seed.containerContents)) {
+            throw new Error('Thing generation seed containerContents must be an array.');
+        }
+        normalizedSeed.containerContents = seed.containerContents.map((entry, index) => {
+            if (!entry || typeof entry !== 'object' || Array.isArray(entry)) {
+                throw new Error(`Thing generation seed containerContents[${index}] must be an object.`);
+            }
+            const name = typeof entry.name === 'string' ? entry.name.trim() : '';
+            if (!name) {
+                throw new Error(`Thing generation seed containerContents[${index}] is missing a name.`);
+            }
+            const count = entry.count === undefined || entry.count === null || entry.count === ''
+                ? 1
+                : Number(entry.count);
+            if (!Number.isInteger(count) || count < 0) {
+                throw new Error(`Thing generation seed containerContents[${index}].count must be an integer zero or greater.`);
+            }
+            return { name, count };
+        });
+    }
+
+    const normalizeStatusEffectSeed = (effect, fieldName) => {
+        if (effect === undefined || effect === null) {
+            return null;
+        }
+        if (!effect || typeof effect !== 'object' || Array.isArray(effect)) {
+            throw new Error(`Thing generation seed ${fieldName} must be an object.`);
+        }
+        const normalizedEffect = {};
+        for (const textField of ['name', 'description']) {
+            if (typeof effect[textField] === 'string' && effect[textField].trim()) {
+                normalizedEffect[textField] = effect[textField].trim();
+            }
+        }
+        if (effect.duration !== undefined && effect.duration !== null && String(effect.duration).trim()) {
+            normalizedEffect.duration = String(effect.duration).trim();
+        }
+        if (effect.attributes !== undefined && effect.attributes !== null) {
+            normalizedEffect.attributes = normalizeNamedNumericEntries(effect.attributes, {
+                fieldName: `${fieldName}.attributes`,
+                nameKeys: ['name', 'attribute'],
+                valueKey: 'modifier'
+            });
+        }
+        if (effect.skills !== undefined && effect.skills !== null) {
+            normalizedEffect.skills = normalizeNamedNumericEntries(effect.skills, {
+                fieldName: `${fieldName}.skills`,
+                nameKeys: ['name', 'skill'],
+                valueKey: 'modifier'
+            });
+        }
+        if (effect.needBars !== undefined && effect.needBars !== null) {
+            normalizedEffect.needBars = normalizeNamedNumericEntries(effect.needBars, {
+                fieldName: `${fieldName}.needBars`,
+                nameKeys: ['name'],
+                valueKey: 'delta'
+            });
+        }
+        return normalizedEffect;
+    };
+
+    for (const fieldName of ['causeStatusEffectOnTarget', 'causeStatusEffectOnEquipper']) {
+        const normalizedEffect = normalizeStatusEffectSeed(seed[fieldName], fieldName);
+        if (normalizedEffect !== null) {
+            normalizedSeed[fieldName] = normalizedEffect;
+        }
+    }
+
+    const seedBooleanFlags = extractThingBooleanFlags(seed);
+    if (Object.keys(seedBooleanFlags).length) {
+        Object.assign(normalizedSeed, seedBooleanFlags);
+    }
+
+    const generatorFieldInputs = getThingExtensionFieldInputsFromSource(
+        seed,
+        getThingGeneratorPromptFields(),
+        'thing generation seed'
+    );
+    Object.assign(normalizedSeed, generatorFieldInputs);
+
+    return normalizedSeed;
+}
+
+function validateParsedThingCandidateBatch(parsedItems, {
+    label = 'generated Thing batch',
+    forcedThingType = null,
+    constraints = []
+} = {}) {
+    if (!Array.isArray(parsedItems)) {
+        throw new TypeError(`${label} must be an array.`);
+    }
+    const preparedEntries = parsedItems.map((itemData, index) => {
+        const parsedKind = typeof itemData?.itemOrScenery === 'string'
+            ? itemData.itemOrScenery.trim().toLowerCase()
+            : (typeof itemData?.thingType === 'string' ? itemData.thingType.trim().toLowerCase() : '');
+        const thingType = forcedThingType || (parsedKind === 'scenery' ? 'scenery' : 'item');
+        const extensionFieldInputs = getThingExtensionFieldInputsFromSource(
+            itemData,
+            getThingXmlParserFields(),
+            `${label} candidate ${index + 1}`
+        );
+        return {
+            data: {
+                name: itemData?.name,
+                description: itemData?.description || `A thing named ${itemData?.name || 'unknown'}.`,
+                shortDescription: itemData?.shortDescription || null,
+                thingType,
+                rarity: itemData?.rarity || null,
+                itemTypeDetail: itemData?.type || null,
+                slot: itemData?.slot || null,
+                count: itemData?.count,
+                relativeLevel: itemData?.relativeLevel,
+                attributeBonuses: Array.isArray(itemData?.attributeBonuses) ? itemData.attributeBonuses : [],
+                causeStatusEffectOnTarget: itemData?.causeStatusEffectOnTarget || null,
+                causeStatusEffectOnEquipper: itemData?.causeStatusEffectOnEquipper || null,
+                containerContents: itemData?.containerContents,
+                metadata: sanitizeMetadataObject({
+                    value: itemData?.value || null,
+                    weight: itemData?.weight || null,
+                    properties: itemData?.properties || null
+                }),
+                ...extractThingBooleanFlags(itemData),
+                ...extensionFieldInputs
+            },
+            constraints: constraints[index] || null
+        };
+    });
+    thingMutationService.prepareCreateBatch(preparedEntries);
+    return parsedItems;
+}
+
 async function generateItemsByNames({
     itemNames = [],
     location = null,
@@ -15599,98 +15822,11 @@ async function generateItemsByNames({
 
     const missing = normalized;
 
-    const normalizeThingSeed = (seed = {}) => {
-        if (!seed || typeof seed !== 'object') {
-            return null;
-        }
-
-        const normalizedSeed = {};
-
-        if (typeof seed.name === 'string') {
-            const trimmedName = seed.name.trim();
-            if (trimmedName) {
-                normalizedSeed.name = trimmedName;
-            }
-        }
-
-        if (typeof seed.description === 'string') {
-            const trimmedDescription = seed.description.trim();
-            if (trimmedDescription) {
-                normalizedSeed.description = trimmedDescription;
-            }
-        }
-
-        if (typeof seed.notes === 'string') {
-            const trimmedNotes = seed.notes.trim();
-            if (trimmedNotes) {
-                normalizedSeed.notes = trimmedNotes;
-            }
-        }
-
-        if (typeof seed.type === 'string') {
-            const trimmedType = seed.type.trim();
-            if (trimmedType) {
-                normalizedSeed.type = trimmedType;
-            }
-        }
-
-        if (typeof seed.slot === 'string') {
-            const trimmedSlot = seed.slot.trim();
-            if (trimmedSlot) {
-                normalizedSeed.slot = trimmedSlot;
-            }
-        }
-
-        if (typeof seed.rarity === 'string') {
-            const trimmedRarity = seed.rarity.trim();
-            if (trimmedRarity) {
-                normalizedSeed.rarity = trimmedRarity;
-            }
-        }
-
-        if (seed.value !== undefined && seed.value !== null && seed.value !== '') {
-            const numericValue = Number(seed.value);
-            normalizedSeed.value = Number.isFinite(numericValue) ? numericValue : seed.value;
-        }
-
-        if (seed.weight !== undefined && seed.weight !== null && seed.weight !== '') {
-            const numericWeight = Number(seed.weight);
-            normalizedSeed.weight = Number.isFinite(numericWeight) ? numericWeight : seed.weight;
-        }
-
-        if (seed.relativeLevel !== undefined && seed.relativeLevel !== null && seed.relativeLevel !== '') {
-            const numericRelative = Number(seed.relativeLevel);
-            if (Number.isFinite(numericRelative)) {
-                const clampedRelative = Math.max(-10, Math.min(10, Math.round(numericRelative)));
-                normalizedSeed.relativeLevel = clampedRelative;
-            }
-        }
-
-        if (typeof seed.itemOrScenery === 'string') {
-            const normalizedType = seed.itemOrScenery.trim().toLowerCase();
-            normalizedSeed.itemOrScenery = normalizedType === 'scenery' ? 'scenery' : 'item';
-        }
-
-        const seedBooleanFlags = extractThingBooleanFlags(seed);
-        if (Object.keys(seedBooleanFlags).length) {
-            Object.assign(normalizedSeed, seedBooleanFlags);
-        }
-
-        const generatorFieldInputs = getThingExtensionFieldInputsFromSource(
-            seed,
-            getThingGeneratorPromptFields(),
-            'thing generation seed'
-        );
-        Object.assign(normalizedSeed, generatorFieldInputs);
-
-        return normalizedSeed;
-    };
-
     const seedLookup = new Map();
     const unnamedSeeds = [];
     if (Array.isArray(seeds)) {
         seeds.forEach(seed => {
-            const normalizedSeed = normalizeThingSeed(seed);
+            const normalizedSeed = normalizeThingGenerationSeed(seed);
             if (!normalizedSeed) {
                 return;
             }
@@ -15871,6 +16007,14 @@ async function generateItemsByNames({
                                 `Single thing generation must return exactly one thing; received ${parsed.length}.`
                             );
                         }
+                        validateParsedThingCandidateBatch([{
+                            ...parsed[0],
+                            name: requestedName || parsed[0].name
+                        }], {
+                            label: `single Thing generation "${requestLabel}"`,
+                            forcedThingType,
+                            constraints: [seed]
+                        });
                         inventoryContent = responseText;
                         return parsed;
                     } catch (error) {
@@ -15976,7 +16120,7 @@ async function generateItemsByNames({
                 );
                 Object.assign(metadata, booleanFlags);
 
-                const thing = new Thing({
+                const preparedThing = thingMutationService.prepareCreate({
                     name: finalName,
                     description: composedDescription,
                     shortDescription: itemData?.shortDescription ?? null,
@@ -16007,6 +16151,11 @@ async function generateItemsByNames({
                     metadata,
                     ...extensionFieldInputs,
                     ...booleanFlags
+                }, {
+                    constraints: seed
+                });
+                const { thing } = thingMutationService.commitCreate(preparedThing, {
+                    runtimeRegistry: things
                 });
 
                 const ownerLevelForLog = owner && Number.isFinite(owner?.level)
@@ -16016,19 +16165,19 @@ async function generateItemsByNames({
                 console.log(
                     `[ItemGeneration] Calculated stats for "${finalName}": ownerLevel=${ownerLevelForLog}, relativeLevel=${relativeLevel}, computedLevel=${computedLevel}, rarity=${itemData?.rarity || 'unknown'}, slot=${itemData?.slot || 'none'}, bonuses=${bonusSummary || 'none'}`
                 );
-                things.set(thing.id, thing);
-
                 if (owner && typeof owner.addInventoryItem === 'function') {
                     owner.addInventoryItem(thing, { mergeStacks });
-                    metadata.ownerId = owner.id;
-                    delete metadata.locationId;
-                    thing.metadata = metadata;
+                    const committedMetadata = { ...(thing.metadata || {}) };
+                    committedMetadata.ownerId = owner.id;
+                    delete committedMetadata.locationId;
+                    thing.metadata = committedMetadata;
                 } else if (resolvedLocation) {
-                    metadata.locationId = resolvedLocation.id;
-                    delete metadata.ownerId;
-                    thing.metadata = metadata;
+                    const committedMetadata = { ...(thing.metadata || {}) };
+                    committedMetadata.locationId = resolvedLocation.id;
+                    delete committedMetadata.ownerId;
+                    thing.metadata = committedMetadata;
                     if (typeof resolvedLocation.addThingId === 'function') {
-                        resolvedLocation.addThingId(thing.id);
+                        resolvedLocation.addThingId(thing.id, { mergeStacks });
                     }
                 }
 
@@ -16061,11 +16210,18 @@ async function generateItemsByNames({
             } catch (itemError) {
                 console.warn(`Failed to generate detailed items from event for "${requestedName || `auto_${index + 1}`}":`, itemError.message);
                 console.warn(itemError);
+                if (generationRequests.length === 1) {
+                    throw itemError;
+                }
                 return null;
             }
         });
 
         const settled = await Promise.allSettled(generationTasks);
+        const rejected = settled.filter(result => result.status === 'rejected');
+        if (generationRequests.length === 1 && rejected.length) {
+            throw rejected[0].reason;
+        }
         for (const result of settled) {
             if (result.status === 'fulfilled' && result.value) {
                 created.push(result.value);
@@ -16089,8 +16245,10 @@ async function generateItemsByNames({
     } catch (error) {
         console.warn('Failed to prepare item generation context:', error.message);
         console.warn(error);
-        const fallbacks = [];
-        return fallbacks;
+        if (generationRequests.length === 1) {
+            throw error;
+        }
+        return [];
     }
 }
 
@@ -16203,6 +16361,10 @@ async function generateContainerContentsForThing({
             validateGeneratedContainerContentsAgainstSeeds(parsed, pendingContents, {
                 containerName: container.name || container.id || 'container'
             });
+            validateParsedThingCandidateBatch(parsed, {
+                label: `container contents for "${container.name || container.id}"`,
+                forcedThingType: 'item'
+            });
             return parsed;
         } catch (error) {
             console.warn(
@@ -16237,6 +16399,7 @@ async function generateContainerContentsForThing({
             ? resolvedRegion.averageLevel
             : (Number.isFinite(currentPlayer?.level) ? currentPlayer.level : 1));
     const createdThings = [];
+    const preparedThingEntries = [];
 
     for (const itemData of parsedItems) {
         if (!itemData?.name) {
@@ -16274,7 +16437,7 @@ async function generateContainerContentsForThing({
             ...booleanFlags
         });
 
-        const thing = new Thing({
+        const preparedThing = thingMutationService.prepareCreate({
             name: itemData.name,
             description: itemData.description || `An item found inside ${container.name || 'a container'}.`,
             shortDescription: itemData.shortDescription ?? null,
@@ -16305,8 +16468,14 @@ async function generateContainerContentsForThing({
             ...extensionFieldInputs,
             ...booleanFlags
         });
-        things.set(thing.id, thing);
-        container.addInventoryItem(thing);
+        preparedThingEntries.push(preparedThing);
+    }
+
+    const committedThingEntries = thingMutationService.commitCreateBatch(preparedThingEntries, {
+        runtimeRegistry: things
+    });
+    for (const { thing } of committedThingEntries) {
+        container.addInventoryItem(thing, { mergeStacks: false });
         createdThings.push(thing);
     }
 
@@ -16773,28 +16942,71 @@ async function alterThingByPrompt({
 
     const requestStart = Date.now();
     let requestPayloadForLog = null;
-    const aiResponse = await LLMClient.chatCompletion({
+    let aiResponse = '';
+    const alterationGeneration = await runPromptWithParseRetries({
         messages,
-        temperature: parsedTemplate.temperature,
-        metadataLabel: 'alter_thing',
-        expectedXmlRootTag: 'item',
-        captureRequestPayload: (payload) => { requestPayloadForLog = payload; }
+        maxAttempts: resolveConfiguredPromptMaxAttempts(config?.ai, { fallbackMaxAttempts: 3 }),
+        complete: async ({ messages: completionMessages }) => {
+            requestPayloadForLog = null;
+            aiResponse = await LLMClient.chatCompletion({
+                messages: completionMessages,
+                temperature: parsedTemplate.temperature,
+                metadataLabel: 'alter_thing',
+                expectedXmlRootTag: 'item',
+                captureRequestPayload: (payload) => { requestPayloadForLog = payload; }
+            });
+            return aiResponse;
+        },
+        parse: async (responseText) => {
+            if (!responseText || !responseText.trim()) {
+                throw new Error('Empty item alteration response from AI.');
+            }
+            const parsed = await parseThingsXml(responseText, {
+                promptEnv,
+                parseXMLTemplate,
+                prepareBasePromptContext,
+                strictXml: true
+            });
+            if (!Array.isArray(parsed) || parsed.length !== 1) {
+                throw new Error(`Thing alteration must return exactly one item definition; received ${parsed?.length || 0}.`);
+            }
+            const provisional = parsed[0];
+            const provisionalKind = (provisional.itemOrScenery || thing.thingType || 'item').trim().toLowerCase() === 'scenery'
+                ? 'scenery'
+                : 'item';
+            const provisionalExtensionFields = getThingExtensionFieldInputsFromSource(
+                provisional,
+                getThingXmlParserFields(),
+                `altered thing "${provisional.name || thing.name}"`
+            );
+            thingMutationService.prepareReplacement(thing, {
+                ...originalState,
+                name: provisional.name || targetName,
+                description: provisional.description || thing.description,
+                shortDescription: provisional.shortDescription || thing.shortDescription || null,
+                thingType: provisionalKind,
+                itemTypeDetail: provisional.type || thing.itemTypeDetail || null,
+                slot: provisionalKind === 'item' && provisional.slot && provisional.slot.toLowerCase() !== 'n/a'
+                    ? provisional.slot
+                    : null,
+                ...provisionalExtensionFields
+            });
+            return parsed;
+        },
+        buildRetryInstruction: error => (
+            'The preceding Thing alteration XML failed structural or domain validation: '
+            + `${error.message}\nReturn one corrected <item>...</item> XML definition only. `
+            + 'Use the exact required nested XML structure for structured fields and ensure all fields form one valid Thing.'
+        ),
+        onAttempt: ({ attempt, maxAttempts, error }) => {
+            if (error) {
+                console.warn(`Thing alteration response attempt ${attempt} of ${maxAttempts} failed validation: ${error.message}`);
+            }
+        }
     });
 
     const apiDurationSeconds = (Date.now() - requestStart) / 1000;
-
-    if (!aiResponse || !aiResponse.trim()) {
-        throw new Error('Empty item alteration response from AI.');
-    }
-
-    const parsedItems = await parseThingsXml(aiResponse, {
-        promptEnv,
-        parseXMLTemplate,
-        prepareBasePromptContext
-    });
-    if (!Array.isArray(parsedItems) || !parsedItems.length) {
-        throw new Error('Thing alteration response did not include an item definition.');
-    }
+    const parsedItems = alterationGeneration.value;
 
     const updatedItem = parsedItems[0];
     const updatedShortDescriptionRaw = typeof updatedItem.shortDescription === 'string'
@@ -16961,98 +17173,136 @@ async function alterThingByPrompt({
         resolvedLocation = finalLocation;
     }
 
-    if (previousOwner && previousOwner !== finalOwner && typeof previousOwner.removeInventoryItem === 'function') {
-        try {
-            previousOwner.removeInventoryItem(thing);
-        } catch (error) {
-            console.warn(`Failed to remove ${originalName} from ${previousOwner.name || previousOwner.id}:`, error.message);
-        }
-    }
-
-    const newLocationId = sanitizedMetadata.locationId || null;
-    if (previousLocation && previousLocation.id !== newLocationId && typeof previousLocation.removeThingId === 'function') {
-        try {
-            previousLocation.removeThingId(thing.id);
-        } catch (error) {
-            console.warn(`Failed to detach ${thing.id} from location ${previousLocation.id}:`, error.message);
-        }
-    }
-
-    if (finalOwner && typeof finalOwner.addInventoryItem === 'function' && sanitizedMetadata.ownerId === finalOwner.id) {
-        try {
-            finalOwner.addInventoryItem(thing);
-        } catch (error) {
-            console.warn(`Failed to add ${thing.name} to ${finalOwner.name || finalOwner.id}:`, error.message);
-        }
-    }
-
-    if (newLocationId) {
-        try {
-            const locationCandidate = Location.get(newLocationId);
-            if (locationCandidate && typeof locationCandidate.addThingId === 'function') {
-                locationCandidate.addThingId(thing.id);
-            }
-        } catch (error) {
-            console.warn(`Failed to attach ${thing.id} to location ${newLocationId}:`, error.message);
-        }
-    }
-
-    thing.thingType = normalizedType;
-    thing.name = updatedName;
-    thing.description = updatedItem.description || thing.description;
-    thing.itemTypeDetail = updatedItem.type || null;
-    thing.rarity = rarity;
-    thing.slot = slotValue;
-    thing.attributeBonuses = normalizedType === 'item' ? scaledAttributeBonuses : [];
-    if (updatedItem.count !== undefined) {
-        thing.count = updatedItem.count;
-    }
-    thing.level = computedLevel;
-    thing.relativeLevel = Number.isFinite(relativeLevel) ? relativeLevel : null;
-    thing.metadata = sanitizedMetadata;
-    if (typeof thing.setCauseStatusEffects !== 'function') {
-        throw new Error('Thing alteration requires setCauseStatusEffects support.');
-    }
-    thing.setCauseStatusEffects({
-        target: normalizedType === 'item' ? effectiveTargetStatusEffect : null,
-        equipper: normalizedType === 'item' ? effectiveEquipperStatusEffect : null
-    });
-    if (resolvedShortDescription) {
-        thing.shortDescription = resolvedShortDescription;
-    }
-
     const updatedExtensionFieldInputs = getThingExtensionFieldInputsFromSource(
         updatedItem,
         getThingXmlParserFields(),
         `altered thing "${updatedName || originalName || 'unknown'}"`
     );
-    for (const [fieldName, value] of Object.entries(updatedExtensionFieldInputs)) {
-        if (typeof thing.setExtensionField !== 'function') {
-            throw new Error(`Thing alteration cannot set registered field "${fieldName}" because Thing.setExtensionField is unavailable.`);
-        }
-        thing.setExtensionField(fieldName, value);
-    }
+    const replacementCandidateData = {
+        ...originalState,
+        name: updatedName,
+        description: updatedItem.description || thing.description,
+        shortDescription: resolvedShortDescription || originalState.shortDescription || null,
+        thingType: normalizedType,
+        rarity,
+        itemTypeDetail: updatedItem.type || null,
+        slot: normalizedType === 'item' ? slotValue : null,
+        attributeBonuses: normalizedType === 'item' ? scaledAttributeBonuses : [],
+        unscaledAttributeBonuses: normalizedType === 'item' ? rawAttributeBonuses : [],
+        causeStatusEffects: [],
+        causeStatusEffect: null,
+        causeStatusEffectOnTarget: normalizedType === 'item' ? effectiveTargetStatusEffect : null,
+        causeStatusEffectOnEquipper: normalizedType === 'item' ? effectiveEquipperStatusEffect : null,
+        count: updatedItem.count !== undefined ? updatedItem.count : originalState.count,
+        level: computedLevel,
+        relativeLevel: Number.isFinite(relativeLevel) ? relativeLevel : null,
+        imageId: thing.imageId ? null : originalState.imageId,
+        metadata: sanitizedMetadata,
+        ...updatedBooleanFlags,
+        ...updatedExtensionFieldInputs
+    };
+    const preparedReplacement = thingMutationService.prepareReplacement(
+        thing,
+        replacementCandidateData,
+        {},
+        { preservePlacement: false }
+    );
 
-    if (normalizedType === 'scenery') {
-        thing.slot = null;
-        thing.attributeBonuses = [];
-        thing.setCauseStatusEffects();
-    }
+    await ensureUniqueThingNames({
+        things: [preparedReplacement.candidate],
+        location: sanitizedMetadata.locationId ? Location.get(sanitizedMetadata.locationId) || null : resolvedLocation,
+        owner: resolvedOwner || null
+    });
 
-    if (thing.imageId) {
-        thing.imageId = null;
-    }
-
-    if (ensureUniqueThingNames) {
-        try {
-            await ensureUniqueThingNames({
-                things: [thing],
-                location: sanitizedMetadata.locationId ? Location.get(sanitizedMetadata.locationId) || null : resolvedLocation,
-                owner: resolvedOwner || null
+    const newLocationId = sanitizedMetadata.locationId || null;
+    const placementRollbackActions = [];
+    try {
+        if (previousOwner && previousOwner !== finalOwner) {
+            if (typeof previousOwner.removeInventoryItem !== 'function' || typeof previousOwner.addInventoryItem !== 'function') {
+                throw new Error(`Owner ${previousOwner.name || previousOwner.id} does not support reversible inventory placement.`);
+            }
+            const equippedSlot = typeof previousOwner.getEquippedSlotForThing === 'function'
+                ? previousOwner.getEquippedSlotForThing(thing)
+                : null;
+            const removed = previousOwner.removeInventoryItem(thing);
+            if (removed !== true) {
+                throw new Error(`Failed to remove ${originalName} from ${previousOwner.name || previousOwner.id}.`);
+            }
+            placementRollbackActions.push(() => {
+                previousOwner.addInventoryItem(thing, { suppressNpcEquip: true, mergeStacks: false });
+                if (equippedSlot && typeof previousOwner.equipItemInSlot === 'function') {
+                    const equipped = previousOwner.equipItemInSlot(thing, equippedSlot, { suppressTimestamp: true });
+                    if (equipped !== true) {
+                        throw new Error(`Failed to restore equipment slot ${equippedSlot}.`);
+                    }
+                }
             });
-        } catch (error) {
-            console.warn('Failed to enforce unique thing names after alteration:', error.message);
         }
+
+        if (previousLocation && previousLocation.id !== newLocationId) {
+            if (typeof previousLocation.removeThingId !== 'function' || typeof previousLocation.addThingId !== 'function') {
+                throw new Error(`Location ${previousLocation.id} does not support reversible Thing placement.`);
+            }
+            const removed = previousLocation.removeThingId(thing.id);
+            if (removed !== true) {
+                throw new Error(`Failed to detach ${thing.id} from location ${previousLocation.id}.`);
+            }
+            placementRollbackActions.push(() => previousLocation.addThingId(thing.id, { mergeStacks: false }));
+        }
+
+        if (finalOwner && sanitizedMetadata.ownerId === finalOwner.id && finalOwner !== previousOwner) {
+            if (typeof finalOwner.addInventoryItem !== 'function' || typeof finalOwner.removeInventoryItem !== 'function') {
+                throw new Error(`Owner ${finalOwner.name || finalOwner.id} does not support reversible inventory placement.`);
+            }
+            const added = finalOwner.addInventoryItem(thing, { suppressNpcEquip: true, mergeStacks: false });
+            if (added !== true) {
+                throw new Error(`Failed to add ${thing.name} to ${finalOwner.name || finalOwner.id}.`);
+            }
+            placementRollbackActions.push(() => finalOwner.removeInventoryItem(thing, { suppressNpcEquip: true }));
+        }
+
+        if (newLocationId && (!previousLocation || previousLocation.id !== newLocationId)) {
+            const locationCandidate = Location.get(newLocationId);
+            if (!locationCandidate || typeof locationCandidate.addThingId !== 'function' || typeof locationCandidate.removeThingId !== 'function') {
+                throw new Error(`Location ${newLocationId} does not support reversible Thing placement.`);
+            }
+            const added = locationCandidate.addThingId(thing.id, { mergeStacks: false });
+            if (added !== true) {
+                throw new Error(`Failed to attach ${thing.id} to location ${newLocationId}.`);
+            }
+            placementRollbackActions.push(() => locationCandidate.removeThingId(thing.id));
+        }
+    } catch (placementError) {
+        const rollbackErrors = [];
+        for (const rollback of placementRollbackActions.reverse()) {
+            try {
+                rollback();
+            } catch (rollbackError) {
+                rollbackErrors.push(rollbackError?.message || String(rollbackError));
+            }
+        }
+        if (rollbackErrors.length) {
+            placementError.message = `${placementError.message} Placement rollback also failed: ${rollbackErrors.join('; ')}`;
+        }
+        throw placementError;
+    }
+
+    let alterationCommit;
+    try {
+        alterationCommit = thingMutationService.commitReplacement(thing, preparedReplacement);
+    } catch (commitError) {
+        const rollbackErrors = [];
+        for (const rollback of placementRollbackActions.reverse()) {
+            try {
+                rollback();
+            } catch (rollbackError) {
+                rollbackErrors.push(rollbackError?.message || String(rollbackError));
+            }
+        }
+        if (rollbackErrors.length) {
+            commitError.message = `${commitError.message} Placement rollback also failed: ${rollbackErrors.join('; ')}`;
+        }
+        throw commitError;
     }
 
     LLMClient.logPrompt({
@@ -17074,6 +17324,10 @@ async function alterThingByPrompt({
             {
                 title: 'Updated Item',
                 content: JSON.stringify(thing.toJSON(), null, 2)
+            },
+            {
+                title: 'Mutation Receipt',
+                content: JSON.stringify(alterationCommit.receipt, null, 2)
             }
         ]
     });
@@ -17082,7 +17336,8 @@ async function alterThingByPrompt({
         originalName,
         newName: thing.name,
         changeDescription: changeDescription || '',
-        thing: thing
+        thing: thing,
+        mutationReceipt: alterationCommit.receipt
     };
 }
 
@@ -23420,7 +23675,9 @@ function getThingExtensionXmlFieldsForPrompt(thing) {
             return {
                 fieldName: field.fieldName,
                 tagName: field.xmlPrompt.tagName,
-                value: typeof normalizedValue === 'string'
+                collection: field.xmlPrompt.collection || null,
+                value: normalizedValue,
+                renderedValue: typeof normalizedValue === 'string'
                     ? normalizedValue
                     : JSON.stringify(normalizedValue)
             };
@@ -24617,7 +24874,7 @@ async function parseThingsXml(xmlContent, {
                 .filter(field => field && field.xmlPrompt && typeof field.xmlPrompt.tagName === 'string');
         };
 
-        const parseRegisteredThingXmlFieldValue = (rawValue, field, itemName) => {
+        const parseRegisteredThingXmlScalarValue = (rawValue, field, itemName, tagName = field.xmlPrompt.tagName) => {
             if (rawValue === undefined || rawValue === null) {
                 return undefined;
             }
@@ -24632,14 +24889,14 @@ async function parseThingsXml(xmlContent, {
                 case 'number': {
                     const numeric = Number(trimmed);
                     if (!Number.isFinite(numeric)) {
-                        throw new Error(`Thing "${itemName}" registered XML field <${field.xmlPrompt.tagName}> must be a finite number.`);
+                        throw new Error(`Thing "${itemName}" registered XML field <${tagName}> must be a finite number.`);
                     }
                     return numeric;
                 }
                 case 'integer': {
                     const numeric = Number(trimmed);
                     if (!Number.isInteger(numeric)) {
-                        throw new Error(`Thing "${itemName}" registered XML field <${field.xmlPrompt.tagName}> must be an integer.`);
+                        throw new Error(`Thing "${itemName}" registered XML field <${tagName}> must be an integer.`);
                     }
                     return numeric;
                 }
@@ -24647,7 +24904,7 @@ async function parseThingsXml(xmlContent, {
                     const normalized = trimmed.toLowerCase();
                     if (['true', '1', 'yes', 'y', 'on'].includes(normalized)) return true;
                     if (['false', '0', 'no', 'n', 'off'].includes(normalized)) return false;
-                    throw new Error(`Thing "${itemName}" registered XML field <${field.xmlPrompt.tagName}> must be true or false.`);
+                    throw new Error(`Thing "${itemName}" registered XML field <${tagName}> must be true or false.`);
                 }
                 case 'array': {
                     let parsed;
@@ -24655,11 +24912,11 @@ async function parseThingsXml(xmlContent, {
                         parsed = JSON.parse(trimmed);
                     } catch (error) {
                         throw new Error(
-                            `Thing "${itemName}" registered XML field <${field.xmlPrompt.tagName}> must be a valid JSON array: ${error.message}`
+                            `Thing "${itemName}" registered XML field <${tagName}> must be a valid JSON array: ${error.message}`
                         );
                     }
                     if (!Array.isArray(parsed)) {
-                        throw new Error(`Thing "${itemName}" registered XML field <${field.xmlPrompt.tagName}> must be a JSON array.`);
+                        throw new Error(`Thing "${itemName}" registered XML field <${tagName}> must be a JSON array.`);
                     }
                     return parsed;
                 }
@@ -24669,17 +24926,86 @@ async function parseThingsXml(xmlContent, {
                         parsed = JSON.parse(trimmed);
                     } catch (error) {
                         throw new Error(
-                            `Thing "${itemName}" registered XML field <${field.xmlPrompt.tagName}> must be a valid JSON object: ${error.message}`
+                            `Thing "${itemName}" registered XML field <${tagName}> must be a valid JSON object: ${error.message}`
                         );
                     }
                     if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
-                        throw new Error(`Thing "${itemName}" registered XML field <${field.xmlPrompt.tagName}> must be a JSON object.`);
+                        throw new Error(`Thing "${itemName}" registered XML field <${tagName}> must be a JSON object.`);
                     }
                     return parsed;
                 }
                 default:
                     throw new Error(`Thing "${itemName}" registered XML field <${field.xmlPrompt.tagName}> has unsupported type "${field.type}".`);
             }
+        };
+
+        const parseRegisteredThingXmlFieldValue = (fieldNode, field, itemName) => {
+            const collection = field?.xmlPrompt?.collection || null;
+            if (!collection) {
+                return parseRegisteredThingXmlScalarValue(fieldNode?.textContent, field, itemName);
+            }
+            if (field.type !== 'array') {
+                throw new Error(`Thing registered XML field <${field.xmlPrompt.tagName}> declares a collection but is not an array field.`);
+            }
+            const elementChildren = Array.from(fieldNode?.childNodes || [])
+                .filter(child => child && child.nodeType === 1);
+            if (!elementChildren.length) {
+                if (String(fieldNode?.textContent || '').trim()) {
+                    throw new Error(
+                        `Thing "${itemName}" registered XML field <${field.xmlPrompt.tagName}> must contain `
+                        + `<${collection.itemTagName}> child elements.`
+                    );
+                }
+                return [];
+            }
+            const unexpectedChild = elementChildren.find(child => (
+                (child.tagName || child.nodeName || child.localName || '') !== collection.itemTagName
+            ));
+            if (unexpectedChild) {
+                const childName = unexpectedChild.tagName || unexpectedChild.nodeName || unexpectedChild.localName || 'unknown';
+                throw new Error(
+                    `Thing "${itemName}" registered XML field <${field.xmlPrompt.tagName}> has unexpected `
+                    + `<${childName}> child; expected only <${collection.itemTagName}>.`
+                );
+            }
+            const allowedChildTags = new Set(collection.fields.map(child => child.tagName));
+            return elementChildren.map((entryNode, index) => {
+                const entryElements = Array.from(entryNode.childNodes || [])
+                    .filter(child => child && child.nodeType === 1);
+                const unexpectedEntryChild = entryElements.find(child => (
+                    !allowedChildTags.has(child.tagName || child.nodeName || child.localName || '')
+                ));
+                if (unexpectedEntryChild) {
+                    const childName = unexpectedEntryChild.tagName || unexpectedEntryChild.nodeName || unexpectedEntryChild.localName || 'unknown';
+                    throw new Error(
+                        `Thing "${itemName}" <${field.xmlPrompt.tagName}> entry ${index + 1} has unexpected <${childName}> child.`
+                    );
+                }
+                const entry = {};
+                for (const child of collection.fields) {
+                    const valueNode = getDirectChildElement(entryNode, child.tagName);
+                    const rawValue = valueNode?.textContent;
+                    if ((!valueNode || !String(rawValue || '').trim()) && child.required) {
+                        throw new Error(
+                            `Thing "${itemName}" <${field.xmlPrompt.tagName}> entry ${index + 1} requires `
+                            + `a non-empty <${child.tagName}>.`
+                        );
+                    }
+                    if (!valueNode || !String(rawValue || '').trim()) {
+                        continue;
+                    }
+                    const parsedValue = parseRegisteredThingXmlScalarValue(
+                        rawValue,
+                        { ...child, xmlPrompt: { tagName: child.tagName } },
+                        itemName,
+                        child.tagName
+                    );
+                    if (parsedValue !== undefined) {
+                        entry[child.fieldName] = parsedValue;
+                    }
+                }
+                return entry;
+            });
         };
 
         const registeredThingXmlParserFields = getRegisteredThingXmlParserFields();
@@ -24996,7 +25322,7 @@ async function parseThingsXml(xmlContent, {
                     continue;
                 }
                 const parsedValue = parseRegisteredThingXmlFieldValue(
-                    fieldNode.textContent,
+                    fieldNode,
                     field,
                     entryName || 'unknown'
                 );
@@ -25314,11 +25640,15 @@ async function generateLocationThingsForLocation({ location } = {}) {
             if (!generatedItems.length) {
                 throw new Error('Location things generation response contained no item or scenery entries.');
             }
-            return validateGeneratedLocationThingBatch(generatedItems, {
+            const validatedItems = validateGeneratedLocationThingBatch(generatedItems, {
                 itemCount,
                 sceneryCount,
                 rarityList
             });
+            validateParsedThingCandidateBatch(validatedItems, {
+                label: `location Things for "${location.name || location.id}"`
+            });
+            return validatedItems;
         },
         buildRetryInstruction: error => (
             'The preceding location item/scenery XML failed structured validation: '
@@ -25340,6 +25670,7 @@ async function generateLocationThingsForLocation({ location } = {}) {
     const parsedItems = locationThingsResult.value;
 
     const createdThings = [];
+    const preparedThingEntries = [];
     for (const itemData of parsedItems) {
         if (!itemData?.name) {
             continue;
@@ -25410,7 +25741,7 @@ async function generateLocationThingsForLocation({ location } = {}) {
 
         const cleanedMetadata = sanitizeMetadataObject(metadata);
 
-        const thing = new Thing({
+        const preparedThing = thingMutationService.prepareCreate({
             name: itemData.name,
             description: itemData.description,
             shortDescription: itemData.shortDescription ?? null,
@@ -25429,14 +25760,17 @@ async function generateLocationThingsForLocation({ location } = {}) {
             ...extensionFieldInputs,
             ...booleanFlags
         });
+        preparedThingEntries.push(preparedThing);
+    }
 
-        things.set(thing.id, thing);
-        location.addThingId(thing.id);
-
+    const committedThingEntries = thingMutationService.commitCreateBatch(preparedThingEntries, {
+        runtimeRegistry: things
+    });
+    for (const { thing } of committedThingEntries) {
+        location.addThingId(thing.id, { mergeStacks: false });
         if (shouldGenerateThingImage(thing) && (!thing.imageId || !hasExistingImage(thing.imageId))) {
             thing.imageId = null;
         }
-
         createdThings.push(thing);
     }
 

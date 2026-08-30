@@ -4,6 +4,7 @@ const { randomUUID } = require('crypto');
 const contentDisposition = require('content-disposition');
 const Player = require('./Player.js');
 const Thing = require('./Thing.js');
+const ThingMutationService = require('./ThingMutationService.js');
 const { getCurrencyLabel } = require('./public/js/currency-utils.js');
 const Utils = require('./Utils.js');
 const { XMLSerializer } = require('@xmldom/xmldom');
@@ -3531,6 +3532,11 @@ module.exports = function registerApiRoutes(scope) {
             }
             return generated;
         };
+
+        const thingMutationService = new ThingMutationService({
+            ThingClass: Thing,
+            getModExtensionRegistry: () => modExtensionRegistry || Globals.modExtensionRegistry || null
+        });
 
         const { collectHistoryMatches, runChatCompletionWithToolLoop, executeChatToolCall } = createChatToolRuntime({
             getConfig: () => config,
@@ -29718,10 +29724,23 @@ module.exports = function registerApiRoutes(scope) {
             } catch (error) {
                 console.error('Chat API error:', error);
 
-                stream.error({ message: error.message || 'Chat processing failed.' });
-                stream.complete({ aborted: true, error: error.message || 'Chat processing failed.' });
+                const committedMutationReceipts = Array.isArray(error.committedMutationReceipts)
+                    ? error.committedMutationReceipts.map(receipt => JSON.parse(JSON.stringify(receipt)))
+                    : [];
+                stream.error({
+                    message: error.message || 'Chat processing failed.',
+                    ...(committedMutationReceipts.length ? { committedMutationReceipts } : {})
+                });
+                stream.complete({
+                    aborted: true,
+                    error: error.message || 'Chat processing failed.',
+                    ...(committedMutationReceipts.length ? { committedMutationReceipts } : {})
+                });
 
                 const withMeta = (payload) => {
+                    if (committedMutationReceipts.length) {
+                        payload.committedMutationReceipts = committedMutationReceipts;
+                    }
                     if (stream.requestId) {
                         payload.requestId = stream.requestId;
                         payload.streamMeta = {
@@ -51620,6 +51639,7 @@ module.exports = function registerApiRoutes(scope) {
                 npcGenerationPromises,
                 pendingRegionStubs
             });
+            thingMutationService.audit(things);
             backfillTraveledToLocationIdsOnLoad(chatHistory);
 
             let metadata = hydrationResult.metadata || {};

@@ -202,7 +202,9 @@ test('alterThingByPrompt treats parsed target/equipper effect scopes as authorit
     assert.match(functionSource, /causeStatusEffectOnTarget:\s*effectiveTargetStatusEffect/);
     assert.match(functionSource, /causeStatusEffectOnEquipper:\s*effectiveEquipperStatusEffect/);
     assert.match(functionSource, /await enrichAlteredThingStatusEffects\(\{/);
-    assert.match(functionSource, /thing\.setCauseStatusEffects\(\{\s*target:\s*normalizedType === 'item' \? effectiveTargetStatusEffect : null,\s*equipper:\s*normalizedType === 'item' \? effectiveEquipperStatusEffect : null\s*\}\);/);
+    assert.match(functionSource, /causeStatusEffectOnTarget:\s*normalizedType === 'item' \? effectiveTargetStatusEffect : null/);
+    assert.match(functionSource, /causeStatusEffectOnEquipper:\s*normalizedType === 'item' \? effectiveEquipperStatusEffect : null/);
+    assert.match(functionSource, /thingMutationService\.commitReplacement\(thing, preparedReplacement\)/);
     assert.match(source, /StatusEffect\.generateFromDescriptions\(seeds,/);
     assert.doesNotMatch(functionSource, /thing\.causeStatusEffect\s*=\s*normalizedType === 'item'/);
     assert.doesNotMatch(functionSource, /previousTargetEffect/);

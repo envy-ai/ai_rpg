@@ -12,6 +12,12 @@ test('createThing tool schema exposes isContainer as an allowed seed field', () 
     const createThing = findCreateThingToolDefinition();
     assert.ok(createThing, 'createThing tool definition should exist');
     assert.equal(createThing.parameters.properties.isContainer.type, 'boolean');
+    assert.equal(createThing.parameters.properties.count.type, 'integer');
+    assert.equal(createThing.parameters.properties.containerContents.type, 'array');
+    assert.equal(
+        createThing.parameters.properties.causeStatusEffectOnTarget.properties.needBars.type,
+        'array'
+    );
 });
 
 test('createThing tool schema exposes registered Thing fields at request time', () => {
@@ -34,7 +40,7 @@ test('createThing tool schema exposes registered Thing fields at request time', 
     assert.match(createThing.parameters.properties.implantSlot.description, /Implant grouping slot/);
 });
 
-test('createThing tool forwards isContainer into the thing generation seed', async () => {
+test('createThing tool forwards core and structured item fields into the thing generation seed', async () => {
     const location = { id: 'loc-1', name: 'Study' };
     const region = { id: 'region-1', name: 'Manor' };
     let capturedGenerateArgs = null;
@@ -58,7 +64,19 @@ test('createThing tool forwards isContainer into the thing generation seed', asy
                                             shortDescription: 'locked oak chest',
                                             itemOrScenery: 'scenery',
                                             name: 'Locked Oak Chest',
-                                            isContainer: true
+                                            count: 2,
+                                            isContainer: true,
+                                            containerContents: [{ name: 'Brass Key', count: 1 }],
+                                            attributeBonuses: [{ attribute: 'luck', bonus: 2 }],
+                                            causeStatusEffectOnTarget: {
+                                                name: 'Marked',
+                                                description: 'The target glows.',
+                                                duration: '5 minutes',
+                                                attributes: [{ name: 'dexterity', modifier: -1 }],
+                                                skills: [{ name: 'Stealth', modifier: -2 }],
+                                                needBars: [{ name: 'energy', delta: -5 }]
+                                            },
+                                            properties: 'The lock remembers failed keys.'
                                         })
                                     }
                                 }]
@@ -121,7 +139,20 @@ test('createThing tool forwards isContainer into the thing generation seed', asy
     });
 
     assert.equal(result.rounds, 2);
+    assert.equal(capturedGenerateArgs.seeds[0].shortDescription, 'locked oak chest');
+    assert.equal(capturedGenerateArgs.seeds[0].count, 2);
     assert.equal(capturedGenerateArgs.seeds[0].isContainer, true);
+    assert.deepEqual(capturedGenerateArgs.seeds[0].containerContents, [{ name: 'Brass Key', count: 1 }]);
+    assert.deepEqual(capturedGenerateArgs.seeds[0].attributeBonuses, [{ attribute: 'luck', bonus: 2 }]);
+    assert.deepEqual(capturedGenerateArgs.seeds[0].causeStatusEffectOnTarget, {
+        name: 'Marked',
+        description: 'The target glows.',
+        duration: '5 minutes',
+        attributes: [{ name: 'dexterity', modifier: -1 }],
+        skills: [{ name: 'Stealth', modifier: -2 }],
+        needBars: [{ name: 'energy', delta: -5 }]
+    });
+    assert.equal(capturedGenerateArgs.seeds[0].properties, 'The lock remembers failed keys.');
     assert.equal(capturedGenerateArgs.options.treatAsScenery, true);
 });
 
@@ -210,6 +241,8 @@ test('createThing tool forwards and preserves registered Thing fields', async ()
         createRegionStubFromEvent: async () => region,
         generateItemsByNames: async (args) => {
             capturedGenerateArgs = args;
+            createdThing.slot = args.seeds[0].slot;
+            createdThing.setExtensionField('implantSlot', args.seeds[0].implantSlot);
             return [createdThing];
         },
         ensureExitConnection: async () => ({}),
@@ -329,3 +362,213 @@ test('createThing tool queues requested names for named thing seeds', async () =
     assert.deepEqual(capturedGenerateArgs.itemNames, ['Velkathra Signal Board']);
     assert.equal(capturedGenerateArgs.seeds[0].name, 'Velkathra Signal Board');
 });
+
+test('createThing reuses a committed result when the same tool-call id is replayed', async () => {
+    const location = { id: 'loc-1', name: 'Study' };
+    const region = { id: 'region-1', name: 'Manor' };
+    const args = {
+        shortDescription: 'a brass astrolabe',
+        itemOrScenery: 'item',
+        name: 'Brass Astrolabe'
+    };
+    const responses = [
+        toolResponseForCreate(args, 'same-create-call'),
+        toolResponseForCreate(args, 'same-create-call'),
+        {
+            data: {
+                choices: [{ message: { content: 'Created once.', tool_calls: [] } }]
+            }
+        }
+    ];
+    let generationCalls = 0;
+    const LLMClient = {
+        async chatCompletion(options) {
+            const response = responses.shift();
+            options.onResponse?.(response);
+            return response.data.choices[0].message.content || '';
+        },
+        logPrompt() {},
+        formatMessagesForErrorLog(messages) { return JSON.stringify(messages); }
+    };
+    const runtime = createChatToolRuntime({
+        getConfig: () => ({ ai: { max_tool_rounds: 3 } }),
+        getChatHistory: () => [],
+        isAssistantProseLikeEntry: () => true,
+        serializeNpcForClient: value => value,
+        buildLocationResponse: value => value,
+        getCurrentPlayer: () => ({ id: 'player-1', name: 'Player', currentLocation: location.id }),
+        createLocationFromEvent: async () => location,
+        createRegionStubFromEvent: async () => region,
+        generateItemsByNames: async () => {
+            generationCalls += 1;
+            return [{ id: 'thing-1', name: 'Brass Astrolabe', thingType: 'item' }];
+        },
+        ensureExitConnection: async () => ({}),
+        findRegionByLocationId: () => region,
+        LLMClient,
+        Player: { getAll: () => [] },
+        Thing: { getAll: () => [] },
+        Location: { get: () => location, getAll: () => [location] },
+        Region: { getAll: () => [region] },
+        getGameLocations: () => new Map([[location.id, location]]),
+        getFactions: () => new Map(),
+        getRegionsMap: () => new Map([[region.id, region]]),
+        getPendingRegionStubs: () => new Map()
+    });
+
+    const result = await runtime.runChatCompletionWithToolLoop({
+        requestOptions: { messages: [{ role: 'user', content: 'Create it once.' }] },
+        metadataLabel: 'test_create_thing_idempotency'
+    });
+
+    assert.equal(generationCalls, 1);
+    assert.equal(result.toolInvocations.length, 2);
+    assert.equal(result.toolInvocations[0].metadata.cached, false);
+    assert.equal(result.toolInvocations[1].metadata.cached, true);
+    assert.equal(result.toolInvocations[0].metadata.mutationReceipt.committed, true);
+    const replayMessage = result.conversationMessages.find(message => (
+        message?.role === 'tool'
+        && message?.tool_call_id === 'same-create-call'
+        && /already committed/.test(message?.content || '')
+    ));
+    assert.ok(replayMessage);
+});
+
+test('createThing treats different tool-call ids as distinct mutations even with identical arguments', async () => {
+    const location = { id: 'loc-1', name: 'Study' };
+    const region = { id: 'region-1', name: 'Manor' };
+    const args = {
+        shortDescription: 'a brass astrolabe',
+        itemOrScenery: 'item',
+        name: 'Brass Astrolabe'
+    };
+    const responses = [
+        toolResponseForCreate(args, 'first-create-call'),
+        toolResponseForCreate(args, 'second-create-call'),
+        {
+            data: {
+                choices: [{ message: { content: 'Created twice.', tool_calls: [] } }]
+            }
+        }
+    ];
+    let generationCalls = 0;
+    const LLMClient = {
+        async chatCompletion(options) {
+            const response = responses.shift();
+            options.onResponse?.(response);
+            return response.data.choices[0].message.content || '';
+        },
+        logPrompt() {},
+        formatMessagesForErrorLog(messages) { return JSON.stringify(messages); }
+    };
+    const runtime = createChatToolRuntime({
+        getConfig: () => ({ ai: { max_tool_rounds: 3 } }),
+        getChatHistory: () => [],
+        isAssistantProseLikeEntry: () => true,
+        serializeNpcForClient: value => value,
+        buildLocationResponse: value => value,
+        getCurrentPlayer: () => ({ id: 'player-1', name: 'Player', currentLocation: location.id }),
+        createLocationFromEvent: async () => location,
+        createRegionStubFromEvent: async () => region,
+        generateItemsByNames: async () => {
+            generationCalls += 1;
+            return [{ id: `thing-${generationCalls}`, name: 'Brass Astrolabe', thingType: 'item' }];
+        },
+        ensureExitConnection: async () => ({}),
+        findRegionByLocationId: () => region,
+        LLMClient,
+        Player: { getAll: () => [] },
+        Thing: { getAll: () => [] },
+        Location: { get: () => location, getAll: () => [location] },
+        Region: { getAll: () => [region] },
+        getGameLocations: () => new Map([[location.id, location]]),
+        getFactions: () => new Map(),
+        getRegionsMap: () => new Map([[region.id, region]]),
+        getPendingRegionStubs: () => new Map()
+    });
+
+    const result = await runtime.runChatCompletionWithToolLoop({
+        requestOptions: { messages: [{ role: 'user', content: 'Create two.' }] },
+        metadataLabel: 'test_create_thing_distinct_ids'
+    });
+
+    assert.equal(generationCalls, 2);
+    assert.equal(result.toolInvocations.length, 2);
+    assert.equal(result.toolInvocations[0].metadata.cached, false);
+    assert.equal(result.toolInvocations[1].metadata.cached, false);
+});
+
+test('tool-loop failure reports mutations that committed before the outer prompt failed', async () => {
+    const location = { id: 'loc-1', name: 'Study' };
+    const region = { id: 'region-1', name: 'Manor' };
+    let completionCalls = 0;
+    const LLMClient = {
+        async chatCompletion(options) {
+            completionCalls += 1;
+            if (completionCalls === 1) {
+                const response = toolResponseForCreate({
+                    shortDescription: 'a brass astrolabe',
+                    itemOrScenery: 'item',
+                    name: 'Brass Astrolabe'
+                }, 'committed-before-failure');
+                options.onResponse?.(response);
+                return '';
+            }
+            throw new Error('outer completion failed');
+        },
+        logPrompt() {},
+        formatMessagesForErrorLog(messages) { return JSON.stringify(messages); }
+    };
+    const runtime = createChatToolRuntime({
+        getConfig: () => ({ ai: { max_tool_rounds: 3 } }),
+        getChatHistory: () => [],
+        isAssistantProseLikeEntry: () => true,
+        serializeNpcForClient: value => value,
+        buildLocationResponse: value => value,
+        getCurrentPlayer: () => ({ id: 'player-1', name: 'Player', currentLocation: location.id }),
+        createLocationFromEvent: async () => location,
+        createRegionStubFromEvent: async () => region,
+        generateItemsByNames: async () => [{ id: 'thing-1', name: 'Brass Astrolabe', thingType: 'item' }],
+        ensureExitConnection: async () => ({}),
+        findRegionByLocationId: () => region,
+        LLMClient,
+        Player: { getAll: () => [] },
+        Thing: { getAll: () => [] },
+        Location: { get: () => location, getAll: () => [location] },
+        Region: { getAll: () => [region] },
+        getGameLocations: () => new Map([[location.id, location]]),
+        getFactions: () => new Map(),
+        getRegionsMap: () => new Map([[region.id, region]]),
+        getPendingRegionStubs: () => new Map()
+    });
+
+    await assert.rejects(
+        runtime.runChatCompletionWithToolLoop({
+            requestOptions: { messages: [{ role: 'user', content: 'Create, then fail.' }] },
+            metadataLabel: 'test_partial_completion_receipts'
+        }),
+        error => {
+            assert.match(error.message, /Committed mutations before failure:/);
+            assert.equal(error.committedMutationReceipts.length, 1);
+            assert.equal(error.committedMutationReceipts[0].toolName, 'createThing');
+            return true;
+        }
+    );
+});
+
+function toolResponseForCreate(args, id) {
+    return {
+        data: {
+            choices: [{
+                message: {
+                    content: '',
+                    tool_calls: [{
+                        id,
+                        type: 'function',
+                        function: { name: 'createThing', arguments: JSON.stringify(args) }
+                    }]
+                }
+            }]
+        }
+    };
+}

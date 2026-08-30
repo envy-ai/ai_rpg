@@ -18,6 +18,8 @@ const { normalizeWeatherExposure } = require('./location_region_utils.js');
 const { applyRegexReplace } = require('./regex_replace_runtime.js');
 const Quest = require('./Quest.js');
 const { questRewardBenefitRegistry } = require('./QuestRewardBenefitRegistry.js');
+const ThingMutationService = require('./ThingMutationService.js');
+const ThingFieldRegistry = require('./ThingFieldRegistry.js');
 
 const MORE_INFO_MAX_MATCHES = 50;
 const CACHED_CHECK_TOOL_CALL_NOTE = 'You already made this tool call. Do not re-run tool calls for the same checks that you made in earlier drafts.';
@@ -28,6 +30,7 @@ const CHAT_TOOLS_THAT_MAY_LAUNCH_PROMPTS = new Set([
     'alterLocation',
     'alterNpc',
     'alterThing',
+    'recreateThing',
     'createNpc',
     'createQuest',
     'createThing',
@@ -36,6 +39,38 @@ const CHAT_TOOLS_THAT_MAY_LAUNCH_PROMPTS = new Set([
     'updateCharacterFields',
     'updateObjectFields',
     'upsertFactionFields'
+]);
+const MUTATING_CHAT_TOOL_NAMES = new Set([
+    'editChatLogEntry',
+    'regexReplace',
+    'rerunSceneSummary',
+    'editSceneSummary',
+    'teleportCharacterToLocation',
+    'teleportThingToLocation',
+    'moveThingFromLocationToCharacterInventory',
+    'createRegionStub',
+    'createLocationStub',
+    'createExit',
+    'revealEntity',
+    'hideEntity',
+    'createThing',
+    'createNpc',
+    'deleteThing',
+    'setRelationship',
+    'addTracker',
+    'updateTracker',
+    'removeTracker',
+    'createQuest',
+    'scheduleEvent',
+    'alterThing',
+    'recreateThing',
+    'alterNpc',
+    'updateCharacterFields',
+    'bulkUpdateCharacterFields',
+    'updateObjectFields',
+    'upsertFactionFields',
+    'updatePartyMembers',
+    'alterLocation'
 ]);
 
 function chatToolMayLaunchPrompts(name) {
@@ -165,31 +200,14 @@ const SHORT_DESCRIPTION_OBJECT_TYPES = new Set([
 const UPSERT_FACTION_OPERATION_VALUES = Object.freeze(['create', 'update']);
 const UPSERT_FACTION_DEFAULT_RELATION_STATUS = 'neutral';
 const UPSERT_FACTION_DEFAULT_RELATION_NOTES = 'No explicit relationship provided.';
+const BUILTIN_THING_UPDATE_FIELD_NAMES = Object.freeze(
+    ThingFieldRegistry.BUILTIN_FIELDS
+        .filter(field => field.exposeToUpdateTool === true)
+        .map(field => field.fieldName)
+);
 const ADMIN_UPDATE_OBJECT_FIELD_NAMES_BY_TYPE = Object.freeze({
     character: ADMIN_UPDATE_CHARACTER_FIELD_NAMES,
-    thing: Object.freeze([
-        'name',
-        'description',
-        'shortDescription',
-        'thingType',
-        'rarity',
-        'itemTypeDetail',
-        'slot',
-        'count',
-        'level',
-        'relativeLevel',
-        'value',
-        'isVehicle',
-        'isCraftingStation',
-        'isProcessingStation',
-        'isHarvestable',
-        'isSalvageable',
-        'isContainer',
-        'requiresCheckToOpen',
-        'attributeBonuses',
-        'unscaledAttributeBonuses',
-        'statusEffects'
-    ]),
+    thing: BUILTIN_THING_UPDATE_FIELD_NAMES,
     location: Object.freeze([
         'name',
         'description',
@@ -1072,6 +1090,11 @@ const CHAT_TOOL_DEFINITIONS = Object.freeze([
                         type: 'integer',
                         description: 'Optional relative level hint.'
                     },
+                    count: {
+                        type: 'integer',
+                        minimum: 0,
+                        description: 'Optional number of identical items in the created stack. Defaults to 1.'
+                    },
                     isVehicle: {
                         type: 'boolean'
                     },
@@ -1095,6 +1118,19 @@ const CHAT_TOOL_DEFINITIONS = Object.freeze([
                         type: 'boolean',
                         description: 'Optional checked-open flag for containers. Set true when the player must describe an opening attempt and pass a skill check before the container inventory is shown.'
                     },
+                    containerContents: {
+                        type: 'array',
+                        description: 'Optional pending contents for a container. Each entry names an item stack that will be generated when the container is opened or inspected.',
+                        items: {
+                            type: 'object',
+                            properties: {
+                                name: { type: 'string' },
+                                count: { type: 'integer', minimum: 0 }
+                            },
+                            required: ['name', 'count'],
+                            additionalProperties: false
+                        }
+                    },
                     attributeBonuses: {
                         type: 'array',
                         items: {
@@ -1112,7 +1148,43 @@ const CHAT_TOOL_DEFINITIONS = Object.freeze([
                         properties: {
                             name: { type: 'string' },
                             description: { type: 'string' },
-                            duration: { type: 'string' }
+                            duration: { type: 'string' },
+                            attributes: {
+                                type: 'array',
+                                items: {
+                                    type: 'object',
+                                    properties: {
+                                        name: { type: 'string' },
+                                        modifier: { type: 'number' }
+                                    },
+                                    required: ['name', 'modifier'],
+                                    additionalProperties: false
+                                }
+                            },
+                            skills: {
+                                type: 'array',
+                                items: {
+                                    type: 'object',
+                                    properties: {
+                                        name: { type: 'string' },
+                                        modifier: { type: 'number' }
+                                    },
+                                    required: ['name', 'modifier'],
+                                    additionalProperties: false
+                                }
+                            },
+                            needBars: {
+                                type: 'array',
+                                items: {
+                                    type: 'object',
+                                    properties: {
+                                        name: { type: 'string' },
+                                        delta: { type: 'number' }
+                                    },
+                                    required: ['name', 'delta'],
+                                    additionalProperties: false
+                                }
+                            }
                         },
                         additionalProperties: false
                     },
@@ -1121,7 +1193,43 @@ const CHAT_TOOL_DEFINITIONS = Object.freeze([
                         properties: {
                             name: { type: 'string' },
                             description: { type: 'string' },
-                            duration: { type: 'string' }
+                            duration: { type: 'string' },
+                            attributes: {
+                                type: 'array',
+                                items: {
+                                    type: 'object',
+                                    properties: {
+                                        name: { type: 'string' },
+                                        modifier: { type: 'number' }
+                                    },
+                                    required: ['name', 'modifier'],
+                                    additionalProperties: false
+                                }
+                            },
+                            skills: {
+                                type: 'array',
+                                items: {
+                                    type: 'object',
+                                    properties: {
+                                        name: { type: 'string' },
+                                        modifier: { type: 'number' }
+                                    },
+                                    required: ['name', 'modifier'],
+                                    additionalProperties: false
+                                }
+                            },
+                            needBars: {
+                                type: 'array',
+                                items: {
+                                    type: 'object',
+                                    properties: {
+                                        name: { type: 'string' },
+                                        delta: { type: 'number' }
+                                    },
+                                    required: ['name', 'delta'],
+                                    additionalProperties: false
+                                }
+                            }
                         },
                         additionalProperties: false
                     },
@@ -1530,6 +1638,28 @@ const CHAT_TOOL_DEFINITIONS = Object.freeze([
                     }
                 },
                 required: ['thing', 'alteration'],
+                additionalProperties: false
+            }
+        }
+    },
+    {
+        type: 'function',
+        function: {
+            name: 'recreateThing',
+            description: 'Atomically regenerate an existing Thing in place. Use this when asked to recreate, rebuild, or comprehensively replace an item or scenery definition. The original stable id and placement are preserved; generation or validation failure leaves it unchanged. Do not follow this tool with createThing or deleteThing for the same target.',
+            parameters: {
+                type: 'object',
+                properties: {
+                    thing: {
+                        type: 'string',
+                        description: 'Exact Thing id or uniquely resolving name.'
+                    },
+                    instructions: {
+                        type: 'string',
+                        description: 'Complete description of how the replacement should be regenerated.'
+                    }
+                },
+                required: ['thing', 'instructions'],
                 additionalProperties: false
             }
         }
@@ -2231,6 +2361,42 @@ const applyRegisteredThingFieldsToToolDefinition = (toolDefinition, {
     return toolDefinition;
 };
 
+const assertCanonicalThingToolSchemaCoverage = (toolDefinition, modExtensionRegistry = null) => {
+    const functionName = toolDefinition?.function?.name;
+    if (functionName === 'createThing') {
+        const properties = toolDefinition.function.parameters?.properties || {};
+        const preferredBoundaryName = new Map([
+            ['thingType', 'itemOrScenery'],
+            ['itemTypeDetail', 'type']
+        ]);
+        const expectedFields = [
+            ...ThingFieldRegistry.BUILTIN_FIELDS.filter(field => field.exposeToCreateTool === true),
+            ...getRegisteredThingFields(modExtensionRegistry, { exposeToCreateTool: true })
+        ];
+        for (const field of expectedFields) {
+            const boundaryName = preferredBoundaryName.get(field.fieldName) || field.fieldName;
+            if (!Object.prototype.hasOwnProperty.call(properties, boundaryName)) {
+                throw new Error(
+                    `createThing schema is missing canonical Thing field "${field.fieldName}" (boundary name "${boundaryName}").`
+                );
+            }
+        }
+    }
+    if (functionName === 'updateObjectFields') {
+        const canonicalNames = new Set(
+            ThingFieldRegistry.BUILTIN_FIELDS
+                .filter(field => field.exposeToUpdateTool === true)
+                .map(field => field.fieldName)
+        );
+        for (const fieldName of ADMIN_UPDATE_OBJECT_FIELD_NAMES_BY_TYPE.thing) {
+            if (!canonicalNames.has(fieldName)) {
+                throw new Error(`updateObjectFields exposes noncanonical Thing field "${fieldName}".`);
+            }
+        }
+    }
+    return toolDefinition;
+};
+
 const applyConfiguredTrackerLimitsToToolDefinition = (toolDefinition) => {
     if (toolDefinition?.function?.name !== 'addTracker') {
         return toolDefinition;
@@ -2278,12 +2444,15 @@ const getChatToolDefinitions = ({
     allowDirectShortDescriptionUpdates = false
 } = {}) => CHAT_TOOL_DEFINITIONS
     .map(toolDefinition => applyConfiguredTrackerLimitsToToolDefinition(
-        applyRegisteredThingFieldsToToolDefinition(
-            applyDirectShortDescriptionToolPolicy(
-                cloneToolDefinition(toolDefinition),
-                { allowDirectShortDescriptionUpdates }
+        assertCanonicalThingToolSchemaCoverage(
+            applyRegisteredThingFieldsToToolDefinition(
+                applyDirectShortDescriptionToolPolicy(
+                    cloneToolDefinition(toolDefinition),
+                    { allowDirectShortDescriptionUpdates }
+                ),
+                { modExtensionRegistry, getActiveSettingSnapshot }
             ),
-            { modExtensionRegistry, getActiveSettingSnapshot }
+            modExtensionRegistry
         )
     ));
 
@@ -2889,6 +3058,12 @@ const createChatToolRuntime = ({
     ensureModel(Thing, 'Thing');
     ensureModel(Location, 'Location');
     ensureModel(Region, 'Region');
+    const thingFieldRegistry = new ThingFieldRegistry({ getModExtensionRegistry });
+    const thingMutationService = new ThingMutationService({
+        ThingClass: Thing,
+        getModExtensionRegistry,
+        fieldRegistry: thingFieldRegistry
+    });
 
     const moreInfoTemplateEnv = (() => {
         if (typeof nunjucks.Environment !== 'function' || typeof nunjucks.FileSystemLoader !== 'function') {
@@ -3488,9 +3663,21 @@ const createChatToolRuntime = ({
         };
     };
 
-    const getCacheKeyForToolCall = (functionName, args, roundKey) => {
+    const getCacheKeyForToolCall = (functionName, args, roundKey, toolCallId = null) => {
         if (!args || typeof args !== 'object') {
             return null;
+        }
+        if (MUTATING_CHAT_TOOL_NAMES.has(functionName)) {
+            const normalizedToolCallId = normalizeCacheKeyPart(toolCallId);
+            if (!normalizedToolCallId) {
+                throw new Error(`Mutating tool "${functionName}" requires a stable tool-call id for idempotency.`);
+            }
+            return stableCacheKey({
+                type: 'mutation',
+                round: roundKey,
+                tool: functionName,
+                toolCallId: normalizedToolCallId
+            });
         }
         if (functionName === 'resolveAttack') {
             return stableCacheKey({
@@ -5323,6 +5510,7 @@ const createChatToolRuntime = ({
         value = null,
         weight = null,
         relativeLevel = null,
+        count = null,
         isVehicle = null,
         isCraftingStation = null,
         isProcessingStation = null,
@@ -5330,6 +5518,7 @@ const createChatToolRuntime = ({
         isSalvageable = null,
         isContainer = null,
         requiresCheckToOpen = null,
+        containerContents = null,
         attributeBonuses = null,
         causeStatusEffectOnTarget = null,
         causeStatusEffectOnEquipper = null,
@@ -5390,14 +5579,62 @@ const createChatToolRuntime = ({
             const effectName = normalizeOptionalString(rawValue.name);
             const effectDescription = normalizeOptionalString(rawValue.description);
             const effectDuration = normalizeOptionalString(rawValue.duration);
-            if (!effectName && !effectDescription && !effectDuration) {
+            const normalizeModifierEntries = (entries, collectionName, valueFieldName) => {
+                if (entries === null || entries === undefined) {
+                    return null;
+                }
+                if (!Array.isArray(entries)) {
+                    throw new ToolVisibleError(
+                        `createThing "${fieldName}.${collectionName}" must be an array when provided.`,
+                        { code: 'invalid_arguments' }
+                    );
+                }
+                return entries.map((entry, index) => {
+                    if (!entry || typeof entry !== 'object' || Array.isArray(entry)) {
+                        throw new ToolVisibleError(
+                            `createThing "${fieldName}.${collectionName}[${index}]" must be an object.`,
+                            { code: 'invalid_arguments' }
+                        );
+                    }
+                    const entryName = normalizeRequiredString(entry.name, {
+                        functionName,
+                        fieldName: `${fieldName}.${collectionName}[${index}].name`
+                    });
+                    const numericValue = normalizeOptionalNumber(entry[valueFieldName], {
+                        functionName,
+                        fieldName: `${fieldName}.${collectionName}[${index}].${valueFieldName}`
+                    });
+                    if (numericValue === null) {
+                        throw new ToolVisibleError(
+                            `createThing "${fieldName}.${collectionName}[${index}].${valueFieldName}" is required.`,
+                            { code: 'invalid_arguments' }
+                        );
+                    }
+                    return { name: entryName, [valueFieldName]: numericValue };
+                });
+            };
+            const attributes = normalizeModifierEntries(rawValue.attributes, 'attributes', 'modifier');
+            const skills = normalizeModifierEntries(rawValue.skills, 'skills', 'modifier');
+            const needBars = normalizeModifierEntries(rawValue.needBars, 'needBars', 'delta');
+            if (
+                !effectName
+                && !effectDescription
+                && !effectDuration
+                && attributes === null
+                && skills === null
+                && needBars === null
+            ) {
                 return null;
             }
-            return {
+            const normalizedEffect = {
                 name: effectName || '',
                 description: effectDescription || '',
                 duration: effectDuration || ''
             };
+            if (attributes !== null) normalizedEffect.attributes = attributes;
+            if (skills !== null) normalizedEffect.skills = skills;
+            if (needBars !== null) normalizedEffect.needBars = needBars;
+            return normalizedEffect;
         };
 
         const seed = {
@@ -5451,6 +5688,16 @@ const createChatToolRuntime = ({
         if (weightNumber !== null) seed.weight = weightNumber;
         const relativeLevelInteger = normalizeOptionalInteger(relativeLevel, { functionName, fieldName: 'relativeLevel' });
         if (relativeLevelInteger !== null) seed.relativeLevel = relativeLevelInteger;
+        const countInteger = normalizeOptionalInteger(count, { functionName, fieldName: 'count' });
+        if (countInteger !== null) {
+            if (countInteger < 0) {
+                throw new ToolVisibleError(
+                    'createThing "count" must be zero or greater when provided.',
+                    { code: 'invalid_arguments' }
+                );
+            }
+            seed.count = countInteger;
+        }
 
         const isVehicleValue = normalizeOptionalBoolean(isVehicle, { functionName, fieldName: 'isVehicle' });
         if (isVehicleValue !== null) seed.isVehicle = isVehicleValue;
@@ -5466,6 +5713,38 @@ const createChatToolRuntime = ({
         if (isContainerValue !== null) seed.isContainer = isContainerValue;
         const requiresCheckToOpenValue = normalizeOptionalBoolean(requiresCheckToOpen, { functionName, fieldName: 'requiresCheckToOpen' });
         if (requiresCheckToOpenValue !== null) seed.requiresCheckToOpen = requiresCheckToOpenValue;
+
+        if (containerContents !== null && containerContents !== undefined) {
+            if (!Array.isArray(containerContents)) {
+                throw new ToolVisibleError(
+                    'createThing "containerContents" must be an array when provided.',
+                    { code: 'invalid_arguments' }
+                );
+            }
+            seed.containerContents = containerContents.map((entry, index) => {
+                if (!entry || typeof entry !== 'object' || Array.isArray(entry)) {
+                    throw new ToolVisibleError(
+                        `createThing "containerContents[${index}]" must be an object.`,
+                        { code: 'invalid_arguments' }
+                    );
+                }
+                const contentName = normalizeRequiredString(entry.name, {
+                    functionName,
+                    fieldName: `containerContents[${index}].name`
+                });
+                const contentCount = normalizeOptionalInteger(entry.count, {
+                    functionName,
+                    fieldName: `containerContents[${index}].count`
+                });
+                if (contentCount === null || contentCount < 0) {
+                    throw new ToolVisibleError(
+                        `createThing "containerContents[${index}].count" must be an integer zero or greater.`,
+                        { code: 'invalid_arguments' }
+                    );
+                }
+                return { name: contentName, count: contentCount };
+            });
+        }
 
         if (attributeBonuses !== null && attributeBonuses !== undefined) {
             if (!Array.isArray(attributeBonuses)) {
@@ -5531,25 +5810,6 @@ const createChatToolRuntime = ({
                 { code: 'thing_generation_failed' }
             );
         }
-        let shouldClearCreatedThingSlot = false;
-        for (const [fieldName, value] of Object.entries(extensionFieldValues)) {
-            if (typeof createdThing.setExtensionField === 'function') {
-                createdThing.setExtensionField(fieldName, value);
-            } else if (createdThing && typeof createdThing === 'object') {
-                createdThing[fieldName] = value;
-            }
-            const field = registeredCreateFieldMap.get(fieldName) || null;
-            if (
-                field?.clearThingSlotWhenPresent === true
-                && hasMeaningfulRegisteredEntityFieldValue(value)
-            ) {
-                shouldClearCreatedThingSlot = true;
-            }
-        }
-        if (shouldClearCreatedThingSlot && createdThing && typeof createdThing === 'object') {
-            createdThing.slot = null;
-        }
-
         const lines = [
             '<createThingResult>',
             '  <status>success</status>',
@@ -5574,7 +5834,25 @@ const createChatToolRuntime = ({
                 requestedName: requestedName || null,
                 finalName,
                 thingType: createdThing?.thingType || null,
-                locationId: targetLocation.id || null
+                locationId: targetLocation.id || null,
+                mutationReceipt: {
+                    operation: 'create',
+                    thingId: createdThing?.id || null,
+                    beforeChecksum: null,
+                    afterChecksum: createdThing?.checksum || null,
+                    changedFields: typeof createdThing?.toJSON === 'function'
+                        ? Object.keys(createdThing.toJSON())
+                        : [],
+                    placementBefore: null,
+                    placementAfter: targetLocation?.id
+                        ? { locationId: targetLocation.id }
+                        : null,
+                    createdIds: createdThing?.id ? [createdThing.id] : [],
+                    replacedIds: [],
+                    deletedIds: [],
+                    committedAt: new Date().toISOString(),
+                    committed: true
+                }
             }
         };
     };
@@ -5830,6 +6108,60 @@ const createChatToolRuntime = ({
                 newName,
                 thingType,
                 changeDescription
+            }
+        };
+    };
+
+    const executeRecreateThingTool = async ({ thing, instructions } = {}) => {
+        const functionName = 'recreateThing';
+        const thingQuery = normalizeRequiredString(thing, { functionName, fieldName: 'thing' });
+        const replacementInstructions = normalizeRequiredString(instructions, {
+            functionName,
+            fieldName: 'instructions'
+        });
+        if (typeof alterThingByPrompt !== 'function') {
+            throw new ToolVisibleError(
+                'recreateThing is unavailable because the Thing regeneration helper was not configured.',
+                { code: 'missing_dependency' }
+            );
+        }
+        const targetThing = resolveThingReference(thingQuery, { fieldName: 'thing' });
+        const originalId = normalizeOptionalString(targetThing?.id);
+        const originalName = normalizeOptionalString(targetThing?.name);
+        const outcome = await alterThingByPrompt({
+            thing: targetThing,
+            changeDescription: replacementInstructions,
+            newName: null
+        });
+        const recreatedThing = outcome?.thing || targetThing;
+        if (!recreatedThing || normalizeOptionalString(recreatedThing.id) !== originalId) {
+            throw new ToolVisibleError(
+                'recreateThing did not preserve the target Thing id.',
+                { code: 'replacement_identity_changed' }
+            );
+        }
+        const finalName = normalizeOptionalString(recreatedThing.name) || originalName;
+        const lines = [
+            '<recreateThingResult>',
+            '  <status>success</status>',
+            ...renderXmlNode('thing', {
+                id: originalId,
+                originalName,
+                finalName,
+                thingType: normalizeOptionalString(recreatedThing.thingType)
+            }, 1),
+            ...renderXmlNode('instructions', replacementInstructions, 1),
+            '</recreateThingResult>'
+        ];
+        return {
+            content: lines.join('\n'),
+            metadata: {
+                status: 'success',
+                thingId: originalId,
+                originalName,
+                finalName,
+                preservedIdentity: true,
+                mutationReceipt: outcome?.mutationReceipt || null
             }
         };
     };
@@ -6627,7 +6959,8 @@ const createChatToolRuntime = ({
             'giverId',
             'giverName',
             'imageId',
-            'vehicleType'
+            'vehicleType',
+            'properties'
         ]);
         const requiredStringFields = new Set(['name', 'destination']);
         const numberFields = new Set([
@@ -6638,6 +6971,7 @@ const createChatToolRuntime = ({
             'count',
             'relativeLevel',
             'value',
+            'weight',
             'baseLevel',
             'lastVisitedTime',
             'travelTimeMinutes',
@@ -6685,6 +7019,7 @@ const createChatToolRuntime = ({
             'aliases',
             'attributeBonuses',
             'unscaledAttributeBonuses',
+            'containerContents',
             'statusEffects',
             'randomEvents',
             'characterConcepts',
@@ -6708,7 +7043,9 @@ const createChatToolRuntime = ({
             'relations',
             'assets',
             'reputationTiers',
-            'rewardFactionReputation'
+            'rewardFactionReputation',
+            'causeStatusEffectOnTarget',
+            'causeStatusEffectOnEquipper'
         ]);
 
         if (objectType === 'location' && fieldName === 'hasWeather') {
@@ -6771,6 +7108,9 @@ const createChatToolRuntime = ({
             return rawValue;
         }
         if (objectFields.has(fieldName)) {
+            if (rawValue === null && ['causeStatusEffectOnTarget', 'causeStatusEffectOnEquipper'].includes(fieldName)) {
+                return null;
+            }
             return normalizeCharacterFieldMap(rawValue, { functionName, fieldName });
         }
         return rawValue;
@@ -6826,8 +7166,8 @@ const createChatToolRuntime = ({
         }
 
         const operations = [];
-        const addOperation = (fieldName, apply) => {
-            operations.push({ fieldName, apply });
+        const addOperation = (fieldName, value, apply) => {
+            operations.push({ fieldName, value, apply });
         };
 
         for (const [fieldName, rawValue] of fieldEntries) {
@@ -6835,7 +7175,7 @@ const createChatToolRuntime = ({
             const value = registeredField
                 ? normalizeRegisteredEntityFieldValue(rawValue, registeredField, { functionName })
                 : normalizeUpdateObjectFieldValue(rawValue, { functionName, objectType, fieldName });
-            addOperation(fieldName, () => {
+            addOperation(fieldName, value, () => {
                 if (registeredField) {
                     if (target.record && typeof target.record.setExtensionField === 'function') {
                         target.record.setExtensionField(fieldName, value);
@@ -7563,19 +7903,24 @@ const createChatToolRuntime = ({
         const functionName = 'updateObjectFields';
         const canonicalObjectType = normalizeUpdateObjectType(objectType, { functionName });
         const target = resolveUpdateObjectTarget(canonicalObjectType, object, { functionName });
-        const operations = makeUpdateObjectFieldOperations(target, fields, {
+        const normalizedInputFields = canonicalObjectType === 'thing'
+            ? thingFieldRegistry.normalizePatch(fields, {
+                filter: { exposeToUpdateTool: true }
+            })
+            : fields;
+        const operations = makeUpdateObjectFieldOperations(target, normalizedInputFields, {
             functionName,
             objectType: canonicalObjectType,
             allowDirectShortDescriptionUpdates
         });
         let regeneratedShortDescription;
         const shouldRegenerateShortDescription = SHORT_DESCRIPTION_OBJECT_TYPES.has(canonicalObjectType)
-            && Object.prototype.hasOwnProperty.call(fields, 'description')
-            && !Object.prototype.hasOwnProperty.call(fields, 'shortDescription');
+            && Object.prototype.hasOwnProperty.call(normalizedInputFields, 'description')
+            && !Object.prototype.hasOwnProperty.call(normalizedInputFields, 'shortDescription');
         if (shouldRegenerateShortDescription) {
             const normalizedDescription = canonicalObjectType === 'character'
-                ? normalizeCharacterFieldString(fields.description, { functionName, fieldName: 'description' })
-                : normalizeUpdateObjectFieldValue(fields.description, {
+                ? normalizeCharacterFieldString(normalizedInputFields.description, { functionName, fieldName: 'description' })
+                : normalizeUpdateObjectFieldValue(normalizedInputFields.description, {
                     functionName,
                     objectType: canonicalObjectType,
                     fieldName: 'description'
@@ -7585,33 +7930,59 @@ const createChatToolRuntime = ({
                 record: target.record,
                 description: normalizedDescription,
                 functionName,
-                updates: fields
+                updates: normalizedInputFields
             });
         }
         const updatedFields = [];
-        for (const operation of operations) {
+        let mutationReceipt = null;
+        const supportsAtomicThingMutation = canonicalObjectType === 'thing'
+            && typeof Thing === 'function'
+            && typeof Thing.fromJSON === 'function'
+            && target.record instanceof Thing
+            && typeof target.record.replaceStateFrom === 'function';
+        if (supportsAtomicThingMutation) {
             try {
-                operation.apply();
-                updatedFields.push(operation.fieldName);
+                const candidatePatch = Object.fromEntries(
+                    operations.map(operation => [operation.fieldName, operation.value])
+                );
+                if (shouldRegenerateShortDescription) {
+                    candidatePatch.shortDescription = regeneratedShortDescription;
+                }
+                const prepared = thingMutationService.prepareUpdate(target.record, candidatePatch);
+                const committed = thingMutationService.commitUpdate(target.record, prepared);
+                mutationReceipt = committed.receipt;
+                updatedFields.push(...Object.keys(candidatePatch));
             } catch (error) {
                 throw new ToolVisibleError(
-                    `Failed to update "${operation.fieldName}" on ${canonicalObjectType} "${target.name || target.id || object}": ${error?.message || error}`,
+                    `Failed to atomically update thing "${target.name || target.id || object}": ${error?.message || error}`,
                     { code: 'field_update_failed' }
                 );
             }
-        }
-        if (shouldRegenerateShortDescription) {
-            try {
-                target.record.shortDescription = regeneratedShortDescription;
-                if (typeof target.applyReplacement === 'function') {
-                    target.applyReplacement(target.record);
+        } else {
+            for (const operation of operations) {
+                try {
+                    operation.apply();
+                    updatedFields.push(operation.fieldName);
+                } catch (error) {
+                    throw new ToolVisibleError(
+                        `Failed to update "${operation.fieldName}" on ${canonicalObjectType} "${target.name || target.id || object}": ${error?.message || error}`,
+                        { code: 'field_update_failed' }
+                    );
                 }
-                updatedFields.push('shortDescription');
-            } catch (error) {
-                throw new ToolVisibleError(
-                    `Failed to refresh the concise summary on ${canonicalObjectType} "${target.name || target.id || object}": ${error?.message || error}`,
-                    { code: 'field_update_failed' }
-                );
+            }
+            if (shouldRegenerateShortDescription) {
+                try {
+                    target.record.shortDescription = regeneratedShortDescription;
+                    if (typeof target.applyReplacement === 'function') {
+                        target.applyReplacement(target.record);
+                    }
+                    updatedFields.push('shortDescription');
+                } catch (error) {
+                    throw new ToolVisibleError(
+                        `Failed to refresh the concise summary on ${canonicalObjectType} "${target.name || target.id || object}": ${error?.message || error}`,
+                        { code: 'field_update_failed' }
+                    );
+                }
             }
         }
 
@@ -7643,8 +8014,9 @@ const createChatToolRuntime = ({
                 ownerId: target.ownerId || null,
                 ownerName: target.ownerName || null,
                 updatedFields,
+                ...(mutationReceipt ? { mutationReceipt } : {}),
                 updatedValues: JSON.parse(JSON.stringify({
-                    ...fields,
+                    ...normalizedInputFields,
                     ...(shouldRegenerateShortDescription
                         ? { shortDescription: regeneratedShortDescription }
                         : {})
@@ -11837,7 +12209,7 @@ const createChatToolRuntime = ({
                 );
             }
             const cacheKey = resultCache
-                ? getCacheKeyForToolCall(toolCall.functionName, argumentsObject, resultCache.roundKey)
+                ? getCacheKeyForToolCall(toolCall.functionName, argumentsObject, resultCache.roundKey, toolCall.id)
                 : null;
             if (cacheKey && resultCache.entries.has(cacheKey)) {
                 const cachedResult = cloneToolResult(resultCache.entries.get(cacheKey));
@@ -11848,7 +12220,11 @@ const createChatToolRuntime = ({
                         cacheKey
                     };
                 }
-                appendCachedCheckToolCallNote(cachedResult);
+                if (MUTATING_CHAT_TOOL_NAMES.has(toolCall.functionName)) {
+                    cachedResult.content = `${cachedResult.content.trimEnd()}\n\nThis exact mutating tool call already committed; this is its original result.`;
+                } else {
+                    appendCachedCheckToolCallNote(cachedResult);
+                }
                 return cachedResult;
             }
 
@@ -11935,6 +12311,8 @@ const createChatToolRuntime = ({
                 toolResult = executeScheduleEventTool(argumentsObject);
             } else if (toolCall.functionName === 'alterThing') {
                 toolResult = executeAlterThingTool(argumentsObject);
+            } else if (toolCall.functionName === 'recreateThing') {
+                toolResult = executeRecreateThingTool(argumentsObject);
             } else if (toolCall.functionName === 'alterNpc') {
                 toolResult = executeAlterNpcTool(argumentsObject);
             } else if (toolCall.functionName === 'updateCharacterFields') {
@@ -11995,12 +12373,30 @@ const createChatToolRuntime = ({
                 }
             }
             const resolvedToolResult = await toolResult;
-            if (cacheKey) {
+            const toolFailed = resolvedToolResult?.metadata?.error === true;
+            if (cacheKey && !toolFailed) {
+                if (MUTATING_CHAT_TOOL_NAMES.has(toolCall.functionName) && (!resolvedToolResult.metadata || typeof resolvedToolResult.metadata !== 'object')) {
+                    resolvedToolResult.metadata = {};
+                }
                 if (resolvedToolResult?.metadata && typeof resolvedToolResult.metadata === 'object') {
+                    const mutationReceipt = MUTATING_CHAT_TOOL_NAMES.has(toolCall.functionName)
+                        ? (resolvedToolResult.metadata.mutationReceipt || {
+                            operationId: cacheKey,
+                            toolName: toolCall.functionName,
+                            committedAt: new Date().toISOString(),
+                            committed: true
+                        })
+                        : null;
                     resolvedToolResult.metadata = {
                         ...resolvedToolResult.metadata,
                         cached: false,
-                        cacheKey
+                        cacheKey,
+                        ...(mutationReceipt ? { mutationReceipt: {
+                            ...mutationReceipt,
+                            operationId: mutationReceipt.operationId || cacheKey,
+                            toolName: mutationReceipt.toolName || toolCall.functionName,
+                            committed: true
+                        } } : {})
                     };
                 }
                 resultCache.entries.set(cacheKey, cloneToolResult(resolvedToolResult));
@@ -12551,6 +12947,30 @@ const createChatToolRuntime = ({
             };
         };
 
+        const runToolLoopWithCommittedReceipts = async () => {
+            try {
+                return await runToolLoop();
+            } catch (error) {
+                const committedMutationReceipts = toolInvocations
+                    .map(invocation => invocation?.metadata?.mutationReceipt || null)
+                    .filter(receipt => receipt?.committed === true)
+                    .map(receipt => JSON.parse(JSON.stringify(receipt)));
+                if (committedMutationReceipts.length && error && typeof error === 'object') {
+                    error.committedMutationReceipts = committedMutationReceipts;
+                    const existingMessage = typeof error.message === 'string'
+                        ? error.message
+                        : String(error);
+                    if (!existingMessage.includes('Committed mutations before failure:')) {
+                        const operationIds = committedMutationReceipts
+                            .map(receipt => receipt.operationId || receipt.toolName || 'unknown-operation')
+                            .join(', ');
+                        error.message = `${existingMessage} Committed mutations before failure: ${operationIds}.`;
+                    }
+                }
+                throw error;
+            }
+        };
+
         const progressGroupMethods = [
             LLMClient?.withPromptProgressGroup,
             LLMClient?.clearPromptProgressGroup,
@@ -12578,7 +12998,7 @@ const createChatToolRuntime = ({
             || callerOwnsProgressGroup
             || hasInheritedProgressGroup
         ) {
-            return await runToolLoop();
+            return await runToolLoopWithCommittedReceipts();
         }
 
         const progressGroupTargetLabel = normalizeOptionalString(metadataLabel) || 'chat';
@@ -12589,7 +13009,7 @@ const createChatToolRuntime = ({
         }, async () => {
             let recordOutputCharacters = false;
             try {
-                const result = await runToolLoop();
+                const result = await runToolLoopWithCommittedReceipts();
                 recordOutputCharacters = true;
                 return result;
             } finally {
