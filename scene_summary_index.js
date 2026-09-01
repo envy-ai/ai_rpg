@@ -78,11 +78,15 @@ function getSceneSummaryIndexText(entry) {
 }
 
 function countSceneSummaryIndexEntries(entries, options = {}) {
+    return buildSceneSummaryEntryIndexMap(entries, options).length;
+}
+
+function buildSceneSummaryEntryIndexMap(entries, options = {}) {
     if (!Array.isArray(entries)) {
-        throw new Error('Chat history is unavailable for scene summary counting.');
+        throw new Error('Chat history is unavailable for scene summary indexing.');
     }
 
-    let count = 0;
+    const entryIndexMap = [];
     for (const entry of entries) {
         if (!shouldIncludeEntryInSceneSummaryIndex(entry, options)) {
             continue;
@@ -90,10 +94,12 @@ function countSceneSummaryIndexEntries(entries, options = {}) {
         if (!getSceneSummaryIndexText(entry)) {
             continue;
         }
-        resolveEntryRecordId(entry);
-        count += 1;
+        entryIndexMap.push({
+            entryId: resolveEntryRecordId(entry),
+            index: entryIndexMap.length + 1
+        });
     }
-    return count;
+    return entryIndexMap;
 }
 
 function findDeletedCoveredSceneSummaryEntryIds(entries, sceneSummaries) {
@@ -186,6 +192,7 @@ function walkSceneSummaryIntervals(intervals, totalEntries) {
 
 module.exports = {
     HIDDEN_SCENE_SUMMARY_ENTRY_TYPES,
+    buildSceneSummaryEntryIndexMap,
     countSceneSummaryIndexEntries,
     findDeletedCoveredSceneSummaryEntryIds,
     getSceneSummaryIndexText,

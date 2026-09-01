@@ -48,6 +48,9 @@ function loadSummarizer({
     const context = {
         config: { ai: { tinybrain: useTinyBrain, retryAttempts: 1 } },
         SceneSummaries,
+        modExtensionRegistry: {
+            collectSceneSummarizeContributions: () => []
+        },
         Globals: {
             getSceneSummaries: () => sceneSummaries
         },
@@ -136,6 +139,10 @@ test('scene summarization anchors a model scene starting at local entry two to t
     assert.equal(result.scenes[0].startIndex, 3);
     assert.equal(result.scenes[0].startEntryId, 'entry-3');
     assert.equal(sceneSummaries.getContiguousSummarizedEndIndex(), 6);
+    assert.deepEqual(
+        sceneSummaries.serialize().entryIndexMap.map(mapping => mapping.index),
+        [1, 2, 3, 4, 5, 6]
+    );
 });
 
 test('scene summarization uses the staged TinyBrain family when its root family flag is enabled', async () => {

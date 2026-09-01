@@ -21,6 +21,95 @@ function createLocation(id, name) {
     };
 }
 
+test('npc_arrival_departure makes an explicitly visible arriving NPC visible again', async () => {
+    const previousDeps = Events._deps;
+    const previousHandlers = Events._handlers;
+    const previousParsers = Events._parsers;
+    const previousAggregators = Events._aggregators;
+    const previousProcessedMove = Globals.processedMove;
+
+    const origin = createLocation('loc_origin', 'Sleeping Nook');
+    const destination = createLocation('loc_destination', 'Lift Head Platform');
+    const locations = new Map([
+        [origin.id, origin],
+        [destination.id, destination]
+    ]);
+    const npc = {
+        id: 'npc_slip',
+        name: 'Slip of the Under-track',
+        currentLocation: origin.id,
+        hiddenFromPlayer: true,
+        get location() {
+            return locations.get(this.currentLocation) || null;
+        },
+        setLocation(location) {
+            this.currentLocation = typeof location === 'object' ? location.id : location;
+        }
+    };
+    origin.addNpcId(npc.id);
+
+    const player = {
+        id: 'player_exis',
+        name: 'Exis',
+        currentLocation: destination.id,
+        getPartyMembers() {
+            return [];
+        }
+    };
+    const actors = new Map([
+        [player.id, player],
+        [npc.id, npc]
+    ]);
+
+    Events.initialize({
+        getConfig: () => ({ omit_npc_generation: false }),
+        getCurrentPlayer: () => player,
+        players: actors,
+        ensureNpcByName: async () => npc,
+        findActorById: (id) => actors.get(id) || null,
+        findActorByName: (name) => {
+            const normalized = String(name || '').trim().toLowerCase();
+            return Array.from(actors.values()).find(actor => actor.name.toLowerCase() === normalized) || null;
+        },
+        Location: {
+            get: (id) => locations.get(id) || null
+        },
+        gameLocations: locations
+    });
+    Events._resetTrackingSets();
+    Globals.processedMove = false;
+
+    const context = { player, location: destination };
+
+    try {
+        await Events.applyEventOutcomes({
+            parsed: {
+                npc_arrival_departure: [{
+                    name: npc.name,
+                    action: 'arrived',
+                    hideFromPlayer: false
+                }]
+            },
+            rawEntries: {
+                npc_arrival_departure: [`${npc.name} -> arrived -> false`]
+            }
+        }, context);
+
+        assert.equal(npc.currentLocation, destination.id);
+        assert.equal(origin.hasNpc(npc.id), false);
+        assert.equal(destination.hasNpc(npc.id), true);
+        assert.equal(npc.hiddenFromPlayer, false);
+        assert.equal(context.locationRefreshRequested, true);
+    } finally {
+        Events._deps = previousDeps;
+        Events._handlers = previousHandlers;
+        Events._parsers = previousParsers;
+        Events._aggregators = previousAggregators;
+        Globals.processedMove = previousProcessedMove;
+        Events._resetTrackingSets();
+    }
+});
+
 test('npc_arrival_departure lets a party member leave the party and move to the destination', async () => {
     const previousDeps = Events._deps;
     const previousHandlers = Events._handlers;

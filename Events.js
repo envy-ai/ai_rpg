@@ -15080,8 +15080,8 @@ class Events {
                                     gameLocations.set(targetLocation.id, targetLocation);
                                 }
 
-                                if (entry.hideFromPlayer === true) {
-                                    npc.hiddenFromPlayer = true;
+                                if (typeof entry.hideFromPlayer === "boolean") {
+                                    npc.hiddenFromPlayer = entry.hideFromPlayer;
                                     context.locationRefreshRequested = true;
                                 }
                             } catch (error) {

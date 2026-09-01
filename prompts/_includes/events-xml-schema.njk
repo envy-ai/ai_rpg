@@ -541,6 +541,8 @@ Use this when an entity dies or becomes incapacitated. Use `dead` only when the 
 
 Use this when the player becomes aware of a quest, task, promise, self-imposed goal, request, or job this turn, even if they have not explicitly accepted it yet. Include quests the player invents for themselves or agrees to do.
 
+{% if (currentPlayer.currentQuests | length) > config.soft_quest_limit %}Note that the current player's active quest count of {{ currentPlayer.currentQuests | length }} exceeds the soft quest limit of {{ config.soft_quest_limit }}, so refrain from giving the player additional quests unless they have specifically requested them.{% endif %}
+
 ```xml
 <receivedQuest>
   <giverName>Exact quest giver name, if any</giverName>

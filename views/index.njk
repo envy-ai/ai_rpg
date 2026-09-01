@@ -28066,6 +28066,20 @@
             }
         }
 
+        function showImplausibleActionNotification(result, actionLabel) {
+            if (result?.implausible !== true) {
+                return false;
+            }
+            const reason = typeof result.reason === 'string' && result.reason.trim()
+                ? result.reason.trim()
+                : (typeof result.plausibility?.reason === 'string' ? result.plausibility.reason.trim() : '');
+            if (!reason) {
+                throw new Error(`${actionLabel} was marked implausible without an explanation.`);
+            }
+            alert(`${actionLabel} is implausible:\n\n${reason}`);
+            return true;
+        }
+
         async function submitCraftingRequest({ noProse = false } = {}) {
             const payload = buildCraftingPayload({ noProse: Boolean(noProse) });
             const isLocationModification = payload.mode === 'modify-location';
@@ -28094,6 +28108,12 @@
                     body: JSON.stringify(payload)
                 });
                 const result = await response.json().catch(() => ({}));
+                const actionLabel = isLocationModification
+                    ? 'Location modification'
+                    : (payload.mode === 'process' ? 'Processing' : 'Crafting');
+                if (showImplausibleActionNotification(result, actionLabel)) {
+                    return;
+                }
                 if (!response.ok || !result?.success) {
                     const errorMessage = result?.error || `${isLocationModification ? 'Location modification' : 'Crafting'} failed (HTTP ${response.status})`;
                     throw new Error(errorMessage);
@@ -28171,6 +28191,9 @@
                     body: JSON.stringify(payload)
                 });
                 const result = await response.json().catch(() => ({}));
+                if (showImplausibleActionNotification(result, actionLabel)) {
+                    return;
+                }
                 if (!response.ok || !result?.success) {
                     const errorMessage = result?.error || `${actionLabel} failed (HTTP ${response.status})`;
                     throw new Error(errorMessage);

@@ -163,6 +163,110 @@ test('installing a stacked module splits and installs one item from the stack', 
     assert.ok(actor.hasInventoryItem(installed.moduleItem.id));
 });
 
+test('installing stacked modules into stacked base items splits and links one instance of each', () => {
+    const system = createSystem();
+    const slotTypes = system.normalizeSlotTypes([{ id: 'core', label: 'Core' }]);
+    const underwrapStack = item({
+        id: 'underwrap_stack_1',
+        name: 'Heat-Shedding Underwrap',
+        slot: 'body',
+        count: 3,
+        moduleSlots: [{ type: 'core' }]
+    });
+    const crystalStack = item({
+        id: 'crystal_stack_1',
+        name: 'Cooling Core',
+        moduleType: 'core',
+        count: 4
+    });
+    const actor = actorWith([underwrapStack, crystalStack]);
+
+    const installed = system.install({
+        actor,
+        baseItem: underwrapStack,
+        moduleItem: crystalStack,
+        slotTypes
+    });
+
+    assert.equal(underwrapStack.count, 2);
+    assert.equal(crystalStack.count, 3);
+    assert.notEqual(installed.baseItem, underwrapStack);
+    assert.notEqual(installed.baseItem.id, underwrapStack.id);
+    assert.equal(installed.baseItem.count, 1);
+    assert.notEqual(installed.moduleItem, crystalStack);
+    assert.notEqual(installed.moduleItem.id, crystalStack.id);
+    assert.equal(installed.moduleItem.count, 1);
+    assert.deepEqual(underwrapStack.installedModuleIds, []);
+    assert.equal(crystalStack.moduleInstalledOnItemId, null);
+    assert.deepEqual(installed.baseItem.installedModuleIds, [installed.moduleItem.id]);
+    assert.equal(installed.moduleItem.moduleInstalledOnItemId, installed.baseItem.id);
+    assert.ok(actor.hasInventoryItem(underwrapStack.id));
+    assert.ok(actor.hasInventoryItem(crystalStack.id));
+    assert.ok(actor.hasInventoryItem(installed.baseItem.id));
+    assert.ok(actor.hasInventoryItem(installed.moduleItem.id));
+});
+
+test('installing a single module into a stacked base item only splits the base stack', () => {
+    const system = createSystem();
+    const slotTypes = system.normalizeSlotTypes([{ id: 'core', label: 'Core' }]);
+    const coatStack = item({
+        id: 'coat_stack_1',
+        name: 'Socketed Coat',
+        slot: 'body',
+        count: 2,
+        moduleSlots: [{ type: 'core' }]
+    });
+    const crystal = item({
+        id: 'crystal_1',
+        name: 'Cooling Core',
+        moduleType: 'core',
+        count: 1
+    });
+    const actor = actorWith([coatStack, crystal]);
+
+    const installed = system.install({ actor, baseItem: coatStack, moduleItem: crystal, slotTypes });
+
+    assert.equal(coatStack.count, 1);
+    assert.equal(installed.baseItem.count, 1);
+    assert.notEqual(installed.baseItem.id, coatStack.id);
+    assert.equal(installed.moduleItem, crystal);
+    assert.deepEqual(coatStack.installedModuleIds, []);
+    assert.deepEqual(installed.baseItem.installedModuleIds, [crystal.id]);
+    assert.equal(crystal.moduleInstalledOnItemId, installed.baseItem.id);
+});
+
+test('install rejects a legacy stacked base item that already references a module', () => {
+    const system = createSystem();
+    const slotTypes = system.normalizeSlotTypes([{ id: 'core', label: 'Core' }]);
+    const corruptedStack = item({
+        id: 'corrupted_stack_1',
+        name: 'Corrupted Socketed Coat',
+        slot: 'body',
+        count: 2,
+        moduleSlots: [{ type: 'core' }, { type: 'core' }],
+        installedModuleIds: ['old_module_1']
+    });
+    const oldModule = item({
+        id: 'old_module_1',
+        name: 'Old Core',
+        moduleType: 'core',
+        moduleInstalledOnItemId: corruptedStack.id
+    });
+    const newModule = item({
+        id: 'new_module_1',
+        name: 'New Core',
+        moduleType: 'core'
+    });
+    const actor = actorWith([corruptedStack, oldModule, newModule]);
+
+    assert.throws(
+        () => system.install({ actor, baseItem: corruptedStack, moduleItem: newModule, slotTypes }),
+        /already references installed modules and cannot be split safely/i
+    );
+    assert.equal(corruptedStack.count, 2);
+    assert.equal(actor.inventory.length, 3);
+});
+
 test('effective mechanics add installed module bonuses and status effects to the base item', () => {
     const system = createSystem();
     const slotTypes = system.normalizeSlotTypes([{ id: 'core', label: 'Core' }]);

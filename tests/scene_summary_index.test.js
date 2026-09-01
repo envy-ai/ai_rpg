@@ -67,12 +67,16 @@ test('automatic scene-summary threshold counter uses the shared scene-summary in
     const apiSource = fs.readFileSync(path.join(__dirname, '..', 'api.js'), 'utf8');
     assert.match(apiSource, /countSceneSummaryIndexEntries\(entries\)/);
     assert.match(apiSource, /invalidateSceneSummariesForDeletedHistoryEntries/);
+    const invalidationStart = apiSource.indexOf('const invalidateSceneSummariesForDeletedHistoryEntries');
+    const invalidationEnd = apiSource.indexOf('const parseBatchSummaryResponse', invalidationStart);
+    const invalidationSource = apiSource.slice(invalidationStart, invalidationEnd);
+    assert.match(invalidationSource, /sceneSummaries\.invalidateFromEntryIds\(deletedCoveredEntryIds\)/);
+    assert.doesNotMatch(invalidationSource, /sceneSummaries\.clear\(\)/);
 });
 
 test('scene summary deletion check reports missing entries only inside contiguous coverage', () => {
     const sceneSummaries = new SceneSummaries();
-    sceneSummaries.addSummaryResult({
-        summarizedRange: { start: 1, end: 2 },
+    sceneSummaries.load({
         entryIndexMap: [
             { entryId: 'covered-1', index: 1 },
             { entryId: 'covered-2', index: 2 },
@@ -86,6 +90,11 @@ test('scene summary deletion check reports missing entries only inside contiguou
             summary: 'Covered scene.'
         }]
     });
+
+    assert.deepEqual(
+        sceneSummaries.serialize().entryIndexMap.map(mapping => mapping.entryId),
+        ['covered-1', 'covered-2']
+    );
 
     assert.deepEqual(findDeletedCoveredSceneSummaryEntryIds([
         { id: 'covered-1' },

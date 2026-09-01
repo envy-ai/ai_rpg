@@ -360,6 +360,64 @@ test('module action installs one item from a loose location module stack', () =>
     assert.equal(result.metadata.moduleItemId, installedModule.id);
 });
 
+test('module action registers split base and module instances when both inventory inputs are stacked', () => {
+    const registry = new ModExtensionRegistry();
+    const modulesMod = require('../mods/modules/mod.js');
+
+    modulesMod.register(createModulesScope(registry));
+
+    const coatStack = item({
+        id: 'coat_stack_1',
+        name: 'Heat-Shedding Underwrap',
+        slot: 'body',
+        count: 3,
+        moduleSlots: [{ type: 'core' }]
+    });
+    const moduleStack = item({
+        id: 'module_stack_1',
+        name: 'Adaptive-Weave Patch',
+        moduleType: 'core',
+        count: 2
+    });
+    const actor = actorWith([coatStack, moduleStack]);
+    const things = new Map([
+        [coatStack.id, coatStack],
+        [moduleStack.id, moduleStack]
+    ]);
+    const action = registry.getThingContextActionRecord('modules:install-module');
+
+    const result = action.handler({
+        thing: coatStack,
+        actor,
+        currentPlayer: actor,
+        requestBody: {
+            context: 'player-inventory',
+            baseItemId: coatStack.id,
+            baseItemSource: 'inventory',
+            moduleItemId: moduleStack.id,
+            moduleItemSource: 'inventory',
+            slotType: 'core'
+        },
+        things,
+        locations: new Map()
+    });
+
+    const installedBase = things.get(result.metadata.baseItemId);
+    const installedModule = things.get(result.metadata.moduleItemId);
+    assert.equal(coatStack.count, 2);
+    assert.equal(moduleStack.count, 1);
+    assert.ok(installedBase);
+    assert.ok(installedModule);
+    assert.notEqual(installedBase.id, coatStack.id);
+    assert.notEqual(installedModule.id, moduleStack.id);
+    assert.equal(installedBase.count, 1);
+    assert.equal(installedModule.count, 1);
+    assert.deepEqual(installedBase.installedModuleIds, [installedModule.id]);
+    assert.equal(installedModule.moduleInstalledOnItemId, installedBase.id);
+    assert.ok(actor.hasInventoryItem(installedBase.id));
+    assert.ok(actor.hasInventoryItem(installedModule.id));
+});
+
 test('module action can install an inventory module into a loose location base item', () => {
     const registry = new ModExtensionRegistry();
     const modulesMod = require('../mods/modules/mod.js');

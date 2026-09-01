@@ -7,13 +7,13 @@ The implementation class lives in `SceneSummaies.js` (the project filename uses 
 
 ## Stored Model
 - `_scenes`: normalized scene records shaped as `{ startIndex, endIndex, startEntryId, endEntryId, summary, details, quotes }`.
-- `_entryIdToIndex`: chat entry id to 1-based scene-summary index position.
+- `_entryIdToIndex`: chat entry id to 1-based scene-summary index position. Persisted mappings are a bijection over stored scene coverage: every covered index has exactly one entry id, every entry id has exactly one index, and look-ahead context outside committed scenes is not retained.
 - `_entryIdToNpcNames`: chat entry id to NPC names observed for absent-character checks.
 - `_metadata`: `{ version, updatedAt, lastSummarizedRange? }`.
 
 `startIndex` and `endIndex` are inclusive positions in the shared scene-summary index, not raw `chatHistory` array offsets. `startEntryId` and `endEntryId` anchor each stored range back to saved chat entries.
 
-Saves store the serialized payload in `sceneSummaries.json`. `Utils.serializeGameState()` requires a serializable scene-summary store, `Utils.writeSerializedGameState()` writes the file, and `Utils.loadSerializedGameState()` reads it with `{}` as the missing-file default. `Utils.hydrateGameState()` loads it into `Globals.getSceneSummaries()`; validation failures warn, clear the summary store, and allow the rest of the save to load.
+Saves store the serialized payload in `sceneSummaries.json`. `Utils.serializeGameState()` requires a serializable scene-summary store, `Utils.writeSerializedGameState()` writes the file, and `Utils.loadSerializedGameState()` reads it with `{}` as the missing-file default. `Utils.hydrateGameState()` loads it into `Globals.getSceneSummaries()` using the live chat-history index as the authority. Hydration prunes legacy look-ahead mappings, chooses the live entry when a legacy duplicate numeric index exists, and preserves the safe scene prefix when a genuinely covered source entry was deleted. Other validation failures warn, clear the summary store, and allow the rest of the save to load.
 
 ## Shared Scene-Summary Index
 `scene_summary_index.js` defines the indexed entry set used by generation, range diagnostics, slash commands, chat tools, and automatic threshold summarization.
@@ -30,7 +30,7 @@ Hidden story-note entries remain eligible when they carry narrative content. Thi
 
 Indexed text comes from `content` or, if content is empty, `summary`. Normalization strips scene-illustration markdown lines, removes leading `!`, `!!`, or `#` markers from lines, compacts blank lines, and requires every indexed entry to have a non-empty persisted id.
 
-`findDeletedCoveredSceneSummaryEntryIds(...)` compares the contiguous stored entry mapping with live chat IDs. Manual deletion of a covered source entry clears the derived scene-summary store and logs a warning; the next automatic threshold run can rebuild from the remaining history. Directly edited or legacy saves are also checked before scheduled summarization. Until rebuilding, base-context rendering exposes all remaining history raw so deleted text cannot survive through a stale derived summary and the missing chat item is not treated as corruption.
+`findDeletedCoveredSceneSummaryEntryIds(...)` compares the contiguous stored entry mapping with live chat IDs. Manual deletion of a covered source entry invalidates the scene containing the earliest deletion plus every later scene and logs the preserved coverage boundary; the next automatic threshold run rebuilds only that suffix from the remaining history. Directly edited or legacy saves are reconciled during hydration and checked again before scheduled summarization. Until invalidation, base-context rendering refuses stale coverage so deleted text cannot survive through a derived summary and the missing chat item is not treated as corruption.
 
 ## Generation Flow
 `Globals.summarizeScenesForHistoryRange({ chatHistory, startIndex, endIndex, redo })` is the server-side scene summarizer.
@@ -48,7 +48,7 @@ Indexed text comes from `content` or, if content is empty, `summary`. Normalizat
 - Parsing extracts the final `<scenes>...</scenes>` block, so Step 1 and Step 2 prose in the prompt response does not have to be valid XML.
 - Parsed `<details>` text is split into trimmed bullet lines. `<quote>` nodes require non-empty `character` and `text`.
 - The final parsed scene is used as the boundary marker for the preceding scene and is not stored as a completed summary.
-- Stored `entryIndexMap` entries include `npcNames` from chat-entry metadata when present.
+- Stored `entryIndexMap` entries include `npcNames` from chat-entry metadata when present. Although the prompt may include an unfinished following scene as boundary context, only indexes inside `summarizedRange` are committed.
 - Generation sets `summarizedRange.start` to the requested range start and anchors the first stored scene there when the model treats leading prompt entries as setup. Generated scenes must continuously cover the complete `summarizedRange`.
 - `addSummaryResult(...)` stages and validates the entire merge before changing live state. It rejects discontinuous generated coverage and replacements that would cut through only part of an existing scene.
 
@@ -56,19 +56,20 @@ Range errors use `scene_summary_diagnostics.js` and include scalar call context:
 
 ## Instance API
 - `clear()`: empties scenes, entry maps, NPC-name maps, and metadata.
-- `addSummaryResult(summaryResult)`: atomically validates `scenes` and `entryIndexMap`, ingests entry ids and NPC names, anchors to `summarizedRange` when supplied, rejects discontinuous coverage or partial stored-scene overlaps, replaces fully covered stored scenes, and updates metadata.
+- `addSummaryResult(summaryResult)`: atomically validates `scenes` and `entryIndexMap`, anchors to `summarizedRange` when supplied, rejects discontinuous coverage or partial stored-scene overlaps, removes every prior mapping in the committed numeric range, installs the new one-to-one mappings and scenes, prunes mappings outside all stored scene coverage, and updates metadata.
 - `replaceWithSummaryResult(summaryResult)`: validates a result in a temporary `SceneSummaries` instance, then atomically replaces scenes, entry mappings, NPC-name mappings, and metadata. Invalid replacement data leaves the existing store unchanged.
 - `containsEntry(entryId)`: resolves an entry id through `_entryIdToIndex` and returns whether that index is covered by a stored scene.
 - `getContiguousSummarizedEndIndex()`: returns the last scene-summary index covered without a gap from index `1`, or `0` when no contiguous coverage exists. Base-context history uses this stable frontier to separate covered and raw records.
 - `getFirstUnsummarizedIndex(totalEntries)`: returns the first uncovered 1-based index or `null` when all entries through `totalEntries` are covered.
 - `deleteSummariesOverlappingRange(startIndex, endIndex)`: removes overlapping stored scenes and returns the uncovered range that should be summarized.
+- `invalidateFromEntryIds(entryIds)`: finds the earliest mapped deletion, removes its containing scene and all later scenes, prunes their mappings, and reports the preserved contiguous boundary.
 - `getScenes()`: returns cloned scenes in insertion order.
 - `getScenesInOrder()`: returns cloned scenes sorted by `startIndex`.
 - `updateSceneAtDisplayIndex(displayIndex, updates)`: replaces editable fields for the 1-based stored display number while preserving range and entry ids.
 - `ingestNpcNamesFromEntries(entries)`: updates `_entryIdToNpcNames` for indexed chat entries with `metadata.npcNames`.
 - `getAbsentCharactersByScene(characterNames)`: returns a `Map` from scene `startIndex` to character names absent from indexed entries in that scene.
 - `serialize()`: returns `{ version, metadata, scenes, entryIndexMap }` with sorted entry mappings and NPC-name data.
-- `load(data)`: clears current state, treats empty data as no stored summaries, and throws when scene data or entry mappings are incomplete.
+- `load(data, { authoritativeEntryIndexMap? })`: clears current state, treats empty data as no stored summaries, prunes mappings outside scene coverage, reconciles legacy duplicate mappings against live history when supplied, preserves only the safe prefix after a covered deletion, and throws when the remaining scene data or mappings violate the one-to-one coverage invariant.
 
 Required scene fields are validated with explicit errors: positive `startIndex`, valid `endIndex`, non-empty `startEntryId`, non-empty `endEntryId`, and non-empty `summary`. `details` defaults to `[]` when omitted and must be an array when provided. `quotes` defaults to `[]`; quote objects require non-empty `character` and `text`.
 

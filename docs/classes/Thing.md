@@ -84,7 +84,7 @@ Thing XML parsing requires every entry to contain a nonblank direct `<name>` and
 
 `POST /api/things`, `PUT /api/things/:id`, crafting instantiation, event-created placeholder items, location/inventory generation, and container-content generation all construct or mutate `Thing` records through the same structural fields. API payloads also accept registered fields exposed to create/edit flows.
 
-The `thing-separate` route accepts item and scenery sources. If separated output contains one or more containers, the first returned container receives the rest of the returned item-type things. Scenery output remains at the source destination because container inventories only hold item Things. Stack separation and explicit split-stack flows opt out of automatic merging.
+The `thing-separate` route accepts item and scenery sources. If separated output contains one or more containers, the first returned container receives the rest of the returned item-type things. Scenery output remains at the source destination because container inventories only hold item Things. Stack separation and explicit split-stack flows opt out of automatic merging. Both routes reject Things participating in an installed-module relationship so `Thing.copy(...)` cannot duplicate module ids or backlinks.
 
 Event checks use Thing data for item infliction, ingestion, consumption, alteration, transfer, pickup/drop, harvested resources, and item-to-NPC transformation. Target cause effects apply to attack/use targets; equipper cause effects contribute through `Player.getStatusEffects()` while the item is equipped.
 

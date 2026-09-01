@@ -291,7 +291,7 @@ Errors:
 
 ## DELETE /api/chat/history
 
-Clears chat history. Derived scene summaries that reference deleted history are cleared and can be regenerated; interval counters are not treated as corrupt or reset.
+Clears chat history. Derived scene-summary coverage is invalidated from the first affected scene and can be regenerated; interval counters are not treated as corrupt or reset.
 
 Response (200):
 
@@ -317,7 +317,7 @@ Notes:
 
 ## DELETE /api/chat/message
 
-Deletes a chat entry by id or timestamp and removes orphaned children. This is also the deletion path used by Adventure-tab delete controls on prompt-excluded diagnostic entries such as `tool-call-debug`; the client exposes that persistent trash control when either an entry id or timestamp is available. If a deleted item was covered by stored scene summaries, those derived summaries are cleared with a terminal warning so later interval runs rebuild against the remaining history instead of treating the deletion as corruption.
+Deletes a chat entry by id or timestamp and removes orphaned children. This is also the deletion path used by Adventure-tab delete controls on prompt-excluded diagnostic entries such as `tool-call-debug`; the client exposes that persistent trash control when either an entry id or timestamp is available. If a deleted item was covered by stored scene summaries, the containing scene and its suffix are invalidated with a terminal warning while the earlier safe prefix remains; later interval runs rebuild only the uncovered suffix against the remaining history.
 
 Request:
 

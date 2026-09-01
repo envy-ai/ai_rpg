@@ -129,7 +129,7 @@ Response:
 Notes:
 - The route looks up the action live from `ModExtensionRegistry` and calls its handler with the Thing, owner actor when resolvable, current player, runtime maps, and request context.
 - Mod handlers are authoritative and should throw explicit errors for invalid owners, incompatible items, duplicate state, or unsupported contexts.
-- The clicked `thingId` remains required for generic routing. Action-specific fields are passed through as `requestBody`; the bundled modules mod uses `baseItemId`, `moduleItemId`, `slotType`, `baseItemSource`, and `moduleItemSource` to install inventory or loose-location modules, splitting one module off a selected stack when needed, and removes modules from the visible base item by reading its `installedModuleIds` plus the selected `moduleItemId`.
+- The clicked `thingId` remains required for generic routing. Action-specific fields are passed through as `requestBody`; the bundled modules mod uses `baseItemId`, `moduleItemId`, `slotType`, `baseItemSource`, and `moduleItemSource` to install inventory or loose-location modules. Installation splits one singleton from the base stack, module stack, or both when needed, then links only those singleton instances. Removal reads the visible base item's `installedModuleIds` plus the selected `moduleItemId`.
 
 ## PUT /api/things/:id
 Update a thing.
@@ -166,6 +166,7 @@ Notes:
 - Prompt output may be either a normal `<items>` list or a top-level `<stack>` node. `<stack>` updates only `name`, `description`, `shortDescription`, and `count`; all other stats are preserved directly from the source thing without attribute-bonus rescaling.
 - When the source thing already has `count > 1`, the route skips the prompt entirely and splits it into that many identical `count: 1` things, reusing the original `imageId`, copying the source thing's current `statusEffects` onto every split thing without re-enrichment, and leaving the source `value` unchanged on each copied stack entry.
 - Source things inside containers preserve their source container. Non-empty container things cannot be separated.
+- Things with installed module ids or an installed-on-base backlink cannot be separated until the module relationship is removed.
 - Separated outputs opt out of automatic same-destination stack merging because the purpose of the route is to produce distinct separated things.
 
 ## POST /api/things/:id/split-stack
@@ -184,6 +185,7 @@ Notes:
 - Split stacks are created via `Thing.copy(...)`, so they keep the same image and hashable item data as the source stack. Only `count`/placement metadata changes.
 - Stack splitting leaves existing `value` metadata unchanged.
 - Source stacks inside containers preserve their source container. Non-empty container stacks cannot be split.
+- Base items with installed modules and module items installed on a base cannot be split until the module relationship is removed. This prevents copied Things from duplicating relationship ids.
 - Explicit split-stack placement opts out of automatic same-destination stack merging so the two stack fragments remain separate until one is moved or explicitly merged.
 
 ## POST /api/things/:id/merge-stacks

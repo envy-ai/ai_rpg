@@ -17,6 +17,8 @@ const makeLazyModuleGetter = (modulePath) => {
   };
 };
 
+const getSceneSummaryIndexModule = makeLazyModuleGetter('./scene_summary_index.js');
+
 const chatSummaryStore = new Map();
 const chatSummaryQueue = [];
 const COMMON_WORDS = new Set([
@@ -2052,7 +2054,29 @@ class Utils {
       throw new Error('Scene summaries are unavailable during hydration.');
     }
     try {
-      sceneSummaries.load(serialized.sceneSummaries || {});
+      const { buildSceneSummaryEntryIndexMap } = getSceneSummaryIndexModule();
+      const serializedSceneSummaries = serialized.sceneSummaries || {};
+      const hasSerializedSceneSummaryState = (
+        Array.isArray(serializedSceneSummaries.scenes) && serializedSceneSummaries.scenes.length > 0
+      ) || (
+        Array.isArray(serializedSceneSummaries.entryIndexMap)
+        && serializedSceneSummaries.entryIndexMap.length > 0
+      );
+      const loadResult = sceneSummaries.load(serializedSceneSummaries, {
+        authoritativeEntryIndexMap: hasSerializedSceneSummaryState
+          ? buildSceneSummaryEntryIndexMap(serialized.chatHistory || [])
+          : null
+      });
+      if (loadResult?.invalidatedFromIndex !== null && loadResult?.invalidatedFromIndex !== undefined) {
+        console.warn(
+          `⚠️ Invalidated stale scene summaries from entry ${loadResult.invalidatedFromIndex} during hydration; `
+          + 'earlier contiguous summaries were preserved.'
+        );
+      } else if (Number(loadResult?.prunedMappingCount) > 0) {
+        console.warn(
+          `⚠️ Pruned ${loadResult.prunedMappingCount} stale scene-summary mapping(s) during hydration.`
+        );
+      }
     } catch (error) {
       if (typeof sceneSummaries.clear !== 'function') {
         throw new Error(`Scene summary hydration failed and the store cannot be cleared: ${error?.message || error}`);

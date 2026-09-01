@@ -49,14 +49,11 @@ class SceneSummaries {
             throw new Error('Scene summary result is missing entry index mapping.');
         }
 
-        this.#ingestEntryIndexMap(entryIndexMap);
-
         const normalizedScenes = [];
         for (const scene of scenes) {
             const normalized = this.#normalizeScene(scene);
             normalizedScenes.push(normalized);
         }
-        this.#anchorScenesToSummarizedRange(normalizedScenes, summaryResult.summarizedRange);
 
         let replacementStart = normalizedScenes[0].startIndex;
         let replacementEnd = normalizedScenes[0].endIndex;
@@ -67,6 +64,19 @@ class SceneSummaries {
             if (scene.endIndex > replacementEnd) {
                 replacementEnd = scene.endIndex;
             }
+        }
+
+        if (summaryResult.summarizedRange) {
+            const summarizedStart = Number(summaryResult.summarizedRange.start);
+            const summarizedEnd = Number(summaryResult.summarizedRange.end);
+            if (!Number.isInteger(summarizedStart) || summarizedStart <= 0) {
+                throw new Error('Scene summary summarizedRange is missing a valid start.');
+            }
+            if (!Number.isInteger(summarizedEnd) || summarizedEnd < summarizedStart) {
+                throw new Error('Scene summary summarizedRange is missing a valid end.');
+            }
+            replacementStart = summarizedStart;
+            replacementEnd = summarizedEnd;
         }
 
         const partialOverlap = this._scenes.find(scene => (
@@ -83,6 +93,20 @@ class SceneSummaries {
             );
         }
 
+        this.#removeEntryMappingsInRange(replacementStart, replacementEnd);
+        this.#ingestEntryIndexMap(entryIndexMap);
+        this.#anchorScenesToSummarizedRange(normalizedScenes, summaryResult.summarizedRange);
+
+        for (const mapping of entryIndexMap) {
+            const index = Number(mapping?.index);
+            if (!normalizedScenes.some(scene => scene.startIndex <= index && index <= scene.endIndex)) {
+                throw new Error(
+                    `Scene summary entryIndexMap index ${index} lies outside the committed scene coverage `
+                    + `${replacementStart}-${replacementEnd}.`
+                );
+            }
+        }
+
         this._scenes = this._scenes.filter(scene => {
             if (!scene || typeof scene !== 'object') {
                 return false;
@@ -93,6 +117,9 @@ class SceneSummaries {
         for (const scene of normalizedScenes) {
             this._scenes.push(scene);
         }
+
+        this.#pruneEntryMappingsToStoredScenes();
+        this.#validateStoredMappingCoverage();
 
         this._metadata.updatedAt = new Date().toISOString();
         if (summaryResult.summarizedRange) {
@@ -180,6 +207,7 @@ class SceneSummaries {
         }
 
         this._scenes = kept;
+        this.#pruneEntryMappingsToStoredScenes();
         this._metadata.updatedAt = new Date().toISOString();
 
         let removedStart = removed[0].startIndex;
@@ -236,6 +264,44 @@ class SceneSummaries {
         const gapStart = gaps[0].start;
         const gapEnd = gaps[gaps.length - 1].end;
         return { start: gapStart, end: gapEnd };
+    }
+
+    invalidateFromEntryIds(entryIds = []) {
+        if (!Array.isArray(entryIds)) {
+            throw new Error('Scene summary invalidation entry ids must be an array.');
+        }
+        const indexes = entryIds
+            .map(entryId => (typeof entryId === 'string' ? entryId.trim() : ''))
+            .filter(Boolean)
+            .map(entryId => this._entryIdToIndex.get(entryId))
+            .filter(index => Number.isInteger(index) && index > 0);
+        if (!indexes.length) {
+            return null;
+        }
+
+        const earliestIndex = Math.min(...indexes);
+        const affectedScene = this.getScenesInOrder().find(scene => (
+            scene.startIndex <= earliestIndex && earliestIndex <= scene.endIndex
+        ));
+        if (!affectedScene) {
+            throw new Error(
+                `Scene summary invalidation could not find a stored scene covering entry index ${earliestIndex}.`
+            );
+        }
+
+        const invalidatedFromIndex = affectedScene.startIndex;
+        const removedScenes = this._scenes.filter(scene => scene.endIndex >= invalidatedFromIndex);
+        this._scenes = this._scenes.filter(scene => scene.endIndex < invalidatedFromIndex);
+        this.#pruneEntryMappingsToStoredScenes();
+        this.#validateStoredMappingCoverage();
+        this._metadata.updatedAt = new Date().toISOString();
+
+        return {
+            invalidatedFromIndex,
+            earliestMissingIndex: earliestIndex,
+            removedSceneCount: removedScenes.length,
+            preservedThroughIndex: this.getContiguousSummarizedEndIndex()
+        };
     }
 
     #anchorScenesToSummarizedRange(normalizedScenes, summarizedRange) {
@@ -438,7 +504,7 @@ class SceneSummaries {
         };
     }
 
-    load(data = {}) {
+    load(data = {}, { authoritativeEntryIndexMap = null } = {}) {
         this.clear();
         if (!data || typeof data !== 'object') {
             return;
@@ -453,11 +519,68 @@ class SceneSummaries {
             throw new Error('Scene summaries data is incomplete.');
         }
 
-        this.#ingestEntryIndexMap(entryIndexMap);
         for (const scene of scenes) {
             const normalized = this.#normalizeScene(scene);
             this._scenes.push(normalized);
         }
+
+        const orderedScenes = this.getScenesInOrder();
+        for (let index = 1; index < orderedScenes.length; index += 1) {
+            if (orderedScenes[index].startIndex <= orderedScenes[index - 1].endIndex) {
+                throw new Error(
+                    `Stored scene ${orderedScenes[index].startIndex}-${orderedScenes[index].endIndex} overlaps `
+                    + `stored scene ${orderedScenes[index - 1].startIndex}-${orderedScenes[index - 1].endIndex}.`
+                );
+            }
+        }
+
+        const normalizedMappings = entryIndexMap.map(entry => this.#normalizeEntryIndexMapping(entry));
+        const coveredMappings = normalizedMappings.filter(mapping => this.#isIndexCovered(mapping.index));
+        let invalidatedFromIndex = null;
+
+        if (Array.isArray(authoritativeEntryIndexMap)) {
+            const authoritativeByIndex = new Map();
+            for (const entry of authoritativeEntryIndexMap) {
+                const normalized = this.#normalizeEntryIndexMapping(entry);
+                if (authoritativeByIndex.has(normalized.index)) {
+                    throw new Error(`Authoritative scene summary index contains duplicate index ${normalized.index}.`);
+                }
+                authoritativeByIndex.set(normalized.index, normalized.entryId);
+            }
+
+            const candidatesByIndex = new Map();
+            for (const mapping of coveredMappings) {
+                if (!candidatesByIndex.has(mapping.index)) {
+                    candidatesByIndex.set(mapping.index, []);
+                }
+                candidatesByIndex.get(mapping.index).push(mapping);
+            }
+
+            for (const scene of orderedScenes) {
+                for (let index = scene.startIndex; index <= scene.endIndex; index += 1) {
+                    const authoritativeEntryId = authoritativeByIndex.get(index);
+                    const candidates = candidatesByIndex.get(index) || [];
+                    const matching = candidates.find(candidate => candidate.entryId === authoritativeEntryId);
+                    if (!authoritativeEntryId || !matching) {
+                        invalidatedFromIndex = scene.startIndex;
+                        break;
+                    }
+                    this.#ingestEntryIndexMap([matching]);
+                }
+                if (invalidatedFromIndex !== null) {
+                    break;
+                }
+            }
+
+            if (invalidatedFromIndex !== null) {
+                this._scenes = this._scenes.filter(scene => scene.endIndex < invalidatedFromIndex);
+            }
+        } else {
+            this.#ingestEntryIndexMap(coveredMappings);
+        }
+
+        this.#pruneEntryMappingsToStoredScenes();
+        this.#validateStoredMappingCoverage();
 
         if (data.metadata && typeof data.metadata === 'object') {
             this._metadata = {
@@ -465,32 +588,110 @@ class SceneSummaries {
                 ...data.metadata
             };
         }
+        const prunedMappingCount = entryIndexMap.length - this._entryIdToIndex.size;
+        if (invalidatedFromIndex !== null || prunedMappingCount > 0) {
+            this._metadata.updatedAt = new Date().toISOString();
+        }
+        return {
+            invalidatedFromIndex,
+            prunedMappingCount
+        };
     }
 
     #ingestEntryIndexMap(entryIndexMap) {
+        const entryIdSeenInBatch = new Set();
+        const indexToEntryId = new Map(
+            Array.from(this._entryIdToIndex.entries()).map(([entryId, index]) => [index, entryId])
+        );
         for (const entry of entryIndexMap) {
-            const entryId = typeof entry?.entryId === 'string' ? entry.entryId.trim() : '';
-            const index = Number(entry?.index);
-            if (!entryId) {
-                throw new Error('Scene summary entryIndexMap entry is missing entryId.');
+            const { entryId, index, npcNames } = this.#normalizeEntryIndexMapping(entry);
+            if (entryIdSeenInBatch.has(entryId)) {
+                throw new Error(`Scene summary entryIndexMap contains duplicate entry ID ${entryId}.`);
             }
-            if (!Number.isInteger(index) || index <= 0) {
-                throw new Error(`Scene summary entryIndexMap entry has invalid index for ${entryId}.`);
-            }
-            const npcNames = Array.isArray(entry?.npcNames)
-                ? entry.npcNames
-                    .map(name => (typeof name === 'string' ? name.trim() : ''))
-                    .filter(Boolean)
-                : [];
+            entryIdSeenInBatch.add(entryId);
             const existing = this._entryIdToIndex.get(entryId);
             if (existing !== undefined && existing !== index) {
                 throw new Error(`Scene summary entryIndexMap index mismatch for ${entryId}.`);
             }
+            const existingEntryIdAtIndex = indexToEntryId.get(index);
+            if (existingEntryIdAtIndex !== undefined && existingEntryIdAtIndex !== entryId) {
+                throw new Error(
+                    `Scene summary entryIndexMap index ${index} is assigned to both `
+                    + `${existingEntryIdAtIndex} and ${entryId}.`
+                );
+            }
             this._entryIdToIndex.set(entryId, index);
+            indexToEntryId.set(index, entryId);
             if (npcNames.length) {
                 this._entryIdToNpcNames.set(entryId, npcNames);
             } else {
                 this._entryIdToNpcNames.delete(entryId);
+            }
+        }
+    }
+
+    #normalizeEntryIndexMapping(entry) {
+        const entryId = typeof entry?.entryId === 'string' ? entry.entryId.trim() : '';
+        const index = Number(entry?.index);
+        if (!entryId) {
+            throw new Error('Scene summary entryIndexMap entry is missing entryId.');
+        }
+        if (!Number.isInteger(index) || index <= 0) {
+            throw new Error(`Scene summary entryIndexMap entry has invalid index for ${entryId}.`);
+        }
+        const npcNames = Array.isArray(entry?.npcNames)
+            ? entry.npcNames
+                .map(name => (typeof name === 'string' ? name.trim() : ''))
+                .filter(Boolean)
+            : [];
+        return { entryId, index, npcNames };
+    }
+
+    #removeEntryMappingsInRange(startIndex, endIndex) {
+        for (const [entryId, index] of this._entryIdToIndex.entries()) {
+            if (startIndex <= index && index <= endIndex) {
+                this._entryIdToIndex.delete(entryId);
+                this._entryIdToNpcNames.delete(entryId);
+            }
+        }
+    }
+
+    #isIndexCovered(index) {
+        return this._scenes.some(scene => scene.startIndex <= index && index <= scene.endIndex);
+    }
+
+    #pruneEntryMappingsToStoredScenes() {
+        for (const [entryId, index] of this._entryIdToIndex.entries()) {
+            if (!this.#isIndexCovered(index)) {
+                this._entryIdToIndex.delete(entryId);
+                this._entryIdToNpcNames.delete(entryId);
+            }
+        }
+    }
+
+    #validateStoredMappingCoverage() {
+        const indexToEntryId = new Map();
+        for (const [entryId, index] of this._entryIdToIndex.entries()) {
+            const existingEntryId = indexToEntryId.get(index);
+            if (existingEntryId && existingEntryId !== entryId) {
+                throw new Error(
+                    `Scene summary entry index ${index} is assigned to both ${existingEntryId} and ${entryId}.`
+                );
+            }
+            indexToEntryId.set(index, entryId);
+        }
+
+        for (const scene of this._scenes) {
+            for (let index = scene.startIndex; index <= scene.endIndex; index += 1) {
+                if (!indexToEntryId.has(index)) {
+                    throw new Error(`Scene summary entry mapping is missing covered index ${index}.`);
+                }
+            }
+            if (indexToEntryId.get(scene.startIndex) !== scene.startEntryId) {
+                throw new Error(`Scene summary start entry ID does not match index ${scene.startIndex}.`);
+            }
+            if (indexToEntryId.get(scene.endIndex) !== scene.endEntryId) {
+                throw new Error(`Scene summary end entry ID does not match index ${scene.endIndex}.`);
             }
         }
     }

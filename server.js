@@ -10246,7 +10246,9 @@ async function summarizeScenesForHistoryRange({ chatHistory, startIndex, endInde
         throw new Error('Scene summary end index is invalid after removing the final scene.');
     }
 
-    const entryIndexMap = rangeEntries.map(entry => {
+    const entryIndexMap = rangeEntries
+        .filter(entry => summarizedStartIndex <= entry.index && entry.index <= summarizedEndIndex)
+        .map(entry => {
         const npcNames = Array.isArray(entry?.entry?.metadata?.npcNames)
             ? entry.entry.metadata.npcNames
                 .map(name => (typeof name === 'string' ? name.trim() : ''))
@@ -10257,7 +10259,7 @@ async function summarizeScenesForHistoryRange({ chatHistory, startIndex, endInde
             entryId: entry.entryId,
             npcNames: npcNames.length ? npcNames : undefined
         };
-    });
+        });
     const entryIdByIndex = new Map(entryIndexMap.map(entry => [entry.index, entry.entryId]));
 
     const scenesWithBounds = [];

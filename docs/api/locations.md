@@ -212,11 +212,11 @@ Responses:
   - `modification`: `{ locationChanged, alteration, alterationSummary }`
   - `plausibility`: `{ type, reason }`
   - `narrative`: `{ description, otherEffect }`
+- 200 implausible outcome: `{ success: true, applied: false, implausible: true, reason, outcome, resultLevel: "implausible", plausibility }`. No location, inventory, time, or history mutation occurs; the shared crafting client displays `reason` as a non-error popup notification.
 - 400: `{ success: false, error }`
   - No active player.
   - Target location is not the player's current location.
   - Selected item is missing, not in player inventory, equipped, or an attempted consumed container is not empty.
-  - The plausibility prompt resolves to an implausible action.
 - 404: `{ success: false, error }`
 - 500: `{ success: false, error }` for prompt rendering/parsing failures, unmatched consumed item names, failed `alter_location` mutation, failed received-item generation, or other server errors.
 

@@ -110,7 +110,7 @@ test('success-degree craft parsing fills omitted result fields from the base out
       <itemsConsumed>
         <itemName>Wild Onion</itemName>
         <itemName>Primordial Leaf Compost</itemName>
-      </itemsCrafted>
+      </itemsConsumed>
       <item>
         <name>Blessed Onion Row</name>
         <count>1</count>
@@ -163,6 +163,40 @@ test('success-degree craft parsing preserves explicit empty crafted output field
         assert.ok(result);
         assert.equal(result.timeTakenRaw, '30 minutes');
         assert.deepEqual(JSON.parse(JSON.stringify(result.itemsRecovered)), []);
+    } finally {
+        restore();
+    }
+});
+
+test('success-degree craft parsing rejects mismatched item field closing tags', async () => {
+    const { parseCraftingResultsResponse, restore } = loadParseCraftingResultsResponse();
+    try {
+        const malformedDegreeXml = `
+<response>
+  <craftingResults>
+    <result>
+      <level>critical_success</level>
+      <itemsConsumed>
+        <itemName>Wild Onion</itemName>
+      </itemsConsumed>
+      <itemsCrafted>
+        <item>
+          <name>Blessed Onion Knife</name>
+          <count>1</count>
+          <description>A knife with a clean green edge.</description>
+          <moduleInstalledOnItemId>N/A</moduleType>
+          <rarity>Uncommon</rarity>
+        </item>
+      </itemsCrafted>
+      <timeTaken>20 minutes</timeTaken>
+    </result>
+  </craftingResults>
+</response>`;
+
+        await assert.rejects(
+            parseCraftingResultsResponse(malformedDegreeXml, { baseOutcomeXml }),
+            /Failed to parse crafting results response: Failed to parse XML content strictly/i
+        );
     } finally {
         restore();
     }

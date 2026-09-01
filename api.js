@@ -122,6 +122,115 @@ function filterNeedBarChangesForHistory(changes) {
     return changes.filter(entry => entry && entry.hideFromHistory !== true);
 }
 
+const CRAFTING_PLAUSIBILITY_TYPES = new Set(['plausible', 'implausible', 'trivial']);
+const CRAFTING_DIFFICULTY_LEVELS = new Set([
+    'trivial',
+    'easy',
+    'medium',
+    'hard',
+    'very hard',
+    'legendary'
+]);
+
+function validateCraftingPlausibilityOutcome(plausibility, { responseXml } = {}) {
+    if (!plausibility || typeof plausibility !== 'object' || Array.isArray(plausibility)) {
+        throw new Error('Crafting plausibility response is missing a usable <plausibility> block.');
+    }
+    if (typeof responseXml !== 'string' || !responseXml.trim()) {
+        throw new TypeError('Crafting plausibility validation requires the response XML.');
+    }
+
+    const plausibilityMatch = responseXml.match(/<plausibility\b[\s\S]*?<\/plausibility>/i);
+    if (!plausibilityMatch) {
+        throw new Error('Crafting plausibility response is missing <plausibility>...</plausibility>.');
+    }
+
+    const plausibilityDoc = Utils.parseXmlDocumentStrict(plausibilityMatch[0], 'text/xml');
+    const plausibilityNode = plausibilityDoc.getElementsByTagName('plausibility')[0] || null;
+    if (!plausibilityNode) {
+        throw new Error('Crafting plausibility response is missing a parseable <plausibility> block.');
+    }
+
+    const directElementChildren = (node) => Array.from(node?.childNodes || [])
+        .filter(child => child && child.nodeType === 1);
+    const directChild = (node, tagName) => {
+        const normalizedTagName = String(tagName || '').trim().toLowerCase();
+        return directElementChildren(node).find(child => (
+            String(child.nodeName || '').trim().toLowerCase() === normalizedTagName
+        )) || null;
+    };
+    const requiredDirectText = (node, tagName, contextLabel) => {
+        const child = directChild(node, tagName);
+        const value = child && typeof child.textContent === 'string'
+            ? child.textContent.trim()
+            : '';
+        if (!value) {
+            throw new Error(`Crafting plausibility response is missing required ${contextLabel} <${tagName}>.`);
+        }
+        return value;
+    };
+
+    const rawType = requiredDirectText(plausibilityNode, 'type', '<plausibility>');
+    const normalizedType = rawType.toLowerCase();
+    if (!CRAFTING_PLAUSIBILITY_TYPES.has(normalizedType)) {
+        throw new Error(
+            `Crafting plausibility <type> must be Plausible, Implausible, or Trivial; received "${rawType}".`
+        );
+    }
+    if (typeof plausibility.type !== 'string' || plausibility.type.trim().toLowerCase() !== normalizedType) {
+        throw new Error('Crafting plausibility parser did not preserve the required <type> value.');
+    }
+
+    if (normalizedType === 'implausible') {
+        const rawReason = requiredDirectText(plausibilityNode, 'reason', '<plausibility>');
+        if (typeof plausibility.reason !== 'string' || !plausibility.reason.trim()) {
+            throw new Error('Crafting plausibility parser did not preserve the implausibility <reason>.');
+        }
+        return {
+            type: normalizedType,
+            reason: rawReason
+        };
+    }
+
+    if (normalizedType === 'plausible') {
+        const skillCheckNode = directChild(plausibilityNode, 'skillCheck');
+        if (!skillCheckNode) {
+            throw new Error('Crafting plausibility response is missing required <plausibility> <skillCheck>.');
+        }
+
+        requiredDirectText(skillCheckNode, 'reason', '<skillCheck>');
+        requiredDirectText(skillCheckNode, 'skill', '<skillCheck>');
+        requiredDirectText(skillCheckNode, 'attribute', '<skillCheck>');
+        const rawDifficulty = requiredDirectText(skillCheckNode, 'difficulty', '<skillCheck>');
+        const normalizedDifficulty = rawDifficulty
+            .toLowerCase()
+            .replace(/-/g, ' ')
+            .replace(/\s+/g, ' ')
+            .trim();
+        if (!CRAFTING_DIFFICULTY_LEVELS.has(normalizedDifficulty)) {
+            throw new Error(
+                'Crafting plausibility <difficulty> must be Trivial, Easy, Medium, Hard, Very Hard, or Legendary; '
+                + `received "${rawDifficulty}".`
+            );
+        }
+
+        if (!plausibility.skillCheck || typeof plausibility.skillCheck !== 'object') {
+            throw new Error('Crafting plausibility parser did not preserve the required <skillCheck>.');
+        }
+        if (typeof plausibility.skillCheck.attribute !== 'string' || !plausibility.skillCheck.attribute.trim()) {
+            throw new Error('Crafting plausibility parser did not preserve the required <attribute>.');
+        }
+        if (typeof plausibility.skillCheck.difficulty !== 'string' || !plausibility.skillCheck.difficulty.trim()) {
+            throw new Error('Crafting plausibility parser did not preserve the required <difficulty>.');
+        }
+    }
+
+    return {
+        type: normalizedType,
+        reason: typeof plausibility.reason === 'string' ? plausibility.reason.trim() : null
+    };
+}
+
 const {
     buildModManagerState,
     clearPendingLoadIntent,
@@ -12373,7 +12482,7 @@ module.exports = function registerApiRoutes(scope) {
                 return null;
             }
 
-            const doc = Utils.parseXmlDocument(sanitizeForXml(baseOutcomeXml), 'text/xml');
+            const doc = Utils.parseXmlDocumentStrict(sanitizeForXml(baseOutcomeXml), 'text/xml');
             const parent = findCraftResultParentNode(doc);
             if (!parent) {
                 throw new Error('Base crafting outcome XML is missing a craftingResults, salvageResults, or harvestResults parent node.');
@@ -12443,7 +12552,7 @@ module.exports = function registerApiRoutes(scope) {
                 return results;
             }
             try {
-                const doc = Utils.parseXmlDocument(sanitizeForXml(xmlContent), 'text/xml');
+                const doc = Utils.parseXmlDocumentStrict(sanitizeForXml(xmlContent), 'text/xml');
                 const fallbackIndex = buildCraftResultFallbacks(baseOutcomeXml);
                 const parent = findCraftResultParentNode(doc);
                 if (!parent) {
@@ -12494,7 +12603,7 @@ module.exports = function registerApiRoutes(scope) {
                         }
                         const wrapped = `<items>${serializedItem}</items>`;
                         //console.log('Wrapped item XML for parsing:', wrapped);
-                        const parsedItems = await parseThingsXml(wrapped) || [];
+                        const parsedItems = await parseThingsXml(wrapped, { strictXml: true }) || [];
                         //console.log('Parsed items from crafting results:', parsedItems);
                         parsedItems.forEach(entry => {
                             if (entry) {
@@ -13815,6 +13924,22 @@ module.exports = function registerApiRoutes(scope) {
             return payload;
         }
 
+        function hasThingModuleRelationships(thing) {
+            if (!thing || typeof thing !== 'object') {
+                return false;
+            }
+            const installedModuleIds = typeof thing.getExtensionField === 'function'
+                ? thing.getExtensionField('installedModuleIds')
+                : thing.installedModuleIds;
+            const moduleInstalledOnItemId = typeof thing.getExtensionField === 'function'
+                ? thing.getExtensionField('moduleInstalledOnItemId')
+                : thing.moduleInstalledOnItemId;
+            return (
+                (Array.isArray(installedModuleIds) && installedModuleIds.length > 0)
+                || (typeof moduleInstalledOnItemId === 'string' && moduleInstalledOnItemId.trim())
+            );
+        }
+
         function resolveCraftConsumedThings({
             inputThings,
             consumedNames,
@@ -14990,7 +15115,7 @@ module.exports = function registerApiRoutes(scope) {
 
         const invalidateSceneSummariesForDeletedHistoryEntries = (reason) => {
             const sceneSummaries = Globals.getSceneSummaries();
-            if (!sceneSummaries || typeof sceneSummaries.clear !== 'function') {
+            if (!sceneSummaries || typeof sceneSummaries.invalidateFromEntryIds !== 'function') {
                 throw new Error('Scene summary store is unavailable for chat-history deletion recovery.');
             }
             const deletedCoveredEntryIds = findDeletedCoveredSceneSummaryEntryIds(
@@ -15000,9 +15125,15 @@ module.exports = function registerApiRoutes(scope) {
             if (!deletedCoveredEntryIds.length) {
                 return [];
             }
-            sceneSummaries.clear();
+            const invalidation = sceneSummaries.invalidateFromEntryIds(deletedCoveredEntryIds);
+            if (!invalidation) {
+                throw new Error(
+                    'Scene summary store reported deleted covered entries but could not resolve their stored indexes.'
+                );
+            }
             console.warn(
-                `Cleared derived scene summaries after ${reason}; deleted covered chat entries: `
+                `Invalidated derived scene summaries from entry ${invalidation.invalidatedFromIndex} after ${reason}; `
+                + `preserved coverage through ${invalidation.preservedThroughIndex}; deleted covered chat entries: `
                 + deletedCoveredEntryIds.join(', ')
             );
             return deletedCoveredEntryIds;
@@ -42342,36 +42473,101 @@ module.exports = function registerApiRoutes(scope) {
                     throw new Error('Crafting plausibility template did not produce prompts.');
                 }
 
-                const plausibilityResponse = await LLMClient.chatCompletion({
+                const availableThings = slotItems.map(entry => entry.thing);
+                const plausibilityRequestOptions = {
                     messages: [
                         { role: 'system', content: plausibilityTemplate.systemPrompt },
                         { role: 'user', content: plausibilityTemplate.generationPrompt }
                     ],
                     metadataLabel: 'craft_plausibility',
-                    expectedXmlRootTag: 'response'
+                    expectedXmlRootTag: 'response',
+                    requiredRegex: /<response>[\s\S]*<\/response>/i
+                };
+                if (typeof plausibilityTemplate.temperature === 'number') {
+                    plausibilityRequestOptions.temperature = plausibilityTemplate.temperature;
+                }
+
+                const plausibilityAttempt = await runPromptWithParseRetries({
+                    messages: plausibilityRequestOptions.messages,
+                    maxAttempts: resolveConfiguredPromptMaxAttempts(config?.ai, { fallbackMaxAttempts: 3 }),
+                    complete: ({ messages }) => LLMClient.chatCompletion({
+                        ...plausibilityRequestOptions,
+                        messages
+                    }),
+                    parse: async response => {
+                        if (!response || !response.trim()) {
+                            throw new Error('Crafting plausibility analysis returned no response.');
+                        }
+
+                        const parsedPlausibility = parsePlausibilityOutcome(response);
+                        const validatedPlausibility = validateCraftingPlausibilityOutcome(parsedPlausibility, {
+                            responseXml: response
+                        });
+                        if (validatedPlausibility.type === 'implausible') {
+                            return {
+                                plausibility: parsedPlausibility,
+                                craftingResults: new Map()
+                            };
+                        }
+
+                        const parsedCraftingResults = await parseCraftingResultsResponse(response);
+                        const parsedBaseSuccessResult = parsedCraftingResults.get('success') || null;
+                        if (!parsedBaseSuccessResult) {
+                            throw new Error('Craft plausibility response missing a usable standard success result.');
+                        }
+
+                        const candidateConsumedNames = Array.isArray(parsedBaseSuccessResult.itemsConsumed)
+                            ? parsedBaseSuccessResult.itemsConsumed.filter(name => typeof name === 'string' && name.trim())
+                            : [];
+                        resolveCraftConsumedThings({
+                            inputThings: availableThings,
+                            consumedNames: candidateConsumedNames,
+                            mode: craftingMode,
+                            allowFallbackConsumeFirst: isSalvageAction
+                        });
+
+                        return {
+                            plausibility: parsedPlausibility,
+                            craftingResults: parsedCraftingResults
+                        };
+                    },
+                    buildRetryInstruction: error => [
+                        `The previous crafting response could not be accepted: ${error?.message || error}`,
+                        'Correct the XML and return one complete <response>...</response> block only.',
+                        'Include the required <plausibility><type> tag. Plausible attempts also require a complete <skillCheck> with <reason>, <skill>, <attribute>, and an allowed <difficulty>, plus a usable standard-success result with <timeTaken>.',
+                        'Implausible attempts require a non-empty <reason> and do not require crafting results.',
+                        'Each <itemsConsumed><itemName> must exactly match a selected input and may name each selected Thing at most once.'
+                    ].join('\n'),
+                    onAttempt: ({ attempt, maxAttempts, response, error, accepted }) => {
+                        LLMClient.logPrompt({
+                            metadataLabel: plausibilityRequestOptions.metadataLabel,
+                            systemPrompt: plausibilityTemplate.systemPrompt,
+                            generationPrompt: plausibilityTemplate.generationPrompt,
+                            response,
+                            sections: [
+                                {
+                                    title: 'Structured response attempt',
+                                    content: `${attempt}/${maxAttempts}`
+                                },
+                                {
+                                    title: 'Structured response validation',
+                                    content: accepted
+                                        ? 'accepted'
+                                        : `rejected: ${error?.stack || error?.message || error}`
+                                }
+                            ]
+                        });
+                        if (!accepted) {
+                            console.warn(
+                                `Crafting plausibility response attempt ${attempt}/${maxAttempts} failed validation: `
+                                + `${error?.message || error}`
+                            );
+                        }
+                    }
                 });
 
-                LLMClient.logPrompt({
-                    metadataLabel: 'craft_plausibility',
-                    systemPrompt: plausibilityTemplate.systemPrompt,
-                    generationPrompt: plausibilityTemplate.generationPrompt,
-                    response: plausibilityResponse
-                });
-
-                if (!plausibilityResponse || !plausibilityResponse.trim()) {
-                    throw new Error('Crafting plausibility analysis returned no response.');
-                }
-
-                const plausibility = parsePlausibilityOutcome(plausibilityResponse);
-                if (!plausibility) {
-                    throw new Error('Unable to parse crafting plausibility response.');
-                }
-
-                const craftingResults = await parseCraftingResultsResponse(plausibilityResponse);
-                const baseSuccessResult = craftingResults.get('success');
-                if (!baseSuccessResult) {
-                    throw new Error('Craft plausibility response missing a standard success result.');
-                }
+                const plausibilityResponse = plausibilityAttempt.response;
+                const { plausibility, craftingResults } = plausibilityAttempt.value;
 
                 const actionOutcome = resolveActionOutcome({
                     plausibility,
@@ -42389,9 +42585,19 @@ module.exports = function registerApiRoutes(scope) {
                     { level: actionOutcome.locationLevel }
                 );
                 if (mappedLevel === 'implausible') {
-                    return res.status(400).json({
-                        success: false,
-                        error: plausibility.reason || 'That crafting attempt is implausible.'
+                    const implausibilityReason = plausibility.reason
+                        || 'That attempt is not feasible in the current circumstances.';
+                    return res.json({
+                        success: true,
+                        applied: false,
+                        implausible: true,
+                        reason: implausibilityReason,
+                        outcome: actionOutcome,
+                        resultLevel: mappedLevel,
+                        plausibility: {
+                            type: plausibility.type,
+                            reason: implausibilityReason
+                        }
                     });
                 }
 
@@ -42409,7 +42615,6 @@ module.exports = function registerApiRoutes(scope) {
                             : []
                 })));*/
                 let effectiveResults = craftingResults;
-                const availableThings = slotItems.map(entry => entry.thing);
 
                 if (mappedLevel && mappedLevel !== 'success') {
                     const degreeMode = isHarvestAction ? 'harvest' : (isSalvageAction ? 'salvage' : craftingMode);
@@ -43650,9 +43855,19 @@ module.exports = function registerApiRoutes(scope) {
                     { level: actionOutcome.locationLevel }
                 );
                 if (mappedLevel === 'implausible') {
-                    return res.status(400).json({
-                        success: false,
-                        error: plausibility.reason || 'That location modification attempt is implausible.'
+                    const implausibilityReason = plausibility.reason
+                        || 'That location modification is not feasible in the current circumstances.';
+                    return res.json({
+                        success: true,
+                        applied: false,
+                        implausible: true,
+                        reason: implausibilityReason,
+                        outcome: actionOutcome,
+                        resultLevel: mappedLevel,
+                        plausibility: {
+                            type: plausibility.type,
+                            reason: implausibilityReason
+                        }
                     });
                 }
 
@@ -45783,6 +45998,12 @@ module.exports = function registerApiRoutes(scope) {
                         error: 'Non-empty containers cannot be separated.'
                     });
                 }
+                if (hasThingModuleRelationships(sourceThing)) {
+                    return res.status(400).json({
+                        success: false,
+                        error: 'Installed modules must be removed before this thing can be separated.'
+                    });
+                }
 
                 if (typeof separateThingByPrompt !== 'function') {
                     throw new Error('Thing separation prompt helper is unavailable.');
@@ -46145,6 +46366,12 @@ module.exports = function registerApiRoutes(scope) {
                     return res.status(400).json({
                         success: false,
                         error: 'Non-empty containers cannot be split.'
+                    });
+                }
+                if (hasThingModuleRelationships(sourceThing)) {
+                    return res.status(400).json({
+                        success: false,
+                        error: 'Installed modules must be removed before this stack can be split.'
                     });
                 }
 
@@ -55195,4 +55422,5 @@ module.exports.shouldPropagatePlayerActionEventCheckError = shouldPropagatePlaye
 module.exports.resolveThingStandardValueDetails = resolveThingStandardValueDetails;
 module.exports.resolveThingCurrencyConversion = resolveThingCurrencyConversion;
 module.exports.filterNeedBarChangesForHistory = filterNeedBarChangesForHistory;
+module.exports.validateCraftingPlausibilityOutcome = validateCraftingPlausibilityOutcome;
 module.exports.buildManualQuestCompletionEntries = buildManualQuestCompletionEntries;
