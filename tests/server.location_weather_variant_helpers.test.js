@@ -129,7 +129,7 @@ test('indoor weather variant prompt uses the interior seasonal template', () => 
     assert.match(prompt, /Season: Spring/);
     assert.match(prompt, /Seasonal interior changes: Fresh daylight brightens established windows/);
     assert.match(prompt, /Do not add or emphasize outdoor vegetation, trees, open sky, rain, snow, or other precipitation\./);
-    assert.doesNotMatch(prompt, /Seasonal vegetation:/);
+    assert.doesNotMatch(prompt, /Seasonal appearance:/);
     assert.doesNotMatch(prompt, /Weather:/);
 });
 
@@ -149,7 +149,7 @@ test('legacy null weather hint inside an Interior region uses the interior templ
     assert.equal(conditions.weatherScope, 'no');
     assert.equal(conditions.hasLocalWeather, false);
     assert.match(prompt, /Seasonal interior changes:/);
-    assert.doesNotMatch(prompt, /Seasonal vegetation:/);
+    assert.doesNotMatch(prompt, /Seasonal appearance:/);
     assert.doesNotMatch(prompt, /Weather:/);
 });
 
@@ -203,7 +203,7 @@ test('location weather variant prompt renders current lighting, season, and weat
 
     assert.match(prompt, /Lighting: Moonlit night/);
     assert.match(prompt, /Season: Spring/);
-    assert.match(prompt, /Seasonal vegetation: Fresh green shoots cover the banks/);
+    assert.match(prompt, /Seasonal appearance: Fresh green shoots cover the banks/);
     assert.match(prompt, /Weather: Heavy Rain/);
     assert.doesNotMatch(prompt, /<p>/);
 });

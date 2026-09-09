@@ -96,7 +96,7 @@ axes:
         description: Dialogue follows genre patterns with some individual color. Character voices differ lightly, but common phrases and rhythms recur. They sometimes say the same thing between scenes.
       - level: 3
         name: Varied
-        description: Dialogue is broadly varied. Most recurring characters have distinct priorities, vocabulary, and rhythms while still speaking naturally. They never say the same thing between scenes, but may paraphrasse things they said recently in cases where emphasis is necessary.
+        description: Dialogue is clearly attributable without idiom or compression. Speakers differ through what they notice, what they prioritize, and how they structure thought, not through accent, slang, or rhythm tricks. Characters speak in complete, natural sentences — but no two characters would make the same point the same way, and none repeat themselves between scenes. A "unique voice" at this level is not clipped speech and idiom. Wording should be clear and natural.
       - level: 4
         name: Distinctive
         description: Dialogue is strongly character-specific. Word choice, humor, subtext, silences, and conversational tactics reveal who is speaking. NPCs do not repeat themselves from scene to scene, paraphrased or otherwise, unless specifically asked.

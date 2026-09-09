@@ -1,5 +1,5 @@
 {% set listedNpcs = whileYouWereAwayNpcs or [] %}
-<task>Resolve what changed while the player was away, then write return prose from the player's perspective only when it adds useful material not already covered.</task>
+<task>Resolve what changed while the player was away, then follow the arrival-narration requirement below.</task>
 
 {% for npc in listedNpcs %}For {{ npc.name }} (last seen {{ npc.lastSeenTimeAgo }} at {{ npc.lastSeenLocationName | default(npc.last_seen_location, true) }}), return exactly one complete <characterUpdate> XML block using this exact schema. Do not nest a second <characterUpdates> wrapper, include another character, or substitute field names:
 <characterUpdate>
@@ -27,9 +27,15 @@ Plan what the player can directly see, learn, or experience on return. Do not ex
 
 {% llm_dummy_action %}
 
+{% if whileAwayVisibleProseRequired %}
+Draft Response: This arrival has no other narration. Write a few non-empty return-scene paragraphs from the player's perspective. Do not treat the movement notice as prior arrival prose. Output prose only.
+
+{% llmparse('player_action_required_prose') as whileAwayPlayerProse %}
+{% else %}
 Draft Response: Write a few return-scene paragraphs from the player's perspective when useful. Do not repeat material already covered by the arrival turn. If no additional player-facing prose is needed, return exactly N/A. Otherwise output prose only.
 
 {% llmparse('player_action_optional_prose') as whileAwayPlayerProse %}
+{% endif %}
 
 {% if whileAwayPlayerProse %}
 {% set tinyBrainAuditFocus = 'Player-facing prose must not expose hidden/offscreen knowledge; exact-location arrivals must not include nearby or party characters; structured changes must not contradict the staged update blocks.' %}

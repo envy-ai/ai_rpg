@@ -5,7 +5,12 @@ The following NPCs are currently at this location and have not been with the pla
 - {{ npc.name }} (last seen {{ npc.lastSeenTimeAgo }} at {{ npc.lastSeenLocationName | default(npc.last_seen_location, true) }})
 {% endfor -%}
 
-<task>Write a paragraph-long summary for each listed character, if any, describing what they have been up to since they last saw the player. Include proseForPlayer only when there is useful player-facing return narration that has not already been covered. Otherwise omit proseForPlayer or leave it empty.</task>
+<task>Write a paragraph-long summary for each listed character, if any, describing what they have been up to since they last saw the player.
+{% if whileAwayVisibleProseRequired -%}
+This arrival has no other narration. You MUST include non-empty proseForPlayer describing what the player directly sees, learns, or experiences on returning. Do not treat the movement notice as prior arrival prose.
+{% else -%}
+Include proseForPlayer only when there is useful player-facing return narration that has not already been covered. Otherwise omit proseForPlayer or leave it empty.
+{% endif -%}</task>
 
 If one of the above listed characters was already here when the player arrived, keep them in their listed update. Only use the optional arrival section for a character who is physically in the exact current location right now but was not listed above. Do not use it for someone who is merely nearby, elsewhere in the same building, or audible from another room.
 
@@ -16,13 +21,21 @@ Need bar instructions:{% for bar in needBarDefinitions or [] %}
 These instructions take precedence over existing game state descriptions, which described the characters at the time they were last seen and are not intended to lock characters in that state. Even if a character is narratively 'starving,' if food is available in the scene, their food bar should be at least 50%, etc.
 {% else -%}
 No current-location NPCs require individual while-you-were-away character updates.
+{% if whileAwayVisibleProseRequired -%}
+This arrival has no other narration. You MUST include non-empty proseForPlayer describing what the player directly sees, learns, or experiences on returning. Do not treat the movement notice as prior arrival prose.
+{% else -%}
 Include proseForPlayer only when there is useful player-facing return narration that has not already been covered. Otherwise omit proseForPlayer or leave it empty.
+{% endif -%}
 {% endif -%}
 
 Return a response in this format:
 
 <response>
+{% if whileAwayVisibleProseRequired -%}
+  <!-- proseForPlayer is mandatory and must contain player-facing arrival narration. -->
+{% else -%}
   <!-- proseForPlayer is optional. Omit it or leave it empty when its trimmed content would be empty. -->
+{% endif -%}
   <proseForPlayer>
     <!-- A few paragraphs describing what the player sees, learns, or experiences upon returning to this location after being away. The player is not omniscient, so describe events and changes from their perspective. Do not repeat prose or dialogue from the previous turn, even paraphrased. -->
   </proseForPlayer>

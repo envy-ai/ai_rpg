@@ -590,10 +590,19 @@ test('base-context includes active mystery threads and contained boxes only', ()
         }
     ];
     context.mysteryThreadMaxActive = 2;
+    context.mysteryThreadMaxUnresolvedBoxes = 3;
+    context.mysteryCapacity = {
+        activeThreadCount: 2,
+        maxActiveThreads: 2,
+        maxUnresolvedBoxesPerThread: 3,
+        full: true
+    };
 
     const rendered = promptEnv.render('base-context.xml.njk', context);
 
-    assert.match(rendered, /<activeMysteryThreads max="2">/);
+    assert.match(rendered, /<mysteryCapacity activeThreads="2" maxActiveThreads="2" maxUnresolvedBoxesPerThread="3" full="true">/);
+    assert.match(rendered, /MYSTERY CAPACITY IS FULL/);
+    assert.match(rendered, /<activeMysteryThreads max="2" maxUnresolvedBoxesPerThread="3">/);
     assert.match(rendered, /<name>Skyhawk Furnace Siphoning<\/name>/);
     assert.match(rendered, /<summary>Drask is stealing vitality from the furnace\.<\/summary>/);
     assert.match(rendered, /<constraint>Drask is the siphoner\.<\/constraint>/);

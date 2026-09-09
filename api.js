@@ -78,6 +78,7 @@ const {
 } = require('./TinyBrainResultBuilders.js');
 const {
     collectPlayerActionAccompanyingCharacters,
+    collectPlayerActionAutomaticPartyMembers,
     collectPlayerActionHiddenContestContext,
     movePlayerActionAccompanyingCharacters,
     resolvePreResolvedPlayerActionHiddenContestToolCall
@@ -8815,9 +8816,13 @@ module.exports = function registerApiRoutes(scope) {
             requestId = null,
             locationWasVisitedBeforeArrival = undefined,
             locationLastVisitedTimeBeforeArrival = undefined,
+            arrivalProseAlreadyProvided = false,
             suppressVisibleProse = false,
             replacementArrivalEntry = null
         } = {}) {
+            if (typeof arrivalProseAlreadyProvided !== 'boolean') {
+                throw new TypeError('While-you-were-away arrivalProseAlreadyProvided must be a boolean.');
+            }
             if (typeof suppressVisibleProse !== 'boolean') {
                 throw new TypeError('While-you-were-away suppressVisibleProse must be a boolean.');
             }
@@ -8827,6 +8832,10 @@ module.exports = function registerApiRoutes(scope) {
             ) {
                 throw new Error('Suppressing while-you-were-away visible prose requires a replacement arrival entry.');
             }
+            if (suppressVisibleProse && !arrivalProseAlreadyProvided) {
+                throw new Error('Suppressing while-you-were-away visible prose requires existing arrival prose.');
+            }
+            const whileAwayVisibleProseRequired = !arrivalProseAlreadyProvided && !suppressVisibleProse;
             const resolvedLocation = locationOverride
                 || (typeof currentPlayer?.currentLocation === 'string' && currentPlayer.currentLocation.trim()
                     ? (gameLocations.get(currentPlayer.currentLocation.trim()) || Location.get(currentPlayer.currentLocation.trim()) || null)
@@ -9004,7 +9013,8 @@ module.exports = function registerApiRoutes(scope) {
 
             const whileAwayPromptContext = {
                 ...promptBaseContext,
-                promptType: 'while-you-were-away'
+                promptType: 'while-you-were-away',
+                whileAwayVisibleProseRequired
             };
             const useTinyBrainWhileAway = isTinyBrainPromptEnabled(
                 Globals.config,
@@ -9028,6 +9038,8 @@ module.exports = function registerApiRoutes(scope) {
                 throw new Error('While-you-were-away prompt template is missing prompts.');
             }
 
+            const completeResponseRegex = /<response[\s\S]*<\/response>/i;
+            const responseWithVisibleProseRegex = /<response\b[\s\S]*?<proseForPlayer\b[^>]*>(?!\s*(?:<!\[CDATA\[\s*\]\]>)?\s*<\/proseForPlayer>)[\s\S]*?<\/proseForPlayer>[\s\S]*?<\/response>/i;
             const requestOptions = {
                 messages: [
                     { role: 'system', content: parsedTemplate.systemPrompt },
@@ -9036,7 +9048,9 @@ module.exports = function registerApiRoutes(scope) {
                 metadataLabel: 'while_you_were_away',
                 validateXML: false,
                 expectedXmlRootTag: 'response',
-                requiredRegex: /<response[\s\S]*<\/response>/i
+                requiredRegex: whileAwayVisibleProseRequired
+                    ? responseWithVisibleProseRegex
+                    : completeResponseRegex
             };
             if (typeof parsedTemplate.temperature === 'number') {
                 requestOptions.temperature = parsedTemplate.temperature;
@@ -9096,6 +9110,9 @@ module.exports = function registerApiRoutes(scope) {
             const parsedResponse = parseWhileYouWereAwayResponse(rawResponse, {
                 expectedNameKeys: new Set(candidateByNameKey.keys())
             });
+            if (whileAwayVisibleProseRequired && !parsedResponse?.proseForPlayer) {
+                throw new Error('While-you-were-away arrival required non-empty proseForPlayer, but none was returned.');
+            }
             const parsedUpdates = Array.isArray(parsedResponse?.updates)
                 ? parsedResponse.updates
                 : [];
@@ -18500,11 +18517,15 @@ module.exports = function registerApiRoutes(scope) {
             const hasEffectivePlayerDestination = Boolean(effectivePlayerDestinationText);
             const shouldSplitEventChecks = hasEffectivePlayerDestination && !moveTurnResultEventLocationRepresentsVehicle;
             const suppressOriginTimeAdvance = shouldSplitEventChecks && Boolean(destinationProse);
-            const authoritativeMovementCompanionNames = Array.isArray(
-                moveTurnResultPayload.accompanyingCharacters
-            )
-                ? moveTurnResultPayload.accompanyingCharacters.slice()
-                : [];
+            const authoritativeMovementCompanionNames = Array.from(new Set([
+                ...collectPlayerActionAutomaticPartyMembers({
+                    currentPlayer,
+                    players
+                }).map(member => member.name),
+                ...(Array.isArray(moveTurnResultPayload.accompanyingCharacters)
+                    ? moveTurnResultPayload.accompanyingCharacters
+                    : [])
+            ]));
 
             let destinationLocation = null;
             let vehicleMovement = null;
@@ -18613,9 +18634,7 @@ module.exports = function registerApiRoutes(scope) {
                     }
 
                     if (!(suppressPlayerMove && destinationLocation?.isStub && destinationLocation.stubMetadata?.isRegionEntryStub)) {
-                        destinationLocation = await ensuremoveTurnResultDestinationUnstubbed(destinationLocation, {
-                            travelContext: null
-                        });
+                        destinationLocation = await ensuremoveTurnResultDestinationUnstubbed(destinationLocation);
                     }
 
 	                    if (!suppressPlayerMove && currentPlayer && currentPlayer.currentLocation !== destinationLocation.id) {
@@ -25435,6 +25454,9 @@ module.exports = function registerApiRoutes(scope) {
         }
 
         async function ensureRegionSecretsForCurrentRegion() {
+            if (Globals.config?.regions?.secrets_enabled !== true) {
+                return null;
+            }
             const currentRegion = Globals?.region || null;
             if (!currentRegion || (Array.isArray(currentRegion.secrets) && currentRegion.secrets.length)) {
                 return null;
@@ -25498,7 +25520,7 @@ module.exports = function registerApiRoutes(scope) {
                     return collected;
                 })();
 
-                if (secrets.length) {
+                if (secrets.length && Globals.config?.regions?.secrets_enabled === true) {
                     try {
                         currentRegion.secrets = secrets;
                     } catch (error) {
@@ -26114,6 +26136,7 @@ module.exports = function registerApiRoutes(scope) {
             let whileYouWereAwayProcessed = false;
             const runWhileYouWereAwayOnArrivalIfNeeded = async ({
                 parentEntryId = null,
+                arrivalProseAlreadyProvided = true,
                 suppressVisibleProse = false,
                 replacementArrivalEntry = null
             } = {}) => {
@@ -26150,6 +26173,7 @@ module.exports = function registerApiRoutes(scope) {
                     stream,
                     locationWasVisitedBeforeArrival,
                     locationLastVisitedTimeBeforeArrival,
+                    arrivalProseAlreadyProvided,
                     suppressVisibleProse,
                     replacementArrivalEntry
                 });
@@ -27711,7 +27735,9 @@ module.exports = function registerApiRoutes(scope) {
                         __codexQuotaCountAsTurn: promptMetadataLabel === 'player_action',
                         __codexQuotaTurnKey: stream.requestId || `player_turn_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`
                     },
-                    validateXML: false
+                    validateXML: false,
+                    responseValidationRetryFeedback: promptMetadataLabel === 'player_action'
+                        && !useTinyBrainPlayerAction
                 };
                 const liveTokenStreamFallbackDiagnostics = [];
                 const collectLiveTokenStreamFallbackDiagnostic = async diagnostic => {
@@ -30371,6 +30397,14 @@ module.exports = function registerApiRoutes(scope) {
             return 2;
         };
 
+        const getMysteryThreadMaxUnresolvedBoxesForApi = () => {
+            const configured = Number(config?.mystery_threads?.max_unresolved_boxes_per_thread);
+            if (Number.isInteger(configured) && configured >= 0) {
+                return configured;
+            }
+            return 3;
+        };
+
         const validateMysteryThreadStatusChange = (thread, nextStatus) => {
             if (nextStatus !== 'active' || thread.status === 'active') {
                 return;
@@ -30462,7 +30496,8 @@ module.exports = function registerApiRoutes(scope) {
                     success: true,
                     mysteryThreads,
                     count: mysteryThreads.length,
-                    maxActive: getMysteryThreadMaxActiveForApi()
+                    maxActive: getMysteryThreadMaxActiveForApi(),
+                    maxUnresolvedBoxesPerThread: getMysteryThreadMaxUnresolvedBoxesForApi()
                 });
             } catch (error) {
                 console.error('Failed to list mystery threads:', error);
@@ -30585,6 +30620,18 @@ module.exports = function registerApiRoutes(scope) {
                             error: `Mystery box "${boxId}" not found.`
                         });
                     }
+                }
+
+                const unresolvedBoxCount = boxIds
+                    .map(boxId => MysteryBox.getById(boxId))
+                    .filter(box => box && !box.resolved)
+                    .length;
+                const maxUnresolvedBoxes = getMysteryThreadMaxUnresolvedBoxesForApi();
+                if (unresolvedBoxCount > maxUnresolvedBoxes) {
+                    return res.status(400).json({
+                        success: false,
+                        error: `Mystery thread "${thread.name}" cannot contain more than ${maxUnresolvedBoxes} unresolved mystery boxes.`
+                    });
                 }
 
                 const assignedIds = new Set(boxIds);
@@ -34955,6 +35002,15 @@ module.exports = function registerApiRoutes(scope) {
 
                 const body = req.body && typeof req.body === 'object' ? req.body : {};
                 const rawLocationId = typeof body.locationId === 'string' ? body.locationId.trim() : '';
+                const arrivalProseAlreadyProvided = body.arrivalProseAlreadyProvided === undefined
+                    ? false
+                    : body.arrivalProseAlreadyProvided;
+                if (typeof arrivalProseAlreadyProvided !== 'boolean') {
+                    return res.status(400).json({
+                        success: false,
+                        error: 'arrivalProseAlreadyProvided must be a boolean.'
+                    });
+                }
                 const accountTravelTime = body.accountTravelTime === true;
                 const storyToolTeleport = body.storyToolTeleport === true;
                 const accompanyingCharacters = body.accompanyingCharacters === undefined
@@ -35246,6 +35302,7 @@ module.exports = function registerApiRoutes(scope) {
                             locationId: destinationLocation.id,
                             returnEntries: true,
                             clientId,
+                            arrivalProseAlreadyProvided,
                             locationWasVisitedBeforeArrival: typeof Globals.getPlayerArrivalWasVisitedBeforeMove === 'function'
                                 ? Globals.getPlayerArrivalWasVisitedBeforeMove(destinationLocation.id)
                                 : undefined,
@@ -41329,6 +41386,15 @@ module.exports = function registerApiRoutes(scope) {
                         player: serializeNpcForClient(currentPlayer)
                     });
                 }
+	                const arrivalProseAlreadyProvided = req.body?.arrivalProseAlreadyProvided === undefined
+	                    ? false
+	                    : req.body.arrivalProseAlreadyProvided;
+	                if (typeof arrivalProseAlreadyProvided !== 'boolean') {
+	                    return res.status(400).json({
+	                        success: false,
+	                        error: 'arrivalProseAlreadyProvided must be a boolean.'
+	                    });
+	                }
 
                 releasePlayerMoveLock = tryAcquirePlayerMoveLock(currentPlayerId, '/api/player/move');
                 if (!releasePlayerMoveLock) {
@@ -41638,6 +41704,7 @@ module.exports = function registerApiRoutes(scope) {
 	                    locationId: destinationLocation.id,
 	                    returnEntries: true,
 	                    clientId,
+	                    arrivalProseAlreadyProvided,
 	                    locationWasVisitedBeforeArrival: typeof Globals.getPlayerArrivalWasVisitedBeforeMove === 'function'
 	                        ? Globals.getPlayerArrivalWasVisitedBeforeMove(destinationLocation.id)
 	                        : undefined,
@@ -50861,10 +50928,7 @@ module.exports = function registerApiRoutes(scope) {
                 if (entranceLocation.isStub) {
                     report('new_game:location_detail', 'Detailing starting location...');
                     try {
-                        const expansion = await generateLocationFromPrompt({
-                            stubLocation: entranceLocation,
-                            createStubs: false
-                        });
+                        const expansion = await generateLocationFromPrompt({ stubLocation: entranceLocation });
                         if (expansion?.location) {
                             entranceLocation = expansion.location;
                             entranceLocationId = entranceLocation.id;

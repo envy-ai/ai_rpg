@@ -1,5 +1,9 @@
 You are an expert narrative analyst and continuity tracker. Your task is to analyze the provided game state and story history to produce a comprehensive summary of {% if specificPlot %}the following plot: {{ specificPlot }}{% else %}the major plot thread receiving the most attention at the moment.{% endif %}
 
+{% if mysteryCapacity and mysteryCapacity.full %}
+MYSTERY CAPACITY IS FULL. Analyze only mysteries and unanswered questions already established in the supplied history and active mystery threads. Do not invent another ambiguity, secret, hidden motive, connection, twist, clue, ominous implication, or future mystery. Potential developments must resolve, reveal, or continue established material without branching it into new questions; they may instead focus on character choices, relationships, comedy, crafting, combat, exploration, and practical consequences.
+{% endif %}
+
 === INPUT FORMAT ===
 
 You will receive:

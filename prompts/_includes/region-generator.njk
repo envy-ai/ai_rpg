@@ -204,12 +204,14 @@ Very important: follow the instructions in &lt;writingStyleNotes&gt; and any ton
     <concept>1-2 sentence description of an enemy concept</concept>
     ... more concepts ...
   </enemyConcepts>
-#}  <secrets>
+#}{% if config.regions.secrets_enabled == true %}
+  <secrets>
     <!-- Generate interesting secrets, hidden features, or easter eggs appropriate for this region. These should be brief descriptions that could be used to create hidden content later. Be careful to format your XML tags correctly. Generate half as many secrets as there are locations in the region, rounded up. Adhere strictly to tonal and setting guidelines when generating these. -->
     <secret>1-2 sentence description of a secret or hidden feature</secret>
     <secret>1-2 sentence description of a secret or hidden feature</secret>
     ... more secrets ...
   </secrets>
+{% endif %}
   <shortDescription><!--5-10 word summary to reduce context vs full XML. Try to get the essence of the region across clearly and concisely. Don't mention the region by name.--></shortDescription>
 </region>
 {% endif %}

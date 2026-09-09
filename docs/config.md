@@ -2,6 +2,21 @@
 
 This document covers runtime configuration layers, editing surfaces, and config options that affect game behavior.
 
+## Region secrets
+
+`regions.secrets_enabled` is a boolean and defaults to `false` in `config.default.yaml`. It is also editable under System Configuration → World Generation → Region Secrets.
+
+```yaml
+regions:
+  secrets_enabled: false
+```
+
+When disabled, both main region generation and pending-region expansion omit secrets instructions/schema, and the background `region_generate_secrets` path makes no LLM request. Region parsers accept XML without secrets and ignore unsolicited generated secrets. Base context (including Standard and TinyBrain prompts), region NPC generation, short-description context, and region tool lookups omit stored region secrets; `moreInfo` does so even with `includeFullState: true`. Disabling while a background request is already running prevents that request from storing its result.
+
+Existing secrets remain stored in saves and accessible through region editing. Enabling the switch restores their use and generation for regions with missing secrets. This setting does not rewrite descriptions, NPC histories/goals, chat history, summaries, or plot analysis that already incorporated secret-derived ideas, and it does not disable unrelated NPC secrets or mystery-thread systems.
+
+Unsolicited `<secrets>` blocks are also removed from generated region XML before it is reused as entrance-selection or NPC-generation context. The original generation response remains in its prompt log.
+
 ## CLI config override file
 
 You can layer an additional YAML file on top of `config.default.yaml` and `config.yaml` at startup:
@@ -380,14 +395,17 @@ Location, region, and single-NPC generation prompts may return `<quantity>`. Mis
 
 ## Mystery Threads
 
-`mystery_threads.max_active` caps how many active private mystery threads are injected into base-context prompts and how many automatic mystery threads the reactive mystery-box flow can keep active.
+`mystery_threads.max_active` caps how many active private mystery threads are injected into base-context prompts and how many automatic mystery threads the reactive mystery-box flow can keep active. `mystery_threads.max_unresolved_boxes_per_thread` caps unresolved boxes in each thread; resolved historical boxes remain persisted but free capacity.
 
 ```yaml
 mystery_threads:
   max_active: 3
+  max_unresolved_boxes_per_thread: 3
 ```
 
-Validation requires a non-negative integer. `0` disables active mystery-thread base-context injection and forces automatic mystery tracking to skip rather than create new active mystery continuity.
+Both values require non-negative integers. Setting either effective capacity to `0` prevents automatic creation. Existing over-cap saves are preserved, but automatic tracking cannot add another unresolved box until capacity opens.
+
+Base context exposes the active-thread count, per-thread unresolved counts, and whether overall mystery capacity is full. When all active thread and unresolved-box slots are full, prose prompts explicitly forbid every form of new mystery—including unexplained clues, hidden actors, secret motives, suspicious discrepancies, unexplained oddities, ominous implications, and foreshadowed questions. They may reveal or resolve established mysteries without branching them into new questions.
 
 ## AI backend selection
 

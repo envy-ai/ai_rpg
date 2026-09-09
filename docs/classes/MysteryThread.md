@@ -43,19 +43,20 @@ The class stores containment as ids only and does not enforce global uniqueness 
 
 ## Prompt And Event Behavior
 - Base-context prompt construction includes only active threads, capped by `mystery_threads.max_active`. The default config sets this cap to `3`; runtime helpers fall back to `2` when the active config omits a valid non-negative integer.
+- `mystery_threads.max_unresolved_boxes_per_thread` defaults and falls back to `3`. Resolved boxes remain in `boxIds` but do not consume this capacity. Existing over-cap threads remain loadable and editable, while automatic tracking rejects new box attachments until their unresolved count drops below the limit.
 - A cap of `0` keeps mystery-thread continuity out of base context and causes the automatic mystery-box update prompt to skip tracking.
-- Active prompt context includes thread id, name, status, keys, summary, constraints, and contained unresolved boxes. Resolved boxes remain in `boxIds` but are omitted from `<mysteryBoxes>`.
+- Active prompt context includes thread id, name, status, keys, summary, constraints, contained unresolved boxes, the unresolved count, and per-thread/full capacity state. The wrapper also supplies overall capacity. When it is full, prose prompts must not invent any new mystery-shaped material and may only reveal or resolve established mysteries without branching them.
 - A `mysteryBoxMention` event runs `mystery-thread-check` before `mystery-box-update` when active threads exist. The check can inactivate matching active threads and mark matching boxes resolved.
 - Resolved thread names are matched by id, key, or active name/key search. Unknown returned thread or box names are warned and ignored.
-- `mystery-box-update` can create, update, or skip one `MysteryBox`, then applies the returned thread data through `MysteryThread`. Creating or activating an active thread is rejected when the active count is at `mystery_threads.max_active`.
+- `mystery-box-update` can create, update, or skip one `MysteryBox`, then applies the returned thread data through `MysteryThread`. Automatically created threads must be active, and a new box cannot be attached to an inactive thread without activating it, so generated output cannot evade active capacity. Creating or activating a thread is rejected when the active count is at `mystery_threads.max_active`; attaching a new unresolved box is rejected at the per-thread cap. Capacity is checked before constructing a new box so a rejected fourth box cannot remain orphaned. Existing boxes may still be updated at capacity.
 - The periodic `mystery_box_cleanup` prompt and `/resolve_mystery_threads` command review active threads by exact id. Returned threads with `<resolved>true</resolved>` are set to `inactive`, not `concluded`, matching the existing reactive mystery-thread check convention.
 - Mystery prompts are logged through `LLMClient.logPrompt()`, including `mystery_thread_check`, `mystery_box_update`, and `mystery_box_cleanup`.
 
 ## API And Story Tools
-- `GET /api/mystery-threads`: returns sorted lightweight summaries, optional phrase filtering, and `maxActive`.
+- `GET /api/mystery-threads`: returns sorted lightweight summaries, optional phrase filtering, `maxActive`, and `maxUnresolvedBoxesPerThread`.
 - `GET /api/mystery-threads/:id`: loads one full thread by exact id or exact normalized key/name/alias.
 - `PUT /api/mystery-threads/:id`: Story Tools-style field replacement by exact id. It preserves `boxIds`, validates active-cap activation, and persists through the mystery persistence helper.
-- `PUT /api/mystery-threads/:id/boxes`: replaces the thread's assigned box ids, validates every id, removes those ids from other threads, and persists.
+- `PUT /api/mystery-threads/:id/boxes`: replaces the thread's assigned box ids, validates every id and the unresolved-box cap before mutation, removes those ids from other threads, and persists.
 - Browser Story Tools centers the Mystery Boxes panel on threads. The thread form edits name, status, summary, and constraints; it does not expose aliases, so saving through that form leaves the canonical name as the retained key.
 - Mystery API mutations rewrite `mysteryBoxes.json`, `mysteryThreads.json`, and metadata counts when a current save directory is attached. Without a current save directory, runtime state is updated and a later normal save writes the data. A configured but missing save directory is an error.
 

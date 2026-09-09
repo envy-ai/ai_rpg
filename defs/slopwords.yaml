@@ -23,7 +23,7 @@ regexes:
     name: "gossip/gossiping/etc"
     ppm: default
   - pattern: "/(logging|logbook|document|data point|record|journal|ledger|notebook)/i"
-    name: "Stop having characters log and document everything. It's an overused trope. Omit."
+    name: "Stop having characters log and document everything, or making plots about debts. It's an overused trope. Omit."
     ppm: 0
   - pattern: '/[Aa] beat\./'
     name: "Ban use of 'a beat' in prose."
@@ -80,7 +80,7 @@ slopwords:
   anchoring: default
   amber: default
   mischief: default
-  ledger: default
+  ledger: 0
   ozone: 0
   Elara: 0
   Aris: 0

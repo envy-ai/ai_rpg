@@ -22,6 +22,7 @@ imagegen/test*
 imagegen/*2512*
 *.old
 *.bak
+*.orig
 **/*.old
 **/*.bak
 new-game-settings/*

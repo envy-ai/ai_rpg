@@ -9,6 +9,9 @@ const {
     validateGeneratedLocationThingBatch
 } = require('./LocationThingGenerationValidation.js');
 const {
+    parseLocationExitSuggestions
+} = require('./LocationExitSuggestions.js');
+const {
     resolveConfiguredPromptMaxAttempts,
     runPromptWithParseRetries
 } = require('./PromptRetryPolicy.js');
@@ -194,6 +197,7 @@ const { diffFrozenEnabledModDirectoryNames } = require('./ModDiscovery.js');
 const { buildModManagerState } = require('./ModManager.js');
 const { initializeLorebookManager, getLorebookManager } = require('./lorebook.js');
 const { loadMergedDefinitionFile, validateDefinitionOverlays } = require('./DefinitionLoader.js');
+const { loadBannedTropes } = require('./BannedTropes.js');
 const {
     buildUnifiedTonalScalePromptForSetting,
     loadUnifiedTonalScaleDefinition
@@ -217,6 +221,7 @@ attachAxiosMetricsLogger(axios);
 let cachedBannedNpcWords = null;
 let cachedBannedNpcRegexes = null;
 let cachedBannedLocationNames = null;
+let cachedBannedTropes = null;
 let cachedExperiencePointValues = null;
 let cachedSlopWordList = null;
 let cachedNpcNameBlockedWords = null;
@@ -808,6 +813,7 @@ function reloadConfigAndDefs({
     cachedBannedNpcWords = null;
     cachedBannedNpcRegexes = null;
     cachedBannedLocationNames = null;
+    cachedBannedTropes = null;
     cachedExperiencePointValues = null;
     cachedSlopWordList = null;
     cachedNpcNameBlockedWords = null;
@@ -4270,14 +4276,25 @@ async function validateConfiguration() {
             }
         }
     }
+    if (config.regions?.secrets_enabled !== undefined && typeof config.regions.secrets_enabled !== 'boolean') {
+        validationErrors.push('regions.secrets_enabled must be a boolean when provided');
+    }
     if (config.mystery_threads !== undefined) {
         const mysteryThreadsConfig = config.mystery_threads;
         if (!mysteryThreadsConfig || typeof mysteryThreadsConfig !== 'object' || Array.isArray(mysteryThreadsConfig)) {
             validationErrors.push('mystery_threads must be an object when provided');
-        } else if (mysteryThreadsConfig.max_active !== undefined) {
-            const maxActive = Number(mysteryThreadsConfig.max_active);
-            if (!Number.isInteger(maxActive) || maxActive < 0) {
-                validationErrors.push('mystery_threads.max_active must be an integer greater than or equal to 0 when provided');
+        } else {
+            if (mysteryThreadsConfig.max_active !== undefined) {
+                const maxActive = Number(mysteryThreadsConfig.max_active);
+                if (!Number.isInteger(maxActive) || maxActive < 0) {
+                    validationErrors.push('mystery_threads.max_active must be an integer greater than or equal to 0 when provided');
+                }
+            }
+            if (mysteryThreadsConfig.max_unresolved_boxes_per_thread !== undefined) {
+                const maxUnresolvedBoxesPerThread = Number(mysteryThreadsConfig.max_unresolved_boxes_per_thread);
+                if (!Number.isInteger(maxUnresolvedBoxesPerThread) || maxUnresolvedBoxesPerThread < 0) {
+                    validationErrors.push('mystery_threads.max_unresolved_boxes_per_thread must be an integer greater than or equal to 0 when provided');
+                }
             }
         }
     }
@@ -4957,20 +4974,31 @@ function resolveMysteryThreadMaxActive(sourceConfig = config) {
     return 2;
 }
 
+function resolveMysteryThreadMaxUnresolvedBoxes(sourceConfig = config) {
+    const configured = Number(sourceConfig?.mystery_threads?.max_unresolved_boxes_per_thread);
+    if (Number.isInteger(configured) && configured >= 0) {
+        return configured;
+    }
+    return 3;
+}
+
+function countUnresolvedMysteryBoxes(thread) {
+    return thread.boxIds
+        .map(boxId => MysteryBox.getById(boxId))
+        .filter(Boolean)
+        .filter(box => !box.resolved)
+        .length;
+}
+
 function buildActiveMysteryThreadsForPrompt(sourceConfig = config) {
     const maxActive = resolveMysteryThreadMaxActive(sourceConfig);
+    const maxUnresolvedBoxesPerThread = resolveMysteryThreadMaxUnresolvedBoxes(sourceConfig);
     if (maxActive <= 0) {
         return [];
     }
 
-    return MysteryThread.getActive({ max: maxActive }).map(thread => ({
-        id: thread.id,
-        name: thread.name,
-        status: thread.status,
-        keys: [...thread.keys],
-        summary: thread.summary,
-        constraints: [...thread.constraints],
-        mysteryBoxes: thread.boxIds
+    return MysteryThread.getActive({ max: maxActive }).map(thread => {
+        const mysteryBoxes = thread.boxIds
             .map(boxId => MysteryBox.getById(boxId))
             .filter(Boolean)
             .filter(box => !box.resolved)
@@ -4979,8 +5007,38 @@ function buildActiveMysteryThreadsForPrompt(sourceConfig = config) {
                 name: box.name,
                 keys: [...box.keys],
                 text: box.text
-            }))
-    }));
+            }));
+        return {
+            id: thread.id,
+            name: thread.name,
+            status: thread.status,
+            keys: [...thread.keys],
+            summary: thread.summary,
+            constraints: [...thread.constraints],
+            mysteryBoxCount: mysteryBoxes.length,
+            mysteryBoxCapacityFull: mysteryBoxes.length >= maxUnresolvedBoxesPerThread,
+            mysteryBoxes
+        };
+    });
+}
+
+function buildMysteryCapacityForPrompt(sourceConfig = config) {
+    const maxActiveThreads = resolveMysteryThreadMaxActive(sourceConfig);
+    const maxUnresolvedBoxesPerThread = resolveMysteryThreadMaxUnresolvedBoxes(sourceConfig);
+    const activeThreadCount = MysteryThread.getActive({ max: Number.MAX_SAFE_INTEGER }).length;
+    const activeThreadsInContext = MysteryThread.getActive({ max: maxActiveThreads });
+    const hasOpenExistingThread = activeThreadsInContext.some(
+        thread => countUnresolvedMysteryBoxes(thread) < maxUnresolvedBoxesPerThread
+    );
+    const canCreateActiveThread = maxUnresolvedBoxesPerThread > 0
+        && activeThreadCount < maxActiveThreads;
+
+    return {
+        activeThreadCount,
+        maxActiveThreads,
+        maxUnresolvedBoxesPerThread,
+        full: !canCreateActiveThread && !hasOpenExistingThread
+    };
 }
 
 function buildMysteryCleanupThreadsForPrompt() {
@@ -7903,7 +7961,7 @@ function buildBasePromptContext({
         description: regionStatus?.description || location?.stubMetadata?.regionDescription || 'No region description available.',
         statusEffects: normalizeStatusEffects(region || regionStatus),
         locations: regionLocations,
-        secrets: regionStatus?.secrets || [],
+        secrets: config.regions?.secrets_enabled === true ? (regionStatus?.secrets || []) : [],
         connectedRegions
     };
 
@@ -9360,9 +9418,12 @@ function buildBasePromptContext({
         tonalScaleEvaluation,
         tonalScaleEvaluationTurnsAgo,
         mysteryThreadMaxActive: resolveMysteryThreadMaxActive(config),
+        mysteryThreadMaxUnresolvedBoxes: resolveMysteryThreadMaxUnresolvedBoxes(config),
+        mysteryCapacity: buildMysteryCapacityForPrompt(config),
         activeMysteryThreads: buildActiveMysteryThreadsForPrompt(config),
         mysteryCleanupThreads: buildMysteryCleanupThreadsForPrompt(),
         trackers: buildTrackersForPrompt(),
+        bannedTropes: getBannedTropes(),
         currentRegion: currentRegionContext,
         currentLocation: currentLocationContext,
         isExterior: resolvedIsExterior,
@@ -11335,7 +11396,6 @@ function clampAttributeValue(value) {
     return Math.max(1, Math.min(20, value));
 }
 
-const PRIMARY_DIRECTIONS = ['north', 'east', 'south', 'west', 'up', 'down', 'northeast', 'northwest', 'southeast', 'southwest', 'in', 'out', 'forward', 'back'];
 const OPPOSITE_DIRECTION_MAP = {
     north: 'south',
     south: 'north',
@@ -13241,93 +13301,104 @@ function collectPendingRegionLocationsForExpansion(regionId) {
     return locations;
 }
 
-function pickAvailableDirections(location, exclude = []) {
-    const exclusions = new Set();
-    (exclude || []).map(normalizeDirection).filter(Boolean).forEach(dir => exclusions.add(dir));
+function buildLocationExitDiscoveryContext(location, originLocation = null) {
+    const exits = [];
+    const seenDestinationIds = new Set();
 
-    if (typeof location.getAvailableDirections === 'function') {
-        for (const existingDirection of location.getAvailableDirections()) {
-            const normalized = normalizeDirection(existingDirection);
-            if (normalized) {
-                exclusions.add(normalized);
+    if (location && typeof location.getAvailableDirections === 'function') {
+        for (const direction of location.getAvailableDirections()) {
+            const exit = typeof location.getExit === 'function' ? location.getExit(direction) : null;
+            const destination = exit?.destination ? gameLocations.get(exit.destination) || null : null;
+            if (!exit || !destination) {
+                continue;
             }
+            seenDestinationIds.add(destination.id);
+            exits.push({
+                name: destination.name || destination.id,
+                destinationType: destination.stubMetadata?.isRegionEntryStub ? 'region' : 'location',
+                description: exit.description || '',
+                isReturnRoute: Boolean(originLocation?.id && destination.id === originLocation.id)
+            });
         }
     }
 
-    return PRIMARY_DIRECTIONS.filter(direction => !exclusions.has(direction));
+    if (originLocation?.id && !seenDestinationIds.has(originLocation.id)) {
+        exits.unshift({
+            name: originLocation.name || originLocation.id,
+            destinationType: 'location',
+            description: 'The route back to the location from which the traveler arrived.',
+            isReturnRoute: true
+        });
+    }
+
+    return exits;
 }
 
-async function createStubNeighbors(location, context = {}) {
-    if (!location || typeof location.id !== 'string') {
-        return [];
+function filterNewExitSuggestionsToUnknownPlaces(suggestions = []) {
+    if (!Array.isArray(suggestions)) {
+        throw new Error('Suggested exits must be an array.');
     }
 
-    if (typeof location.hasGeneratedStubs === 'boolean' && location.hasGeneratedStubs) {
-        return [];
-    }
-
-    const excludeDirections = Array.isArray(context.excludeDirections) ? context.excludeDirections : [];
-    const available = pickAvailableDirections(location, excludeDirections);
-
-    if (available.length === 0) {
-        if (typeof location.markStubsGenerated === 'function') {
-            location.markStubsGenerated();
+    return suggestions.filter(suggestion => {
+        const normalizedName = suggestion.name.trim().toLowerCase().replace(/\s+/g, ' ');
+        if (findLocationByNameLoose(normalizedName) || findRegionByNameLoose(normalizedName)) {
+            return false;
         }
-        return [];
-    }
-
-    const minStubs = context.minStubs || 1;
-    const maxStubs = Math.max(minStubs, Math.min(context.maxStubs || 3, available.length));
-    const stubCount = randomIntInclusive(minStubs, maxStubs);
-    const created = [];
-
-    for (let i = 0; i < stubCount && available.length > 0; i++) {
-        const randomIndex = randomIntInclusive(0, available.length - 1);
-        const direction = available.splice(randomIndex, 1)[0];
-        const stubName = generateStubName(location, direction);
-        const stubShortDescription = context.shortDescription
-            ? `${context.shortDescription} (${direction} approach)`
-            : `An unexplored area ${direction} of ${location.name || 'this location'}.`;
-        const stubPurpose = context.locationPurpose || 'Extend the surrounding region for future exploration.';
-        const stub = new Location({
-            name: stubName,
-            description: null,
-            shortDescription: stubShortDescription,
-            baseLevel: null,
-            isStub: true,
-            regionId: location.stubMetadata?.regionId || null,
-            stubMetadata: {
-                originLocationId: location.id,
-                originDirection: direction,
-                themeHint: context.themeHint || null,
-                shortDescription: stubShortDescription,
-                locationPurpose: stubPurpose,
-                settingDescription: context.settingDescription || null,
-                allowRename: false
+        for (const pendingRegion of pendingRegionStubs.values()) {
+            const pendingName = pendingRegion?.originalName || pendingRegion?.name || '';
+            if (pendingName.trim().toLowerCase().replace(/\s+/g, ' ') === normalizedName) {
+                return false;
             }
-        });
-
-        gameLocations.set(stub.id, stub);
-        try {
-            await ensureLocationNameAllowed(stub);
-        } catch (error) {
-            console.warn(`Failed to ensure location name for stub neighbor ${stub.id}:`, error.message);
         }
-        const exitDescription = `Unexplored path leading ${direction} toward ${stub.name}`;
-        ensureExitConnection(location, stub, { description: exitDescription, bidirectional: false });
+        return true;
+    });
+}
 
-        console.log(`🌱 Created stub location ${stub.name} (${stub.id}) to the ${direction} of ${location.name || location.id}`);
+async function createSuggestedExitStubs(location, suggestions = []) {
+    if (!location || typeof location.id !== 'string') {
+        throw new Error('Cannot create suggested exit stubs without a source location.');
+    }
+    if (!Array.isArray(suggestions)) {
+        throw new Error('Suggested exits must be an array.');
+    }
+
+    const created = [];
+    for (const suggestion of suggestions) {
+        let stub = null;
+        if (suggestion.destinationType === 'region') {
+            stub = await createRegionStubFromEvent({
+                name: suggestion.name,
+                originLocation: location,
+                description: suggestion.description,
+                travelTimeMinutes: suggestion.travelTimeMinutes,
+                createOriginExit: true
+            });
+        } else {
+            stub = await createLocationFromEvent({
+                name: suggestion.name,
+                originLocation: location,
+                descriptionHint: suggestion.description,
+                expandStub: false,
+                targetRegionId: location.regionId || null,
+                travelTimeMinutes: suggestion.travelTimeMinutes,
+                createOriginExit: true
+            });
+        }
+
+        if (!stub || stub.isStub !== true) {
+            throw new Error(`Failed to create ${suggestion.destinationType} stub for suggested exit "${suggestion.name}".`);
+        }
         created.push({
             id: stub.id,
-            name: stub.name,
-            direction
+            name: stub.name || suggestion.name,
+            destinationType: suggestion.destinationType
         });
     }
 
-    if (typeof location.markStubsGenerated === 'function') {
-        location.markStubsGenerated();
+    if (typeof location.markStubsGenerated !== 'function') {
+        throw new Error(`Location "${location.name || location.id}" cannot record its new-exit generation decision.`);
     }
-
+    location.markStubsGenerated();
     return created;
 }
 
@@ -13421,7 +13492,19 @@ function extractRegionImportantNpcCount(stubResponse) {
     }
 }
 
+function omitDisabledRegionSecretsFromXml(response) {
+    if (config.regions?.secrets_enabled === true || typeof response !== 'string') {
+        return response;
+    }
+    // Region secrets are a flat XML container. Remove unsolicited fields before
+    // the generation response is reused as context for entrance/NPC prompts.
+    return response.replace(/<secrets\b[^>]*\/>|<secrets\b[^>]*>[\s\S]*?<\/secrets\s*>/gi, '');
+}
+
 function extractRegionSecrets(stubResponse) {
+    if (config.regions?.secrets_enabled !== true) {
+        return [];
+    }
     // Find the strings inside <secret> tags inside <regionSecrets>.
     const secrets = [];
     if (!stubResponse || typeof stubResponse !== 'string') {
@@ -13763,7 +13846,7 @@ async function expandRegionEntryStub(stubLocation) {
                         );
                     }
                 });
-                stubResponse = stubGenerationResult.response;
+                stubResponse = omitDisabledRegionSecretsFromXml(stubGenerationResult.response);
                 parsedStubResponse = stubGenerationResult.value;
             } catch (error) {
                 throw new Error(
@@ -17461,6 +17544,7 @@ function renderRegionNpcPrompt(region, options = {}) {
             attributeDefinitions: options.attributeDefinitions || attributeDefinitionsForPrompt,
             bannedWords: options.bannedWords || getNpcPromptBannedWords(),
             characterConcepts: options.characterConcepts || [],
+            secrets: Globals.config?.regions?.secrets_enabled === true ? (options.secrets || []) : [],
             config: Globals.config || {},
             lorebookEntries,
             npcRepresentation,
@@ -17795,6 +17879,7 @@ async function runShortDescriptionPrompt({
 
     const templatePayload = {
         itemType,
+        config: Globals.config || {},
         itemTypeLabel,
         itemTypePlural,
         itemTypePluralLabel,
@@ -18053,7 +18138,7 @@ function buildRegionShortDescriptionItem(region) {
         throw new Error('Region short description requires a name.');
     }
 
-    const secrets = Array.isArray(region.secrets) ? region.secrets : [];
+    const secrets = config.regions?.secrets_enabled === true && Array.isArray(region.secrets) ? region.secrets : [];
     const locations = [];
     if (Array.isArray(region.locations)) {
         region.locations.forEach(loc => {
@@ -22850,6 +22935,17 @@ function getBannedNpcWords() {
 
 function getNpcPromptBannedWords() {
     return getBannedNpcWords();
+}
+
+function getBannedTropes() {
+    if (Array.isArray(cachedBannedTropes)) {
+        return cachedBannedTropes;
+    }
+
+    cachedBannedTropes = loadBannedTropes({
+        baseDir: Globals.baseDir || __dirname
+    });
+    return cachedBannedTropes;
 }
 
 function getSlopWordList() {
@@ -29017,6 +29113,10 @@ async function renderLocationGeneratorPrompt(options = {}) {
             stubHasBaseLevel: isStubExpansion ? Boolean(options.stubHasBaseLevel) : false,
             stubHasControllingFaction: isStubExpansion ? Boolean(options.stubHasControllingFaction) : false,
             stubHasWeather: isStubExpansion ? Boolean(options.stubHasWeather) : false,
+            discoverNewExits: isStubExpansion ? Boolean(options.discoverNewExits) : false,
+            existingExitDestinations: isStubExpansion && Array.isArray(options.existingExitDestinations)
+                ? options.existingExitDestinations
+                : [],
             isStubExpansion,
             lorebookEntries,
             additionalLore: additionalLore,
@@ -30798,7 +30898,6 @@ async function generateLocationFromPrompt(options = {}) {
         const {
             stubLocation = null,
             originLocation = null,
-            createStubs = false,
             imageDataUrl: imageDataUrlRaw,
             ...promptOverrides
         } = options;
@@ -30806,6 +30905,13 @@ async function generateLocationFromPrompt(options = {}) {
         const isStubExpansion = Boolean(stubLocation);
         const stubMetadata = stubLocation ? stubLocation.stubMetadata || {} : {};
         const resolvedOriginLocation = originLocation || (stubMetadata.originLocationId ? Location.get(stubMetadata.originLocationId) : null);
+        const shouldDiscoverNewExits = Boolean(
+            isStubExpansion
+            && !stubLocation.hasGeneratedStubs
+        );
+        const existingExitDestinations = shouldDiscoverNewExits
+            ? buildLocationExitDiscoveryContext(stubLocation, resolvedOriginLocation)
+            : [];
         const imageDataUrlProvided = Object.prototype.hasOwnProperty.call(options, 'imageDataUrl');
         const normalizedImageDataUrl = typeof imageDataUrlRaw === 'string' ? imageDataUrlRaw.trim() : '';
         const stubImageDataUrl = typeof stubMetadata.imageDataUrl === 'string' ? stubMetadata.imageDataUrl.trim() : '';
@@ -31117,6 +31223,8 @@ async function generateLocationFromPrompt(options = {}) {
             originLocationName: stubTemplateData?.originLocationName || null,
             originDescription: stubTemplateData?.originDescription || null,
             originDirection: stubTemplateData?.originDirection || null,
+            discoverNewExits: shouldDiscoverNewExits,
+            existingExitDestinations,
             hasImage: Boolean(resolvedImageDataUrl)
         };
 
@@ -31153,18 +31261,80 @@ async function generateLocationFromPrompt(options = {}) {
         //console.log('📝 System Prompt:', systemPrompt);
         //console.log('📤 Full Request Payload:', JSON.stringify({ messages }, null, 2));
 
-        const aiResponse = await runGenerationPromptCompletion({
-            requestOptions: {
-                messages,
-                metadataLabel: 'location_generation',
-                expectedXmlRootTag: 'location',
-                multimodal: Boolean(resolvedImageDataUrl)
-            },
-            metadataLabel: 'location_generation'
-        });
+        let aiResponse = '';
+        let suggestedNewExits = [];
+        let loggedLocationGenerationAttempts = false;
 
-        if (!aiResponse || !aiResponse.trim()) {
-            throw new Error('Invalid response from AI API');
+        if (shouldDiscoverNewExits) {
+            const exitSuggestionGeneration = await runPromptWithParseRetries({
+                messages,
+                maxAttempts: resolveConfiguredPromptMaxAttempts(config?.ai, { fallbackMaxAttempts: 3 }),
+                complete: async ({ messages: completionMessages }) => {
+                    const responseText = await runGenerationPromptCompletion({
+                        requestOptions: {
+                            messages: completionMessages,
+                            metadataLabel: 'location_generation',
+                            expectedXmlRootTag: 'location',
+                            multimodal: Boolean(resolvedImageDataUrl)
+                        },
+                        metadataLabel: 'location_generation'
+                    });
+                    LLMClient.logPrompt({
+                        prefix: 'location_generation',
+                        metadataLabel: 'location_generation',
+                        systemPrompt: systemPrompt || '',
+                        generationPrompt: completionMessages
+                            .filter(message => message.role !== 'system')
+                            .map(message => {
+                                const content = typeof message.content === 'string'
+                                    ? message.content
+                                    : JSON.stringify(message.content, null, 2);
+                                return `${message.role}: ${content}`;
+                            })
+                            .join('\n\n'),
+                        response: responseText || ''
+                    });
+                    return responseText || '';
+                },
+                parse: responseText => {
+                    if (!responseText.trim()) {
+                        throw new Error('Location generation returned an empty response.');
+                    }
+                    return parseLocationExitSuggestions(responseText, { required: true });
+                },
+                retainRejectedResponse: false,
+                buildRetryInstruction: error => (
+                    'The preceding location XML failed new-exit validation: '
+                    + `${error.message}\n`
+                    + 'Generate a fresh, complete response as exactly one <location>...</location> block. '
+                    + 'Do not copy the rejected document. Include one valid <newExits> decision; it may be empty. '
+                    + 'Every included exit must have exactly one destinationType, name, description, and travelTime. Output XML only.'
+                ),
+                onAttempt: ({ attempt, maxAttempts, error }) => {
+                    if (!error) {
+                        return;
+                    }
+                    console.warn(
+                        `Location generation response attempt ${attempt} of ${maxAttempts} failed new-exit validation: ${error.message}`
+                    );
+                }
+            });
+            aiResponse = exitSuggestionGeneration.response;
+            suggestedNewExits = filterNewExitSuggestionsToUnknownPlaces(exitSuggestionGeneration.value);
+            loggedLocationGenerationAttempts = true;
+        } else {
+            aiResponse = await runGenerationPromptCompletion({
+                requestOptions: {
+                    messages,
+                    metadataLabel: 'location_generation',
+                    expectedXmlRootTag: 'location',
+                    multimodal: Boolean(resolvedImageDataUrl)
+                },
+                metadataLabel: 'location_generation'
+            });
+            if (!aiResponse || !aiResponse.trim()) {
+                throw new Error('Invalid response from AI API');
+            }
         }
 
         //console.log('📥 AI Raw Response:');
@@ -31239,13 +31409,15 @@ async function generateLocationFromPrompt(options = {}) {
             location.controllingFactionId = factionResolution.id;
         }
 
-        LLMClient.logPrompt({
-            prefix: 'location_generation',
-            metadataLabel: 'location_generation',
-            systemPrompt: systemPrompt || '',
-            generationPrompt: generationPrompt || '',
-            response: aiResponse || ''
-        });
+        if (!loggedLocationGenerationAttempts) {
+            LLMClient.logPrompt({
+                prefix: 'location_generation',
+                metadataLabel: 'location_generation',
+                systemPrompt: systemPrompt || '',
+                generationPrompt: generationPrompt || '',
+                response: aiResponse || ''
+            });
+        }
 
         // Store the location in gameLocations
         gameLocations.set(location.id, location);
@@ -31307,31 +31479,11 @@ async function generateLocationFromPrompt(options = {}) {
             });
         }
 
-        if (createStubs) {
-            const themeHint = templateOverrides.locationTheme || templateOverrides.theme || stubMetadata.themeHint || null;
-            const stubCreationContext = {
-                themeHint,
-                shortDescription: templateOverrides.shortDescription || null,
-                locationPurpose: templateOverrides.locationPurpose || null,
-                settingDescription: templateOverrides.setting || describeSettingForPrompt(getActiveSettingSnapshot())
-            };
-
-            const excludeDirections = [];
-            if (isStubExpansion && stubMetadata.originDirection) {
-                const reverseDir = getOppositeDirection(stubMetadata.originDirection);
-                if (reverseDir) {
-                    excludeDirections.push(reverseDir);
-                }
-            }
-
-            newlyCreatedStubs.push(...await createStubNeighbors(location, {
-                excludeDirections,
-                ...stubCreationContext
-            }));
-
-            if (newlyCreatedStubs.length > 0) {
-                console.log(`🧭 ${location.name || location.id} now has ${newlyCreatedStubs.length} unexplored stub location(s) awaiting discovery.`);
-            }
+        if (shouldDiscoverNewExits) {
+            newlyCreatedStubs.push(...await createSuggestedExitStubs(location, suggestedNewExits));
+            console.log(
+                `🧭 ${location.name || location.id} exit discovery created ${newlyCreatedStubs.length} LLM-selected stub(s).`
+            );
         }
 
         return {
@@ -33898,7 +34050,7 @@ async function generateRegionFromPrompt(options = {}) {
         report('region:request', { message: 'Requesting region layout from AI...' });
 
         console.log('🗺️ Requesting region generation from AI...');
-        const aiResponse = await runGenerationPromptCompletion({
+        let aiResponse = await runGenerationPromptCompletion({
             requestOptions: {
                 messages,
                 //temperature: parsedTemplate.temperature,
@@ -33924,7 +34076,11 @@ async function generateRegionFromPrompt(options = {}) {
             response: aiResponse || ''
         });
 
-        const region = Region.fromXMLSnippet(aiResponse, { requireLocationHasWeather: true });
+        aiResponse = omitDisabledRegionSecretsFromXml(aiResponse);
+        const region = Region.fromXMLSnippet(aiResponse, {
+            requireLocationHasWeather: true,
+            includeSecrets: config.regions?.secrets_enabled === true
+        });
         await ensureRegionNameAllowed(region);
         const controllingFactionName = extractXmlTagValue(aiResponse, {
             rootTag: 'region',

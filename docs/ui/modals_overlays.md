@@ -4,6 +4,12 @@ Most modals live in `views/index.njk` and are wired up by the inline script or `
 
 ## Keyboard submission
 
+Allocation formula evaluation treats a missing attribute-count override as unspecified, preserving the actual attribute count. For example, at level 4 with seven attributes, `ceil(level * (number_of_attributes / 2))` grants 14 points; base values totaling 81 spend 11 above the 70-point baseline, leaving 3. Gear-modified totals are displayed separately and are not charged as allocated base attributes.
+
+The portrait's unspent-points warning is a keyboard-accessible button that fetches current player data and opens the character modal at its editable allocation controls. It focuses attributes when attribute points remain, otherwise skills. Point previews start from server-derived balances, subtract provisional spending, and include formula deltas for both pools. An empty skill list still displays the available skill pool. Apply Point Changes persists the assigned values through the existing player update endpoint and refreshes the portrait warning.
+
+The lockpicking/open-container modal uses the shared `btn btn-secondary` (Cancel) and `btn btn-primary` (Try to Open) classes for themed button styling, including hover and disabled states.
+
 - `public/js/modal-submit-shortcuts.js`, loaded by the shared head include on every application page, provides one delegated modal submission shortcut.
 - Pressing Ctrl+Enter or Cmd+Enter in an editable modal control submits its nearest form through `requestSubmit()`, preserving native validation and the form's submit handler.
 - Non-form data-entry modals declare their intended action with `data-ctrl-enter-submit`; this covers workflows such as fast travel, region repair, file uploads, crafting/salvage intent, NPC memories/goals, load game, world-profile auto-fill guidance, model addition, and chat-message editing.

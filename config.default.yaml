@@ -522,6 +522,8 @@ quest_completion_prose:
 soft_quest_limit: 10
 
 regions:
+  # Generate region secrets and include stored region secrets in AI context.
+  secrets_enabled: false
   minLocations: 2
   maxLocations: 3
 locations:
@@ -679,9 +681,11 @@ plot_summary_prompt_frequency: 10
 
 # Maximum number of active mystery threads included in base-context prompts and
 # available for automatic mystery tracking. Set to 0 to keep all mystery thread
-# continuity out of base context and force automatic tracking to skip.
+# continuity out of base context and force automatic tracking to skip. Each
+# thread may contain at most max_unresolved_boxes_per_thread unresolved boxes.
 mystery_threads:
   max_active: 3
+  max_unresolved_boxes_per_thread: 3
 
 # Minimum in-game time since the destination was last visited, in minutes, before
 # the blocking while-you-were-away reunion prompt runs when the player returns.

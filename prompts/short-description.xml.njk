@@ -34,10 +34,10 @@ Region Information:
   <region> 
     <name>{{ regionContext.name }}</name>
     <description>{{ regionContext.description }}</description>
-    <secrets>
+    {% if config.regions.secrets_enabled == true %}<secrets>
       {% for secret in regionContext.secrets %}<secret>{{ secret }}</secret>
       {% endfor %} 
-    </secrets>
+    </secrets>{% endif %}
     <locations>
       {% for loc in regionContext.locations %}<locationName>{{ loc.name }}</locationName>
       {% endfor %}</locations>
@@ -58,10 +58,10 @@ Location Information:
     <name>{{ group.regionName }}</name>
     {% if group.regionContext %}
     <description>{{ group.regionContext.description }}</description>
-    <secrets>
+    {% if config.regions.secrets_enabled == true %}<secrets>
       {% for secret in group.regionContext.secrets %}<secret>{{ secret }}</secret>
       {% endfor %} 
-    </secrets>
+    </secrets>{% endif %}
     <locations>
       {% for loc in group.regionContext.locations %}<locationName>{{ loc.name }}</locationName>
       {% endfor %}</locations>

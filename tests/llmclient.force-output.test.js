@@ -952,6 +952,198 @@ test('LLMClient.chatCompletion retries when the expected XML root is not closed'
     }
 });
 
+test('LLMClient.chatCompletion can return rejected response validation output as correction feedback', { concurrency: false }, async () => {
+    const originalAxiosPost = axios.post;
+    const originalConfig = Globals.config;
+    const originalBaseDir = Globals.baseDir;
+    const tmpRoot = path.resolve(__dirname, '..', 'tmp');
+    fs.mkdirSync(tmpRoot, { recursive: true });
+    const tempBaseDir = fs.mkdtempSync(path.join(tmpRoot, 'llmclient-validation-feedback-'));
+    const rejectedResponse = 'Hildegarde is an available celestial combat medic.';
+    const correctedResponse = `<turnResult><prose>${rejectedResponse}</prose></turnResult>`;
+    const requestPayloads = [];
+
+    axios.post = async (_endpoint, payload) => {
+        requestPayloads.push(JSON.parse(JSON.stringify(payload)));
+        const content = requestPayloads.length === 1 ? rejectedResponse : correctedResponse;
+        return {
+            status: 200,
+            statusText: 'OK',
+            headers: {},
+            config: {},
+            data: {
+                id: `mock_response_${requestPayloads.length}`,
+                model: payload.model,
+                choices: [
+                    {
+                        message: { content },
+                        finish_reason: 'stop'
+                    }
+                ],
+                usage: { total_tokens: 12 }
+            }
+        };
+    };
+    Globals.baseDir = tempBaseDir;
+    Globals.config = {
+        ai: {
+            backend: 'openai_compatible',
+            endpoint: 'https://example.invalid/v1/chat/completions',
+            apiKey: 'test-key',
+            model: 'test-model',
+            stream: false,
+            retryAttempts: 1,
+            max_concurrent_requests: 1,
+            supress_seed: true
+        }
+    };
+    const originalMessages = [
+        { role: 'user', content: 'Find a celestial combat medic.' },
+        {
+            role: 'assistant',
+            content: '',
+            tool_calls: [{
+                id: 'check_1',
+                type: 'function',
+                function: {
+                    name: 'resolveSkillCheck',
+                    arguments: '{"actor":"player"}'
+                }
+            }]
+        },
+        {
+            role: 'tool',
+            tool_call_id: 'check_1',
+            name: 'resolveSkillCheck',
+            content: 'critical success'
+        }
+    ];
+    const tools = [{
+        type: 'function',
+        function: {
+            name: 'resolveSkillCheck',
+            description: 'Resolve a check.',
+            parameters: { type: 'object', properties: {} }
+        }
+    }];
+
+    try {
+        const result = await LLMClient.chatCompletion({
+            messages: originalMessages,
+            metadataLabel: 'player_action',
+            validateXML: false,
+            expectedXmlRootTags: ['turnResult', 'moveTurnResult', 'rejected'],
+            requiredRegex: /<turnResult>[\s\S]*<\/turnResult>/i,
+            responseValidationRetryFeedback: true,
+            additionalPayload: {
+                tools,
+                tool_choice: 'auto'
+            },
+            stream: false,
+            retryAttempts: 1,
+            waitAfterError: 0,
+            output: 'silent'
+        });
+
+        assert.equal(result, correctedResponse);
+        assert.equal(requestPayloads.length, 2);
+        assert.equal(originalMessages[2].content, 'critical success');
+        assert.deepEqual(requestPayloads[1].messages.slice(0, originalMessages.length), originalMessages);
+        assert.deepEqual(requestPayloads[1].tools, tools);
+        assert.equal(requestPayloads[1].tool_choice, 'none');
+        assert.deepEqual(requestPayloads[1].messages.slice(-2), [
+            { role: 'assistant', content: rejectedResponse },
+            {
+                role: 'user',
+                content: [
+                    'Your previous response failed response validation.',
+                    'Validation error: Required regex /<turnResult>[\\s\\S]*<\\/turnResult>/i did not match response (attempt 1).',
+                    '',
+                    'Correct the previous response while preserving its story content and all resolved tool outcomes.',
+                    'Change only what is needed to satisfy the response format and validation requirements.',
+                    'Do not make any tool calls.'
+                ].join('\n')
+            }
+        ]);
+    } finally {
+        axios.post = originalAxiosPost;
+        Globals.config = originalConfig;
+        Globals.baseDir = originalBaseDir;
+    }
+});
+
+test('LLMClient.chatCompletion does not add validation correction feedback to transport retries', { concurrency: false }, async () => {
+    const originalAxiosPost = axios.post;
+    const originalConfig = Globals.config;
+    const originalBaseDir = Globals.baseDir;
+    const tmpRoot = path.resolve(__dirname, '..', 'tmp');
+    fs.mkdirSync(tmpRoot, { recursive: true });
+    const tempBaseDir = fs.mkdtempSync(path.join(tmpRoot, 'llmclient-no-transport-feedback-'));
+    const requestPayloads = [];
+
+    axios.post = async (_endpoint, payload) => {
+        requestPayloads.push(JSON.parse(JSON.stringify(payload)));
+        if (requestPayloads.length === 1) {
+            const error = new Error('Synthetic transport failure.');
+            error.status = 500;
+            throw error;
+        }
+        return {
+            status: 200,
+            statusText: 'OK',
+            headers: {},
+            config: {},
+            data: {
+                id: 'mock_response_2',
+                model: payload.model,
+                choices: [
+                    {
+                        message: { content: '<turnResult><prose>Recovered.</prose></turnResult>' },
+                        finish_reason: 'stop'
+                    }
+                ],
+                usage: { total_tokens: 12 }
+            }
+        };
+    };
+    Globals.baseDir = tempBaseDir;
+    Globals.config = {
+        ai: {
+            backend: 'openai_compatible',
+            endpoint: 'https://example.invalid/v1/chat/completions',
+            apiKey: 'test-key',
+            model: 'test-model',
+            stream: false,
+            retryAttempts: 1,
+            max_concurrent_requests: 1,
+            supress_seed: true
+        }
+    };
+    const originalMessages = [{ role: 'user', content: 'Return a player action.' }];
+
+    try {
+        const result = await LLMClient.chatCompletion({
+            messages: originalMessages,
+            metadataLabel: 'player_action',
+            validateXML: false,
+            requiredRegex: /<turnResult>[\s\S]*<\/turnResult>/i,
+            responseValidationRetryFeedback: true,
+            stream: false,
+            retryAttempts: 1,
+            waitAfterError: 0,
+            output: 'silent'
+        });
+
+        assert.equal(result, '<turnResult><prose>Recovered.</prose></turnResult>');
+        assert.equal(requestPayloads.length, 2);
+        assert.deepEqual(requestPayloads[1].messages, originalMessages);
+    } finally {
+        axios.post = originalAxiosPost;
+        Globals.config = originalConfig;
+        Globals.baseDir = originalBaseDir;
+    }
+});
+
 test('LLMClient.chatCompletion validates any configured complete XML root inside surrounding text', async () => {
     const originalAxiosPost = axios.post;
     const originalConfig = Globals.config;

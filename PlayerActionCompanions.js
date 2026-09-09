@@ -137,13 +137,13 @@ function normalizePlayerActionAccompanyingCharacterSelection(
 function collectPlayerActionAccompanyingCharacters({ currentPlayer, location, players } = {}) {
     requireMap(players, 'Player-action players');
     const originLocation = requireLocation(location, 'Player-action origin location');
-    const partyMemberIds = getPartyMemberIds(currentPlayer);
-    const orderedIds = [...partyMemberIds, ...getLocationNpcIds(originLocation)];
+    const partyMemberIds = new Set(getPartyMemberIds(currentPlayer));
+    const orderedIds = getLocationNpcIds(originLocation);
     const seenIds = new Set();
     const descriptors = [];
 
     for (const actorId of orderedIds) {
-        if (seenIds.has(actorId)) {
+        if (seenIds.has(actorId) || partyMemberIds.has(actorId)) {
             continue;
         }
         seenIds.add(actorId);
@@ -160,6 +160,26 @@ function collectPlayerActionAccompanyingCharacters({ currentPlayer, location, pl
         });
     }
 
+    buildIdentifierIndex(descriptors);
+    return descriptors;
+}
+
+function collectPlayerActionAutomaticPartyMembers({ currentPlayer, players } = {}) {
+    requireMap(players, 'Player-action players');
+    const descriptors = [];
+    for (const actorId of getPartyMemberIds(currentPlayer)) {
+        const actor = players.get(actorId);
+        if (!actor) {
+            throw new Error(`Player-action party member candidate id "${actorId}" was not found.`);
+        }
+        if (actor.id === currentPlayer?.id || actor.isNPC !== true || actor.isDead === true) {
+            continue;
+        }
+        descriptors.push({
+            name: normalizeIdentifier(actor.name, `Party member name for "${actorId}"`),
+            aliases: getActorAliases(actor)
+        });
+    }
     buildIdentifierIndex(descriptors);
     return descriptors;
 }
@@ -353,9 +373,6 @@ function movePlayerActionAccompanyingCharacters({
     if (!Array.isArray(characterNames)) {
         throw new TypeError('Player-action accompanying character names must be an array.');
     }
-    if (!characterNames.length) {
-        return [];
-    }
 
     const allowedCharacters = collectPlayerActionAccompanyingCharacters({
         currentPlayer,
@@ -366,7 +383,18 @@ function movePlayerActionAccompanyingCharacters({
         characterNames,
         allowedCharacters
     );
-    const partyMemberIds = new Set(getPartyMemberIds(currentPlayer));
+    const automaticPartyMembers = collectPlayerActionAutomaticPartyMembers({
+        currentPlayer,
+        players
+    });
+    const automaticPartyNames = automaticPartyMembers.map(member => member.name);
+    const allMovementNames = [...automaticPartyNames, ...canonicalNames];
+    if (!allMovementNames.length) {
+        return [];
+    }
+    const automaticPartyNameSet = new Set(
+        automaticPartyNames.map(name => name.toLowerCase())
+    );
     const actorsByCanonicalName = new Map();
     for (const actor of players.values()) {
         if (actor && typeof actor.name === 'string' && actor.name.trim()) {
@@ -378,12 +406,12 @@ function movePlayerActionAccompanyingCharacters({
         }
     }
 
-    const movementPlan = canonicalNames.map(name => {
+    const movementPlan = allMovementNames.map(name => {
         const actor = actorsByCanonicalName.get(name.toLowerCase());
         if (!actor) {
             throw new Error(`Unable to resolve an exact character named "${name}".`);
         }
-        const isPartyMember = partyMemberIds.has(actor.id);
+        const isPartyMember = automaticPartyNameSet.has(name.toLowerCase());
         if (!isPartyMember && actor.currentLocation !== origin.id) {
             throw new Error(`Accompanying character "${name}" is not present at the movement origin.`);
         }
@@ -416,11 +444,12 @@ function movePlayerActionAccompanyingCharacters({
         }
     }
 
-    return canonicalNames;
+    return allMovementNames;
 }
 
 module.exports = {
     collectPlayerActionAccompanyingCharacters,
+    collectPlayerActionAutomaticPartyMembers,
     collectPlayerActionHiddenContestContext,
     movePlayerActionAccompanyingCharacters,
     normalizePlayerActionAccompanyingCharacterSelection,

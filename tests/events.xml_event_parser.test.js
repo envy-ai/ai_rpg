@@ -939,6 +939,125 @@ test('mystery box update parser accepts skip without creating a box', () => {
     assert.match(parsed.reason, /threads are full/);
 });
 
+test('mystery box updates cap each thread at three unresolved boxes without orphaning rejected boxes', () => {
+    const previousDeps = Events._deps;
+    IdGenerator.reset();
+    MysteryBox.clear();
+    MysteryThread.clear();
+
+    try {
+        Events._deps = {
+            getConfig: () => ({
+                mystery_threads: {
+                    max_active: 3,
+                    max_unresolved_boxes_per_thread: 3,
+                },
+            }),
+        };
+        const boxes = ['First Secret', 'Second Secret', 'Third Secret'].map((name) => new MysteryBox({
+            name,
+            text: `${name} truth.`,
+        }));
+        const thread = new MysteryThread({
+            name: 'Crowded Thread',
+            status: 'active',
+            boxIds: boxes.map((box) => box.id),
+        });
+
+        assert.throws(
+            () => Events._applyMysteryBoxUpdate({
+                action: 'create',
+                thread: { id: thread.id, name: thread.name, status: 'active' },
+                name: 'Fourth Secret',
+                keys: [],
+                text: 'Fourth Secret truth.',
+            }, { name: 'Fourth Secret', context: 'A fourth mystery appeared.' }),
+            /max_unresolved_boxes_per_thread is 3/i
+        );
+        assert.equal(MysteryBox.getAll().length, 3);
+        assert.deepEqual(thread.boxIds, boxes.map((box) => box.id));
+
+        assert.throws(
+            () => Events._applyMysteryBoxUpdate({
+                action: 'create',
+                thread: { name: 'Hidden Overflow Thread', status: 'inactive' },
+                name: 'Hidden Overflow Secret',
+                keys: [],
+                text: 'This must not evade active capacity.',
+            }, { name: 'Hidden Overflow Secret', context: 'A hidden overflow mystery appeared.' }),
+            /automatically created mystery threads must be active/i
+        );
+        assert.equal(MysteryBox.getAll().length, 3);
+
+        const updated = Events._applyMysteryBoxUpdate({
+            action: 'update',
+            thread: { id: thread.id, name: thread.name, status: 'active' },
+            name: 'First Secret',
+            keys: [],
+            text: 'The first truth is now more precise.',
+        }, { name: 'First Secret', context: 'The existing mystery gained a concrete detail.' });
+        assert.equal(updated.id, boxes[0].id);
+        assert.equal(MysteryBox.getAll().length, 3);
+
+        boxes[1].markResolved();
+        const replacement = Events._applyMysteryBoxUpdate({
+            action: 'create',
+            thread: { id: thread.id, name: thread.name, status: 'active' },
+            name: 'Replacement Secret',
+            keys: [],
+            text: 'Replacement Secret truth.',
+        }, { name: 'Replacement Secret', context: 'A replacement mystery appeared after resolution.' });
+        assert.ok(thread.boxIds.includes(replacement.id));
+        assert.equal(Events._countUnresolvedMysteryBoxes(thread), 3);
+    } finally {
+        Events._deps = previousDeps;
+        MysteryBox.clear();
+        MysteryThread.clear();
+    }
+});
+
+test('overall mystery capacity is full only when every active thread and box slot is occupied', () => {
+    IdGenerator.reset();
+    MysteryBox.clear();
+    MysteryThread.clear();
+    const capacityConfig = {
+        mystery_threads: {
+            max_active: 3,
+            max_unresolved_boxes_per_thread: 3,
+        },
+    };
+
+    try {
+        const boxes = [];
+        for (let threadIndex = 1; threadIndex <= 3; threadIndex += 1) {
+            const threadBoxes = [];
+            for (let boxIndex = 1; boxIndex <= 3; boxIndex += 1) {
+                const box = new MysteryBox({
+                    name: `Thread ${threadIndex} Secret ${boxIndex}`,
+                    text: 'Concrete hidden truth.',
+                });
+                boxes.push(box);
+                threadBoxes.push(box.id);
+            }
+            new MysteryThread({
+                name: `Thread ${threadIndex}`,
+                status: 'active',
+                boxIds: threadBoxes,
+            });
+            if (threadIndex === 2) {
+                assert.equal(Events._isMysteryCapacityFull(capacityConfig), false);
+            }
+        }
+
+        assert.equal(Events._isMysteryCapacityFull(capacityConfig), true);
+        boxes[0].markResolved();
+        assert.equal(Events._isMysteryCapacityFull(capacityConfig), false);
+    } finally {
+        MysteryBox.clear();
+        MysteryThread.clear();
+    }
+});
+
 test('mystery thread check parser accepts resolved threads and boxes', () => {
     const parsed = Events._parseMysteryThreadCheckResponse(`<resolvedMysteries>
   <mysteryThread>

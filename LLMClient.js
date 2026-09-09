@@ -5754,6 +5754,7 @@ class LLMClient {
         liveTokenStreamCapabilityKey = null,
         onLiveTokenStreamFallback = null,
         preserveBaseContextToolDefinitions = false,
+        responseValidationRetryFeedback = false,
     } = {}) {
         const cancelAllGeneration = LLMClient.#cancelAllGeneration;
         const resolvedOutput = LLMClient.resolveOutput(output);
@@ -5864,6 +5865,7 @@ class LLMClient {
                 progressGroupId,
                 progressGroupTargetLabel,
                 preserveBaseContextToolDefinitions,
+                responseValidationRetryFeedback,
                 forceOutput: forceOutput !== null && forceOutput !== undefined ? '[provided]' : null
             });
         }
@@ -6042,6 +6044,9 @@ class LLMClient {
             if (typeof preserveBaseContextToolDefinitions !== 'boolean') {
                 throw new TypeError('chatCompletion preserveBaseContextToolDefinitions must be a boolean.');
             }
+            if (typeof responseValidationRetryFeedback !== 'boolean') {
+                throw new TypeError('chatCompletion responseValidationRetryFeedback must be a boolean.');
+            }
             const resolvedSeed = Number.isFinite(seed) ? Math.trunc(seed) : LLMClient.#generateSeed();
             if (!Array.isArray(messages) || messages.length === 0) {
                 throw new Error('LLMClient.chatCompletion requires at least one message.');
@@ -6173,6 +6178,32 @@ class LLMClient {
             let xmlContinuationPrefix = '';
             let xmlContinuationMessages = null;
             let xmlRepetitionContinuations = 0;
+            let responseValidationRetryMessages = null;
+            const markResponseValidationError = (error) => {
+                const validationError = error instanceof Error
+                    ? error
+                    : new Error(String(error));
+                validationError.isResponseValidationError = true;
+                return validationError;
+            };
+            const buildResponseValidationRetryMessages = ({ rejectedResponse, error }) => [
+                ...messages,
+                {
+                    role: 'assistant',
+                    content: rejectedResponse
+                },
+                {
+                    role: 'user',
+                    content: [
+                        'Your previous response failed response validation.',
+                        `Validation error: ${error.message}`,
+                        '',
+                        'Correct the previous response while preserving its story content and all resolved tool outcomes.',
+                        'Change only what is needed to satisfy the response format and validation requirements.',
+                        'Do not make any tool calls.'
+                    ].join('\n')
+                }
+            ];
             const inspectTinyBrainXmlRepetition = (currentResponseText) => {
                 if (!xmlRepetitionDetector) {
                     return;
@@ -6251,6 +6282,14 @@ class LLMClient {
                     ...effectiveCustomArgs,
                     ...basePayload
                 };
+                if (responseValidationRetryMessages) {
+                    if (Array.isArray(payload.tools) && payload.tools.length > 0) {
+                        payload.tool_choice = 'none';
+                    }
+                    if (Array.isArray(payload.functions) && payload.functions.length > 0) {
+                        payload.function_call = 'none';
+                    }
+                }
                 if (liveDisableTools) {
                     delete payload.tools;
                     delete payload.functions;
@@ -6277,7 +6316,7 @@ class LLMClient {
                         'Assistant response prefill cannot be used with tool-call request payloads.'
                     );
                 }
-                const effectiveMessages = xmlContinuationMessages || messages;
+                const effectiveMessages = xmlContinuationMessages || responseValidationRetryMessages || messages;
                 const systemAppendedMessages = LLMClient.#applySystemPromptAppend(
                     effectiveMessages,
                     aiConfig.sysprompt_append
@@ -7487,7 +7526,7 @@ class LLMClient {
                                 warn(`Missing regex response logged to ${filePath}`);
                             }
                             errorLog(errorMsg);
-                            throw new Error(errorMsg);
+                            throw markResponseValidationError(new Error(errorMsg));
                         }
                     }
 
@@ -7585,7 +7624,7 @@ class LLMClient {
                             if (filePath) {
                                 warn(`Invalid XML response logged to ${filePath}`);
                             }
-                            throw xmlError;
+                            throw markResponseValidationError(xmlError);
                         }
 
                         // use regex to check for required tags
@@ -7604,7 +7643,7 @@ class LLMClient {
                                     warn(`Invalid XML response logged to ${filePath}`);
                                 }
                                 errorLog(errorMsg);
-                                throw new Error(errorMsg);
+                                throw markResponseValidationError(new Error(errorMsg));
                             }
                         }
                     }
@@ -7922,6 +7961,21 @@ class LLMClient {
                     }
 
                     const willRetryAttempt = shouldForceOAuthRefresh || attempt < retryAttempts;
+                    if (
+                        willRetryAttempt
+                        && responseValidationRetryFeedback
+                        && error?.isResponseValidationError === true
+                        && typeof responseContent === 'string'
+                        && responseContent.trim()
+                    ) {
+                        responseValidationRetryMessages = buildResponseValidationRetryMessages({
+                            rejectedResponse: responseContent,
+                            error
+                        });
+                        xmlContinuationMessages = null;
+                        xmlContinuationPrefix = '';
+                        livePrefillOverride = undefined;
+                    }
                     if (willRetryAttempt) {
                         retryAttemptAtFront = true;
                     }

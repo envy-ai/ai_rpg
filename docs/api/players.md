@@ -183,11 +183,12 @@ Notes:
 Move the current player through an exit from the current location.
 
 Request:
-- Body: `{ destinationId?: string, direction?: string, expectedOriginLocationId: string, accompanyingCharacters?: string[], clientId?: string }`
+- Body: `{ destinationId?: string, direction?: string, expectedOriginLocationId: string, arrivalProseAlreadyProvided?: boolean, accompanyingCharacters?: string[], clientId?: string }`
   - At least one of `destinationId` or `direction` is required.
   - When `destinationId` is present, the route finds the exit whose destination matches that id.
   - `expectedOriginLocationId` is required and must match the current server-side player location.
   - `accompanyingCharacters` contains complete canonical names or aliases selected by the preceding travel-prose prompt. It defaults to an empty array.
+  - `arrivalProseAlreadyProvided` must be a boolean and defaults to `false`. The client sends `true` only when the preceding direct-travel action produced real arrival prose; a prompt-skipping `# moved` comment sends `false`.
 
 Response:
 - 200: `{ success: true, location: LocationResponse, player: NpcProfile, worldTime, timeProgress, message, direction }`
@@ -201,9 +202,11 @@ Notes:
 - The route rejects movement while player ability selection is pending, while another move is in progress for the same player, when origin verification fails, or when vehicle boarding/disembark rules block the exit.
 - Before movement side effects, the route checks for non-stub locations listed in multiple live regions. When found, it returns `409` with `code: "location_region_membership_conflict"` and a `conflict` payload whose location and region labels are formatted as `name (id)`; the client fixer modal can resolve it and retry the move.
 - Region-entry and ordinary location stubs are expanded before movement completes.
+- Every ordinary location stub expansion uses the same exit-discovery behavior, including expansion during this route: the location-generation prompt sees the implied return route and existing outgoing exits, then may return any contextually justified number of new location or region exit stubs, including zero. Malformed entries trigger bounded parser-guided regeneration, while duplicate and already-known destinations are ignored. The decision is persisted through `hasGeneratedStubs` so it is not repeated.
 - Before resolving move duration, cross-region arrivals run the shared exit travel-time backfill for the destination region. That helper updates `0`-minute legacy exits, renders only pending zero-minute exits through the `set_travel_times` prompt, skips same-region moves, and treats prompt failures as warning-only so movement can continue.
 - Positive exit travel time advances world time unless the source location context represents a vehicle. The response includes `worldTime` and `timeProgress`; `timeProgress` is `null` when no time is advanced.
 - Gameplay arrival runs the while-you-were-away prompt only when the destination had a recorded pre-arrival visited state and passes the configured revisit threshold. First visits, missing pre-arrival snapshots, and too-soon revisits skip that prompt.
+- When that WYWA pass runs, a direct move with `arrivalProseAlreadyProvided: false` requires nonempty player-facing return prose and rejects/retries an empty one-shot or TinyBrain prose stage. Already-narrated player-action arrivals keep WYWA prose optional, and the existing TinyBrain replacement-prose path may suppress its duplicate visible entry.
 - Direct moves persist a travel event-summary row and parent it to visible arrival prose, prior travel prose, or the travel user/comment entry so the client can render it in the turn-state drawer.
 - Companion selections are validated against living party members and living NPCs at the verified origin before mutation. Aliases are canonicalized. Selected non-party NPCs move into the destination location; selected party members retain membership and the normal off-location party representation.
 - After movement, the server runs location/region/exit integrity checks, queues relevant assets, records NPC sightings, and returns a full `LocationResponse`.

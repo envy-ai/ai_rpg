@@ -6,6 +6,10 @@ Generate a list of random events for the current region, {{ currentRegion.name }
 {% endif %}
 </task>
 
+{% if mysteryCapacity and mysteryCapacity.full %}
+Mystery capacity is full. Every generated event must have an immediately understandable cause and a self-contained outcome. Do not introduce unexplained clues, hidden actors, secret motives, suspicious discrepancies, ominous implications, conspiracies, or new unanswered questions. Favor character interactions, comedy, practical complications, crafting opportunities, environmental events, combat, commerce, and ordinary local activity.
+{% endif %}
+
 Return the events in this format:
 <randomStoryEvents>
   Briefly describe 5 random story events that are specifically relevant to this {% if mode == 'location' %}location{% else %}region{% endif %}. Each event should be 1-2 sentences long. Have some be favorable, some unfavorable, and some neutral.

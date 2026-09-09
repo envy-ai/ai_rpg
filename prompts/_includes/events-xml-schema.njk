@@ -457,6 +457,9 @@ Use this to create physically present entities mentioned or acting in the checke
 Use this when the text introduces or materially adds to a significant unresolved mystery, hidden offscreen actor, secret motive, conspiracy, unexplained artifact, suspicious discrepancy, or private background thread that may matter later. This does not reveal anything to the player by itself; it triggers a separate private continuity prompt that creates or updates a persisted mystery box.
 
 Do not emit this for every unanswered question, ordinary flavor detail, routine clue, or player speculation. Use it when future scenes would benefit from a stable hidden truth or motive instead of improvising vague mystery later.
+{% if mysteryCapacity and mysteryCapacity.full %}
+Mystery capacity is full. Emit this event only when the checked text materially updates one of the exact existing mystery boxes in activeMysteryThreads. Do not emit it for a newly introduced mystery of any kind; the prose-generation prompt was required not to create one.
+{% endif %}
 
 ```xml
 <mysteryBoxMention>

@@ -40,3 +40,5 @@
 - Tinybrain prompt responses must be checked for syntactical correctness by their parsers so that syntax errors can be caught and fixed without the entire prompt failing
 - Never require a tinybrain prompt to tell you exactly something that you already know. If you know it, you don't need to ask again.
 - If tool calls can be eliminated by asking it questions and providing the information, do that.
+
+If this is GPT-6-Astra or later, delegate coding tasks to gpt-x-sol and testing tasks to gpt-x-terra.

@@ -623,6 +623,7 @@ test('runWhileYouWereAwayPrompt requires a complete response wrapper from LLMCli
         locationOverride: square,
         locationId: square.id,
         locationWasVisitedBeforeArrival: true,
+        arrivalProseAlreadyProvided: true,
         returnEntries: true
     });
 
@@ -641,6 +642,20 @@ test('runWhileYouWereAwayPrompt requires a complete response wrapper from LLMCli
         '<response><characterUpdates></characterUpdates>',
         capturedOptions[0].requiredRegex
     );
+    await assert.rejects(
+        () => runWhileYouWereAwayPrompt({
+            locationOverride: square,
+            locationId: square.id,
+            locationWasVisitedBeforeArrival: true
+        }),
+        /required non-empty proseForPlayer/
+    );
+    assert.equal(capturedOptions.length, 2);
+    assert.doesNotMatch('<response><characterUpdates></characterUpdates></response>', capturedOptions[1].requiredRegex);
+    assert.doesNotMatch('<response><proseForPlayer>   </proseForPlayer></response>', capturedOptions[1].requiredRegex);
+    assert.doesNotMatch('<response><proseForPlayer><![CDATA[ ]]></proseForPlayer></response>', capturedOptions[1].requiredRegex);
+    assert.match('<response><proseForPlayer>The room has changed.</proseForPlayer></response>', capturedOptions[1].requiredRegex);
+
 });
 
 test('resolveWhileYouWereAwayDestination prefers the current region and supports region-only travel', () => {
@@ -832,6 +847,7 @@ test('TinyBrain while-you-were-away suppression keeps bookkeeping and event chec
         returnEntries: true,
         entryCollector: collector,
         parentEntryId: replacementArrivalEntry.id,
+        arrivalProseAlreadyProvided: true,
         suppressVisibleProse: true,
         replacementArrivalEntry
     });
@@ -1029,6 +1045,7 @@ test('runWhileYouWereAwayPrompt compares revisit threshold against total world m
         locationOverride: square,
         locationId: square.id,
         locationWasVisitedBeforeArrival: true,
+        arrivalProseAlreadyProvided: true,
         locationLastVisitedTimeBeforeArrival: square.lastVisitedTime,
         returnEntries: true
     });
@@ -1352,7 +1369,8 @@ test('runWhileYouWereAwayPrompt silently ignores inactive need bars returned by 
         const storedEntry = await runWhileYouWereAwayPrompt({
             locationOverride: square,
             locationId: square.id,
-            locationWasVisitedBeforeArrival: true
+            locationWasVisitedBeforeArrival: true,
+            arrivalProseAlreadyProvided: true
         });
 
         assert.equal(npc._setCalls.length, 0);
@@ -1433,7 +1451,8 @@ test('runWhileYouWereAwayPrompt warns and ignores nonexistent need bars returned
         const storedEntry = await runWhileYouWereAwayPrompt({
             locationOverride: square,
             locationId: square.id,
-            locationWasVisitedBeforeArrival: true
+            locationWasVisitedBeforeArrival: true,
+            arrivalProseAlreadyProvided: true
         });
 
         assert.equal(npc._setCalls.length, 0);
@@ -1782,7 +1801,8 @@ test('runWhileYouWereAwayPrompt allows arrival updates for current-location NPCs
     const storedEntry = await runWhileYouWereAwayPrompt({
         locationOverride: square,
         locationId: square.id,
-        locationWasVisitedBeforeArrival: true
+        locationWasVisitedBeforeArrival: true,
+        arrivalProseAlreadyProvided: true
     });
 
     assert.equal(storedEntry.type, 'while-you-were-away');

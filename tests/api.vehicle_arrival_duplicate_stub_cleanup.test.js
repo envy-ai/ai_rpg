@@ -6,7 +6,7 @@ const vm = require('vm');
 function loadVehicleArrivalDuplicateStubHelpers(contextOverrides = {}) {
     const source = fs.readFileSync(require.resolve('../api.js'), 'utf8');
     const start = source.indexOf("        const normalizeVehicleArrivalDuplicateStubName = (value) => {");
-    const end = source.indexOf("\n        const moveVehicleForTravelProse = async ({", start);
+    const end = source.indexOf("\n        const moveVehicleFormoveTurnResult = async ({", start);
     if (start < 0 || end < 0) {
         throw new Error('Unable to locate vehicle-arrival duplicate-stub helpers in api.js');
     }

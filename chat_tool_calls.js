@@ -914,6 +914,11 @@ const CHAT_TOOL_DEFINITIONS = Object.freeze([
                         type: 'string',
                         description: 'Optional exit description.'
                     },
+                    travelTimeMinutes: {
+                        type: 'integer',
+                        minimum: 1,
+                        description: 'Required realistic travel duration in whole minutes for this connection in both directions. Use at least 1 minute; choose a duration appropriate to the distance and terrain.'
+                    },
                     vehicleType: {
                         type: 'string',
                         description: 'Optional vehicle type; sets isVehicle=true.'
@@ -923,7 +928,7 @@ const CHAT_TOOL_DEFINITIONS = Object.freeze([
                         description: 'Optional relative level hint for created stubs.'
                     }
                 },
-                required: ['fromLocation'],
+                required: ['fromLocation', 'travelTimeMinutes'],
                 additionalProperties: false
             }
         }
@@ -3421,7 +3426,7 @@ const createChatToolRuntime = ({
                 : null,
             locationNames,
             connectedRegionNames: Array.from(connectedRegionNames).sort((a, b) => a.localeCompare(b)),
-            secrets: Array.isArray(regionData.secrets)
+            secrets: getConfig()?.regions?.secrets_enabled === true && Array.isArray(regionData.secrets)
                 ? regionData.secrets.map(secret => toTrimmedString(secret)).filter(Boolean)
                 : [],
             weatherName: weatherName || null,
@@ -4984,6 +4989,7 @@ const createChatToolRuntime = ({
 
     const executeCreateExitTool = async ({
         fromLocation,
+        travelTimeMinutes,
         fromRegion = null,
         toLocation = null,
         toRegion = null,
@@ -4992,6 +4998,12 @@ const createChatToolRuntime = ({
         relativeLevel = null
     } = {}) => {
         const functionName = 'createExit';
+        if (!Number.isInteger(travelTimeMinutes) || travelTimeMinutes < 1) {
+            throw new ToolVisibleError(
+                'createExit "travelTimeMinutes" is required and must be a positive integer number of minutes.',
+                { code: 'invalid_arguments' }
+            );
+        }
         const fromLocationQuery = normalizeRequiredString(fromLocation, { functionName, fieldName: 'fromLocation' });
         const fromRegionQuery = normalizeOptionalString(fromRegion);
         const toLocationQuery = normalizeOptionalString(toLocation);
@@ -5056,6 +5068,7 @@ const createChatToolRuntime = ({
                     ensureExitConnection(originLocation, destinationLocation, {
                         description: descriptionText || `${destinationLocation.name || destinationLocation.id}`,
                         bidirectional: true,
+                        travelTimeMinutes,
                         destinationRegion: destinationRegionId,
                         isVehicle: Boolean(vehicleTypeText),
                         vehicleType: vehicleTypeText || null
@@ -5069,6 +5082,7 @@ const createChatToolRuntime = ({
                 destinationLocation = await createRegionStubFromEvent({
                     name: toRegionQuery,
                     originLocation,
+                    travelTimeMinutes,
                     description: descriptionText,
                     vehicleType: vehicleTypeText || null,
                     isVehicle: Boolean(vehicleTypeText),
@@ -5103,6 +5117,7 @@ const createChatToolRuntime = ({
                     ensureExitConnection(originLocation, destinationLocation, {
                         description: descriptionText || `${destinationLocation.name || destinationLocation.id}`,
                         bidirectional: true,
+                        travelTimeMinutes,
                         destinationRegion: destinationRegionId,
                         isVehicle: Boolean(vehicleTypeText),
                         vehicleType: vehicleTypeText || null
@@ -5119,6 +5134,7 @@ const createChatToolRuntime = ({
                 destinationLocation = await createLocationFromEvent({
                     name: toLocationQuery,
                     originLocation,
+                    travelTimeMinutes,
                     descriptionHint: descriptionText || toLocationQuery,
                     directionHint: null,
                     expandStub: false,
@@ -5141,6 +5157,7 @@ const createChatToolRuntime = ({
                 ensureExitConnection(originLocation, destinationLocation, {
                     description: descriptionText || `${destinationLocation.name || destinationLocation.id}`,
                     bidirectional: true,
+                    travelTimeMinutes,
                     destinationRegion: destinationRegionForExit,
                     isVehicle: Boolean(vehicleTypeText),
                     vehicleType: vehicleTypeText || null
@@ -5161,6 +5178,7 @@ const createChatToolRuntime = ({
                     ensureExitConnection(originLocation, destinationLocation, {
                         description: descriptionText || `${destinationLocation.name || destinationLocation.id}`,
                         bidirectional: true,
+                        travelTimeMinutes,
                         destinationRegion: destinationRegionForExit,
                         isVehicle: Boolean(vehicleTypeText),
                         vehicleType: vehicleTypeText || null
@@ -6609,7 +6627,8 @@ const createChatToolRuntime = ({
         }
         try {
             return JSON.parse(JSON.stringify(source, (key, value) => (
-                typeof value === 'function' ? undefined : value
+                typeof value === 'function' || (key === 'secrets' && getConfig()?.regions?.secrets_enabled !== true)
+                    ? undefined : value
             )));
         } catch {
             return {

@@ -152,6 +152,11 @@ test('shared map fast travel asks for confirmation before gameplay travel side e
   );
   assert.match(
     helperSource,
+    /teleportNpcToLocation\(playerRecord,\s*destinationId,\s*\{[\s\S]*?arrivalProseAlreadyProvided:\s*hasPromptText/,
+    'map fast travel should distinguish prompt narration from a blank movement comment'
+  );
+  assert.match(
+    helperSource,
     /travelNarrationResult\?\.accompanyingCharacters[\s\S]*?teleportNpcToLocation\(playerRecord,[\s\S]*?accompanyingCharacters/,
     'map fast travel should carry prompt-selected companions into the player teleport request'
   );

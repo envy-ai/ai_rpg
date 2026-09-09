@@ -34,11 +34,13 @@ Here are the character concepts for the region:
 </characterConcepts>
 Note that character concepts are here to provide inspiration and context. It may not be appropriate to generate *any* NPCs in some regions, or very few.
 
+{% if config.regions.secrets_enabled == true %}
 Here are some secrets about the region:
 <secrets>
 {% for secret in secrets %}- {{ secret }}
 {% endfor %}
 </secrets>
+{% endif %}
 
 Here are all the locations in the region:
 <allLocationsInRegion>

@@ -195,7 +195,7 @@ test('exit and map travel pause for location region conflict repair before dispa
     assert.match(directMoveSource, /const repaired = await requestLocationRegionFix\(result\.conflict\);/);
     assert.match(
         directMoveSource,
-        /return performDirectMove\(destinationId, destinationName, \{ accompanyingCharacters \}\);/
+        /return performDirectMove\(destinationId, destinationName, \{[\s\S]*?accompanyingCharacters,[\s\S]*?arrivalProseAlreadyProvided[\s\S]*?\}\);/
     );
     assert.match(mapTravelSource, /await ensureLocationRegionMembershipReadyForMovement\(\)/);
 });

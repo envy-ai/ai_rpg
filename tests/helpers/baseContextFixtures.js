@@ -107,6 +107,7 @@ function buildBaseRenderContext({
         abilityContext: '',
         plotSummary: '',
         plotExpander: '',
+        bannedTropes: [],
         worldTime: {
             dayIndex: 0,
             timeMinutes: 720,
@@ -143,7 +144,8 @@ function loadBuildBasePromptContext({
     config = {},
     chatHistory = [],
     sceneSummaries = null,
-    saveMetadata = null
+    saveMetadata = null,
+    bannedTropes = []
 } = {}) {
     const source = fs.readFileSync(require.resolve('../../server.js'), 'utf8');
     const start = source.indexOf('function buildBasePromptContext');
@@ -228,6 +230,7 @@ function loadBuildBasePromptContext({
         extractPersonality: () => ({}),
         findRegionByLocationId: () => null,
         getActiveSettingSnapshot: () => ({ name: 'Test Setting' }),
+        getBannedTropes: () => bannedTropes.slice(),
         getExperiencePointValues: () => ({}),
         getGearSlotNames: () => ['head', 'body'],
         getGearSlotTypes: () => ['head', 'body'],
@@ -248,6 +251,13 @@ function loadBuildBasePromptContext({
         resolveLocationHasWeather: () => null,
         resolveEffectiveLocationHasWeather: () => 'no',
         resolveMysteryThreadMaxActive: () => 0,
+        resolveMysteryThreadMaxUnresolvedBoxes: () => 0,
+        buildMysteryCapacityForPrompt: () => ({
+            maxActive: 0,
+            maxUnresolvedBoxes: 0,
+            activeCount: 0,
+            unresolvedBoxCount: 0
+        }),
         resolveRegionWeatherForPrompt: () => null,
         formatHistoryEntrySpeakerPrefix: (_entry, { roleLabel }) => `${roleLabel}:`,
         formatSceneStartWorldTimeLabel,

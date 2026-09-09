@@ -640,7 +640,7 @@ class Region {
     });
   }
 
-  static fromXMLSnippet(xmlSnippet, { requireLocationHasWeather = false } = {}) {
+  static fromXMLSnippet(xmlSnippet, { requireLocationHasWeather = false, includeSecrets = true } = {}) {
     if (!xmlSnippet || typeof xmlSnippet !== 'string') {
       throw new Error('Region XML snippet must be a string');
     }
@@ -734,7 +734,7 @@ class Region {
             enemyConcepts.push(value);
           }
         }
-      } else if (tag === 'secrets') {
+      } else if (tag === 'secrets' && includeSecrets) {
         const secretNodes = Array.from(child.getElementsByTagName('secret'));
         if (secretNodes.length) {
           secretNodes.forEach(node => {

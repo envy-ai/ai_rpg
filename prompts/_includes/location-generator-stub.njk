@@ -12,6 +12,19 @@
 </originLocation>
 {% endif -%}
 
+{% if discoverNewExits -%}
+<existingExits>
+  {% for exit in existingExitDestinations -%}
+  <exit>
+    <destinationType>{{ exit.destinationType }}</destinationType>
+    <name>{{ exit.name }}</name>
+    <description>{{ exit.description }}</description>
+    <isReturnRoute>{{ "yes" if exit.isReturnRoute else "no" }}</isReturnRoute>
+  </exit>
+  {% endfor -%}
+</existingExits>
+{% endif -%}
+
 {% set stubHasNumNpcs = (stubNumNpcs is not none) %}
 {% set stubHasNumHostiles = (stubNumHostiles is not none) %}
 {% set stubHasAny = stubName or stubId or stubHasShortDescription or stubHasDescription or stubHasRelativeLevel or stubHasBaseLevel or stubHasControllingFaction or stubHasNumNpcs or stubHasNumHostiles %}
@@ -43,11 +56,22 @@ Include notable characters, scenery, and other elements from the entry prose.{% 
 
 GUIDELINES:
 - Reference sensory details and story hooks that bridge to and from the origin location.
-- Mention at least one notable feature that hints at additional unexplored directions.
+- Mention features hinting at additional unexplored directions only when a genuinely traversable route fits this location.
 - Ensure the description makes sense even if the player arrived without prior knowledge beyond the origin.
 - The number of NPCs and hostiles should reflect the type of location as well as the current region. For instance, an upscale tavern might have 3-4 NPCs and 0 hostiles, while a seedy tavern may have 2 NPCs and 2 hostiles, and so on. A a deserted cave might have 0 NPCs and 1-3 hostiles. The player's residence should typically have 0 NPCs and 0 hostiles. An abandoned structure region might have 1 or 2 NPCs distributed among all locations, so consider the region when choosing these numbers. Conversly, a bustling city region might have many NPCs distributed among its locations, with crowded places having 4.
 - Note that if a location is called an "Exterior" (such as "Abandoned Factory Exterior" or "Bob's Bakery Exterior"), it is outdoors, outside of the building or structure named. Typically the interior of the building is a separate location or region connected to the exterior.
 - Choose the controlling faction using the <factions> list in the gameState. Use the full faction name, or "None" if no faction controls the location.
+
+{% if discoverNewExits -%}
+ONWARD EXIT DECISION:
+- Invent plausible new destinations beyond the map outline and exits leading to them from this location. Do not list existing exits or destinations already named in the outline. Return zero new exits if no additional route fits the location.
+- Returning zero new exits is fully valid. Do not invent an exit merely to fill a quota or compass direction.
+- Give additional exits stronger consideration when <existingExits> contains only the return route, but still return zero when no other route makes sense.
+- Return exactly as many new exits as fit the location's physical layout, narrative role, and surrounding region. There is no target count.
+- Use destinationType "location" for a place inside the current region. Use "region" only for a distinct adjoining area substantial enough to become its own region.
+- Every destination must be new, directly reachable from this location, and absent from the existing location and region context.
+- Give each exit a concise route description and a realistic travel duration.
+{% endif -%}
 
 {% include "_includes/generation-prompt-instructions.njk" %}
 
@@ -75,6 +99,17 @@ Return ONLY the following fields, in this format:
   {% if stubNumNpcs is none -%}<numNpcs><!-- Integer from 0 to 4, indicating how many NPCs typically inhabit this location --></numNpcs>{% endif %}
   {% if stubNumHostiles is none -%}<numHostiles><!-- Integer from 0 to 4, indicating how many hostile entities (creatures, NPCs, etc) typically inhabit this location --></numHostiles>{% endif %}
   {% if not stubHasWeather -%}<hasWeather><!-- Use "yes" when outdoors and exposed to local weather, "sheltered" when outside weather remains visible from a protected or indoor space, or "no" when no outdoor weather is visible. Never omit this field. --></hasWeather>{% endif %}
+  {% if discoverNewExits -%}
+  <newExits>
+    <!-- Return zero or more <exit> entries. An empty <newExits></newExits> block means no additional exit makes sense. -->
+    <exit>
+      <destinationType><!-- "location" or "region" --></destinationType>
+      <name><!-- New destination name --></name>
+      <description><!-- Concise description of the route or doorway from this location --></description>
+      <travelTime><!-- Realistic duration such as "5 minutes", "2 hours", or "1 day" --></travelTime>
+    </exit>
+  </newExits>
+  {% endif -%}
   <numItems><!-- Integer from 0 to 4, indicating how many items typically can be found in this location --></numItems>
   <numScenery><!-- Integer from 2 to 4, indicating how many notable scenery features typically can be found in this location --></numScenery>
 {#  <randomStoryEvents>

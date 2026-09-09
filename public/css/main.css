@@ -4241,6 +4241,38 @@ button.thing-action-icon:hover, button.thing-action-icon:focus-visible {
   position: relative;
 }
 
+:is(.thing-collection-view--grid, .thing-collection-view--small-grid) .entity-image-badges:has(> .entity-image-badge:nth-child(4)) > .entity-image-badge {
+  font-size: 0.7125rem;
+}
+:is(.thing-collection-view--grid, .thing-collection-view--small-grid) .entity-image-badges:has(> .entity-image-badge:nth-child(4)) > .entity-image-badge--asset {
+  width: 16.5px;
+  height: 16.5px;
+}
+
+.thing-collection-view--small-grid .entity-image-badges:has(> .entity-image-badge:nth-child(4)) > .entity-image-badge {
+  font-size: 0.49875rem;
+}
+.thing-collection-view--small-grid .entity-image-badges:has(> .entity-image-badge:nth-child(4)) > .entity-image-badge--asset {
+  width: 11.55px;
+  height: 11.55px;
+}
+
+:is(.thing-collection-view--grid, .thing-collection-view--small-grid) .entity-image-badges:has(> .entity-image-badge:nth-child(5)) > .entity-image-badge {
+  font-size: 0.6365rem;
+}
+:is(.thing-collection-view--grid, .thing-collection-view--small-grid) .entity-image-badges:has(> .entity-image-badge:nth-child(5)) > .entity-image-badge--asset {
+  width: 14.74px;
+  height: 14.74px;
+}
+
+.thing-collection-view--small-grid .entity-image-badges:has(> .entity-image-badge:nth-child(5)) > .entity-image-badge {
+  font-size: 0.44555rem;
+}
+.thing-collection-view--small-grid .entity-image-badges:has(> .entity-image-badge:nth-child(5)) > .entity-image-badge--asset {
+  width: 10.318px;
+  height: 10.318px;
+}
+
 .entity-image-badge__mask,
 .entity-image-badge__image {
   display: block;
@@ -6132,7 +6164,20 @@ body.dark .thing-toggle-hint {
   align-items: center;
   justify-content: center;
   z-index: 40;
-  cursor: help;
+  cursor: pointer;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  font: inherit;
+}
+.chat-player-points-indicator:focus-visible {
+  outline: 2px solid #fde047;
+  outline-offset: 4px;
+}
+.chat-player-points-indicator:disabled {
+  cursor: wait;
+}
+.chat-player-points-indicator {
   filter: drop-shadow(0 2px 4px rgba(15, 23, 42, 0.45));
 }
 

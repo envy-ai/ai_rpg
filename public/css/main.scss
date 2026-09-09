@@ -4726,6 +4726,32 @@ button.thing-action-icon {
   position: relative;
 }
 
+@each $badge-count, $badge-scale in (4: 0.75, 5: 0.67) {
+  :is(.thing-collection-view--grid, .thing-collection-view--small-grid)
+    .entity-image-badges:has(> .entity-image-badge:nth-child(#{$badge-count})) {
+    > .entity-image-badge {
+      font-size: $thing-image-badge-font-size * $badge-scale;
+    }
+
+    > .entity-image-badge--asset {
+      width: $thing-image-badge-asset-size * $badge-scale;
+      height: $thing-image-badge-asset-size * $badge-scale;
+    }
+  }
+
+  .thing-collection-view--small-grid
+    .entity-image-badges:has(> .entity-image-badge:nth-child(#{$badge-count})) {
+    > .entity-image-badge {
+      font-size: $thing-small-grid-image-badge-font-size * $badge-scale;
+    }
+
+    > .entity-image-badge--asset {
+      width: $thing-small-grid-image-badge-asset-size * $badge-scale;
+      height: $thing-small-grid-image-badge-asset-size * $badge-scale;
+    }
+  }
+}
+
 .entity-image-badge__mask,
 .entity-image-badge__image {
   display: block;
@@ -6617,7 +6643,20 @@ body.dark .thing-toggle-hint {
   align-items: center;
   justify-content: center;
   z-index: 40;
-  cursor: help;
+  cursor: pointer;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  font: inherit;
+
+  &:focus-visible {
+    outline: 2px solid #fde047;
+    outline-offset: 4px;
+  }
+
+  &:disabled {
+    cursor: wait;
+  }
   filter: drop-shadow(0 2px 4px rgba(15, 23, 42, 0.45));
 }
 

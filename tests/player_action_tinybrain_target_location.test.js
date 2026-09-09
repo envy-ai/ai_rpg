@@ -57,7 +57,7 @@ test('chat API passes committed travel movement type with the authoritative dest
     );
     assert.match(
         apiSource,
-        /const authoritativeMovementCompanionNames = Array\.isArray\([\s\S]*moveTurnResultPayload\.accompanyingCharacters[\s\S]*Events\.runEventChecks\([\s\S]*authoritativeMovementCompanionNames/,
+        /const authoritativeMovementCompanionNames = Array\.from\(new Set\(\[[\s\S]*collectPlayerActionAutomaticPartyMembers\([\s\S]*moveTurnResultPayload\.accompanyingCharacters[\s\S]*Events\.runEventChecks\([\s\S]*authoritativeMovementCompanionNames/,
         'sectioned event checks must receive authoritative player-movement companions'
     );
 });

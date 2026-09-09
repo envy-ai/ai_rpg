@@ -919,6 +919,15 @@
                         </div>
 
                         <div class="form-group">
+                            <label for="regions-secrets-enabled">Region Secrets:</label>
+                            <div class="checkbox-wrapper">
+                                <input type="hidden" name="regions.secrets_enabled::boolean" value="false">
+                                <input type="checkbox" id="regions-secrets-enabled" name="regions.secrets_enabled::boolean" value="true" {% if config.regions.secrets_enabled == true %}checked{% endif %}>
+                            </div>
+                            <span class="help-text">Generate hidden regional secrets and use saved region secrets in AI context.</span>
+                        </div>
+
+                        <div class="form-group">
                             <label for="locations-max-npcs">Max NPCs per Location:</label>
                             <input type="number" id="locations-max-npcs" name="locations.maxNpcs::int" value="{{ config.locations.maxNpcs }}" min="0" step="1">
                             <span class="help-text">Maximum NPCs created per location</span>

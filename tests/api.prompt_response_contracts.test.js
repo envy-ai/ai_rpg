@@ -36,4 +36,8 @@ test('generic and question prompts do not inherit player-action XML roots', () =
         responseContract,
         /if \(shouldUseRepetitionBusterXml\) \{\s*requestOptions\.expectedXmlRootTags = playerActionXmlRootTags;\s*requestOptions\.requiredRegex = playerActionProseRegex;\s*\}/
     );
+    assert.match(
+        requestLiteral,
+        /responseValidationRetryFeedback:\s*promptMetadataLabel === 'player_action'\s*&& !useTinyBrainPlayerAction/
+    );
 });

@@ -53,6 +53,8 @@ test('character menu teleport sends story-tool flag through the teleport helper'
 
     assert.match(helper, /storyToolTeleport = false/);
     assert.match(helper, /storyToolTeleport: storyToolTeleport === true/);
+    assert.match(helper, /arrivalProseAlreadyProvided = false/);
+    assert.match(helper, /arrivalProseAlreadyProvided: arrivalProseAlreadyProvided === true/);
     assert.match(modal, /teleportNpcToLocation\(resolvedNpc,\s*entry\.id,\s*\{[\s\S]*?storyToolTeleport:\s*true/);
 });
 
@@ -97,4 +99,6 @@ test('committed player travel reports arrival-processing failures without return
     assert.match(route, /catch \(arrivalError\) \{[\s\S]*?arrivalProcessingError = \{[\s\S]*?message:[\s\S]*?stack:/);
     assert.match(helper, /result\.arrivalProcessingError/);
     assert.match(helper, /showChatErrorPopup/);
+    assert.match(route, /const arrivalProseAlreadyProvided = body\.arrivalProseAlreadyProvided/);
+    assert.match(route, /runWhileYouWereAwayPrompt\(\{[\s\S]*?arrivalProseAlreadyProvided/);
 });

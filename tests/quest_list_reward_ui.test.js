@@ -42,3 +42,14 @@ test('active quest cards expose manual completion and return to Adventure after 
     assert.match(questCardSource, /completeButton\.textContent = 'Mark Complete';/);
     assert.match(questCardSource, /actions\.appendChild\(completeButton\);/);
 });
+
+test('quest currency rewards use the active setting currency name', () => {
+    const questCardSource = extractQuestCardSource();
+
+    assert.match(viewSource, /function resolveCurrencyLabel\(\{ amount = 2, capitalize = false \} = \{\}\)/);
+    assert.match(viewSource, /getCurrencyLabel\(amount, \{ setting \}\)/);
+    assert.match(questCardSource, /const rewardCurrencyLabel = resolveCurrencyLabel\(\{ amount: rewardCurrency \}\);/);
+    assert.match(questCardSource, /rewardParts\.push\(`\$\{rewardCurrency\} \$\{rewardCurrencyLabel\}`\)/);
+    assert.match(questCardSource, /currencyItem\.textContent = `\$\{rewardCurrency\} \$\{rewardCurrencyLabel\}`;/);
+    assert.doesNotMatch(questCardSource, /\bgold\b/i);
+});

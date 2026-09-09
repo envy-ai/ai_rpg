@@ -25,6 +25,8 @@ function createMinimalRuntime({
     requestUserInput = null,
     deleteThingById = null,
     createLocationFromEvent = null,
+    createRegionStubFromEvent = null,
+    ensureExitConnection = null,
     characters = [],
     currentPlayer = { currentLocation: 'loc-origin' },
     things = [],
@@ -46,13 +48,13 @@ function createMinimalRuntime({
         createLocationFromEvent: createLocationFromEvent || (async () => {
             throw new Error('createLocationFromEvent should not be reached for this test.');
         }),
-        createRegionStubFromEvent: async () => {
+        createRegionStubFromEvent: createRegionStubFromEvent || (async () => {
             throw new Error('createRegionStubFromEvent should not be reached for this test.');
-        },
+        }),
         generateItemsByNames: async () => [],
-        ensureExitConnection: () => {
+        ensureExitConnection: ensureExitConnection || (() => {
             throw new Error('ensureExitConnection should not be reached for this test.');
-        },
+        }),
         findRegionByLocationId: () => null,
         LLMClient: {
             chatCompletion: async (options) => {
@@ -111,6 +113,71 @@ function cleanupLocations(locations) {
             Location.removeFromIndex(location);
         }
     }
+}
+
+test('createExit requires positive travel minutes before creating any world state', async () => {
+    const definition = findToolDefinition('createExit');
+    assert.ok(definition.parameters.required.includes('travelTimeMinutes'));
+    assert.equal(definition.parameters.properties.travelTimeMinutes.minimum, 1);
+    const runtime = createMinimalRuntime();
+    for (const travelTimeMinutes of [undefined, null, '', '5', 0, -1, 1.5]) {
+        const result = await runtime.executeChatToolCall({
+            functionName: 'createExit',
+            argumentsObject: { fromLocation: 'Origin', toLocation: 'New Place', travelTimeMinutes }
+        });
+        assert.match(result.content, /positive integer number of minutes/);
+    }
+});
+
+for (const kind of ['existing location', 'new location', 'existing region', 'new region']) {
+    test(`createExit carries travel time through ${kind} creation and preserves duplicates`, async () => {
+        IdGenerator.reset();
+        const region = new Region({ id: 'exit-test-region', name: 'Exit Region', description: 'Region.' });
+        const origin = new Location({ id: `exit-origin-${kind}`, name: 'Exit Origin', description: 'Origin.', regionId: 'exit-test-region' });
+        const destination = new Location({ id: `exit-destination-${kind}`, name: 'Exit Destination', description: 'Destination.', regionId: 'exit-test-region' });
+        const connections = [];
+        const stubCalls = [];
+        const isNew = kind.startsWith('new');
+        const isRegion = kind.endsWith('region');
+        region.entranceLocationId = destination.id;
+        const runtime = createMinimalRuntime({
+            locations: isNew ? [origin] : [origin, destination],
+            regions: isRegion && !isNew ? [region] : [],
+            createLocationFromEvent: async options => { stubCalls.push(options); return destination; },
+            createRegionStubFromEvent: async options => { stubCalls.push(options); return destination; },
+            ensureExitConnection: (from, to, options) => {
+                connections.push(options);
+                from.addExit('test-route', new LocationExit({
+                    description: 'Route.', destination: to.id,
+                    travelTimeMinutes: options.travelTimeMinutes, bidirectional: options.bidirectional
+                }));
+            }
+        });
+        try {
+            const args = {
+                fromLocation: origin.id, travelTimeMinutes: 37,
+                ...(isRegion ? { toRegion: region.name } : { toLocation: destination.name })
+            };
+            const result = await runtime.executeChatToolCall({ functionName: 'createExit', argumentsObject: args });
+            assert.match(result.content, /<status>success<\/status>/);
+            assert.equal(connections.length, 1);
+            assert.equal(connections[0].travelTimeMinutes, 37);
+            assert.equal(connections[0].bidirectional, true);
+            assert.equal(stubCalls.length, isNew ? 1 : 0);
+            if (isNew) assert.equal(stubCalls[0].travelTimeMinutes, 37);
+            if (!isNew) {
+                const duplicate = await runtime.executeChatToolCall({
+                    functionName: 'createExit', argumentsObject: { ...args, travelTimeMinutes: 99 }
+                });
+                assert.match(duplicate.content, /<status>unchanged<\/status>/);
+                assert.equal(connections.length, 1);
+                assert.equal(origin.getExit('test-route').travelTimeMinutes, 37);
+            }
+        } finally {
+            cleanupLocations([origin, destination]);
+            Region.removeFromIndex(region);
+        }
+    });
 }
 
 test('requestUserInput tool definition asks a required question only', () => {
@@ -2068,7 +2135,7 @@ test('moreInfo omits bulky region and location scaffolding while keeping region 
     ];
 
     const runtime = createChatToolRuntime({
-        getConfig: () => ({ ai: { max_tool_rounds: 4 } }),
+        getConfig: () => ({ ai: { max_tool_rounds: 4 }, regions: { secrets_enabled: true } }),
         getChatHistory: () => [],
         isAssistantProseLikeEntry: () => true,
         serializeNpcForClient: value => value,

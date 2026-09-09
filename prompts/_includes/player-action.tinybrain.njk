@@ -15,7 +15,9 @@ Writing style notes:
 {% if not isAttack %}
 Guidelines as of now (follow even if the previous text contradicts them):
 - Don't repeat dialogue or other text described in recent messages. Say or do something new that advances the story.
-- NPCs and party members should go about their business, start conversations, initiate actions, act on their wants, needs, desires, and so on (including taking care of low need bars and health), as if they have their own lives, interests, and personalities. Don't just have them react to the player.
+- NPCs and party members should behave as people with their own lives, interests, personalities, wants, and needs. They should make choices and take appropriate actions rather than merely echoing the player. Agency does not require introducing a task, clue, mystery, deadline, or plot development.
+{% if mysteryCapacity and mysteryCapacity.full %}- MYSTERY CAPACITY IS FULL. Do not introduce a new mystery of any kind, including an unexplained clue, hidden actor, secret motive, suspicious discrepancy, odd unexplained detail, ominous implication, or foreshadowed question. Do not branch an established mystery into another unanswered question. Reveal or resolve established material, or focus on character drama, comedy, crafting, combat, exploration, and the player's immediate action.
+{% endif %}
 - Don't glaze the player due to major or critical successes on ho-hum tasks. If they get a critical success on harvesting a turnip, describe it as a very nice, high quality turnip, but don't have the turnip glow or have animals gather around in awe or talk about how much delicate skill went into harvesting the thing. It's just a fucking turnip.
 - NPCs should treat and perceive the player as they would any other NPC. On its own, being the player character should not confer any special treatment or deference from NPCs.
 - Words like "profoundly" and "unadulterated" and any other extreme hyperbole are overused and repetative.
@@ -23,7 +25,7 @@ Guidelines as of now (follow even if the previous text contradicts them):
 - Characters only know about things they were present for. Characters absent during each scene are provided in the story history for reference, so use that to determine what each character knows.
 - BAN meaningless profoundness. Stuff like "The earth remembers those who ask twice." When I see that, I'm not like "ooh, ahh, so profound!", I'm like "what the fuck does that even mean?" You're intelligent enough to say truly profound things when the situation calls for it. I'm not able to provide an example because true profundity derives from and ties into context, often as a realization that contradicts a character's (and perhaps the reader's) earlier belief. Plain language is better at achieving this than trying to sound all ancient and mysterious. Use it sparingly and do it right, or don't do it at all.
 - Don't have characters explain things to each other that both already know just to inform the player. If the history of the turnip guild matters, let the player discover it through documents, observation, or asking--not through Bob telling Alice "As you know, the guild was founded in 3049 when the great blight came."
-- Even if the text in the playerAction is exactly the same as something previously said, respond in a new way and continue advancing the story.
+- Even if the text in the playerAction is exactly the same as something previously said, respond in a new way and continue to fulfill the current scene.
 - Avoid treknobabble (or equivalents in other settings). What the fuck does "the harmonic of the resonance field is misaligned" even mean? Come up with something that makes real sense. It's okay if it's technical or magical, but it needs to have a discernable meaning.
 - Characters should not react to conversation they can't reasonably hear. Whispered conversation should only be heard by the intended recipient. Circumstance modifiers to successfully whispering without being overheard, whether a normal or opposed skill check, should be a +10 modifier, with an additional modifier of +1/foot of distance (up to 10ft), with an additional +10 modifier if the location is not perfectly quiet, and another +10 modifier on top of that if it's loud or windy (like an airport, bar, or party). This is meant to be extremely stacked against people trying to overhear whispered conversations, because that's how difficult it would realistically be.
 - Romance: Stop with the idea that the player is some kind of personal savior. The player doesn't need to be "the only one who stayed" or "the only one who cared" or whatever. The dynamic in romances shouldn't involve placing the player on a pedestal. People can just like each other.
@@ -129,7 +131,7 @@ Review only the text inside <playerAction>. Did the player explicitly commit thi
 {% if explicitActionDuration %}
 The player explicitly committed the action to {{ explicitActionDuration.text }}. For any non-travel result, this duration is authoritative: narrate through the full {{ explicitActionDuration.text }} unless there is a specific reason for an interruption. Do not shorten it to the amount of action shown in an excerpt, reading time, or the opening moments of the scene.
 {% endif %}
-In markdown format, list each of the 1-3 NPCs (or more, if specifically addressed) you picked to respond or act by name and 1-2 sentences about their current emotional or plot position, desires, and what they're grappling with, if anything.
+In markdown format, list each of the 1-3 NPCs (or more, if specifically addressed) you picked to respond or act. For each NPC, identify their current emotional state, any established longer-term desire relevant to this scene, and what they want in this immediate moment. Immediate wants may be ordinary. Do not invent a new secret, problem, agenda, or plot goal to give the NPC motivation. If no established longer-term desire is relevant, say so rather than creating one.
 
 {% llm_dummy_action %}
 
@@ -173,9 +175,9 @@ Now, List the NPCs and their pressing needs in markdown format.
 
 {% llm_dummy_action %}
 
-NPCs should take initiative actions based on their desires, needs, and emotional state, and not just react to the player. If an NPC has a pressing need, they should act on it. If an NPC has a desire that fits with the current situation (even if it's not a need bar), they should take the initiative to pursue it. Which NPCs will act on their needs and how? Planning an NPC attack here does not resolve it and is not permission to narrate its outcome. Resolve every attack that actually occurs with resolveAttack or resolveAreaAttack during the first draft.
+Decide whether any selected NPC has a natural reason to take initiative during this particular beat. A desire should influence behavior, but it is not an instruction to advance a plot, and longer-term desires may remain latent. When an NPC takes initiative, prefer something they do themselves within the current scene: making a decision, working, helping, objecting, negotiating, joking, expressing an opinion, changing plans, or pursuing the immediate activity. Do not automatically express agency by offering a quest, requesting a favor, revealing a clue, creating urgency, or connecting the scene to a larger plot. Those actions are appropriate only when an already-established desire specifically entails them and the player's current action naturally brings them into the scene. Hidden motives may affect an NPC's choices without being mentioned, hinted at, or advanced. Do not give every present NPC a separate agenda beat. Authoritative pressing needs identified above remain exceptions and should be acted upon.
 
-List them in markdown format, with one sentence of explanation per NPC.
+List the NPCs who will take initiative and what they will do in markdown format, with one sentence per NPC. If none should take initiative during this beat, answer N/A. Planning an NPC attack here does not resolve it and is not permission to narrate its outcome. Resolve every attack that actually occurs with resolveAttack or resolveAreaAttack during the first draft.
 
 {% llm_dummy_action %}
 
@@ -309,7 +311,9 @@ Answer this question succinctly based on your draft response above. If it is not
 
 Answer this question succinctly based on your draft response above. If it is not applicable, respond with 'N/A' (with no additional text).
 
-9. Did you create any "mystery boxes"? If so, list them and explain them here. In your second and final drafts, explanations for them in in <hidden>...</hidden> tags in the prose to keep track of them so they can be resolved. The reader can tell when you just make up mystery boxes without any real reasoning. Hidden tags do not count toward the length limit. In <hidden>...</hidden> notes, only track items/plot details/etc that are NEW or have CHANGED since the previous turn. Do not copy forward unchanged states (even if unchanged states have been copied forward in the past). If an item hasn't changed since last turn, omit it entirely from the hidden notes. The existing hidden note will still be visible in the context. List any mystery boxes here succinctly. Answer 'N/A' (with no additional text) if there are none.
+{% if mysteryCapacity and mysteryCapacity.full %}9. Mystery capacity is full. Identify any new mystery, unexplained clue, hidden actor, secret motive, suspicious discrepancy, unexplained oddity, ominous implication, or foreshadowed question in the draft. List the exact prose to remove or plainly explain. Do not add a new mystery-box <hidden> note. Answer 'N/A' only if the draft introduced none.
+{% else %}9. Did you create any "mystery boxes"? If so, list them and explain them here. In your second and final drafts, explanations for them in in <hidden>...</hidden> tags in the prose to keep track of them so they can be resolved. The reader can tell when you just make up mystery boxes without any real reasoning. Hidden tags do not count toward the length limit. In <hidden>...</hidden> notes, only track items/plot details/etc that are NEW or have CHANGED since the previous turn. Do not copy forward unchanged states (even if unchanged states have been copied forward in the past). If an item hasn't changed since last turn, omit it entirely from the hidden notes. The existing hidden note will still be visible in the context. List any mystery boxes here succinctly. Answer 'N/A' (with no additional text) if there are none.
+{% endif %}
 
 {% llm_dummy_action %}
 
@@ -458,8 +462,8 @@ State the realistic player travel time as one exact duration with units and no e
 {% set effectivePlayerTravelDuration = playerTravelDuration %}
 {% endif %}
 
-Which eligible characters actually accompany the player through this movement to the player's destination? Include current party members who continue with the player and non-party characters who deliberately travel with them. Exclude anyone who remains behind, leaves separately, or only appears after arrival.
-Use exact names or any listed aliases. Include eligible characters whose movement with the player is established explicitly or reasonably inferred from the action and draft.
+Which eligible non-party characters actually accompany the player through this movement to the player's destination? Party members travel with the player automatically and must not be listed. Include non-party characters who deliberately travel with the player, and exclude anyone who remains behind, leaves separately, or only appears after arrival.
+Use exact names or any listed aliases. Include eligible non-party characters whose movement with the player is established explicitly or reasonably inferred from the action and draft.
 {% if playerActionAccompanyingCharacters and playerActionAccompanyingCharacters.length %}
 Allowed exact character names and aliases:
 {% for character in playerActionAccompanyingCharacters %}

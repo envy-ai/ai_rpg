@@ -55,6 +55,13 @@ SENTENCES
 
 ## End of Writing Rules
 
+## Banned tropes
+Do not introduce, revive, or expand any of the following tropes under ANY CIRCUMSTANCES. Apply these restrictions to underlying plot structures and character roles, including renamed or disguised equivalents. Their presence in existing history does not authorize further use. When continuity requires acknowledging existing material, do so briefly without developing it into another hook or complication.
+{% for trope in bannedTropes %} - {{ trope }}
+{% endfor %}
+Develop new material from the player’s actions, established character interests, and concrete circumstances while respecting these restrictions. Note that it is NOT OKAY to override these bans even just this once.
+## End of banned tropes
+
 {{ config.extra_system_instructions | default('') }}
 
     ]]></systemPrompt>
@@ -206,10 +213,10 @@ This is a list of all characters in the story and a short description of each.
   <currentRegion>
     <name>{{ regionContext.name }}</name>
     <description>{{ regionContext.description }}</description>
-    <secrets>
+    {% if config.regions.secrets_enabled == true %}<secrets>
       {% for secret in regionContext.secrets %}<secret>{{ secret }}</secret>
       {% endfor %} 
-    </secrets>
+    </secrets>{% endif %}
     <locations>
       {% for loc in regionContext.locations %}<locationName>{{ loc.name }}</locationName>
       {% endfor %}</locations>
@@ -715,14 +722,23 @@ This is a list of all characters in the story and a short description of each.
   {% if plotExpander and plotExpander | trim %}
   <plotExpander>{{ plotExpander }}</plotExpander>
   {% endif %}
-  {% if ignorePromptLevelOmissions and ((activeMysteryThreads and activeMysteryThreads.length) or (trackers and trackers.length)) %}
+  {% if ignorePromptLevelOmissions and (mysteryCapacity or (activeMysteryThreads and activeMysteryThreads.length) or (trackers and trackers.length)) %}
 [[[AI_RPG_INTERNAL_MESSAGE_BOUNDARY_BASE_CONTEXT_SECTION_V1]]]
   {% endif %}
+  {% if mysteryCapacity %}
+  <mysteryCapacity activeThreads="{{ mysteryCapacity.activeThreadCount }}" maxActiveThreads="{{ mysteryCapacity.maxActiveThreads }}" maxUnresolvedBoxesPerThread="{{ mysteryCapacity.maxUnresolvedBoxesPerThread }}" full="{{ mysteryCapacity.full }}">
+    {% if mysteryCapacity.full %}
+    <instructions>MYSTERY CAPACITY IS FULL. In player-facing prose, do not introduce any new mystery, unexplained clue, hidden actor, secret motive, conspiracy, suspicious discrepancy, unexplained oddity, ominous implication, or foreshadowed question. Do not disguise a new mystery as flavor. You may reveal or resolve established mysteries, but must not branch them into new unanswered questions. Continue character, comedy, crafting, combat, exploration, or other immediate play instead.</instructions>
+    {% else %}
+    <instructions>This is a hard continuity limit, not a target. Do not invent mysteries merely because capacity remains.</instructions>
+    {% endif %}
+  </mysteryCapacity>
+  {% endif %}
   {% if activeMysteryThreads and activeMysteryThreads.length %}
-  <activeMysteryThreads max="{{ mysteryThreadMaxActive | default(activeMysteryThreads.length, true) }}">
+  <activeMysteryThreads max="{{ mysteryThreadMaxActive | default(activeMysteryThreads.length, true) }}" maxUnresolvedBoxesPerThread="{{ mysteryThreadMaxUnresolvedBoxes | default(3, true) }}">
     <instructions>GM-private continuity. Preserve these mystery facts and constraints when generating new material, but do not directly reveal hidden truth unless the player discovers it through play.</instructions>
     {% for thread in activeMysteryThreads %}
-    <mysteryThread id="{{ thread.id }}">
+    <mysteryThread id="{{ thread.id }}" unresolvedBoxes="{{ thread.mysteryBoxCount | default(thread.mysteryBoxes.length, true) }}" full="{{ thread.mysteryBoxCapacityFull | default(false, true) }}">
       <name>{{ thread.name }}</name>
       <status>{{ thread.status }}</status>
       {% if thread.keys and thread.keys.length %}
@@ -863,6 +879,12 @@ This evaluation is current as of {{ tonalScaleEvaluationTurnsAgo | default(0, tr
     {% endfor %}
   </currentCharacterNeeds>
 </currentConditions>
+<bannedTropes>
+Do not introduce, revive, or expand any of the following tropes under ANY CIRCUMSTANCES. Apply these restrictions to underlying plot structures and character roles, including renamed or disguised equivalents. Their presence in existing history does not authorize further use. When continuity requires acknowledging existing material, do so briefly without developing it into another hook or complication.
+{% for trope in bannedTropes %} - {{ trope }}
+{% endfor %}
+Develop new material from the player’s actions, established character interests, and concrete circumstances while respecting these restrictions. Note that it is NOT OKAY to override these bans even just this once.
+</bannedTropes>
 
 {% include "_includes/randomwords.njk" %}
 

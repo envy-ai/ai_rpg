@@ -2,7 +2,7 @@
 
 Browser-facing endpoints for persisted private `MysteryThread` continuity records. A mystery thread groups related `MysteryBox` records, tracks whether the thread is active for prompt context, and stores GM-only summary/constraint text used to keep hidden continuity consistent.
 
-Active threads are injected into base-context prompts up to `mystery_threads.max_active`. Inactive and concluded threads remain persisted, searchable, and editable through these routes. Resolved mystery boxes remain visible in API payloads, but active prompt context omits resolved boxes from a thread's `<mysteryBoxes>` block.
+Active threads are injected into base-context prompts up to `mystery_threads.max_active`. Each thread may contain at most `mystery_threads.max_unresolved_boxes_per_thread` unresolved boxes; resolved boxes remain visible and persisted but free capacity. Inactive and concluded threads remain searchable and editable.
 
 ## Client Payloads
 
@@ -33,10 +33,12 @@ Query parameters:
 
 Response:
 
-- 200: `{ success: true, mysteryThreads, count, maxActive }`
+- 200: `{ success: true, mysteryThreads, count, maxActive, maxUnresolvedBoxesPerThread }`
 - 500: unexpected listing/serialization failure
 
 `maxActive` is read from `config.mystery_threads.max_active` when it is a non-negative integer. The route falls back to `2` if the active runtime config does not provide a valid value.
+
+`maxUnresolvedBoxesPerThread` is read from `config.mystery_threads.max_unresolved_boxes_per_thread` and falls back to `3`.
 
 ## GET /api/mystery-threads/:id
 
@@ -87,6 +89,7 @@ Request body:
 Behavior:
 
 - Every submitted box id must resolve to an existing `MysteryBox`.
+- The submitted assignment may contain at most `maxUnresolvedBoxesPerThread` unresolved boxes. Resolved historical boxes do not count toward the limit. Validation occurs before any box is removed from another thread.
 - Duplicate ids collapse through `MysteryThread.replaceBoxIds(...)`; the first occurrence determines order.
 - Assigned box ids are removed from every other thread, so a box has at most one visible parent thread in Story Tools.
 - The route does not create, delete, rename, resolve, or edit mystery boxes.
@@ -94,7 +97,7 @@ Behavior:
 Response:
 
 - 200: `{ success: true, mysteryThread, persisted }`
-- 400: invalid input, unknown box id, invalid save state, or persistence failure
+- 400: invalid input, unknown box id, unresolved-box-cap violation, invalid save state, or persistence failure
 - 404: no thread exists with that exact id
 
 ## Persistence

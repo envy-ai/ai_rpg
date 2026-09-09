@@ -327,7 +327,8 @@
 
     const buildFormulaVariables = (levelValue, overrides = null) => {
       const optionsOverride = (() => {
-        if (Number.isFinite(Number(overrides))) {
+        if (overrides !== null && overrides !== undefined && overrides !== ''
+          && Number.isFinite(Number(overrides))) {
           return { attributeCountOverride: Number(overrides) };
         }
         if (overrides && typeof overrides === 'object') {
@@ -492,7 +493,7 @@
           const baseline = Number.isFinite(floorValue) ? floorValue : attributeDefaultValue;
           spent += Math.max(0, numeric - baseline);
         }
-        return attributePoolBaseValue - spent;
+        return attributePoolBaseValue + computeFormulaDeltaFromBaseline(attributePoolEvaluator, levelOverride) - spent;
       }
       const attrCount = state.attributes.definitions.length
         || state.attributes.values.size
@@ -521,7 +522,7 @@
     };
 
     const computeSkillPool = (levelOverride = null) => {
-      if (!enableSkills || !state.skills.names.length) {
+      if (!enableSkills) {
         return 0;
       }
       if (Number.isFinite(skillPoolBaseValue)) {

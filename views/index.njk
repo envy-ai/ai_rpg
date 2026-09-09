@@ -397,9 +397,9 @@
                                             <div class="character-level-stack">
                                                 <div class="character-level-badge chat-player-level-badge" id="chatPlayerLevelBadge" aria-hidden="true">L.?</div>
                                             </div>
-                                            <div class="chat-player-points-indicator" id="chatPlayerPointsIndicator" hidden aria-hidden="true">
+                                            <button type="button" class="chat-player-points-indicator" id="chatPlayerPointsIndicator" hidden aria-hidden="true" aria-label="Distribute unspent skill and attribute points" aria-haspopup="dialog" aria-controls="npcViewModal">
                                                 <span class="chat-player-points-indicator-mark" aria-hidden="true">!</span>
-                                            </div>
+                                            </button>
                                             <div class="chat-player-portrait-image" id="chatPlayerPortraitImage">
                                                 <div class="chat-player-placeholder" aria-hidden="true">🧙</div>
                                             </div>
@@ -1748,8 +1748,8 @@
                     <div id="containerOpenCheckStatus" class="container-open-check-modal__status" role="status" aria-live="polite"></div>
                 </div>
                 <footer class="modal__footer">
-                    <button type="button" class="btn-secondary" id="containerOpenCheckCancelBtn">Cancel</button>
-                    <button type="submit" class="btn-primary" id="containerOpenCheckSubmitBtn">Try to Open</button>
+                    <button type="button" class="btn btn-secondary" id="containerOpenCheckCancelBtn">Cancel</button>
+                    <button type="submit" class="btn btn-primary" id="containerOpenCheckSubmitBtn">Try to Open</button>
                 </footer>
             </form>
         </div>
@@ -5215,9 +5215,9 @@
             }, 15000);
         }
 
-        function resolveCurrencyLabel({ capitalize = false } = {}) {
+        function resolveCurrencyLabel({ amount = 2, capitalize = false } = {}) {
             const setting = window.currentSetting || {};
-            const label = window.CurrencyUtils.getCurrencyLabel(2, { plural: setting.currencyNamePlural });
+            const label = window.CurrencyUtils.getCurrencyLabel(amount, { setting });
             if (!capitalize) {
                 return label;
             }
@@ -6287,20 +6287,29 @@
             return true;
         };
 
-        if (chatSidebarElements.viewButton) {
-            chatSidebarElements.viewButton.addEventListener('click', async () => {
+        for (const trigger of [chatSidebarElements.viewButton, chatSidebarElements.pointsIndicator]) {
+            if (!trigger) continue;
+            trigger.addEventListener('click', async (event) => {
+                event.stopPropagation();
                 try {
-                    chatSidebarElements.viewButton.disabled = true;
+                    trigger.disabled = true;
                     const playerData = await fetchLatestPlayerDataForModal();
                     if (!playerData || typeof showNpcViewModal !== 'function') {
                         throw new Error('Player view modal is not available.');
                     }
-                    showNpcViewModal(playerData);
+                    await showNpcViewModal(playerData);
+                    if (trigger === chatSidebarElements.pointsIndicator) {
+                        const sectionId = playerData.unspentAttributePoints > 0
+                            ? 'npcViewAttributesSection' : 'npcViewSkillsSection';
+                        const section = document.getElementById(sectionId);
+                        section.scrollIntoView({ block: 'start' });
+                        section.querySelector('input:not(:disabled), button:not(:disabled)')?.focus({ preventScroll: true });
+                    }
                 } catch (error) {
                     console.warn('Failed to open player view modal:', error);
-                    alert(`Failed to open player view: ${error?.message || error}`);
+                    alert(`Failed to open player view: ${error?.stack || error}`);
                 } finally {
-                    chatSidebarElements.viewButton.disabled = false;
+                    trigger.disabled = false;
                 }
             });
         }
@@ -8946,7 +8955,7 @@
             return result;
         }
 
-        async function teleportNpcToLocation(npc, destinationLocationId, { card = null, originLocationId = null, accountTravelTime = false, storyToolTeleport = false, accompanyingCharacters = [] } = {}) {
+        async function teleportNpcToLocation(npc, destinationLocationId, { card = null, originLocationId = null, accountTravelTime = false, storyToolTeleport = false, arrivalProseAlreadyProvided = false, accompanyingCharacters = [] } = {}) {
             if (!npc || !npc.id) {
                 throw new Error('Missing character information.');
             }
@@ -8963,6 +8972,7 @@
                     locationId: destinationLocationId,
                     accountTravelTime: accountTravelTime === true,
                     storyToolTeleport: storyToolTeleport === true,
+                    arrivalProseAlreadyProvided: arrivalProseAlreadyProvided === true,
                     accompanyingCharacters,
                     clientId
                 })
@@ -37937,6 +37947,7 @@
         } 
 
         let accompanyingCharacters = [];
+        let arrivalProseAlreadyProvided = false;
         if (window.AIRPG_CHAT && typeof window.AIRPG_CHAT.dispatchAutomatedMessage === 'function') {
             const promptBypassMove = shouldPromptBypassMove(exit);
             const travelMetadata = promptBypassMove
@@ -37968,6 +37979,7 @@
                 accompanyingCharacters = Array.isArray(travelNarrationResult?.accompanyingCharacters)
                     ? travelNarrationResult.accompanyingCharacters.slice()
                     : [];
+                arrivalProseAlreadyProvided = promptBypassMove;
             } catch (error) {
                 console.error('Failed to dispatch move via chat:', error);
                 hideLocationOverlay();
@@ -37976,7 +37988,10 @@
             }
         }
 
-        const moveSucceeded = await performDirectMove(exit.destination, destinationName, { accompanyingCharacters });
+        const moveSucceeded = await performDirectMove(exit.destination, destinationName, {
+            accompanyingCharacters,
+            arrivalProseAlreadyProvided
+        });
         if (moveSucceeded) {
             try {
                 window.AIRPG_CHAT?.playDeferredTravelCompletionSound?.({ waitForNext: true });
@@ -37986,7 +38001,7 @@
         }
     }
 
-            async function performDirectMove(destinationId, destinationName, { accompanyingCharacters = [] } = {}) {
+            async function performDirectMove(destinationId, destinationName, { accompanyingCharacters = [], arrivalProseAlreadyProvided = false } = {}) {
                 if (!destinationId) {
                     return false;
                 }
@@ -38016,6 +38031,7 @@
                             destinationId,
                             expectedOriginLocationId,
                             accompanyingCharacters,
+                            arrivalProseAlreadyProvided: arrivalProseAlreadyProvided === true,
                             clientId: window.AIRPG_CLIENT_ID || null
                         })
                     });
@@ -38070,7 +38086,10 @@
                             hideLocationOverlay();
                             const repaired = await requestLocationRegionFix(result.conflict);
                             if (repaired) {
-                                return performDirectMove(destinationId, destinationName, { accompanyingCharacters });
+                                return performDirectMove(destinationId, destinationName, {
+                                    accompanyingCharacters,
+                                    arrivalProseAlreadyProvided
+                                });
                             }
                             return false;
                         }
@@ -38437,6 +38456,7 @@
                     await teleportNpcToLocation(playerRecord, destinationId, {
                         originLocationId: lastRenderedLocation?.id || null,
                         accountTravelTime: true,
+                        arrivalProseAlreadyProvided: hasPromptText,
                         accompanyingCharacters
                     });
 
@@ -39624,8 +39644,9 @@
                 const rewardNpcDispositions = normalizeQuestNpcDispositionRewards(quest.rewardNpcDispositions || []);
                 const rewardBenefits = Array.isArray(quest.rewardBenefits) ? quest.rewardBenefits.filter(Boolean) : [];
                 const rewardNotes = Array.isArray(quest.rewardNotes) ? quest.rewardNotes.filter(Boolean) : [];
+                const rewardCurrencyLabel = resolveCurrencyLabel({ amount: rewardCurrency });
                 const rewardParts = [];
-                if (rewardCurrency > 0) rewardParts.push(`${rewardCurrency} gold`);
+                if (rewardCurrency > 0) rewardParts.push(`${rewardCurrency} ${rewardCurrencyLabel}`);
                 if (rewardXp > 0) rewardParts.push(`${rewardXp} XP`);
                 if (rewardItems.length) rewardParts.push(`${rewardItems.length} item${rewardItems.length === 1 ? '' : 's'}`);
                 if (rewardFactionReputation.length) rewardParts.push(`${rewardFactionReputation.length} faction rep`);
@@ -39716,7 +39737,7 @@
                     list.className = 'quest-reward-list';
                     if (rewardCurrency > 0) {
                         const currencyItem = document.createElement('li');
-                        currencyItem.textContent = `${rewardCurrency} gold`;
+                        currencyItem.textContent = `${rewardCurrency} ${rewardCurrencyLabel}`;
                         list.appendChild(currencyItem);
                     }
                     if (rewardXp > 0) {

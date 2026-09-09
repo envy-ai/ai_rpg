@@ -77,6 +77,7 @@ Exits can point at fully generated locations, location stubs, or region-entry st
 - Region generation, region-stub expansion, event handling, API exit creation, and chat-tool exit creation route through `ensureExitConnection(...)` or the same stub helpers.
 - Generated or prompted exit travel times are parsed by callers. Prompt-generated `0` minutes are normalized to `1` before they reach `LocationExit`; `LocationExit` itself allows `0` for unpopulated or no-time exits.
 - `/api/locations/:id/exits` defaults unspecified travel time to `1` minute and accepts duration strings or non-negative integer minute values.
+- The `createExit` chat tool requires an explicit positive integer `travelTimeMinutes`, passes it through location/region stub creation, and uses it for both directions of new connections. Duplicate forward exits remain unchanged, including their timing.
 - `new_exit_discovered` and `move_new_location` event handling can thread parsed travel minutes into created location/region stubs and their reverse links. Event-created exits from location vehicles, and region exits from region vehicles, are suppressed when the event would create a new vehicle-origin connection.
 - `/api/locations/:id/exits/:exitId` removes the requested exit, removes a reverse exit to the origin when present, and can delete orphaned destination stubs or pending-region stubs.
 - `/fix_exits` scans loaded exits and calls `ensureExitConnection(...)` to repair missing reverse links while preserving vehicle-edge markers.

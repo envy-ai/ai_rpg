@@ -1,9 +1,12 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
+const path = require('node:path');
+const nunjucks = require('nunjucks');
 
 const {
     collectPlayerActionAccompanyingCharacters,
+    collectPlayerActionAutomaticPartyMembers,
     collectPlayerActionHiddenContestContext,
     movePlayerActionAccompanyingCharacters,
     normalizePlayerActionAccompanyingCharacterSelection,
@@ -39,7 +42,7 @@ function makeNpc(id, name, currentLocation, overrides = {}) {
     };
 }
 
-test('player-action companion candidates include living party and origin NPCs only', () => {
+test('player-action companion candidates include only living non-party origin NPCs', () => {
     const origin = makeLocation('origin', ['local', 'dead']);
     const player = {
         id: 'player',
@@ -56,9 +59,34 @@ test('player-action companion candidates include living party and origin NPCs on
     assert.deepEqual(
         collectPlayerActionAccompanyingCharacters({ currentPlayer: player, location: origin, players }),
         [
-            { name: 'Mira Vale', aliases: ['Mira'] },
             { name: 'Tal Stone', aliases: [] }
         ]
+    );
+    assert.deepEqual(
+        collectPlayerActionAutomaticPartyMembers({ currentPlayer: player, players }),
+        [{ name: 'Mira Vale', aliases: ['Mira'] }]
+    );
+});
+
+test('standard player-action travel prompt requests eligible accompanying characters', () => {
+    const promptEnvironment = new nunjucks.Environment(
+        new nunjucks.FileSystemLoader(path.resolve(__dirname, '../prompts'))
+    );
+    const rendered = promptEnvironment.render('_includes/travel-prose.njk', {
+        currentVehicle: null,
+        playerActionAccompanyingCharacters: [
+            { name: 'Tal Stone', aliases: ['Tal'] },
+            { name: 'Orrin Reed', aliases: [] }
+        ]
+    });
+
+    assert.match(rendered, /Eligible characters who may accompany the player/);
+    assert.match(rendered, /Tal Stone \(accepted aliases: Tal\)/);
+    assert.match(rendered, /- Orrin Reed/);
+    assert.match(rendered, /Party members travel with the player automatically/);
+    assert.match(
+        rendered,
+        /<accompanyingCharacters>[\s\S]*NON-PARTY character[\s\S]*<\/accompanyingCharacters>/
     );
 });
 
@@ -274,7 +302,7 @@ test('player-action companion movement relocates party and non-party characters 
     ]);
 
     const moved = movePlayerActionAccompanyingCharacters({
-        characterNames: ['Mira', 'Tal Stone'],
+        characterNames: ['Tal Stone'],
         currentPlayer,
         originLocation: origin,
         destinationLocation: destination,
@@ -288,6 +316,38 @@ test('player-action companion movement relocates party and non-party characters 
     assert.deepEqual(origin.npcIds, []);
     assert.deepEqual(destination.npcIds, ['local']);
     assert.deepEqual(currentPlayer.getPartyMembers(), ['party']);
+});
+
+test('player-action movement carries party members automatically when the explicit list is empty', () => {
+    const origin = makeLocation('origin', ['party']);
+    const destination = makeLocation('destination');
+    const party = makeNpc('party', 'Mira Vale', 'origin', { aliases: new Set(['Mira']) });
+    const currentPlayer = {
+        id: 'player',
+        getPartyMembers: () => ['party']
+    };
+    const players = new Map([
+        ['player', { id: 'player', name: 'Hero', isNPC: false }],
+        ['party', party]
+    ]);
+    const gameLocations = new Map([
+        [origin.id, origin],
+        [destination.id, destination]
+    ]);
+
+    const moved = movePlayerActionAccompanyingCharacters({
+        characterNames: [],
+        currentPlayer,
+        originLocation: origin,
+        destinationLocation: destination,
+        players,
+        gameLocations
+    });
+
+    assert.deepEqual(moved, ['Mira Vale']);
+    assert.equal(party.currentLocation, null);
+    assert.deepEqual(origin.npcIds, []);
+    assert.deepEqual(destination.npcIds, []);
 });
 
 test('player-action companion movement rejects unknown or unavailable characters before mutation', () => {
@@ -394,10 +454,26 @@ test('deferred direct and fast-travel paths carry companion selections into move
     assert.match(chatSource, /return this\.submitChatMessage\(message,/);
     assert.match(
         viewSource,
-        /performDirectMove\(exit\.destination, destinationName, \{ accompanyingCharacters \}\)/
+        /performDirectMove\(exit\.destination, destinationName, \{[\s\S]*?accompanyingCharacters,[\s\S]*?arrivalProseAlreadyProvided[\s\S]*?\}\)/
     );
     assert.match(
         viewSource,
         /teleportNpcToLocation\(playerRecord, destinationId, \{[\s\S]*?accompanyingCharacters/
+    );
+    assert.match(
+        viewSource,
+        /arrivalProseAlreadyProvided = promptBypassMove/
+    );
+    assert.match(
+        viewSource,
+        /arrivalProseAlreadyProvided: hasPromptText/
+    );
+    assert.match(
+        apiSource,
+        /runWhileYouWereAwayPrompt\(\{[\s\S]*?arrivalProseAlreadyProvided/
+    );
+    assert.match(
+        apiSource,
+        /app\.post\('\/api\/player\/move'[\s\S]*?const arrivalProseAlreadyProvided = req\.body\?\.arrivalProseAlreadyProvided[\s\S]*?runWhileYouWereAwayPrompt\(\{[\s\S]*?arrivalProseAlreadyProvided/
     );
 });

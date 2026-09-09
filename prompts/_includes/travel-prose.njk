@@ -1,3 +1,12 @@
+{% if playerActionAccompanyingCharacters and playerActionAccompanyingCharacters.length -%}
+Eligible characters who may accompany the player through a change of world location are listed below. Use an exact name or listed alias. List only non-party characters who deliberately travel with them, as party members travel with the player automatically. Exclude characters who remain behind, leave separately, or only appear after arrival.
+{% for character in playerActionAccompanyingCharacters -%}
+- {{ character.name }}{% if character.aliases and character.aliases.length %} (accepted aliases: {{ character.aliases | join(', ') }}){% endif %}
+{% endfor -%}
+{% else -%}
+No non-party characters are eligible to accompany the player through a change of world location.
+{% endif %}
+
 {% if currentVehicle.vehicleInfo.isUnderway -%}
   <!-- Note: The vehicle "{{ currentVehicle.name | trim }}" is currently enroute to "{{ currentVehicle.destination | trim }}" and will arrive in {{ currentVehicle.timeToDestination | trim }} (this time is canonical and supersedes anything in dialogue or elsewhere), and the player is on board. Reply with <turnResult> rather than <moveTurnResult> unless:
   * The vehicle is making an unplanned stop or changing destinations, OR
@@ -31,6 +40,8 @@
     <region><!-- The exact region of the player's destination. Omit if the destination is in the current region. Example: "Johnstown" --></region>
     <travelTime><!-- Travel time with units (minutes and/or hours only), e.g. "1 hour", "30 minutes", "1 hour 30 minutes", "1.5 hours". Travel time should be realistic based on the distance and terrain, with a minimum of 1 minute for tiny adjacent spaces, at least 5 minutes for locations in small towns, at least 15 minutes in large cities, and 30 minutes or even multiple hours in wild terrain. --></travelTime>
   </playerDestination>
+
+  <accompanyingCharacters><!-- Include one <name>Exact eligible character name or alias</name> child for each NON-PARTY character who actually accompanies the player through this movement. Party members travel with the player automatically and must not be listed here. Leave this element empty if no non-party character accompanies the player. Omit characters who remain behind, leave separately, or only appear after arrival. --></accompanyingCharacters>
 
   <!-- Use ANY COMBINATION OF AT LEAST ONE OF THE BELOW (originProse, betweenProse, and/or destinationProse). If no prose applies to one or two sections, omit them.{% if currentVehicle and not currentVehicle.vehicleInfo.hasArrived %}
   The player is currently inside of a vehicle. If the eta is more than a few minutes away, don't automatically have the player arrive at the destination. For instance, a sailing ship might launch from port and move over the open ocean, an airplane would take off and ascend to cruising altitude, a sci-fi spacecraft might spend time in hyperspace, and so on. Give the player time to do things while they're in transit, and describe the experience of being in transit.

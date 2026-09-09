@@ -10945,7 +10945,28 @@ class Events {
         return 2;
     }
 
+    static _resolveMysteryThreadMaxUnresolvedBoxes(config = this.config || {}) {
+        const configured = Number(config?.mystery_threads?.max_unresolved_boxes_per_thread);
+        if (Number.isInteger(configured) && configured >= 0) {
+            return configured;
+        }
+        return 3;
+    }
+
+    static _countUnresolvedMysteryBoxes(thread) {
+        if (!thread) {
+            return 0;
+        }
+        return thread.boxIds
+            .map((boxId) => MysteryBox.getById(boxId))
+            .filter(Boolean)
+            .filter((box) => !box.resolved)
+            .length;
+    }
+
     static _serializeMysteryThreadForPrompt(thread, { includeBoxes = true } = {}) {
+        const mysteryBoxCount = this._countUnresolvedMysteryBoxes(thread);
+        const maxUnresolvedBoxes = this._resolveMysteryThreadMaxUnresolvedBoxes(this.config || {});
         const serialized = {
             id: thread.id,
             name: thread.name,
@@ -10954,6 +10975,8 @@ class Events {
             summary: thread.summary,
             constraints: [...thread.constraints],
             boxIds: [...thread.boxIds],
+            mysteryBoxCount,
+            mysteryBoxCapacityFull: mysteryBoxCount >= maxUnresolvedBoxes,
         };
         if (includeBoxes) {
             serialized.mysteryBoxes = thread.boxIds
@@ -10968,6 +10991,17 @@ class Events {
                 }));
         }
         return serialized;
+    }
+
+    static _isMysteryCapacityFull(config = this.config || {}) {
+        const maxActive = this._resolveMysteryThreadMaxActive(config);
+        const maxUnresolvedBoxes = this._resolveMysteryThreadMaxUnresolvedBoxes(config);
+        const activeThreads = MysteryThread.getActive({ max: Number.MAX_SAFE_INTEGER });
+        const canCreateThread = maxUnresolvedBoxes > 0 && activeThreads.length < maxActive;
+        const hasOpenThread = activeThreads
+            .slice(0, maxActive)
+            .some((thread) => this._countUnresolvedMysteryBoxes(thread) < maxUnresolvedBoxes);
+        return !canCreateThread && !hasOpenThread;
     }
 
     static _getMysteryThreadIndexForPrompt() {
@@ -11440,6 +11474,10 @@ class Events {
             ...(Array.isArray(update.keys) ? update.keys : []),
         ].filter(Boolean);
 
+        this._assertMysteryThreadUpdateCapacity(update.thread, box, {
+            config: this.config || {},
+        });
+
         if (update.action === "update") {
             if (!box) {
                 throw new Error(`Mystery box update targeted "${canonicalName}" but no matching mystery box exists.`);
@@ -11475,26 +11513,71 @@ class Events {
         return box;
     }
 
-    static _applyMysteryThreadUpdateForBox(threadUpdate, box, { action = "update", canonicalName = "", config = {} } = {}) {
-        if (!box) {
-            throw new Error("Cannot attach mystery thread update without a mystery box.");
-        }
-
-        let thread = null;
+    static _resolveMysteryThreadUpdateTarget(threadUpdate, box = null) {
         const threadLookupKeys = [
             threadUpdate?.id,
             threadUpdate?.name,
             ...(Array.isArray(threadUpdate?.keys) ? threadUpdate.keys : []),
         ].filter(Boolean);
         for (const key of threadLookupKeys) {
-            thread = MysteryThread.getById(key) || MysteryThread.getByKey(key);
+            const thread = MysteryThread.getById(key) || MysteryThread.getByKey(key);
             if (thread) {
-                break;
+                return thread;
             }
         }
+        return box ? MysteryThread.getContainingBox(box.id) : null;
+    }
+
+    static _assertMysteryThreadUpdateCapacity(threadUpdate, box = null, { config = {} } = {}) {
+        const thread = this._resolveMysteryThreadUpdateTarget(threadUpdate, box);
+        const maxActive = this._resolveMysteryThreadMaxActive(config);
+        const maxUnresolvedBoxes = this._resolveMysteryThreadMaxUnresolvedBoxes(config);
+        const activeThreadCount = MysteryThread.getActive({ max: Number.MAX_SAFE_INTEGER }).length;
+        const requestedStatus = normalizeString(threadUpdate?.status);
+        const newThreadStatus = requestedStatus || "active";
+
         if (!thread) {
-            thread = MysteryThread.getContainingBox(box.id);
+            const threadName = normalizeString(threadUpdate?.name) || normalizeString(box?.name);
+            if (newThreadStatus !== "active") {
+                throw new Error("Automatically created mystery threads must be active.");
+            }
+            if (newThreadStatus === "active" && activeThreadCount >= maxActive) {
+                throw new Error(`Cannot create active mystery thread "${threadName || "unnamed"}"; mystery_threads.max_active is ${maxActive}.`);
+            }
+            if (maxUnresolvedBoxes < 1) {
+                throw new Error(`Cannot create a mystery box; mystery_threads.max_unresolved_boxes_per_thread is ${maxUnresolvedBoxes}.`);
+            }
+            return null;
         }
+
+        if (requestedStatus === "active" && thread.status !== "active" && activeThreadCount >= maxActive) {
+            throw new Error(`Cannot activate mystery thread "${thread.name}"; mystery_threads.max_active is ${maxActive}.`);
+        }
+
+        if (box && thread.boxIds.includes(box.id)) {
+            return thread;
+        }
+
+        if (thread.status !== "active" && requestedStatus !== "active") {
+            throw new Error(`Cannot add a new mystery box to inactive thread "${thread.name}" without activating it.`);
+        }
+
+        const unresolvedBoxCount = this._countUnresolvedMysteryBoxes(thread);
+        if (unresolvedBoxCount >= maxUnresolvedBoxes) {
+            throw new Error(
+                `Cannot add another unresolved mystery box to "${thread.name}"; `
+                + `mystery_threads.max_unresolved_boxes_per_thread is ${maxUnresolvedBoxes}.`
+            );
+        }
+        return thread;
+    }
+
+    static _applyMysteryThreadUpdateForBox(threadUpdate, box, { action = "update", canonicalName = "", config = {} } = {}) {
+        if (!box) {
+            throw new Error("Cannot attach mystery thread update without a mystery box.");
+        }
+
+        let thread = this._assertMysteryThreadUpdateCapacity(threadUpdate, box, { config });
 
         const maxActive = this._resolveMysteryThreadMaxActive(config);
         const activeThreadCount = MysteryThread.getActive({ max: Number.MAX_SAFE_INTEGER }).length;
@@ -11653,6 +11736,7 @@ class Events {
         });
         const config = this.config || {};
         const mysteryThreadMaxActive = this._resolveMysteryThreadMaxActive(config);
+        const mysteryThreadMaxUnresolvedBoxes = this._resolveMysteryThreadMaxUnresolvedBoxes(config);
         const activeMysteryThreads = this._getActiveMysteryThreadsForPrompt(mysteryThreadMaxActive);
         const activeThreadCount = MysteryThread.getActive({ max: Number.MAX_SAFE_INTEGER }).length;
         const rendered = promptEnv.render("base-context.xml.njk", {
@@ -11665,8 +11749,15 @@ class Events {
             mysteryThreads: this._getMysteryThreadIndexForPrompt(),
             activeMysteryThreads,
             mysteryThreadMaxActive,
+            mysteryThreadMaxUnresolvedBoxes,
             mysteryThreadActiveCount: activeThreadCount,
             mysteryThreadCapacityFull: activeThreadCount >= mysteryThreadMaxActive,
+            mysteryCapacity: {
+                activeThreadCount,
+                maxActiveThreads: mysteryThreadMaxActive,
+                maxUnresolvedBoxesPerThread: mysteryThreadMaxUnresolvedBoxes,
+                full: this._isMysteryCapacityFull(config),
+            },
             omitGameHistory: true,
         });
         const parsedTemplate = parseXMLTemplate(rendered);

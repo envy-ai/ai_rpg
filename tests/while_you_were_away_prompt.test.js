@@ -125,6 +125,19 @@ test('while-you-were-away include allows return prose to be omitted when no NPCs
     assert.doesNotMatch(rendered, /<name>[^<]+<\/name>/);
 });
 
+test('while-you-were-away include requires return prose when no other arrival narration exists', () => {
+    const promptEnv = createPromptEnv();
+    const rendered = promptEnv.render('_includes/while-you-were-away.njk', {
+        whileYouWereAwayNpcs: [],
+        whileAwayVisibleProseRequired: true
+    });
+
+    assert.match(rendered, /This arrival has no other narration./);
+    assert.match(rendered, /MUST include non-empty proseForPlayer/);
+    assert.match(rendered, /proseForPlayer is mandatory/);
+    assert.doesNotMatch(rendered, /proseForPlayer is optional/);
+});
+
 test('while-you-were-away tiny-brain uses strict structured parsers and allows optional moves to be empty', () => {
     const promptEnv = createPromptEnv();
     const state = createTinyBrainRenderState();
@@ -142,6 +155,20 @@ test('while-you-were-away tiny-brain uses strict structured parsers and allows o
     ]);
     assert.equal(state.checkpoints[2].kind, 'dummy');
     assert.equal(state.checkpoints[3].parserName, 'player_action_optional_prose');
+});
+
+test('while-you-were-away tiny-brain requires prose when no other arrival narration exists', () => {
+    const promptEnv = createPromptEnv();
+    const state = createTinyBrainRenderState();
+    const rendered = promptEnv.render('_includes/while-you-were-away.tinybrain.njk', {
+        whileYouWereAwayNpcs: [],
+        whileAwayVisibleProseRequired: true,
+        __tinyBrainState: state
+    });
+
+    assert.equal(state.checkpoints[3].parserName, 'player_action_required_prose');
+    assert.match(rendered, /This arrival has no other narration./);
+    assert.doesNotMatch(rendered, /return exactly N\/A/);
 });
 
 test('while-you-were-away tiny-brain requires the canonical character update schema', () => {

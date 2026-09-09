@@ -8,8 +8,11 @@ Create or update one private mystery-box note for the event mention below.
 - Use this only to preserve the concrete hidden explanation and useful future-reference notes for the mentioned mystery.
 - Mystery boxes must belong to a mystery thread. A thread is the broader continuity problem; a box is one private note inside that problem.
 - At most {{ mysteryThreadMaxActive | default(2, true) }} active mystery thread(s) may be used for automatic tracking.
+- Each mystery thread may contain at most {{ mysteryThreadMaxUnresolvedBoxes | default(3, true) }} unresolved mystery box(es). Resolved boxes do not consume this capacity.
 - If active mystery thread capacity is not full, you may create a new active thread when this is genuinely a new unresolved mystery, or attach/update a box inside an existing active thread when it fits.
 - If active mystery thread capacity is full, you may only create or update a mystery box inside an existing active thread when the mention is directly related and consistent with that thread. If it is unrelated, return <action>skip</action>.
+- Never create a new box inside a thread whose unresolved box capacity is full. Update a matching existing box instead, or return <action>skip</action>.
+- If overall mystery capacity is full, return <action>skip</action> unless this mention updates a matching existing box. Do not split one mystery across extra threads to evade the per-thread limit.
 - If the active thread capacity is 0, return <action>skip</action> for all mentions.
 - Before updating or attaching a box to a thread, check the active thread summary, constraints, and contained boxes for plot consistency. Do not create a second incompatible explanation for the same clue.
 - Whenever a mystery box changes canonical truth, update the parent thread summary and constraints to keep the broader thread coherent.
@@ -32,10 +35,12 @@ Create or update one private mystery-box note for the event mention below.
 Mystery Thread Capacity:
 - active: {{ mysteryThreadActiveCount | default(0, true) }} / {{ mysteryThreadMaxActive | default(2, true) }}
 - full: {{ mysteryThreadCapacityFull | default(false, true) }}
+- maximum unresolved boxes per thread: {{ mysteryThreadMaxUnresolvedBoxes | default(3, true) }}
+- overall mystery capacity full: {{ mysteryCapacity.full | default(false, true) }}
 
 Active Mystery Threads:
 {%- for thread in activeMysteryThreads %}
-- {{ thread.name }} (id: {{ thread.id }}, status: {{ thread.status }}, keys: {{ thread.keys | join(', ') }})
+- {{ thread.name }} (id: {{ thread.id }}, status: {{ thread.status }}, unresolved boxes: {{ thread.mysteryBoxCount | default(thread.mysteryBoxes.length, true) }} / {{ mysteryThreadMaxUnresolvedBoxes | default(3, true) }}, full: {{ thread.mysteryBoxCapacityFull | default(false, true) }}, keys: {{ thread.keys | join(', ') }})
   Summary: {{ thread.summary }}
   Constraints: {{ thread.constraints | join(' | ') }}
   Boxes:

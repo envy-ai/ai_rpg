@@ -39,13 +39,11 @@
 - None
 {% endif %}
 
-**Secrets**
 {% if region.secrets and region.secrets.length %}
+**Secrets**
 {% for secret in region.secrets %}
 - {{ secret }}
 {% endfor %}
-{% else %}
-- None
 {% endif %}
 
 {% if region.weatherName %}
