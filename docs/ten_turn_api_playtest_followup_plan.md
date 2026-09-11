@@ -61,7 +61,7 @@ The primary test surface is the backend API. Browser/Playwright checks are inclu
 
 1. Start from one named baseline manual save and record its player, location, world time, inventory, party, quests, currency, needs, status effects, and faction standings.
 2. Start the game outside the sandbox with the qwen-combo-router configuration plus a temporary override under `tmp/` that disables image generation. Do not pass a save on the startup command line; load the baseline through the normal API after startup. Enable only the background systems required by the current scenario.
-3. Maintain one WebSocket client for the entire request. It must record prompt progress, answer `quest_confirmation_request`, and answer forced `player_input_request` rolls when a case calls for `<f>`.
+3. Maintain one WebSocket client for the entire request. It must record prompt progress and answer forced `player_input_request` rolls when a case calls for `<f>`. After the turn response, inspect `GET /api/quests/pending` and resolve any offer belonging to that request through `POST /api/quests/confirm` according to the case's `questAccepted` policy.
    The API harness must use a local HTTP transport without a client-side response deadline: a complete turn can legitimately take more than five minutes when several prompt families and model swaps run in sequence.
 4. Run only one scenario on a loaded fixture. Restore the scenario fixture before every success, failure, cancellation, or edge-case variant.
 5. Never use an earlier scenario's mutated world as the next scenario's starting state.

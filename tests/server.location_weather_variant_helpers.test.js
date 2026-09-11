@@ -5,8 +5,15 @@ const path = require('path');
 const vm = require('vm');
 const nunjucks = require('nunjucks');
 const { resolveEffectiveLocationWeatherExposure } = require('../LocationWeatherExposure.js');
+const Utils = require('../Utils.js');
 
-function loadVariantHelpers({ hasWeather = true, regionName = 'Weather Test Region' } = {}) {
+function loadVariantHelpers({
+    hasWeather = true,
+    regionName = 'Weather Test Region',
+    resolveWeather = null,
+    config = {},
+    resolveEffectiveAiConfiguration = () => ({ aiConfig: { has_vision: false } })
+} = {}) {
     const source = fs.readFileSync(require.resolve('../server.js'), 'utf8');
     const start = source.indexOf('function slugifyLocationVariantKeyPart(value, fallback = ');
     const end = source.indexOf('\nfunction parseImageDataUrl(dataUrl) {', start);
@@ -26,9 +33,20 @@ function loadVariantHelpers({ hasWeather = true, regionName = 'Weather Test Regi
             lstripBlocks: true
         }
     );
+    const region = {
+        id: 'region-1',
+        name: regionName,
+        resolveCurrentWeather: (args) => (resolveWeather || (() => ({
+            name: 'Heavy Rain',
+            description: 'Rain falls hard enough to bead on stone and blur distant shapes.'
+        })))({ location: 'regional-weather', ...args })
+    };
     const context = {
         JSON,
         Date,
+        Utils,
+        config,
+        LLMClient: { resolveEffectiveAiConfiguration },
         console: {
             ...console,
             warn: (...args) => warnings.push(args.join(' '))
@@ -53,17 +71,18 @@ function loadVariantHelpers({ hasWeather = true, regionName = 'Weather Test Regi
                 seasonInteriorDescription: 'Fresh daylight brightens established windows and lighter fabrics replace winter textiles. Keep all vegetation and rain outside the enclosed room.',
                 dayIndex: 0,
                 timeMinutes: 1410
-            })
+            }),
+            getTimeConfig: () => ({ cycleLengthMinutes: 1440 })
         },
         resolveEffectiveLocationWeatherExposure: (location, { region } = {}) => resolveEffectiveLocationWeatherExposure({
             ...location,
             generationHints: { ...(location?.generationHints || {}), hasWeather }
         }, { region }),
-        findRegionByLocationId: () => ({ id: 'region-1', name: regionName }),
-        resolveRegionWeatherForPrompt: () => ({
+        findRegionByLocationId: () => region,
+        resolveRegionWeatherForPrompt: resolveWeather || (() => ({
             name: 'Heavy Rain',
             description: 'Rain falls hard enough to bead on stone and blur distant shapes.'
-        })
+        }))
     };
 
     vm.createContext(context);
@@ -73,6 +92,8 @@ this.slugifyLocationVariantKeyPart = slugifyLocationVariantKeyPart;
 this.buildLocationWeatherVariantKey = buildLocationWeatherVariantKey;
 this.resolveLocationWeatherVariantConditions = resolveLocationWeatherVariantConditions;
 this.buildLocationWeatherVariantPrompt = buildLocationWeatherVariantPrompt;
+this.shouldUseSeasonalImageVision = shouldUseSeasonalImageVision;
+this.extractSeasonalImageVisionInstructions = extractSeasonalImageVisionInstructions;
 this.resolveLocationWeatherVariantSourceImage = resolveLocationWeatherVariantSourceImage;
 this.logEditedImageSizeWarning = logEditedImageSizeWarning;
 this.attachCompletedLocationWeatherVariantJob = attachCompletedLocationWeatherVariantJob;`,
@@ -179,6 +200,74 @@ test('location weather variant cache keys differ by season and exposure scope', 
 
     assert.notEqual(spring, winter);
     assert.notEqual(spring, sheltered);
+});
+
+test('vision variants use a versioned cache key and retain regional weather for indoor instructions', () => {
+    const helpers = loadVariantHelpers({ hasWeather: 'no' });
+    const deterministic = helpers.resolveLocationWeatherVariantConditions({
+        id: 'location-1',
+        imageId: 'base-image'
+    });
+    const vision = helpers.resolveLocationWeatherVariantConditions({
+        id: 'location-1',
+        imageId: 'base-image'
+    }, { visionEnabled: true });
+
+    assert.equal(deterministic.weatherName, null);
+    assert.equal(vision.weatherName, 'Heavy Rain');
+    assert.match(vision.variantKey, /__vision-v1__heavy-rain$/);
+    assert.notEqual(vision.variantKey, deterministic.variantKey);
+});
+
+test('seasonal vision gate honors an effective has_vision model override', () => {
+    const helpers = loadVariantHelpers({
+        config: { ai_multimodal: { enabled: false } },
+        resolveEffectiveAiConfiguration: label => {
+            assert.equal(label, 'generate_seasonal_image_vision');
+            return { aiConfig: { has_vision: true } };
+        }
+    });
+
+    assert.equal(helpers.shouldUseSeasonalImageVision(), true);
+});
+
+test('vision variants use actual regional weather even when the location is sheltered', () => {
+    const helpers = loadVariantHelpers({
+        hasWeather: 'no',
+        resolveWeather: ({ location }) => location === null
+            ? { name: 'No local weather', description: 'This location is sheltered.' }
+            : { name: 'Heavy Rain', description: 'Regional rain.' }
+    });
+    const vision = helpers.resolveLocationWeatherVariantConditions({
+        id: 'location-1',
+        imageId: 'base-image'
+    }, { visionEnabled: true });
+
+    assert.equal(vision.weatherName, 'Heavy Rain');
+    assert.match(vision.variantKey, /__vision-v1__heavy-rain$/);
+});
+
+test('seasonal vision parser accepts prose before a single XML instruction block', () => {
+    const helpers = loadVariantHelpers();
+    const instructions = helpers.extractSeasonalImageVisionInstructions([
+        'This is an exterior scene, so the rain should affect its stone and foliage.',
+        '<imageEditingInstructions>Darken the sky and add rain-slick reflections to the bridge.</imageEditingInstructions>'
+    ].join('\n\n'));
+
+    assert.equal(instructions, 'Darken the sky and add rain-slick reflections to the bridge.');
+});
+
+test('seasonal vision parser rejects malformed or empty instruction blocks', () => {
+    const helpers = loadVariantHelpers();
+
+    assert.throws(
+        () => helpers.extractSeasonalImageVisionInstructions('No XML at all.'),
+        /Failed to parse XML content strictly|missing root element/
+    );
+    assert.throws(
+        () => helpers.extractSeasonalImageVisionInstructions('<imageEditingInstructions> </imageEditingInstructions>'),
+        /empty image editing instructions/
+    );
 });
 
 test('location weather variant prompt renders current lighting, season, and weather conditions', () => {

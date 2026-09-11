@@ -1586,3 +1586,69 @@ Original prompt: Add an item context-menu cheat that converts a complete stack i
 - Conversion rejects non-items, missing/negative values, invalid counts/totals, non-empty containers (including pending generated contents), stale confirmations, and missing/invalid active-player currency with clear server messages surfaced in a browser popup.
 - Updated Thing, Player, Things API, chat-interface, Playwright, and documentation-index references. Added focused conversion helper/source coverage and a guarded no-save browser verifier.
 - Final validation passed: syntax checks, four focused/adjacent backend test files, the required bundled browser-game smoke, and the dedicated Chromium flow. The browser confirmed cancellation is non-mutating, acceptance deletes a seven-item stack and raises currency from 0 to 14, and a missing value produces a specific corrective alert with no unexpected browser errors. The isolated no-save server was stopped; the regular game server was not restarted.
+
+Original prompt: Replace blocking quest-confirmation popups with expandable inline quest offers after the turn log; keep offers pending across clients and saves, and show a standard-themed reminder only when another turn is attempted.
+
+- Approved `tmp/quest-offer-inline-mockup.png`; the reminder uses the existing `.modal` theme per follow-up.
+- Replaced the client-bound promise wait with durable pending quest records. Generated quests are not instantiated or added to the player until acceptance.
+- Added saved `pendingQuestConfirmations.json`, global chat refreshes, inline `quest-offer` history entries, accept/decline resolution, and an authoritative `/api/chat` pending-decision gate.
+- Added `GET /api/quests/pending` and updated the follow-up API playtest harness to resolve request-owned durable offers after each interactive turn instead of waiting for the retired WebSocket confirmation event.
+- Updated quest, event, chat, save/load, realtime, modal, and playtest documentation, including the docs index. Recompiled `public/css/main.css` from SCSS.
+- Final focused validation passed: syntax checks, 6/6 quest/API/harness test files, the complete 4/4 follow-up harness suite, and the dedicated Chromium inline-offer flow. The browser verified collapsed-by-default rendering, expansion, standard-themed next-turn reminder, preserved draft text, review scrolling, and accepted-state rendering; all four screenshots were visually inspected.
+- The broader headless E2E run completed with 40 passed and three unrelated existing failures in config-page visibility, mobile Log Viewer navigation, and settings persistence navigation.
+- TODO: none. The isolated no-save port-7788 test server was stopped after verification.
+
+Original prompt: Diagnose and fix faction emblems remaining as placeholders while only one faction image renders.
+
+- Reproduced the live faction list and traced repeated failures to image-prompt batching: every faction request embedded a complete base context, so a six-request batch contained six internal base-context end markers and was rejected by `LLMClient` before prompt generation.
+- Changed compatible base-context image prompt batches to share the identical context once, retain exactly one internal boundary marker, and keep each faction-specific instruction in its own request. Batch compatibility now includes the shared context as well as the system prompt.
+- Added regression coverage for multiple faction emblem prompts and for separating requests whose base contexts differ; updated image API/index documentation.
+- Validation passed: `node --check server.js`, focused image-prompt batching and faction-emblem tests, and a post-restart browser smoke with no browser errors. Visually inspected `tmp/faction-emblem-batching-fixed-smoke/shot-0.png`.
+- Corrected an initial restart with `config.yaml.qwen-combo-router-artemis`: stopped that server and its orphaned llama.cpp router/worker, then restarted with plain `npm run start`. The default configuration uses the remote `glm-5.3-flash` endpoint, no local text-model process remains, no save was loaded, and `/api/hello` returns successfully on port 7777.
+- TODO: load the desired save and refresh the browser; missing faction emblems will retry through the corrected batching path.
+
+Original prompt: If a region is controlled by a faction, overlay the faction's emblem at double size in the upper left corner of the map. Hovering over it should still cause the tooltip to appear.
+
+- Added the region's `controllingFactionId` to the Region Map payload and wired the shared faction-emblem component into each controlled-region render.
+- Added a fixed upper-left Region Map variant sized from 56px through 88px, exactly twice the normal NPC emblem range, retaining the shared hover/focus tooltip and lazy image generation.
+- Updated focused structural and browser coverage plus Region Map, chat UI, Faction, and documentation-index references.
+- Compiled `public/css/main.css`, passed syntax checks, the four faction-emblem tests, both adjacent Region Map tests, and the focused 2/2 Chromium suite.
+- The browser test exercised the real `loadRegionMap()` path with a controlled-region response, confirmed an 88px emblem (twice the normal 44px icon), and verified the formatted tooltip. Visually inspected `tmp/faction-region-map-emblem.png` and the shared overlay screenshot.
+- Restarted port 7777 with plain `npm run start`, the default configuration, and no save. `/api/hello` is healthy; the required browser-game client smoke produced `tmp/faction-region-map-live-smoke/shot-0.png` with no error artifact, and the screenshot was visually inspected.
+- TODO: none.
+
+Original prompt: On the faction tooltip, put a triple sized faction emblem in the upper left, with the title and description wrapped around it. The horizontal rule and everything below it should clear below the image.
+
+- Added a 132px tooltip emblem, exactly three times the standard 44px icon, inside a float-containing header so the faction title and description wrap beside it while the divider/details begin below it.
+- Tooltip markup now resolves the faction's current image id each time it opens, allowing newly lazy-generated emblem art to appear on the next hover; the established diamond remains while no image id exists.
+- Updated focused structural/browser coverage and Faction/chat UI documentation.
+- Compiled `public/css/main.css`; syntax checks and all four faction-emblem structural/runtime tests pass.
+- Focused Chromium coverage passed 2/2 and geometrically verified the 132px image, title placement beside it, and details below its bottom edge. Visually inspected `tmp/faction-emblem-overlays.png` and `tmp/faction-region-map-emblem.png`.
+- The required browser-game client smoke against the existing port-7777 server produced `tmp/faction-tooltip-emblem-live-smoke/shot-0.png` with no error artifact; the screenshot was visually inspected.
+- The regular server was not restarted, per the permission requirement.
+- TODO: none.
+
+Original prompt: Location and NPC tooltips need the same TLC that the emblem tooltip got. Format them like the item tooltips and give them additional pertinent info.
+
+- Replaced description-only location and NPC hover bubbles with shared floating tooltips built from the item-tooltip structure.
+- Location tooltips now show level, region path, exits, spoiler-safe visible NPC count, item/scenery counts, controlling faction, favorite/vehicle state, and active effects when present.
+- NPC tooltips now show state, level, class/race, health, faction, party/trade status, aliases, resistances/vulnerabilities, dispositions toward the player, and active effects when present across current-location, compact party, and Party-tab cards.
+- Removed a legacy location-image event handler that could overwrite the rich tooltip with raw description HTML after the new handler ran.
+- Added focused structural and Chromium coverage, updated Location/Player/chat UI documentation and the docs index, and compiled `public/css/main.css` from SCSS.
+- Final validation passed: compiled SCSS, syntax checks, 2/2 focused structural tests, the rich entity-tooltip Chromium flow, and the 2/2 adjacent faction-emblem Chromium regressions. Runtime coverage exercised location, current-location NPC, compact Adventure-party NPC, and Party-tab NPC hover paths.
+- Visually inspected `tmp/location-rich-tooltip.png`, `tmp/npc-rich-tooltip.png`, `tmp/npc-party-rich-tooltip.png`, and the required generic browser-game smoke at `tmp/entity-tooltips-generic-smoke/shot-0.png`; no console-error artifact was produced.
+- The isolated no-save test servers were stopped. The regular server was not restarted, per the permission requirement.
+- TODO: none.
+
+Original prompt: The improved tooltips should show up on the lightbox screen too, in place of the old ones. You can restart the server as soon as this is done.
+
+- Replaced the retired description-only NPC/location lightbox provider with a strict rich-entity provider that invokes the same item-style formatters used for hover tooltips when the lightbox opens.
+- Current-location, current-location NPC, compact Adventure-party NPC, and Party-tab NPC lightboxes now show the complete pertinent entity details and current resolved faction data.
+- Added structural coverage and expanded the Chromium interaction flow to open and assert every affected lightbox path.
+- Visually inspected the location, location-NPC, and Party-tab NPC lightbox captures; the rich sidecars are correctly sized, aligned, and readable.
+- Updated chat-interface, modal/overlay, Location, Player, and documentation-index references.
+- Final validation passed: the focused structural test, rich entity-lightbox Chromium flow, 2/2 faction-emblem Chromium regressions, lightbox backdrop behavior, mobile tooltip dismissal, and faction-emblem source coverage. The required generic browser-game smoke produced no console-error artifact.
+- The adjacent `item_tooltip_and_description_stats` file passed all three tooltip/description checks; its unrelated event-generated-item test still fails because its `server.js` source-slice marker is stale. That unrelated test was left untouched.
+- Visually inspected `tmp/location-rich-lightbox.png`, `tmp/npc-rich-lightbox.png`, `tmp/npc-party-rich-lightbox.png`, and `tmp/entity-lightboxes-generic-smoke/shot-0.png`.
+- Restarted the regular server with plain `npm run start`, no config override, active setting, or save. Port 7777 reported healthy startup with the updated template.
+- TODO: none.

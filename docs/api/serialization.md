@@ -33,6 +33,7 @@ Each save directory can contain:
 | `scheduledEvents.json` | Object map from `ScheduledEvent.serializeAll()`. |
 | `trackers.json` | Object map from `Tracker.serializeAll()`. |
 | `pendingRegionStubs.json` | Object map of unresolved region-entry stubs and their preserved metadata. Hydration rebuilds and deduplicates this map against loaded locations/regions. |
+| `pendingQuestConfirmations.json` | Array of unresolved quest offers, including their complete private candidates and linkage to client-safe inline `quest-offer` chat rows. Missing files load as `[]` for older saves. |
 | `worldTime.json` | Minute-canonical world time, normally `{ dayIndex, timeMinutes }`. |
 | `calendarDefinition.json` | Normalized active calendar definition used for date, season, holiday, and light-level resolution. |
 | `gameConfigOverride.yaml` | Raw per-game YAML config override normalized by `Globals.setGameConfigOverrideYaml()`. Blank content means no per-game override. |
@@ -102,8 +103,8 @@ Registered Thing and Player extension fields must be registered before load for 
 5. Apply `gameConfigOverride.yaml` through `Globals.reloadConfigAndDefs({ needBarSentenceValidationMode: 'throw' })`.
 6. Clear the remaining transient promise maps, job maps, queues, and pending image/backfill state.
 7. Run `Utils.hydrateGameState(...)`.
-8. Reconcile faction references, party-member location state, missing image ids, world time on the current player, summary state, and short-description backfill planning.
-9. Resolve the current player from `metadata.playerId` or the first loaded actor.
+8. Resolve the current player from `metadata.playerId` or the first loaded actor, then hydrate pending quest confirmations and reconcile their inline chat entries.
+9. Reconcile faction references, party-member location state, missing image ids, world time on the current player, summary state, and short-description backfill planning.
 10. Return `loadedData` and `runtimeCancellation` with the client-facing current-player profile, totals, and cancellation diagnostics.
 
 `hydrateGameState()` migrates compatible save data before registry rebuild, then loads skills, factions, mystery boxes, mystery threads, scheduled events, trackers, things, players, images, chat history, locations, exits, regions, pending region stubs, chat summaries, and scene summaries. Player runtime registries and static model indexes for quests, locations, things, regions, factions, mystery boxes/threads, scheduled events, and trackers are cleared before re-instantiating saved records.

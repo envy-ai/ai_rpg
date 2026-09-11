@@ -1,52 +1,62 @@
 {% from "_includes/app-header-nav.njk" import appNavLink %}
 {% set appHeaderTitle = appHeaderTitle | default('Play') %}
 {% set appHeaderSubtitle = appHeaderSubtitle | default('') %}
-{% set toolsActive = currentPage == 'debug' or currentPage == 'player-stats' %}
-<header class="app-header header" role="banner">
+{% set toolsActive = currentPage == 'debug' or currentPage == 'player-stats' or currentPage == 'log-viewer' %}
+<header class="app-header header" role="banner" data-game-loaded="{{ 'true' if currentPage == 'chat' and gameLoaded else 'false' }}">
+    <div class="app-header__scrim" data-app-header-close hidden></div>
     <div class="app-header__inner">
         <a href="/" class="app-header__brand" aria-label="AI RPG Play">
-            <span class="app-header__brand-mark" aria-hidden="true">
-                <img src="/assets/fluentui-emoji/crossed_swords_color_classic.svg" alt="">
-            </span>
+            <span class="app-header__brand-mark" aria-hidden="true"><img src="/assets/fluentui-emoji/crossed_swords_color_classic.svg" alt=""></span>
             <span class="app-header__brand-copy">
                 <span class="app-header__brand-name">AI RPG</span>
                 <span class="app-header__page-title">{{ appHeaderTitle }}</span>
-                {% if appHeaderSubtitle %}
-                <span class="app-header__page-subtitle">{{ appHeaderSubtitle }}</span>
-                {% endif %}
+                {% if appHeaderSubtitle %}<span class="app-header__page-subtitle">{{ appHeaderSubtitle }}</span>{% endif %}
             </span>
         </a>
 
-        <nav class="app-nav" aria-label="Primary">
-            {{ appNavLink('/', 'chat', 'Play', 'app-header-icon--play', currentPage, '') }}
-            {{ appNavLink('/new-game', 'new-game', 'New Game', 'app-header-icon--new-game', currentPage, 'accent') }}
-            {{ appNavLink('/settings', 'settings', 'Worlds', 'app-header-icon--worlds', currentPage, '') }}
-            {{ appNavLink('/mods', 'mods', 'Mods', 'app-header-icon--mods', currentPage, '') }}
-            {{ appNavLink('/lorebooks', 'lorebooks', 'Lorebooks', 'app-header-icon--lorebooks', currentPage, '') }}
-            {{ appNavLink('/config', 'config', 'System', 'app-header-icon--system', currentPage, '') }}
-            <details class="app-tools-menu {{ 'is-active' if toolsActive else '' }}" {% if toolsActive %}open{% endif %}>
-                <summary class="app-tools-menu__summary" title="Tools">
-                    <span class="app-header-icon app-header-icon--tools" aria-hidden="true"></span>
-                    <span class="app-nav__label">Tools</span>
-                </summary>
-                <div class="app-tools-menu__panel">
-                    {{ appNavLink('/debug', 'debug', 'Debug', 'app-header-icon--debug', currentPage, '') }}
-                    {{ appNavLink('/player-stats', 'player-stats', 'Player Stats', 'app-header-icon--player-stats', currentPage, '') }}
-                </div>
-            </details>
-        </nav>
-
         {% if currentPage == 'chat' %}
-        <div class="app-header-actions" aria-label="Game actions">
-            <button id="saveGameBtn" class="app-header-action" type="button" title="Save Current Game">
-                <span class="app-header-icon app-header-icon--save" aria-hidden="true"></span>
-                <span class="app-header-action__label">Save</span>
-            </button>
-            <button id="loadGameBtn" class="app-header-action" type="button" title="Load Saved Game">
-                <span class="app-header-icon app-header-icon--load" aria-hidden="true"></span>
-                <span class="app-header-action__label">Load</span>
-            </button>
-        </div>
+        <button id="appHeaderPrimaryAction" class="app-header-action app-header-primary-action" type="button" data-action="{{ 'save' if gameLoaded else 'load' }}">
+            <span class="app-header-icon app-header-icon--{{ 'save' if gameLoaded else 'load' }}" aria-hidden="true"></span>
+            <span class="app-header-action__label">{{ 'Save' if gameLoaded else 'Load' }}</span>
+        </button>
         {% endif %}
+        <button id="appHeaderMenuToggle" class="app-header-menu-toggle" type="button" aria-expanded="false" aria-controls="appHeaderMobilePanel">
+            <span class="app-header-menu-toggle__icon" aria-hidden="true"></span>
+            <span class="app-header-menu-toggle__label">Menu</span>
+        </button>
+
+        <div id="appHeaderMobilePanel" class="app-header__menu-panel">
+            {% if currentPage == 'chat' %}
+            <div class="app-header-actions" aria-label="Game actions">
+                <button id="saveGameBtn" class="app-header-action" type="button" title="Save Current Game">
+                    <span class="app-header-icon app-header-icon--save" aria-hidden="true"></span>
+                    <span class="app-header-action__label">Save</span>
+                </button>
+                <button id="loadGameBtn" class="app-header-action" type="button" title="Load Saved Game">
+                    <span class="app-header-icon app-header-icon--load" aria-hidden="true"></span>
+                    <span class="app-header-action__label">Load</span>
+                </button>
+            </div>
+            {% endif %}
+            <nav class="app-nav" aria-label="Primary">
+                {{ appNavLink('/', 'chat', 'Play', 'app-header-icon--play', currentPage, '') }}
+                {{ appNavLink('/new-game', 'new-game', 'New Game', 'app-header-icon--new-game', currentPage, 'accent') }}
+                {{ appNavLink('/settings', 'settings', 'Worlds', 'app-header-icon--worlds', currentPage, '') }}
+                {{ appNavLink('/mods', 'mods', 'Mods', 'app-header-icon--mods', currentPage, '') }}
+                {{ appNavLink('/lorebooks', 'lorebooks', 'Lorebooks', 'app-header-icon--lorebooks', currentPage, '') }}
+                {{ appNavLink('/config', 'config', 'System', 'app-header-icon--system', currentPage, '') }}
+                <details class="app-tools-menu {{ 'is-active' if toolsActive else '' }}" {% if toolsActive %}open{% endif %}>
+                    <summary class="app-tools-menu__summary" title="Tools">
+                        <span class="app-header-icon app-header-icon--tools" aria-hidden="true"></span>
+                        <span class="app-nav__label">Tools</span>
+                    </summary>
+                    <div class="app-tools-menu__panel">
+                        {{ appNavLink('/debug', 'debug', 'Debug', 'app-header-icon--debug', currentPage, '') }}
+                        {{ appNavLink('/player-stats', 'player-stats', 'Player Stats', 'app-header-icon--player-stats', currentPage, '') }}
+                        {{ appNavLink('/log-viewer', 'log-viewer', 'Log Viewer', 'app-header-icon--log-viewer', currentPage, '') }}
+                    </div>
+                </details>
+            </nav>
+        </div>
     </div>
 </header>

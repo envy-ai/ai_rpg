@@ -58,7 +58,7 @@ test('prompt progress formula advances 75 percent to target then asymptotically'
     assert.throws(() => LLMClient.calculatePromptProgressFraction(1, 0), /target characters/i);
 });
 
-test('prompt progress character targets resolve exact and prefix labels without wildcard fallback', () => {
+test('prompt progress character targets resolve exact and prefix labels before the 5000 default', () => {
     const config = {
         prompt_progress: {
             character_targets: {
@@ -74,53 +74,73 @@ test('prompt progress character targets resolve exact and prefix labels without 
     assert.equal(LLMClient.resolvePromptProgressCharacterTarget('location_generation', config), 10000);
     assert.equal(LLMClient.resolvePromptProgressCharacterTarget('npc_generation_single', config), 10000);
     assert.equal(LLMClient.resolvePromptProgressCharacterTarget('player_action', config), 5000);
-    let missingTargetError = null;
-    try {
-        LLMClient.resolvePromptProgressCharacterTarget('new_unconfigured_prompt', config);
-    } catch (error) {
-        missingTargetError = error;
-    }
-    assert.match(missingTargetError?.message || '', /character target.*new_unconfigured_prompt/i);
-    assert.equal(missingTargetError.isConfigurationError, true);
+    assert.equal(LLMClient.resolvePromptProgressCharacterTarget('new_unconfigured_prompt', config), 5000);
+    assert.equal(LLMClient.resolvePromptProgressCharacterTarget('new_prompt_without_progress_config', {}), 5000);
+    assert.equal(LLMClient.resolvePromptProgressCharacterTarget('new_prompt_without_targets', {
+        prompt_progress: {}
+    }), 5000);
 });
 
-test('missing prompt progress coverage aborts before transport without entering request retries', { concurrency: false }, async () => {
+test('prompt progress character targets reject explicit malformed values', () => {
+    for (const invalidTarget of [0, -1, Number.POSITIVE_INFINITY, 'not-a-number']) {
+        assert.throws(
+            () => LLMClient.resolvePromptProgressCharacterTarget('configured_prompt', {
+                prompt_progress: { character_targets: { configured_prompt: invalidTarget } }
+            }),
+            /finite number > 0/i
+        );
+    }
+    assert.throws(
+        () => LLMClient.resolvePromptProgressCharacterTarget('configured_prompt', {
+            prompt_progress: { character_targets: [] }
+        }),
+        /character_targets must be an object/i
+    );
+});
+
+test('an unconfigured prompt starts at 5000 then uses its recorded positive average', { concurrency: false }, async () => {
     const originalAxiosPost = axios.post;
     const originalBaseDir = Globals.baseDir;
     const originalConfig = Globals.config;
     const originalRealtimeHub = Globals.realtimeHub;
-    const baseDir = makeTempBaseDir('prompt-progress-missing-target');
-    let transportCalls = 0;
+    const baseDir = makeTempBaseDir('prompt-progress-default-target');
+    const emittedEntries = [];
     installPromptProgressConfig(baseDir);
-    Globals.realtimeHub = { emit() {} };
     LLMClient.resetPromptOutputCharacterStatsForTests();
+    Globals.realtimeHub = {
+        emit(_room, type, payload) {
+            if (type === 'prompt_progress' && Array.isArray(payload?.entries)) {
+                emittedEntries.push(...payload.entries);
+            }
+        }
+    };
     axios.post = async () => {
-        transportCalls += 1;
-        throw new Error('Transport must not be reached for an invalid prompt-progress configuration.');
+        const responseStream = new Readable({ read() {} });
+        process.nextTick(() => {
+            responseStream.push('data: {"choices":[{"delta":{"content":"abcd"}}]}\n\n');
+            responseStream.push('data: [DONE]\n\n');
+            responseStream.push(null);
+        });
+        return { status: 200, statusText: 'OK', data: responseStream };
     };
 
     try {
-        await assert.rejects(
-            LLMClient.withPromptProgressGroup({
-                progressGroupId: 'missing-target-test-run',
-                progressGroupTargetLabel: 'need_bar_event_checks_tinybrain'
-            }, () => LLMClient.chatCompletion({
-                messages: [{ role: 'user', content: 'This label is intentionally missing.' }],
-                metadataLabel: 'need_bar_event_checks',
-                retryAttempts: 6,
-                validateXML: false,
-                stream: true,
-                output: 'stdout'
-            })),
-            error => {
-                assert.equal(error?.isConfigurationError, true);
-                assert.match(error?.message || '', /need_bar_event_checks_tinybrain/);
-                return true;
-            }
-        );
-        assert.equal(transportCalls, 0);
+        const request = () => LLMClient.chatCompletion({
+            messages: [{ role: 'user', content: 'Exercise an unconfigured progress label.' }],
+            metadataLabel: 'future_unconfigured_prompt',
+            validateXML: false,
+            retryAttempts: 0,
+            output: 'stdout'
+        });
+
+        assert.equal(await request(), 'abcd');
+        assert.ok(emittedEntries.some(entry => entry.targetCharacters === 5000));
+        assert.equal(LLMClient.getPromptOutputCharacterStats('future_unconfigured_prompt').averageOutputCharacters, 4);
+
+        emittedEntries.length = 0;
+        assert.equal(await request(), 'abcd');
+        assert.ok(emittedEntries.some(entry => entry.targetCharacters === 4));
     } finally {
-        LLMClient.clearPromptProgressGroup('missing-target-test-run');
         axios.post = originalAxiosPost;
         Globals.realtimeHub = originalRealtimeHub;
         LLMClient.resetPromptOutputCharacterStatsForTests();

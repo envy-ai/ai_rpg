@@ -1,11 +1,11 @@
 # Visible Weather and Lighting Location Image Variants
 
-This is a finished/archive design note for the visible weather and lighting image-variant feature. It preserves the original v1 intent and summarizes the current implemented behavior as of the live code.
+This is a finished/archive design note for the original visible weather and lighting image-variant feature. Its deterministic-only prompt flow is historical: current variants use the base-context `generate-seasonal-image-vision` prompt with the base image attached when vision is available, and retain deterministic instructions otherwise. See the live references below for vision routing, versioned cache keys, and cached `N/A` decisions.
 
 For live reference details, use:
 
 - `docs/api/images.md` for `/api/images/location-variant/request` and image job behavior.
-- `docs/config.md` for `imagegen.location_variant_settings`.
+- `docs/config.md` for the effective `imagegen.workflow.edit` profile and vision prompt selection.
 - `docs/classes/Location.md` and `docs/classes/ComfyUIClient.md` for persistence and ComfyUI integration.
 - `docs/ui/chat_interface.md` for Adventure UI display behavior.
 

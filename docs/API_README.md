@@ -30,7 +30,7 @@ This is the high-level index for the project's HTTP API documentation. Most `/ap
 - `docs/api/settings.md` - setting CRUD, AI fill-missing, faction defaults, and world-profile calendar drafts
 - `docs/api/things.md` - items/scenery CRUD and inventory transfers
 - `docs/api/trackers.md` - browser-facing tracker CRUD routes
-- `docs/api/misc.md` - feature flags, health check, slash commands, prompt cancellation/retry, config test
+- `docs/api/misc.md` - feature flags, health check, read-only current/previous-session log viewer, slash commands, prompt cancellation/retry, config test
 
 ## Compatibility Notes
 - Duplicate route: `GET /api/attributes` is defined twice. Express binds the first definition (attribute definitions + generation methods). The later definition is unreachable until the duplication is removed; both behaviors are documented in `docs/api/attributes.md`.

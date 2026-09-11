@@ -116,6 +116,131 @@ function rejectNestedElements(node, label) {
     }
 }
 
+const CONTAINER_OPEN_DIFFICULTY_LEVELS = Object.freeze([
+    'Trivial',
+    'Easy',
+    'Medium',
+    'Hard',
+    'Very Hard',
+    'Legendary'
+]);
+
+function parseContainerOpenCheckPlan(response) {
+    const { xml, root } = parseStrictXml(response, 'container-open check plan');
+    if (normalizedTagName(root) !== 'containeropencheck') {
+        throw new Error('Container-open check plan must use <containerOpenCheck> as its document root.');
+    }
+    if (directTextContent(root)) {
+        throw new Error('Container-open check plan cannot contain text outside its fields.');
+    }
+
+    const typeField = requireSingleDirectChild(root, 'type', 'Container-open check plan');
+    rejectNestedElements(typeField.node, 'Container-open check plan <type>');
+    const checkType = typeField.text.toLowerCase();
+    if (checkType !== 'unopposed' && checkType !== 'opposed') {
+        throw new Error('Container-open check plan <type> must be "unopposed" or "opposed".');
+    }
+
+    const commonTags = ['type', 'reason', 'skill', 'attribute', 'circumstanceModifiers'];
+    const typeSpecificTags = checkType === 'unopposed'
+        ? ['difficultyLevel']
+        : ['opponent', 'opponentSkill', 'opponentAttribute'];
+    rejectUnexpectedDirectChildren(
+        root,
+        [...commonTags, ...typeSpecificTags],
+        'Container-open check plan'
+    );
+
+    const readTextField = (tagName) => {
+        const field = requireSingleDirectChild(root, tagName, 'Container-open check plan');
+        rejectNestedElements(field.node, `Container-open check plan <${tagName}>`);
+        return field.text;
+    };
+    const reason = readTextField('reason');
+    const skill = readTextField('skill');
+    const attribute = readTextField('attribute');
+    if (skill.toLowerCase() === 'n/a' && attribute.toLowerCase() === 'n/a') {
+        throw new Error('Container-open check plan must select a skill, an attribute, or both.');
+    }
+
+    const modifiersField = requireSingleDirectChild(
+        root,
+        'circumstanceModifiers',
+        'Container-open check plan',
+        { allowEmpty: true }
+    );
+    if (directTextContent(modifiersField.node)) {
+        throw new Error(
+            'Container-open check plan <circumstanceModifiers> cannot contain text outside <modifier> entries.'
+        );
+    }
+    rejectUnexpectedDirectChildren(
+        modifiersField.node,
+        ['modifier'],
+        'Container-open check plan <circumstanceModifiers>'
+    );
+    const circumstanceModifiers = directChildrenByTagName(modifiersField.node, 'modifier')
+        .map((modifierNode, index) => {
+            const label = `Container-open check modifier ${index + 1}`;
+            if (directTextContent(modifierNode)) {
+                throw new Error(`${label} cannot contain text outside its fields.`);
+            }
+            rejectUnexpectedDirectChildren(modifierNode, ['amount', 'reason'], label);
+            const amountField = requireSingleDirectChild(modifierNode, 'amount', label);
+            const reasonField = requireSingleDirectChild(modifierNode, 'reason', label);
+            rejectNestedElements(amountField.node, `${label} <amount>`);
+            rejectNestedElements(reasonField.node, `${label} <reason>`);
+            if (!/^-?\d+$/.test(amountField.text)) {
+                throw new Error(`${label} <amount> must be an integer.`);
+            }
+            const amount = Number(amountField.text);
+            if (!Number.isSafeInteger(amount)) {
+                throw new Error(`${label} <amount> must be a safe integer.`);
+            }
+            return {
+                amount,
+                reason: reasonField.text
+            };
+        });
+
+    const argumentsObject = {
+        reason,
+        skill,
+        attribute,
+        circumstanceModifiers
+    };
+    if (checkType === 'unopposed') {
+        const difficultyLevel = readTextField('difficultyLevel');
+        if (!CONTAINER_OPEN_DIFFICULTY_LEVELS.includes(difficultyLevel)) {
+            throw new Error(
+                'Container-open check plan <difficultyLevel> must be one of: '
+                + `${CONTAINER_OPEN_DIFFICULTY_LEVELS.join(', ')}.`
+            );
+        }
+        argumentsObject.difficultyLevel = difficultyLevel;
+    } else {
+        const opponent = readTextField('opponent');
+        const opponentSkill = readTextField('opponentSkill');
+        const opponentAttribute = readTextField('opponentAttribute');
+        if (opponentSkill.toLowerCase() === 'n/a' && opponentAttribute.toLowerCase() === 'n/a') {
+            throw new Error(
+                'Container-open opposed check plan must select an opponent skill, opponent attribute, or both.'
+            );
+        }
+        argumentsObject.opponent = opponent;
+        argumentsObject.opponentSkill = opponentSkill;
+        argumentsObject.opponentAttribute = opponentAttribute;
+    }
+
+    return {
+        value: {
+            checkType,
+            argumentsObject
+        },
+        normalizedResponse: xml
+    };
+}
+
 function parseSceneSummaryBoundaries(response, entryCount) {
     const totalEntries = requirePositiveIntegerArgument(
         entryCount,
@@ -647,6 +772,14 @@ function parsePlayerActionExplicitDuration(response) {
 }
 
 function parsePlayerActionDuration(response, minimumMinutes = 1) {
+    return parsePlayerActionDurationWithClock(response, minimumMinutes);
+}
+
+function parsePlayerActionTimePassedDuration(response, minimumMinutes = 1, currentWorldMinute = null) {
+    return parsePlayerActionDurationWithClock(response, minimumMinutes, currentWorldMinute);
+}
+
+function parsePlayerActionDurationWithClock(response, minimumMinutes, currentWorldMinute = null) {
     const normalized = normalizePlainResponse(response, 'player-action duration');
     if (!Number.isInteger(minimumMinutes) || minimumMinutes < 0) {
         throw new RangeError('Player-action duration minimum must be a non-negative integer.');
@@ -654,9 +787,13 @@ function parsePlayerActionDuration(response, minimumMinutes = 1) {
     rejectPlayerActionResultMarkup(normalized, 'Player-action duration');
     let minutes;
     try {
-        minutes = Utils.parseDurationToMinutes(normalized, {
+        const durationOptions = {
             fieldName: 'player-action duration'
-        });
+        };
+        if (currentWorldMinute !== null && currentWorldMinute !== undefined) {
+            durationOptions.currentWorldMinute = currentWorldMinute;
+        }
+        minutes = Utils.parseDurationToMinutes(normalized, durationOptions);
     } catch (error) {
         throw new Error(`Player-action duration is invalid: ${error.message}`);
     }
@@ -2113,6 +2250,7 @@ function parseScheduledEventInterruptionRewrite(response, originalXml) {
 module.exports = {
     isNonMutatingScheduledEventToolName,
     parseAllowedCharacterSelection,
+    parseContainerOpenCheckPlan,
     parseContainerOpenNarrativeResult,
     parseCraftNarrativeResult,
     parseExactXmlRoot,
@@ -2126,6 +2264,7 @@ module.exports = {
     parsePlayerActionDestinationChanges,
     parsePlayerActionExplicitDuration,
     parsePlayerActionDuration,
+    parsePlayerActionTimePassedDuration,
     parsePlayerActionAccompanyingCharacters,
     parsePlayerActionHiddenContests,
     parsePlayerActionHiddenNotes,

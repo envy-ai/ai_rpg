@@ -20,6 +20,7 @@ const Quest = require('./Quest.js');
 const { questRewardBenefitRegistry } = require('./QuestRewardBenefitRegistry.js');
 const ThingMutationService = require('./ThingMutationService.js');
 const ThingFieldRegistry = require('./ThingFieldRegistry.js');
+const { buildSkillCheckOutcomeToolContent } = require('./utils/skill-check-outcome-guidance.js');
 
 const MORE_INFO_MAX_MATCHES = 50;
 const CACHED_CHECK_TOOL_CALL_NOTE = 'You already made this tool call. Do not re-run tool calls for the same checks that you made in earlier drafts.';
@@ -1558,7 +1559,7 @@ const CHAT_TOOL_DEFINITIONS = Object.freeze([
         type: 'function',
         function: {
             name: 'createQuest',
-            description: 'Create or update a player quest from a concise quest summary using the same quest-generation and confirmation path as received_quest events. Requires an active client when a new quest needs player confirmation.',
+            description: 'Create or update a player quest from a concise quest summary using the same quest-generation and durable pending-offer path as received_quest events. New quests are shown as inline offers and remain pending until the player accepts or declines them.',
             parameters: {
                 type: 'object',
                 properties: {
@@ -9394,7 +9395,7 @@ const createChatToolRuntime = ({
             || normalizeOptionalString(actionResolution.degree)
             || (actionResolution.success ? 'success' : 'failure');
         return {
-            content: resultLabel,
+            content: buildSkillCheckOutcomeToolContent(actionResolution, resultLabel),
             metadata: {
                 result: resultLabel,
                 checkType: 'unopposed',
@@ -9488,7 +9489,7 @@ const createChatToolRuntime = ({
             || normalizeOptionalString(actionResolution.degree)
             || (actionResolution.success ? 'success' : 'failure');
         return {
-            content: resultLabel,
+            content: buildSkillCheckOutcomeToolContent(actionResolution, resultLabel),
             metadata: {
                 result: resultLabel,
                 checkType: 'opposed',
@@ -11908,8 +11909,13 @@ const createChatToolRuntime = ({
         const declinedQuests = Array.isArray(result.declinedQuests)
             ? result.declinedQuests
             : [];
+        const pendingQuestOffers = Array.isArray(result.pendingQuestOffers)
+            ? result.pendingQuestOffers
+            : [];
         const status = questsAwarded.length || updatedQuests.length
             ? 'success'
+            : pendingQuestOffers.length
+                ? 'pending'
             : declinedQuests.length
                 ? 'declined'
                 : 'not_created';
@@ -11960,8 +11966,18 @@ const createChatToolRuntime = ({
             lines.push('    </quest>');
         }
         lines.push('  </declinedQuests>');
+        lines.push('  <pendingQuestOffers>');
+        for (const offer of pendingQuestOffers) {
+            lines.push('    <questOffer>');
+            lines.push(`      <confirmationId>${xmlEscapeText(toTrimmedString(offer?.confirmationId))}</confirmationId>`);
+            lines.push(`      <name>${xmlEscapeText(toTrimmedString(offer?.quest?.name))}</name>`);
+            lines.push('    </questOffer>');
+        }
+        lines.push('  </pendingQuestOffers>');
         if (status === 'declined') {
             lines.push('  <instruction>The player declined this quest offer. The createQuest request is resolved; do not retry it.</instruction>');
+        } else if (status === 'pending') {
+            lines.push('  <instruction>The quest offer is pending the player\'s decision. Do not retry this createQuest request.</instruction>');
         }
         lines.push('</createQuestResult>');
 
@@ -11971,7 +11987,8 @@ const createChatToolRuntime = ({
                 status,
                 questsAwarded,
                 updatedQuests,
-                declinedQuests
+                declinedQuests,
+                pendingQuestOffers
             }
         };
     };

@@ -12,6 +12,7 @@ const {
     normalizePlayerActionAccompanyingCharacterSelection,
     resolvePreResolvedPlayerActionHiddenContestToolCall
 } = require('../PlayerActionCompanions.js');
+const { buildSkillCheckOutcomeToolContent } = require('../utils/skill-check-outcome-guidance.js');
 
 function makeLocation(id, npcIds = []) {
     return {
@@ -200,7 +201,7 @@ test('pre-resolved hidden contests satisfy semantically matching opposed-check c
         players
     });
 
-    assert.equal(matched.content, 'major success');
+    assert.equal(matched.content, buildSkillCheckOutcomeToolContent(resolution, 'major success'));
     assert.equal(matched.metadata.preResolvedHiddenNpcCheck, true);
     assert.equal(matched.metadata.suppressCheckResultsRecord, true);
     assert.equal(matched.metadata.cached, true);

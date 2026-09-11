@@ -13,13 +13,32 @@ function loadServerFunction(functionName, extraContext = {}) {
     const dependencyStartName = functionName === 'parseXMLTemplate'
         ? 'splitUnsafeCdataTerminatorsForTag'
         : functionName;
-    const start = source.indexOf(`function ${dependencyStartName}`);
+    const synchronousStart = source.indexOf(`function ${dependencyStartName}`);
+    const asyncStart = source.indexOf(`async function ${dependencyStartName}`);
+    const start = asyncStart >= 0 ? asyncStart : synchronousStart;
     if (start < 0) {
         throw new Error(`Unable to locate ${functionName} in server.js`);
     }
 
-    const functionStart = source.indexOf(`function ${functionName}`, start);
-    const bodyStart = source.indexOf('{', functionStart);
+    const synchronousFunctionStart = source.indexOf(`function ${functionName}`, start);
+    const asyncFunctionStart = source.indexOf(`async function ${functionName}`, start);
+    const functionStart = asyncFunctionStart >= 0 ? asyncFunctionStart : synchronousFunctionStart;
+    const parameterStart = source.indexOf('(', functionStart);
+    let parameterDepth = 0;
+    let parameterEnd = -1;
+    for (let i = parameterStart; i < source.length; i += 1) {
+        const char = source[i];
+        if (char === '(') {
+            parameterDepth += 1;
+        } else if (char === ')') {
+            parameterDepth -= 1;
+            if (parameterDepth === 0) {
+                parameterEnd = i;
+                break;
+            }
+        }
+    }
+    const bodyStart = source.indexOf('{', parameterEnd);
     if (bodyStart < 0) {
         throw new Error(`Unable to find body for ${functionName} in server.js`);
     }
@@ -267,8 +286,9 @@ test('location things prompt preserves minimum-count XML tag names as instructio
         { autoescape: false }
     );
 
-    const rendered = promptEnv.render('location-generator-things.njk', {
-        setting: 'Test Setting',
+    const rendered = promptEnv.render('base-context.xml.njk', createMinimalBaseContext({
+        promptType: 'location-generator-things',
+        settingDescription: 'Test Setting',
         region: { regionName: 'Test Region', regionDescription: 'A region.' },
         location: { name: 'Test Room', description: 'A room.' },
         attributeDefinitions: {},
@@ -284,8 +304,9 @@ test('location things prompt preserves minimum-count XML tag names as instructio
         recentThings: [],
         lorebookEntries: [],
         thingGeneratorPromptFields: [],
-        modGenerationPromptInstructions: []
-    });
+        modGenerationPromptInstructions: [],
+        bannedTropes: []
+    }));
     const parsed = parseXMLTemplate(rendered);
 
     assert.match(
@@ -308,6 +329,107 @@ test('location things prompt preserves minimum-count XML tag names as instructio
         parsed.generationPrompt,
         /<\/count><\/itemOrScenery><\/item><\/itemOrScenery><\/item>/
     );
+});
+
+test('location things renderer combines target base context with its generation task context', async () => {
+    Globals.config = { strictXMLParsing: true };
+    const parseXMLTemplate = loadServerFunction('parseXMLTemplate');
+    const actualPromptEnv = new nunjucks.Environment(
+        new nunjucks.FileSystemLoader(path.join(__dirname, '..', 'prompts')),
+        { autoescape: false }
+    );
+    const targetLocation = {
+        id: 'location_destination',
+        getDetails() {
+            return {
+                id: this.id,
+                name: 'Brass Observatory',
+                description: 'A target-only detail above the canal.',
+                special: 'target-only detail'
+            };
+        }
+    };
+    let receivedBaseContextOptions = null;
+    let capturedTemplateName = null;
+    let capturedTemplatePayload = null;
+    const renderer = loadServerFunction('renderLocationThingsPrompt', {
+        prepareBasePromptContext: async options => {
+            receivedBaseContextOptions = options;
+            const targetDetails = options.locationOverride.getDetails();
+            return createMinimalBaseContext({
+                setting: {
+                    ...createMinimalBaseContext().setting,
+                    name: 'Aether Marches',
+                    genre: 'Clockwork Fantasy',
+                    tone: 'Melancholy'
+                },
+                currentLocation: targetDetails,
+                currentPlayer: {
+                    ...createMinimalBaseContext().currentPlayer,
+                    name: 'Origin Player',
+                    description: 'Waiting at the distant origin.'
+                },
+                bannedTropes: []
+            });
+        },
+        getGearSlotTypes: () => ['hand'],
+        attributeDefinitionsForPrompt: { focus: { description: 'Mental precision.' } },
+        Thing: {
+            generateRandomRarityDefinition: () => ({ label: 'Common', description: 'Ordinary.' }),
+            getAllRarityDefinitions: () => [{ label: 'Rare', description: 'Hard to find.' }],
+            getAll: () => [{
+                name: 'Earlier Compass',
+                rarity: 'Rare',
+                createdAt: '2026-01-02T00:00:00.000Z'
+            }]
+        },
+        getThingGeneratorPromptFields: () => [{ fieldName: 'weatherproofing' }],
+        getModGenerationPromptInstructions: () => ['Keep brass fittings exposed.'],
+        promptEnv: {
+            render(templateName, payload) {
+                capturedTemplateName = templateName;
+                capturedTemplatePayload = payload;
+                return actualPromptEnv.render(templateName, payload);
+            }
+        },
+        parseXMLTemplate
+    });
+
+    const parsed = await renderer({
+        settingDescription: 'A city of brass and stormwater.',
+        region: { name: 'Canal Ward', description: 'Flooded workshops.' },
+        locationOverride: targetLocation,
+        location: { name: 'Brass Observatory', description: 'A target location above the canal.' },
+        rarityList: { items: { Rare: 2 }, scenery: { Common: 1 } },
+        itemCount: 2,
+        sceneryCount: 1,
+        lorebookEntries: [{ content: 'The observatory predicts tides.' }]
+    });
+
+    assert.ok(parsed);
+    assert.equal(capturedTemplateName, 'base-context.xml.njk');
+    assert.strictEqual(receivedBaseContextOptions.locationOverride, targetLocation);
+    assert.equal(capturedTemplatePayload.currentLocation.special, 'target-only detail');
+    assert.equal(capturedTemplatePayload.setting.genre, 'Clockwork Fantasy');
+    assert.deepEqual(capturedTemplatePayload.rarityList, { items: { Rare: 2 }, scenery: { Common: 1 } });
+    assert.equal(capturedTemplatePayload.itemCount, 2);
+    assert.equal(capturedTemplatePayload.sceneryCount, 1);
+    assert.deepEqual(capturedTemplatePayload.lorebookEntries, [{ content: 'The observatory predicts tides.' }]);
+    assert.deepEqual(capturedTemplatePayload.modGenerationPromptInstructions, ['Keep brass fittings exposed.']);
+    assert.equal(JSON.stringify(capturedTemplatePayload.recentThings), JSON.stringify([{
+        name: 'Earlier Compass',
+        rarity: 'Rare',
+        createdAt: '2026-01-02T00:00:00.000Z'
+    }]));
+    assert.match(parsed.systemPrompt, /Genre: Clockwork Fantasy/);
+    assert.match(parsed.generationPrompt, /Brass Observatory/);
+    assert.match(parsed.generationPrompt, /target-only detail/);
+    assert.match(parsed.generationPrompt, /Origin Player/);
+    assert.match(parsed.generationPrompt, /The observatory predicts tides\./);
+    assert.match(parsed.generationPrompt, /Rare: 2/);
+    assert.match(parsed.generationPrompt, /Return at least 2 top-level <item>/);
+    assert.match(parsed.generationPrompt, /at least 1 top-level <item> entry whose <itemOrScenery> is scenery/);
+    assert.doesNotMatch(parsed.generationPrompt, /<!\[CDATA\[/);
 });
 
 test('scene summary parser extracts the final scenes block from prose-heavy responses', () => {

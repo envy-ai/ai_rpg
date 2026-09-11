@@ -32,16 +32,12 @@ test('quest confirmation payload includes the resolved disposition delta, not ju
     const typicalStep = Number(Player.getDispositionDefinitions()?.range?.typicalStep);
     assert.ok(Number.isFinite(typicalStep) && typicalStep !== 0, 'disposition definitions should provide a typicalStep');
 
-    const previousEmit = Globals.emitToClient;
-    let captured = null;
-    Globals.emitToClient = (clientId, event, payload) => {
-        captured = payload;
-        return true;
-    };
+    const previousGetById = Player.getById;
+    Player.getById = id => id === 'player-1' ? { id } : null;
     try {
         const manager = new QuestConfirmationManager({ timeoutMs: null });
-        manager.requestConfirmation({
-            clientId: 'client-1',
+        const captured = manager.requestConfirmation({
+            playerId: 'player-1',
             quest: {
                 id: 'q1',
                 name: 'Befriend the Guard',
@@ -50,14 +46,14 @@ test('quest confirmation payload includes the resolved disposition delta, not ju
                 ]
             }
         });
-    } finally {
-        Globals.emitToClient = previousEmit;
-    }
 
-    const disposition = captured?.quest?.rewardNpcDispositions?.[0]?.dispositions?.[0];
-    assert.ok(disposition, 'confirmation payload should include the disposition reward');
-    assert.equal(disposition.intensity, 2, 'raw intensity is preserved');
-    assert.equal(disposition.delta, 2 * typicalStep, 'resolved delta matches the applied change');
+        const disposition = captured?.quest?.rewardNpcDispositions?.[0]?.dispositions?.[0];
+        assert.ok(disposition, 'confirmation payload should include the disposition reward');
+        assert.equal(disposition.intensity, 2, 'raw intensity is preserved');
+        assert.equal(disposition.delta, 2 * typicalStep, 'resolved delta matches the applied change');
+    } finally {
+        Player.getById = previousGetById;
+    }
 });
 
 test('accept dialog displays the resolved delta when present, falling back to intensity', () => {

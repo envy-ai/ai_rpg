@@ -613,6 +613,12 @@ Region exits: [comma-separated list of connected regions]{%- endset %}
                                 <textarea id="imagePromptPrefixScenery" name="imagePromptPrefixScenery" rows="4" placeholder="Short guidance for scenery/establishing shot art..."></textarea>
                                 <div class="help-text">Optional text prepended to scenery/background prompts.</div>
                             </div>
+
+                            <div class="form-group full-width">
+                                <label for="imagePromptPrefixFaction">Faction Emblem Prompt Prefix</label>
+                                <textarea id="imagePromptPrefixFaction" name="imagePromptPrefixFaction" rows="4" placeholder="Short guidance for faction emblem art..."></textarea>
+                                <div class="help-text">Optional text prepended to faction emblem prompts.</div>
+                            </div>
                         </div>
                     </section>
 
@@ -641,6 +647,11 @@ Region exits: [comma-separated list of connected regions]{%- endset %}
                             <div class="form-group full-width">
                                 <label for="imagePromptInstructionsScenery">Scenery Prompt Instructions</label>
                                 <textarea id="imagePromptInstructionsScenery" name="imagePromptInstructionsScenery" rows="5" placeholder="World-specific instructions for generating scenery image prompts..."></textarea>
+                            </div>
+
+                            <div class="form-group full-width">
+                                <label for="imagePromptInstructionsFaction">Faction Emblem Prompt Instructions</label>
+                                <textarea id="imagePromptInstructionsFaction" name="imagePromptInstructionsFaction" rows="5" placeholder="World-specific instructions for generating faction emblem prompts..."></textarea>
                             </div>
                         </div>
                     </section>
@@ -1308,10 +1319,12 @@ Region exits: [comma-separated list of connected regions]{%- endset %}
             assignValue('imagePromptPrefixLocation', setting.imagePromptPrefixLocation || '');
             assignValue('imagePromptPrefixItem', setting.imagePromptPrefixItem || '');
             assignValue('imagePromptPrefixScenery', setting.imagePromptPrefixScenery || '');
+            assignValue('imagePromptPrefixFaction', setting.imagePromptPrefixFaction || '');
             assignValue('imagePromptInstructionsCharacter', setting.imagePromptInstructionsCharacter || '');
             assignValue('imagePromptInstructionsLocation', setting.imagePromptInstructionsLocation || '');
             assignValue('imagePromptInstructionsItem', setting.imagePromptInstructionsItem || '');
             assignValue('imagePromptInstructionsScenery', setting.imagePromptInstructionsScenery || '');
+            assignValue('imagePromptInstructionsFaction', setting.imagePromptInstructionsFaction || '');
             const generationSettingsField = document.querySelector('[name="imageGenerationSettings"]');
             const editSettingsField = document.querySelector('[name="imageEditSettings"]');
             if (generationSettingsField) generationSettingsField.value = JSON.stringify(setting.imageGenerationSettings || {});
@@ -3893,10 +3906,12 @@ Region exits: [comma-separated list of connected regions]{%- endset %}
                     imagePromptPrefixLocation: filled.imagePromptPrefixLocation,
                     imagePromptPrefixItem: filled.imagePromptPrefixItem,
                     imagePromptPrefixScenery: filled.imagePromptPrefixScenery,
+                    imagePromptPrefixFaction: filled.imagePromptPrefixFaction,
                     imagePromptInstructionsCharacter: filled.imagePromptInstructionsCharacter,
                     imagePromptInstructionsLocation: filled.imagePromptInstructionsLocation,
                     imagePromptInstructionsItem: filled.imagePromptInstructionsItem,
-                    imagePromptInstructionsScenery: filled.imagePromptInstructionsScenery
+                    imagePromptInstructionsScenery: filled.imagePromptInstructionsScenery,
+                    imagePromptInstructionsFaction: filled.imagePromptInstructionsFaction
                 }).forEach(([fieldId, value]) => applyText(fieldId, value));
                 if (settingsFactionEditor && Array.isArray(filled.defaultFactions)) {
                     settingsFactionEditor.load(filled.defaultFactions);

@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="en">
+{% set pageTitleValue = title %}
+<head>
+    {% include "_includes/head-common.njk" %}
+    <link rel="stylesheet" href="/css/log-viewer.css">
+    <script src="/js/log-viewer.js" defer></script>
+</head>
+<body>
+    <div class="container">
+        {% set appHeaderTitle = 'Log Viewer' %}
+        {% set appHeaderSubtitle = 'Current and previous session logs' %}
+        {% include "_includes/app-header.njk" %}
+        <main class="story-tools-panel log-viewer">
+            <div class="story-tools-header log-viewer__toolbar">
+                <h1><span class="app-header-icon app-header-icon--log-viewer" aria-hidden="true"></span> Log Viewer</h1>
+                <div class="log-viewer__session-controls">
+                    <label for="log-session">Session</label>
+                    <select id="log-session" class="story-tools-search-mode">
+                        <option value="logs">Current session · logs</option>
+                        <option value="logs_prev">Previous session · logs_prev</option>
+                    </select>
+                    <button id="log-refresh" type="button" class="btn btn-secondary">Refresh</button>
+                </div>
+            </div>
+            <div class="story-tools-entries-wrap log-viewer__layout">
+                <aside class="log-viewer__sidebar" aria-label="Log files">
+                    <label for="log-filter">Filter filenames</label>
+                    <input id="log-filter" class="story-tools-search-input" type="search" placeholder="Filter filenames…" aria-describedby="log-filter-help" autocomplete="off">
+                    <p id="log-filter-help" class="story-tools-count">Space-separated terms · Match all</p>
+                    <div class="log-viewer__list-heading story-tools-count">
+                        <span id="log-count" role="status">Loading…</span>
+                        <span>Created · newest first</span>
+                    </div>
+                    <div id="log-files" class="story-tools-page-list" aria-label="Files"></div>
+                </aside>
+                <section class="log-viewer__reader" aria-labelledby="log-filename">
+                    <div class="story-tools-entry-header">
+                        <h2 id="log-filename">Select a log file</h2>
+                        <span class="story-tools-tag">Read-only</span>
+                    </div>
+                    <p id="log-metadata" class="story-tools-count" role="status">Loading files…</p>
+                    <div class="story-tools-entry-content log-viewer__text-box">
+                        <pre id="log-lines" aria-hidden="true"></pre>
+                        <textarea id="log-content" aria-label="Log contents" readonly wrap="off" spellcheck="false"></textarea>
+                    </div>
+                </section>
+            </div>
+        </main>
+    </div>
+    <dialog id="log-error" class="modal__dialog log-viewer__error" aria-labelledby="log-error-title">
+        <form method="dialog">
+            <div class="modal__header"><h2 id="log-error-title">Unable to load logs</h2><button class="modal__close" aria-label="Close">×</button></div>
+            <div class="modal__body"><pre id="log-error-details"></pre></div>
+            <div class="modal__footer"><button class="btn btn-secondary">Close</button></div>
+        </form>
+    </dialog>
+</body>
+</html>

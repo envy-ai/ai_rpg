@@ -271,6 +271,7 @@ test('background chat can wait on realtime state, cancel concurrently, and must 
     fs.mkdirSync(path.join(root, 'logs'), { recursive: true });
     let resolveChat;
     let endRequestCount = 0;
+    let pendingQuestResolutionCount = 0;
     let chatRequestBody = null;
     const apiClient = {
         async fetchJson(method, route, body) {
@@ -339,6 +340,11 @@ test('background chat can wait on realtime state, cancel concurrently, and must 
         },
         endRequest() {
             endRequestCount += 1;
+        },
+        async resolvePendingQuestOffers(requestId) {
+            assert.equal(requestId, 'background-request');
+            pendingQuestResolutionCount += 1;
+            return 0;
         },
         async close() {}
     };
@@ -409,6 +415,7 @@ test('background chat can wait on realtime state, cancel concurrently, and must 
             }
         });
         assert.equal(endRequestCount, 1);
+        assert.equal(pendingQuestResolutionCount, 1);
         assert.deepEqual(chatRequestBody.forcedNpcTurns, [{ id: 'char_34' }, { name: 'QA Shieldhand' }]);
         const stepResults = JSON.parse(fs.readFileSync(path.join(output.attemptDir, 'steps.json'), 'utf8'));
         assert.equal(stepResults.some(entry => entry.type === 'startChat'), true);

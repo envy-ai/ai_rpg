@@ -29,6 +29,14 @@ test('generated image downloads use character and thing names', () => {
     assert.equal(buildFilename('thing-image-1', 'webp', { players, things }), 'Moonlit Blade.webp');
 });
 
+test('generated faction emblem downloads use the faction name', () => {
+    const factions = new Map([
+        ['faction-1', { id: 'faction-1', name: 'Azure Watch', imageId: 'emblem-image-1' }]
+    ]);
+
+    assert.equal(buildFilename('emblem-image-1', 'png', { factions }), 'Azure Watch.png');
+});
+
 test('generated image downloads use location names for base images and display variants', () => {
     const gameLocations = new Map([
         ['location-1', {

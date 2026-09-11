@@ -130,6 +130,31 @@ test('createQuest reports a declined confirmation as a terminal tool outcome', a
     assert.match(result.content, /The createQuest request is resolved; do not retry it\./);
 });
 
+test('createQuest reports a pending offer without asking the model to retry', async () => {
+    const runtime = createRuntime({
+        createQuestFromEvent: async () => ({
+            questsAwarded: [],
+            updatedQuests: [],
+            declinedQuests: [],
+            pendingQuestOffers: [{
+                confirmationId: 'confirmation-1',
+                quest: { name: 'Investigate the Archive' }
+            }]
+        })
+    });
+
+    const result = await executeTool(runtime, 'createQuest', {
+        summary: 'Investigate the missing archive key.'
+    });
+
+    assert.equal(result.metadata.status, 'pending');
+    assert.equal(result.metadata.pendingQuestOffers[0].confirmationId, 'confirmation-1');
+    assert.match(result.content, /<status>pending<\/status>/);
+    assert.match(result.content, /<pendingQuestOffers>/);
+    assert.match(result.content, /pending the player's decision/i);
+    assert.match(result.content, /Do not retry/);
+});
+
 test('createQuest returns a tool error when quest creation is unavailable', async () => {
     const runtime = createRuntime({
         createQuestFromEvent: null

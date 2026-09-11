@@ -42,7 +42,7 @@ The hub is a transport helper. Event schema, request correlation, hidden-note fi
 - Image jobs emit targeted or broadcast `image_job_update` events from `server.js`.
 - A post-render Cache Monitor failure broadcasts `comfy_cache_monitor_fallback` after the server successfully falls back to full ComfyUI `/free` cleanup. The browser uses it to show an install/enable recommendation unless that browser has suppressed the warning in localStorage.
 - Location and map mutations can broadcast events such as `location_relocated`, `location_exit_created`, `location_exit_deleted`, and `location_stub_expanded`.
-- Quest confirmations are emitted through `Globals.emitToClient` as `quest_confirmation_request`.
+- Quest-offer creation and resolution emit global `chat_history_updated` broadcasts so every connected client refreshes the same durable inline offer state. Quest decisions no longer use client-targeted `quest_confirmation_request` messages.
 
 ## Notes
 - `RealtimeHub` does not authenticate `clientId` values, persist messages, replay missed events, or validate app-level payload schemas.

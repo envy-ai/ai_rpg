@@ -116,6 +116,30 @@ test('player action XML parser extracts turnResult timePassed without exposing i
     assert.equal(parsed.timePassedMinutes, 12);
 });
 
+test('player action XML parser resolves until clock time against the supplied world-minute snapshot', async () => {
+    const context = loadPlayerActionXmlParser();
+    const parsed = await context.parsePlayerActionProseFromXml(
+        '<turnResult><prose>The player sleeps until dawn.</prose>'
+        + '<timePassed><reasoning>Sleep continues to the requested time.</reasoning>'
+        + '<duration>until 6 AM</duration></timePassed></turnResult>',
+        { currentWorldMinute: 110 }
+    );
+
+    assert.equal(parsed.prose, 'The player sleeps until dawn.');
+    assert.equal(parsed.timePassedMinutes, 250);
+});
+
+test('player action XML parser applies next-day rollover to until clock time', async () => {
+    const context = loadPlayerActionXmlParser();
+    const parsed = await context.parsePlayerActionProseFromXml(
+        '<turnResult><prose>The player waits for morning.</prose>'
+        + '<timePassed><duration>until 06:00</duration></timePassed></turnResult>',
+        { currentWorldMinute: 1215 }
+    );
+
+    assert.equal(parsed.timePassedMinutes, 585);
+});
+
 test('player action XML parser tolerates timePassed nested directly inside turnResult prose', async () => {
     const context = loadPlayerActionXmlParser();
     const parsed = await context.parsePlayerActionProseFromXml(
@@ -315,7 +339,7 @@ test('context exclusion helper preserves metadata while excluding entry', () => 
 
 test('chat route aborts rejected player-action XML before normal response storage', () => {
     const source = fs.readFileSync(require.resolve('../api.js'), 'utf8');
-    const parseIndex = source.indexOf('const parsedProse = await parsePlayerActionProseFromXml(aiResponse, { logJson: true });');
+    const parseIndex = source.indexOf('const parsedProse = await parsePlayerActionProseFromXml(aiResponse, {');
     assert.notEqual(parseIndex, -1, 'Unable to locate player-action XML parse call.');
     const branchIndex = source.indexOf('if (parsedProse.rejected)', parseIndex);
     assert.notEqual(branchIndex, -1, 'Unable to locate rejected player-action branch.');
@@ -338,7 +362,7 @@ test('chat route aborts rejected player-action XML before normal response storag
 
 test('chat route rewrites same-location scheduled event interruptions before slop removal', () => {
     const source = fs.readFileSync(require.resolve('../api.js'), 'utf8');
-    const parseIndex = source.indexOf('const parsedProse = await parsePlayerActionProseFromXml(aiResponse, { logJson: true });');
+    const parseIndex = source.indexOf('const parsedProse = await parsePlayerActionProseFromXml(aiResponse, {');
     assert.notEqual(parseIndex, -1, 'Unable to locate player-action XML parse call.');
     const rewriteIndex = source.indexOf('maybeRewritePlayerActionForScheduledEventInterruption', parseIndex);
     assert.notEqual(rewriteIndex, -1, 'Unable to locate scheduled-event interruption rewrite call.');
@@ -348,6 +372,10 @@ test('chat route rewrites same-location scheduled event interruptions before slo
 
     const routeSlice = source.slice(parseIndex, slopIndex);
     assert.match(routeSlice, /playerActionRemainingTimePassedMinutes/);
+    assert.match(
+        routeSlice,
+        /parsePlayerActionProseFromXml\(rewrittenXmlPayload,[\s\S]*currentWorldMinute:\s*playerActionTimeReferenceWorldMinute/
+    );
     assert.match(source, /metadataLabel:\s*'player_action_interruption_rewrite'/);
     assert.match(source, /suppressVisibleProse:\s*true/);
 });

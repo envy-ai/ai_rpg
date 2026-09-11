@@ -32,11 +32,27 @@
                 <button class="tab-button" id="tab-story-tools-tab" data-tab="story-tools" role="tab" aria-selected="false" aria-controls="tab-story-tools" aria-label="Story Tools" title="Story Tools"><img src="/assets/material-icons/game-tab-icons/story_tools.svg" class="tab-button__icon" alt="" aria-hidden="true"></button>
             </div>
 
+            <nav class="mobile-adventure-primary-nav" id="mobileAdventurePrimaryNav" aria-label="Adventure sections" role="tablist">
+                <button type="button" role="tab" class="mobile-adventure-nav-button is-active" data-mobile-adventure-pane="location" aria-selected="true" aria-controls="mobileAdventureLocationPane">Location</button>
+                <button type="button" role="tab" class="mobile-adventure-nav-button" data-mobile-adventure-pane="chat" aria-selected="false" aria-controls="mobileAdventureChatPane">Chat</button>
+                <button type="button" role="tab" class="mobile-adventure-nav-button" data-mobile-adventure-pane="player-party" aria-selected="false" aria-controls="mobileAdventurePlayerPartyPane">Player &amp; Party</button>
+            </nav>
+            <nav class="mobile-adventure-subnav mobile-adventure-subnav--location" id="mobileAdventureLocationSubnav" aria-label="Location sections" role="tablist">
+                <button type="button" role="tab" class="mobile-adventure-subnav-button is-active" data-mobile-location-pane="general" aria-selected="true" aria-controls="mobileAdventureLocationPane">General info</button>
+                <button type="button" role="tab" class="mobile-adventure-subnav-button" data-mobile-location-pane="npcs" aria-selected="false" aria-controls="mobileAdventureLocationPane">NPCs (<span data-mobile-count="npcs">0</span>)</button>
+                <button type="button" role="tab" class="mobile-adventure-subnav-button" data-mobile-location-pane="things" aria-selected="false" aria-controls="mobileAdventureLocationPane">Items (<span data-mobile-count="items">0</span>) &amp; Scenery (<span data-mobile-count="scenery">0</span>)</button>
+            </nav>
+            <nav class="mobile-adventure-subnav mobile-adventure-subnav--player" id="mobileAdventurePlayerSubnav" aria-label="Player and party sections" role="tablist" hidden>
+                <button type="button" role="tab" class="mobile-adventure-subnav-button is-active" data-mobile-player-pane="player" aria-selected="true" aria-controls="mobileAdventurePlayerPartyPane">Player</button>
+                <button type="button" role="tab" class="mobile-adventure-subnav-button" data-mobile-player-pane="party" aria-selected="false" aria-controls="mobileAdventurePlayerPartyPane">Party (<span data-mobile-count="party">0</span>)</button>
+                <button type="button" role="tab" class="mobile-adventure-subnav-button" data-mobile-player-pane="trackers" aria-selected="false" aria-controls="mobileAdventurePlayerPartyPane">Trackers (<span data-mobile-count="trackers">0</span>)</button>
+            </nav>
+
             <div class="tab-panels">
                 <section class="tab-panel active" id="tab-adventure" role="tabpanel" aria-labelledby="tab-adventure-tab">
                     <div class="adventure-background" id="adventureBackground" aria-hidden="true"></div>
                     <div class="adventure-content">
-                        <div class="location-block">
+                        <div class="location-block" id="mobileAdventureLocationPane">
                             <div class="container">
                                 <div class="world-time-indicator world-time-indicator--sidebar" id="worldTimeIndicator" hidden aria-live="polite">
                                     <span class="world-time-indicator__time" id="worldTimeIndicatorTime">--:--</span>
@@ -127,7 +143,7 @@
                                                     <div class="thing-list-panel__header">
                                                         <div class="thing-list-panel__heading-group">
                                                             <h5 class="location-thing-heading">Scenery</h5>
-                                                            <span class="inventory-count" id="locationSceneryCount">0 objects</span>
+                                                            <span class="inventory-count" id="locationSceneryCount" data-visible-count="0">0 objects</span>
                                                         </div>
                                                         <div class="thing-list-panel__controls">
                                                             {{ thingListViewToggle("locationSceneryViewToggle", "locationSceneryView", "Change location scenery view") }}
@@ -175,7 +191,7 @@
                                                     <div class="thing-list-panel__header">
                                                         <div class="thing-list-panel__heading-group">
                                                             <h5 class="location-thing-heading">Items</h5>
-                                                            <span class="inventory-count" id="locationItemsCount">0 items</span>
+                                                            <span class="inventory-count" id="locationItemsCount" data-visible-count="0">0 items</span>
                                                         </div>
                                                         <div class="thing-list-panel__controls">
                                                             {{ thingListCombineButton("locationItemsCombineBtn", "Find similar location item stacks to combine") }}
@@ -214,6 +230,15 @@
                                                             </label>
                                                         </div>
                                                     </div>
+                                                    <div class="location-item-mobile-action-toggle" id="locationItemMobileActionToggle" role="group" aria-label="Choose what tapping a location item does">
+                                                        <button type="button" class="thing-list-panel__icon-toggle location-item-mobile-action-toggle__button is-active" id="locationItemInspectModeButton" data-location-item-action-mode="inspect" aria-label="Inspect items" aria-pressed="true" title="Inspect items">
+                                                            <img src="/assets/material-icons/misc/zoom_in.svg" class="location-item-mobile-action-toggle__icon" alt="" aria-hidden="true">
+                                                        </button>
+                                                        <button type="button" class="thing-list-panel__icon-toggle location-item-mobile-action-toggle__button" id="locationItemPickupModeButton" data-location-item-action-mode="pickup" aria-label="Pick up items" aria-pressed="false" title="Pick up items">
+                                                            <img src="/assets/material-icons/misc/pick_up.svg" class="location-item-mobile-action-toggle__icon" alt="" aria-hidden="true">
+                                                        </button>
+                                                        <span class="sr-only" id="locationItemMobileActionStatus" aria-live="polite">Tapping an item inspects it.</span>
+                                                    </div>
                                                     <div class="location-entity-grid" id="locationItems">
                                                         <div class="location-thing-empty">No notable items present.</div>
                                                     </div>
@@ -239,7 +264,24 @@
                         ></div>
 
                         <div class="chat-wrapper">
-                            <div class="chat-container">
+                            <div class="chat-container" id="mobileAdventureChatPane">
+                                <button
+                                    type="button"
+                                    class="player-prompt-guidance-button"
+                                    id="playerPromptGuidanceButton"
+                                    aria-label="Edit player prompt guidance"
+                                    title="Player Prompt Guidance"
+                                    aria-haspopup="dialog"
+                                    aria-expanded="false"
+                                    aria-controls="playerPromptGuidanceModal"
+                                >
+                                    <img
+                                        class="player-prompt-guidance-icon"
+                                        src="/assets/material-icons/game-tab-icons/book.svg"
+                                        alt=""
+                                        aria-hidden="true"
+                                    >
+                                </button>
                                 <button
                                     type="button"
                                     class="terminal-output-button"
@@ -338,10 +380,12 @@
                                                     <div class="message-timestamp">{{ (message.timestamp or '') | replace('T', ' ') | replace('Z', '') }}</div>
                                                 </div>
                                             {% else %}
-                                                <div class="message {{ 'user-message' if message.role == 'user' else 'ai-message' }}" data-chat-bubble-type="{{ message.type or message.role or 'assistant' }}" data-chat-bubble-label="{{ message.type or ('Player' if message.role == 'user' else 'AI Game Master') }}">
+                                                <div class="message {{ 'user-message' if message.role == 'user' else 'ai-message' }}" data-chat-bubble-type="{{ message.type or message.role or 'assistant' }}" data-chat-bubble-label="{{ 'Player Prompt Guidance' if message.type == 'player-prompt-guidance' else (message.type or ('Player' if message.role == 'user' else 'AI Game Master')) }}">
                                                     <div class="message-sender">
                                                         {% if message.role == 'user' %}
                                                             👤 You
+                                                        {% elif message.type == 'player-prompt-guidance' %}
+                                                            📝 System
                                                         {% elif message.type == 'tracker-updates' %}
                                                             Tracker Updates
                                                         {% elif message.type == 'relationship-updates' %}
@@ -350,7 +394,7 @@
                                                             🤖 AI Game Master
                                                         {% endif %}
                                                     </div>
-                                                    <div>{{ message.content }}</div>
+                                                    <div{% if message.type == 'player-prompt-guidance' %} class="message-content"{% endif %}>{{ message.content }}</div>
                                                     <div class="message-timestamp">{{ message.timestamp | replace('T', ' ') | replace('Z', '') }}</div>
                                                 </div>
                                             {% endif %}
@@ -389,7 +433,7 @@
                                 data-adventure-resize-target="party"
                             ></div>
 
-                            <aside class="chat-sidebar" aria-label="Player and party overview">
+                            <aside class="chat-sidebar" id="mobileAdventurePlayerPartyPane" aria-label="Player and party overview">
                                 <section class="chat-player-section">
                                     <h3 class="chat-sidebar-heading" id="chatPlayerName">Player</h3>
                                     <div class="chat-player-card" id="chatPlayerCard">
@@ -1061,6 +1105,31 @@
         </div>
     </div>
 
+    <div id="playerPromptGuidanceModal" class="modal player-prompt-guidance-modal" role="dialog" aria-modal="true" aria-labelledby="playerPromptGuidanceTitle" aria-describedby="playerPromptGuidanceDescription" aria-hidden="true" hidden>
+        <div class="modal__dialog">
+            <header class="modal__header">
+                <h2 id="playerPromptGuidanceTitle">Player Prompt Guidance</h2>
+                <button type="button" class="modal__close" id="playerPromptGuidanceCloseBtn" aria-label="Close player prompt guidance">
+                    <span aria-hidden="true">X</span>
+                </button>
+            </header>
+            <form id="playerPromptGuidanceForm" class="player-prompt-guidance-modal__form" novalidate>
+                <div class="modal__body player-prompt-guidance-modal__body">
+                    <p id="playerPromptGuidanceDescription" class="modal__instruction">Add free-text instructions for the AI to consider throughout the game.</p>
+                    <label for="playerPromptGuidanceInput">Guidance</label>
+                    <textarea id="playerPromptGuidanceInput" class="player-prompt-guidance-modal__textarea" rows="10" placeholder="I would like dungeons to contain more hostile creatures." spellcheck="true"></textarea>
+                    <div id="playerPromptGuidanceStatus" class="player-prompt-guidance-modal__status" role="status" aria-live="polite" hidden></div>
+                </div>
+                <footer class="modal__footer">
+                    <div class="button-group">
+                        <button type="button" class="btn btn-secondary" id="playerPromptGuidanceCancelBtn">Cancel</button>
+                        <button type="submit" class="btn btn-primary" id="playerPromptGuidanceSaveBtn">Save</button>
+                    </div>
+                </footer>
+            </form>
+        </div>
+    </div>
+
     <div id="prefixHelpModal" class="modal prefix-help-modal" role="dialog" aria-modal="true" aria-hidden="true" hidden>
         <div class="modal__dialog">
             <header class="modal__header">
@@ -1137,6 +1206,26 @@
                 <div class="button-group">
                     <button type="button" class="btn btn-secondary" id="emptyActionConfirmCancelBtn">Cancel</button>
                     <button type="button" class="btn btn-primary" id="emptyActionConfirmSubmitBtn">Continue</button>
+                </div>
+            </footer>
+        </div>
+    </div>
+
+    <div id="questDecisionReminderModal" class="modal quest-decision-reminder-modal" role="dialog" aria-modal="true" aria-labelledby="questDecisionReminderTitle" aria-describedby="questDecisionReminderDescription" aria-hidden="true" hidden>
+        <div class="modal__dialog">
+            <header class="modal__header">
+                <h2 id="questDecisionReminderTitle">Quest decision required</h2>
+                <button type="button" class="modal__close" id="questDecisionReminderCloseBtn" aria-label="Close quest decision reminder">
+                    <span aria-hidden="true">X</span>
+                </button>
+            </header>
+            <div class="modal__body">
+                <p id="questDecisionReminderDescription" class="modal__instruction">Accept or decline the pending quest offer before taking your next turn. You can keep reading the turn, or jump back to the offer now.</p>
+            </div>
+            <footer class="modal__footer">
+                <div class="button-group">
+                    <button type="button" class="btn btn-secondary" id="questDecisionReminderKeepReadingBtn">Keep reading</button>
+                    <button type="button" class="btn btn-primary" id="questDecisionReminderReviewBtn">Review quest</button>
                 </div>
             </footer>
         </div>
@@ -1628,7 +1717,7 @@
             <div class="modal__body thing-container-modal__body">
                 <div class="thing-container-modal__toolbar">
                     <button type="button" class="npc-edit-add-btn" id="thingContainerBackBtn" hidden>Back</button>
-                    <span class="npc-edit-hint">Drag items between columns or shift-click to move a whole stack.</span>
+                    <span class="npc-edit-hint">Tap an item on mobile or Shift-click on desktop to move a whole stack.</span>
                 </div>
                 <div class="thing-container-modal__columns">
                     <section class="thing-list-panel thing-container-modal__panel" id="containerPlayerInventoryPanel">
@@ -3149,6 +3238,7 @@
     <script src="/vendor/json-viewer.js"></script>
     <script src="/js/turn-state-diff-drawer.js"></script>
     <script src="/js/chat.js"></script>
+    <script src="/js/mobile-adventure-nav.js"></script>
     <script defer src="/js/vehicle-overlay.js"></script>
     <script defer src="/js/map.js"></script>
     <script defer src="/js/world-map.js"></script>
@@ -3585,16 +3675,27 @@
 
             const groupedBadges = new Map();
             normalized.forEach(badge => {
-                if (!groupedBadges.has(badge.position)) {
-                    groupedBadges.set(badge.position, []);
+                const isEquippableBadge = badge.key === 'isEquippable';
+                const groupKey = isEquippableBadge
+                    ? `${badge.position}:isEquippable`
+                    : badge.position;
+                if (!groupedBadges.has(groupKey)) {
+                    groupedBadges.set(groupKey, {
+                        position: badge.position,
+                        entries: []
+                    });
                 }
-                groupedBadges.get(badge.position).push(badge);
+                groupedBadges.get(groupKey).entries.push(badge);
             });
 
-            for (const [position, entries] of groupedBadges.entries()) {
+            for (const { position, entries } of groupedBadges.values()) {
                 entries.sort((a, b) => a.order - b.order);
                 const overlay = document.createElement('div');
                 overlay.className = `entity-image-badges ${IMAGE_BADGE_POSITION_CLASSES[position]}`;
+                const isEquippableOverlay = entries.every(entry => entry.key === 'isEquippable');
+                if (isEquippableOverlay) {
+                    overlay.classList.add('entity-image-badges--equippable');
+                }
                 const hasInteractiveBadges = entries.some(entry =>
                     entry.key === 'isCraftingStation'
                     || entry.key === 'isProcessingStation'
@@ -3609,6 +3710,9 @@
                 entries.forEach(badge => {
                     const span = document.createElement('span');
                     span.className = 'entity-image-badge';
+                    if (badge.key === 'isEquippable') {
+                        span.classList.add('entity-image-badge--equippable');
+                    }
                     renderImageBadgeVisual(span, badge);
                     renderImageBadgeLockOverlay(span, badge);
                     if (badge.slotCountText) {
@@ -3906,6 +4010,13 @@
                 return Promise.resolve(null);
             }
 
+            if (typeof lightboxDataProvider === 'function') {
+                element.__airpgLightboxDataProvider = lightboxDataProvider;
+            }
+            const resolvedLightboxDataProvider = typeof lightboxDataProvider === 'function'
+                ? lightboxDataProvider
+                : element.__airpgLightboxDataProvider;
+
             const normalizedEntityType = normalizeImageEntityType(entityType);
 
             const safeAltText = escapeHtml(altText || '');
@@ -3967,7 +4078,7 @@
                     img.dataset.lightboxImage = img.src;
                     img.dataset.lightboxAlt = altText || safeAltText || 'Image';
                     img.dataset.lightboxCaption = altText || '';
-                    bindLightboxElement(img, lightboxDataProvider || undefined);
+                    bindLightboxElement(img, resolvedLightboxDataProvider || undefined);
                 }
                 applyBadgesOverlay();
                 syncRenderProgressOverlay();
@@ -4633,7 +4744,8 @@
                 imageId: entity.imageId || null,
                 altText: entity.name || altText,
                 placeholderIcon: '🎭',
-                placeholderClass: 'entity-icon-placeholder location-entity-placeholder'
+                placeholderClass: 'entity-icon-placeholder location-entity-placeholder',
+                lightboxDataProvider: createRichEntityLightboxDataProvider(entity, 'npc')
             });
 
             if (npcHealthBar) {
@@ -4656,6 +4768,12 @@
                     compact: true
                 }
             );
+
+            attachFactionEmblem(portrait, {
+                factionId: entity?.factionId,
+                variant: 'npc',
+                statusRowCount: npcNeedBars.childElementCount
+            });
 
             return { portrait, portraitImage, levelBadge, npcHealthBar, npcHealthFill, npcNeedBars };
         }
@@ -5354,6 +5472,51 @@
             return getLatestPlayerData() || data.player;
         }
 
+        function resolveAbilityDescriptionParts(ability = {}) {
+            const shortDescription = typeof ability?.shortDescription === 'string'
+                ? ability.shortDescription.trim()
+                : '';
+            const fullDescription = typeof ability?.description === 'string' && ability.description.trim()
+                ? ability.description.trim()
+                : (typeof ability?.text === 'string' ? ability.text.trim() : '');
+            const normalizeForComparison = value => value.replace(/\s+/g, ' ').trim();
+            return {
+                shortDescription,
+                fullDescription: shortDescription
+                    && normalizeForComparison(shortDescription) === normalizeForComparison(fullDescription)
+                    ? ''
+                    : fullDescription
+            };
+        }
+
+        function appendAbilityDescriptions(card, descriptionParts = {}) {
+            const shortDescription = typeof descriptionParts?.shortDescription === 'string'
+                ? descriptionParts.shortDescription.trim()
+                : '';
+            const fullDescription = typeof descriptionParts?.fullDescription === 'string'
+                ? descriptionParts.fullDescription.trim()
+                : '';
+            if (!shortDescription && !fullDescription) {
+                const fallback = document.createElement('p');
+                fallback.className = 'npc-view-ability-card-description npc-view-ability-card-description--full';
+                fallback.textContent = 'No description provided.';
+                card.appendChild(fallback);
+                return;
+            }
+            if (shortDescription) {
+                const summary = document.createElement('p');
+                summary.className = 'npc-view-ability-card-description npc-view-ability-card-description--short';
+                summary.textContent = shortDescription;
+                card.appendChild(summary);
+            }
+            if (fullDescription) {
+                const description = document.createElement('p');
+                description.className = 'npc-view-ability-card-description npc-view-ability-card-description--full';
+                description.textContent = fullDescription;
+                card.appendChild(description);
+            }
+        }
+
         function getPlayerAbilityEntriesForModal(player = {}) {
             return Array.isArray(player?.abilities)
                 ? alphabetizeAbilities(player.abilities)
@@ -5364,19 +5527,12 @@
                         const typeText = typeof ability?.type === 'string' && ability.type.trim()
                             ? ability.type.trim()
                             : 'Passive';
-                        const description = typeof ability?.shortDescription === 'string' && ability.shortDescription.trim()
-                            ? ability.shortDescription.trim()
-                            : (typeof ability?.description === 'string' && ability.description.trim()
-                                ? ability.description.trim()
-                                : (typeof ability?.text === 'string' && ability.text.trim()
-                                    ? ability.text.trim()
-                                    : 'No description provided.'));
                         return {
                             name,
                             typeText,
                             typeKey: normalizeAbilityTypeKey(typeText),
                             level: Number(ability?.level),
-                            description
+                            descriptionParts: resolveAbilityDescriptionParts(ability)
                         };
                     })
                     .filter(entry => entry.name)
@@ -5449,7 +5605,7 @@
 
             playerAbilitiesEmpty.setAttribute('hidden', '');
             playerAbilitiesGrid.removeAttribute('hidden');
-            entries.forEach(({ name: abilityName, typeKey, level, description: descriptionText }) => {
+            entries.forEach(({ name: abilityName, typeKey, level, descriptionParts }) => {
                 const card = document.createElement('button');
                 card.type = 'button';
                 card.className = 'npc-view-ability-card player-abilities-card';
@@ -5481,12 +5637,8 @@
                 header.appendChild(nameEl);
                 header.appendChild(meta);
 
-                const description = document.createElement('p');
-                description.className = 'npc-view-ability-card-description';
-                description.textContent = descriptionText;
-
                 card.appendChild(header);
-                card.appendChild(description);
+                appendAbilityDescriptions(card, descriptionParts);
                 card.addEventListener('click', () => {
                     insertTextIntoChatInputAtCursor(`[${abilityName}]`);
                 });
@@ -6089,7 +6241,6 @@
                     throw new Error(data?.error || `HTTP ${response.status}`);
                 }
                 if (data.player) {
-                    window.__AIRPG_GAME_LOADED__ = true;
                     updateChatPlayerPanel(data.player);
                     if (Array.isArray(data.player.partyMembers)) {
                         renderChatPartyPanel(data.player.partyMembers);
@@ -7099,12 +7250,12 @@
                 const tooltipText = normalizedDescription || 'No description provided.';
 
                 if (tooltipText) {
-                    card.setAttribute('aria-label', tooltipText);
+                    card.setAttribute('aria-label', `${member?.name || 'Unknown NPC'}. ${tooltipText}`);
                 }
 
                 if (tooltipController && typeof tooltipController.show === 'function') {
                     card.addEventListener('mouseenter', (event) => {
-                        tooltipController.show(tooltipText, event);
+                        tooltipController.show(formatNpcTooltipHtml(member), event, { allowHTML: true });
                     });
                     card.addEventListener('mousemove', (event) => {
                         tooltipController.move?.(event);
@@ -10389,6 +10540,331 @@
             return normalizeNumeric(numeric);
         };
 
+        const normalizeRichTooltipText = (value, fallback = '') => {
+            if (typeof value !== 'string') {
+                return fallback;
+            }
+            const normalized = value
+                .replace(/<[^>]+>/g, ' ')
+                .replace(/\s+/g, ' ')
+                .trim();
+            return normalized || fallback;
+        };
+
+        const formatRichTooltipLabel = (value, fallback = '') => {
+            const normalized = normalizeRichTooltipText(value, fallback);
+            if (!normalized) {
+                return '';
+            }
+            return normalized
+                .replace(/[_-]+/g, ' ')
+                .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+                .replace(/\b\w/g, letter => letter.toUpperCase());
+        };
+
+        const resolveRichTooltipFactionName = (factionId) => {
+            const normalizedId = typeof factionId === 'string' ? factionId.trim() : '';
+            if (!normalizedId || !(factionOptionsCache?.map instanceof Map)) {
+                return '';
+            }
+            const faction = factionOptionsCache.map.get(normalizedId);
+            return normalizeRichTooltipText(faction?.name);
+        };
+
+        const formatRichTooltipDetails = (items = []) => {
+            const rows = items
+                .filter(item => item && item.label && item.value !== null && item.value !== undefined && item.value !== '')
+                .map(item => `
+                    <div class="tooltip-thing-detail">
+                        <span class="tooltip-thing-detail-label">${escapeHtml(String(item.label))}</span>
+                        <span class="tooltip-thing-detail-value">${escapeHtml(String(item.value))}</span>
+                    </div>
+                `);
+            return rows.length
+                ? `<div class="tooltip-thing-details">${rows.join('')}</div>`
+                : '';
+        };
+
+        const formatRichTooltipEffects = (effects = [], title = 'Active Effects') => {
+            const rows = (Array.isArray(effects) ? effects : [])
+                .filter(effect => effect && typeof effect === 'object')
+                .map(effect => {
+                    const name = normalizeRichTooltipText(effect.name || effect.description);
+                    if (!name) {
+                        return '';
+                    }
+                    const duration = formatStatusEffectDuration(effect.duration);
+                    return `
+                        <li class="tooltip-thing-bonus-item">
+                            <span class="tooltip-thing-bonus-attr">${escapeHtml(name)}</span>
+                            ${duration ? `<span class="tooltip-thing-bonus-value">${escapeHtml(duration)}</span>` : ''}
+                        </li>
+                    `;
+                })
+                .filter(Boolean);
+            if (!rows.length) {
+                return '';
+            }
+            return `
+                <div class="tooltip-thing-bonuses tooltip-entity-effects">
+                    <div class="tooltip-thing-bonuses-title">${escapeHtml(title)}</div>
+                    <ul class="tooltip-thing-bonuses-list">${rows.join('')}</ul>
+                </div>
+            `;
+        };
+
+        const formatNpcTooltipHtml = (npc = {}) => {
+            const name = normalizeRichTooltipText(npc?.name, 'Unknown NPC');
+            const description = normalizeRichTooltipText(
+                npc?.description || npc?.shortDescription,
+                'No description provided.'
+            );
+            const metaParts = [npc?.class, npc?.race]
+                .map(value => normalizeRichTooltipText(value))
+                .filter(Boolean);
+            const level = Number(npc?.level);
+            const health = Number(npc?.health);
+            const maxHealth = Number(npc?.maxHealth);
+            const factionName = resolveRichTooltipFactionName(npc?.factionId);
+            const aliases = (Array.isArray(npc?.aliases) ? npc.aliases : [])
+                .map(alias => normalizeRichTooltipText(alias))
+                .filter(Boolean);
+            const detailItems = [];
+
+            if (Number.isFinite(health) || Number.isFinite(maxHealth)) {
+                detailItems.push({
+                    label: 'Health',
+                    value: `${Number.isFinite(health) ? Math.ceil(health) : '?'} / ${Number.isFinite(maxHealth) ? Math.ceil(maxHealth) : '?'}`
+                });
+            }
+            if (factionName) {
+                detailItems.push({ label: 'Faction', value: factionName });
+            }
+            if (npc?.isInPlayerParty === true) {
+                detailItems.push({ label: 'Party', value: 'Member' });
+            }
+            if (npc?.isNPC === true && npc?.isDead !== true) {
+                detailItems.push({
+                    label: 'Trade',
+                    value: npc?.willingToTrade === false || npc?.isHostileToPlayer === true
+                        ? 'Unavailable'
+                        : 'Available'
+                });
+            }
+            if (aliases.length) {
+                detailItems.push({ label: 'Aliases', value: aliases.join(', ') });
+            }
+            const resistances = normalizeRichTooltipText(npc?.resistances);
+            if (resistances) {
+                detailItems.push({ label: 'Resists', value: resistances });
+            }
+            const vulnerabilities = normalizeRichTooltipText(npc?.vulnerabilities);
+            if (vulnerabilities) {
+                detailItems.push({ label: 'Vulnerable', value: vulnerabilities });
+            }
+
+            const stateLabels = [];
+            if (npc?.isDead === true) {
+                stateLabels.push('Dead');
+            } else if (npc?.isHostileToPlayer === true) {
+                stateLabels.push('Hostile');
+            }
+            if (npc?.hiddenFromPlayer === true) {
+                stateLabels.push('Hidden');
+            }
+            const stateMarkup = stateLabels.length
+                ? `<div class="tooltip-entity-flags">${stateLabels.map(label => `<span>${escapeHtml(label)}</span>`).join('')}</div>`
+                : '';
+
+            const dispositions = npc?.dispositionsTowardPlayer && typeof npc.dispositionsTowardPlayer === 'object'
+                ? Object.entries(npc.dispositionsTowardPlayer)
+                    .filter(([, value]) => Number.isFinite(Number(value)))
+                : [];
+            const dispositionsMarkup = dispositions.length
+                ? `
+                    <div class="tooltip-thing-bonuses tooltip-entity-dispositions">
+                        <div class="tooltip-thing-bonuses-title">Toward You</div>
+                        <ul class="tooltip-thing-bonuses-list">
+                            ${dispositions.map(([key, value]) => {
+                                const numericValue = Number(value);
+                                const valueClass = numericValue > 0 ? 'positive' : (numericValue < 0 ? 'negative' : 'neutral');
+                                return `
+                                    <li class="tooltip-thing-bonus-item">
+                                        <span class="tooltip-thing-bonus-attr">${escapeHtml(formatRichTooltipLabel(key, key))}</span>
+                                        <span class="tooltip-thing-bonus-value ${valueClass}">${escapeHtml(numericValue > 0 ? `+${numericValue}` : String(numericValue))}</span>
+                                    </li>
+                                `;
+                            }).join('')}
+                        </ul>
+                    </div>
+                `
+                : '';
+
+            const stateClass = npc?.isDead === true
+                ? ' is-dead'
+                : (npc?.isHostileToPlayer === true ? ' is-hostile' : '');
+
+            return `
+                <div class="tooltip-thing tooltip-entity is-npc${stateClass}">
+                    <div class="tooltip-thing-name">${escapeHtml(name)}</div>
+                    <div class="tooltip-entity-heading-row">
+                        ${Number.isFinite(level) ? `<span class="tooltip-entity-level">Level ${escapeHtml(String(level))}</span>` : ''}
+                        ${stateMarkup}
+                    </div>
+                    ${metaParts.length ? `<div class="tooltip-thing-meta">${metaParts.map(value => escapeHtml(value)).join(' • ')}</div>` : ''}
+                    <div class="tooltip-thing-description">${escapeHtml(description)}</div>
+                    <hr>
+                    ${formatRichTooltipDetails(detailItems)}
+                    ${dispositionsMarkup}
+                    ${formatRichTooltipEffects(npc?.statusEffects)}
+                </div>
+            `.trim();
+        };
+
+        const formatLocationTooltipHtml = (location = {}) => {
+            const name = normalizeRichTooltipText(location?.name, 'Unknown Location');
+            const description = normalizeRichTooltipText(
+                location?.description || location?.shortDescription,
+                'No description available.'
+            );
+            const level = Number(location?.baseLevel);
+            const regionPath = (Array.isArray(location?.regionPath) ? location.regionPath : [])
+                .map(region => normalizeRichTooltipText(region?.name))
+                .filter(Boolean);
+            const regionLabel = regionPath.join(' › ')
+                || normalizeRichTooltipText(location?.regionName || location?.region?.name);
+            const exits = location?.exits && typeof location.exits === 'object'
+                ? Object.values(location.exits).filter(Boolean)
+                : [];
+            const visibleNpcs = (Array.isArray(location?.npcs) ? location.npcs : [])
+                .filter(npc => npc && (npc.hiddenFromPlayer !== true || npc.isDead === true));
+            const things = Array.isArray(location?.things) ? location.things.filter(Boolean) : [];
+            const itemCount = things.filter(thing => String(thing?.thingType || thing?.type || '').toLowerCase() !== 'scenery').length;
+            const sceneryCount = things.filter(thing => String(thing?.thingType || thing?.type || '').toLowerCase() === 'scenery').length;
+            const factionName = resolveRichTooltipFactionName(location?.controllingFactionId);
+            const detailItems = [
+                { label: 'Exits', value: exits.length },
+                { label: 'NPCs', value: visibleNpcs.length }
+            ];
+
+            if (things.length || !Array.isArray(location?.thingIds) || location.thingIds.length === 0) {
+                detailItems.push({ label: 'Items', value: itemCount });
+                detailItems.push({ label: 'Scenery', value: sceneryCount });
+            } else {
+                detailItems.push({ label: 'Objects', value: location.thingIds.filter(Boolean).length });
+            }
+            if (factionName) {
+                detailItems.push({ label: 'Controlled By', value: factionName });
+            }
+            if (location?.favorite === true) {
+                detailItems.push({ label: 'Favorite', value: 'Yes' });
+            }
+
+            const regionVehicleInfo = location?.region?.vehicleInfo && typeof location.region.vehicleInfo === 'object'
+                ? location.region.vehicleInfo
+                : null;
+            const locationVehicleInfo = location?.vehicleInfo && typeof location.vehicleInfo === 'object'
+                ? location.vehicleInfo
+                : null;
+            const vehicleInfo = regionVehicleInfo || locationVehicleInfo;
+            if (vehicleInfo?.isUnderway === true) {
+                const destination = normalizeRichTooltipText(vehicleInfo.displayDestination || vehicleInfo.currentDestination);
+                if (destination) {
+                    detailItems.push({ label: 'Destination', value: destination });
+                }
+                const arrival = normalizeRichTooltipText(vehicleInfo.timeToDestination);
+                if (arrival) {
+                    detailItems.push({ label: 'Arrival', value: arrival });
+                }
+            } else {
+                const vehicleLocation = normalizeRichTooltipText(location?.vehicleCurrentLocationName);
+                if (vehicleLocation) {
+                    detailItems.push({ label: 'Vehicle At', value: vehicleLocation });
+                }
+            }
+
+            return `
+                <div class="tooltip-thing tooltip-entity is-location">
+                    <div class="tooltip-thing-name">${escapeHtml(name)}</div>
+                    ${Number.isFinite(level) ? `<div class="tooltip-entity-level">Level ${escapeHtml(String(level))}</div>` : ''}
+                    ${regionLabel ? `<div class="tooltip-thing-meta">${escapeHtml(regionLabel)}</div>` : ''}
+                    <div class="tooltip-thing-description">${escapeHtml(description)}</div>
+                    <hr>
+                    ${formatRichTooltipDetails(detailItems)}
+                    ${formatRichTooltipEffects(location?.statusEffects, 'Location Effects')}
+                </div>
+            `.trim();
+        };
+
+        const createRichEntityLightboxDataProvider = (entity, entityType) => {
+            if (entityType !== 'npc' && entityType !== 'location') {
+                throw new Error(`Unsupported rich entity lightbox type: ${entityType}`);
+            }
+
+            return (element) => {
+                const formatter = entityType === 'npc'
+                    ? formatNpcTooltipHtml
+                    : formatLocationTooltipHtml;
+                const detailsHtml = formatter(entity);
+                if (typeof detailsHtml !== 'string' || !detailsHtml.trim()) {
+                    throw new Error(`Unable to format ${entityType} lightbox details.`);
+                }
+
+                const imageElement = element instanceof HTMLImageElement
+                    ? element
+                    : element?.querySelector?.('img');
+                return {
+                    src: imageElement?.currentSrc || imageElement?.src || '',
+                    alt: normalizeRichTooltipText(entity?.name, entityType === 'npc' ? 'NPC' : 'Location'),
+                    detailsHtml
+                };
+            };
+        };
+
+        const bindLocationFloatingTooltip = (host, location) => {
+            if (!(host instanceof HTMLElement)) {
+                return;
+            }
+            host.__airpgLocationTooltipData = location && typeof location === 'object' ? location : {};
+            if (host.dataset.locationFloatingTooltipBound === 'true') {
+                return;
+            }
+            host.dataset.locationFloatingTooltipBound = 'true';
+
+            const showTooltip = (event) => {
+                if (shouldSuppressContextTooltips()) {
+                    window.floatingTooltipController?.hide?.();
+                    return;
+                }
+                window.hidePartyTooltip?.();
+                window.floatingTooltipController?.show?.(
+                    formatLocationTooltipHtml(host.__airpgLocationTooltipData || {}),
+                    event,
+                    { allowHTML: true }
+                );
+            };
+
+            host.addEventListener('mouseenter', showTooltip);
+            host.addEventListener('mousemove', (event) => {
+                if (event.target instanceof Element && event.target.closest('.faction-emblem')) {
+                    return;
+                }
+                const floatingTooltip = document.getElementById('inventoryTooltip');
+                if (!floatingTooltip || floatingTooltip.hasAttribute('hidden')) {
+                    showTooltip(event);
+                    return;
+                }
+                window.floatingTooltipController?.move?.(event);
+            });
+            host.addEventListener('mouseleave', () => {
+                window.floatingTooltipController?.hide?.();
+            });
+        };
+
+        window.formatNpcTooltipHtml = formatNpcTooltipHtml;
+        window.formatLocationTooltipHtml = formatLocationTooltipHtml;
+        window.createRichEntityLightboxDataProvider = createRichEntityLightboxDataProvider;
+
         const formatThingTooltip = (thing = {}) => {
             const normalizedType = normalizeThingType(thing);
 
@@ -10442,6 +10918,15 @@
                 : (Number.isFinite(Number(thing?.metadata?.level)) ? Number(thing.metadata.level) : null);
             const levelHtml = Number.isFinite(resolvedLevel)
                 ? `<div class="tooltip-thing-level">Level ${escapeHtml(String(resolvedLevel))}</div>`
+                : '';
+            const equipSlotType = normalizedType !== 'scenery' && isEquippableThing(thing)
+                ? resolveThingSlotType(thing)
+                : '';
+            const equipSlotHtml = equipSlotType
+                ? `<div class="tooltip-thing-equip-slot">Equip slot: ${escapeHtml(formatSlotTypeLabel(equipSlotType))}</div>`
+                : '';
+            const levelAndSlotHtml = levelHtml || equipSlotHtml
+                ? `<div class="tooltip-thing-level-slot-row">${levelHtml}${equipSlotHtml}</div>`
                 : '';
             const metaHtml = metaParts.length
                 ? `<div class="tooltip-thing-meta">${metaParts.join(' • ')}</div>`
@@ -10585,7 +11070,7 @@
             return `
                 <div class="tooltip-thing ${cardClass}">
                     ${nameHtml}
-                    ${levelHtml}
+                    ${levelAndSlotHtml}
                     ${metaHtml}
                     ${baseDamageHtml}
                     ${descriptionHtml}
@@ -10780,7 +11265,7 @@
         let locationEditRelocationOptions = [];
         let locationEditRelocationLocationId = null;
         let regionEditVehicleInfoSnapshot = null;
-        let factionOptionsCache = { list: [], map: new Map(), loadedAt: 0 };
+        let factionOptionsCache = { list: [], map: new Map(), playerStandings: {}, loadedAt: 0 };
         let factionOptionsPromise = null;
         const addNpcModal = document.getElementById('addNpcModal');
         const addNpcForm = document.getElementById('addNpcForm');
@@ -11014,6 +11499,10 @@
         const locationItemsSortEl = document.getElementById('locationItemsSort');
         const locationItemsSortToggleEl = document.getElementById('locationItemsSortToggle');
         const locationItemsCombineBtn = document.getElementById('locationItemsCombineBtn');
+        const locationItemMobileActionToggle = document.getElementById('locationItemMobileActionToggle');
+        const locationItemInspectModeButton = document.getElementById('locationItemInspectModeButton');
+        const locationItemPickupModeButton = document.getElementById('locationItemPickupModeButton');
+        const locationItemMobileActionStatus = document.getElementById('locationItemMobileActionStatus');
         const thingStackCombinerModal = document.getElementById('thingStackCombinerModal');
         const thingStackCombinerTitle = document.getElementById('thingStackCombinerTitle');
         const thingStackCombinerProgress = document.getElementById('thingStackCombinerProgress');
@@ -11837,8 +12326,16 @@
             return Boolean(event && (event.pointerType === 'touch' || event.pointerType === 'pen'));
         }
 
+        function isMobileTooltipContext() {
+            return isTouchOrCoarsePointerContext() || window.matchMedia('(max-width: 768px)').matches;
+        }
+
+        function isNarrowMobileViewport() {
+            return window.matchMedia('(max-width: 768px)').matches;
+        }
+
         function shouldSuppressContextTooltips() {
-            if (!isTouchOrCoarsePointerContext()) {
+            if (!isMobileTooltipContext()) {
                 return false;
             }
 
@@ -11850,7 +12347,7 @@
         }
 
         function suppressContextTooltipsForTouch(durationMs = TOUCH_TOOLTIP_SUPPRESS_MS) {
-            if (!isTouchOrCoarsePointerContext()) {
+            if (!isMobileTooltipContext()) {
                 return;
             }
 
@@ -11860,6 +12357,9 @@
             window.floatingTooltipController?.hide?.();
             window.hidePartyTooltip?.();
         }
+
+        // Capture taps even when a control stops propagation, without consuming its action.
+        document.addEventListener('click', () => suppressContextTooltipsForTouch(), { capture: true, passive: true });
 
         function wireContextMenuButtonTooltipSuppression(button) {
             if (!(button instanceof HTMLElement) || button.dataset.touchTooltipSuppressWired === 'true') {
@@ -13016,6 +13516,30 @@
                     lockIconUrl: definition.key === 'isContainer' ? '/assets/material-icons/misc/lock.svg' : ''
                 }));
             return builtInBadges.concat(getModThingImageBadges(thing));
+        }
+
+        const EQUIPPABLE_ITEM_IMAGE_BADGE = Object.freeze({
+            key: 'isEquippable',
+            label: 'Equippable',
+            imageUrl: '/assets/material-icons/misc/sword_shield.svg',
+            renderMode: 'image',
+            position: 'top-right',
+            order: 0
+        });
+
+        function isEquippableItemThing(thing) {
+            const normalizedThingType = typeof thing?.thingType === 'string'
+                ? thing.thingType.trim().toLowerCase()
+                : '';
+            return normalizedThingType === 'item' && getThingSlotInfo(thing).canModifyEquipment;
+        }
+
+        function getThingCollectionImageBadges(thing, { viewMode = 'classic' } = {}) {
+            const badges = getThingPropertyBadges(thing);
+            if (normalizeThingListViewMode(viewMode) === 'table' || !isEquippableItemThing(thing)) {
+                return badges;
+            }
+            return badges.concat(EQUIPPABLE_ITEM_IMAGE_BADGE);
         }
 
         function getModThingContextActions(thing, options = {}) {
@@ -14994,7 +15518,8 @@
             };
 
             const startPointerTouchDrag = (event) => {
-                if (!isTouchOrCoarsePointerContext()
+                if (!isEligible()
+                    || !isTouchOrCoarsePointerContext()
                     || !isTouchLikePointerEvent(event)
                     || event.isPrimary === false
                     || event.button !== 0
@@ -15024,6 +15549,10 @@
             const updatePointerTouchDrag = (event) => {
                 const state = getState();
                 if (!state || state.card !== card || state.inputType !== 'pointer' || state.pointerId !== event.pointerId) {
+                    return;
+                }
+                if (!isEligible()) {
+                    cancelDrag({ suppressClick: state.dragStarted });
                     return;
                 }
                 const dx = event.clientX - state.startX;
@@ -15076,7 +15605,7 @@
             card.addEventListener('lostpointercapture', cancelPointerTouchDrag);
 
             card.addEventListener('touchstart', (event) => {
-                if (!isTouchOrCoarsePointerContext() || event.touches.length !== 1 || getState() || isOtherDragActive()) {
+                if (!isEligible() || !isTouchOrCoarsePointerContext() || event.touches.length !== 1 || getState() || isOtherDragActive()) {
                     return;
                 }
                 if (isTouchDragInteractiveTarget(event.target)) {
@@ -15094,6 +15623,10 @@
             card.addEventListener('touchmove', (event) => {
                 const state = getState();
                 if (!state || state.card !== card || state.inputType !== 'touch') {
+                    return;
+                }
+                if (!isEligible()) {
+                    cancelDrag({ suppressClick: state.dragStarted });
                     return;
                 }
                 const touch = getTouchByIdentifier(event.changedTouches, state.identifier)
@@ -15167,7 +15700,9 @@
         } = {}) {
             wireTouchDragGestureCard(card, {
                 wiredDatasetKey: 'modalTouchDragWired',
-                isEligible: () => Boolean(thing?.id) && modal instanceof HTMLElement,
+                isEligible: () => Boolean(thing?.id)
+                    && modal instanceof HTMLElement
+                    && !isNarrowMobileViewport(),
                 getState: () => modalInventoryTouchDragState,
                 setState: (nextState) => { modalInventoryTouchDragState = nextState; },
                 buildStateFields: () => ({
@@ -15219,6 +15754,31 @@
             event.dataTransfer.setData('text/plain', thing.id);
             return true;
         }
+
+        const modalItemDragSelector = [
+            '#npcInventoryModal .thing-collection-entry',
+            '#thingContainerModal .thing-collection-entry',
+            '#barterModal .thing-collection-entry',
+            '#craftingModal .thing-collection-entry',
+            '#moduleWorkbenchModal .thing-collection-entry'
+        ].join(', ');
+
+        document.addEventListener('dragstart', (event) => {
+            if (!isNarrowMobileViewport() || !(event.target instanceof Element)) {
+                return;
+            }
+            if (!event.target.closest(modalItemDragSelector)) {
+                return;
+            }
+            event.preventDefault();
+            event.stopImmediatePropagation();
+            cancelModalInventoryTouchDrag();
+            modalInventoryDragState = null;
+            currentThingContainerDragSource = null;
+            currentBarterDragState = null;
+            clearThingContainerTouchDropHighlights();
+            clearBarterDropHighlights();
+        }, true);
 
         async function dropModalInventoryDragAtCurrentLocation(event) {
             if (!modalInventoryDragState) {
@@ -15380,6 +15940,9 @@
                 factionOptionsCache = {
                     list,
                     map,
+                    playerStandings: data.playerStandings && typeof data.playerStandings === 'object'
+                        ? data.playerStandings
+                        : {},
                     loadedAt: Date.now()
                 };
                 return factionOptionsCache;
@@ -15390,6 +15953,173 @@
             } finally {
                 factionOptionsPromise = null;
             }
+        }
+
+        function formatFactionEmblemTooltipHtml(faction, playerStandings = {}) {
+            const name = typeof faction?.name === 'string' && faction.name.trim()
+                ? faction.name.trim()
+                : 'Unknown faction';
+            const rawDescription = faction?.shortDescription || faction?.description || '';
+            const description = typeof rawDescription === 'string'
+                ? rawDescription.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim()
+                : '';
+            const home = typeof faction?.homeRegionName === 'string'
+                ? faction.homeRegionName.trim()
+                : '';
+            const goals = normalizeFactionTextList(faction?.goals).slice(0, 3);
+            const rawStanding = Number(playerStandings?.[faction?.id]);
+            const standing = Number.isFinite(rawStanding) ? Math.round(rawStanding) : 0;
+            const standingTier = resolveFactionStandingTier(standing, faction?.reputationTiers || []);
+            const tierLabel = typeof standingTier?.label === 'string' && standingTier.label.trim()
+                ? standingTier.label.trim()
+                : 'Unranked';
+            const imageId = typeof faction?.imageId === 'string' ? faction.imageId.trim() : '';
+            const details = [];
+
+            if (home) {
+                details.push(`
+                    <div class="faction-emblem-tooltip__detail">
+                        <span>Home</span>
+                        <strong>${escapeHtml(home)}</strong>
+                    </div>
+                `);
+            }
+            details.push(`
+                <div class="faction-emblem-tooltip__detail">
+                    <span>Your standing</span>
+                    <strong>${escapeHtml(`${tierLabel} (${formatSignedValue(standing)})`)}</strong>
+                </div>
+            `);
+
+            const goalsMarkup = goals.length
+                ? `
+                    <div class="faction-emblem-tooltip__goals">
+                        <span>Goals</span>
+                        <ul>${goals.map(goal => `<li>${escapeHtml(goal)}</li>`).join('')}</ul>
+                    </div>
+                `
+                : '';
+            const emblemMarkup = imageId
+                ? `<img src="/api/images/${encodeURIComponent(imageId)}/file" alt="">`
+                : '<span class="faction-emblem-tooltip__placeholder" aria-hidden="true">◆</span>';
+
+            return `
+                <div class="faction-emblem-tooltip">
+                    <div class="faction-emblem-tooltip__header">
+                        <span class="faction-emblem-tooltip__emblem" aria-hidden="true">${emblemMarkup}</span>
+                        <strong class="faction-emblem-tooltip__name">${escapeHtml(name)}</strong>
+                        ${description ? `<p>${escapeHtml(description)}</p>` : ''}
+                    </div>
+                    <div class="faction-emblem-tooltip__details">${details.join('')}</div>
+                    ${goalsMarkup}
+                </div>
+            `.trim();
+        }
+
+        function attachFactionEmblem(host, { factionId, variant = 'npc', statusRowCount = 0 } = {}) {
+            if (!(host instanceof HTMLElement)) {
+                return null;
+            }
+
+            host.querySelector(':scope > .faction-emblem')?.remove();
+            const normalizedFactionId = normalizeFactionId(factionId);
+            if (!normalizedFactionId) {
+                return null;
+            }
+
+            const emblem = document.createElement('button');
+            emblem.type = 'button';
+            emblem.className = `faction-emblem faction-emblem--${variant}`;
+            emblem.dataset.factionId = normalizedFactionId;
+            emblem.setAttribute('aria-label', 'Faction information');
+            emblem.style.setProperty(
+                '--faction-emblem-status-offset',
+                `${8 + (Math.max(0, Number(statusRowCount) || 0) * 7)}px`
+            );
+            emblem.innerHTML = '<span class="faction-emblem__placeholder" aria-hidden="true">◆</span>';
+            host.appendChild(emblem);
+
+            const setLocationHoverState = (active) => {
+                if (variant === 'location') {
+                    host.classList.toggle('is-faction-emblem-hovered', Boolean(active));
+                }
+            };
+
+            const hideTooltip = () => {
+                setLocationHoverState(false);
+                window.floatingTooltipController?.hide?.();
+            };
+
+            void loadFactionOptions().then(directory => {
+                if (!emblem.isConnected || !host.contains(emblem)) {
+                    return;
+                }
+                const faction = directory?.map instanceof Map
+                    ? directory.map.get(normalizedFactionId)
+                    : null;
+                if (!faction) {
+                    throw new Error(`Faction ${normalizedFactionId} is not available.`);
+                }
+
+                const factionName = typeof faction.name === 'string' && faction.name.trim()
+                    ? faction.name.trim()
+                    : 'Faction';
+                emblem.setAttribute('aria-label', `${factionName} faction information`);
+
+                const showTooltip = (event) => {
+                    setLocationHoverState(true);
+                    window.hidePartyTooltip?.();
+                    window.floatingTooltipController?.show?.(
+                        formatFactionEmblemTooltipHtml(faction, directory.playerStandings),
+                        event,
+                        { allowHTML: true }
+                    );
+                };
+
+                emblem.addEventListener('mouseenter', showTooltip);
+                emblem.addEventListener('mousemove', (event) => {
+                    event.stopPropagation();
+                    window.floatingTooltipController?.move?.(event);
+                });
+                emblem.addEventListener('mouseleave', hideTooltip);
+                emblem.addEventListener('focus', () => {
+                    const rect = emblem.getBoundingClientRect();
+                    showTooltip({ clientX: rect.right, clientY: rect.top });
+                });
+                emblem.addEventListener('blur', hideTooltip);
+                emblem.addEventListener('mousedown', event => event.stopPropagation());
+                emblem.addEventListener('click', event => event.stopPropagation());
+                emblem.addEventListener('contextmenu', event => event.stopPropagation());
+                emblem.addEventListener('keydown', event => {
+                    if (event.key === 'Escape') {
+                        event.stopPropagation();
+                        hideTooltip();
+                        emblem.blur();
+                    }
+                });
+
+                return renderEntityImage({
+                    element: emblem,
+                    entityType: 'faction',
+                    entityId: normalizedFactionId,
+                    imageId: faction.imageId || null,
+                    altText: `${factionName} emblem`,
+                    placeholderIcon: '◆',
+                    placeholderClass: 'faction-emblem__placeholder',
+                    enableLightbox: false
+                }).then(result => {
+                    if (result?.imageId) {
+                        faction.imageId = result.imageId;
+                    }
+                    return result;
+                });
+            }).catch(error => {
+                console.warn(`Failed to display faction emblem ${normalizedFactionId}:`, error?.message || error);
+                emblem.classList.add('is-error');
+                emblem.setAttribute('aria-label', 'Faction emblem unavailable');
+            });
+
+            return emblem;
         }
 
         function resetFactionSelect(selectEl, noneLabel = 'None') {
@@ -23900,6 +24630,7 @@
             const tableConfig = normalizeThingTableConfig(options.tableConfig);
             const thingLightboxDataProvider = createThingLightboxDataProvider(thing, options.tooltipOptions || {});
             const equipped = Boolean(thing?.isEquipped || thing?.equippedSlot);
+            const equippableItem = isEquippableItemThing(thing);
 
             if (resolvedViewMode === 'table') {
                 const row = document.createElement('tr');
@@ -23910,7 +24641,7 @@
                         ? 'is-scenery'
                         : 'is-item',
                     ...extraClasses
-                ].join(' ');
+                ].filter(Boolean).join(' ');
 
                 if (options.focusable) {
                     row.tabIndex = 0;
@@ -24039,8 +24770,9 @@
                     normalizedThingType === 'scenery'
                         ? 'is-scenery'
                         : 'is-item',
+                    equippableItem ? 'is-equippable' : '',
                     ...extraClasses
-                ].join(' ');
+                ].filter(Boolean).join(' ');
 
                 if (options.focusable) {
                     tile.tabIndex = 0;
@@ -24067,7 +24799,7 @@
                     placeholderIcon: normalizedThingType === 'scenery' ? '🏞️' : '🎁',
                     placeholderClass: 'entity-icon-placeholder location-entity-placeholder',
                     lightboxDataProvider: thingLightboxDataProvider,
-                    badges: getThingPropertyBadges(thing),
+                    badges: getThingCollectionImageBadges(thing, { viewMode: resolvedViewMode }),
                     countBadgeText: getThingCountBadgeText(thing)
                 });
 
@@ -24106,8 +24838,9 @@
                 normalizedThingType === 'scenery'
                     ? 'entity-card--scenery is-scenery'
                     : 'entity-card--item is-item',
+                equippableItem ? 'is-equippable' : '',
                 ...extraClasses
-            ].join(' ');
+            ].filter(Boolean).join(' ');
 
             if (options.focusable) {
                 card.tabIndex = 0;
@@ -24133,7 +24866,7 @@
                 placeholderIcon: normalizedThingType === 'scenery' ? '🏞️' : '🎁',
                 placeholderClass: 'entity-icon-placeholder location-entity-placeholder',
                 lightboxDataProvider: thingLightboxDataProvider,
-                badges: getThingPropertyBadges(thing),
+                badges: getThingCollectionImageBadges(thing, { viewMode: resolvedViewMode }),
                 countBadgeText: getThingCountBadgeText(thing)
             });
 
@@ -24241,6 +24974,8 @@
                 ));
 
             if (countEl) {
+                countEl.dataset.visibleCount = String(filteredItems.length);
+                countEl.dataset.totalCount = String(sortedItems.length);
                 countEl.textContent = formatThingListCountText({
                     filteredCount: filteredItems.length,
                     totalCount: sortedItems.length,
@@ -26093,7 +26828,8 @@
                     }
                 });
                 card.addEventListener('click', async (event) => {
-                    if (!event.shiftKey || event.button !== 0) {
+                    const mobileTapTransfer = isMobileTooltipContext();
+                    if ((!mobileTapTransfer && !event.shiftKey) || event.button !== 0) {
                         return;
                     }
                     if (event.target?.closest?.('.entity-context-menu-button, .thing-card-menu-button, button, a, input, select, textarea')) {
@@ -28505,20 +29241,8 @@
                 header.appendChild(name);
                 header.appendChild(meta);
 
-                const description = document.createElement('p');
-                description.className = 'npc-view-ability-card-description';
-                description.textContent = (
-                    typeof ability?.shortDescription === 'string' && ability.shortDescription.trim()
-                        ? ability.shortDescription.trim()
-                        : (typeof ability?.description === 'string' && ability.description.trim()
-                            ? ability.description.trim()
-                            : (typeof ability?.text === 'string' && ability.text.trim()
-                                ? ability.text.trim()
-                                : 'No description provided.'))
-                );
-
                 card.appendChild(header);
-                card.appendChild(description);
+                appendAbilityDescriptions(card, resolveAbilityDescriptionParts(ability));
                 container.appendChild(card);
             });
         }
@@ -36145,6 +36869,40 @@
 
         let draggedLocationThing = null;
         const locationThingDropInFlightIds = new Set();
+        const LOCATION_ITEM_MOBILE_ACTION_MODES = new Set(['inspect', 'pickup']);
+        let locationItemMobileActionMode = 'inspect';
+
+        function setLocationItemMobileActionMode(mode) {
+            if (!LOCATION_ITEM_MOBILE_ACTION_MODES.has(mode)) {
+                throw new Error(`Unsupported mobile location-item action mode "${mode}".`);
+            }
+
+            locationItemMobileActionMode = mode;
+            if (locationItemsPanelEl) {
+                locationItemsPanelEl.dataset.mobileItemActionMode = mode;
+            }
+            [locationItemInspectModeButton, locationItemPickupModeButton].filter(Boolean).forEach(button => {
+                const isActive = button.dataset.locationItemActionMode === mode;
+                button.classList.toggle('is-active', isActive);
+                button.setAttribute('aria-pressed', isActive ? 'true' : 'false');
+            });
+            if (locationItemMobileActionStatus) {
+                locationItemMobileActionStatus.textContent = mode === 'pickup'
+                    ? 'Tapping an item picks it up.'
+                    : 'Tapping an item inspects it.';
+            }
+        }
+
+        if (locationItemMobileActionToggle) {
+            locationItemMobileActionToggle.addEventListener('click', (event) => {
+                const button = event.target.closest('[data-location-item-action-mode]');
+                if (!(button instanceof HTMLButtonElement) || !locationItemMobileActionToggle.contains(button)) {
+                    return;
+                }
+                setLocationItemMobileActionMode(button.dataset.locationItemActionMode || '');
+            });
+        }
+        setLocationItemMobileActionMode('inspect');
 
         const resetThingDragState = (expectedThingId = null) => {
             if (!expectedThingId || draggedLocationThing?.id === expectedThingId) {
@@ -36495,6 +37253,49 @@
             });
         }
 
+        function wireMobileLocationItemAction(card, thing, { locationId = null } = {}) {
+            if (!(card instanceof HTMLElement) || !thing?.id) {
+                return;
+            }
+
+            card.addEventListener('click', async (event) => {
+                if (!isNarrowMobileViewport() || locationItemMobileActionMode !== 'pickup') {
+                    return;
+                }
+                if (event.target.closest('.entity-context-menu-button, .thing-card-menu-button, .entity-image-badge--action, .thing-action-icon, button, a, input, select, textarea')) {
+                    return;
+                }
+
+                event.preventDefault();
+                event.stopImmediatePropagation();
+                suppressContextTooltipsForTouch();
+
+                const playerId = typeof window.currentPlayerData?.id === 'string'
+                    ? window.currentPlayerData.id.trim()
+                    : '';
+                if (!playerId) {
+                    window.alert('The active player is unavailable, so this item cannot be picked up.');
+                    return;
+                }
+
+                card.classList.add('is-picking-up');
+                await handleGiveThingToOwner({
+                    ownerId: playerId,
+                    ownerType: 'player',
+                    dragState: {
+                        id: thing.id,
+                        locationId,
+                        thingType: normalizeThingTypeForDrag(thing.thingType),
+                        element: card,
+                        thing
+                    }
+                });
+                if (card.isConnected) {
+                    card.classList.remove('is-picking-up');
+                }
+            }, true);
+        }
+
         window.registerInventoryDropTarget = registerInventoryDropTarget;
 
         function renderLocationThingCollections(location, things = []) {
@@ -36551,6 +37352,9 @@
                     card.addEventListener('dragend', () => {
                         card.classList.remove('is-dragging');
                     });
+                    if (normalizeThingTypeForDrag(thing.thingType) === 'item') {
+                        wireMobileLocationItemAction(card, thing, { locationId: safeLocation?.id || null });
+                    }
                     registerThingModuleDropTarget(card, thing, { context: 'location', locationId: safeLocation?.id || null });
                     registerThingContainerDropTarget(card, thing, { locationId: safeLocation?.id || null });
                 }
@@ -36996,8 +37800,7 @@
                         imageId: location.imageId || null
                     });
 
-                    const locationDescriptionHtml = location.description || 'No description available.';
-                    const locationDescriptionText = locationDescriptionHtml
+                    const locationDescriptionText = (location.description || 'No description available.')
                         .replace(/<[^>]+>/g, ' ')
                         .replace(/\s+/g, ' ')
                         .trim() || 'No description available.';
@@ -37052,9 +37855,12 @@
                         clearVehicleLocationPip();
                     }
                     if (locationTooltip) {
-                        locationTooltip.innerHTML = locationDescriptionHtml;
+                        locationTooltip.innerHTML = formatLocationTooltipHtml(location);
                         locationTooltip.setAttribute('hidden', '');
                         locationTooltip.setAttribute('aria-hidden', 'true');
+                    }
+                    if (locationImage) {
+                        bindLocationFloatingTooltip(locationImage, location);
                     }
                     if (locationHint) {
                         const awaitingImage = !location.imageId;
@@ -37095,10 +37901,14 @@
                             ? '<div class="location-placeholder"><div class="spinner" role="status" aria-hidden="true"></div></div>'
                             : '<div class="location-placeholder"></div>';
 
-                        const finalizeTooltip = () => {
+                        const finalizeLocationImageOverlays = () => {
                             if (existingTooltip && !existingTooltip.isConnected) {
                                 locationImage.appendChild(existingTooltip);
                             }
+                            attachFactionEmblem(locationImage, {
+                                factionId: location.controllingFactionId,
+                                variant: 'location'
+                            });
                         };
 
                         const renderPromise = renderEntityImage({
@@ -37112,14 +37922,15 @@
                             placeholderIcon: '🏞️',
                             placeholderClass: 'location-placeholder',
                             placeholderMarkup,
-                            enableLightbox: true
+                            enableLightbox: true,
+                            lightboxDataProvider: createRichEntityLightboxDataProvider(location, 'location')
                         });
 
-                        finalizeTooltip();
+                        finalizeLocationImageOverlays();
 
                         if (renderPromise && typeof renderPromise.then === 'function') {
                             renderPromise.then(result => {
-                                finalizeTooltip();
+                                finalizeLocationImageOverlays();
                                 const resolvedBaseImageId = result?.imageId || location.imageId || null;
                                 if (resolvedBaseImageId && lastRenderedLocation?.id === location.id) {
                                     lastRenderedLocation.imageId = resolvedBaseImageId;
@@ -37142,7 +37953,7 @@
                                     void requestLocationVariantForDisplay(location, resolvedBaseImageId, location.name || 'Location image');
                                 }
                             }).catch(() => {
-                                finalizeTooltip();
+                                finalizeLocationImageOverlays();
                                 if (locationHint) {
                                     locationHint.textContent = 'Image unavailable.';
                                 }
@@ -37165,21 +37976,12 @@
                             locationImage.removeAttribute('aria-label');
                         }
 
-                        if (tooltipController && typeof tooltipController.show === 'function') {
-                            locationImage.onmouseenter = (event) => {
-                                tooltipController.show(locationDescriptionHtml, event, { allowHTML: true });
-                            };
-                            locationImage.onmousemove = (event) => {
-                                tooltipController.move(event);
-                            };
-                            locationImage.onmouseleave = () => {
-                                tooltipController.hide();
-                            };
-                        } else {
-                            locationImage.onmouseenter = null;
-                            locationImage.onmousemove = null;
-                            locationImage.onmouseleave = null;
-                        }
+                        // Rich location hover behavior is installed once by
+                        // bindLocationFloatingTooltip(). Clear the legacy property
+                        // handlers so they cannot replace it with description-only HTML.
+                        locationImage.onmouseenter = null;
+                        locationImage.onmousemove = null;
+                        locationImage.onmouseleave = null;
                     }
 
                     if (newExitButton) {
@@ -37457,11 +38259,11 @@
                                     .replace(/\s+/g, ' ')
                                     .trim() || 'No description provided.';
                                 if (npcDescriptionText) {
-                                    card.setAttribute('aria-label', npcDescriptionText);
+                                    card.setAttribute('aria-label', `${npc?.name || 'Unknown NPC'}. ${npcDescriptionText}`);
                                 }
                                 if (tooltipController && typeof tooltipController.show === 'function') {
                                     card.addEventListener('mouseenter', (event) => {
-                                        tooltipController.show(npcDescriptionText, event);
+                                        tooltipController.show(formatNpcTooltipHtml(npc), event, { allowHTML: true });
                                     });
                                     card.addEventListener('mousemove', (event) => {
                                         tooltipController.move(event);
@@ -37563,6 +38365,8 @@
                         locationSceneryEmpty.style.display = 'block';
                     }
                     if (locationSceneryCount) {
+                        locationSceneryCount.dataset.visibleCount = '0';
+                        locationSceneryCount.dataset.totalCount = '0';
                         locationSceneryCount.textContent = '0 objects';
                     }
                     if (locationItems) {
@@ -37575,6 +38379,8 @@
                         locationItemsEmpty.style.display = 'block';
                     }
                     if (locationItemsCount) {
+                        locationItemsCount.dataset.visibleCount = '0';
+                        locationItemsCount.dataset.totalCount = '0';
                         locationItemsCount.textContent = '0 items';
                     }
                     currentLocationThingCollections = {
@@ -37636,7 +38442,7 @@
                     window.AIRPG_CHAT.syncBodyModalOpenClass();
                     return;
                 }
-                const hasOpenModal = Boolean(document.querySelector('.modal[aria-hidden="false"], .chat-edit-modal.is-open, .quest-confirmation.is-open, .npc-selection-modal'));
+                const hasOpenModal = Boolean(document.querySelector('.modal[aria-hidden="false"], .chat-edit-modal.is-open, .npc-selection-modal'));
                 document.body.classList.toggle('modal-open', hasOpenModal);
             }
 
@@ -38184,7 +38990,7 @@
                     window.AIRPG_CHAT.syncBodyModalOpenClass();
                     return;
                 }
-                const hasOpenModal = Boolean(document.querySelector('.modal[aria-hidden="false"], .chat-edit-modal.is-open, .quest-confirmation.is-open, .npc-selection-modal'));
+                const hasOpenModal = Boolean(document.querySelector('.modal[aria-hidden="false"], .chat-edit-modal.is-open, .npc-selection-modal'));
                 document.body.classList.toggle('modal-open', hasOpenModal);
             }
 
@@ -40337,8 +41143,29 @@
                         ? faction.tags.join(' · ')
                         : 'No tags';
 
-                    button.appendChild(name);
-                    button.appendChild(tags);
+                    const emblem = document.createElement('div');
+                    emblem.className = 'faction-list-emblem';
+                    emblem.setAttribute('aria-hidden', 'true');
+
+                    const copy = document.createElement('div');
+                    copy.className = 'faction-list-copy';
+                    copy.append(name, tags);
+
+                    button.append(emblem, copy);
+                    void renderEntityImage({
+                        element: emblem,
+                        entityType: 'faction',
+                        entityId: faction.id,
+                        imageId: faction.imageId || null,
+                        altText: '',
+                        placeholderIcon: '◆',
+                        placeholderClass: 'faction-list-emblem-placeholder',
+                        enableLightbox: false
+                    }).then(result => {
+                        if (result?.imageId) {
+                            faction.imageId = result.imageId;
+                        }
+                    });
                     button.addEventListener('click', () => {
                         state.selectedId = faction.id;
                         renderList();
@@ -40924,7 +41751,8 @@
                         imageId: member.imageId || null,
                         altText: member.name || 'Party member portrait',
                         placeholderIcon: '🎭',
-                        placeholderClass: 'party-portrait-placeholder'
+                        placeholderClass: 'party-portrait-placeholder',
+                        lightboxDataProvider: createRichEntityLightboxDataProvider(member, 'npc')
                     });
 
                     if (portraitHealthBar) {
@@ -40946,6 +41774,12 @@
                             variant: 'npc'
                         }
                     );
+
+                    attachFactionEmblem(portrait, {
+                        factionId: member?.factionId,
+                        variant: 'npc',
+                        statusRowCount: portraitNeedBars.childElementCount
+                    });
 
                     applyNpcDeathStyling(card, portrait, member);
                     if (typeof registerNpcTradeButton === 'function') {
@@ -40985,7 +41819,7 @@
                             hideTooltip();
                             return;
                         }
-                        floatingTooltip.textContent = description;
+                        floatingTooltip.innerHTML = formatNpcTooltipHtml(member);
                         floatingTooltip.removeAttribute('hidden');
                         floatingTooltip.classList.add('visible');
                         positionTooltip(event);
@@ -42509,7 +43343,6 @@
                 const result = await response.json();
                 
                 if (result.success && result.player) {
-                    window.__AIRPG_GAME_LOADED__ = true;
                     updateChatPlayerPanel(result.player);
                     if (Array.isArray(result.player.partyMembers)) {
                         renderChatPartyPanel(result.player.partyMembers);

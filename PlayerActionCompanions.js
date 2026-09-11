@@ -1,3 +1,5 @@
+const { buildSkillCheckOutcomeToolContent } = require('./utils/skill-check-outcome-guidance.js');
+
 function requireMap(value, label) {
     if (!(value instanceof Map)) {
         throw new TypeError(`${label} must be a Map.`);
@@ -344,7 +346,7 @@ function resolvePreResolvedPlayerActionHiddenContestToolCall(toolCall, {
             ? actionResolution.degree.trim()
             : (actionResolution.success === true ? 'success' : 'failure'));
     return {
-        content: resultLabel,
+        content: buildSkillCheckOutcomeToolContent(actionResolution, resultLabel),
         metadata: {
             result: resultLabel,
             checkType: 'opposed',

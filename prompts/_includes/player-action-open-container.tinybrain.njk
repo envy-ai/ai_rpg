@@ -3,9 +3,42 @@ Character: {{ characterName | default('The player', true) }}
 Container: {{ container.name }} — {{ container.description }}
 Attempt: {{ containerOpenAction }}
 
-Choose and immediately make exactly one check tool call. Use resolveSkillCheck unless another character is directly and actively opposing the attempt, in which case use resolveOpposedSkillCheck. After its result returns, summarize the attribute/skill choice and result in one sentence. Do not call another check tool and do not reroll.
+Choose exactly one check. Use an unopposed check unless another character is directly and actively opposing the attempt.
 
-{% llm_dummy_action %}
+Return only this XML. Use N/A when a skill or attribute does not apply. Use an empty <circumstanceModifiers/> when there are no modifiers.
+
+For an unopposed check:
+<containerOpenCheck>
+  <type>unopposed</type>
+  <reason>brief reason for this check and its difficulty</reason>
+  <skill>exact skill name or N/A</skill>
+  <attribute>exact attribute name or N/A</attribute>
+  <difficultyLevel>Trivial|Easy|Medium|Hard|Very Hard|Legendary</difficultyLevel>
+  <circumstanceModifiers>
+    <modifier><amount>integer</amount><reason>brief reason</reason></modifier>
+  </circumstanceModifiers>
+</containerOpenCheck>
+
+For an opposed check:
+<containerOpenCheck>
+  <type>opposed</type>
+  <reason>brief reason for this opposed check</reason>
+  <skill>exact acting character skill name or N/A</skill>
+  <attribute>exact acting character attribute name or N/A</attribute>
+  <opponent>exact opposing character name</opponent>
+  <opponentSkill>exact skill name or N/A</opponentSkill>
+  <opponentAttribute>exact attribute name or N/A</opponentAttribute>
+  <circumstanceModifiers>
+    <modifier><amount>integer</amount><reason>brief reason</reason></modifier>
+  </circumstanceModifiers>
+</containerOpenCheck>
+
+{% llmparse('container_open_check_plan') as containerOpenCheck %}
+
+The game has now resolved that check. This response is authoritative:
+{{ containerOpenCheck.response }}
+
+Do not choose another check and do not reroll.
 
 State whether the result opens the container now, whether it permanently removes the check requirement, and what may be shown. Do not reveal contents on failure.
 

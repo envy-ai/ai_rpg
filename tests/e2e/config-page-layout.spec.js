@@ -72,6 +72,7 @@ test('configuration page separates major concerns and uses shared section cards'
     const firstCardBox = await editCards.nth(0).boundingBox();
     const secondCardBox = await editCards.nth(1).boundingBox();
     expect(secondCardBox.y - (firstCardBox.y + firstCardBox.height)).toBeGreaterThan(0);
+    await page.locator('[data-image-workflow-mode="edit"] [data-image-workflow-field="family"]').selectOption('flux_klein');
     const fluxCache = page.locator('[data-image-workflow-mode="edit"] [data-image-workflow-field="flux_kv_cache"]');
     await expect(fluxCache).toBeVisible();
     await expect(fluxCache).toBeChecked();
@@ -115,11 +116,15 @@ test('configuration page separates major concerns and uses shared section cards'
     await expect(page.locator('#image-prompt-instructions-location')).toBeVisible();
     await expect(page.locator('#image-prompt-instructions-item')).toBeVisible();
     await expect(page.locator('#image-prompt-instructions-scenery')).toBeVisible();
+    await expect(page.locator('#image-prompt-instructions-faction')).toBeVisible();
     await page.locator('#image-prompt-instructions-location').fill('Keep architecture grounded and geographically consistent.');
+    await page.locator('#image-prompt-instructions-faction').fill('Use flat heraldic shapes.');
     await page.locator('#config-tab-image-prompts button[type="submit"]').click();
     await expect.poll(() => submittedConfigurations.length).toBe(2);
     expect(submittedConfigurations[1].get('imagegen.image_prompt_instructions.location::string'))
         .toBe('Keep architecture grounded and geographically consistent.');
+    expect(submittedConfigurations[1].get('imagegen.image_prompt_instructions.faction::string'))
+        .toBe('Use flat heraldic shapes.');
 
     await page.locator('[data-config-tab-target="game"]').click();
     await expect(page.locator('#save-game-config-override')).toBeDisabled();

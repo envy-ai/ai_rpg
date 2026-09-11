@@ -3668,6 +3668,7 @@ class Events {
             dispositionChanges: [],
             factionReputationChanges: [],
             questsAwarded: [],
+            pendingQuestOffers: [],
             questRewards: [],
             questObjectivesCompleted: [],
             itemTriggeredStatusChanges: [],
@@ -3696,6 +3697,7 @@ class Events {
         mergeArray("dispositionChanges");
         mergeArray("factionReputationChanges");
         mergeArray("questsAwarded");
+        mergeArray("pendingQuestOffers");
         mergeArray("questCompletionRewards", "questRewards");
         mergeArray("completedQuestObjectives", "questObjectivesCompleted");
         mergeArray("itemTriggeredStatusChanges");
@@ -4298,6 +4300,7 @@ class Events {
                                 factionReputationChanges:
                                     followup.factionReputationChanges,
                                 questsAwarded: followup.questsAwarded,
+                                pendingQuestOffers: followup.pendingQuestOffers,
                                 questCompletionRewards: followup.questRewards,
                                 completedQuestObjectives:
                                     followup.questObjectivesCompleted,
@@ -4345,6 +4348,7 @@ class Events {
             questObjectivesCompleted: accumulator.questObjectivesCompleted,
             questRewards: accumulator.questRewards,
             questsAwarded: accumulator.questsAwarded,
+            pendingQuestOffers: accumulator.pendingQuestOffers,
             followupResults,
             hiddenNpcChecks: accumulator.hiddenNpcChecks,
             timeProgress: accumulator.timeProgress,
@@ -4733,6 +4737,7 @@ class Events {
         let dispositionChanges = [];
         let factionReputationChanges = [];
         let questsAwarded = [];
+        let pendingQuestOffers = [];
         let questRewards = [];
         let questObjectivesCompleted = [];
         let itemTriggeredStatusChanges = [];
@@ -4807,6 +4812,12 @@ class Events {
                 outcomeContext.questsAwarded.length
             ) {
                 questsAwarded = outcomeContext.questsAwarded;
+            }
+            if (
+                Array.isArray(outcomeContext?.pendingQuestOffers) &&
+                outcomeContext.pendingQuestOffers.length
+            ) {
+                pendingQuestOffers = outcomeContext.pendingQuestOffers;
             }
             if (
                 Array.isArray(outcomeContext?.questCompletionRewards) &&
@@ -4994,6 +5005,12 @@ class Events {
                             questsAwarded.push(...followup.questsAwarded);
                         }
                         if (
+                            Array.isArray(followup.pendingQuestOffers) &&
+                            followup.pendingQuestOffers.length
+                        ) {
+                            pendingQuestOffers.push(...followup.pendingQuestOffers);
+                        }
+                        if (
                             Array.isArray(followup.questRewards) &&
                             followup.questRewards.length
                         ) {
@@ -5049,6 +5066,7 @@ class Events {
         console.debug(
             "[QuestDebug] runEventChecks returning quests:",
             questsAwarded,
+            pendingQuestOffers,
         );
 
         const eventResult = {
@@ -12287,8 +12305,9 @@ class Events {
                 if (!Array.isArray(context.declinedQuests)) {
                     context.declinedQuests = [];
                 }
-
-                let lastQuestCreated = null;
+                if (!Array.isArray(context.pendingQuestOffers)) {
+                    context.pendingQuestOffers = [];
+                }
 
                 for (const questEntry of questEntries) {
                     const questSummaryRaw = questEntry.summary.trim();
@@ -12584,51 +12603,41 @@ class Events {
                         continue;
                     }
 
-                    const quest = new Quest(questOptions);
-
-                    for (const objective of objectiveDescriptions) {
-                        try {
-                            if (!objective) {
-                                continue;
-                            }
+                    const objectives = objectiveDescriptions
+                        .map((objective) => {
                             if (typeof objective === "string") {
-                                if (objective.trim()) {
-                                    quest.addObjective(objective.trim(), false);
-                                }
-                                continue;
+                                const description = objective.trim();
+                                return description
+                                    ? { description, optional: false, completed: false }
+                                    : null;
                             }
-                            if (typeof objective === "object") {
-                                const description =
-                                    typeof objective.description === "string"
-                                        ? objective.description.trim()
-                                        : "";
-                                if (!description) {
-                                    continue;
-                                }
-                                const optional = Boolean(objective.optional);
-                                quest.addObjective(description, optional);
-                                if (typeof objective.completed === "boolean") {
-                                    quest.objectives[quest.objectives.length - 1].completed =
-                                        objective.completed;
-                                }
+                            if (!objective || typeof objective !== "object") {
+                                return null;
                             }
-                        } catch (error) {
-                            console.warn("Failed to add quest objective:", error.message);
-                        }
-                    }
+                            const description = typeof objective.description === "string"
+                                ? objective.description.trim()
+                                : "";
+                            return description
+                                ? {
+                                    description,
+                                    optional: Boolean(objective.optional),
+                                    completed: Boolean(objective.completed),
+                                }
+                                : null;
+                        })
+                        .filter(Boolean);
 
-                    const clientId = context?.stream?.clientId;
-                    if (!clientId) {
-                        throw new Error(
-                            "Quest confirmation requires an active client connection.",
-                        );
-                    }
+                    const questCandidate = {
+                        ...questOptions,
+                        giver: undefined,
+                        giverId: questOptions.giver?.id || null,
+                        giverName: questOptions.giverName || questOptions.giver?.name || "",
+                        objectives,
+                    };
 
                     const questPreview = {
-                        id: quest.id,
-                        name: quest.name,
-                        description: quest.description,
-                        secretNotes: quest.secretNotes || "",
+                        name: questCandidate.name,
+                        description: questCandidate.description,
                         summary: questSummary,
                         giver: questOptions.giverName || questOptions.giver?.name || "",
                         rewardItems,
@@ -12640,56 +12649,23 @@ class Events {
                         rewardNpcDispositions,
                         rewardBenefits,
                         rewardNotes,
-                        objectives: Array.isArray(quest.objectives)
-                            ? quest.objectives
-                                .map((entry) => ({
-                                    description:
-                                        typeof entry?.description === "string"
-                                            ? entry.description
-                                            : "",
-                                    optional: Boolean(entry?.optional),
-                                }))
-                                .filter((item) => item.description)
-                            : [],
+                        objectives: objectives.map((entry) => ({
+                            description: entry.description,
+                            optional: entry.optional,
+                        })),
                     };
 
-                    const accepted = await confirmQuestWithPlayer({
-                        clientId,
+                    const pendingOffer = await confirmQuestWithPlayer({
+                        playerId: player.id,
                         requestId: context?.stream?.requestId || null,
-                        quest: questPreview,
+                        parentId: context?.parentId || null,
+                        locationId: location?.id || player.currentLocation || null,
+                        quest: questCandidate,
+                        preview: questPreview,
                     });
-
-                    if (!accepted) {
-                        console.debug("[QuestDebug] Quest declined by player:", quest.name);
-                        context.declinedQuests.push({
-                            id: quest.id,
-                            name: quest.name,
-                            summary: questSummary,
-                            giver: questOptions.giverName || questOptions.giver?.name || "",
-                            accepted: false,
-                        });
-                        continue;
-                    }
-
-                    player.addQuest(quest);
-                    context.questsAwarded.push({
-                        id: quest.id,
-                        name: quest.name,
-                        summary: questSummary,
-                        giver: questOptions.giverName || questOptions.giver?.name || "",
-                        accepted: true,
-                    });
-                    console.debug(
-                        "[QuestDebug] context after push:",
-                        context.questsAwarded,
-                    );
-
-                    lastQuestCreated = quest;
+                    context.pendingQuestOffers.push(pendingOffer);
                 }
 
-                if (lastQuestCreated) {
-                    context.lastQuest = lastQuestCreated;
-                }
             },
             completed_quest_objective: async function (entries = [], context = {}) {
                 return Events.processQuestObjectiveCompletionEntries(entries, context);

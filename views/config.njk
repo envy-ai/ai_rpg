@@ -1297,6 +1297,14 @@
                                           rows="6"
                                           placeholder="Global instructions for scenery image prompts...">{{ config.imagegen.image_prompt_instructions.scenery or '' }}</textarea>
                             </div>
+
+                            <div class="form-group full-width">
+                                <label for="image-prompt-instructions-faction">Faction Emblem Prompt Instructions</label>
+                                <textarea id="image-prompt-instructions-faction"
+                                          name="imagegen.image_prompt_instructions.faction::string"
+                                          rows="6"
+                                          placeholder="Global instructions for faction emblem image prompts...">{{ config.imagegen.image_prompt_instructions.faction or '' }}</textarea>
+                            </div>
                         </div>
                     </div>
                 </div>

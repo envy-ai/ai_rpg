@@ -72,7 +72,7 @@ Represents a player-owned quest with objectives, reward metadata, giver metadata
 - Quest reward prose is presentation output for already-applied structured rewards. It is not passed back through ordinary event checks, preventing narrated coins, items, XP, reputation, dispositions, or incidental status language from being applied a second time.
 
 ## API And UI Use
-- Generated quest offers pass through `QuestConfirmationManager`, emit `quest_confirmation_request`, and enter the player's quest list only when accepted through `/api/quests/confirm`.
+- Generated quest offers pass through `QuestConfirmationManager` as plain, unregistered candidates. They appear as durable inline `quest-offer` chat entries on every client and enter the player's canonical quest list only when accepted through `/api/quests/confirm`.
 - `/api/quest/edit` mutates an existing quest on the current player. It can update text fields, conventional rewards, typed benefits, reward notes, objectives, `paused`, `rewardClaimed`, and `giverName`; it does not create quests or grant completion rewards. Applied benefit ids cannot be removed or retargeted.
 - `POST /api/quests/:questId/retry-rewards` explicitly retries a completed quest whose `rewardClaimed` remains false. The completed-quest card exposes this as **Retry Pending Rewards** and shows stack-bearing failures in the chat error popup.
 - `DELETE /api/player/quests/:questId` removes a quest from the current player's stored quest list and does not move it to completed quests.
@@ -80,7 +80,7 @@ Represents a player-owned quest with objectives, reward metadata, giver metadata
 - Chat responses expose `questCompletionErrors` without converting the otherwise-successful turn into a top-level API error. The chat client shows each pending-reward error and its backtrace in the existing error popup while retaining the objective-completion result.
 - Chat tool field updates include quest and objective targets from the player's current and completed quests, with `rewardItems`, `rewardFactionReputation`, `rewardNpcDispositions`, validated `rewardBenefits`, `rewardNotes`, `rewardClaimed`, `paused`, `completed`, and `optional` among the allowed persisted fields.
 - `createQuest({ summary, giver? })` is a mutation-capable chat tool for generic prompts and scheduled-event resolution. Parser-only housekeeping can still create quests by returning `<quests>` XML, which is converted afterward into `createQuest` executor calls. The executor feeds the supplied summary/giver into the same `received_quest` event handler used by event checks, including the quest-generation prompt, duplicate/update handling, reward normalization, and player confirmation for new quests.
-- When the player declines a tool-created quest offer, the event handler records that decision in `declinedQuests`. The tool returns the terminal structured status `declined`, the declined quest identity, and an instruction not to retry the resolved request. A generation path that produces no accepted, updated, or declined quest still returns `not_created`.
+- A tool-created new quest returns structured status `pending` plus its confirmation id and tells the model not to retry. The eventual decision happens outside the originating model turn. Existing-quest updates still return `success`; a generation path that produces no accepted, updated, or pending quest returns `not_created`.
 
 ## Operational Notes
 - `Quest.QuestObjective` is assigned for external access to the helper class.

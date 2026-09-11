@@ -192,7 +192,7 @@ Supported step types should initially be limited to:
 
 Unknown step or assertion types, unknown fields, unresolved fixture variables, and missing response policies must throw during schema validation before the scenario mutates state.
 
-Open one realtime WebSocket before the first interactive step and retain it for the scenario. Correlate events by generated request ID and keep the current behavior of answering forced rolls, confirmations, and quest confirmations explicitly. Do not add a client-side request deadline.
+Open one realtime WebSocket before the first interactive step and retain it for the scenario. Correlate events by generated request ID and keep the current behavior of answering forced rolls and other realtime input requests explicitly. After an interactive request finishes, query the durable pending-quest endpoint and resolve offers associated with that request according to its `questAccepted` policy. Do not add a client-side request deadline.
 
 Modes:
 

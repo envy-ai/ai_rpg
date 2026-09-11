@@ -1073,6 +1073,7 @@ export async function runScenario({
                 if (step.forcedNpcTurns !== undefined) body.forcedNpcTurns = step.forcedNpcTurns;
                 try {
                     lastResponse = await apiClient.fetchJson('POST', '/api/chat', body);
+                    await realtime.resolvePendingQuestOffers(identifiers.requestId);
                 } finally {
                     realtime.endRequest(identifiers.requestId);
                 }
@@ -1114,18 +1115,22 @@ export async function runScenario({
                     throw new Error(`No pending chat named "${step.name}" exists.`);
                 }
                 const outcome = await pending.outcomePromise;
-                realtime.endRequest(pending.identifiers.requestId);
-                pendingChats.delete(step.name);
-                if (outcome.error) throw outcome.error;
-                lastResponse = outcome.response;
-                responses[step.name] = lastResponse;
-                stepResults.push({
-                    index,
-                    type: step.type,
-                    name: step.name,
-                    requestId: pending.identifiers.requestId,
-                    response: lastResponse
-                });
+                try {
+                    if (outcome.error) throw outcome.error;
+                    await realtime.resolvePendingQuestOffers(pending.identifiers.requestId);
+                    lastResponse = outcome.response;
+                    responses[step.name] = lastResponse;
+                    stepResults.push({
+                        index,
+                        type: step.type,
+                        name: step.name,
+                        requestId: pending.identifiers.requestId,
+                        response: lastResponse
+                    });
+                } finally {
+                    realtime.endRequest(pending.identifiers.requestId);
+                    pendingChats.delete(step.name);
+                }
             } else if (step.type === 'waitForRealtime') {
                 const timeoutMs = step.timeoutMs ?? 60_000;
                 const pollIntervalMs = step.pollIntervalMs ?? 25;
@@ -1176,6 +1181,9 @@ export async function runScenario({
                 }
                 try {
                     lastResponse = await apiClient.fetchJson(step.method.toUpperCase(), step.route, body);
+                    if (identifiers) {
+                        await realtime.resolvePendingQuestOffers(identifiers.requestId);
+                    }
                 } finally {
                     if (identifiers) realtime.endRequest(identifiers.requestId);
                 }

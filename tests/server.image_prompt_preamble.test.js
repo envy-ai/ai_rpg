@@ -103,10 +103,12 @@ test('per-world image prompt instructions override only their matching global fa
     const { resolveImagePromptGenerationInstructions } = loadImagePromptPreambleHelpers({
         settingSnapshot: {
             imagePromptInstructionsCharacter: 'Use graphic-novel portrait composition.',
+            imagePromptInstructionsFaction: 'Use flat heraldic shapes.',
             imagePromptInstructionsItem: '   '
         },
         globalInstructions: {
             character: 'Global character guidance.',
+            faction: 'Global faction guidance.',
             item: 'Global item guidance.'
         }
     });
@@ -115,6 +117,7 @@ test('per-world image prompt instructions override only their matching global fa
         resolveImagePromptGenerationInstructions('character'),
         'Use graphic-novel portrait composition.'
     );
+    assert.equal(resolveImagePromptGenerationInstructions('faction'), 'Use flat heraldic shapes.');
     assert.equal(resolveImagePromptGenerationInstructions('item'), 'Global item guidance.');
 });
 

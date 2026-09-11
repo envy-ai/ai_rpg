@@ -12,25 +12,15 @@
 </originLocation>
 {% endif -%}
 
-{% if discoverNewExits -%}
-<existingExits>
-  {% for exit in existingExitDestinations -%}
-  <exit>
-    <destinationType>{{ exit.destinationType }}</destinationType>
-    <name>{{ exit.name }}</name>
-    <description>{{ exit.description }}</description>
-    <isReturnRoute>{{ "yes" if exit.isReturnRoute else "no" }}</isReturnRoute>
-  </exit>
-  {% endfor -%}
-</existingExits>
-{% endif -%}
+
 
 {% set stubHasNumNpcs = (stubNumNpcs is not none) %}
 {% set stubHasNumHostiles = (stubNumHostiles is not none) %}
 {% set stubHasAny = stubName or stubId or stubHasShortDescription or stubHasDescription or stubHasRelativeLevel or stubHasBaseLevel or stubHasControllingFaction or stubHasNumNpcs or stubHasNumHostiles %}
 
 {% if stubHasAny -%}
-<stub>
+The following is the location stub that you're expanding:
+<thisLocationStub>
   {% if stubId -%}<id>{{ stubId }}</id>{% endif %}
   {% if stubName -%}<name>{{ stubName }}</name>{% endif %}
   {% if stubHasShortDescription -%}<shortDescription>{{ stubShortDescription }}</shortDescription>{% endif %}
@@ -41,8 +31,22 @@
   {% if stubHasNumNpcs -%}<numNpcs>{{ stubNumNpcs }}</numNpcs>{% endif %}
   {% if stubHasNumHostiles -%}<numHostiles>{{ stubNumHostiles }}</numHostiles>{% endif %}
   {% if stubHasWeather -%}<hasWeather>{{ stubWeatherScope }}</hasWeather>{% endif %}
-</stub>
+</thisLocationStub>
 {% endif -%}
+
+The location stub you are expanding has the following existing exits.
+<existingExits>
+  {% for exit in existingExitDestinations -%}
+  <exit>
+    <destinationType>{{ exit.destinationType }}</destinationType>
+    <name>{{ exit.name }}</name>
+    <description>{{ exit.description }}</description>
+    <travelTime>{{ exit.travelTime }}</travelTime>
+    <explored>{{ "yes" if exit.explored else "no" }}</explored>
+  </exit>
+  {% endfor -%}
+</existingExits>
+
 
 <task>You are an AI assistant that expands partially discovered locations in a fictional world. Using the provided context, fully develop the destination so it seamlessly connects to its origin area. Expand the stubbed destination into a fully realized location that feels like a natural continuation of the origin area. Maintain continuity with the origin's tone, scale, and environmental storytelling.</task>
 
@@ -56,13 +60,15 @@ Include notable characters, scenery, and other elements from the entry prose.{% 
 
 GUIDELINES:
 - Reference sensory details and story hooks that bridge to and from the origin location.
-- Mention features hinting at additional unexplored directions only when a genuinely traversable route fits this location.
+{% if encourageNewExits -%}- Mention features hinting at additional unexplored directions only when a genuinely traversable route fits this location.
+{% endif -%}
 - Ensure the description makes sense even if the player arrived without prior knowledge beyond the origin.
 - The number of NPCs and hostiles should reflect the type of location as well as the current region. For instance, an upscale tavern might have 3-4 NPCs and 0 hostiles, while a seedy tavern may have 2 NPCs and 2 hostiles, and so on. A a deserted cave might have 0 NPCs and 1-3 hostiles. The player's residence should typically have 0 NPCs and 0 hostiles. An abandoned structure region might have 1 or 2 NPCs distributed among all locations, so consider the region when choosing these numbers. Conversly, a bustling city region might have many NPCs distributed among its locations, with crowded places having 4.
 - Note that if a location is called an "Exterior" (such as "Abandoned Factory Exterior" or "Bob's Bakery Exterior"), it is outdoors, outside of the building or structure named. Typically the interior of the building is a separate location or region connected to the exterior.
 - Choose the controlling faction using the <factions> list in the gameState. Use the full faction name, or "None" if no faction controls the location.
+- New exits may only be made to other regions or other locations _within the current region_. If an exit to a region is already among this location's existing exits, do not create additional exits to that region, to locations within that region, or to locations that serve as entrances to that region. Do not create exits to specific locations in other regions, only to other regions as a whole.
 
-{% if discoverNewExits -%}
+{% if encourageNewExits -%}
 ONWARD EXIT DECISION:
 - Invent plausible new destinations beyond the map outline and exits leading to them from this location. Do not list existing exits or destinations already named in the outline. Return zero new exits if no additional route fits the location.
 - Returning zero new exits is fully valid. Do not invent an exit merely to fill a quota or compass direction.
@@ -71,6 +77,9 @@ ONWARD EXIT DECISION:
 - Use destinationType "location" for a place inside the current region. Use "region" only for a distinct adjoining area substantial enough to become its own region.
 - Every destination must be new, directly reachable from this location, and absent from the existing location and region context.
 - Give each exit a concise route description and a realistic travel duration.
+{% else %}
+New exit considerations:
+- This location already has unexplored exits. Only consider additional exits if there's an existing reason in the story to add them.
 {% endif -%}
 
 {% include "_includes/generation-prompt-instructions.njk" %}
@@ -89,7 +98,7 @@ When generating character concepts for this location, follow these additional us
 IMPORTANT: THIS IS THE EXTERIOR OF A BUILDING, NOT THE INTERIOR! Do NOT rename it to be the interior or otherwise treat it as if it were the interior. The interior is a separate region or location that is connected to this location. Do NOT put people who you would expect to find INSIDE the building here unless there's an exceptional reason for them to be here. Shopkeepers, building residents, business employees, and so on should not be generated here; instead, consider generating passersby and other people who might be *outside* the building.
 {% endif %}
 OUTPUT FORMAT:
-Return ONLY the following fields, in this format:
+First, given the exits above, brainstorm for 1 paragraph in plain text according to the rules above about whether there should be additional exits and where they should go to. Then, output the following fields, in this format:
 
 <location>
   <name>{{ stubName }}</name>
@@ -104,7 +113,7 @@ Return ONLY the following fields, in this format:
     <!-- Return zero or more <exit> entries. An empty <newExits></newExits> block means no additional exit makes sense. -->
     <exit>
       <destinationType><!-- "location" or "region" --></destinationType>
-      <name><!-- New destination name --></name>
+      <name><!-- Name of new location or region --></name>
       <description><!-- Concise description of the route or doorway from this location --></description>
       <travelTime><!-- Realistic duration such as "5 minutes", "2 hours", or "1 day" --></travelTime>
     </exit>

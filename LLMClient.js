@@ -3919,7 +3919,7 @@ class LLMClient {
 
         const targets = LLMClient.#getPromptProgressCharacterTargets(config);
         if (!targets) {
-            throw new Error('config.prompt_progress.character_targets is required for prompt progress tracking.');
+            return 5000;
         }
 
         const exactTargets = new Map();
@@ -3957,15 +3957,11 @@ class LLMClient {
             return match.target;
         }
 
-        throw LLMClient.#configurationError(
-            `Missing prompt_progress.character_targets character target for prompt label "${normalizedLabel}".`
-        );
+        return 5000;
     }
 
     static #resolvePromptProgressTargetForRun(label, characterStats) {
-        const configuredTarget = LLMClient.#hasPromptProgressCharacterTargetsConfigured()
-            ? LLMClient.resolvePromptProgressCharacterTarget(label)
-            : null;
+        const configuredTarget = LLMClient.resolvePromptProgressCharacterTarget(label);
         const averageOutputCharacters = Number(characterStats?.averageOutputCharacters);
         if (Number.isFinite(averageOutputCharacters) && averageOutputCharacters > 0) {
             return averageOutputCharacters;
@@ -5740,6 +5736,7 @@ class LLMClient {
         runInBackground = false,
         maxConcurrent = null,
         multimodal = false,
+        preferDedicatedMultimodalConfiguration = false,
         forceOutput = null,
         logStreamChunksToConsole = false,
         reasoningEffort = null,
@@ -5859,6 +5856,7 @@ class LLMClient {
                 seed,
                 topP,
                 multimodal,
+                preferDedicatedMultimodalConfiguration,
                 reasoningEffort,
                 prefill,
                 assistantResponseSeed,
@@ -6047,6 +6045,9 @@ class LLMClient {
             if (typeof responseValidationRetryFeedback !== 'boolean') {
                 throw new TypeError('chatCompletion responseValidationRetryFeedback must be a boolean.');
             }
+            if (typeof preferDedicatedMultimodalConfiguration !== 'boolean') {
+                throw new TypeError('chatCompletion preferDedicatedMultimodalConfiguration must be a boolean.');
+            }
             const resolvedSeed = Number.isFinite(seed) ? Math.trunc(seed) : LLMClient.#generateSeed();
             if (!Array.isArray(messages) || messages.length === 0) {
                 throw new Error('LLMClient.chatCompletion requires at least one message.');
@@ -6069,12 +6070,18 @@ class LLMClient {
                     ai: {
                         backend: configuredAi.backend ?? null,
                         model: configuredAi.model ?? null,
-                        endpoint: configuredAi.endpoint ?? null
+                        endpoint: configuredAi.endpoint ?? null,
+                        ...(multimodal === true
+                            ? { has_vision: configuredAi.has_vision ?? null }
+                            : {})
                     },
                     aiMultimodal: multimodal === true && Globals?.config?.ai_multimodal
                         ? Globals.config.ai_multimodal
                         : null,
-                    aiModelOverrides: Globals?.config?.ai_model_overrides ?? null
+                    aiModelOverrides: Globals?.config?.ai_model_overrides ?? null,
+                    ...(preferDedicatedMultimodalConfiguration === true
+                        ? { preferDedicatedMultimodalConfiguration: true }
+                        : {})
                 })
             );
             const normalizedRequiredRegexForCassette = (() => {
@@ -6105,6 +6112,7 @@ class LLMClient {
                 frequencyPenalty,
                 presencePenalty,
                 multimodal,
+                preferDedicatedMultimodalConfiguration,
                 validateXML,
                 validateXMLStrict,
                 expectedXmlRootTags: normalizedExpectedXmlRootTags,
@@ -6232,8 +6240,15 @@ class LLMClient {
                     ? resolvedLiveTokenStreamFallbackChunkSize
                     : configuredNonStreamTokenChunkSize;
                 const aiConfig = LLMClient.#cloneAiConfig();
-                if (multimodal) {
-                    const multimodalConfig = Globals?.config?.ai_multimodal;
+                const { overrides, profiles: overrideProfiles } = LLMClient.#resolveAiModelOverrides(
+                    metadataLabel,
+                    Globals?.config
+                );
+                const effectiveHasVision = overrides && Object.prototype.hasOwnProperty.call(overrides, 'has_vision')
+                    ? overrides.has_vision
+                    : aiConfig.has_vision;
+                const multimodalConfig = Globals?.config?.ai_multimodal;
+                const applyDedicatedMultimodalConfiguration = () => {
                     if (!multimodalConfig || typeof multimodalConfig !== 'object') {
                         throw new Error('AI multimodal configuration is not set.');
                     }
@@ -6246,12 +6261,17 @@ class LLMClient {
                         }
                         aiConfig[key] = value;
                     }
+                };
+                if (multimodal && effectiveHasVision !== true && !preferDedicatedMultimodalConfiguration) {
+                    applyDedicatedMultimodalConfiguration();
                 }
 
-                const { overrides, profiles: overrideProfiles } = LLMClient.#resolveAiModelOverrides(metadataLabel, Globals?.config);
                 let overrideCustomArgs = undefined;
                 let overrideHeaders = undefined;
-                if (overrides) {
+                const useDedicatedMultimodalOnly = multimodal
+                    && effectiveHasVision !== true
+                    && preferDedicatedMultimodalConfiguration;
+                if (overrides && !useDedicatedMultimodalOnly) {
                     const profileSummary = overrideProfiles.length ? ` (profiles: ${overrideProfiles.join(', ')})` : '';
                     log(`Applying AI model overrides for ${metadataLabel}${profileSummary}`);
                     for (const [key, value] of Object.entries(overrides)) {
@@ -6265,6 +6285,9 @@ class LLMClient {
                         }
                         aiConfig[key] = value;
                     }
+                }
+                if (useDedicatedMultimodalOnly) {
+                    applyDedicatedMultimodalConfiguration();
                 }
 
                 const resolvedBackend = LLMClient.resolveBackend(aiConfig);

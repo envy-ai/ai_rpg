@@ -12,7 +12,7 @@ function extractContainerOpenCheckRoute(source) {
     return source.slice(start, end);
 }
 
-test('checked container open-check sends skill-check tools through LLM additionalPayload', () => {
+test('checked container open-check reserves native tool calls for the non-TinyBrain path', () => {
     const source = fs.readFileSync(require.resolve('../api.js'), 'utf8');
     const routeSource = extractContainerOpenCheckRoute(source);
 
@@ -30,6 +30,21 @@ test('checked container open-check sends skill-check tools through LLM additiona
         routeSource,
         /validateXML: false,\s*tools: enabledChatTools,/,
         'open-check route should not rely on top-level requestOptions.tools'
+    );
+    assert.match(
+        routeSource,
+        /completeStage: async stage => \{[\s\S]*configureRequestChatTools\(\s*stage\.requestOptions,\s*\[\]\s*\)/,
+        'TinyBrain checkpoints should run without native tool definitions'
+    );
+    assert.match(
+        routeSource,
+        /afterParse: async stage => \{[\s\S]*parserName !== 'container_open_check_plan'[\s\S]*executeChatToolCall\(toolCall,/,
+        'TinyBrain should have the server execute its parsed check plan'
+    );
+    assert.equal(
+        (routeSource.match(/dieRollOverride: inlineRollControls\.dieRoll/g) || []).length,
+        2,
+        'both native and server-executed container checks should honor an inline die roll'
     );
 });
 

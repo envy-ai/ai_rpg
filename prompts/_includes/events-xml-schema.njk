@@ -629,7 +629,7 @@ Use this when something in the turn changes a need bar for the player, party mem
 
 ### `triggered_abilities`
 
-Use this when a character's triggered ability fires during the turn. Include only abilities that actually triggered, not abilities that were merely available, discussed, or considered.
+Use this when a character's triggered ability fires during the turn. Include only abilities that actually triggered. If it summons a physically present animate entity, also emit npcFirstAppearance unless that entity already exists in game data; use npcArrival if it does. A tracked ability does not mean its summoned entity is tracked.
 
 ```xml
 <triggeredAbility>

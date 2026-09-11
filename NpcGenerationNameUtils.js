@@ -1,13 +1,7 @@
-function normalizeNpcNameForDuplicateCheck(value) {
-  if (typeof value !== 'string') {
-    return '';
-  }
+const { normalizePersonNameForDuplicateCheck } = require('./DuplicateNameUtils.js');
 
-  return value
-    .replace(/[^\w\s]|_/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim()
-    .toLowerCase();
+function normalizeNpcNameForDuplicateCheck(value) {
+  return normalizePersonNameForDuplicateCheck(value);
 }
 
 function getLocationNpcIds(location) {

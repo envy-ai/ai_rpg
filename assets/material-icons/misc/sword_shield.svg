@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 -960 960 960" fill="#ffffff">
+  <!-- Adapted from Google Material Symbols Outlined swords and shield (Apache-2.0).
+       Changes: isolate the rising sword and add a shield with transparent overlap clearance.
+       References: https://github.com/google/material-design-icons/tree/master/symbols/web/swords
+                   https://github.com/google/material-design-icons/tree/master/symbols/web/shield
+       License: ../LICENSE-2.0.txt -->
+  <defs>
+    <mask id="sword-shield-clearance" maskUnits="userSpaceOnUse" x="0" y="-960" width="960" height="960" style="mask-type: luminance">
+      <rect x="0" y="-960" width="960" height="960" fill="#ffffff"/>
+      <path d="M880-724 426-270l5 4q23 23 23 57t-23 57l-28 28-88-88L198-96q-12 12-28 12t-28-12l-50-50q-12-12-12-28t12-28l116-117-88-88 28-28q23-23 57-23t57 23l4 5 454-454h160v160Z" fill="#000000" stroke="#000000" stroke-width="64" stroke-linejoin="round"/>
+    </mask>
+  </defs>
+  <path mask="url(#sword-shield-clearance)" d="M480-80q-139-35-229.5-159.5T160-516v-244l320-120 320 120v244q0 152-90.5 276.5T480-80Zm0-84q104-33 172-132t68-220v-189l-240-90-240 90v189q0 121 68 220t172 132Z"/>
+  <path d="M880-724 426-270l5 4q23 23 23 57t-23 57l-28 28-88-88L198-96q-12 12-28 12t-28-12l-50-50q-12-12-12-28t12-28l116-117-88-88 28-28q23-23 57-23t57 23l4 5 454-454h160v160ZM370-327l430-430v-47h-47L323-374l47 47Z"/>
+</svg>

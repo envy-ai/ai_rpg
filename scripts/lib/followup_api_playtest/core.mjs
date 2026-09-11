@@ -267,6 +267,47 @@ export class RealtimeSession {
         }
     }
 
+    async resolvePendingQuestOffers(requestId) {
+        const normalizedRequestId = requireText(requestId, 'requestId');
+        const policy = this.policies.get(normalizedRequestId);
+        if (!policy) {
+            throw new Error(`No interactive response policy is registered for request ${normalizedRequestId}.`);
+        }
+        const pendingResult = await this.apiClient.fetchJson('GET', '/api/quests/pending');
+        this.events.push({
+            type: 'harness_pending_quest_lookup',
+            receivedAt: new Date().toISOString(),
+            requestId: normalizedRequestId,
+            result: pendingResult
+        });
+        if (!pendingResult.ok || pendingResult.payload?.success !== true) {
+            throw new Error(
+                `Unable to inspect pending quest offers after request ${normalizedRequestId}: `
+                + `${pendingResult.payload?.error || `HTTP ${pendingResult.status}`}`
+            );
+        }
+        const pendingOffers = pendingResult.payload.pendingQuestConfirmations;
+        if (!Array.isArray(pendingOffers)) {
+            throw new Error('GET /api/quests/pending returned an invalid pendingQuestConfirmations payload.');
+        }
+        const requestOffers = pendingOffers.filter(offer => offer?.requestId === normalizedRequestId);
+        for (const offer of requestOffers) {
+            const resolutionResult = await this.#respond('/api/quests/confirm', {
+                confirmationId: requireText(offer.confirmationId, 'pending quest confirmationId'),
+                clientId: this.clientId,
+                requestId: normalizedRequestId,
+                accepted: policy.questAccepted
+            });
+            if (!resolutionResult.ok || resolutionResult.payload?.success !== true) {
+                throw new Error(
+                    `Unable to resolve pending quest offer ${offer.confirmationId}: `
+                    + `${resolutionResult.payload?.error || `HTTP ${resolutionResult.status}`}`
+                );
+            }
+        }
+        return requestOffers.length;
+    }
+
     eventsForRequest(requestId) {
         return this.events.filter(event => (
             event?.requestId === requestId
@@ -348,6 +389,7 @@ export class RealtimeSession {
             body,
             result
         });
+        return result;
     }
 
     #resolvePolicy(event) {
@@ -373,16 +415,6 @@ export class RealtimeSession {
         this.events.push(event);
         if (event.type === 'connection_ack') {
             acknowledge(event);
-            return;
-        }
-        if (event.type === 'quest_confirmation_request') {
-            const { requestId, policy } = this.#resolvePolicy(event);
-            await this.#respond('/api/quests/confirm', {
-                confirmationId: event.confirmationId,
-                clientId: this.clientId,
-                requestId,
-                accepted: policy.questAccepted
-            });
             return;
         }
         if (event.type !== 'player_input_request') {

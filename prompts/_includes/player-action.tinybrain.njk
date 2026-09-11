@@ -208,9 +208,11 @@ These hidden-character contest results were resolved by the game and are authori
 {% endfor %}
 {% endif %}
 
-Information gathering and tool calling: If necessary, call any tools that might provide necessary information for writing the prose that's missing from the context. Just write N/A (with no additional text) for this item if you have all the information you need (which will be the typical case). Note that the context contains the entire story history, although earlier parts may be abbreviated.
+Information gathering and pre-outcome mechanical resolution: If necessary, call tools that provide information missing from the context. More importantly, before proposing story outcomes, identify every meaningful uncertain non-attack action already committed by the player in the playerAction and call resolveSkillCheck or resolveOpposedSkillCheck now. Do not decide its concrete result or draft an outcome until the tool result has returned. Do not check a trivially easy action. Write N/A (with no additional text) only if you need neither an information lookup nor a mechanical check. Note that the context contains the entire story history, although earlier parts may be abbreviated.
 
-Make any necessary tool calls here to gather additional information before proceeding with the story continuation.
+{% include "_includes/player-action-check-outcomes.njk" %}
+
+Make any necessary information and check tool calls here before proceeding with outcome brainstorming. Do not reroll these checks in the draft.
 
 {% llm_dummy_action %}
 
@@ -234,7 +236,7 @@ Briefly, in markdown list format, list each other character at the current locat
 {% llmparse('mod_step_' ~ step.number) %} {# Most of these will probably be no-ops, but we call them anyway to maintain the structure and give modules the opportunity to parse if they want to #}
 {% endfor %}
 
-In markdown format, list three (if there are few possibilities) to five (if things could easily go all sorts of different directions) ways that the next few paragraphs could play out, using no more than 12 words per bullet. Each bullet should be a different possible direction for the story to take, based on the current context and the player's action. Do not include any commentary or explanation, just the list of possibilities.
+In markdown format, list three (if there are few possibilities) to five (if things could easily go all sorts of different directions) ways that the next few paragraphs could play out, using no more than 12 words per bullet. Each bullet should be a different possible direction for the story to take, based on the current context and the player's action. Every possibility must honor all authoritative check results already received. A new immediate fact needed to express an otherwise plausible successful check is necessary, not an unwanted narrative commitment; do not negate or weaken success merely to avoid establishing that fact. Do not include any commentary or explanation, just the list of possibilities.
 
 {% llm_dummy_action %}
 
@@ -245,7 +247,7 @@ Pick whichever one you feel is most interesting, dramatic, funny, or fun to writ
 {% if config.use_legacy_prompt_checks %}
 Draft Response: Generate a preliminary but full draft that continues the story based on the current context, strictly adhering to this degree of success/failure: "{{ success_or_failure }}" regardless of how hard the action is. This is just a first attempt. Use no more than {{ config.prose_length }}.
 {% else %}
-Draft Response: Generate a preliminary but full draft that continues the story based on the current context{#, strictly adhering to this degree of success/failure: "{{ success_or_failure }}" regardless of how hard the action is#}. This is just a first attempt. Use no more than {{ config.prose_length }}. Resolve every attack written into the draft with resolveAttack or resolveAreaAttack and adhere to its outcome, including who attacked whom and whether the defender was defeated. Whenever a character makes a meaningful non-attack action that is not trivially easy and was not already resolved in the authoritative hidden-character results above, call resolveSkillCheck or resolveOpposedSkillCheck as appropriate and adhere to its result. Call the tool for every unresolved attack or check written into the draft, including actions introduced by NPC initiative. It is okay to interrupt the draft to call tools; formatting can be repaired in the second draft. Examples of skill checks include climbing a wall, searching for hidden exits, and moving a large rock. Examples of opposed skill checks include arm wrestling, stealth versus detection, and haggling. The user may signal a preferred skill or ability in [square brackets]; otherwise use your best judgment, and override an unsuitable suggestion when needed. Do not reference the same object, detail, or plot element in consecutive turns unless something about it has changed. If a detail was established in a previous turn, do not have characters reflect on it again unless new information emerges or a character is actively interacting with it. Characters must not repeat the same metaphor type, observation pattern, or speech tic multiple times in a scene. Variety in how characters express themselves is essential. Do NOT append "What do you do?" or any other text addressing the player directly.
+Draft Response: Generate a preliminary but full draft that continues the story based on the current context{#, strictly adhering to this degree of success/failure: "{{ success_or_failure }}" regardless of how hard the action is#}. This is just a first attempt. Use no more than {{ config.prose_length }}. Apply the authoritative check-outcome contract above to every result. The player's meaningful uncertain non-attack actions should already have been resolved during information gathering or the compulsion check; do not reroll them. Resolve every attack written into the draft with resolveAttack or resolveAreaAttack and adhere to its outcome, including who attacked whom and whether the defender was defeated. Whenever the draft introduces a meaningful non-attack action that is not trivially easy and was not already resolved in the authoritative results above, call resolveSkillCheck or resolveOpposedSkillCheck before deciding or narrating its concrete outcome, then adhere to its result. Call the tool for every unresolved attack or check written into the draft, including actions introduced by NPC initiative. It is okay to interrupt the draft to call tools; formatting can be repaired in the second draft. Examples of skill checks include climbing a wall, searching for hidden exits, and moving a large rock. Examples of opposed skill checks include arm wrestling, stealth versus detection, and haggling. The user may signal a preferred skill or ability in [square brackets]; otherwise use your best judgment, and override an unsuitable suggestion when needed. Do not reference the same object, detail, or plot element in consecutive turns unless something about it has changed. If a detail was established in a previous turn, do not have characters reflect on it again unless new information emerges or a character is actively interacting with it. Characters must not repeat the same metaphor type, observation pattern, or speech tic multiple times in a scene. Variety in how characters express themselves is essential. Do NOT append "What do you do?" or any other text addressing the player directly.
 {% endif %}
 {% if (currentPlayer.currentQuests | length) > config.soft_quest_limit %}
 Note that the current player's active quest count of {{ currentPlayer.currentQuests | length }} exceeds the soft quest limit of {{ config.soft_quest_limit }}, so if possible, refrain from giving the player additional tasks that could be interpreted as quests unless they specifically request them.
@@ -327,7 +329,7 @@ Answer this question succinctly based on your draft response above. If it is not
 {% llmparse('mod_step_' ~ step.number) %}
 {% endfor %}
 
-Write a second draft that fixes the above issues, using no more than {{ config.prose_length }}. Adhere to every skill-check, opposed skill-check, and attack outcome received above. If you omitted a necessary check from the first draft, make it here and adjust the prose to its result. Fix any formatting issues. Use <hidden>...</hidden> tags to make any notes to save to your context for later without revealing them to the reader. Hidden tags do not count toward the length limit. In <hidden>...</hidden> notes, only track items, plot details, or other facts that are NEW or have CHANGED since the previous turn. Do not include things already visible in the prompt context or copy forward unchanged states.
+Write a second draft that fixes the above issues, using no more than {{ config.prose_length }}. Adhere to every skill-check, opposed skill-check, and attack outcome received above, applying the authoritative check-outcome contract. If you omitted a necessary unresolved check from the first draft, make it here before deciding its concrete outcome and adjust the prose to its result. Do not reroll a check already made. Fix any formatting issues. Use <hidden>...</hidden> tags to make any notes to save to your context for later without revealing them to the reader. Hidden tags do not count toward the length limit. In <hidden>...</hidden> notes, only track items, plot details, or other facts that are NEW or have CHANGED since the previous turn. Do not include things already visible in the prompt context or copy forward unchanged states.
 
 {% llm_dummy_action %}
 Analyze the second draft and make sure everything in it makes sense and is continuous with the story so far. Identify any issues to fix in the final prose. Check that all resolved attacks and uncertain actions agree with their tool results. Keep track of any new or changed hidden notes so you can report them separately after writing the final prose.
@@ -512,15 +514,15 @@ Briefly list what, if anything, might have changed at this destination during th
 {% endif %}
 
 {% if proseScopes and ('origin' in proseScopes) %}
-Write only the final refined ORIGIN portion of the story now. Do not label it, wrap it in XML, or include hidden notes. Across all requested portions, use no more than {{ config.prose_length }}. Preserve continuity and adhere to every tool outcome.
+Write only the final refined ORIGIN portion of the story now. Do not label it, wrap it in XML, or include hidden notes. Across all requested portions, use no more than {{ config.prose_length }}. Preserve continuity and adhere to every tool outcome by applying the authoritative check-outcome contract.
 {% llmparse('player_action_required_prose') as originProse %}
 {% endif %}
 {% if proseScopes and ('between' in proseScopes) %}
-Write only the final refined BETWEEN portion of the story now. Do not label it, wrap it in XML, or include hidden notes. Continue smoothly from any prior portion. Across all requested portions, use no more than {{ config.prose_length }}. Preserve continuity and adhere to every tool outcome.
+Write only the final refined BETWEEN portion of the story now. Do not label it, wrap it in XML, or include hidden notes. Continue smoothly from any prior portion. Across all requested portions, use no more than {{ config.prose_length }}. Preserve continuity and adhere to every tool outcome by applying the authoritative check-outcome contract.
 {% llmparse('player_action_required_prose') as betweenProse %}
 {% endif %}
 {% if proseScopes and ('destination' in proseScopes) %}
-Write only the final refined DESTINATION portion of the story now. Do not label it, wrap it in XML, or include hidden notes. Continue smoothly from any prior portion. Across all requested portions, use no more than {{ config.prose_length }}. Preserve continuity and adhere to every tool outcome. Use the destination context and accepted changes below where they help the arrival feel grounded.
+Write only the final refined DESTINATION portion of the story now. Do not label it, wrap it in XML, or include hidden notes. Continue smoothly from any prior portion. Across all requested portions, use no more than {{ config.prose_length }}. Preserve continuity and adhere to every tool outcome by applying the authoritative check-outcome contract. Use the destination context and accepted changes below where they help the arrival feel grounded.
 {% if playerDestinationContext and playerDestinationContext.resolved %}
 Canonical destination: {{ playerDestinationContext.locationName }}{% if playerDestinationContext.regionName %}, {{ playerDestinationContext.regionName }}{% endif %}
 Canonical destination description: {{ playerDestinationContext.description }}
@@ -537,7 +539,7 @@ The following destination changes were already accepted. Depict every one natura
 List only hidden notes that are NEW or CHANGED this turn, without XML tags. Do not copy forward unchanged notes or information already visible in the prompt. Answer exactly N/A if there are none.
 {% llmparse('player_action_hidden_notes') as hiddenNotes %}
 {% else %}
-Write the final refined story prose now, using no more than {{ config.prose_length }}. Do not label it, wrap it in XML, or include hidden notes. Use what you determined above, preserve continuity, and adhere to every skill-check, opposed skill-check, and attack outcome.{% if explicitActionDuration %} The player committed this non-travel action to exactly {{ explicitActionDuration.text }}; narrate through its full duration unless there is a specific reason for an interruption.{% endif %}
+Write the final refined story prose now, using no more than {{ config.prose_length }}. Do not label it, wrap it in XML, or include hidden notes. Use what you determined above, preserve continuity, and adhere to every skill-check, opposed skill-check, and attack outcome by applying the authoritative check-outcome contract.{% if explicitActionDuration %} The player committed this non-travel action to exactly {{ explicitActionDuration.text }}; narrate through its full duration unless there is a specific reason for an interruption.{% endif %}
 {% llmparse('player_action_required_prose') as normalProse %}
 
 List only hidden notes that are NEW or CHANGED this turn, without XML tags. Do not copy forward unchanged notes or information already visible in the prompt. Answer exactly N/A if there are none.
@@ -547,8 +549,8 @@ List only hidden notes that are NEW or CHANGED this turn, without XML tags. Do n
 Briefly state how much in-world wall-clock time the concrete non-travel actions in the final prose realistically consumed. Estimate elapsed wall-clock time, not reading time and not the sum of parallel work. Do not include a duration on this step.
 {% llmparse('player_action_time_reasoning') as timeReasoning %}
 
-State the exact elapsed duration only, rounded to the nearest minute, with a 1 minute minimum. Do not give a range, uncertainty, or explanation. Use one of: HH:MM, INTEGER minutes, INTEGER hours, or INTEGER hours, INTEGER minutes.
-{% llmparse('player_action_duration', 1) as timeDuration %}
+State the exact elapsed duration only, rounded to the nearest minute, with a 1 minute minimum. Do not give a range, uncertainty, or explanation. Use one of: HH:MM, INTEGER minutes, INTEGER hours, INTEGER hours, INTEGER minutes, or "until HH:MM AM/PM". For the until form, the leading zero and minutes may be omitted; AM/PM may also be omitted to use 24-hour time. Examples: until 6:00 AM, until 6 AM, until 06 AM, until 18:00, or until 18.
+{% llmparse('player_action_time_passed_duration', 1, playerActionWorldTimeMinutes) as timeDuration %}
 {% endif %}
 {% endif %}
 

@@ -67,6 +67,8 @@ function loadGenerateRegionExitStubs(options = {}) {
         getBannedLocationNameSet: () => new Set(),
         isLocationNameBanned: () => false,
         Region: { getByName: options.getRegionByName || (() => null) },
+        findRegionByNameLoose: options.getRegionByName || (() => null),
+        findLocationByNameLoose: name => StubLocation.findByName(name),
         regenerateRegionNames: async () => {},
         normalizeRegionLocationName: (value) => String(value || '').trim().toLowerCase(),
         gameLocations,

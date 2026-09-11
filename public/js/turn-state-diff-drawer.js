@@ -88,48 +88,22 @@
         return entry.type === 'event-summary' || entry.type === 'status-summary';
     }
 
-    function parseContentItems(entry) {
-        const content = normalizeString(entry && entry.content);
-        if (!content) {
-            return [];
-        }
-
-        const title = normalizeString(entry.summaryTitle);
-        const lines = content
-            .split(/\r?\n/)
-            .map(line => line.trim())
-            .filter(Boolean);
-
-        if (!lines.length) {
-            return [];
-        }
-
-        return lines
-            .filter((line, index) => !(index === 0 && title && line === title))
-            .map(line => ({
-                icon: '*',
-                text: line.replace(/^\s*[-*]\s+/, '').trim()
-            }))
-            .filter(item => item.text);
-    }
-
     function normalizeEntryItems(entry) {
         if (!isTurnDiffEntry(entry)) {
             return [];
         }
 
-        const sourceItems = Array.isArray(entry.summaryItems) && entry.summaryItems.length
+        const sourceItems = Array.isArray(entry.summaryItems)
             ? entry.summaryItems
-            : parseContentItems(entry);
+            : [];
 
         return sourceItems
             .map(item => {
                 if (!isObject(item)) {
-                    const text = normalizeString(item);
-                    return text ? { icon: '*', text } : null;
+                    return null;
                 }
 
-                const text = normalizeString(item.text || item.summary || item.description || item.content);
+                const text = normalizeString(item.text);
                 if (!text) {
                     return null;
                 }
@@ -169,10 +143,6 @@
             });
     }
 
-    function includesAny(text, terms) {
-        return terms.some(term => text.includes(term));
-    }
-
     function categorizeTurnDiffItem(item, entry) {
         const explicitCategory = normalizeString(item && item.category);
         if (explicitCategory && CATEGORY_LABELS[explicitCategory]) {
@@ -186,36 +156,11 @@
         return 'other';
     }
 
-    function inferSeverity(item, entry) {
+    function inferSeverity(item) {
         const explicitSeverity = normalizeString(item && item.severity).toLowerCase();
         if (explicitSeverity === 'critical' || explicitSeverity === 'important' || explicitSeverity === 'normal') {
             return explicitSeverity;
         }
-
-        const text = [
-            item && item.text,
-            item && item.summaryTitle,
-            entry && entry.summaryTitle
-        ].map(value => normalizeString(value).toLowerCase()).join(' ');
-
-        if (includesAny(text, ['killed', 'incapacitated', 'dead'])) {
-            return 'critical';
-        }
-        if (includesAny(text, [
-            'damage',
-            'healed',
-            'quest objective complete',
-            'finished quest',
-            'joined the party',
-            'left the party',
-            'reputation with',
-            'travelled',
-            'traveled',
-            'new exit'
-        ])) {
-            return 'important';
-        }
-
         return 'normal';
     }
 
@@ -239,9 +184,7 @@
             return true;
         }
 
-        const icon = normalizeString(row && row.icon);
-        const text = normalizeString(row && row.text).toLowerCase();
-        return icon === '⏳' && /\bpassed\.?$/.test(text);
+        return false;
     }
 
     function formatElapsedTimeRow(row) {
@@ -249,9 +192,6 @@
         const text = normalizeString(row && row.text);
         if (!text) {
             return icon;
-        }
-        if (icon && text.startsWith(icon)) {
-            return text;
         }
         return [icon, text].filter(Boolean).join(' ');
     }
@@ -526,20 +466,20 @@
         const metadata = row.metadata && typeof row.metadata === 'object'
             ? row.metadata.dispositionChange
             : null;
-        const text = normalizeString(row.text);
-        const parsed = text.match(/^(.+?)'s\s+(.+?)\s+disposition\s+Δ\s+([+-]?\d+)/i);
-        const npcName = normalizeString(metadata && metadata.npcName) || (parsed ? normalizeString(parsed[1]) : 'Someone');
-        const npcId = normalizeString(metadata && metadata.npcId) || null;
-        const typeLabel = normalizeString(metadata && metadata.typeLabel) || (parsed ? normalizeString(parsed[2]) : 'Disposition');
-        const metadataDelta = Number(metadata && metadata.delta);
-        const parsedDelta = parsed ? Number(parsed[3]) : NaN;
-        const delta = Number.isFinite(metadataDelta)
-            ? metadataDelta
-            : (Number.isFinite(parsedDelta) ? parsedDelta : null);
-        if (Number.isFinite(delta) && delta === 0) {
+        if (!metadata || typeof metadata !== 'object') {
             return null;
         }
-        const icon = normalizeString(metadata && metadata.icon) || normalizeString(row.icon) || '💞';
+        const npcRef = Array.isArray(row.entityRefs)
+            ? row.entityRefs.find(ref => ref && ref.type === 'npc')
+            : null;
+        const npcName = normalizeString(metadata.npcName) || normalizeString(npcRef && npcRef.name);
+        const npcId = normalizeString(metadata && metadata.npcId) || null;
+        const typeLabel = normalizeString(metadata.typeLabel);
+        const delta = Number(metadata.delta);
+        if (!npcName || !typeLabel || !Number.isFinite(delta) || delta === 0) {
+            return null;
+        }
+        const icon = normalizeString(metadata.icon) || normalizeString(row.icon) || '💞';
 
         return {
             npcId,
@@ -696,26 +636,28 @@
         const metadata = row.metadata && typeof row.metadata === 'object'
             ? row.metadata.needBarChange
             : null;
-        const text = normalizeString(row.text);
-        const parsed = text.match(/^(.+?)'s\s+(.+?)\s+(?:(?:small|medium|large|fill|all)\s+)?(?:increase|decrease|changed|raise|lower|restore|drain)\b.*?(?:Δ\s+([+-]?\d+(?:\.\d+)?))?/i);
+        if (!metadata || typeof metadata !== 'object') {
+            return null;
+        }
         const firstRef = Array.isArray(row.entityRefs) ? row.entityRefs.find(ref => ref && ref.type === 'npc') : null;
-        const actorName = normalizeString(metadata && metadata.actorName)
+        const actorName = normalizeString(metadata.actorName)
             || normalizeString(firstRef && firstRef.name)
-            || (parsed ? normalizeString(parsed[1]) : 'Unknown');
-        const actorId = normalizeString(metadata && metadata.actorId)
+            || '';
+        const actorId = normalizeString(metadata.actorId)
             || normalizeString(firstRef && firstRef.id)
             || null;
-        const needBarName = normalizeString(metadata && metadata.needBarName)
-            || (parsed ? normalizeString(parsed[2]) : 'Need Bar');
-        const icon = normalizeString(metadata && metadata.icon) || normalizeString(row.icon) || '🧪';
-        const metadataDelta = Number(metadata && metadata.delta);
-        const parsedDeltaText = parsed ? normalizeString(parsed[3]) : '';
-        let deltaText = normalizeString(metadata && metadata.deltaText) || parsedDeltaText;
+        const needBarName = normalizeString(metadata.needBarName);
+        const icon = normalizeString(metadata.icon) || normalizeString(row.icon) || '🧪';
+        const metadataDelta = Number(metadata.delta);
+        let deltaText = normalizeString(metadata.deltaText);
         if (!deltaText && Number.isFinite(metadataDelta) && metadataDelta !== 0) {
             deltaText = `${metadataDelta > 0 ? '+' : ''}${Math.round(metadataDelta)}`;
         }
         if (deltaText === '+0' || deltaText === '-0' || deltaText === '0') {
             deltaText = '';
+        }
+        if (!actorName || !needBarName) {
+            return null;
         }
 
         return {

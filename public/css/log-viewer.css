@@ -1,0 +1,160 @@
+.log-viewer {
+  flex: 1;
+  height: auto;
+  min-width: 0;
+}
+.log-viewer h1 {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 1.4rem;
+}
+.log-viewer h2 {
+  font-size: 1rem;
+  overflow-wrap: anywhere;
+}
+.log-viewer__toolbar {
+  flex-wrap: wrap;
+}
+.log-viewer__session-controls {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.log-viewer #log-session {
+  max-width: none;
+}
+.log-viewer__layout {
+  display: grid;
+  grid-template-columns: minmax(250px, 31%) minmax(0, 1fr);
+  padding: 0;
+  overflow: hidden;
+}
+.log-viewer__sidebar, .log-viewer__reader {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px;
+  min-width: 0;
+  min-height: 0;
+}
+.log-viewer__sidebar {
+  border-right: 1px solid rgba(255, 255, 255, 0.3);
+}
+.log-viewer__list-heading {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.log-viewer #log-files {
+  flex: 1;
+  flex-direction: column;
+  flex-wrap: nowrap;
+  max-height: none;
+}
+.log-viewer__file {
+  width: 100%;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  overflow-wrap: anywhere;
+}
+.log-viewer__file time {
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 0.8rem;
+}
+.log-viewer__reader .story-tools-entry-header {
+  justify-content: space-between;
+}
+.log-viewer__reader .story-tools-tag {
+  flex-shrink: 0;
+}
+.log-viewer__text-box {
+  flex: 1;
+  min-height: 0;
+  max-height: none;
+  display: flex;
+  overflow: hidden;
+  padding: 0;
+  white-space: normal;
+  font: 0.85rem/1.55 ui-monospace, SFMono-Regular, Consolas, monospace;
+}
+.log-viewer #log-lines, .log-viewer #log-content {
+  margin: 0;
+  padding: 12px;
+  font: inherit;
+  white-space: pre;
+}
+.log-viewer #log-lines {
+  color: rgba(255, 255, 255, 0.6);
+  text-align: right;
+  border-right: 1px solid rgba(255, 255, 255, 0.3);
+  overflow: hidden;
+  flex-shrink: 0;
+  user-select: none;
+}
+.log-viewer #log-content {
+  flex: 1;
+  min-width: 0;
+  resize: none;
+  border: 0;
+  border-radius: 0;
+  color: inherit;
+  background: transparent;
+  overflow: auto;
+}
+.log-viewer #log-content:focus-visible {
+  outline: 2px solid #667eea;
+  outline-offset: -2px;
+}
+.log-viewer__error {
+  margin: auto;
+}
+.log-viewer__error:not([open]) {
+  display: none;
+}
+.log-viewer__error::backdrop {
+  background: var(--airpg-modal-backdrop);
+}
+.log-viewer__error pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 55vh;
+  overflow: auto;
+}
+
+@media (max-width: 900px) {
+  .log-viewer__layout {
+    flex: none;
+    height: 75vh;
+    min-height: 540px;
+  }
+}
+@media (max-width: 768px) {
+  .log-viewer {
+    padding: 12px;
+  }
+  .log-viewer__layout {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(210px, 36%) minmax(0, 1fr);
+  }
+  .log-viewer__sidebar {
+    border-right: 0;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.3);
+  }
+  .log-viewer__sidebar, .log-viewer__reader {
+    padding: 10px;
+    gap: 8px;
+  }
+  .log-viewer__session-controls {
+    gap: 8px;
+  }
+  .log-viewer #log-session {
+    max-width: 100%;
+  }
+}
+
+/*# sourceMappingURL=log-viewer.css.map */

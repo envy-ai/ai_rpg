@@ -33,6 +33,7 @@
 - When finished with a coding task, update any relevant documentation. If no relevant documentation exists, create some. Name the doc file after the name of the class (Location.js -> Location.md).
 - When updating documentation, also update docs/README.md to reflect any changes or new items.
 - The game server (and associated processes) run outside of the sandbox. When restarting it, don't load a save.
+- ASK PERMISSION before restarting the server, as I may be using it and it can cause data loss.
 
 ## Tinybrain prompts
 

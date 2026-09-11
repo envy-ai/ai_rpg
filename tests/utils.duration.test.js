@@ -41,6 +41,51 @@ test('parseDurationToMinutes still rejects bare decimal strings without units', 
     );
 });
 
+test('parseDurationToMinutes accepts opt-in until clock times with optional leading zero and minutes', () => {
+    const options = { currentWorldMinute: 110 };
+    assert.equal(Utils.parseDurationToMinutes('until 6:00 AM', options), 250);
+    assert.equal(Utils.parseDurationToMinutes('until 06:00 AM', options), 250);
+    assert.equal(Utils.parseDurationToMinutes('until 6 AM', options), 250);
+    assert.equal(Utils.parseDurationToMinutes('until 06 AM', options), 250);
+});
+
+test('parseDurationToMinutes treats until clock times without AM or PM as 24-hour time', () => {
+    const options = { currentWorldMinute: 110 };
+    assert.equal(Utils.parseDurationToMinutes('until 18:00', options), 970);
+    assert.equal(Utils.parseDurationToMinutes('until 18', options), 970);
+    assert.equal(Utils.parseDurationToMinutes('until 6', options), 250);
+});
+
+test('parseDurationToMinutes handles until noon, midnight, rollover, and an equal clock target', () => {
+    assert.equal(Utils.parseDurationToMinutes('until 12 PM', { currentWorldMinute: 690 }), 30);
+    assert.equal(Utils.parseDurationToMinutes('until 12 AM', { currentWorldMinute: 1410 }), 30);
+    assert.equal(Utils.parseDurationToMinutes('until 6:00', { currentWorldMinute: 1215 }), 585);
+    assert.equal(Utils.parseDurationToMinutes('until 1 PM', { currentWorldMinute: 780 }), 1440);
+});
+
+test('parseDurationToMinutes rejects invalid or context-free until clock times', () => {
+    assert.throws(
+        () => Utils.parseDurationToMinutes('until 6 AM'),
+        /without a current world minute/i
+    );
+    assert.throws(
+        () => Utils.parseDurationToMinutes('until 0 AM', { currentWorldMinute: 0 }),
+        /between 1 and 12/i
+    );
+    assert.throws(
+        () => Utils.parseDurationToMinutes('until 13 PM', { currentWorldMinute: 0 }),
+        /between 1 and 12/i
+    );
+    assert.throws(
+        () => Utils.parseDurationToMinutes('until 24', { currentWorldMinute: 0 }),
+        /between 0 and 23/i
+    );
+    assert.throws(
+        () => Utils.parseDurationToMinutes('until 18:60', { currentWorldMinute: 0 }),
+        /clock minute must be between 00 and 59|invalid/i
+    );
+});
+
 test('parseDurationToMinutes can accept an optional unary sign when allowSigned is enabled', () => {
     assert.equal(
         Utils.parseDurationToMinutes('+10m', { allowSigned: true }),

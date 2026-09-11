@@ -100,6 +100,10 @@ ai:
   # kimi_bridge.model when set, or the saved Kimi CLI default when blank.
   model: zai-org/glm-4.7
 
+  # When true, multimodal requests use this AI profile directly instead of
+  # switching to ai_multimodal. Matching ai_model_overrides can change it.
+  has_vision: false
+
   # When true for the image_prompt_generation model, drain prompt writing first,
   # unload it through a llama.cpp router while ComfyUI renders, then reload it.
   unload_during_image_generation: false
@@ -350,6 +354,7 @@ prompt_progress:
     while_you_were_away*: 5000
     xml_fix: 5000
     housekeeping: 5000
+    generate_seasonal_image_vision: 5000
 model_swap_options:
   - "zai-org/glm-4.7"
   - "z-ai/glm-4.6"
@@ -463,12 +468,17 @@ imagegen:
     image:
       width: 1280
       height: 720
+  faction_settings:
+    image:
+      width: 1024
+      height: 1024
   #Additional user instructions to include in the image prompt generation
   image_prompt_instructions:
     character:
     item:
     location:
     scenery:
+    faction:
 random_event_frequency:
   enabled: true
   common: 0.05

@@ -808,6 +808,64 @@ test('drawer does not infer categories from uncategorized event text', () => {
     assert.deepEqual(Array.from(summary.categories, category => category.category), ['other']);
 });
 
+test('turn diff notifications require structured summary items instead of parsing entry prose', () => {
+    const drawer = loadDrawerApi();
+    const summary = drawer.summarizeTurnDiff([{
+        type: 'event-summary',
+        summaryTitle: '📋 Events',
+        content: '📋 Events\n• ☠ Mara was killed.'
+    }]);
+
+    assert.equal(summary.total, 0);
+    assert.doesNotMatch(drawerSource, /function parseContentItems\(/);
+});
+
+test('turn diff notification semantics come from structured fields, not display text', () => {
+    const drawer = loadDrawerApi();
+    const summary = drawer.summarizeTurnDiff([{
+        type: 'event-summary',
+        summaryTitle: '📋 Events',
+        summaryItems: [{
+            icon: '⏳',
+            category: 'time',
+            text: 'Mara was killed after 2 minutes passed.'
+        }]
+    }]);
+
+    assert.equal(summary.rows[0].severity, 'normal');
+    assert.equal(summary.elapsedTimeRows.length, 0);
+    assert.deepEqual(summary.bodyRows.map(row => row.text), [
+        'Mara was killed after 2 minutes passed.'
+    ]);
+});
+
+test('grouped disposition and need notifications require structured change metadata', () => {
+    const drawer = loadDrawerApi({
+        document: createFakeDocument(),
+        CustomEvent: FakeCustomEvent
+    });
+    const element = drawer.createDrawer([{
+        type: 'event-summary',
+        summaryTitle: '📋 Events',
+        summaryItems: [{
+            icon: '🙂',
+            category: 'disposition',
+            text: "Bob's Platonic disposition Δ +1"
+        }, {
+            icon: '🍗',
+            category: 'needs',
+            text: "Bob's Hunger small decrease Δ -3"
+        }]
+    }], { open: true });
+
+    assert.equal(collectByClass(element, 'turn-diff-drawer__disposition-row').length, 0);
+    assert.equal(collectByClass(element, 'turn-diff-drawer__need-row').length, 0);
+    assert.equal(collectByClass(element, 'turn-diff-drawer__row').length, 2);
+    assert.doesNotMatch(drawerSource, /const parsed = text\.match/);
+    assert.doesNotMatch(chatSource, /const parsed = text\.match/);
+    assert.doesNotMatch(chatSource, /text\.startsWith\('traveled from '\)/);
+});
+
 test('server and live bundles preserve explicit summary item categories', () => {
     assert.match(apiSource, /category:\s*normalizeSummaryCategory\(item\?\.category\)/);
     assert.match(chatSource, /pushEventBundleItem\(icon,\s*text,\s*category\s*=\s*'other'/);

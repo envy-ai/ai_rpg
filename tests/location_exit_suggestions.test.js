@@ -5,7 +5,10 @@ const path = require('node:path');
 const vm = require('node:vm');
 const nunjucks = require('nunjucks');
 
-const { parseLocationExitSuggestions } = require('../LocationExitSuggestions.js');
+const {
+    parseLocationExitSuggestions,
+    shouldEncourageNewExitSuggestions
+} = require('../LocationExitSuggestions.js');
 const { runPromptWithParseRetries } = require('../PromptRetryPolicy.js');
 
 const promptsDir = path.join(__dirname, '..', 'prompts');
@@ -33,6 +36,24 @@ this.createSuggestedExitStubs = createSuggestedExitStubs;`,
         context
     );
     return context.createSuggestedExitStubs;
+}
+
+function loadBuildLocationExitDiscoveryContext(gameLocations) {
+    const source = fs.readFileSync(require.resolve('../server.js'), 'utf8');
+    const start = source.indexOf('function buildLocationExitDiscoveryContext(location, originLocation = null) {');
+    const end = source.indexOf('\nfunction filterNewExitSuggestionsToUnknownPlaces(suggestions = []) {', start);
+    if (start < 0 || end < 0) {
+        throw new Error('Unable to locate buildLocationExitDiscoveryContext in server.js');
+    }
+
+    const context = { gameLocations, Set };
+    vm.createContext(context);
+    vm.runInContext(
+        `${source.slice(start, end)}
+this.buildLocationExitDiscoveryContext = buildLocationExitDiscoveryContext;`,
+        context
+    );
+    return context.buildLocationExitDiscoveryContext;
 }
 
 test('suggested exits create the requested stub kinds and persist an empty decision', async () => {
@@ -139,6 +160,31 @@ test('location exit suggestions parse location and region stubs without imposing
     ]);
 });
 
+test('location exit suggestions collapse duplicate names that differ only by leading the', () => {
+    const suggestions = parseLocationExitSuggestions(`
+        <location>
+            <name>Windcut Shelf</name>
+            <newExits>
+                <exit>
+                    <destinationType>location</destinationType>
+                    <name>The Goat Bell Ledge</name>
+                    <description>A narrow switchback follows old bell posts.</description>
+                    <travelTime>15 minutes</travelTime>
+                </exit>
+                <exit>
+                    <destinationType>location</destinationType>
+                    <name>Goat Bell Ledge</name>
+                    <description>The same switchback without its article.</description>
+                    <travelTime>15 minutes</travelTime>
+                </exit>
+            </newExits>
+        </location>
+    `, { required: true });
+
+    assert.equal(suggestions.length, 1);
+    assert.equal(suggestions[0].name, 'The Goat Bell Ledge');
+});
+
 test('location exit suggestions reject missing decisions and malformed entries', () => {
     assert.throws(
         () => parseLocationExitSuggestions('<location><name>Closed Room</name></location>', { required: true }),
@@ -166,11 +212,13 @@ test('stub prompt requests a contextual zero-or-more exit decision only when ena
         stubId: 'loc_windcut_shelf',
         stubName: 'Windcut Shelf',
         discoverNewExits: true,
+        encourageNewExits: true,
         existingExitDestinations: [{
             destinationType: 'location',
             name: 'Lower Trail',
             description: 'The route back down the mountain.',
-            isReturnRoute: true
+            isReturnRoute: true,
+            isUnexplored: false
         }]
     });
 
@@ -180,6 +228,25 @@ test('stub prompt requests a contextual zero-or-more exit decision only when ena
     assert.match(discoveryPrompt, /There is no target count/);
     assert.match(discoveryPrompt, /<newExits>/);
 
+    const unexploredExitPrompt = env.render('_includes/location-generator-stub.njk', {
+        stubId: 'loc_windcut_shelf',
+        stubName: 'Windcut Shelf',
+        discoverNewExits: true,
+        encourageNewExits: false,
+        existingExitDestinations: [{
+            destinationType: 'location',
+            name: 'Unopened Observatory',
+            description: 'A sealed stair continues upward.',
+            isReturnRoute: false,
+            isUnexplored: true
+        }]
+    });
+    assert.match(unexploredExitPrompt, /<existingExits>/);
+    assert.match(unexploredExitPrompt, /<newExits>/);
+    assert.doesNotMatch(unexploredExitPrompt, /ONWARD EXIT DECISION/);
+    assert.doesNotMatch(unexploredExitPrompt, /Invent plausible new destinations/);
+    assert.doesNotMatch(unexploredExitPrompt, /Mention features hinting at additional unexplored directions/);
+
     const ordinaryPrompt = env.render('_includes/location-generator-stub.njk', {
         stubId: 'loc_windcut_shelf',
         stubName: 'Windcut Shelf',
@@ -187,6 +254,45 @@ test('stub prompt requests a contextual zero-or-more exit decision only when ena
     });
     assert.doesNotMatch(ordinaryPrompt, /<existingExits>/);
     assert.doesNotMatch(ordinaryPrompt, /<newExits>/);
+});
+
+test('new-exit encouragement is enabled only when no existing exit is unexplored', () => {
+    assert.equal(shouldEncourageNewExitSuggestions([]), true);
+    assert.equal(shouldEncourageNewExitSuggestions([
+        { name: 'Lower Trail', isUnexplored: false },
+        { name: 'Market Road', isUnexplored: false }
+    ]), true);
+    assert.equal(shouldEncourageNewExitSuggestions([
+        { name: 'Lower Trail', isUnexplored: false },
+        { name: 'Unopened Observatory', isUnexplored: true }
+    ]), false);
+    assert.throws(
+        () => shouldEncourageNewExitSuggestions(null),
+        /must be an array/
+    );
+});
+
+test('location exit discovery marks unvisited destinations as unexplored', () => {
+    const explored = { id: 'loc-explored', name: 'Market Road', visited: true };
+    const unexplored = { id: 'loc-unexplored', name: 'Sealed Observatory', visited: false };
+    const gameLocations = new Map([
+        [explored.id, explored],
+        [unexplored.id, unexplored]
+    ]);
+    const buildContext = loadBuildLocationExitDiscoveryContext(gameLocations);
+    const exitsByDirection = new Map([
+        ['west', { destination: explored.id, description: 'A familiar road.' }],
+        ['up', { destination: unexplored.id, description: 'A sealed stair.' }]
+    ]);
+    const location = {
+        getAvailableDirections: () => Array.from(exitsByDirection.keys()),
+        getExit: direction => exitsByDirection.get(direction) || null
+    };
+
+    const exits = buildContext(location, explored);
+    assert.equal(exits.find(exit => exit.name === 'Market Road').isUnexplored, false);
+    assert.equal(exits.find(exit => exit.name === 'Sealed Observatory').isUnexplored, true);
+    assert.equal(shouldEncourageNewExitSuggestions(exits), false);
 });
 
 function loadFilterNewExitSuggestionsToUnknownPlaces({
@@ -329,6 +435,7 @@ test('location generation automatically validates new exits for every ordinary s
     const functionSource = source.slice(start, end);
 
     assert.match(functionSource, /isStubExpansion\s*&& !stubLocation\.hasGeneratedStubs/);
+    assert.match(functionSource, /shouldEncourageNewExitSuggestions\(existingExitDestinations\)/);
     assert.match(functionSource, /runPromptWithParseRetries\(\{/);
     assert.match(functionSource, /parseLocationExitSuggestions\(responseText, \{ required: true \}\)/);
     assert.doesNotMatch(functionSource, /discoverNewExits = false/);

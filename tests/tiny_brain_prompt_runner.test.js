@@ -1546,6 +1546,8 @@ test('real player-action template preserves underway vehicle normal and redirect
                         : 'Location: New Harbor Station\nRegion: New Harbor';
                 } else if (checkpoint.parserName === 'player_action_duration') {
                     aiResponse = vehicleAnswer === 'UNCHANGED' ? '3 minutes' : '30 minutes';
+                } else if (checkpoint.parserName === 'player_action_time_passed_duration') {
+                    aiResponse = '3 minutes';
                 } else if (checkpoint.parserName === 'player_action_prose_scope') {
                     aiResponse = 'BETWEEN';
                 } else if (checkpoint.parserName === 'player_action_required_prose') {

@@ -172,7 +172,11 @@ class Utils {
     return value > 0 ? Math.ceil(value) : Math.floor(value);
   }
 
-  static parseDurationToMinutes(value, { fieldName = 'duration', allowSigned = false } = {}) {
+  static parseDurationToMinutes(value, {
+    fieldName = 'duration',
+    allowSigned = false,
+    currentWorldMinute = null
+  } = {}) {
     const label = typeof fieldName === 'string' && fieldName.trim()
       ? fieldName.trim()
       : 'duration';
@@ -200,6 +204,44 @@ class Utils {
       return sanitized.trim();
     };
     const parseUnsignedDurationText = (text) => {
+      const untilMatch = text.match(/^until\s+(\d{1,2})(?::(\d{2}))?\s*(am|pm)?$/i);
+      if (untilMatch) {
+        if (currentWorldMinute === null || currentWorldMinute === undefined) {
+          throwWithTrace(`${label} cannot use an until clock time without a current world minute.`);
+        }
+        const currentMinute = Number(currentWorldMinute);
+        if (!Number.isFinite(currentMinute) || currentMinute < 0 || !Number.isInteger(currentMinute)) {
+          throwWithTrace(`${label} current world minute must be a non-negative integer.`);
+        }
+
+        const rawHour = Number(untilMatch[1]);
+        const minute = untilMatch[2] === undefined ? 0 : Number(untilMatch[2]);
+        const meridiem = untilMatch[3]?.toLowerCase() || null;
+        if (minute < 0 || minute > 59) {
+          throwWithTrace(`${label} until clock minute must be between 00 and 59.`);
+        }
+
+        let hour24 = rawHour;
+        if (meridiem) {
+          if (rawHour < 1 || rawHour > 12) {
+            throwWithTrace(`${label} until clock hour must be between 1 and 12 when AM or PM is present.`);
+          }
+          hour24 = rawHour % 12;
+          if (meridiem === 'pm') {
+            hour24 += 12;
+          }
+        } else if (rawHour < 0 || rawHour > 23) {
+          throwWithTrace(`${label} until clock hour must be between 0 and 23 when AM or PM is omitted.`);
+        }
+
+        const targetMinuteOfDay = (hour24 * 60) + minute;
+        const currentMinuteOfDay = currentMinute % 1440;
+        const sameDayDifference = targetMinuteOfDay - currentMinuteOfDay;
+        return sameDayDifference > 0
+          ? sameDayDifference
+          : sameDayDifference + 1440;
+      }
+
       if (/^\d+$/.test(text)) {
         return Number(text);
       }
@@ -1113,6 +1155,7 @@ class Utils {
       factions = new Map(),
       currentSetting = null,
       pendingRegionStubs = null,
+      pendingQuestConfirmations = [],
       gameConfigOverrideYaml = '',
       enabledMods = []
     } = context;
@@ -1151,6 +1194,10 @@ class Utils {
     };
 
     serialized.chatHistory = Array.isArray(chatHistory) ? [...chatHistory] : [];
+    if (!Array.isArray(pendingQuestConfirmations)) {
+      throw new Error('pendingQuestConfirmations must be an array during serialization.');
+    }
+    serialized.pendingQuestConfirmations = JSON.parse(JSON.stringify(pendingQuestConfirmations));
     serialized.generatedImages = Object.fromEntries(generatedImages);
     if (pendingRegionStubs instanceof Map) {
       serialized.pendingRegionStubs = Object.fromEntries(pendingRegionStubs);
@@ -1331,6 +1378,7 @@ class Utils {
       ensureFile('skills.json', serialized.skills || []),
       ensureFile('metadata.json', serialized.metadata || {}),
       ensureFile('pendingRegionStubs.json', serialized.pendingRegionStubs || {}),
+      ensureFile('pendingQuestConfirmations.json', serialized.pendingQuestConfirmations || []),
       ensureFile('worldTime.json', serialized.worldTime || {}),
       ensureFile('calendarDefinition.json', serialized.calendarDefinition || {}),
       fs.promises.writeFile(path.join(saveDir, 'gameConfigOverride.yaml'), serialized.gameConfigOverrideYaml || '', 'utf8'),
@@ -1394,6 +1442,7 @@ class Utils {
       chatSummaries: readJson('chatSummaries.json', {}),
       sceneSummaries: readJson('sceneSummaries.json', {}),
       pendingRegionStubs: readJson('pendingRegionStubs.json', {}),
+      pendingQuestConfirmations: readJson('pendingQuestConfirmations.json', []),
       worldTime: readJson('worldTime.json', null),
       calendarDefinition: readJson('calendarDefinition.json', null),
       gameConfigOverrideYaml: readText('gameConfigOverride.yaml', '')

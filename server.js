@@ -1,5 +1,6 @@
 const http = require('http');
 const express = require('express');
+const LogViewer = require('./LogViewer.js');
 const axios = require('axios');
 const LLMClient = require('./LLMClient.js');
 const {
@@ -9,7 +10,8 @@ const {
     validateGeneratedLocationThingBatch
 } = require('./LocationThingGenerationValidation.js');
 const {
-    parseLocationExitSuggestions
+    parseLocationExitSuggestions,
+    shouldEncourageNewExitSuggestions
 } = require('./LocationExitSuggestions.js');
 const {
     resolveConfiguredPromptMaxAttempts,
@@ -112,6 +114,10 @@ const {
 } = require('./base_context_relationships.js');
 const { getCurrencyLabel } = require('./public/js/currency-utils.js');
 const SanitizedStringSet = require('./SanitizedStringSet.js');
+const {
+    normalizeDuplicateName,
+    normalizePersonNameForDuplicateCheck
+} = require('./DuplicateNameUtils.js');
 const StatusEffect = require('./StatusEffect.js');
 const {
     findSameLocationNpcByName,
@@ -1346,7 +1352,8 @@ function resolveImagePromptGenerationInstructions(kind, settingSnapshot = getAct
         character: 'imagePromptInstructionsCharacter',
         location: 'imagePromptInstructionsLocation',
         item: 'imagePromptInstructionsItem',
-        scenery: 'imagePromptInstructionsScenery'
+        scenery: 'imagePromptInstructionsScenery',
+        faction: 'imagePromptInstructionsFaction'
     };
     const settingField = settingFieldByKind[normalizedKind];
     const settingInstructions = settingField && typeof settingSnapshot?.[settingField] === 'string'
@@ -1438,6 +1445,26 @@ function resolveThingImageDimensions(thing) {
     return {
         width: resolveDimension(overrideImageSettings.width, defaultImageSettings.width, 'width'),
         height: resolveDimension(overrideImageSettings.height, defaultImageSettings.height, 'height')
+    };
+}
+
+function resolveFactionImageDimensions(configuration = config) {
+    const factionImageSettings = configuration?.imagegen?.faction_settings?.image || {};
+    const defaultImageSettings = configuration?.imagegen?.default_settings?.image || {};
+    const resolveDimension = (primaryValue, fallbackValue, label) => {
+        const primaryNumeric = Number(primaryValue);
+        if (Number.isFinite(primaryNumeric) && primaryNumeric > 0) {
+            return primaryNumeric;
+        }
+        const fallbackNumeric = Number(fallbackValue);
+        if (Number.isFinite(fallbackNumeric) && fallbackNumeric > 0) {
+            return fallbackNumeric;
+        }
+        throw new Error(`Image generation: missing configured ${label} for faction emblem images.`);
+    };
+    return {
+        width: resolveDimension(factionImageSettings.width, defaultImageSettings.width, 'width'),
+        height: resolveDimension(factionImageSettings.height, defaultImageSettings.height, 'height')
     };
 }
 
@@ -1762,7 +1789,7 @@ function buildLocationWeatherVariantKey({ sourceImageId, seasonKey, lightingKey,
     return `${source}__${season}__${lighting}__${scope}__${weather}`;
 }
 
-function resolveLocationWeatherVariantConditions(location, { sourceImageId = null } = {}) {
+function resolveLocationWeatherVariantConditions(location, { sourceImageId = null, visionEnabled = false } = {}) {
     if (!location || typeof location !== 'object') {
         throw new Error('Location is required to resolve weather image variant conditions.');
     }
@@ -1809,20 +1836,47 @@ function resolveLocationWeatherVariantConditions(location, { sourceImageId = nul
         weatherKey = slugifyLocationVariantKeyPart(weatherName, 'weather');
     }
 
-    const variantKey = buildLocationWeatherVariantKey({
+    let visionWeatherKey = weatherKey;
+    if (visionEnabled && !hasLocalWeather) {
+        let regionalWeather = null;
+        if (region && typeof region.resolveCurrentWeather === 'function') {
+            const timeConfig = Globals.getTimeConfig();
+            const dayIndex = Number(worldTimeContext?.dayIndex);
+            const timeMinutes = Number(worldTimeContext?.timeMinutes);
+            if (!Number.isFinite(dayIndex) || dayIndex < 0 || !Number.isFinite(timeMinutes) || timeMinutes < 0) {
+                throw new Error('World time context is invalid while resolving seasonal image vision weather.');
+            }
+            regionalWeather = region.resolveCurrentWeather({
+                seasonName: worldTimeContext?.season || null,
+                totalMinutes: (dayIndex * timeConfig.cycleLengthMinutes) + timeMinutes
+            });
+        }
+        weatherName = typeof regionalWeather?.name === 'string' && regionalWeather.name.trim()
+            ? regionalWeather.name.trim()
+            : 'Unspecified weather';
+        weatherDescription = typeof regionalWeather?.description === 'string' && regionalWeather.description.trim()
+            ? regionalWeather.description.trim()
+            : 'Weather has not been defined for this region.';
+        visionWeatherKey = slugifyLocationVariantKeyPart(weatherName, 'weather');
+    }
+
+    const deterministicVariantKey = buildLocationWeatherVariantKey({
         sourceImageId: resolvedSourceImageId,
         seasonKey: worldTimeContext.season,
         lightingKey,
         weatherScope,
         weatherKey
     });
+    const variantKey = visionEnabled
+        ? `${deterministicVariantKey}__vision-v1${hasLocalWeather ? '' : `__${visionWeatherKey}`}`
+        : deterministicVariantKey;
 
     return {
         sourceImageId: resolvedSourceImageId,
         variantKey,
         lightingKey,
         lightingLabel,
-        weatherKey,
+        weatherKey: visionEnabled ? visionWeatherKey : weatherKey,
         weatherName,
         weatherDescription,
         hasLocalWeather,
@@ -1833,6 +1887,7 @@ function resolveLocationWeatherVariantConditions(location, { sourceImageId = nul
         timeLabel: worldTimeContext.timeLabel || null,
         dateLabel: worldTimeContext.dateLabel || null,
         season: worldTimeContext.season || null,
+        seasonDescription: worldTimeContext.seasonDescription || null,
         seasonVegetationDescription: worldTimeContext.seasonVegetationDescription || null,
         seasonInteriorDescription: worldTimeContext.seasonInteriorDescription || null
     };
@@ -1891,6 +1946,101 @@ function buildLocationWeatherVariantPrompt(location, conditions, { sourceImageMe
         throw new Error('Location weather variant image prompt template rendered empty output.');
     }
     return prompt;
+}
+
+function shouldUseSeasonalImageVision() {
+    if (config?.ai_multimodal?.enabled === true) {
+        return true;
+    }
+    const effective = LLMClient.resolveEffectiveAiConfiguration('generate_seasonal_image_vision', config);
+    return effective?.aiConfig?.has_vision === true;
+}
+
+function imageFileToDataUrl(filePath) {
+    const extension = path.extname(filePath).toLowerCase();
+    const mimeTypes = new Map([
+        ['.png', 'image/png'],
+        ['.jpg', 'image/jpeg'],
+        ['.jpeg', 'image/jpeg'],
+        ['.webp', 'image/webp'],
+        ['.gif', 'image/gif']
+    ]);
+    const mimeType = mimeTypes.get(extension);
+    if (!mimeType) {
+        throw new Error(`Unsupported seasonal image source extension "${extension || '(none)'}".`);
+    }
+    return `data:${mimeType};base64,${fs.readFileSync(filePath).toString('base64')}`;
+}
+
+function extractSeasonalImageVisionInstructions(responseText) {
+    const response = typeof responseText === 'string' ? responseText.trim() : '';
+    const rootXml = Utils.extractFinalXmlRootBlock(response, 'imageEditingInstructions');
+    const doc = Utils.parseXmlDocumentStrict(rootXml, 'text/xml');
+    const root = doc.documentElement;
+    if (!root || root.tagName !== 'imageEditingInstructions') {
+        throw new Error('Seasonal image vision response is missing the <imageEditingInstructions> root.');
+    }
+    const nestedElements = Array.from(root.childNodes || []).filter(node => node?.nodeType === 1);
+    if (nestedElements.length) {
+        throw new Error('Seasonal image vision instructions must contain prose or N/A without nested XML elements.');
+    }
+    const instructions = (root.textContent || '').trim();
+    if (!instructions) {
+        throw new Error('Seasonal image vision response contained empty image editing instructions.');
+    }
+    return instructions;
+}
+
+async function buildLocationWeatherVariantVisionPrompt(location, conditions, sourceImagePath) {
+    const baseContext = buildBasePromptContext({ locationOverride: location });
+    const renderedTemplate = promptEnv.render('base-context.xml.njk', {
+        ...baseContext,
+        promptType: 'generate-seasonal-image-vision',
+        location: {
+            name: location.name || 'Unnamed location',
+            description: location.description || location.shortDescription || ''
+        },
+        season: {
+            name: conditions.season || 'Unspecified season',
+            description: conditions.seasonDescription || ''
+        },
+        weather: {
+            name: conditions.weatherName || 'Unspecified weather',
+            description: conditions.weatherDescription || ''
+        },
+        timeOfDay: conditions.timeLabel || conditions.segment || conditions.lightingLabel
+    });
+    const parsedTemplate = parseXMLTemplate(renderedTemplate);
+    if (!parsedTemplate.generationPrompt?.trim()) {
+        throw new Error('Seasonal image vision prompt rendered without a generation prompt.');
+    }
+    const userContent = [
+        { type: 'text', text: parsedTemplate.generationPrompt },
+        { type: 'image_url', image_url: { url: imageFileToDataUrl(sourceImagePath) } }
+    ];
+    const response = await runTrackedImagePromptGeneration(() => LLMClient.chatCompletion({
+        messages: [
+            ...(parsedTemplate.systemPrompt?.trim() ? [{ role: 'system', content: parsedTemplate.systemPrompt }] : []),
+            { role: 'user', content: userContent }
+        ],
+        temperature: parsedTemplate.temperature,
+        metadataLabel: 'generate_seasonal_image_vision',
+        expectedXmlRootTag: 'imageEditingInstructions',
+        validateXMLStrict: true,
+        requiredRegex: /<imageEditingInstructions>[\s\S]*?[^\s<][\s\S]*?<\/imageEditingInstructions>/i,
+        responseValidationRetryFeedback: true,
+        multimodal: true,
+        runInBackground: true,
+        preferDedicatedMultimodalConfiguration: true
+    }));
+    LLMClient.logPrompt({
+        prefix: 'generate_seasonal_image_vision',
+        metadataLabel: 'generate_seasonal_image_vision',
+        systemPrompt: parsedTemplate.systemPrompt || '',
+        generationPrompt: parsedTemplate.generationPrompt,
+        response: response || ''
+    });
+    return extractSeasonalImageVisionInstructions(response);
 }
 
 function resolveLocationWeatherVariantSourceImage(location) {
@@ -1977,7 +2127,7 @@ function clearLocationImageVariants(location, { sourceImageId = null, deleteGene
     const removed = location.clearImageVariants({ sourceImageId });
     if (deleteGeneratedImageMetadata) {
         for (const entry of removed) {
-            if (entry?.imageId && generatedImages && typeof generatedImages.delete === 'function') {
+            if (entry?.imageId && entry.imageId !== entry.sourceImageId && generatedImages && typeof generatedImages.delete === 'function') {
                 generatedImages.delete(entry.imageId);
             }
             if (entry?.variantKey && location?.id) {
@@ -2018,7 +2168,9 @@ function attachCompletedLocationWeatherVariantJob(job, result) {
         attached = true;
         console.log(`🌦️ Updated location ${location.id} weather image variant ${payload.variantKey} to: ${result.imageId}`);
     } else {
-        generatedImages.delete(result.imageId);
+        if (result.imageId !== sourceImageId) {
+            generatedImages.delete(result.imageId);
+        }
         console.warn(`🌦️ Discarded stale weather image variant ${payload.variantKey || ''} for location ${payload.locationId || ''}.`);
     }
     clearEntityJob('location-variant', `${payload.locationId}:${payload.variantKey}`, job.id);
@@ -2569,7 +2721,35 @@ function resolveImageJobResolutionType(job) {
     if (entityType === 'scenery') {
         return 'scenery';
     }
+    if (payload.isFactionEmblem || entityType === 'faction') {
+        return 'faction';
+    }
     return null;
+}
+
+async function maskFactionEmblemImage(imageBuffer, job) {
+    if (!job?.payload?.isFactionEmblem) {
+        return imageBuffer;
+    }
+    if (!Buffer.isBuffer(imageBuffer) || imageBuffer.length === 0) {
+        throw new Error('Faction emblem masking requires a non-empty image buffer.');
+    }
+    const metadata = await sharp(imageBuffer).metadata();
+    const width = Number(metadata?.width);
+    const height = Number(metadata?.height);
+    if (!Number.isInteger(width) || width <= 0 || !Number.isInteger(height) || height <= 0) {
+        throw new Error('Faction emblem masking could not determine the generated image dimensions.');
+    }
+    const mask = Buffer.from(
+        `<svg width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" xmlns="http://www.w3.org/2000/svg">`
+        + `<ellipse cx="${width / 2}" cy="${height / 2}" rx="${width / 2}" ry="${height / 2}" fill="#fff"/>`
+        + '</svg>'
+    );
+    return sharp(imageBuffer)
+        .ensureAlpha()
+        .composite([{ input: mask, blend: 'dest-in' }])
+        .png()
+        .toBuffer();
 }
 
 function resolveImageJobRenderDimensions(job, configuration = config) {
@@ -2899,6 +3079,14 @@ function cleanupFinishedImageJobTracking(currentJob) {
         }
     }
 
+    if (payload.isFactionEmblem && payload.factionId) {
+        clearEntityJob('faction', payload.factionId, currentJob.id);
+        const faction = factions.get(payload.factionId);
+        if (faction && currentJob.status !== JOB_STATUS.COMPLETED) {
+            delete faction.pendingImageJobId;
+        }
+    }
+
     if (payload.isLocationExitImage && payload.locationExitId) {
         clearEntityJob('location-exit', payload.locationExitId, currentJob.id);
         if (currentJob.status !== JOB_STATUS.COMPLETED) {
@@ -3017,6 +3205,16 @@ function applyCompletedImageJobResult(job, result) {
             console.log(`🎨 Updated thing ${thing.name} (${thing.thingType}) imageId to: ${result.imageId}`);
         }
         clearEntityJob('thing', job.payload.thingId, job.id);
+    }
+
+    if (job.payload.isFactionEmblem && job.payload.factionId && result.imageId) {
+        const faction = factions.get(job.payload.factionId);
+        if (faction) {
+            faction.imageId = result.imageId;
+            delete faction.pendingImageJobId;
+            console.log(`🛡️ Updated faction ${faction.name} emblem imageId to: ${result.imageId}`);
+        }
+        clearEntityJob('faction', job.payload.factionId, job.id);
     }
 
     emitJobUpdate(job, { phase: 'completed' });
@@ -3405,7 +3603,7 @@ async function processBatchedImageGeneration(jobs) {
         const image = images[index];
         const imageInfo = completionResult.images[index];
         const imageId = generateImageId();
-        const imageData = await withRetry(async () => {
+        const rawImageData = await withRetry(async () => {
             return await comfyUIClient.getImage(
                 imageInfo.filename,
                 imageInfo.subfolder,
@@ -3413,10 +3611,13 @@ async function processBatchedImageGeneration(jobs) {
                 { signal }
             );
         });
+        const imageData = job.payload?.isFactionEmblem
+            ? await maskFactionEmblemImage(rawImageData, job)
+            : rawImageData;
         const saveResult = await comfyUIClient.saveImage(
             imageData,
             imageId,
-            imageInfo.filename,
+            job.payload?.isFactionEmblem ? `${imageId}.png` : imageInfo.filename,
             saveDirectory
         );
         if (!saveResult.success) {
@@ -3526,10 +3727,13 @@ async function processImageGeneration(job) {
         job.progress = 70;
         job.message = `Saving ${engine === 'nanogpt' ? 'NanoGPT' : 'OpenAI'} image...`;
 
+        const outputBuffer = job.payload?.isFactionEmblem
+            ? await maskFactionEmblemImage(generationResult.imageBuffer, job)
+            : generationResult.imageBuffer;
         const saveResult = await comfyUIClient.saveImage(
-            generationResult.imageBuffer,
+            outputBuffer,
             imageId,
-            `${generationResult.requestId}.png`,
+            job.payload?.isFactionEmblem ? `${imageId}.png` : `${generationResult.requestId}.png`,
             saveDirectory
         );
 
@@ -3655,7 +3859,7 @@ async function processImageGeneration(job) {
 
         for (const imageInfo of completionResult.images) {
             try {
-                const imageData = await withRetry(async () => {
+                const rawImageData = await withRetry(async () => {
                     return await comfyUIClient.getImage(
                         imageInfo.filename,
                         imageInfo.subfolder,
@@ -3663,11 +3867,14 @@ async function processImageGeneration(job) {
                         { signal }
                     );
                 });
+                const imageData = job.payload?.isFactionEmblem
+                    ? await maskFactionEmblemImage(rawImageData, job)
+                    : rawImageData;
 
                 const saveResult = await comfyUIClient.saveImage(
                     imageData,
                     imageId,
-                    imageInfo.filename,
+                    job.payload?.isFactionEmblem ? `${imageId}.png` : imageInfo.filename,
                     saveDirectory
                 );
 
@@ -3832,6 +4039,7 @@ async function validateConfiguration() {
         validateOptionalImageSizeOverrides('item', config.imagegen.item_settings?.image);
         validateOptionalImageSizeOverrides('scenery', config.imagegen.scenery_settings?.image);
         validateOptionalImageSizeOverrides('character', config.imagegen.character_settings?.image);
+        validateOptionalImageSizeOverrides('faction', config.imagegen.faction_settings?.image);
 
         if (
             config.imagegen.prompt_generation_attempts !== undefined
@@ -4800,6 +5008,8 @@ const pendingRegionStubs = new Map(); // Store region definitions awaiting full 
 const pendingLocationImages = new Map(); // Store active image job IDs per location
 const playerImageGenerationPromises = new Map(); // Store pre-job portrait generation promises per character
 const locationImageGenerationPromises = new Map(); // Store pre-job location image generation promises per location
+const factionImageGenerationPromises = new Map(); // Store pre-job emblem generation promises per faction
+const locationWeatherVariantGenerationPromises = new Map(); // Store pre-job seasonal variant promises per location and conditions
 const npcGenerationPromises = new Map(); // Track in-flight NPC generations by normalized explicit name
 const levelUpAbilityPromises = new Map(); // Track in-flight level-up ability generations per character
 const playerAbilitySelectionPromises = new Map(); // Track in-flight player ability option generation per level
@@ -5108,6 +5318,10 @@ function filterHiddenNotesFromChatEntryForClient(entry, sourceConfig = config) {
     if (shouldShowHiddenNotes(sourceConfig) || !entry || typeof entry !== 'object') {
         return entry;
     }
+    const entryType = typeof entry.type === 'string' ? entry.type.trim().toLowerCase() : '';
+    if (entryType === 'player-prompt-guidance') {
+        return entry;
+    }
     const filtered = { ...entry };
     if (typeof filtered.content === 'string') {
         filtered.content = stripHiddenNotesFromText(filtered.content);
@@ -5244,7 +5458,9 @@ function pushChatEntry(entry, collector = null, locationId = null) {
     if (entry && typeof entry === 'object') {
         const entryRole = typeof entry.role === 'string' ? entry.role.trim().toLowerCase() : '';
         const entryType = typeof entry.type === 'string' ? entry.type.trim().toLowerCase() : '';
-        const shouldScrub = entryRole !== 'user' && entryType !== 'tool-call-debug';
+        const shouldScrub = entryRole !== 'user'
+            && entryType !== 'tool-call-debug'
+            && entryType !== 'player-prompt-guidance';
         const scrubOptions = entryType === 'event-summary'
             ? { scrub_events: false }
             : null;
@@ -6277,6 +6493,7 @@ function serializeNpcForClient(npc, options = {}) {
         healthAttribute: npc.healthAttribute,
         imageId: npc.imageId,
         imagePrompt: npc.imagePrompt,
+        playerGuidance: typeof npc.playerGuidance === 'string' ? npc.playerGuidance : '',
         isNPC: Boolean(npc.isNPC),
         isPlayer: !Boolean(npc.isNPC),
         hiddenFromPlayer: Boolean(npc.hiddenFromPlayer && !npc.isDead),
@@ -6500,6 +6717,10 @@ function normalizeActorNameForComparison(value) {
         .replace(/\s+/g, ' ')
         .trim()
         .toLowerCase();
+}
+
+function normalizeActorNameForDuplicateCheck(value) {
+    return normalizePersonNameForDuplicateCheck(value);
 }
 
 function findActorByLooseName(name) {
@@ -6781,20 +7002,17 @@ function hasNameCollisionWithReservedSet(name, reservedNames) {
         return false;
     }
 
-    const normalized = normalizeActorNameForComparison(name);
+    const normalized = normalizeActorNameForDuplicateCheck(name);
     if (!normalized) {
         return false;
-    }
-
-    if (reservedNames.has(normalized)) {
-        return true;
     }
 
     const reservedValues = typeof reservedNames.keys === 'function'
         ? reservedNames.keys()
         : [];
-    for (const existing of reservedValues) {
-        if (typeof existing !== 'string' || !existing) {
+    for (const existingValue of reservedValues) {
+        const existing = normalizeActorNameForDuplicateCheck(existingValue);
+        if (!existing) {
             continue;
         }
         if (existing === normalized) {
@@ -7027,13 +7245,13 @@ function findLocationByNameLoose(name) {
         return location;
     }
 
-    const normalized = trimmed.toLowerCase();
+    const normalized = normalizeDuplicateName(trimmed);
     for (const loc of gameLocations.values()) {
         if (!loc) continue;
         if (loc.id === trimmed) {
             return loc;
         }
-        if (typeof loc.name === 'string' && loc.name.trim().toLowerCase() === normalized) {
+        if (typeof loc.name === 'string' && normalizeDuplicateName(loc.name) === normalized) {
             return loc;
         }
     }
@@ -7044,13 +7262,13 @@ function findRegionByNameLoose(name) {
     if (!name || typeof name !== 'string') {
         return null;
     }
-    const normalized = name.trim().toLowerCase();
+    const normalized = normalizeDuplicateName(name);
     if (!normalized) {
         return null;
     }
     for (const region of regions.values()) {
         if (!region) continue;
-        if (region.name && region.name.trim().toLowerCase() === normalized) {
+        if (region.name && normalizeDuplicateName(region.name) === normalized) {
             return region;
         }
     }
@@ -7078,7 +7296,7 @@ function findPendingRegionByNameLoose(name) {
     if (!name || typeof name !== 'string' || !(pendingRegionStubs instanceof Map)) {
         return null;
     }
-    const normalized = name.trim().toLowerCase();
+    const normalized = normalizeDuplicateName(name);
     if (!normalized) {
         return null;
     }
@@ -7097,7 +7315,7 @@ function findPendingRegionByNameLoose(name) {
             pending.targetRegionName,
         ];
         if (candidates.some(candidate =>
-            typeof candidate === 'string' && candidate.trim().toLowerCase() === normalized
+            typeof candidate === 'string' && normalizeDuplicateName(candidate) === normalized
         )) {
             return pending;
         }
@@ -7167,7 +7385,7 @@ function findLocationByNameInRegionLoose(name, regionId) {
     if (!trimmed || !normalizedRegionId) {
         return null;
     }
-    const normalizedName = trimmed.toLowerCase();
+    const normalizedName = normalizeDuplicateName(trimmed);
     const region = regions.get(normalizedRegionId) || null;
     const pending = pendingRegionStubs.get(normalizedRegionId) || null;
     const locationIds = new Set([
@@ -7188,7 +7406,7 @@ function findLocationByNameInRegionLoose(name, regionId) {
             continue;
         }
         const candidateId = typeof location.id === 'string' ? location.id.trim().toLowerCase() : '';
-        const candidateName = typeof location.name === 'string' ? location.name.trim().toLowerCase() : '';
+        const candidateName = typeof location.name === 'string' ? normalizeDuplicateName(location.name) : '';
         if (candidateId === normalizedName || candidateName === normalizedName) {
             return location;
         }
@@ -7199,7 +7417,7 @@ function findLocationByNameInRegionLoose(name, regionId) {
             continue;
         }
         const candidateId = typeof location.id === 'string' ? location.id.trim().toLowerCase() : '';
-        const candidateName = typeof location.name === 'string' ? location.name.trim().toLowerCase() : '';
+        const candidateName = typeof location.name === 'string' ? normalizeDuplicateName(location.name) : '';
         if (candidateId === normalizedName || candidateName === normalizedName) {
             return location;
         }
@@ -8358,6 +8576,7 @@ function buildBasePromptContext({
         gear: gearSnapshot,
         personality: currentPlayerPersonality,
         aiNotes: currentPlayerPersonality.aiNotes || '',
+        playerGuidance: playerStatus?.playerGuidance ?? currentPlayer?.playerGuidance ?? '',
         currency: playerStatus?.currency ?? currentPlayer?.currency ?? 0,
         needBars: currentPlayerNeedBars,
         needs: currentPlayerNeeds,
@@ -12369,7 +12588,7 @@ function generateStubName(baseLocation, direction) {
 
     let candidate = `${baseName} ${directionLabel}`.trim();
 
-    if (typeof Location.findByName === 'function' && Location.findByName(candidate)) {
+    if (findLocationByNameLoose(candidate)) {
         candidate = `${candidate} ${randomIntInclusive(2, 99)}`;
     }
 
@@ -12377,7 +12596,7 @@ function generateStubName(baseLocation, direction) {
 }
 
 function normalizeRegionLocationName(name) {
-    return typeof name === 'string' ? name.trim().toLowerCase() : '';
+    return normalizeDuplicateName(name);
 }
 
 function ensureExitConnection(fromLocation, toLocation, { description, bidirectional = false, destinationRegion, travelTimeMinutes = undefined, updateExistingExitTravelTime = true, isVehicle = undefined, vehicleType = undefined, imagePrompt = undefined } = {}) {
@@ -12940,7 +13159,7 @@ async function createRegionStubFromEvent({ name, originLocation = null, descript
         }
     }
 
-    const normalizedTargetName = trimmedName.toLowerCase();
+    const normalizedTargetName = normalizeDuplicateName(trimmedName);
     const normalizedRelativeLevel = Number.isFinite(relativeLevel)
         ? Math.max(-10, Math.min(10, Math.round(relativeLevel)))
         : 0;
@@ -12994,16 +13213,14 @@ async function createRegionStubFromEvent({ name, originLocation = null, descript
         return arrivalLocation;
     }
 
-    if (typeof Location.findByName === 'function') {
-        const existingLocation = Location.findByName(trimmedName);
-        if (existingLocation && existingLocation.id && existingLocation.id !== originLocation.id) {
-            const destinationRegionId = existingLocation.regionId
-                || existingLocation.stubMetadata?.regionId
-                || existingLocation.stubMetadata?.targetRegionId
-                || null;
-            ensureExistingConnection(existingLocation, destinationRegionId);
-            return existingLocation;
-        }
+    const existingLocation = findLocationByNameLoose(trimmedName);
+    if (existingLocation && existingLocation.id && existingLocation.id !== originLocation.id) {
+        const destinationRegionId = existingLocation.regionId
+            || existingLocation.stubMetadata?.regionId
+            || existingLocation.stubMetadata?.targetRegionId
+            || null;
+        ensureExistingConnection(existingLocation, destinationRegionId);
+        return existingLocation;
     }
 
     // If a pending region with this name already exists, associate this origin's
@@ -13017,7 +13234,7 @@ async function createRegionStubFromEvent({ name, originLocation = null, descript
         if (!pendingNameSource) {
             continue;
         }
-        if (pendingNameSource.trim().toLowerCase() !== normalizedTargetName) {
+        if (normalizeDuplicateName(pendingNameSource) !== normalizedTargetName) {
             continue;
         }
 
@@ -13025,7 +13242,7 @@ async function createRegionStubFromEvent({ name, originLocation = null, descript
         break;
     }
 
-    const normalizeName = (value) => (typeof value === 'string' ? value.trim().toLowerCase() : null);
+    const normalizeName = (value) => normalizeDuplicateName(value) || null;
 
     const matchesExistingEntryStub = (location) => {
         if (!location || typeof location !== 'object') {
@@ -13061,15 +13278,9 @@ async function createRegionStubFromEvent({ name, originLocation = null, descript
     };
 
     const findExistingEntryStub = () => {
-        if (typeof Location.findByName === 'function') {
-            try {
-                const exactMatch = Location.findByName(trimmedName);
-                if (matchesExistingEntryStub(exactMatch)) {
-                    return exactMatch;
-                }
-            } catch (_) {
-                // Ignore errors from Location.findByName and continue searching.
-            }
+        const duplicateNameMatch = findLocationByNameLoose(trimmedName);
+        if (matchesExistingEntryStub(duplicateNameMatch)) {
+            return duplicateNameMatch;
         }
 
         for (const candidate of gameLocations.values()) {
@@ -13103,17 +13314,17 @@ async function createRegionStubFromEvent({ name, originLocation = null, descript
         if (exit.destinationRegion) {
             const pending = pendingRegionStubs.get(exit.destinationRegion);
             const pendingName = pending ? (pending.originalName || pending.name) : null;
-            if (pendingName && pendingName.trim().toLowerCase() === normalizedTargetName) {
+            if (pendingName && normalizeDuplicateName(pendingName) === normalizedTargetName) {
                 return true;
             }
             const destinationRegion = regions.get(exit.destinationRegion);
-            if (destinationRegion?.name?.trim().toLowerCase() === normalizedTargetName) {
+            if (normalizeDuplicateName(destinationRegion?.name) === normalizedTargetName) {
                 return true;
             }
         }
 
         const destinationLocation = gameLocations.get(exit.destination);
-        const stubTargetName = destinationLocation?.stubMetadata?.targetRegionName?.trim().toLowerCase() || null;
+        const stubTargetName = normalizeDuplicateName(destinationLocation?.stubMetadata?.targetRegionName) || null;
         return Boolean(stubTargetName && stubTargetName === normalizedTargetName);
     });
 
@@ -13144,14 +13355,12 @@ async function createRegionStubFromEvent({ name, originLocation = null, descript
     }
 
     let stubName = trimmedName;
-    if (typeof Location.findByName === 'function') {
-        let suffix = 2;
-        let candidate = stubName;
-        while (Location.findByName(candidate)) {
-            candidate = `${stubName} ${suffix++}`;
-        }
-        stubName = candidate;
+    let suffix = 2;
+    let candidate = stubName;
+    while (findLocationByNameLoose(candidate)) {
+        candidate = `${stubName} ${suffix++}`;
     }
+    stubName = candidate;
 
     const stubMetadata = {
         originLocationId: originLocation.id,
@@ -13317,7 +13526,8 @@ function buildLocationExitDiscoveryContext(location, originLocation = null) {
                 name: destination.name || destination.id,
                 destinationType: destination.stubMetadata?.isRegionEntryStub ? 'region' : 'location',
                 description: exit.description || '',
-                isReturnRoute: Boolean(originLocation?.id && destination.id === originLocation.id)
+                isReturnRoute: Boolean(originLocation?.id && destination.id === originLocation.id),
+                isUnexplored: destination.visited !== true
             });
         }
     }
@@ -13327,7 +13537,8 @@ function buildLocationExitDiscoveryContext(location, originLocation = null) {
             name: originLocation.name || originLocation.id,
             destinationType: 'location',
             description: 'The route back to the location from which the traveler arrived.',
-            isReturnRoute: true
+            isReturnRoute: true,
+            isUnexplored: originLocation.visited !== true
         });
     }
 
@@ -18791,7 +19002,7 @@ async function generateNpcFromEvent({
         throw new Error('NPC image uploads must include both downscaled and original image data URLs.');
     }
 
-    const normalizedKey = trimmedName.toLowerCase();
+    const normalizedKey = normalizeActorNameForDuplicateCheck(trimmedName);
     const dedupeKey = normalizedKey || null;
     if (dedupeKey && npcGenerationPromises.has(dedupeKey)) {
         return npcGenerationPromises.get(dedupeKey);
@@ -23195,10 +23406,10 @@ function filterAllowedLocationNameCandidates(candidateNames, {
         return [];
     }
 
-    const originalLower = typeof originalName === 'string' && originalName.trim()
-        ? originalName.trim().toLowerCase()
-        : '';
-    const usedNameSet = usedNames instanceof Set ? usedNames : null;
+    const originalLower = normalizeDuplicateName(originalName);
+    const usedNameSet = usedNames instanceof Set
+        ? new Set(Array.from(usedNames, name => normalizeDuplicateName(name)).filter(Boolean))
+        : null;
     const seen = new Set();
     const allowed = [];
 
@@ -23210,7 +23421,7 @@ function filterAllowedLocationNameCandidates(candidateNames, {
         if (!trimmed) {
             continue;
         }
-        const normalized = trimmed.toLowerCase();
+        const normalized = normalizeDuplicateName(trimmed);
         if (normalized === originalLower) {
             continue;
         }
@@ -24818,12 +25029,18 @@ function rekeyNpcLookupMap(sourceMap, renameMap) {
     return updated;
 }
 
-function renderLocationThingsPrompt(context = {}) {
+async function renderLocationThingsPrompt(context = {}) {
     try {
-        const templateName = 'location-generator-things.njk';
+        const templateName = 'base-context.xml.njk';
         const safeSetting = context.settingDescription || context.setting || 'An evocative roleplaying setting.';
         const safeRegion = context.region || {};
         const safeLocation = context.location || {};
+        const locationOverride = context.locationOverride
+            && typeof context.locationOverride === 'object'
+            && context.locationOverride.id
+            ? context.locationOverride
+            : null;
+        const baseContext = await prepareBasePromptContext({ locationOverride });
         const gearSlotTypes = getGearSlotTypes();
         const attributeNames = Object.keys(attributeDefinitionsForPrompt || {})
             .filter(name => typeof name === 'string' && name.trim())
@@ -24863,7 +25080,9 @@ function renderLocationThingsPrompt(context = {}) {
         };
 
         const templatePayload = {
-            setting: safeSetting,
+            ...baseContext,
+            promptType: 'location-generator-things',
+            settingDescription: safeSetting,
             region: {
                 regionName: safeRegion.name || safeRegion.regionName || 'Unknown Region',
                 regionDescription: safeRegion.description || safeRegion.regionDescription || 'No description provided.'
@@ -25677,9 +25896,10 @@ async function generateLocationThingsForLocation({ location } = {}) {
         console.warn('[Lorebook] Failed to get entries for location things generation:', err.message);
     }
 
-    const parsedTemplate = renderLocationThingsPrompt({
+    const parsedTemplate = await renderLocationThingsPrompt({
         settingDescription: describeSettingForPrompt(settingSnapshot),
         region: region ? { name: region.name, description: region.description } : null,
+        locationOverride: location,
         location: {
             name: location.name || 'Unknown Location',
             description: stripHtml(locationDescription) || locationDescription || 'No description provided.'
@@ -26975,7 +27195,7 @@ async function regenerateLocationName(location) {
     const bannedSet = getBannedLocationNameSet();
     const slopWords = getLocationNameValidationSlopWords();
     const originalName = typeof location.name === 'string' ? location.name.trim() : '';
-    const originalLower = originalName ? originalName.toLowerCase() : '';
+    const originalLower = normalizeDuplicateName(originalName);
 
     const usedNames = new Set();
     for (const locations of Object.values(worldOutline?.regions || {})) {
@@ -26986,7 +27206,7 @@ async function regenerateLocationName(location) {
             if (typeof name !== 'string') {
                 continue;
             }
-            const normalized = name.trim().toLowerCase();
+            const normalized = normalizeDuplicateName(name);
             if (normalized) {
                 usedNames.add(normalized);
             }
@@ -26996,7 +27216,7 @@ async function regenerateLocationName(location) {
         for (const entry of Location.getAll()) {
             const name = typeof entry?.name === 'string' ? entry.name.trim() : '';
             if (name) {
-                usedNames.add(name.toLowerCase());
+                usedNames.add(normalizeDuplicateName(name));
             }
         }
     }
@@ -27012,7 +27232,7 @@ async function regenerateLocationName(location) {
 
     const selectUniqueName = () => {
         for (const trimmed of safeCandidateNames) {
-            const normalized = trimmed.toLowerCase();
+            const normalized = normalizeDuplicateName(trimmed);
             if (!usedNames.has(normalized)) {
                 return trimmed;
             }
@@ -27027,7 +27247,7 @@ async function regenerateLocationName(location) {
         if (baseCandidate) {
             for (let suffix = 2; suffix <= 100; suffix += 1) {
                 const attempt = `${baseCandidate} ${suffix}`;
-                if (!usedNames.has(attempt.toLowerCase()) && !isLocationNameBanned(attempt, bannedSet, slopWords)) {
+                if (!usedNames.has(normalizeDuplicateName(attempt)) && !isLocationNameBanned(attempt, bannedSet, slopWords)) {
                     selectedName = attempt;
                     break;
                 }
@@ -27137,9 +27357,7 @@ function chooseRegionName({
 
     const sharedUsedNames = usedNames instanceof Set ? usedNames : null;
     const tried = new Set();
-    const originalLower = typeof region.name === 'string'
-        ? region.name.trim().toLowerCase()
-        : '';
+    const originalLower = normalizeDuplicateName(region.name);
 
     if (originalLower) {
         tried.add(originalLower);
@@ -27156,24 +27374,27 @@ function chooseRegionName({
     });
 
     for (const trimmed of safeCandidateNames) {
-        const lower = trimmed.toLowerCase();
+        const lower = normalizeDuplicateName(trimmed);
         if (tried.has(lower)) {
             continue;
         }
         tried.add(lower);
 
-        if (typeof Region.getByName === 'function') {
-            const existing = Region.getByName(trimmed);
-            if (existing && existing !== region) {
-                continue;
-            }
+        const existing = typeof Region.getAll === 'function'
+            ? Region.getAll().find(candidate => (
+                candidate !== region
+                && normalizeDuplicateName(candidate?.name) === lower
+            ))
+            : null;
+        if (existing) {
+            continue;
         }
         // check against location names as well
-        if (typeof Location.getByName === 'function') {
-            const existingLocation = Location.getByName(trimmed);
-            if (existingLocation) {
-                continue;
-            }
+        const existingLocation = typeof Location.getAll === 'function'
+            ? Location.getAll().find(candidate => normalizeDuplicateName(candidate?.name) === lower)
+            : null;
+        if (existingLocation) {
+            continue;
         }
 
         if (sharedUsedNames) {
@@ -29645,6 +29866,9 @@ function applyImagePromptPrefix(promptText, prefixType = null) {
             case 'scenery':
                 prefix = settingSnapshot.imagePromptPrefixScenery || '';
                 break;
+            case 'faction':
+                prefix = settingSnapshot.imagePromptPrefixFaction || '';
+                break;
             default:
                 prefix = '';
                 break;
@@ -29812,8 +30036,33 @@ function buildImagePromptSkippedResult(error) {
     };
 }
 
+function splitImagePromptBatchGenerationPrompt(generationPrompt) {
+    const prompt = String(generationPrompt || '');
+    const marker = LLMClient.getBaseContextEndMarker();
+    const parts = prompt.split(marker);
+    if (parts.length === 1) {
+        return {
+            hasBaseContext: false,
+            baseContext: '',
+            requestPrompt: prompt
+        };
+    }
+    if (parts.length !== 2 || !parts[0].trim() || !parts[1].trim()) {
+        throw new Error('An image prompt batch request must contain exactly one base-context end marker with non-empty content on both sides.');
+    }
+    return {
+        hasBaseContext: true,
+        baseContext: parts[0].trimEnd(),
+        requestPrompt: parts[1].trimStart()
+    };
+}
+
 function buildImagePromptBatchKey(prompts = {}) {
-    return String(prompts?.systemPrompt || '').trim();
+    const splitPrompt = splitImagePromptBatchGenerationPrompt(prompts?.generationPrompt);
+    return JSON.stringify([
+        String(prompts?.systemPrompt || '').trim(),
+        splitPrompt.hasBaseContext ? splitPrompt.baseContext : null
+    ]);
 }
 
 function wrapImagePromptBatchCdata(value) {
@@ -29821,14 +30070,29 @@ function wrapImagePromptBatchCdata(value) {
 }
 
 function renderImagePromptBatchGenerationPrompt(requests = []) {
-    const requestXml = requests.map(request => [
+    const splitPrompts = requests.map(request => splitImagePromptBatchGenerationPrompt(
+        request.prompts?.generationPrompt
+    ));
+    const sharedBaseContext = splitPrompts[0]?.hasBaseContext
+        ? splitPrompts[0].baseContext
+        : null;
+    if (sharedBaseContext !== null && splitPrompts.some(entry => (
+        !entry.hasBaseContext || entry.baseContext !== sharedBaseContext
+    ))) {
+        throw new Error('Image prompt batching requires every base-context request in a batch to share the same base context.');
+    }
+    if (sharedBaseContext === null && splitPrompts.some(entry => entry.hasBaseContext)) {
+        throw new Error('Image prompt batching cannot mix base-context and non-base-context requests.');
+    }
+
+    const requestXml = requests.map((request, index) => [
         '    <request>',
         `      <id>${escapeXmlText(request.id)}</id>`,
-        `      <generationPrompt>${wrapImagePromptBatchCdata(request.prompts?.generationPrompt || '')}</generationPrompt>`,
+        `      <generationPrompt>${wrapImagePromptBatchCdata(splitPrompts[index].requestPrompt)}</generationPrompt>`,
         '    </request>'
     ].join('\n')).join('\n');
 
-    return [
+    const batchPrompt = [
         '<imagePromptBatchRequest>',
         '  <task>',
         '    Generate one final image-generation prompt for each request below. Treat each request independently.',
@@ -29847,6 +30111,11 @@ function renderImagePromptBatchGenerationPrompt(requests = []) {
         '  </imagePrompt>',
         '</imagePrompts>'
     ].join('\n');
+
+    if (sharedBaseContext === null) {
+        return batchPrompt;
+    }
+    return `${sharedBaseContext}\n${LLMClient.getBaseContextEndMarker()}\n${batchPrompt}`;
 }
 
 function getDirectImagePromptBatchChildText(node, tagName) {
@@ -30202,6 +30471,32 @@ async function cancelAllImageJobs(reason = 'Image generation cancelled.') {
     };
 }
 
+function renderFactionEmblemPrompt(faction) {
+    if (!faction || typeof faction !== 'object') {
+        throw new Error('Faction object is required for emblem prompt generation.');
+    }
+    const baseContext = buildBasePromptContext({
+        omitInventoryItems: true,
+        omitAbilities: true
+    });
+    const renderedTemplate = promptEnv.render('base-context.xml.njk', {
+        ...baseContext,
+        promptType: 'faction-emblem-prompt',
+        faction: typeof faction.toJSON === 'function' ? faction.toJSON() : faction,
+        additionalInstructions: resolveImagePromptGenerationInstructions('faction'),
+        omitGameHistory: true
+    });
+    const parsedTemplate = parseXMLTemplate(renderedTemplate);
+    if (!parsedTemplate?.systemPrompt?.trim() || !parsedTemplate?.generationPrompt?.trim()) {
+        throw new Error('Faction emblem prompt rendered without system and generation prompts.');
+    }
+    return {
+        renderedTemplate,
+        systemPrompt: parsedTemplate.systemPrompt.trim(),
+        generationPrompt: parsedTemplate.generationPrompt.trim()
+    };
+}
+
 async function generateEditableEntityImagePrompt(entity, entityType) {
     if (!entity || typeof entity !== 'object') {
         throw new Error('Image prompt target entity is required.');
@@ -30247,8 +30542,134 @@ async function generateEditableEntityImagePrompt(entity, entityType) {
                 renderedTemplate: promptTemplate.renderedTemplate || null
             };
         }
+        case 'faction': {
+            const promptTemplate = renderFactionEmblemPrompt(entity);
+            const { prompt } = await generateImagePromptFromTemplate(promptTemplate, { prefixType: 'faction' });
+            return {
+                prompt: assignEntityImagePrompt(entity, prompt, 'Faction'),
+                promptType: 'faction',
+                renderedTemplate: promptTemplate.renderedTemplate || null
+            };
+        }
         default:
             throw new Error(`Editable image prompts are not supported for entity type '${entityType}'.`);
+    }
+}
+
+async function generateFactionImage(faction, options = {}) {
+    try {
+        const { force = false, clientId = null } = options || {};
+        const hasFinalImagePrompt = Object.prototype.hasOwnProperty.call(options || {}, 'finalImagePrompt');
+        let finalImagePromptOverride = null;
+        if (hasFinalImagePrompt) {
+            if (typeof options.finalImagePrompt !== 'string') {
+                throw new TypeError('Confirmed faction emblem prompt must be a string.');
+            }
+            finalImagePromptOverride = options.finalImagePrompt.trim();
+            if (!finalImagePromptOverride) {
+                throw new Error('Confirmed faction emblem prompt cannot be empty.');
+            }
+        }
+        if (!faction || typeof faction !== 'object' || !faction.id) {
+            throw new Error('Faction object with an id is required.');
+        }
+        if (!config.imagegen?.enabled) {
+            return { success: false, skipped: true, reason: 'disabled' };
+        }
+        if (!comfyUIClient) {
+            return { success: false, skipped: true, reason: 'no-client' };
+        }
+
+        const activeJobId = getEntityJob('faction', faction.id);
+        if (activeJobId) {
+            addJobSubscriber(activeJobId, clientId, { emitSnapshot: true });
+            return {
+                success: true,
+                existingJob: true,
+                jobId: activeJobId,
+                job: getJobSnapshot(activeJobId)
+            };
+        }
+
+        const existingGenerationPromise = factionImageGenerationPromises.get(faction.id);
+        if (!finalImagePromptOverride && existingGenerationPromise) {
+            const existingResult = await existingGenerationPromise;
+            const existingJobId = existingResult?.jobId || getEntityJob('faction', faction.id) || faction.pendingImageJobId || null;
+            const existingJob = existingJobId ? imageJobs.get(existingJobId) : null;
+            if (existingJob) {
+                addJobSubscriber(existingJob, clientId, { emitSnapshot: true });
+                return {
+                    ...existingResult,
+                    success: true,
+                    existingJob: true,
+                    jobId: existingJobId,
+                    job: getJobSnapshot(existingJobId)
+                };
+            }
+            return { ...existingResult, existingJob: true };
+        }
+
+        if (faction.imageId && !force && hasExistingImage(faction.imageId)) {
+            return { success: true, skipped: true, imageId: faction.imageId };
+        }
+        if (force && faction.imageId) {
+            faction.imageId = null;
+        }
+
+        const generationPromise = Promise.resolve().then(async () => {
+            let finalImagePrompt = finalImagePromptOverride;
+            if (!finalImagePrompt) {
+                try {
+                    const promptTemplate = renderFactionEmblemPrompt(faction);
+                    ({ prompt: finalImagePrompt } = await generateImagePromptFromTemplate(promptTemplate, { prefixType: 'faction' }));
+                } catch (error) {
+                    if (isImagePromptGenerationFailure(error)) {
+                        return buildImagePromptSkippedResult(error);
+                    }
+                    throw error;
+                }
+            }
+            finalImagePrompt = assignEntityImagePrompt(faction, finalImagePrompt, 'Faction');
+            const { width, height } = resolveFactionImageDimensions();
+            const jobId = generateImageId();
+            const payload = {
+                prompt: finalImagePrompt,
+                width,
+                height,
+                seed: Math.floor(Math.random() * 1000000),
+                negative_prompt: buildNegativePrompt('blurry, low quality, text, letters, words, gradients, photorealism, more than two colors, multiple emblems'),
+                megapixels: getDefaultMegapixels(),
+                factionId: faction.id,
+                isFactionEmblem: true,
+                force,
+                entityType: 'faction',
+                entityId: faction.id,
+                clientId
+            };
+            const job = createImageJob(jobId, payload);
+            setEntityJob('faction', faction.id, jobId);
+            faction.pendingImageJobId = jobId;
+            enqueueImageJob(jobId);
+            return {
+                success: true,
+                jobId,
+                status: job.status,
+                message: 'Faction emblem generation job queued',
+                estimatedTime: '30-90 seconds'
+            };
+        });
+
+        factionImageGenerationPromises.set(faction.id, generationPromise);
+        try {
+            return await generationPromise;
+        } finally {
+            if (factionImageGenerationPromises.get(faction.id) === generationPromise) {
+                factionImageGenerationPromises.delete(faction.id);
+            }
+        }
+    } catch (error) {
+        console.error('Error generating faction emblem:', error);
+        throw error;
     }
 }
 
@@ -30520,114 +30941,175 @@ async function generateLocationWeatherVariant(location, options = {}) {
             };
         }
 
-        const conditions = resolveLocationWeatherVariantConditions(location, { sourceImageId });
-        const existingVariant = typeof location.getImageVariant === 'function'
-            ? location.getImageVariant(conditions.variantKey)
-            : null;
-        if (!force && existingVariant?.sourceImageId === sourceImageId && existingVariant.imageId && hasExistingImage(existingVariant.imageId)) {
-            return {
-                success: true,
-                skipped: true,
-                locationId: location.id,
-                sourceImageId,
-                variantKey: conditions.variantKey,
-                conditions,
-                imageId: existingVariant.imageId
-            };
+        const visionEnabled = shouldUseSeasonalImageVision();
+        const conditions = resolveLocationWeatherVariantConditions(location, { sourceImageId, visionEnabled });
+        const generationRuntimeId = runtimeGenerationId;
+        const generationKey = `${generationRuntimeId}:${location.id}:${conditions.variantKey}`;
+        const inFlightGeneration = locationWeatherVariantGenerationPromises.get(generationKey);
+        if (inFlightGeneration) {
+            const result = await inFlightGeneration;
+            if (result?.jobId) {
+                const joinedJob = imageJobs.get(result.jobId);
+                if (joinedJob) {
+                    addJobSubscriber(joinedJob, clientId, { emitSnapshot: true });
+                }
+            }
+            return result;
         }
-
-        if (!force && existingVariant?.jobId) {
-            const pendingJob = imageJobs.get(existingVariant.jobId);
-            if (pendingJob && (pendingJob.status === JOB_STATUS.QUEUED || pendingJob.status === JOB_STATUS.PROCESSING)) {
-                addJobSubscriber(pendingJob, clientId, { emitSnapshot: true });
+        const generationPromise = (async () => {
+            const existingVariant = typeof location.getImageVariant === 'function'
+                ? location.getImageVariant(conditions.variantKey)
+                : null;
+            if (!force && existingVariant?.sourceImageId === sourceImageId && existingVariant.imageId && hasExistingImage(existingVariant.imageId)) {
                 return {
                     success: true,
-                    existingJob: true,
+                    skipped: true,
                     locationId: location.id,
                     sourceImageId,
                     variantKey: conditions.variantKey,
                     conditions,
-                    jobId: existingVariant.jobId,
-                    job: getJobSnapshot(existingVariant.jobId)
+                    imageId: existingVariant.imageId
                 };
             }
-        }
 
-        if (force && existingVariant) {
-            const removed = location.removeImageVariant(conditions.variantKey);
-            if (removed?.imageId) {
-                generatedImages.delete(removed.imageId);
+            if (!force && existingVariant?.jobId) {
+                const pendingJob = imageJobs.get(existingVariant.jobId);
+                if (pendingJob && (pendingJob.status === JOB_STATUS.QUEUED || pendingJob.status === JOB_STATUS.PROCESSING)) {
+                    addJobSubscriber(pendingJob, clientId, { emitSnapshot: true });
+                    return {
+                        success: true,
+                        existingJob: true,
+                        locationId: location.id,
+                        sourceImageId,
+                        variantKey: conditions.variantKey,
+                        conditions,
+                        jobId: existingVariant.jobId,
+                        job: getJobSnapshot(existingVariant.jobId)
+                    };
+                }
             }
-        }
 
-        const sourceImagePath = resolveImageFilePath(sourceImageId);
-        if (!sourceImagePath) {
+            if (force && existingVariant) {
+                const removed = location.removeImageVariant(conditions.variantKey);
+                if (removed?.imageId && removed.imageId !== removed.sourceImageId) {
+                    generatedImages.delete(removed.imageId);
+                }
+            }
+
+            const sourceImagePath = resolveImageFilePath(sourceImageId);
+            if (!sourceImagePath) {
+                return {
+                    success: false,
+                    skipped: true,
+                    reason: 'source-file-missing',
+                    sourceImageId,
+                    variantKey: conditions.variantKey,
+                    conditions
+                };
+            }
+
+            const sourceImageMetadata = sourceResolution.sourceImageMetadata || generatedImages.get(sourceImageId) || null;
+            const prompt = visionEnabled
+                ? await buildLocationWeatherVariantVisionPrompt(location, conditions, sourceImagePath)
+                : buildLocationWeatherVariantPrompt(location, conditions, { sourceImageMetadata });
+            if (runtimeGenerationId !== generationRuntimeId || location.imageId !== sourceImageId) {
+                return {
+                    success: false,
+                    skipped: true,
+                    reason: 'stale-source-image',
+                    locationId: location.id,
+                    sourceImageId,
+                    variantKey: conditions.variantKey,
+                    conditions
+                };
+            }
+            if (visionEnabled && prompt === 'N/A') {
+                const now = new Date().toISOString();
+                location.setImageVariant(conditions.variantKey, {
+                    variantKey: conditions.variantKey,
+                    sourceImageId,
+                    imageId: sourceImageId,
+                    jobId: null,
+                    conditions,
+                    prompt,
+                    createdAt: existingVariant?.createdAt || now,
+                    updatedAt: now,
+                    completedAt: now
+                });
+                return {
+                    success: true,
+                    skipped: true,
+                    reason: 'no-changes-needed',
+                    locationId: location.id,
+                    sourceImageId,
+                    variantKey: conditions.variantKey,
+                    conditions,
+                    imageId: sourceImageId
+                };
+            }
+            const jobId = generateImageId();
+            const locationImageSettings = config.imagegen.location_settings?.image || {};
+            const defaultImageSettings = config.imagegen.default_settings?.image || {};
+            const locationNegative = !visionEnabled && conditions.weatherScope === 'no'
+                ? buildNegativePrompt('new people, new characters, text, logos, signage, changed architecture, changed camera angle, distorted landmarks, low quality, blurry, outdoor scene, exterior view, open sky, landscape, forest, outdoor trees, outdoor vegetation, rain indoors, snow indoors, precipitation indoors')
+                : buildNegativePrompt('new people, new characters, text, logos, signage, changed architecture, changed camera angle, distorted landmarks, low quality, blurry');
+            const payload = {
+                prompt,
+                width: sourceImageMetadata?.width || locationImageSettings.width || defaultImageSettings.width || 1024,
+                height: sourceImageMetadata?.height || locationImageSettings.height || defaultImageSettings.height || 1024,
+                seed: Math.floor(Math.random() * 1000000),
+                negative_prompt: locationNegative,
+                megapixels: resolveMegapixels(sourceImageMetadata?.megapixels || locationImageSettings.megapixels),
+                locationId: location.id,
+                sourceImageId,
+                sourceImagePath,
+                variantKey: conditions.variantKey,
+                conditions,
+                isLocationWeatherVariant: true,
+                force,
+                entityType: 'location-variant',
+                entityId: location.id,
+                clientId
+            };
+
+            const now = new Date().toISOString();
+            location.setImageVariant(conditions.variantKey, {
+                variantKey: conditions.variantKey,
+                sourceImageId,
+                imageId: null,
+                jobId,
+                conditions,
+                prompt,
+                createdAt: existingVariant?.createdAt || now,
+                updatedAt: now,
+                completedAt: null
+            });
+
+            const job = createImageJob(jobId, payload);
+            enqueueImageJob(jobId);
+            setEntityJob('location-variant', `${location.id}:${conditions.variantKey}`, jobId);
+
             return {
-                success: false,
-                skipped: true,
-                reason: 'source-file-missing',
+                success: true,
+                locationId: location.id,
                 sourceImageId,
                 variantKey: conditions.variantKey,
-                conditions
+                conditions,
+                jobId,
+                status: job.status,
+                job: getJobSnapshot(jobId),
+                message: 'Location weather image variant job queued',
+                estimatedTime: '30-90 seconds'
             };
+        })();
+        locationWeatherVariantGenerationPromises.set(generationKey, generationPromise);
+        try {
+            return await generationPromise;
+        } finally {
+            if (locationWeatherVariantGenerationPromises.get(generationKey) === generationPromise) {
+                locationWeatherVariantGenerationPromises.delete(generationKey);
+            }
         }
-
-        const sourceImageMetadata = sourceResolution.sourceImageMetadata || generatedImages.get(sourceImageId) || null;
-        const prompt = buildLocationWeatherVariantPrompt(location, conditions, { sourceImageMetadata });
-        const jobId = generateImageId();
-        const locationImageSettings = config.imagegen.location_settings?.image || {};
-        const defaultImageSettings = config.imagegen.default_settings?.image || {};
-        const locationNegative = conditions.weatherScope === 'no'
-            ? buildNegativePrompt('new people, new characters, text, logos, signage, changed architecture, changed camera angle, distorted landmarks, low quality, blurry, outdoor scene, exterior view, open sky, landscape, forest, outdoor trees, outdoor vegetation, rain indoors, snow indoors, precipitation indoors')
-            : buildNegativePrompt('new people, new characters, text, logos, signage, changed architecture, changed camera angle, distorted landmarks, low quality, blurry');
-        const payload = {
-            prompt,
-            width: sourceImageMetadata?.width || locationImageSettings.width || defaultImageSettings.width || 1024,
-            height: sourceImageMetadata?.height || locationImageSettings.height || defaultImageSettings.height || 1024,
-            seed: Math.floor(Math.random() * 1000000),
-            negative_prompt: locationNegative,
-            megapixels: resolveMegapixels(sourceImageMetadata?.megapixels || locationImageSettings.megapixels),
-            locationId: location.id,
-            sourceImageId,
-            sourceImagePath,
-            variantKey: conditions.variantKey,
-            conditions,
-            isLocationWeatherVariant: true,
-            force,
-            entityType: 'location-variant',
-            entityId: location.id,
-            clientId
-        };
-
-        const now = new Date().toISOString();
-        location.setImageVariant(conditions.variantKey, {
-            variantKey: conditions.variantKey,
-            sourceImageId,
-            imageId: null,
-            jobId,
-            conditions,
-            prompt,
-            createdAt: existingVariant?.createdAt || now,
-            updatedAt: now,
-            completedAt: null
-        });
-
-        const job = createImageJob(jobId, payload);
-        enqueueImageJob(jobId);
-        setEntityJob('location-variant', `${location.id}:${conditions.variantKey}`, jobId);
-
-        return {
-            success: true,
-            locationId: location.id,
-            sourceImageId,
-            variantKey: conditions.variantKey,
-            conditions,
-            jobId,
-            status: job.status,
-            job: getJobSnapshot(jobId),
-            message: 'Location weather image variant job queued',
-            estimatedTime: '30-90 seconds'
-        };
     } catch (error) {
         console.error('Error generating location weather image variant:', error);
         throw error;
@@ -30912,6 +31394,10 @@ async function generateLocationFromPrompt(options = {}) {
         const existingExitDestinations = shouldDiscoverNewExits
             ? buildLocationExitDiscoveryContext(stubLocation, resolvedOriginLocation)
             : [];
+        const shouldEncourageNewExits = Boolean(
+            shouldDiscoverNewExits
+            && shouldEncourageNewExitSuggestions(existingExitDestinations)
+        );
         const imageDataUrlProvided = Object.prototype.hasOwnProperty.call(options, 'imageDataUrl');
         const normalizedImageDataUrl = typeof imageDataUrlRaw === 'string' ? imageDataUrlRaw.trim() : '';
         const stubImageDataUrl = typeof stubMetadata.imageDataUrl === 'string' ? stubMetadata.imageDataUrl.trim() : '';
@@ -31224,6 +31710,7 @@ async function generateLocationFromPrompt(options = {}) {
             originDescription: stubTemplateData?.originDescription || null,
             originDirection: stubTemplateData?.originDirection || null,
             discoverNewExits: shouldDiscoverNewExits,
+            encourageNewExits: shouldEncourageNewExits,
             existingExitDestinations,
             hasImage: Boolean(resolvedImageDataUrl)
         };
@@ -32692,11 +33179,9 @@ async function generateRegionExitStubs({
         if (!isLocationNameBanned(definition.name, bannedSet)) {
             return false;
         }
-        if (typeof Region.getByName === 'function') {
-            const existingRegion = Region.getByName(definition.name);
-            if (existingRegion) {
-                return false;
-            }
+        const existingRegion = findRegionByNameLoose(definition.name);
+        if (existingRegion) {
+            return false;
         }
         return true;
     });
@@ -32743,7 +33228,7 @@ async function generateRegionExitStubs({
             fieldLabel: `Region controlling faction for "${definition.name || 'Unnamed Region'}"`
         });
 
-        const existingRegion = Region.getByName(definition.name);
+        const existingRegion = findRegionByNameLoose(definition.name);
         if (existingRegion) {
             const isCurrentRegion = existingRegion === region
                 || (existingRegion.id && region.id && existingRegion.id === region.id);
@@ -32787,23 +33272,21 @@ async function generateRegionExitStubs({
             continue;
         }
 
-        if (typeof Location.findByName === 'function') {
-            const existingLocation = Location.findByName(definition.name);
-            if (existingLocation && existingLocation.id && existingLocation.id !== sourceLocation.id) {
-                const destinationRegionId = existingLocation.regionId
-                    || existingLocation.stubMetadata?.regionId
-                    || existingLocation.stubMetadata?.targetRegionId
-                    || null;
-                ensureExitConnection(sourceLocation, existingLocation, {
-                    description: existingLocation.name || definition.name,
-                    bidirectional: true,
-                    destinationRegion: destinationRegionId,
-                    travelTimeMinutes,
-                    isVehicle: Boolean(vehicleLabel),
-                    vehicleType: vehicleLabel
-                });
-                continue;
-            }
+        const existingLocation = findLocationByNameLoose(definition.name);
+        if (existingLocation && existingLocation.id && existingLocation.id !== sourceLocation.id) {
+            const destinationRegionId = existingLocation.regionId
+                || existingLocation.stubMetadata?.regionId
+                || existingLocation.stubMetadata?.targetRegionId
+                || null;
+            ensureExitConnection(sourceLocation, existingLocation, {
+                description: existingLocation.name || definition.name,
+                bidirectional: true,
+                destinationRegion: destinationRegionId,
+                travelTimeMinutes,
+                isVehicle: Boolean(vehicleLabel),
+                vehicleType: vehicleLabel
+            });
+            continue;
         }
 
         const newRegionId = generateRegionStubId();
@@ -32838,14 +33321,12 @@ async function generateRegionExitStubs({
         normalizedDirection = directionCandidate;
 
         let stubName = `${definition.name}`;
-        if (typeof Location.findByName === 'function') {
-            let suffix = 2;
-            let candidateName = stubName;
-            while (Location.findByName(candidateName)) {
-                candidateName = `${stubName} ${suffix++}`;
-            }
-            stubName = candidateName;
+        let suffix = 2;
+        let candidateName = stubName;
+        while (findLocationByNameLoose(candidateName)) {
+            candidateName = `${stubName} ${suffix++}`;
         }
+        stubName = candidateName;
 
         const stubShortDescription = `An unexplored path leading toward ${definition.name}.`;
         const stubMetadata = {
@@ -33156,14 +33637,12 @@ async function generateVehicleStubs({
 
             if (!vehicleLocation) {
                 let stubName = group.name;
-                if (typeof Location.findByName === 'function') {
-                    let suffix = 2;
-                    let candidateName = stubName;
-                    while (Location.findByName(candidateName)) {
-                        candidateName = `${stubName} ${suffix++}`;
-                    }
-                    stubName = candidateName;
+                let suffix = 2;
+                let candidateName = stubName;
+                while (findLocationByNameLoose(candidateName)) {
+                    candidateName = `${stubName} ${suffix++}`;
                 }
+                stubName = candidateName;
 
                 const baseLevel = Number.isFinite(regionAverageLevel) ? regionAverageLevel : null;
                 const computedBaseLevel = baseLevel !== null
@@ -34166,6 +34645,7 @@ app.use(bodyParser.json({ limit: '20mb' }));
 app.use(bodyParser.urlencoded({ extended: true, limit: '20mb' }));
 app.use('/assets', express.static(path.join(__dirname, 'assets')));
 app.use(express.static('public'));
+new LogViewer(__dirname).registerRoutes(app);
 
 // Route for AI RPG Chat Interface
 app.get('/', (req, res) => {
@@ -34783,7 +35263,7 @@ Events.initialize({
     alterThingByPrompt,
     separateThingByPrompt,
     regenerateLocationName,
-    confirmQuestWithPlayer: ({ clientId, quest, requestId }) => questConfirmationManager.requestConfirmation({ clientId, quest, requestId }),
+    confirmQuestWithPlayer: (request) => questConfirmationManager.requestConfirmation(request),
     defaultStatusDuration: Events.DEFAULT_STATUS_DURATION,
     majorStatusDuration: Events.MAJOR_STATUS_DURATION,
     baseTimeoutMilliseconds,
@@ -34832,6 +35312,7 @@ const apiScope = {
     generateLocationFromPrompt,
     generateLocationImage,
     generateLocationWeatherVariant,
+    generateFactionImage,
     generatePlayerImage,
     generateEditableEntityImagePrompt,
     generateRegionFromPrompt,
@@ -34906,6 +35387,7 @@ const apiScope = {
     pendingLocationImages,
     playerImageGenerationPromises,
     locationImageGenerationPromises,
+    factionImageGenerationPromises,
     npcGenerationPromises,
     levelUpAbilityPromises,
     playerAbilitySelectionPromises,

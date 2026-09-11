@@ -350,7 +350,7 @@ The qwen-combo-router profile routes player-visible narrative work through its 2
 
 `config.yaml.artemis-kimi-prose` keeps the same Artemis-derived ComfyUI workflow and current gameplay settings while routing every unmatched/non-prose text prompt to the local `Artemis-31B-v1.Q4_K_S` llama.cpp endpoint. Its sole active model override sends the player-visible prose label list to `kimi_cli_bridge` with Kimi's saved default model and low thinking effort. TinyBrain is enabled for local Artemis event checks, need-bar checks, and scene summaries; every supported prose family handled by the Kimi override has its family switch disabled so Kimi receives the ordinary prompt. The root route enables managed termination handoff, disables router unloading/model switching and startup preloading, and uses `scripts/start-artemis-ram-router.sh`. The prose override explicitly disables both image-handoff flags and clears the local startup path so Kimi never participates in the llama.cpp lifecycle.
 
-The root `config.yaml` uses this Artemis/Kimi profile as its standard configuration. It additionally routes image-referenced multimodal text prompts through `kimi_cli_bridge`, retains NanoGPT's image-generation credentials as the requested inactive alternative to the selected ComfyUI engine, and omits unused Mimo, Pollinations, LocalAI, Codex bridge, Cline bridge, disabled Z.AI, and inactive `dumb` override service configuration.
+The root `config.yaml` follows the same local/Kimi split but selects a vision-capable main model with `ai.has_vision: true`, so image-referenced text prompts remain on their effective main or prompt-override profile instead of switching to `ai_multimodal`. It retains NanoGPT's image-generation credentials as the requested inactive alternative to the selected ComfyUI engine and omits unused Mimo, Pollinations, LocalAI, Codex bridge, Cline bridge, disabled Z.AI, and inactive `dumb` override service configuration.
 
 `scripts/start-artemis-ram-router.sh` stages `/d/llms/Artemis-31B-v1.Q4_K_S.gguf` in the dedicated `/dev/shm/ai-rpg-artemis-models` directory before starting a one-model router. Staging is serialized with `flock`; an existing copy is reused only when its byte size and recorded source device/inode/size/mtime fingerprint still match. New copies are written to a partial file and renamed into place only after their size is verified. The staged GGUF intentionally survives managed llama.cpp termination and is naturally discarded when the host clears `/dev/shm`. The router uses a 96,000-token context, Q8 KV caches, full GPU offload, `--no-mmproj`, and a three-minute idle sleep. Because it starts in router mode without `router_preload_model`, restarting the lightweight router after a ComfyUI batch does not load Artemis until a non-prose request arrives; idle sleep destroys the loaded model and KV cache while leaving the tmpfs GGUF available for the next RAM-to-VRAM load. `ARTEMIS_LLAMA_BINARY`, `ARTEMIS_SOURCE_MODEL`, `ARTEMIS_SHM_MODELS_DIR`, `ARTEMIS_LLAMA_HOST`, `ARTEMIS_LLAMA_PORT`, `ARTEMIS_LLAMA_CTX_SIZE`, and `ARTEMIS_LLAMA_SLEEP_IDLE_SECONDS` provide explicit launch-time overrides.
 
@@ -433,6 +433,7 @@ These keys are shared by normal prompt calls unless a caller or `ai_model_overri
 ```yaml
 ai:
   model: zai-org/glm-4.7
+  has_vision: false
   maxTokens: 10000
   lowTemperature: 0.0
   temperature: 0.6
@@ -450,6 +451,8 @@ ai:
 model_swap_options:
   - "zai-org/glm-4.7"
 ```
+
+`ai.has_vision` defaults to `false`. For an image-bearing text prompt, an effective value of `true` keeps the request on the main AI profile instead of switching to `ai_multimodal`. Prompt-specific `ai_model_overrides` are included when resolving this flag: an override can set `has_vision: true` to keep that override's model, backend, endpoint, headers, and credentials for vision, or set it to `false` to retain the normal `ai_multimodal` merge followed by the matching override profile.
 
 - `model` is the default model for OpenAI-compatible, Codex, and Cline requests. Kimi selects `ai.kimi_bridge.model` through ACP session configuration when set and otherwise keeps Kimi's saved default.
 - `maxTokens` becomes `max_tokens` when a prompt call does not provide a positive `maxTokens`; server helpers may also use it as a minimum when resolving prompt-specific token caps.
@@ -628,7 +631,7 @@ prompt_progress:
     player_action*: 5000
 ```
 
-Prompt labels are normalized the same way as `metadataLabel`; keys ending in `*` match prefixes, and exact labels win over prefix matches. Missing target coverage for a tracked prompt label throws a non-retryable configuration error before transport instead of falling back to a placeholder. The default config gives region-related prompts `20000`, location-related and NPC-generation prompts `10000`, and other known prompt families, including the `creative_mode_action*`, `need_bar_event_checks*`, `while_you_were_away*`, and `scheduled_event_*` direct/TinyBrain labels, plus `scene_illustration_prompt` and `set_travel_times`, `5000`. Once `logs/prompt-output-character-stats.json` has a positive average output-character count for a label, that average becomes the prompt's progress target instead of the configured value; the config value remains the cold-start target before a usable average exists. Character-appended labels for inventory generation, NPC memories, NPC progression, NPC abilities, and NPC alias assignment use the base prompt label's average. Use `/promptstats` to inspect stored averages and `/promptstats clear` to clear them.
+Prompt labels are normalized the same way as `metadataLabel`; keys ending in `*` match prefixes, and exact labels win over prefix matches. A tracked label without a matching entry uses a 5,000-character cold-start target. The same default applies when `prompt_progress` or its `character_targets` map is absent. Explicit malformed, non-finite, or non-positive configured targets remain errors. The default config gives region-related prompts `20000`, location-related and NPC-generation prompts `10000`, and other known prompt families, including the `creative_mode_action*`, `need_bar_event_checks*`, `while_you_were_away*`, and `scheduled_event_*` direct/TinyBrain labels, plus `scene_illustration_prompt` and `set_travel_times`, `5000`. Once `logs/prompt-output-character-stats.json` has a positive average output-character count for a label, that average becomes the prompt's progress target instead of the configured or default value. Character-appended labels for inventory generation, NPC memories, NPC progression, NPC abilities, and NPC alias assignment use the base prompt label's average. Use `/promptstats` to inspect stored averages and `/promptstats clear` to clear them.
 
 Progress uses decoded JavaScript characters, not tokens or UTF-8 bytes. Up to the target `X`, the bar advances linearly through 75% of its width. After `X`, it approaches the end asymptotically: each additional `X` characters consumes half of the remaining 25%.
 
@@ -1102,7 +1105,7 @@ healthRegenPercentPerMinute: 0.01736111111
 
 `imagegen.prompt_batching` controls batching for the same LLM prompt-writing step. It is separate from `imagegen.batch_prompts`, which batches the final ComfyUI rendering jobs.
 
-`imagegen.image_prompt_instructions` remains the global per-target fallback for the prompt-writing LLM. The four global values are editable under System Configuration → Image Prompts. An active world profile can override each target independently through World Profiles → Image Prompt Generation; an empty profile field deliberately retains the global instruction.
+`imagegen.image_prompt_instructions` remains the global per-target fallback for the prompt-writing LLM. Character, location, item, scenery, and faction-emblem values are editable under System Configuration → Image Prompts. An active world profile can override each target independently through World Profiles → Image Prompt Generation; an empty profile field deliberately retains the global instruction.
 
 Ordinary ComfyUI workflow templates under `imagegen/` receive the full merged runtime config as `config`, in addition to the image job values under `image`. When render batching is enabled, the configured workflow instead receives the compatible jobs as `images`. For example, a workflow can reference `{{ config.imagegen.lora }}` to select a configured LoRA filename.
 
@@ -1135,7 +1138,7 @@ The standard Krea 2 family automatically selects its matching list workflow when
 
 ## Image generation size overrides and portrait layout
 
-`imagegen.default_settings.image` remains the baseline size for generated character, item, and scenery images. You can optionally override those dimensions with `imagegen.character_settings.image`, `imagegen.item_settings.image`, and `imagegen.scenery_settings.image`.
+`imagegen.default_settings.image` remains the baseline size for generated character, item, scenery, and faction-emblem images. You can override those dimensions with the corresponding per-type image settings.
 
 ```yaml
 imagegen:
@@ -1155,12 +1158,17 @@ imagegen:
     image:
       width: null
       height: null
+  faction_settings:
+    image:
+      width: 1024
+      height: 1024
 ```
 
 - `character_settings.image.width` / `height` are optional. `null` or omission falls back to `default_settings.image`. The Play page precomputes the effective aspect ratio and reserves it for empty NPC/party/modal portraits; the player sidebar uses a separate player portrait layout hook with the same effective dimensions.
 - `item_settings.image.width` / `height` are optional. `null` or omission falls back to `default_settings.image`.
 - `scenery_settings.image.width` / `height` are optional. `null` or omission falls back to `default_settings.image`.
-- When provided, character/item/scenery override values must be between `64` and `4096`.
+- `faction_settings.image.width` / `height` default to `1024 × 1024`. Each generated emblem is saved as a PNG with an alpha mask whose ellipse is inscribed in those exact dimensions, so every pixel outside the oval is transparent.
+- When provided, character/item/scenery/faction override values must be between `64` and `4096`.
 - If neither the per-type override nor `default_settings.image` provides a usable width/height, startup validation fails instead of silently hardcoding a fallback size.
 
 ## Canonical ComfyUI workflows
@@ -1214,7 +1222,9 @@ Location image-to-image variants for the current world-time lighting, season, sc
 
 - Location variants use `imagegen.workflow.edit`, whose shipped default is the standard Flux Klein edit workflow. The root `config.yaml` can select the standard Krea 2 Identity Edit v1.2 workflow for experimentation. Set `workflow.edit.custom_template` to select a custom img2img template under `imagegen/`. Missing custom or selected standard templates fail configuration validation.
 - The Image Edit form has no resolution controls. Standard Krea 2, Flux Klein, and Qwen edit graphs use ComfyUI's `GetImageSize` on the loaded source and an explicit final `ImageScale` to preserve its exact dimensions. The standard Krea graph applies the required full `d/krea2_identity_edit_v1_2.safetensors` adapter internally at strength 1.0 and uses the Krea2Edit model-patch and dual grounded-conditioning nodes. Its supplied preset uses 10 steps, CFG 1, Euler/simple, full denoise, `fit` geometry, `ref_boost: 4`, and `grounding_px: 768`. Standard edit graphs route the rendered edit prompt through a Crystools `Show any [Crystools]` node with the `Final Prompt` prefix.
-- The deterministic edit prompt always supplies lighting and season before weather. Weather-exposed and sheltered locations use `templates/location-weather-variant-image-prompt.njk` and receive the active calendar's `vegetationDescription`. Locations whose effective exposure is `no` use `templates/location-weather-variant-interior-image-prompt.njk` and the active season's `interiorDescription`, while prohibiting invented exterior vegetation, sky, openings, and precipitation. Legacy null exposure is inferred from `Exterior`/`Interior` location and region names; generated locations are required to persist an explicit scope. Variant cache keys include source image, season, lighting, effective scope, and weather.
+- When an enabled dedicated vision configuration is available, or the prompt's effective AI profile has `has_vision: true`, location variants generate their edit instructions through `prompts/base-context.xml.njk` with `_includes/generate-seasonal-image-vision.njk`. The request attaches the authoritative base location image and supplies the location, season, weather, and time-of-day context. The override/logging label is `generate_seasonal_image_vision`. An effective vision-capable main profile is used directly; otherwise the dedicated vision configuration takes precedence over non-vision prompt overrides for this request. The returned `<imageEditingInstructions>` supplies the edit prompt; `N/A` reuses the base image and caches that decision. Invalid vision responses fail explicitly rather than reverting to deterministic instructions.
+- Vision variant cache keys are distinct from older deterministic variants and include regional weather even for interiors, allowing the model to judge visible weather effects from the source image. Concurrent requests for the same variant share prompt generation. The vision prompt runs before the ComfyUI rendering phase and uses the same path with or without TinyBrain enabled.
+- When vision is unavailable, the deterministic edit prompt supplies lighting and season before weather. Weather-exposed and sheltered locations use `templates/location-weather-variant-image-prompt.njk` and receive the active calendar's `vegetationDescription`. Locations whose effective exposure is `no` use `templates/location-weather-variant-interior-image-prompt.njk` and the active season's `interiorDescription`, while prohibiting invented exterior vegetation, sky, openings, and precipitation. Legacy null exposure is inferred from `Exterior`/`Interior` location and region names; generated locations are required to persist an explicit scope. Variant cache keys include source image, season, lighting, effective scope, and weather.
 - Custom variant workflows remain responsible for their own dimension handling; the server's `{{ image.width }}` and `{{ image.height }}` values are metadata/config fallbacks, not the canonical standard-workflow preservation mechanism.
 - Model, encoder, VAE, optional LoRAs, steps, CFG, sampler, scheduler, denoise, and applicable Flux KV-cache selection all come from that same effective edit profile. The required Krea Identity Edit v1.2 LoRA remains baked into the Krea graph so it cannot be accidentally omitted or duplicated through preset selection. The standard Flux Klein graph retains its native `Flux2Scheduler`, which accepts steps and source dimensions but does not expose generic scheduler or denoise inputs; those two generic profile fields apply only to edit graphs with compatible nodes.
 - V1 does not support OpenAI or NanoGPT editing. Non-ComfyUI engines skip `/api/images/location-variant/request` with `unsupported-engine`.

@@ -12,7 +12,8 @@ function loadNewExitNameValidationHelpers() {
     }
 
     const functionSource = source.slice(start, end);
-    const context = { Map, Set };
+    const { normalizeDuplicateName } = require('../DuplicateNameUtils.js');
+    const context = { Map, Set, normalizeDuplicateName };
     vm.createContext(context);
     vm.runInContext(
         `${functionSource}
@@ -48,6 +49,29 @@ test('new exit name validation rejects duplicate location names with region cont
     assert.match(rejection.message, /Location name "Clocktower Plaza" conflicts with existing location "Clocktower Plaza"/);
     assert.match(rejection.message, /Old Town/);
     assert.match(rejection.message, /loc-clocktower/);
+});
+
+test('new exit name validation ignores a leading the on either duplicate location name', () => {
+    const { validateNewExitWorldEntityName } = loadNewExitNameValidationHelpers();
+    const rejection = validateNewExitWorldEntityName({
+        type: 'location',
+        name: 'Clocktower Plaza',
+        gameLocations: new Map([
+            ['loc-clocktower', {
+                id: 'loc-clocktower',
+                name: 'The Clocktower Plaza',
+                regionId: 'region-old-town'
+            }]
+        ]),
+        regions: new Map([
+            ['region-old-town', { id: 'region-old-town', name: 'Old Town' }]
+        ]),
+        pendingRegionStubs: new Map(),
+        bannedLocationNames: new Set(),
+        slopWords: []
+    });
+
+    assert.equal(rejection?.reason, 'duplicate_location');
 });
 
 test('new exit name validation rejects cross-type region conflicts', () => {

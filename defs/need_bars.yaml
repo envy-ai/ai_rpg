@@ -54,7 +54,7 @@ need_bars:
       0:
         name: Starving
         sentence: "%CHARACTER% is starving and in danger of fainting. They are completely focused on finding food and will struggle to do anything else until they eat something."
-        effect: -10% to health and attributes, chance of fainting
+        effect: decreased constitution and other attributes, chance of fainting
       25:
         name: Extremely hungry
         sentence: "%CHARACTER% is feeling etremely hungry. They are very distracted by their hunger."
@@ -78,11 +78,11 @@ need_bars:
       950:
         name: Full
         sentence: "%CHARACTER% is feeling full in terms of hunger."
-        effect: Good mood, slight bonuses
+        effect: Good mood, slight attribute bonuses
       1000:
         name: Stuffed
         sentence: "%CHARACTER% is feeling stuffed in terms of hunger."
-        effect: Good mood, slight bonuses
+        effect: Good mood, slight attribute bonuses, contsitution bonus
   stamina:
     name: Stamina
     aliases:

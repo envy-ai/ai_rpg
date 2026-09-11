@@ -11,6 +11,8 @@ class Faction {
   #relations;
   #assets;
   #reputationTiers;
+  #imageId;
+  #imagePrompt;
   #createdAt;
   #lastUpdated;
 
@@ -173,6 +175,8 @@ class Faction {
     relations = null,
     assets = [],
     reputationTiers = [],
+    imageId = null,
+    imagePrompt = '',
     allowReservedName = false
   } = {}) {
     if (!name || typeof name !== 'string') {
@@ -197,6 +201,14 @@ class Faction {
     this.#relations = Faction.#normalizeRelations(relations);
     this.#assets = Faction.#normalizeAssets(assets);
     this.#reputationTiers = Faction.#normalizeReputationTiers(reputationTiers);
+    if (imageId !== null && imageId !== undefined && typeof imageId !== 'string') {
+      throw new Error('Faction imageId must be a non-empty string or null.');
+    }
+    if (typeof imagePrompt !== 'string') {
+      throw new Error('Faction imagePrompt must be a string.');
+    }
+    this.#imageId = typeof imageId === 'string' && imageId.trim() ? imageId.trim() : null;
+    this.#imagePrompt = imagePrompt.trim();
 
     this.#createdAt = new Date().toISOString();
     this.#lastUpdated = this.#createdAt;
@@ -220,6 +232,8 @@ class Faction {
   }
   get assets() { return this.#assets.map(asset => ({ ...asset })); }
   get reputationTiers() { return this.#reputationTiers.map(tier => ({ ...tier })); }
+  get imageId() { return this.#imageId; }
+  get imagePrompt() { return this.#imagePrompt; }
   get createdAt() { return this.#createdAt; }
   get lastUpdated() { return this.#lastUpdated; }
 
@@ -285,6 +299,22 @@ class Faction {
 
   set reputationTiers(value) {
     this.#reputationTiers = Faction.#normalizeReputationTiers(value);
+    this.#lastUpdated = new Date().toISOString();
+  }
+
+  set imageId(value) {
+    if (value !== null && value !== undefined && typeof value !== 'string') {
+      throw new Error('Faction imageId must be a non-empty string or null.');
+    }
+    this.#imageId = typeof value === 'string' && value.trim() ? value.trim() : null;
+    this.#lastUpdated = new Date().toISOString();
+  }
+
+  set imagePrompt(value) {
+    if (typeof value !== 'string') {
+      throw new Error('Faction imagePrompt must be a string.');
+    }
+    this.#imagePrompt = value.trim();
     this.#lastUpdated = new Date().toISOString();
   }
 
@@ -366,6 +396,8 @@ class Faction {
       ),
       assets: this.#assets.map(asset => ({ ...asset })),
       reputationTiers: this.#reputationTiers.map(tier => ({ ...tier })),
+      imageId: this.#imageId,
+      imagePrompt: this.#imagePrompt,
       createdAt: this.#createdAt,
       lastUpdated: this.#lastUpdated
     };
@@ -386,6 +418,8 @@ class Faction {
       relations: data.relations,
       assets: data.assets,
       reputationTiers: data.reputationTiers,
+      imageId: data.imageId ?? null,
+      imagePrompt: data.imagePrompt ?? '',
       allowReservedName: true
     });
 

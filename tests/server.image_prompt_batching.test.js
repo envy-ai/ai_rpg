@@ -4,6 +4,8 @@ const fs = require('fs');
 const vm = require('vm');
 const Utils = require('../Utils.js');
 
+const BASE_CONTEXT_END_MARKER = '[[[AI_RPG_INTERNAL_BASE_CONTEXT_END_V1]]]';
+
 function loadImagePromptBatchHarness({
     promptBatching = { enabled: true, delay_ms: 2000, max_items: 10 },
     settingSnapshot = {},
@@ -61,6 +63,7 @@ function loadImagePromptBatchHarness({
         LLMClient: {
             resolveEffectiveAiConfiguration: (_label, fullConfig) => ({ aiConfig: fullConfig.ai }),
             resolveBackend: aiConfig => aiConfig.backend,
+            getBaseContextEndMarker: () => BASE_CONTEXT_END_MARKER,
             chatCompletion: async ({ messages }) => {
                 calls.push(messages);
                 if (typeof chatCompletion === 'function') {
@@ -146,6 +149,50 @@ test('image prompt generation batches compatible queued requests', async () => {
     assert.equal(results[0].prompt, 'item prefix\n\ngenerated batch prompt 1');
     assert.equal(results[1].prompt, 'item prefix\n\ngenerated batch prompt 2');
     assert.equal(harness.logs.some(entry => entry.prefix === 'image_prompt_generation_batch'), true);
+});
+
+test('image prompt batching shares one base context and preserves each faction request', async () => {
+    const harness = loadImagePromptBatchHarness();
+    const sharedContext = '<gameState>shared faction context</gameState>';
+    const first = harness.generateImagePromptFromTemplate({
+        systemPrompt: 'faction emblem system',
+        generationPrompt: `${sharedContext}\n${BASE_CONTEXT_END_MARKER}\n<task>Emblem for faction one</task>`
+    }, { prefixType: 'faction' });
+    const second = harness.generateImagePromptFromTemplate({
+        systemPrompt: 'faction emblem system',
+        generationPrompt: `${sharedContext}\n${BASE_CONTEXT_END_MARKER}\n<task>Emblem for faction two</task>`
+    }, { prefixType: 'faction' });
+
+    harness.flushImagePromptBatchQueue();
+    const results = await Promise.all([first, second]);
+
+    assert.equal(harness.calls.length, 1);
+    const batchPrompt = harness.calls[0][1].content;
+    assert.equal(batchPrompt.split(BASE_CONTEXT_END_MARKER).length - 1, 1);
+    assert.equal(batchPrompt.split(sharedContext).length - 1, 1);
+    assert.match(batchPrompt, /Emblem for faction one/);
+    assert.match(batchPrompt, /Emblem for faction two/);
+    assert.equal(results[0].prompt, 'generated batch prompt 1');
+    assert.equal(results[1].prompt, 'generated batch prompt 2');
+});
+
+test('image prompt batching separates requests with different base contexts', async () => {
+    const harness = loadImagePromptBatchHarness();
+    const first = harness.generateImagePromptFromTemplate({
+        systemPrompt: 'faction emblem system',
+        generationPrompt: `first context\n${BASE_CONTEXT_END_MARKER}\n<task>Emblem one</task>`
+    }, { prefixType: 'faction' });
+    const second = harness.generateImagePromptFromTemplate({
+        systemPrompt: 'faction emblem system',
+        generationPrompt: `second context\n${BASE_CONTEXT_END_MARKER}\n<task>Emblem two</task>`
+    }, { prefixType: 'faction' });
+
+    harness.flushImagePromptBatchQueue();
+    const results = await Promise.all([first, second]);
+
+    assert.equal(harness.calls.length, 2);
+    assert.equal(results[0].prompt, 'generated single prompt');
+    assert.equal(results[1].prompt, 'generated single prompt');
 });
 
 test('image prompt batching separates incompatible system prompts', async () => {

@@ -78,6 +78,25 @@ test('player-action TinyBrain result builder uses an explicit duration without a
     );
 });
 
+test('player-action TinyBrain result builder preserves an until clock duration validated at the prompt snapshot', () => {
+    const xml = buildPlayerActionTinyBrainResult({
+        assignments: {
+            movementKind: 'none',
+            normalProse: 'Baato sleeps until morning.',
+            hiddenNotes: null,
+            timeReasoning: 'The rest lasts until the requested wake time.',
+            timeDuration: { text: 'until 6 AM', minutes: 250 }
+        },
+        templateContext: {
+            currentVehicle: null,
+            playerActionWorldTimeMinutes: 110
+        }
+    });
+    const root = parse(xml);
+
+    assert.equal(root.getElementsByTagName('duration')[0].textContent, 'until 6 AM');
+});
+
 test('player-action TinyBrain result builder uses authoritative player travel metadata', () => {
     const xml = buildPlayerActionTinyBrainResult({
         assignments: baseMoveAssignments({

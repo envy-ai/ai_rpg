@@ -91,6 +91,7 @@ Environment variables:
 - `empty-action-confirm.spec.js`: empty chat sends require confirmation before `/api/chat` receives an empty user action.
 - `crafting.empty-submit.spec.js`: crafting and location-modification modals submit intentional empty material selections, including the Ctrl+Enter prose shortcut.
 - `header.navigation.spec.js`: shared header rendering including the primary Mods route, nav labels, save/load actions, tools menu layering, and mobile non-overlap checks.
+- `location-item-mobile-action-toggle.spec.js`: mobile-only current-location inspect/pickup toggle visibility, default/selected state, and mocked direct-pickup routing to the active player.
 - `modal-submit-shortcuts.spec.js`: shared modal form submission, explicit non-form actions, filter non-submission, and common-page helper loading.
 - `settings.persistence.spec.js`: world profile create/rename/delete persistence and Calendar tab serialization using required Character Options mechanic attributes and enabled-mod preset configuration.
 - `story-tools-search.spec.js`: Story Tools search modes, type filters, case sensitivity, delayed filtering, and Mystery Box load/save behavior.

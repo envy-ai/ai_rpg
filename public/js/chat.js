@@ -432,6 +432,14 @@ class AIRPGChat {
         this.chatLog = document.getElementById('chatLog');
         this.messageInput = document.getElementById('messageInput');
         this.sendButton = document.getElementById('sendButton');
+        this.playerPromptGuidanceButton = document.getElementById('playerPromptGuidanceButton');
+        this.playerPromptGuidanceModal = document.getElementById('playerPromptGuidanceModal');
+        this.playerPromptGuidanceForm = document.getElementById('playerPromptGuidanceForm');
+        this.playerPromptGuidanceCloseButton = document.getElementById('playerPromptGuidanceCloseBtn');
+        this.playerPromptGuidanceInput = document.getElementById('playerPromptGuidanceInput');
+        this.playerPromptGuidanceStatus = document.getElementById('playerPromptGuidanceStatus');
+        this.playerPromptGuidanceCancelButton = document.getElementById('playerPromptGuidanceCancelBtn');
+        this.playerPromptGuidanceSaveButton = document.getElementById('playerPromptGuidanceSaveBtn');
         this.terminalOutputButton = document.getElementById('terminalOutputButton');
         this.abortTurnButton = document.getElementById('abortTurnButton');
         this.prefixHelpLink = document.getElementById('prefixHelpLink');
@@ -444,6 +452,10 @@ class AIRPGChat {
         this.emptyActionConfirmCloseButton = document.getElementById('emptyActionConfirmCloseBtn');
         this.emptyActionConfirmCancelButton = document.getElementById('emptyActionConfirmCancelBtn');
         this.emptyActionConfirmSubmitButton = document.getElementById('emptyActionConfirmSubmitBtn');
+        this.questDecisionReminderModal = document.getElementById('questDecisionReminderModal');
+        this.questDecisionReminderCloseButton = document.getElementById('questDecisionReminderCloseBtn');
+        this.questDecisionReminderKeepReadingButton = document.getElementById('questDecisionReminderKeepReadingBtn');
+        this.questDecisionReminderReviewButton = document.getElementById('questDecisionReminderReviewBtn');
         this.slashUploadModal = document.getElementById('slashUploadModal');
         this.slashUploadTitle = document.getElementById('slashUploadTitle');
         this.slashUploadCloseButton = document.getElementById('slashUploadCloseBtn');
@@ -503,21 +515,8 @@ class AIRPGChat {
         window.AIRPG_CLIENT_ID = this.clientId;
 
         this.pendingMoveOverlay = false;
-        this.questConfirmationQueue = [];
-        this.activeQuestConfirmation = null;
-        this.questConfirmationModal = null;
-        this.questConfirmationDialog = null;
-        this.questConfirmationTitle = null;
-        this.questConfirmationBackdrop = null;
-        this.questConfirmationSummary = null;
-        this.questConfirmationDescription = null;
-        this.questConfirmationObjectives = null;
-        this.questConfirmationRewards = null;
-        this.questConfirmationGiver = null;
-        this.questConfirmationStatus = null;
-        this.questConfirmationAcceptButton = null;
-        this.questConfirmationDeclineButton = null;
-        this.questConfirmationSubmitting = false;
+        this.pendingQuestOffers = new Map();
+        this.questOfferDecisionInFlight = new Set();
         this.comfyCacheMonitorWarningStorageKey = 'airpg:hideComfyCacheMonitorFallbackWarning';
         this.comfyCacheMonitorWarningModal = null;
         this.comfyCacheMonitorWarningMessage = null;
@@ -534,6 +533,11 @@ class AIRPGChat {
         this.pendingRedoStorageKey = 'airpg:pendingRedoPlayerAction';
         this.pendingRedoInProgress = false;
         this.turnRollbackInProgress = false;
+        this.playerPromptGuidanceLoading = false;
+        this.playerPromptGuidanceLoaded = false;
+        this.playerPromptGuidanceSubmitting = false;
+        this.playerPromptGuidanceLoadGeneration = 0;
+        this.playerPromptGuidancePreviousFocus = null;
         this.terminalOutputViewer = null;
         this.terminalOutputSource = 'llama';
         this.terminalOutputCursors = new Map();
@@ -576,8 +580,9 @@ class AIRPGChat {
         this.activeStatusBundle = null;
 
         this.setupEditModal();
-        this.setupQuestConfirmationModal();
+        this.setupQuestDecisionReminderModal();
         this.setupComfyCacheMonitorWarningModal();
+        this.setupPlayerPromptGuidanceModal();
         this.setupPrefixHelpModal();
         this.setupEmptyActionConfirmModal();
         this.setupSlashUploadModal();
@@ -648,66 +653,21 @@ class AIRPGChat {
         this.setupModalPromptProgressObserver();
     }
 
-    setupQuestConfirmationModal() {
-        if (this.questConfirmationModal) {
+    setupQuestDecisionReminderModal() {
+        if (!this.questDecisionReminderModal) {
             return;
         }
-
-        const container = document.createElement('div');
-        container.className = 'quest-confirmation';
-        container.setAttribute('hidden', '');
-        container.innerHTML = `
-            <div class="quest-confirmation__backdrop" role="presentation"></div>
-            <div class="quest-confirmation__dialog" role="dialog" aria-modal="true" aria-labelledby="questConfirmationTitle">
-                <header class="quest-confirmation__header">
-                    <h2 id="questConfirmationTitle" class="quest-confirmation__title">Quest Available</h2>
-                </header>
-                <div class="quest-confirmation__body">
-                    <p class="quest-confirmation__giver"></p>
-                    <p class="quest-confirmation__summary"></p>
-                    <p class="quest-confirmation__description"></p>
-                    <div class="quest-confirmation__section quest-confirmation__section--objectives">
-                        <h3>Objectives</h3>
-                        <ul class="quest-confirmation__objectives"></ul>
-                    </div>
-                    <div class="quest-confirmation__section quest-confirmation__section--rewards">
-                        <h3>Rewards</h3>
-                        <ul class="quest-confirmation__rewards"></ul>
-                    </div>
-                    <p class="quest-confirmation__status" role="status" aria-live="polite"></p>
-                </div>
-                <footer class="quest-confirmation__footer">
-                    <button type="button" class="quest-confirmation__decline">Decline</button>
-                    <button type="button" class="quest-confirmation__accept">Accept Quest</button>
-                </footer>
-            </div>
-        `;
-
-        document.body.appendChild(container);
-
-        this.questConfirmationModal = container;
-        this.questConfirmationDialog = container.querySelector('.quest-confirmation__dialog');
-        this.questConfirmationBackdrop = container.querySelector('.quest-confirmation__backdrop');
-        this.questConfirmationTitle = container.querySelector('.quest-confirmation__title');
-        this.questConfirmationSummary = container.querySelector('.quest-confirmation__summary');
-        this.questConfirmationDescription = container.querySelector('.quest-confirmation__description');
-        this.questConfirmationObjectives = container.querySelector('.quest-confirmation__objectives');
-        this.questConfirmationRewards = container.querySelector('.quest-confirmation__rewards');
-        this.questConfirmationGiver = container.querySelector('.quest-confirmation__giver');
-        this.questConfirmationStatus = container.querySelector('.quest-confirmation__status');
-        this.questConfirmationAcceptButton = container.querySelector('.quest-confirmation__accept');
-        this.questConfirmationDeclineButton = container.querySelector('.quest-confirmation__decline');
-
-        if (this.questConfirmationAcceptButton) {
-            this.questConfirmationAcceptButton.addEventListener('click', () => this.submitQuestConfirmation(true));
-        }
-        if (this.questConfirmationDeclineButton) {
-            this.questConfirmationDeclineButton.addEventListener('click', () => this.submitQuestConfirmation(false));
-        }
-
+        const close = () => this.closeQuestDecisionReminderModal({ refocusInput: true });
+        this.questDecisionReminderCloseButton?.addEventListener('click', close);
+        this.questDecisionReminderKeepReadingButton?.addEventListener('click', close);
+        this.questDecisionReminderReviewButton?.addEventListener('click', () => this.reviewFirstPendingQuestOffer());
+        this.questDecisionReminderModal.addEventListener('click', (event) => {
+            if (event.target === this.questDecisionReminderModal) close();
+        });
         document.addEventListener('keydown', (event) => {
-            if (event.key === 'Escape' && this.isQuestConfirmationVisible() && !this.questConfirmationSubmitting) {
-                this.submitQuestConfirmation(false);
+            if (event.key === 'Escape' && this.isQuestDecisionReminderModalOpen()) {
+                event.preventDefault();
+                close();
             }
         });
     }
@@ -897,6 +857,246 @@ class AIRPGChat {
         }
         this.llamaRouterUnloadWarningModal.setAttribute('hidden', '');
         this.llamaRouterUnloadWarningModal.classList.remove('is-open');
+    }
+
+    setupPlayerPromptGuidanceModal() {
+        const elements = [
+            this.playerPromptGuidanceButton,
+            this.playerPromptGuidanceModal,
+            this.playerPromptGuidanceForm,
+            this.playerPromptGuidanceCloseButton,
+            this.playerPromptGuidanceInput,
+            this.playerPromptGuidanceStatus,
+            this.playerPromptGuidanceCancelButton,
+            this.playerPromptGuidanceSaveButton
+        ];
+        if (elements.every(element => !element)) {
+            return;
+        }
+        if (elements.some(element => !element)) {
+            throw new Error('Player Prompt Guidance interface is missing required elements.');
+        }
+
+        this.playerPromptGuidanceButton.addEventListener('click', () => {
+            void this.openPlayerPromptGuidanceModal();
+        });
+        this.playerPromptGuidanceForm.addEventListener('submit', (event) => {
+            event.preventDefault();
+            void this.submitPlayerPromptGuidance();
+        });
+
+        const close = () => this.closePlayerPromptGuidanceModal();
+        this.playerPromptGuidanceCloseButton.addEventListener('click', close);
+        this.playerPromptGuidanceCancelButton.addEventListener('click', close);
+        this.playerPromptGuidanceModal.addEventListener('click', (event) => {
+            if (event.target === this.playerPromptGuidanceModal) {
+                close();
+            }
+        });
+        document.addEventListener('keydown', (event) => {
+            if (!this.isPlayerPromptGuidanceModalOpen()) {
+                return;
+            }
+            if (event.key === 'Escape') {
+                event.preventDefault();
+                close();
+                return;
+            }
+            if (event.key === 'Tab') {
+                this.trapPlayerPromptGuidanceFocus(event);
+            }
+        });
+    }
+
+    isPlayerPromptGuidanceModalOpen() {
+        return Boolean(
+            this.playerPromptGuidanceModal
+            && !this.playerPromptGuidanceModal.hasAttribute('hidden')
+        );
+    }
+
+    setPlayerPromptGuidanceStatus(message = '', state = 'info') {
+        if (!this.playerPromptGuidanceStatus) {
+            return;
+        }
+        const text = typeof message === 'string' ? message : String(message || '');
+        this.playerPromptGuidanceStatus.textContent = text;
+        this.playerPromptGuidanceStatus.dataset.state = state;
+        this.playerPromptGuidanceStatus.hidden = !text;
+    }
+
+    syncPlayerPromptGuidanceControls() {
+        const requestInFlight = this.playerPromptGuidanceLoading || this.playerPromptGuidanceSubmitting;
+        if (this.playerPromptGuidanceInput) {
+            this.playerPromptGuidanceInput.disabled = requestInFlight || !this.playerPromptGuidanceLoaded;
+        }
+        if (this.playerPromptGuidanceSaveButton) {
+            this.playerPromptGuidanceSaveButton.disabled = requestInFlight || !this.playerPromptGuidanceLoaded;
+            this.playerPromptGuidanceSaveButton.textContent = this.playerPromptGuidanceSubmitting ? 'Saving...' : 'Save';
+        }
+        if (this.playerPromptGuidanceCancelButton) {
+            this.playerPromptGuidanceCancelButton.disabled = this.playerPromptGuidanceSubmitting;
+        }
+        if (this.playerPromptGuidanceCloseButton) {
+            this.playerPromptGuidanceCloseButton.disabled = this.playerPromptGuidanceSubmitting;
+        }
+        if (this.playerPromptGuidanceButton) {
+            this.playerPromptGuidanceButton.disabled = requestInFlight;
+        }
+    }
+
+    trapPlayerPromptGuidanceFocus(event) {
+        if (!this.playerPromptGuidanceModal || event.defaultPrevented) {
+            return;
+        }
+        const focusable = Array.from(this.playerPromptGuidanceModal.querySelectorAll(
+            'button:not([disabled]), textarea:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])'
+        )).filter(element => !element.hasAttribute('hidden'));
+        if (!focusable.length) {
+            event.preventDefault();
+            return;
+        }
+        const first = focusable[0];
+        const last = focusable[focusable.length - 1];
+        if (event.shiftKey && document.activeElement === first) {
+            event.preventDefault();
+            last.focus();
+        } else if (!event.shiftKey && document.activeElement === last) {
+            event.preventDefault();
+            first.focus();
+        }
+    }
+
+    async openPlayerPromptGuidanceModal() {
+        if (!this.playerPromptGuidanceModal) {
+            return;
+        }
+        if (this.isPlayerPromptGuidanceModalOpen()) {
+            this.playerPromptGuidanceInput?.focus();
+            return;
+        }
+
+        this.playerPromptGuidancePreviousFocus = document.activeElement instanceof HTMLElement
+            ? document.activeElement
+            : this.playerPromptGuidanceButton;
+        const loadGeneration = ++this.playerPromptGuidanceLoadGeneration;
+        this.playerPromptGuidanceLoading = true;
+        this.playerPromptGuidanceLoaded = false;
+        this.playerPromptGuidanceSubmitting = false;
+        this.playerPromptGuidanceInput.value = '';
+        this.setPlayerPromptGuidanceStatus('Loading current guidance...', 'info');
+        this.playerPromptGuidanceModal.removeAttribute('hidden');
+        this.playerPromptGuidanceModal.setAttribute('aria-hidden', 'false');
+        this.playerPromptGuidanceButton.setAttribute('aria-expanded', 'true');
+        document.body.classList.add('modal-open');
+        this.syncPlayerPromptGuidanceControls();
+        this.playerPromptGuidanceCloseButton.focus();
+
+        try {
+            const response = await fetch('/api/player/prompt-guidance', { cache: 'no-store' });
+            const data = await response.json().catch(() => ({}));
+            if (!response.ok || data?.success !== true) {
+                throw new Error(data?.error || `HTTP ${response.status}`);
+            }
+            if (typeof data.guidance !== 'string') {
+                throw new Error('The server returned invalid player prompt guidance.');
+            }
+            if (loadGeneration !== this.playerPromptGuidanceLoadGeneration || !this.isPlayerPromptGuidanceModalOpen()) {
+                return;
+            }
+            this.playerPromptGuidanceInput.value = data.guidance;
+            this.playerPromptGuidanceLoaded = true;
+            this.setPlayerPromptGuidanceStatus('', 'info');
+        } catch (error) {
+            if (loadGeneration === this.playerPromptGuidanceLoadGeneration && this.isPlayerPromptGuidanceModalOpen()) {
+                this.playerPromptGuidanceLoaded = false;
+                this.setPlayerPromptGuidanceStatus(`Failed to load guidance: ${error.message || error}`, 'error');
+            }
+        } finally {
+            if (loadGeneration === this.playerPromptGuidanceLoadGeneration && this.isPlayerPromptGuidanceModalOpen()) {
+                this.playerPromptGuidanceLoading = false;
+                this.syncPlayerPromptGuidanceControls();
+                if (this.playerPromptGuidanceLoaded) {
+                    this.playerPromptGuidanceInput.focus();
+                }
+            }
+        }
+    }
+
+    closePlayerPromptGuidanceModal() {
+        if (!this.playerPromptGuidanceModal || this.playerPromptGuidanceSubmitting) {
+            return false;
+        }
+        this.playerPromptGuidanceLoadGeneration += 1;
+        this.playerPromptGuidanceLoading = false;
+        this.playerPromptGuidanceLoaded = false;
+        this.playerPromptGuidanceModal.setAttribute('hidden', '');
+        this.playerPromptGuidanceModal.setAttribute('aria-hidden', 'true');
+        this.playerPromptGuidanceButton?.setAttribute('aria-expanded', 'false');
+        this.syncPlayerPromptGuidanceControls();
+        this.syncBodyModalOpenClass();
+
+        const focusTarget = this.playerPromptGuidancePreviousFocus;
+        this.playerPromptGuidancePreviousFocus = null;
+        if (focusTarget instanceof HTMLElement && focusTarget.isConnected) {
+            focusTarget.focus();
+        } else {
+            this.playerPromptGuidanceButton?.focus();
+        }
+        return true;
+    }
+
+    async submitPlayerPromptGuidance() {
+        if (
+            !this.isPlayerPromptGuidanceModalOpen()
+            || !this.playerPromptGuidanceLoaded
+            || this.playerPromptGuidanceLoading
+            || this.playerPromptGuidanceSubmitting
+        ) {
+            return;
+        }
+
+        this.playerPromptGuidanceSubmitting = true;
+        this.setPlayerPromptGuidanceStatus('Saving guidance...', 'info');
+        this.syncPlayerPromptGuidanceControls();
+
+        try {
+            const response = await fetch('/api/player/prompt-guidance', {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    guidance: this.playerPromptGuidanceInput.value,
+                    clientId: this.clientId || window.AIRPG_CLIENT_ID || null
+                })
+            });
+            const data = await response.json().catch(() => ({}));
+            if (!response.ok || data?.success !== true) {
+                throw new Error(data?.error || `HTTP ${response.status}`);
+            }
+            if (typeof data.guidance !== 'string') {
+                throw new Error('The server returned invalid updated player prompt guidance.');
+            }
+            if (!data.entry || typeof data.entry !== 'object') {
+                throw new Error('The server did not return the required guidance update notice.');
+            }
+
+            this.playerPromptGuidanceInput.value = data.guidance;
+            const entryAlreadyPresent = this.serverHistory.some(entry => (
+                entry?.id && data.entry.id && entry.id === data.entry.id
+            ));
+            if (!entryAlreadyPresent) {
+                this.updateServerHistory([...this.serverHistory, data.entry]);
+            }
+            await this.refreshChatHistory();
+            this.playerPromptGuidanceSubmitting = false;
+            this.setPlayerPromptGuidanceStatus('', 'info');
+            this.closePlayerPromptGuidanceModal();
+        } catch (error) {
+            this.playerPromptGuidanceSubmitting = false;
+            this.setPlayerPromptGuidanceStatus(`Failed to save guidance: ${error.message || error}`, 'error');
+            this.syncPlayerPromptGuidanceControls();
+            this.playerPromptGuidanceInput?.focus();
+        }
     }
 
     setupPrefixHelpModal() {
@@ -1460,7 +1660,7 @@ class AIRPGChat {
     }
 
     syncBodyModalOpenClass() {
-        const hasOpenModal = Boolean(document.querySelector('.modal[aria-hidden="false"], .chat-edit-modal.is-open, .quest-confirmation.is-open, .npc-selection-modal'));
+        const hasOpenModal = Boolean(document.querySelector('.modal[aria-hidden="false"], .chat-edit-modal.is-open, .npc-selection-modal'));
         if (hasOpenModal) {
             document.body.classList.add('modal-open');
         } else {
@@ -1676,10 +1876,6 @@ class AIRPGChat {
         }
     }
 
-    isQuestConfirmationVisible() {
-        return Boolean(this.questConfirmationModal && !this.questConfirmationModal.hasAttribute('hidden'));
-    }
-
     normalizeQuestConfirmationRequest(payload) {
         if (!payload || typeof payload !== 'object') {
             return null;
@@ -1752,10 +1948,10 @@ class AIRPGChat {
             : [];
 
         const rewardCurrency = Number.isFinite(questSource.rewardCurrency)
-            ? Math.max(0, Math.round(questSource.rewardCurrency))
+            ? Math.round(questSource.rewardCurrency)
             : 0;
         const rewardXp = Number.isFinite(questSource.rewardXp)
-            ? Math.max(0, Math.round(questSource.rewardXp))
+            ? Math.round(questSource.rewardXp)
             : 0;
         const rewardFactionReputation = (() => {
             const source = questSource.rewardFactionReputation;
@@ -1881,276 +2077,104 @@ class AIRPGChat {
         };
     }
 
-    enqueueQuestConfirmation(request) {
-        const normalized = this.normalizeQuestConfirmationRequest(request);
-        if (!normalized) {
-            console.warn('Received invalid quest confirmation payload:', request);
-            return;
-        }
-
-        this.questConfirmationQueue.push(normalized);
-        if (!this.activeQuestConfirmation) {
-            this.presentNextQuestConfirmation();
-        }
+    isQuestDecisionReminderModalOpen() {
+        return Boolean(this.questDecisionReminderModal && !this.questDecisionReminderModal.hasAttribute('hidden'));
     }
 
-    presentNextQuestConfirmation() {
-        if (this.activeQuestConfirmation || !this.questConfirmationQueue.length) {
-            return;
-        }
-        const next = this.questConfirmationQueue.shift();
-        this.activeQuestConfirmation = next;
-        this.renderQuestConfirmation(next);
-        this.openQuestConfirmationModal();
+    openQuestDecisionReminderModal() {
+        if (!this.questDecisionReminderModal || !this.pendingQuestOffers.size) return;
+        this.questDecisionReminderModal.removeAttribute('hidden');
+        this.questDecisionReminderModal.setAttribute('aria-hidden', 'false');
+        document.body.classList.add('modal-open');
+        window.setTimeout(() => this.questDecisionReminderReviewButton?.focus(), 0);
     }
 
-    openQuestConfirmationModal() {
-        if (!this.questConfirmationModal) {
-            return;
-        }
-        this.questConfirmationModal.removeAttribute('hidden');
-        this.questConfirmationModal.classList.add('is-open');
-        this.questConfirmationSubmitting = false;
-        this.setQuestConfirmationStatus('');
-        this.setQuestConfirmationBusy(false);
-        if (this.questConfirmationAcceptButton) {
-            setTimeout(() => {
-                this.questConfirmationAcceptButton?.focus();
-            }, 50);
-        }
+    closeQuestDecisionReminderModal({ refocusInput = false } = {}) {
+        if (!this.questDecisionReminderModal) return;
+        this.questDecisionReminderModal.setAttribute('hidden', '');
+        this.questDecisionReminderModal.setAttribute('aria-hidden', 'true');
+        this.syncBodyModalOpenClass();
+        if (refocusInput) this.messageInput?.focus();
     }
 
-    closeQuestConfirmationModal() {
-        if (!this.questConfirmationModal) {
+    reviewFirstPendingQuestOffer() {
+        const first = this.pendingQuestOffers.values().next().value;
+        if (!first) {
+            this.closeQuestDecisionReminderModal({ refocusInput: true });
             return;
         }
-        this.questConfirmationModal.setAttribute('hidden', '');
-        this.questConfirmationModal.classList.remove('is-open');
-        this.questConfirmationSubmitting = false;
-        this.activeQuestConfirmation = null;
-        this.setQuestConfirmationStatus('');
+        this.closeQuestDecisionReminderModal();
+        const selector = `.quest-offer-message[data-confirmation-id="${CSS.escape(first.confirmationId)}"]`;
+        const offerElement = this.chatLog?.querySelector(selector);
+        const details = offerElement?.querySelector('.quest-offer');
+        if (details) details.open = true;
+        offerElement?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        window.setTimeout(() => offerElement?.querySelector('.quest-offer__accept')?.focus(), 350);
     }
 
-    setQuestConfirmationStatus(message, tone = null) {
-        if (!this.questConfirmationStatus) {
-            return;
-        }
-        const text = typeof message === 'string' ? message.trim() : '';
-        this.questConfirmationStatus.textContent = text;
-        this.questConfirmationStatus.classList.remove('is-error', 'is-success');
-        if (!text) {
-            return;
-        }
-        if (tone === 'error') {
-            this.questConfirmationStatus.classList.add('is-error');
-        } else if (tone === 'success') {
-            this.questConfirmationStatus.classList.add('is-success');
-        }
-    }
-
-    setQuestConfirmationBusy(isBusy, message = null) {
-        this.questConfirmationSubmitting = Boolean(isBusy);
-        if (this.questConfirmationAcceptButton) {
-            this.questConfirmationAcceptButton.disabled = this.questConfirmationSubmitting;
-        }
-        if (this.questConfirmationDeclineButton) {
-            this.questConfirmationDeclineButton.disabled = this.questConfirmationSubmitting;
-        }
-        if (typeof message === 'string') {
-            this.setQuestConfirmationStatus(message, isBusy ? null : undefined);
-        }
-    }
-
-    renderQuestConfirmation(request) {
-        if (!request || !request.quest) {
-            return;
-        }
-        const quest = request.quest;
-        const toggleHidden = (element, shouldHide) => {
-            if (!element) {
-                return;
+    getQuestRewardLines(quest) {
+        const rewardLines = [];
+        const formatter = new Intl.NumberFormat(undefined, { maximumFractionDigits: 0 });
+        if (quest.rewardCurrency > 0) rewardLines.push(`${formatter.format(quest.rewardCurrency)} currency`);
+        if (quest.rewardXp > 0) rewardLines.push(`${formatter.format(quest.rewardXp)} XP`);
+        quest.rewardItems?.forEach(entry => {
+            let line = entry.quantity && entry.quantity !== 1 ? `${entry.quantity} × ${entry.name}` : entry.name;
+            if (entry.description) line += ` — ${entry.description}`;
+            rewardLines.push(line);
+        });
+        quest.rewardFactionReputation?.forEach(entry => {
+            const points = Number(entry.points);
+            if (Number.isFinite(points) && Number.isInteger(points) && points !== 0) {
+                rewardLines.push(`${points > 0 ? '+' : ''}${points} reputation with ${entry.factionName}`);
             }
-            if (shouldHide) {
-                element.setAttribute('hidden', '');
-            } else {
-                element.removeAttribute('hidden');
-            }
-        };
-
-        const titleSegments = [];
-        if (quest.name) {
-            titleSegments.push(`Accept "${quest.name}"?`);
-        } else {
-            titleSegments.push('Accept this quest?');
-        }
-        if (this.questConfirmationTitle) {
-            this.questConfirmationTitle.textContent = titleSegments.join(' ');
-        }
-
-        if (this.questConfirmationGiver) {
-            this.questConfirmationGiver.textContent = quest.giver
-                ? `Quest giver: ${quest.giver}`
-                : '';
-            toggleHidden(this.questConfirmationGiver, !quest.giver);
-        }
-
-        if (this.questConfirmationSummary) {
-            this.questConfirmationSummary.textContent = quest.summary
-                ? quest.summary
-                : '';
-            toggleHidden(this.questConfirmationSummary, !quest.summary);
-        }
-
-        if (this.questConfirmationDescription) {
-            const description = quest.description && quest.description !== quest.summary
-                ? quest.description
-                : '';
-            this.questConfirmationDescription.textContent = description;
-            toggleHidden(this.questConfirmationDescription, !description);
-        }
-
-        if (this.questConfirmationObjectives) {
-            this.questConfirmationObjectives.innerHTML = '';
-            if (Array.isArray(quest.objectives) && quest.objectives.length) {
-                quest.objectives.forEach(entry => {
-                    const item = document.createElement('li');
-                    item.textContent = entry.optional
-                        ? `${entry.description} (optional)`
-                        : entry.description;
-                    this.questConfirmationObjectives.appendChild(item);
-                });
-            } else {
-                const item = document.createElement('li');
-                item.textContent = 'No explicit objectives were provided.';
-                this.questConfirmationObjectives.appendChild(item);
-            }
-        }
-
-        if (this.questConfirmationRewards) {
-            this.questConfirmationRewards.innerHTML = '';
-            const rewardLines = [];
-            const formatter = new Intl.NumberFormat(undefined, { maximumFractionDigits: 0 });
-            if (quest.rewardCurrency > 0) {
-                rewardLines.push(`Currency: ${formatter.format(quest.rewardCurrency)}`);
-            }
-            if (quest.rewardXp > 0) {
-                rewardLines.push(`Experience: ${formatter.format(quest.rewardXp)} XP`);
-            }
-            if (Array.isArray(quest.rewardItems) && quest.rewardItems.length) {
-                quest.rewardItems.forEach(entry => {
-                    let line = entry.quantity && entry.quantity !== 1
-                        ? `${entry.quantity} × ${entry.name}`
-                        : entry.name;
-                    if (entry.description) {
-                        line += ` — ${entry.description}`;
-                    }
-                    rewardLines.push(line);
-                });
-            }
-            if (Array.isArray(quest.rewardFactionReputation) && quest.rewardFactionReputation.length) {
-                quest.rewardFactionReputation.forEach(entry => {
-                    const points = Number(entry.points);
-                    if (!Number.isFinite(points) || !Number.isInteger(points) || points === 0) {
-                        return;
-                    }
-                    const signed = points > 0 ? `+${points}` : `${points}`;
-                    rewardLines.push(`${signed} reputation with ${entry.factionName}`);
-                });
-            }
-            if (Array.isArray(quest.rewardNpcDispositions) && quest.rewardNpcDispositions.length) {
-                quest.rewardNpcDispositions.forEach(entry => {
-                    const npcName = entry?.npcName || 'NPC';
-                    const dispositions = Array.isArray(entry?.dispositions) ? entry.dispositions : [];
-                    dispositions.forEach(disposition => {
-                        const intensity = Number(disposition?.intensity);
-                        if (!Number.isFinite(intensity) || !Number.isInteger(intensity) || intensity === 0) {
-                            return;
-                        }
-                        // Prefer the server-resolved delta (intensity scaled by the
-                        // typical step) so the accept dialog matches the quest list and
-                        // the change actually applied on completion; fall back to the
-                        // raw intensity only if no delta was provided.
-                        const deltaRaw = Number(disposition?.delta);
-                        const amount = Number.isFinite(deltaRaw) && deltaRaw !== 0 ? deltaRaw : intensity;
-                        const signed = amount > 0 ? `+${amount}` : `${amount}`;
-                        const reason = disposition.reason ? ` - ${disposition.reason}` : '';
-                        rewardLines.push(`${npcName}: ${disposition.type} ${signed}${reason}`);
-                    });
-                });
-            }
-            if (Array.isArray(quest.rewardBenefits) && quest.rewardBenefits.length) {
-                quest.rewardBenefits.forEach(entry => {
-                    if (entry.type === 'party-member') {
-                        const role = entry.role ? ` (${entry.role})` : '';
-                        rewardLines.push(`Party member: ${entry.label}${role}`);
-                    }
-                });
-            }
-            if (Array.isArray(quest.rewardNotes) && quest.rewardNotes.length) {
-                quest.rewardNotes.forEach(note => rewardLines.push(`Promise: ${note}`));
-            }
-            if (!rewardLines.length) {
-                rewardLines.push('No guaranteed rewards listed.');
-            }
-
-            rewardLines.forEach(line => {
-                const item = document.createElement('li');
-                item.textContent = line;
-                this.questConfirmationRewards.appendChild(item);
+        });
+        quest.rewardNpcDispositions?.forEach(entry => {
+            entry.dispositions?.forEach(disposition => {
+                const intensity = Number(disposition?.intensity);
+                const deltaRaw = Number(disposition?.delta);
+                const amount = Number.isFinite(deltaRaw) && deltaRaw !== 0 ? deltaRaw : intensity;
+                if (Number.isFinite(amount) && amount !== 0) {
+                    rewardLines.push(`${entry.npcName}: ${disposition.type} ${amount > 0 ? '+' : ''}${amount}`);
+                }
             });
-        }
-
-        this.setQuestConfirmationStatus('');
+        });
+        quest.rewardBenefits?.forEach(entry => {
+            const role = entry.role ? ` (${entry.role})` : '';
+            rewardLines.push(`Party member: ${entry.label}${role}`);
+        });
+        quest.rewardNotes?.forEach(note => rewardLines.push(`Promise: ${note}`));
+        return rewardLines.length ? rewardLines : ['No guaranteed rewards listed.'];
     }
 
-    async submitQuestConfirmation(accepted) {
-        if (!this.activeQuestConfirmation || this.questConfirmationSubmitting) {
-            return;
-        }
-        if (typeof accepted !== 'boolean') {
-            return;
-        }
-
-        if (!this.clientId) {
-            this.setQuestConfirmationStatus('Client ID missing; cannot respond to quest.', 'error');
-            return;
-        }
-
-        this.setQuestConfirmationBusy(true, accepted ? 'Accepting quest…' : 'Declining quest…');
-
+    async submitQuestOfferDecision(confirmationId, accepted, offerElement) {
+        if (!confirmationId || typeof accepted !== 'boolean' || this.questOfferDecisionInFlight.has(confirmationId)) return;
+        this.questOfferDecisionInFlight.add(confirmationId);
+        const buttons = offerElement?.querySelectorAll('.quest-offer__decision-button') || [];
+        buttons.forEach(button => { button.disabled = true; });
+        const status = offerElement?.querySelector('.quest-offer__decision-status');
+        if (status) status.textContent = accepted ? 'Accepting quest…' : 'Declining quest…';
         try {
             const response = await fetch('/api/quests/confirm', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    confirmationId: this.activeQuestConfirmation.confirmationId,
-                    clientId: this.clientId,
-                    decision: accepted ? 'accept' : 'decline'
-                })
+                body: JSON.stringify({ confirmationId, clientId: this.clientId, decision: accepted ? 'accept' : 'decline' })
             });
-            if (!response.ok) {
-                const data = await response.json().catch(() => ({}));
-                const errorMessage = data?.error || `HTTP ${response.status}`;
-                throw new Error(errorMessage);
+            const data = await response.json().catch(() => ({}));
+            if (!response.ok && data?.code !== 'QUEST_CONFIRMATION_RESOLVED') {
+                throw new Error(data?.error || `HTTP ${response.status}`);
             }
-            this.setQuestConfirmationStatus(accepted ? 'Quest accepted.' : 'Quest declined.', 'success');
-            this.closeQuestConfirmationModal();
-            this.presentNextQuestConfirmation();
-            try {
-                window.refreshQuestPanel?.();
-            } catch (panelError) {
-                console.debug('Quest panel refresh failed:', panelError);
-            }
+            await this.refreshChatHistory();
+            window.refreshQuestPanel?.();
         } catch (error) {
-            console.warn('Failed to submit quest confirmation:', error);
-            this.setQuestConfirmationStatus(error?.message || 'Failed to submit quest confirmation.', 'error');
-            this.setQuestConfirmationBusy(false);
-            return;
+            console.warn('Failed to submit quest offer decision:', error);
+            if (status) {
+                status.textContent = error?.message || 'Failed to submit quest decision.';
+                status.dataset.state = 'error';
+            }
+            buttons.forEach(button => { button.disabled = false; });
+        } finally {
+            this.questOfferDecisionInFlight.delete(confirmationId);
         }
-    }
-
-    handleQuestConfirmationRequest(payload) {
-        this.enqueueQuestConfirmation(payload);
     }
 
     async loadExistingHistory() {
@@ -2509,6 +2533,7 @@ class AIRPGChat {
             'slop-remover': 'Slop Remover',
             'skill-check': 'Skill Checks',
             'attack-check': 'Attack Checks',
+            'player-prompt-guidance': 'Player Prompt Guidance',
             'tracker-updates': 'Tracker Updates',
             'relationship-updates': 'Relationship Updates',
             'container-transfer': 'Container Transfers'
@@ -2853,10 +2878,8 @@ class AIRPGChat {
             }
             const category = typeof item.category === 'string' ? item.category.trim().toLowerCase() : '';
             const sourceType = typeof item.sourceType === 'string' ? item.sourceType.trim().toLowerCase() : '';
-            const text = typeof item.text === 'string' ? item.text.trim().toLowerCase() : '';
             return category === 'travel'
-                || sourceType === 'travel_move'
-                || text.startsWith('traveled from ');
+                || sourceType === 'travel_move';
         });
     }
 
@@ -3011,6 +3034,12 @@ class AIRPGChat {
         this.serverHistory = Array.isArray(history)
             ? history.map(entry => this.normalizeLocalEntry(entry))
             : [];
+        this.pendingQuestOffers = new Map(
+            this.serverHistory
+                .filter(entry => entry?.type === 'quest-offer' && entry?.status === 'pending')
+                .map(entry => [entry.confirmationId, entry])
+                .filter(([confirmationId]) => typeof confirmationId === 'string' && confirmationId.trim())
+        );
         this.pruneServerHistoryIfNeeded();
         this.chatHistory = [this.systemMessage, ...this.serverHistory];
         this.renderChatHistory();
@@ -3211,6 +3240,10 @@ class AIRPGChat {
             return this.createSaveNoticeElement(entry);
         }
 
+        if (!renderEditedPlainText && entry.type === 'quest-offer') {
+            return this.createQuestOfferElement(entry);
+        }
+
         const messageDiv = document.createElement('div');
         const role = entry.type === 'user-question'
             ? 'user-question-message'
@@ -3244,9 +3277,12 @@ class AIRPGChat {
 
         const contentDiv = document.createElement('div');
         contentDiv.className = 'message-content';
-        const shouldBypassMarkdown = entry.role === 'user'
-            && typeof entry.content === 'string'
-            && entry.content.charAt(0) === '#';
+        const shouldBypassMarkdown = entry.type === 'player-prompt-guidance'
+            || (
+                entry.role === 'user'
+                && typeof entry.content === 'string'
+                && entry.content.charAt(0) === '#'
+            );
         this.setMessageContent(contentDiv, entry.content || '', { allowMarkdown: !shouldBypassMarkdown });
 
         const timestampDiv = document.createElement('div');
@@ -3277,6 +3313,116 @@ class AIRPGChat {
         }
 
         this.decorateChatBubbleElement(messageDiv, entry);
+        return messageDiv;
+    }
+
+    createQuestOfferElement(entry) {
+        const normalized = this.normalizeQuestConfirmationRequest({
+            confirmationId: entry?.confirmationId,
+            quest: entry?.quest
+        });
+        if (!normalized) {
+            console.warn('Skipping malformed quest offer chat entry:', entry);
+            return null;
+        }
+        const { confirmationId, quest } = normalized;
+        const state = ['accepted', 'declined'].includes(entry.status) ? entry.status : 'pending';
+        const messageDiv = document.createElement('div');
+        messageDiv.className = `message quest-offer-message quest-offer-message--${state}`;
+        messageDiv.dataset.type = 'quest-offer';
+        messageDiv.dataset.timestamp = entry.timestamp || '';
+        messageDiv.dataset.entryId = entry.id || '';
+        messageDiv.dataset.confirmationId = confirmationId;
+
+        const details = document.createElement('details');
+        details.className = 'quest-offer';
+        const summary = document.createElement('summary');
+        summary.className = 'quest-offer__summary';
+
+        const icon = document.createElement('span');
+        icon.className = 'quest-offer__icon';
+        icon.setAttribute('aria-hidden', 'true');
+        icon.textContent = '📜';
+        const heading = document.createElement('span');
+        heading.className = 'quest-offer__heading';
+        const kicker = document.createElement('span');
+        kicker.className = 'quest-offer__kicker';
+        kicker.textContent = state === 'pending' ? 'Quest offered' : `Quest ${state}`;
+        const title = document.createElement('strong');
+        title.className = 'quest-offer__title';
+        title.textContent = quest.name || 'Untitled quest';
+        const giver = document.createElement('span');
+        giver.className = 'quest-offer__giver';
+        giver.textContent = quest.giver ? `Offered by ${quest.giver}` : 'New quest opportunity';
+        heading.append(kicker, title, giver);
+        const badge = document.createElement('span');
+        badge.className = `quest-offer__badge quest-offer__badge--${state}`;
+        badge.textContent = state === 'pending' ? 'Pending' : state === 'accepted' ? 'Accepted' : 'Declined';
+        const chevron = document.createElement('span');
+        chevron.className = 'quest-offer__chevron';
+        chevron.setAttribute('aria-hidden', 'true');
+        summary.append(icon, heading, badge, chevron);
+        details.appendChild(summary);
+
+        const body = document.createElement('div');
+        body.className = 'quest-offer__body';
+        const description = document.createElement('p');
+        description.className = 'quest-offer__description';
+        description.textContent = quest.description || quest.summary || 'No description was provided.';
+        body.appendChild(description);
+
+        const appendSection = (label, values, className) => {
+            const section = document.createElement('section');
+            section.className = `quest-offer__section ${className}`;
+            const sectionTitle = document.createElement('h4');
+            sectionTitle.textContent = label;
+            const list = document.createElement('ul');
+            values.forEach(value => {
+                const item = document.createElement('li');
+                item.textContent = value;
+                list.appendChild(item);
+            });
+            section.append(sectionTitle, list);
+            body.appendChild(section);
+        };
+        appendSection(
+            'Objectives',
+            quest.objectives.length
+                ? quest.objectives.map(objective => `${objective.description}${objective.optional ? ' (optional)' : ''}`)
+                : ['No explicit objectives were provided.'],
+            'quest-offer__section--objectives'
+        );
+        appendSection('Rewards', this.getQuestRewardLines(quest), 'quest-offer__section--rewards');
+
+        const footer = document.createElement('footer');
+        footer.className = 'quest-offer__footer';
+        const decisionStatus = document.createElement('span');
+        decisionStatus.className = 'quest-offer__decision-status';
+        decisionStatus.setAttribute('role', 'status');
+        decisionStatus.textContent = state === 'pending'
+            ? 'Choose before your next turn.'
+            : `This quest was ${state}.`;
+        footer.appendChild(decisionStatus);
+        if (state === 'pending') {
+            const actions = document.createElement('span');
+            actions.className = 'quest-offer__actions';
+            const decline = document.createElement('button');
+            decline.type = 'button';
+            decline.className = 'btn btn-secondary quest-offer__decision-button quest-offer__decline';
+            decline.textContent = 'Decline';
+            decline.addEventListener('click', () => this.submitQuestOfferDecision(confirmationId, false, messageDiv));
+            const accept = document.createElement('button');
+            accept.type = 'button';
+            accept.className = 'btn btn-primary quest-offer__decision-button quest-offer__accept';
+            accept.textContent = 'Accept quest';
+            accept.addEventListener('click', () => this.submitQuestOfferDecision(confirmationId, true, messageDiv));
+            actions.append(decline, accept);
+            footer.appendChild(actions);
+        }
+        body.appendChild(footer);
+        details.appendChild(body);
+        messageDiv.appendChild(details);
+        this.decorateChatBubbleElement(messageDiv, 'quest-offer', 'Quest Offers');
         return messageDiv;
     }
 
@@ -5632,9 +5778,6 @@ class AIRPGChat {
             case 'prompt_progress_cleared':
                 this.handlePromptProgressCleared(payload);
                 break;
-            case 'quest_confirmation_request':
-                this.handleQuestConfirmationRequest(payload);
-                break;
             case 'player_input_request':
                 this.handlePlayerInputRequest(payload);
                 break;
@@ -7676,18 +7819,20 @@ class AIRPGChat {
         const metadata = item.metadata && typeof item.metadata === 'object'
             ? item.metadata.dispositionChange
             : null;
-        const parsed = text.match(/^(.+?)'s\s+(.+?)\s+disposition\s+Δ\s+([+-]?\d+)/i);
-        const npcName = typeof metadata?.npcName === 'string' && metadata.npcName.trim()
+        if (!metadata || typeof metadata !== 'object') {
+            return null;
+        }
+        const npcRef = Array.isArray(item.entityRefs)
+            ? item.entityRefs.find(ref => ref && ref.type === 'npc')
+            : null;
+        const npcName = typeof metadata.npcName === 'string' && metadata.npcName.trim()
             ? metadata.npcName.trim()
-            : (parsed ? parsed[1].trim() : 'Someone');
-        const typeLabel = typeof metadata?.typeLabel === 'string' && metadata.typeLabel.trim()
+            : (typeof npcRef?.name === 'string' ? npcRef.name.trim() : '');
+        const typeLabel = typeof metadata.typeLabel === 'string' && metadata.typeLabel.trim()
             ? metadata.typeLabel.trim()
-            : (parsed ? parsed[2].trim() : 'Disposition');
+            : '';
         const metadataDelta = Number(metadata?.delta);
-        const parsedDelta = parsed ? Number(parsed[3]) : NaN;
-        const delta = Number.isFinite(metadataDelta)
-            ? metadataDelta
-            : (Number.isFinite(parsedDelta) ? parsedDelta : null);
+        const delta = Number.isFinite(metadataDelta) ? metadataDelta : null;
         const icon = typeof metadata?.icon === 'string' && metadata.icon.trim()
             ? metadata.icon.trim()
             : (typeof item.icon === 'string' && item.icon.trim() ? item.icon.trim() : '💞');
@@ -7695,7 +7840,7 @@ class AIRPGChat {
             ? metadata.npcId.trim()
             : null;
 
-        if (Number.isFinite(delta) && delta === 0) {
+        if (!npcName || !typeLabel || !Number.isFinite(delta) || delta === 0) {
             return null;
         }
 
@@ -10439,7 +10584,11 @@ class AIRPGChat {
                 || (payload?.abilitySelection?.pending ? payload.abilitySelection : null);
             const shouldMarkGameLoaded = payload.gameLoaded === true || Boolean(pendingAbilitySelection);
             if (shouldMarkGameLoaded) {
-                window.__AIRPG_GAME_LOADED__ = true;
+                if (typeof window.setAirpgGameLoaded === 'function') {
+                    window.setAirpgGameLoaded(true);
+                } else {
+                    window.__AIRPG_GAME_LOADED__ = true;
+                }
                 if (pendingAbilitySelection && typeof window.handlePendingAbilitySelectionPayload === 'function') {
                     try {
                         window.handlePendingAbilitySelectionPayload(pendingAbilitySelection);
@@ -10798,6 +10947,10 @@ class AIRPGChat {
         if (!trimmed && !allowEmptyAction) {
             return;
         }
+        if (this.pendingQuestOffers.size) {
+            this.openQuestDecisionReminderModal();
+            return { error: 'A quest decision is required.', code: 'QUEST_CONFIRMATION_REQUIRED' };
+        }
         if (typeof window.isPlayerAbilitySelectionBlockingGameplay === 'function'
             && window.isPlayerAbilitySelectionBlockingGameplay()) {
             try {
@@ -10938,7 +11091,16 @@ class AIRPGChat {
             if (data.error) {
                 const errorMessage = data.error;
                 this.hideLoading(requestId);
-                if (this.turnRollbackInProgress) {
+                if (data.code === 'QUEST_CONFIRMATION_REQUIRED') {
+                    if (Array.isArray(data.pendingQuestConfirmations)) {
+                        data.pendingQuestConfirmations.forEach(offer => {
+                            const normalized = this.normalizeQuestConfirmationRequest(offer);
+                            if (normalized) this.pendingQuestOffers.set(normalized.confirmationId, offer);
+                        });
+                    }
+                    this.openQuestDecisionReminderModal();
+                    skipHistoryRefresh = false;
+                } else if (this.turnRollbackInProgress) {
                     skipHistoryRefresh = true;
                 } else if (!pendingAbilitySelection) {
                     this.addMessage('system', `Error: ${errorMessage}`, true);
@@ -11032,6 +11194,10 @@ class AIRPGChat {
     async sendMessage({ allowEmptyAction = false } = {}) {
         const rawInput = this.messageInput.value;
         const hasInputText = typeof rawInput === 'string' && rawInput.trim().length > 0;
+        if (this.pendingQuestOffers.size) {
+            this.openQuestDecisionReminderModal();
+            return;
+        }
         if (!hasInputText && !allowEmptyAction) {
             this.openEmptyActionConfirmModal();
             return;

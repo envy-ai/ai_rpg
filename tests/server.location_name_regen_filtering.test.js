@@ -45,6 +45,7 @@ function extractFunction(source, functionName) {
 
 function loadNameRegenFilteringHelpers() {
     const source = fs.readFileSync(require.resolve('../server.js'), 'utf8');
+    const { normalizeDuplicateName } = require('../DuplicateNameUtils.js');
     const helperNames = [
         'locationNameContainsSlopWord',
         'isLocationNameBanned',
@@ -59,9 +60,10 @@ function loadNameRegenFilteringHelpers() {
         Set,
         Array,
         console,
+        normalizeDuplicateName,
         getSlopWordList: () => [],
-        Region: { getByName: () => null },
-        Location: { getByName: () => null }
+        Region: { getAll: () => [] },
+        Location: { getAll: () => [] }
     };
     vm.createContext(context);
     vm.runInContext(
@@ -102,6 +104,22 @@ test('alternate location name candidates are filtered before selection', () => {
     });
 
     assert.deepEqual(Array.from(candidates), ['Copper Gate']);
+});
+
+test('alternate location name candidates treat a leading the as duplicate-only text', () => {
+    const { filterAllowedLocationNameCandidates } = loadNameRegenFilteringHelpers();
+
+    const candidates = filterAllowedLocationNameCandidates([
+        'The Copper Gate',
+        'Silver Gate'
+    ], {
+        bannedSet: new Set(),
+        slopWords: [],
+        originalName: 'Copper Gate',
+        usedNames: new Set(['The Silver Gate'])
+    });
+
+    assert.deepEqual(Array.from(candidates), []);
 });
 
 test('region alternate selection skips candidates rejected by the same slop rules', () => {

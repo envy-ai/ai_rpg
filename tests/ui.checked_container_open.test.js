@@ -23,8 +23,9 @@ test('checked containers use a dedicated open-attempt modal and API route', () =
     assert.match(apiSource, /promptType: 'player-action-open-container'/);
     assert.match(apiSource, /const enabledChatTools = getChatToolDefinitions/);
     assert.match(apiSource, /toolName === 'resolveSkillCheck'\s*\|\| toolName === 'resolveOpposedSkillCheck'/);
-    assert.match(apiSource, /const isCheckToolCheckpoint = !stage\.isFinal\s*&& stage\.checkpoint\?\.index === 0/);
-    assert.match(apiSource, /isCheckToolCheckpoint \? enabledChatTools : \[\]/);
+    assert.match(apiSource, /parserName !== 'container_open_check_plan'/);
+    assert.match(apiSource, /executeChatToolCall\(toolCall,/);
+    assert.match(apiSource, /configureRequestChatTools\(\s*stage\.requestOptions,\s*\[\]\s*\)/);
     assert.match(apiSource, /toolName === 'resolveSkillCheck'/);
     assert.match(apiSource, /toolName === 'resolveOpposedSkillCheck'/);
     assert.match(apiSource, /permanentlyOpened/);
@@ -38,10 +39,12 @@ test('checked containers use a dedicated open-attempt modal and API route', () =
     assert.match(promptSource, /<timePassed>/);
     assert.match(promptSource, /<duration>/);
     assert.match(promptSource, /resolveSkillCheck/);
-    assert.match(tinyBrainPromptSource, /Choose and immediately make exactly one check tool call/i);
-    assert.equal((tinyBrainPromptSource.match(/llm_dummy_action/g) || []).length, 2);
-    assert.doesNotMatch(tinyBrainPromptSource, /Do not roll yet/i);
-    assert.doesNotMatch(tinyBrainPromptSource, /Now make exactly one chosen check tool call/i);
+    assert.match(tinyBrainPromptSource, /<containerOpenCheck>/);
+    assert.match(tinyBrainPromptSource, /llmparse\('container_open_check_plan'\) as containerOpenCheck/);
+    assert.match(tinyBrainPromptSource, /The game has now resolved that check/);
+    assert.match(tinyBrainPromptSource, /\{\{ containerOpenCheck\.response \}\}/);
+    assert.equal((tinyBrainPromptSource.match(/llm_dummy_action/g) || []).length, 1);
+    assert.doesNotMatch(tinyBrainPromptSource, /check tool call/i);
 });
 
 test('checked container cards show a red lock overlay on the container badge', () => {

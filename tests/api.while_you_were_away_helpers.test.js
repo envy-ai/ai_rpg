@@ -207,6 +207,8 @@ function loadWhileYouWereAwayHelpers({
     recordSlopRemovalEntry = null,
     eventsRunEventChecks = async () => null,
     appendEventSummariesToChat = () => {},
+    appendPendingQuestOffersToChat = () => [],
+    emitToClient = () => false,
     globalsElapsedTime = typeof currentPlayer?.elapsedTime === 'number' ? currentPlayer.elapsedTime : 0,
     globalsTotalWorldMinutes = globalsElapsedTime,
     useTinyBrainWhileAway = false
@@ -308,7 +310,8 @@ function loadWhileYouWereAwayHelpers({
             config,
             elapsedTime: globalsElapsedTime,
             getTotalWorldMinutes: () => globalsTotalWorldMinutes,
-            scrubGeneratedBrackets: value => value
+            scrubGeneratedBrackets: value => value,
+            emitToClient
         },
         currentPlayer,
         players,
@@ -354,6 +357,7 @@ function loadWhileYouWereAwayHelpers({
             runEventChecks: eventsRunEventChecks
         },
         appendEventSummariesToChat,
+        appendPendingQuestOffersToChat,
         applySlopRemoval,
         buildWhileYouWereAwayResult,
         isTinyBrainPromptEnabled: () => useTinyBrainWhileAway,
@@ -1168,6 +1172,87 @@ test('runWhileYouWereAwayPrompt runs scoped event checks while ignoring handled 
     assert.equal(summaryCalls[0].needBarChanges, null);
     assert.equal(collector[collector.length - 1].type, 'event-summary');
     assert.equal(pushedEntries[pushedEntries.length - 1].type, 'while-you-were-away-player');
+});
+
+test('runWhileYouWereAwayPrompt records only quest offers returned by its event pass', async () => {
+    const square = createLocation({ id: 'square', name: 'Town Square', regionId: 'alpha', npcIds: ['mira'] });
+    const regions = new Map([
+        ['alpha', { id: 'alpha', name: 'Alpha', locationIds: ['square'], entranceLocationId: 'square' }]
+    ]);
+    const npc = {
+        id: 'mira',
+        isNPC: true,
+        name: 'Mira',
+        currentLocation: square.id,
+        getNeedBars: () => []
+    };
+    const appendCalls = [];
+    const broadcasts = [];
+    const collector = [];
+    const { runWhileYouWereAwayPrompt } = loadWhileYouWereAwayHelpers({
+        currentPlayer: { id: 'player', name: 'Baato', currentLocation: square.id },
+        players: new Map([[npc.id, npc]]),
+        gameLocations: new Map([[square.id, square]]),
+        regions,
+        prepareBasePromptContext: async () => ({
+            whileYouWereAwayNpcs: [{
+                id: npc.id,
+                name: npc.name,
+                lastSeenAgeMinutes: 300,
+                lastSeenTimeAgo: '5 hours ago'
+            }]
+        }),
+        llmResponse: `
+<response>
+  <characterUpdates>
+    <characterUpdate>
+      <name>Mira</name>
+      <update>Mira posted a notice while the player was away.</update>
+    </characterUpdate>
+  </characterUpdates>
+  <proseForPlayer>Mira points out a newly posted notice.</proseForPlayer>
+</response>
+`,
+        eventsRunEventChecks: async () => ({
+            structured: { parsed: {}, rawEntries: {} },
+            pendingQuestOffers: [{ confirmationId: 'while-away-offer' }]
+        }),
+        appendPendingQuestOffersToChat: (options, receivedCollector) => {
+            appendCalls.push({ options, collector: receivedCollector });
+            const entry = {
+                id: 'quest-offer-entry',
+                type: 'quest-offer',
+                confirmationId: options.confirmationIds[0],
+                parentId: options.parentId,
+                locationId: options.locationId
+            };
+            receivedCollector.push(entry);
+            return [entry];
+        },
+        emitToClient: (...args) => {
+            broadcasts.push(args);
+            return true;
+        }
+    });
+
+    const result = await runWhileYouWereAwayPrompt({
+        locationOverride: square,
+        locationId: square.id,
+        entryCollector: collector,
+        returnEntries: true,
+        locationWasVisitedBeforeArrival: true
+    });
+
+    assert.equal(appendCalls.length, 1);
+    assert.deepEqual(Array.from(appendCalls[0].options.confirmationIds), ['while-away-offer']);
+    assert.equal(appendCalls[0].options.parentId, result.visibleEntry.id);
+    assert.equal(appendCalls[0].options.locationId, square.id);
+    assert.equal(appendCalls[0].collector, collector);
+    assert.equal(collector.at(-1).confirmationId, 'while-away-offer');
+    assert.equal(broadcasts.length, 1);
+    assert.equal(broadcasts[0][0], null);
+    assert.equal(broadcasts[0][1], 'chat_history_updated');
+    assert.equal(broadcasts[0][2].reason, 'quest_offer_pending');
 });
 
 test('runWhileYouWereAwayPrompt can return both hidden and visible entries for parent linking', async () => {

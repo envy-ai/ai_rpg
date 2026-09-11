@@ -94,6 +94,14 @@ not permitted to bypass the currently selected global or per-world workflow.
 
 ## Editing and location variants
 
+When vision is available, the base-context `generate-seasonal-image-vision`
+prompt inspects the attached base location image and writes the edit instructions
+for the current season, weather, and lighting. An `N/A` response reuses the base
+image without running an edit workflow. Without vision, the existing deterministic
+location-variant templates supply the instructions. See
+[configuration](config.md#location-weatherlighting-image-variants) for model
+routing and caching behavior.
+
 Location seasonal/weather variants are edit jobs and use
 `imagegen.workflow.edit`, which defaults to Flux Klein. Selecting a custom edit
 workflow in that mode applies it to those variants as well. Their model,

@@ -4,10 +4,14 @@ Common payloads: see `docs/api/common.md`.
 
 Quest state lives on the current player. There is no standalone quest-list route; the quest panel reads `/api/player`, using the serialized player's `quests` array for active quests and `completedQuests` array for completed quests.
 
-Quest creation normally comes from the chat event pipeline. Generated quest offers are sent to the client as `quest_confirmation_request` websocket messages and are resolved through `/api/quests/confirm`. Quest edits, manual completion, reward retry, and abandon actions use the routes below.
+Quest creation normally comes from the chat event pipeline. A newly generated quest is stored as a durable pending offer and appended to chat after the originating turn's event/status rows. While-you-were-away event passes append only the confirmation ids that pass returned and parent them to that arrival's visible entry. Every client renders the saved offer inline; it remains pending across disconnects and save/load until `/api/quests/confirm` accepts or declines it. Quest edits, manual completion, reward retry, and abandon actions use the routes below.
+
+## GET /api/quests/pending
+
+Returns `{ success: true, pendingQuestConfirmations }`, ordered oldest first. Each record contains a `confirmationId`, player/request/chat linkage, creation timestamp, and the client-safe quest preview. Private candidate data such as `secretNotes` is not returned.
 
 ## POST /api/quests/confirm
-Resolve a pending quest confirmation prompt for the websocket client that received it.
+Resolve a durable pending quest offer. Any connected client may decide; the first valid accept or decline wins.
 
 Request:
 - Body:
@@ -19,16 +23,21 @@ Request:
     - `accept` (string: `true`, `1`, `yes`, `accept`, `false`, `0`, `no`, or `decline`)
 
 Response:
-- 200: `{ success: true, accepted: boolean }`
-- 400: `{ success: false, error }` for missing fields, invalid decisions, unknown confirmation ids, resolved confirmations, or client mismatches
+- 200: `{ success: true, accepted: boolean, confirmationId, questId }`
+- 400: `{ success: false, error }` for missing fields, invalid decisions, or an invalid/unavailable offer record
+- 409: `{ success: false, code: "QUEST_CONFIRMATION_RESOLVED", error }` when another client already resolved the offer
 - 503: `{ success: false, error }` (confirmation service unavailable)
 
 Behavior:
-- `QuestConfirmationManager` owns pending confirmations, keyed by `confirmationId`.
-- A response must come from the same `clientId` that received the websocket request.
-- Resolving the confirmation completes the pending server-side promise. Accepted generated quests enter the player's quest list through the event pipeline; declined quests are ignored.
+- `QuestConfirmationManager` owns pending confirmations, keyed by `confirmationId`; records are not tied to the originating browser.
+- Accepting constructs the canonical `Quest` and adds it to the saved target player. Declining discards the candidate. Both decisions update the inline chat row and broadcast `chat_history_updated` to every client.
+- Pending offers never time out. They remain pending until explicitly resolved.
 - The confirmation request payload contains a safe quest preview: `id`, `name`, `summary`, `description`, `giver`, `objectives`, `rewardItems`, `rewardCurrency`, `rewardXp`, `rewardNpcDispositions`, typed `rewardBenefits`, and narrative `rewardNotes`. Each physical `rewardItems` entry carries its item `name` separately from its `description`. Generated quest previews also include display-ready faction reward entries.
-- Each `rewardNpcDispositions[].dispositions[]` entry carries both the authored `intensity` and a resolved `delta` (the actual disposition change, `intensity` scaled by the disposition definitions' `typicalStep`/`typicalBigStep`). The preview computes `delta` with `resolveQuestDispositionRewardDelta(intensity, Player.getDispositionDefinitions())` — the same shared resolver `Events._resolveQuestDispositionDelta` uses on completion — so the value shown when accepting a quest matches what the quest list shows and what is actually applied. The client accept dialog displays `delta`, falling back to `intensity` only if no delta is available. Faction reputation rewards are applied as authored (no multiplier), so their displayed value already equals the applied change. The first-impression multiplier is intentionally excluded from the preview because it depends on runtime disposition state known only at award time.
+- Each `rewardNpcDispositions[].dispositions[]` entry carries both the authored `intensity` and a resolved `delta` (the actual disposition change, `intensity` scaled by the disposition definitions' `typicalStep`/`typicalBigStep`). The inline offer displays `delta`, falling back to `intensity` only if no delta is available. Faction reputation rewards are applied as authored (no multiplier), so their displayed value already equals the applied change. The first-impression multiplier is intentionally excluded because it depends on runtime disposition state known only at award time.
+
+## Pending-offer chat gate
+
+Before starting any `POST /api/chat` turn, the API checks for pending quest confirmations. If a pending record has `chatEntryId: null` and no inline row, the gate first creates and links that row, broadcasts `chat_history_updated`, and then refreshes the public records so their `chatEntryId` values are usable as jump targets. Matching existing rows are reused, so repeated reconciliation does not duplicate offers. Duplicate rows, pending rows without records, and non-null `chatEntryId` values that point to missing or unrelated rows fail explicitly as corruption. The API then returns HTTP 409 with `code: "QUEST_CONFIRMATION_REQUIRED"` and the current public pending records. No turn state or prompt tracking begins before this check; the only permitted mutation is this chat-log repair.
 
 ## POST /api/quest/edit
 Edit an existing quest on the current player. This route does not create quests and does not apply completion rewards by itself.
@@ -142,6 +151,8 @@ Completion rewards:
 - NPC disposition rewards resolve target NPCs, convert configured intensity to a disposition delta using the disposition range settings, apply the first-impression multiplier when applicable, write the NPC disposition toward the current player, and append `dispositionChanges`.
 - Unknown faction or NPC reward targets are skipped with console warnings during reward application.
 - Reward prose is derived from the structured rewards after they are applied and is not run through event checks. This prevents narration from duplicating currency, items, XP, faction reputation, NPC dispositions, or incidental effects.
+- Player-visible completion summaries are built from the authoritative `questCompletionRewards[].rewards` lines accumulated during application, not by parsing the generated prose. This applies to player actions, crafting, and location modification.
+- Post-action objective results are exposed as `questObjectivesCompleted`. On split travel turns, the chat layer records a separate quest-update summary because the origin and destination event summaries were finalized before the post-action quest check; ordinary turns keep the objective rows in the merged main event summary to avoid duplicates.
 
 ## Quest Shape
 

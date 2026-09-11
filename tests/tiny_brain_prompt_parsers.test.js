@@ -3,6 +3,7 @@ const assert = require('node:assert/strict');
 
 const {
     parseAllowedCharacterSelection,
+    parseContainerOpenCheckPlan,
     parseContainerOpenNarrativeResult,
     parseCraftNarrativeResult,
     parseExactXmlRoot,
@@ -14,6 +15,7 @@ const {
     parsePlayerActionDestinationChanges,
     parsePlayerActionExplicitDuration,
     parsePlayerActionDuration,
+    parsePlayerActionTimePassedDuration,
     parsePlayerActionAccompanyingCharacters,
     parsePlayerActionHiddenContests,
     parsePlayerActionHiddenNotes,
@@ -38,6 +40,73 @@ const {
     parseWhileYouWereAwayResult,
     parseWhileYouWereAwayStagedResult
 } = require('../TinyBrainPromptParsers.js');
+
+test('container-open check plan parser validates unopposed and opposed resolver inputs', () => {
+    const unopposed = parseContainerOpenCheckPlan(
+        '<containerOpenCheck>'
+        + '<type>unopposed</type>'
+        + '<reason>The rusted lock resists careful manipulation.</reason>'
+        + '<skill>Lockpicking</skill><attribute>Dexterity</attribute>'
+        + '<difficultyLevel>Hard</difficultyLevel>'
+        + '<circumstanceModifiers>'
+        + '<modifier><amount>-2</amount><reason>Corroded mechanism</reason></modifier>'
+        + '</circumstanceModifiers>'
+        + '</containerOpenCheck>'
+    ).value;
+    assert.deepEqual(unopposed, {
+        checkType: 'unopposed',
+        argumentsObject: {
+            reason: 'The rusted lock resists careful manipulation.',
+            skill: 'Lockpicking',
+            attribute: 'Dexterity',
+            circumstanceModifiers: [{ amount: -2, reason: 'Corroded mechanism' }],
+            difficultyLevel: 'Hard'
+        }
+    });
+
+    const opposed = parseContainerOpenCheckPlan(
+        '<containerOpenCheck>'
+        + '<type>opposed</type>'
+        + '<reason>The guard is holding the lid shut.</reason>'
+        + '<skill>N/A</skill><attribute>Strength</attribute>'
+        + '<circumstanceModifiers/>'
+        + '<opponent>Gate Guard</opponent>'
+        + '<opponentSkill>Athletics</opponentSkill>'
+        + '<opponentAttribute>Strength</opponentAttribute>'
+        + '</containerOpenCheck>'
+    ).value;
+    assert.equal(opposed.checkType, 'opposed');
+    assert.equal(opposed.argumentsObject.opponent, 'Gate Guard');
+    assert.deepEqual(opposed.argumentsObject.circumstanceModifiers, []);
+    assert.equal(Object.hasOwn(opposed.argumentsObject, 'difficultyLevel'), false);
+
+    assert.throws(
+        () => parseContainerOpenCheckPlan(
+            '<containerOpenCheck><type>unopposed</type><reason>Test</reason>'
+            + '<skill>N/A</skill><attribute>N/A</attribute><difficultyLevel>Easy</difficultyLevel>'
+            + '<circumstanceModifiers/></containerOpenCheck>'
+        ),
+        /must select a skill, an attribute, or both/i
+    );
+    assert.throws(
+        () => parseContainerOpenCheckPlan(
+            '<containerOpenCheck><type>unopposed</type><reason>Test</reason>'
+            + '<skill>Lockpicking</skill><attribute>Dexterity</attribute><difficultyLevel>Impossible</difficultyLevel>'
+            + '<circumstanceModifiers/></containerOpenCheck>'
+        ),
+        /difficultyLevel.*must be one of/i
+    );
+    assert.throws(
+        () => parseContainerOpenCheckPlan(
+            '<containerOpenCheck><type>opposed</type><reason>Test</reason>'
+            + '<skill>Athletics</skill><attribute>Strength</attribute><difficultyLevel>Hard</difficultyLevel>'
+            + '<circumstanceModifiers/><opponent>Guard</opponent>'
+            + '<opponentSkill>Athletics</opponentSkill><opponentAttribute>Strength</opponentAttribute>'
+            + '</containerOpenCheck>'
+        ),
+        /unexpected direct child <difficultylevel>/i
+    );
+});
 
 const hiddenContestContext = {
     player: {
@@ -392,6 +461,22 @@ test('player-action non-XML parsers enforce compact branch-safe answers', () => 
     assert.deepEqual(
         parsePlayerActionExplicitDuration('NONE'),
         { value: null, normalizedResponse: 'NONE' }
+    );
+    assert.deepEqual(
+        parsePlayerActionTimePassedDuration('until 6 AM', 1, 110).value,
+        { text: 'until 6 AM', minutes: 250 }
+    );
+    assert.deepEqual(
+        parsePlayerActionTimePassedDuration('until 18', 1, 110).value,
+        { text: 'until 18', minutes: 970 }
+    );
+    assert.throws(
+        () => parsePlayerActionTimePassedDuration('until 24', 1, 110),
+        /between 0 and 23/i
+    );
+    assert.throws(
+        () => parsePlayerActionDuration('until 6 AM', 1),
+        /without a current world minute/i
     );
     assert.throws(() => parsePlayerActionDuration('0 minutes', 1), /at least 1 minute/i);
     assert.throws(() => parsePlayerActionDuration('About 10 minutes', 1), /invalid/i);

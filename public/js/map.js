@@ -408,6 +408,16 @@ function renderMap(region, options = {}) {
   const cy = ensureCytoscape(container);
   activeRegionId = region.regionId || null;
 
+  if (region.controllingFactionId) {
+    if (typeof window.attachFactionEmblem !== 'function') {
+      throw new Error('Faction emblem rendering is unavailable for the Region Map.');
+    }
+    window.attachFactionEmblem(container, {
+      factionId: region.controllingFactionId,
+      variant: 'region-map'
+    });
+  }
+
   const locationIdSet = new Set((region.locations || []).map(loc => loc.id));
   const vehicleOverlayNodes = [];
   const vehicleOverlayTargets = new Set();

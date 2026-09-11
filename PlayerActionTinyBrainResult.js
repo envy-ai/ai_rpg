@@ -56,14 +56,21 @@ function wrapCdata(value) {
     return `<![CDATA[${String(value ?? '').replace(/]]>/g, ']]]]><![CDATA[>')}]]>`;
 }
 
-function normalizeDuration(value, label, { minimumMinutes = 0 } = {}) {
+function normalizeDuration(value, label, {
+    minimumMinutes = 0,
+    currentWorldMinute = null
+} = {}) {
     requirePlainObject(value, label);
     const text = requireNonEmptyString(value.text, `${label} text`);
     const minutes = Number(value.minutes);
     if (!Number.isInteger(minutes) || minutes < minimumMinutes) {
         throw new Error(`${label} minutes must be an integer of at least ${minimumMinutes}.`);
     }
-    const parsedMinutes = Utils.parseDurationToMinutes(text, { fieldName: label });
+    const durationOptions = { fieldName: label };
+    if (currentWorldMinute !== null && currentWorldMinute !== undefined) {
+        durationOptions.currentWorldMinute = currentWorldMinute;
+    }
+    const parsedMinutes = Utils.parseDurationToMinutes(text, durationOptions);
     if (parsedMinutes !== minutes) {
         throw new Error(`${label} text and parsed minutes disagree.`);
     }
@@ -227,7 +234,7 @@ function resolvePlayerActionMovement({ assignments, templateContext, currentVehi
     return assignments.movementKind;
 }
 
-function buildNormalTurnResult(assignments) {
+function buildNormalTurnResult(assignments, { currentWorldMinute = null } = {}) {
     const prose = requireNonEmptyString(assignments.normalProse, 'Normal-turn prose');
     const explicitDuration = assignments.explicitActionDuration
         ? normalizeDuration(assignments.explicitActionDuration, 'Explicit normal-turn duration', {
@@ -246,7 +253,7 @@ function buildNormalTurnResult(assignments) {
     const duration = explicitDuration || normalizeDuration(
         assignments.timeDuration,
         'Normal-turn duration',
-        { minimumMinutes: 1 }
+        { minimumMinutes: 1, currentWorldMinute }
     );
     const hiddenNotes = optionalTrimmedString(assignments.hiddenNotes);
     const lines = [
@@ -439,7 +446,9 @@ function buildPlayerActionTinyBrainResult({ assignments, templateContext } = {})
     const isMoveTurn = movement !== PLAYER_ACTION_MOVEMENT.NONE
         || vehicleDecision !== PLAYER_ACTION_VEHICLE_DECISION.UNCHANGED;
     if (!isMoveTurn) {
-        return buildNormalTurnResult(assignments);
+        return buildNormalTurnResult(assignments, {
+            currentWorldMinute: templateContext.playerActionWorldTimeMinutes
+        });
     }
     return buildMoveTurnResult({
         assignments,

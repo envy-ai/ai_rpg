@@ -1,7 +1,7 @@
 (() => {
   'use strict';
 
-  const TYPES = ['character', 'item', 'scenery', 'location'];
+  const TYPES = ['character', 'item', 'scenery', 'location', 'faction'];
   const options = {
     model: [],
     text_encoder: [],

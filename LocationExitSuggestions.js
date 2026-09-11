@@ -1,4 +1,5 @@
 const Utils = require('./Utils.js');
+const { normalizeDuplicateName } = require('./DuplicateNameUtils.js');
 
 function getDirectElementChildren(node, tagName = null) {
     const normalizedTagName = typeof tagName === 'string' ? tagName.trim().toLowerCase() : null;
@@ -75,7 +76,7 @@ function parseLocationExitSuggestions(xmlSnippet, { required = false } = {}) {
         const name = getRequiredDirectChildText(exitNode, 'name', contextLabel);
         const description = getRequiredDirectChildText(exitNode, 'description', contextLabel);
         const travelTimeText = getRequiredDirectChildText(exitNode, 'travelTime', contextLabel);
-        const duplicateKey = name.toLowerCase().replace(/\s+/g, ' ');
+        const duplicateKey = normalizeDuplicateName(name);
         if (seenDestinations.has(duplicateKey)) {
             continue;
         }
@@ -99,6 +100,15 @@ function parseLocationExitSuggestions(xmlSnippet, { required = false } = {}) {
     return suggestions;
 }
 
+function shouldEncourageNewExitSuggestions(existingExitDestinations = []) {
+    if (!Array.isArray(existingExitDestinations)) {
+        throw new Error('Existing exit destinations must be an array.');
+    }
+
+    return !existingExitDestinations.some(exit => exit?.isUnexplored === true);
+}
+
 module.exports = {
-    parseLocationExitSuggestions
+    parseLocationExitSuggestions,
+    shouldEncourageNewExitSuggestions
 };

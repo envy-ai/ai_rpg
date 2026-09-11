@@ -78,6 +78,7 @@ class Player {
     #personalityTraits;
     #personalityNotes;
     #aiNotes;
+    #playerGuidance = '';
     #resistances;
     #vulnerabilities;
     #goals = [];
@@ -147,6 +148,16 @@ class Player {
     static #dispositionDefinitions = null;
     static #currentPlayerResolver = null;
     static #pointPoolFormulaRuntime = null;
+
+    static normalizePlayerGuidance(value) {
+        if (value === undefined || value === null) {
+            return '';
+        }
+        if (typeof value !== 'string') {
+            throw new TypeError('Player guidance must be a string.');
+        }
+        return value.replace(/\r\n?/g, '\n').trim();
+    }
 
     static #experienceThreshold = 100;
     static #experienceRolloverMultiplier = 2 / 3;
@@ -2199,6 +2210,7 @@ class Player {
         this.#personalityTraits = Player.#sanitizePersonalityValue(options.personalityTraits ?? personalityOption?.traits);
         this.#personalityNotes = Player.#sanitizePersonalityValue(options.personalityNotes ?? personalityOption?.notes);
         this.#aiNotes = Player.#sanitizePersonalityValue(options.aiNotes ?? personalityOption?.aiNotes);
+        this.#playerGuidance = Player.normalizePlayerGuidance(options.playerGuidance);
         this.#resistances = typeof options.resistances === 'string'
             ? options.resistances
             : (typeof options.resistance === 'string' ? options.resistance : '');
@@ -4306,6 +4318,24 @@ class Player {
         this.#lastUpdated = new Date().toISOString();
     }
 
+    get playerGuidance() {
+        return this.#playerGuidance;
+    }
+
+    set playerGuidance(value) {
+        this.setPlayerGuidance(value);
+    }
+
+    getPlayerGuidance() {
+        return this.#playerGuidance;
+    }
+
+    setPlayerGuidance(value) {
+        this.#playerGuidance = Player.normalizePlayerGuidance(value);
+        this.#lastUpdated = new Date().toISOString();
+        return this.#playerGuidance;
+    }
+
     get resistances() {
         return this.#resistances;
     }
@@ -6375,6 +6405,7 @@ class Player {
             personalityTraits: this.#personalityTraits,
             personalityNotes: this.#personalityNotes,
             aiNotes: this.#aiNotes,
+            playerGuidance: this.#playerGuidance,
             resistances: this.#resistances,
             vulnerabilities: this.#vulnerabilities,
             aliases: this.getAliases(),
@@ -6493,6 +6524,7 @@ class Player {
             personalityTraits: this.#personalityTraits,
             personalityNotes: this.#personalityNotes,
             aiNotes: this.#aiNotes,
+            playerGuidance: this.#playerGuidance,
             resistances: this.#resistances,
             vulnerabilities: this.#vulnerabilities,
             goals: this.#goals.slice(),
@@ -6565,6 +6597,7 @@ class Player {
             personalityTraits: data.personality?.traits ?? data.personalityTraits,
             personalityNotes: data.personality?.notes ?? data.personalityNotes,
             aiNotes: data.aiNotes ?? data.personality?.aiNotes,
+            playerGuidance: data.playerGuidance,
             resistances: typeof data.resistances === 'string'
                 ? data.resistances
                 : (typeof data.resistance === 'string' ? data.resistance : ''),

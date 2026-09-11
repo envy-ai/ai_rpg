@@ -35,6 +35,29 @@ test('findSameLocationNpcByName only matches NPCs in the provided location', () 
   assert.equal(matchInB?.id, 'npc-b');
 });
 
+test('findSameLocationNpcByName ignores a leading the on either side', () => {
+  const location = {
+    id: 'loc-a',
+    npcIds: ['npc-a']
+  };
+  const playersById = new Map([
+    ['npc-a', { id: 'npc-a', name: 'The Brass Warden', isNPC: true }]
+  ]);
+
+  assert.equal(findSameLocationNpcByName({
+    name: 'Brass Warden',
+    location,
+    playersById
+  })?.id, 'npc-a');
+
+  playersById.get('npc-a').name = 'Brass Warden';
+  assert.equal(findSameLocationNpcByName({
+    name: 'The Brass Warden',
+    location,
+    playersById
+  })?.id, 'npc-a');
+});
+
 test('filterGeneratedNpcsAgainstSameLocationDuplicates skips only same-location duplicates', () => {
   const locationA = {
     id: 'loc-a',

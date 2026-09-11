@@ -23,6 +23,7 @@ const ClineBridgeClient = require('./ClineBridgeClient.js');
 const KimiBridgeClient = require('./KimiBridgeClient.js');
 const SlashCommandRegistry = require('./SlashCommandRegistry.js');
 const SanitizedStringSet = require('./SanitizedStringSet.js');
+const { normalizeDuplicateName } = require('./DuplicateNameUtils.js');
 const Events = require('./Events.js');
 const Quest = require('./Quest.js');
 const { questRewardBenefitRegistry } = require('./QuestRewardBenefitRegistry.js');
@@ -121,6 +122,59 @@ function filterNeedBarChangesForHistory(changes) {
         return [];
     }
     return changes.filter(entry => entry && entry.hideFromHistory !== true);
+}
+
+function updatePlayerPromptGuidance({
+    player,
+    guidance,
+    chatHistory,
+    pushChatEntry,
+    locationId
+} = {}) {
+    if (!player || typeof player.setPlayerGuidance !== 'function') {
+        throw new Error('Player prompt guidance requires a current player.');
+    }
+    if (!Array.isArray(chatHistory)) {
+        throw new Error('Player prompt guidance requires an available chat history.');
+    }
+    if (typeof pushChatEntry !== 'function') {
+        throw new Error('Player prompt guidance requires the chat-entry persistence helper.');
+    }
+    const resolvedLocationId = typeof locationId === 'string' ? locationId.trim() : '';
+    if (!resolvedLocationId) {
+        throw new Error('Player prompt guidance cannot be updated without an active location.');
+    }
+
+    const normalizedGuidance = Player.normalizePlayerGuidance(guidance);
+    const entryPayload = {
+        role: 'system',
+        type: 'player-prompt-guidance',
+        content: `Player Prompt Guidance updated:\n\n${normalizedGuidance || '(blank)'}`,
+        metadata: {
+            excludeFromBaseContextHistory: true,
+            playerGuidance: normalizedGuidance
+        }
+    };
+    const initialHistoryLength = chatHistory.length;
+    const storedEntry = pushChatEntry(entryPayload, null, resolvedLocationId);
+    if (!storedEntry || !chatHistory.includes(storedEntry)) {
+        throw new Error('Player prompt guidance update notice was not persisted to chat history.');
+    }
+
+    try {
+        player.setPlayerGuidance(normalizedGuidance);
+    } catch (error) {
+        const storedIndex = chatHistory.indexOf(storedEntry);
+        if (storedIndex >= initialHistoryLength) {
+            chatHistory.splice(storedIndex, 1);
+        }
+        throw new Error(`Player prompt guidance was not updated: ${error.message}`, { cause: error });
+    }
+
+    return {
+        guidance: normalizedGuidance,
+        entry: storedEntry
+    };
 }
 
 const CRAFTING_PLAUSIBILITY_TYPES = new Set(['plausible', 'implausible', 'trivial']);
@@ -724,6 +778,7 @@ function resetNewGameRuntimeState(state = {}) {
         playerAbilitySelectionPromises,
         playerImageGenerationPromises,
         locationImageGenerationPromises,
+        factionImageGenerationPromises,
         levelUpAbilityPromises,
         shortDescriptionBackfillByClient,
         chatHistory,
@@ -787,6 +842,7 @@ function resetNewGameRuntimeState(state = {}) {
         ['playerAbilitySelectionPromises', playerAbilitySelectionPromises],
         ['playerImageGenerationPromises', playerImageGenerationPromises],
         ['locationImageGenerationPromises', locationImageGenerationPromises],
+        ['factionImageGenerationPromises', factionImageGenerationPromises],
         ['levelUpAbilityPromises', levelUpAbilityPromises],
         ['shortDescriptionBackfillByClient', shortDescriptionBackfillByClient]
     ].forEach(([label, collection]) => clearRequiredCollection(label, collection));
@@ -1671,11 +1727,7 @@ function buildNewExitDiscoveredSummaryMetadata(entry, detail = '') {
 let cachedCriticalThresholdFormulaRuntime = null;
 
 function normalizeWorldEntityNameForConflict(value) {
-    if (typeof value !== 'string') {
-        return '';
-    }
-    const trimmed = value.trim().replace(/\s+/g, ' ');
-    return trimmed ? trimmed.toLowerCase() : '';
+    return normalizeDuplicateName(value);
 }
 
 function getWorldEntityDisplayName(entity) {
@@ -1747,7 +1799,8 @@ function findGeneratedImageEntityLabel(imageId, {
     players = null,
     things = null,
     gameLocations = null,
-    gameLocationExits = null
+    gameLocationExits = null,
+    factions = null
 } = {}) {
     const normalizedImageId = typeof imageId === 'string' ? imageId.trim() : '';
     if (!normalizedImageId) {
@@ -1786,6 +1839,11 @@ function findGeneratedImageEntityLabel(imageId, {
             : `location-exit-${locationExit.id || normalizedImageId}`;
     }
 
+    const faction = getCollectionValues(factions).find(entry => entry?.imageId === normalizedImageId) || null;
+    if (faction) {
+        return faction.name || `faction-${faction.id || normalizedImageId}`;
+    }
+
     const metadataEntityType = typeof metadata?.entityType === 'string'
         ? metadata.entityType.trim().toLowerCase()
         : (typeof metadata?.upload?.entityType === 'string' ? metadata.upload.entityType.trim().toLowerCase() : '');
@@ -1813,6 +1871,12 @@ function findGeneratedImageEntityLabel(imageId, {
             return metadataThing.name || `${metadataEntityType}-${metadataEntityId}`;
         }
     }
+    if (metadataEntityId && metadataEntityType === 'faction') {
+        const metadataFaction = getCollectionEntry(factions, metadataEntityId);
+        if (metadataFaction) {
+            return metadataFaction.name || `faction-${metadataEntityId}`;
+        }
+    }
 
     return '';
 }
@@ -1824,7 +1888,8 @@ function buildGeneratedImageDownloadFilename({
     players = null,
     things = null,
     gameLocations = null,
-    gameLocationExits = null
+    gameLocationExits = null,
+    factions = null
 } = {}) {
     const normalizedImageId = typeof imageId === 'string' ? imageId.trim() : '';
     const extension = typeof filepath === 'string' ? path.extname(filepath).toLowerCase() : '';
@@ -1836,7 +1901,8 @@ function buildGeneratedImageDownloadFilename({
         players,
         things,
         gameLocations,
-        gameLocationExits
+        gameLocationExits,
+        factions
     });
     const fallbackLabel = normalizedImageId ? `generated-image-${normalizedImageId}` : 'generated-image';
     return `${sanitizeGeneratedImageDownloadLabel(entityLabel, fallbackLabel)}${extension}`;
@@ -3568,7 +3634,8 @@ module.exports = function registerApiRoutes(scope) {
                 stream: stream || null,
                 questsAwarded: [],
                 declinedQuests: [],
-                updatedQuests: []
+                updatedQuests: [],
+                pendingQuestOffers: []
             };
             if (questLocation && typeof findRegionByLocationId === 'function') {
                 try {
@@ -3592,6 +3659,9 @@ module.exports = function registerApiRoutes(scope) {
                     : [],
                 declinedQuests: Array.isArray(questContext.declinedQuests)
                     ? questContext.declinedQuests
+                    : [],
+                pendingQuestOffers: Array.isArray(questContext.pendingQuestOffers)
+                    ? questContext.pendingQuestOffers
                     : [],
                 lastQuest: questContext.lastQuest && typeof questContext.lastQuest.toJSON === 'function'
                     ? questContext.lastQuest.toJSON()
@@ -6799,7 +6869,10 @@ module.exports = function registerApiRoutes(scope) {
             return `${proseText}${directHiddenText}`.trim();
         }
 
-        function parsePlayerActionTimePassedNode(timePassedNode, { fieldLabel = 'player action <timePassed>' } = {}) {
+        function parsePlayerActionTimePassedNode(timePassedNode, {
+            fieldLabel = 'player action <timePassed>',
+            currentWorldMinute = null
+        } = {}) {
             if (!timePassedNode) {
                 return null;
             }
@@ -6813,9 +6886,16 @@ module.exports = function registerApiRoutes(scope) {
             if (!durationText) {
                 throw new Error(`${fieldLabel} <duration> must not be empty.`);
             }
-            return Utils.parseDurationToMinutes(durationText, {
+            const durationOptions = {
                 fieldName: `${fieldLabel} <duration>`
-            });
+            };
+            if (/^until\b/i.test(durationText)) {
+                durationOptions.currentWorldMinute = currentWorldMinute === null
+                    || currentWorldMinute === undefined
+                    ? Globals.getTotalWorldMinutes()
+                    : currentWorldMinute;
+            }
+            return Utils.parseDurationToMinutes(durationText, durationOptions);
         }
 
         function extractXmlFatalErrorText(error) {
@@ -6896,7 +6976,8 @@ module.exports = function registerApiRoutes(scope) {
 
         async function parsePlayerActionProseFromXml(rawResponse, {
             logJson = false,
-            repairMalformed = true
+            repairMalformed = true,
+            currentWorldMinute = null
         } = {}) {
             if (typeof rawResponse !== 'string') {
                 throw new TypeError('Player action response must be a string.');
@@ -6958,7 +7039,8 @@ module.exports = function registerApiRoutes(scope) {
                     { fieldLabel: 'player action <turnResult>' }
                 );
                 const finalTimePassedMinutes = parsePlayerActionTimePassedNode(finalTimePassedNode, {
-                    fieldLabel: 'player action <turnResult><timePassed>'
+                    fieldLabel: 'player action <turnResult><timePassed>',
+                    currentWorldMinute
                 });
                 const finalText = extractturnResultContent(finalNode);
                 return { prose: finalText, travel: null, timePassedMinutes: finalTimePassedMinutes };
@@ -7035,7 +7117,8 @@ module.exports = function registerApiRoutes(scope) {
                     // misplaced prose child so malformed timing still fails, but do not apply it
                     // in addition to authoritative travel time.
                     parsePlayerActionTimePassedNode(nestedMoveTimePassedNode, {
-                        fieldLabel: 'player action <moveTurnResult> prose <timePassed>'
+                        fieldLabel: 'player action <moveTurnResult> prose <timePassed>',
+                        currentWorldMinute
                     });
                 }
                 const proseExtractionOptions = { excludeDirectChildTags: ['timePassed'] };
@@ -9352,6 +9435,23 @@ module.exports = function registerApiRoutes(scope) {
                     parentId: summaryParentEntry?.id || null,
                     locationId: resolvedLocationId
                 }, entryCollector);
+
+                const pendingQuestOfferConfirmationIds = Array.isArray(eventResult.pendingQuestOffers)
+                    ? eventResult.pendingQuestOffers.map(offer => offer?.confirmationId)
+                    : [];
+                if (pendingQuestOfferConfirmationIds.length) {
+                    const storedQuestOfferEntries = appendPendingQuestOffersToChat({
+                        confirmationIds: pendingQuestOfferConfirmationIds,
+                        timestamp: summaryParentEntry?.timestamp || new Date().toISOString(),
+                        parentId: summaryParentEntry?.id || null,
+                        locationId: resolvedLocationId
+                    }, entryCollector);
+                    if (storedQuestOfferEntries.length) {
+                        Globals.emitToClient(null, 'chat_history_updated', {
+                            reason: 'quest_offer_pending'
+                        });
+                    }
+                }
             }
 
             return returnEntries
@@ -14983,27 +15083,23 @@ module.exports = function registerApiRoutes(scope) {
             }
         };
 
-        const parseQuestRewardMessage = (text) => {
-            if (typeof text !== 'string') {
-                return null;
+        const getQuestRewardSummaryLines = (rewardEntry) => {
+            if (!rewardEntry || typeof rewardEntry !== 'object' || Array.isArray(rewardEntry)) {
+                throw new TypeError('Quest reward summary requires a reward entry object.');
             }
-            const lines = text.split('\n').map(line => line.trim()).filter(Boolean);
-            if (!lines.length) {
-                return null;
+            if (!Array.isArray(rewardEntry.rewards) || !rewardEntry.rewards.length) {
+                const questLabel = rewardEntry.questName || rewardEntry.questId || 'unknown quest';
+                throw new Error(`Quest reward entry for "${questLabel}" has no authoritative reward lines.`);
             }
-            const header = lines.shift();
-            if (!/^i receive the following quest rewards:/i.test(header)) {
-                return null;
-            }
-            const rewards = lines
-                .filter(line => line.startsWith('*'))
-                .map(line => line.replace(/^\*\s*/, '').trim())
-                .filter(Boolean);
-
-            if (!rewards.length) {
-                return { header, rewards: [] };
-            }
-            return { header, rewards };
+            return rewardEntry.rewards.map((line, index) => {
+                if (typeof line !== 'string' || !line.trim()) {
+                    const questLabel = rewardEntry.questName || rewardEntry.questId || 'unknown quest';
+                    throw new TypeError(
+                        `Quest reward entry for "${questLabel}" has an invalid reward line at index ${index}.`
+                    );
+                }
+                return line.trim();
+            });
         };
 
         const normalizeTravelMetadata = (input) => {
@@ -17061,6 +17157,149 @@ module.exports = function registerApiRoutes(scope) {
             }
         }
 
+        function appendPendingQuestOffersToChat({
+            requestId = null,
+            confirmationIds = null,
+            timestamp = null,
+            parentId = null,
+            locationId = null
+        } = {}, collector = null) {
+            if (!questConfirmationManager || typeof questConfirmationManager.getPendingConfirmations !== 'function') {
+                throw new Error('Quest confirmation service is unavailable while recording pending offers.');
+            }
+            const normalizedRequestId = typeof requestId === 'string' && requestId.trim()
+                ? requestId.trim()
+                : null;
+            let confirmationIdFilter = null;
+            if (confirmationIds !== null && confirmationIds !== undefined) {
+                if (!Array.isArray(confirmationIds)) {
+                    throw new TypeError('Pending quest offer confirmationIds filter must be an array.');
+                }
+                confirmationIdFilter = new Set(confirmationIds.map((confirmationId, index) => {
+                    if (typeof confirmationId !== 'string' || !confirmationId.trim()) {
+                        throw new Error(`Pending quest offer confirmationIds[${index}] must be a non-empty string.`);
+                    }
+                    return confirmationId.trim();
+                }));
+            }
+            const allPendingOffers = questConfirmationManager.getPendingConfirmations();
+            if (confirmationIdFilter) {
+                const pendingIds = new Set(allPendingOffers.map(offer => offer.confirmationId));
+                for (const confirmationId of confirmationIdFilter) {
+                    if (!pendingIds.has(confirmationId)) {
+                        throw new Error(`Pending quest offer "${confirmationId}" was not found.`);
+                    }
+                }
+            }
+            const pendingOffers = allPendingOffers.filter(offer => (
+                !offer.chatEntryId
+                && (confirmationIdFilter
+                    ? confirmationIdFilter.has(offer.confirmationId)
+                    : (!normalizedRequestId || offer.requestId === normalizedRequestId))
+            ));
+            const storedEntries = [];
+            for (const offer of pendingOffers) {
+                const resolvedLocationId = offer.locationId || locationId;
+                if (!resolvedLocationId) {
+                    throw new Error(`Pending quest offer "${offer.confirmationId}" has no locationId.`);
+                }
+                const entry = pushChatEntry({
+                    role: 'system',
+                    type: 'quest-offer',
+                    confirmationId: offer.confirmationId,
+                    quest: offer.quest,
+                    status: 'pending',
+                    timestamp: timestamp || offer.createdAt || new Date().toISOString(),
+                    parentId: offer.parentId || parentId || null,
+                    metadata: {
+                        excludeFromBaseContextHistory: true,
+                        confirmationId: offer.confirmationId
+                    }
+                }, collector, resolvedLocationId);
+                questConfirmationManager.attachChatEntry(offer.confirmationId, {
+                    chatEntryId: entry.id,
+                    parentId: entry.parentId,
+                    locationId: resolvedLocationId
+                });
+                storedEntries.push(entry);
+            }
+            return storedEntries;
+        }
+
+        function reconcilePendingQuestOfferChatEntries() {
+            const pendingOffers = questConfirmationManager.getPendingConfirmations();
+            const pendingById = new Map(pendingOffers.map(offer => [offer.confirmationId, offer]));
+            const chatEntriesByConfirmationId = new Map();
+            for (const entry of chatHistory) {
+                if (entry?.type !== 'quest-offer') continue;
+                const confirmationId = typeof entry.confirmationId === 'string' && entry.confirmationId.trim()
+                    ? entry.confirmationId.trim()
+                    : null;
+                if (!confirmationId) {
+                    throw new Error(`Quest offer chat entry "${entry.id || 'unknown'}" has no confirmationId.`);
+                }
+                if (chatEntriesByConfirmationId.has(confirmationId)) {
+                    throw new Error(`Quest confirmation "${confirmationId}" has duplicate chat entries.`);
+                }
+                chatEntriesByConfirmationId.set(confirmationId, entry);
+                if (entry.status === 'pending' && !pendingById.has(confirmationId)) {
+                    throw new Error(`Pending quest offer chat entry "${entry.id || entry.confirmationId}" has no saved confirmation record.`);
+                }
+            }
+            const createdEntries = [];
+            for (const offer of pendingOffers) {
+                const linkedEntry = offer.chatEntryId
+                    ? chatHistory.find(entry => entry?.id === offer.chatEntryId)
+                    : null;
+                if (offer.chatEntryId && !linkedEntry) {
+                    throw new Error(`Pending quest confirmation "${offer.confirmationId}" links to missing chat entry "${offer.chatEntryId}".`);
+                }
+                if (linkedEntry && (
+                    linkedEntry.type !== 'quest-offer'
+                    || linkedEntry.confirmationId !== offer.confirmationId
+                )) {
+                    throw new Error(`Pending quest confirmation "${offer.confirmationId}" links to an unrelated chat entry.`);
+                }
+                const existing = linkedEntry || chatEntriesByConfirmationId.get(offer.confirmationId) || null;
+                if (existing) {
+                    existing.status = 'pending';
+                    if (existing.id !== offer.chatEntryId) {
+                        questConfirmationManager.attachChatEntry(offer.confirmationId, {
+                            chatEntryId: existing.id,
+                            parentId: existing.parentId,
+                            locationId: existing.locationId
+                        });
+                    }
+                    continue;
+                }
+                const locationId = offer.locationId || currentPlayer?.currentLocation || null;
+                if (!locationId) {
+                    throw new Error(`Saved quest confirmation "${offer.confirmationId}" cannot be restored without a locationId.`);
+                }
+                const entry = pushChatEntry({
+                    role: 'system',
+                    type: 'quest-offer',
+                    confirmationId: offer.confirmationId,
+                    quest: offer.quest,
+                    status: 'pending',
+                    timestamp: offer.createdAt,
+                    parentId: offer.parentId || null,
+                    metadata: {
+                        excludeFromBaseContextHistory: true,
+                        confirmationId: offer.confirmationId
+                    }
+                }, null, locationId);
+                questConfirmationManager.attachChatEntry(offer.confirmationId, {
+                    chatEntryId: entry.id,
+                    parentId: entry.parentId,
+                    locationId
+                });
+                chatEntriesByConfirmationId.set(offer.confirmationId, entry);
+                createdEntries.push(entry);
+            }
+            return createdEntries;
+        }
+
         const mergeEventArrays = (target, source) => {
             if (!Array.isArray(source) || !source.length) {
                 return target;
@@ -17188,6 +17427,7 @@ module.exports = function registerApiRoutes(scope) {
                             : [],
                         questRewards: Array.isArray(result.questRewards) ? result.questRewards.slice() : [],
                         questsAwarded: Array.isArray(result.questsAwarded) ? result.questsAwarded.slice() : [],
+                        pendingQuestOffers: Array.isArray(result.pendingQuestOffers) ? result.pendingQuestOffers.slice() : [],
                         followupResults: Array.isArray(result.followupResults) ? result.followupResults.slice() : [],
                         timeProgress: result.timeProgress && typeof result.timeProgress === 'object'
                             ? { ...result.timeProgress }
@@ -17211,6 +17451,7 @@ module.exports = function registerApiRoutes(scope) {
                 merged.questObjectivesCompleted = mergeEventArrays(merged.questObjectivesCompleted, result.questObjectivesCompleted);
                 merged.questRewards = mergeEventArrays(merged.questRewards, result.questRewards);
                 merged.questsAwarded = mergeEventArrays(merged.questsAwarded, result.questsAwarded);
+                merged.pendingQuestOffers = mergeEventArrays(merged.pendingQuestOffers, result.pendingQuestOffers);
                 merged.followupResults = mergeEventArrays(merged.followupResults, result.followupResults);
                 merged.npcUpdates = mergeNpcUpdates(merged.npcUpdates, result.npcUpdates);
                 merged.locationRefreshRequested = Boolean(merged.locationRefreshRequested || result.locationRefreshRequested);
@@ -25667,6 +25908,21 @@ module.exports = function registerApiRoutes(scope) {
                     error: 'A game load is in progress; this turn was not started.'
                 });
             }
+            let pendingQuestConfirmations = questConfirmationManager?.getPendingConfirmations?.() || [];
+            if (pendingQuestConfirmations.length) {
+                const restoredQuestOfferEntries = reconcilePendingQuestOfferChatEntries();
+                if (restoredQuestOfferEntries.length) {
+                    Globals.emitToClient(null, 'chat_history_updated', {
+                        reason: 'quest_offer_pending'
+                    });
+                }
+                pendingQuestConfirmations = questConfirmationManager.getPendingConfirmations();
+                return res.status(409).json({
+                    error: 'Accept or decline the pending quest offer before taking the next turn.',
+                    code: 'QUEST_CONFIRMATION_REQUIRED',
+                    pendingQuestConfirmations
+                });
+            }
             trackActiveChatTurn(res);
             const newTurnToken = `${Date.now().toString(36)}_${Math.random().toString(36).slice(2)}`;
             currentTurnToken = newTurnToken;
@@ -26037,8 +26293,10 @@ module.exports = function registerApiRoutes(scope) {
             let travelAssistantEntry = null;
             let traveledToLocationId = null;
             let worldTimeAtTurnStart = null;
+            let playerActionTimeReferenceWorldMinute = null;
             try {
                 worldTimeAtTurnStart = Globals.getSerializedWorldTime();
+                playerActionTimeReferenceWorldMinute = Globals.getTotalWorldMinutes();
             } catch (worldTimeSnapshotError) {
                 console.warn('Failed to snapshot world time at turn start:', worldTimeSnapshotError.message);
             }
@@ -27802,7 +28060,8 @@ module.exports = function registerApiRoutes(scope) {
                                     }
                                     await parsePlayerActionProseFromXml(normalizedResponse, {
                                         logJson: false,
-                                        repairMalformed: false
+                                        repairMalformed: false,
+                                        currentWorldMinute: playerActionTimeReferenceWorldMinute
                                     });
                                     return {
                                         value: true,
@@ -28135,7 +28394,10 @@ module.exports = function registerApiRoutes(scope) {
 
                     if (shouldUseRepetitionBusterXml) {
                         playerActionXmlPayload = extractPlayerActionXmlPayload(aiResponse);
-                        const parsedProse = await parsePlayerActionProseFromXml(aiResponse, { logJson: true });
+                        const parsedProse = await parsePlayerActionProseFromXml(aiResponse, {
+                            logJson: true,
+                            currentWorldMinute: playerActionTimeReferenceWorldMinute
+                        });
                         if (parsedProse.rejected) {
                             return respondWithRejectedPlayerActionXml(parsedProse, aiResponse);
                         }
@@ -28194,7 +28456,10 @@ module.exports = function registerApiRoutes(scope) {
                                     if (typeof rerunResponse === 'string' && rerunResponse.trim()) {
                                         if (usesActionXmlResponse) {
                                             playerActionXmlPayload = extractPlayerActionXmlPayload(rerunResponse);
-                                            const parsedProse = await parsePlayerActionProseFromXml(rerunResponse, { logJson: true });
+                                            const parsedProse = await parsePlayerActionProseFromXml(rerunResponse, {
+                                                logJson: true,
+                                                currentWorldMinute: playerActionTimeReferenceWorldMinute
+                                            });
                                             if (parsedProse.rejected) {
                                                 return respondWithRejectedPlayerActionXml(parsedProse, rerunResponse);
                                             }
@@ -28248,7 +28513,10 @@ module.exports = function registerApiRoutes(scope) {
                                 && scheduledEventInterruptionInfo.scheduledEventResults.some(result => result?.happened);
                             if (interruptionHadHappenedEvent) {
                                 const rewrittenXmlPayload = scheduledEventInterruptionInfo.rewrittenXmlPayload;
-                                const rewrittenParsedProse = await parsePlayerActionProseFromXml(rewrittenXmlPayload, { logJson: true });
+                                const rewrittenParsedProse = await parsePlayerActionProseFromXml(rewrittenXmlPayload, {
+                                    logJson: true,
+                                    currentWorldMinute: playerActionTimeReferenceWorldMinute
+                                });
                                 if (rewrittenParsedProse.rejected) {
                                     throw new Error('Scheduled event interruption rewrite must not return a rejected player action.');
                                 }
@@ -28985,6 +29253,7 @@ module.exports = function registerApiRoutes(scope) {
                                 appendArray('dispositionChanges', questProcessingContext.dispositionChanges);
                                 appendArray('factionReputationChanges', questProcessingContext.factionReputationChanges);
                                 appendArray('questCompletionErrors', questProcessingContext.questCompletionErrors);
+                                appendArray('questObjectivesCompleted', questProcessingContext.completedQuestObjectives);
 
                                 if (Array.isArray(questProcessingContext.followupResults) && questProcessingContext.followupResults.length) {
                                     if (!Array.isArray(responseData.followupEventChecks)) {
@@ -29272,6 +29541,23 @@ module.exports = function registerApiRoutes(scope) {
                         }, newChatEntries);
                     }
 
+                    const storedQuestOfferEntries = appendPendingQuestOffersToChat({
+                        requestId: stream?.requestId || null,
+                        timestamp: new Date().toISOString(),
+                        parentId: aiResponseEntry?.id || null,
+                        locationId: aiResponseLocationId
+                    }, newChatEntries);
+                    if (storedQuestOfferEntries.length) {
+                        responseData.pendingQuestOffers = storedQuestOfferEntries.map(entry => ({
+                            confirmationId: entry.confirmationId,
+                            quest: entry.quest,
+                            chatEntryId: entry.id
+                        }));
+                        Globals.emitToClient(null, 'chat_history_updated', {
+                            reason: 'quest_offer_pending'
+                        });
+                    }
+
                     if (currentActionIsTravel && travelMetadataIsEventDriven) {
                         if (!traveledToLocationId) {
                             throw new Error('Travel action is missing a destination for traveledToLocationId.');
@@ -29349,12 +29635,12 @@ module.exports = function registerApiRoutes(scope) {
                                 clientId: stream?.clientId || null
                             });
 
-                            const parsedReward = parseQuestRewardMessage(rewardEntry.message);
-                            if (parsedReward?.rewards?.length) {
+                            const rewardSummaryLines = getQuestRewardSummaryLines(rewardEntry);
+                            if (rewardSummaryLines.length) {
                                 const summaryLabel = rewardEntry.questName
                                     ? `🏆 Quest Completed – ${rewardEntry.questName}`
                                     : '🏆 Quest Completed';
-                                const summaryItems = parsedReward.rewards.map(line => ({
+                                const summaryItems = rewardSummaryLines.map(line => ({
                                     description: line,
                                     icon: '🎁',
                                     category: 'quest_reward'
@@ -29392,7 +29678,9 @@ module.exports = function registerApiRoutes(scope) {
 	                        }
 	                    }
 
-                    if (Array.isArray(eventResult?.questObjectivesCompleted) && eventResult.questObjectivesCompleted.length) {
+                    if ((originEventResult || destinationEventResult)
+                        && Array.isArray(eventResult?.questObjectivesCompleted)
+                        && eventResult.questObjectivesCompleted.length) {
                         responseData.questObjectivesCompleted = eventResult.questObjectivesCompleted;
 
                         const groupedObjectives = new Map();
@@ -29985,21 +30273,59 @@ module.exports = function registerApiRoutes(scope) {
             }
 
             try {
+                const pendingRecord = questConfirmationManager.getPendingConfirmation(confirmationId);
+                if (!pendingRecord) {
+                    const resolvedError = new Error('Quest confirmation request not found or already resolved.');
+                    resolvedError.code = 'QUEST_CONFIRMATION_RESOLVED';
+                    throw resolvedError;
+                }
+                const chatEntryId = typeof pendingRecord.chatEntryId === 'string' ? pendingRecord.chatEntryId : '';
+                const offerEntry = chatEntryId
+                    ? chatHistory.find(entry => entry?.id === chatEntryId)
+                    : chatHistory.find(entry => entry?.type === 'quest-offer' && entry?.confirmationId === confirmationId);
+                if (!offerEntry) {
+                    throw new Error(`Quest offer chat entry for confirmation "${confirmationId}" was not found.`);
+                }
                 const result = questConfirmationManager.resolveConfirmation({
                     confirmationId,
                     clientId,
                     accepted: decisionValue
                 });
+                offerEntry.status = decisionValue ? 'accepted' : 'declined';
+                offerEntry.resolvedAt = new Date().toISOString();
+                offerEntry.resolvedByClientId = clientId;
+                offerEntry.questId = result?.questId || null;
+                Globals.emitToClient(null, 'chat_history_updated', {
+                    reason: decisionValue ? 'quest_offer_accepted' : 'quest_offer_declined',
+                    confirmationId
+                });
                 res.json({
                     success: true,
-                    accepted: Boolean(result?.accepted)
+                    accepted: Boolean(result?.accepted),
+                    confirmationId,
+                    questId: result?.questId || null
                 });
             } catch (error) {
-                res.status(400).json({
+                const statusCode = error?.code === 'QUEST_CONFIRMATION_RESOLVED' ? 409 : 400;
+                res.status(statusCode).json({
                     success: false,
+                    code: error?.code || null,
                     error: error?.message || 'Failed to resolve quest confirmation.'
                 });
             }
+        });
+
+        app.get('/api/quests/pending', (req, res) => {
+            if (!questConfirmationManager || typeof questConfirmationManager.getPendingConfirmations !== 'function') {
+                return res.status(503).json({
+                    success: false,
+                    error: 'Quest confirmation service is unavailable.'
+                });
+            }
+            res.json({
+                success: true,
+                pendingQuestConfirmations: questConfirmationManager.getPendingConfirmations()
+            });
         });
 
         // Chat history API endpoint
@@ -30968,6 +31294,92 @@ module.exports = function registerApiRoutes(scope) {
                 res.status(error.status || 500).json({
                     success: false,
                     error: error.message || 'Failed to load current player'
+                });
+            }
+        });
+
+        app.get('/api/player/prompt-guidance', (req, res) => {
+            if (!currentPlayer) {
+                return res.status(404).json({
+                    success: false,
+                    error: 'No current player found'
+                });
+            }
+
+            return res.json({
+                success: true,
+                guidance: currentPlayer.getPlayerGuidance(),
+                player: serializeNpcForClient(currentPlayer)
+            });
+        });
+
+        app.put('/api/player/prompt-guidance', (req, res) => {
+            if (Globals.gameLoaded !== true) {
+                return res.status(409).json({
+                    success: false,
+                    error: 'No game is currently loaded.'
+                });
+            }
+            if (!currentPlayer) {
+                return res.status(404).json({
+                    success: false,
+                    error: 'No current player found'
+                });
+            }
+            if (!req.body || !Object.prototype.hasOwnProperty.call(req.body, 'guidance')) {
+                return res.status(400).json({
+                    success: false,
+                    error: 'guidance is required.'
+                });
+            }
+            if (typeof req.body.guidance !== 'string') {
+                return res.status(400).json({
+                    success: false,
+                    error: 'guidance must be a string.'
+                });
+            }
+
+            const locationId = typeof currentPlayer.currentLocation === 'string'
+                ? currentPlayer.currentLocation.trim()
+                : '';
+            const activeLocation = locationId ? gameLocations.get(locationId) : null;
+            if (!locationId || !activeLocation) {
+                return res.status(409).json({
+                    success: false,
+                    error: 'Player prompt guidance cannot be updated without an active location.'
+                });
+            }
+
+            try {
+                const result = updatePlayerPromptGuidance({
+                    player: currentPlayer,
+                    guidance: req.body.guidance,
+                    chatHistory,
+                    pushChatEntry,
+                    locationId
+                });
+
+                try {
+                    Globals.emitToClient(null, 'chat_history_updated', {
+                        reason: 'player-prompt-guidance',
+                        entryId: result.entry.id,
+                        entryType: result.entry.type,
+                        locationId
+                    });
+                } catch (emitError) {
+                    console.warn('Failed to broadcast player prompt guidance chat update:', emitError.message);
+                }
+
+                return res.json({
+                    success: true,
+                    guidance: result.guidance,
+                    player: serializeNpcForClient(currentPlayer),
+                    entry: result.entry
+                });
+            } catch (error) {
+                return res.status(500).json({
+                    success: false,
+                    error: error.message || 'Failed to update player prompt guidance.'
                 });
             }
         });
@@ -42120,6 +42532,7 @@ module.exports = function registerApiRoutes(scope) {
                 const payload = {
                     regionId: region.id,
                     regionName: region.name,
+                    controllingFactionId: region.controllingFactionId || null,
                     currentLocationId,
                     locations: locations
                         .map(loc => buildMapLocationSummary(loc))
@@ -43553,12 +43966,12 @@ module.exports = function registerApiRoutes(scope) {
                                         clientId: payload.clientId
                                     });
 
-                                    const parsedReward = parseQuestRewardMessage(rewardEntry.message);
-                                    if (parsedReward?.rewards?.length) {
+                                    const rewardSummaryLines = getQuestRewardSummaryLines(rewardEntry);
+                                    if (rewardSummaryLines.length) {
                                         const summaryLabel = rewardEntry.questName
                                             ? `🏆 Quest Completed – ${rewardEntry.questName}`
                                             : '🏆 Quest Completed';
-                                        const summaryItems = parsedReward.rewards.map(line => ({
+                                        const summaryItems = rewardSummaryLines.map(line => ({
                                             description: line,
                                             icon: '🎁',
                                             category: 'quest_reward'
@@ -44413,12 +44826,12 @@ module.exports = function registerApiRoutes(scope) {
                                         clientId: payload.clientId
                                     });
 
-                                    const parsedReward = parseQuestRewardMessage(rewardEntry.message);
-                                    if (parsedReward?.rewards?.length) {
+                                    const rewardSummaryLines = getQuestRewardSummaryLines(rewardEntry);
+                                    if (rewardSummaryLines.length) {
                                         const summaryLabel = rewardEntry.questName
                                             ? `🏆 Quest Completed – ${rewardEntry.questName}`
                                             : '🏆 Quest Completed';
-                                        const summaryItems = parsedReward.rewards.map(line => ({
+                                        const summaryItems = rewardSummaryLines.map(line => ({
                                             description: line,
                                             icon: '🎁',
                                             category: 'quest_reward'
@@ -47289,23 +47702,26 @@ module.exports = function registerApiRoutes(scope) {
                     ].join(':'),
                     entries: new Map()
                 };
+                const containerRequestUserInputHandler = clientId
+                    ? createRequestUserInputHandler({
+                        stream,
+                        promptLabel: 'player_action_open_container'
+                    })
+                    : null;
+                const containerForcedSkillCheckRoll = createForcedSkillCheckRollResolver({
+                    enabled: inlineRollControls.forceSkillCheckRolls,
+                    stream,
+                    promptLabel: 'player_action_open_container'
+                });
                 const runContainerToolLoop = stageRequestOptions => runChatCompletionWithToolLoop({
                     requestOptions: stageRequestOptions,
                     streamEmitter: stream,
                     metadataLabel: 'player_action_open_container',
                     toolResultCache: containerToolResultCache,
                     defaultToolActor: currentPlayer.name || null,
-                    requestUserInput: clientId
-                        ? createRequestUserInputHandler({
-                            stream,
-                            promptLabel: 'player_action_open_container'
-                        })
-                        : null,
-                    forcedSkillCheckRoll: createForcedSkillCheckRollResolver({
-                        enabled: inlineRollControls.forceSkillCheckRolls,
-                        stream,
-                        promptLabel: 'player_action_open_container'
-                    }),
+                    requestUserInput: containerRequestUserInputHandler,
+                    forcedSkillCheckRoll: containerForcedSkillCheckRoll,
+                    dieRollOverride: inlineRollControls.dieRoll,
                     onToolCallEvent: event => checkResultsRecorder.record(event)
                 });
 
@@ -47355,22 +47771,10 @@ module.exports = function registerApiRoutes(scope) {
                         },
                         requestOptions,
                         completeStage: async stage => {
-                            const isCheckToolCheckpoint = !stage.isFinal
-                                && stage.checkpoint?.index === 0;
                             const stageRequestOptions = configureRequestChatTools(
                                 stage.requestOptions,
-                                isCheckToolCheckpoint ? enabledChatTools : []
+                                []
                             );
-                            if (isCheckToolCheckpoint) {
-                                const toolLoopResult = await runContainerToolLoop(
-                                    stageRequestOptions
-                                );
-                                return {
-                                    aiResponse: toolLoopResult.aiResponse,
-                                    conversationMessages: toolLoopResult.conversationMessages,
-                                    toolInvocations: toolLoopResult.toolInvocations
-                                };
-                            }
                             const response = await LLMClient.chatCompletion(stageRequestOptions);
                             return {
                                 aiResponse: response,
@@ -47379,6 +47783,168 @@ module.exports = function registerApiRoutes(scope) {
                                     { role: 'assistant', content: response }
                                 ],
                                 toolInvocations: []
+                            };
+                        },
+                        afterParse: async stage => {
+                            if (stage.checkpoint?.parserName !== 'container_open_check_plan') {
+                                return null;
+                            }
+                            const checkPlan = stage.parsed?.value;
+                            if (!checkPlan || typeof checkPlan !== 'object') {
+                                throw new Error('Container-open TinyBrain checkpoint did not produce a check plan.');
+                            }
+                            const functionName = checkPlan.checkType === 'opposed'
+                                ? 'resolveOpposedSkillCheck'
+                                : 'resolveSkillCheck';
+                            if (!enabledChatTools.some(definition => (
+                                definition?.function?.name === functionName
+                            ))) {
+                                throw new Error(
+                                    `Container-open TinyBrain plan requires unavailable check resolver "${functionName}".`
+                                );
+                            }
+
+                            const toolCall = {
+                                id: `container_open_check_${randomUUID()}`,
+                                functionName,
+                                argumentsObject: {
+                                    ...(checkPlan.argumentsObject || {})
+                                }
+                            };
+                            const eventBase = {
+                                metadataLabel: 'player_action_open_container',
+                                round: 1,
+                                sequence: 1,
+                                id: toolCall.id,
+                                name: functionName,
+                                parameters: toolCall.argumentsObject,
+                                argumentsText: JSON.stringify(toolCall.argumentsObject)
+                            };
+                            checkResultsRecorder.record({
+                                ...eventBase,
+                                phase: 'started'
+                            });
+
+                            const executeCheck = () => executeChatToolCall(toolCall, {
+                                resultCache: containerToolResultCache,
+                                defaultActorName: currentPlayer.name || null,
+                                requestUserInputHandler: containerRequestUserInputHandler,
+                                forcedSkillCheckRoll: containerForcedSkillCheckRoll,
+                                dieRollOverride: inlineRollControls.dieRoll,
+                                promptStream: stream
+                            });
+                            let toolResult;
+                            try {
+                                toolResult = stage.queueReservation
+                                    && chatToolMayLaunchPrompts(functionName)
+                                    ? await LLMClient.withPromptQueueReservationYield(
+                                        stage.queueReservation,
+                                        executeCheck
+                                    )
+                                    : await executeCheck();
+                            } catch (error) {
+                                checkResultsRecorder.record({
+                                    ...eventBase,
+                                    phase: 'error',
+                                    error: {
+                                        message: error?.message || String(error)
+                                    }
+                                });
+                                const retryError = error instanceof Error
+                                    ? error
+                                    : new Error(String(error));
+                                retryError.tinyBrainRetryCompletePlan = true;
+                                throw retryError;
+                            }
+                            if (!toolResult || typeof toolResult.content !== 'string' || !toolResult.content.trim()) {
+                                const error = new Error(
+                                    `Container-open check resolver "${functionName}" returned empty content.`
+                                );
+                                checkResultsRecorder.record({
+                                    ...eventBase,
+                                    phase: 'error',
+                                    error: { message: error.message }
+                                });
+                                error.tinyBrainRetryCompletePlan = true;
+                                throw error;
+                            }
+
+                            const toolErrored = toolResult.metadata?.error === true;
+                            if (toolErrored) {
+                                checkResultsRecorder.record({
+                                    ...eventBase,
+                                    phase: 'error',
+                                    error: {
+                                        message: toolResult.metadata?.message
+                                            || `Check resolver "${functionName}" failed.`,
+                                        code: toolResult.metadata?.code || 'tool_error',
+                                        result: {
+                                            content: toolResult.content,
+                                            metadata: toolResult.metadata || null
+                                        }
+                                    }
+                                });
+                            } else {
+                                checkResultsRecorder.record({
+                                    ...eventBase,
+                                    phase: 'completed',
+                                    cacheHit: Boolean(toolResult.metadata?.cached),
+                                    cacheKey: typeof toolResult.metadata?.cacheKey === 'string'
+                                        ? toolResult.metadata.cacheKey
+                                        : null,
+                                    result: {
+                                        content: toolResult.content,
+                                        metadata: toolResult.metadata || null
+                                    }
+                                });
+                            }
+
+                            stage.parsed.value = {
+                                ...checkPlan,
+                                toolName: functionName,
+                                response: toolResult.content,
+                                metadata: toolResult.metadata || null
+                            };
+                            stage.appendLogSection({
+                                title: 'server-executed container-open check plan',
+                                content: [
+                                    `Resolver: ${functionName}`,
+                                    `Arguments: ${JSON.stringify(toolCall.argumentsObject)}`,
+                                    `Result: ${toolResult.content}`
+                                ].join('\n')
+                            });
+
+                            const conversationMessages = stage.messages.map(message => ({ ...message }));
+                            conversationMessages.push({
+                                role: 'assistant',
+                                content: '',
+                                tool_calls: [{
+                                    id: toolCall.id,
+                                    type: 'function',
+                                    function: {
+                                        name: functionName,
+                                        arguments: JSON.stringify(toolCall.argumentsObject)
+                                    }
+                                }]
+                            });
+                            conversationMessages.push({
+                                role: 'tool',
+                                tool_call_id: toolCall.id,
+                                name: functionName,
+                                content: toolResult.content
+                            });
+                            conversationMessages.push({
+                                role: 'assistant',
+                                content: 'The server completed the accepted container-open check plan.'
+                            });
+                            return {
+                                conversationMessages,
+                                toolInvocations: [{
+                                    id: toolCall.id,
+                                    name: functionName,
+                                    argumentsObject: toolCall.argumentsObject,
+                                    metadata: toolResult.metadata || null
+                                }]
                             };
                         }
                     });
@@ -48907,10 +49473,12 @@ module.exports = function registerApiRoutes(scope) {
                 imagePromptPrefixLocation: toStringValue(raw.imagePromptPrefixLocation),
                 imagePromptPrefixItem: toStringValue(raw.imagePromptPrefixItem),
                 imagePromptPrefixScenery: toStringValue(raw.imagePromptPrefixScenery),
+                imagePromptPrefixFaction: toStringValue(raw.imagePromptPrefixFaction),
                 imagePromptInstructionsCharacter: toStringValue(raw.imagePromptInstructionsCharacter),
                 imagePromptInstructionsLocation: toStringValue(raw.imagePromptInstructionsLocation),
                 imagePromptInstructionsItem: toStringValue(raw.imagePromptInstructionsItem),
                 imagePromptInstructionsScenery: toStringValue(raw.imagePromptInstructionsScenery),
+                imagePromptInstructionsFaction: toStringValue(raw.imagePromptInstructionsFaction),
                 useGlobalImageGenerationSettings: toBoolean(raw.useGlobalImageGenerationSettings, true),
                 useGlobalImageEditSettings: toBoolean(raw.useGlobalImageEditSettings, true),
                 imageGenerationSettings: toJsonObject(raw.imageGenerationSettings, 'imageGenerationSettings'),
@@ -49127,6 +49695,8 @@ module.exports = function registerApiRoutes(scope) {
                 imagePromptPrefixLocation: getText('imagePromptPrefixLocation'),
                 imagePromptPrefixItem: getText('imagePromptPrefixItem'),
                 imagePromptPrefixScenery: getText('imagePromptPrefixScenery'),
+                imagePromptPrefixFaction: getText('imagePromptPrefixFaction'),
+                imagePromptInstructionsFaction: getText('imagePromptInstructionsFaction'),
                 playerStartingLevel: toNumber(getText('playerStartingLevel')),
                 defaultPlayerName: getText('defaultPlayerName'),
                 defaultPlayerDescription: getText('defaultPlayerDescription'),
@@ -50636,6 +51206,7 @@ module.exports = function registerApiRoutes(scope) {
                     playerAbilitySelectionPromises,
                     playerImageGenerationPromises,
                     locationImageGenerationPromises,
+                    factionImageGenerationPromises,
                     levelUpAbilityPromises,
                     shortDescriptionBackfillByClient,
                     chatHistory,
@@ -51487,6 +52058,7 @@ module.exports = function registerApiRoutes(scope) {
                 factions,
                 currentSetting,
                 pendingRegionStubs,
+                pendingQuestConfirmations: questConfirmationManager.serializePending(),
                 enabledMods: getActiveEnabledModNames(),
                 gameConfigOverrideYaml: typeof Globals.getGameConfigOverrideYaml === 'function'
                     ? Globals.getGameConfigOverrideYaml()
@@ -51805,6 +52377,7 @@ module.exports = function registerApiRoutes(scope) {
                 factions,
                 currentSetting,
                 pendingRegionStubs,
+                pendingQuestConfirmations: questConfirmationManager.serializePending(),
                 enabledMods: getActiveEnabledModNames(),
                 gameConfigOverrideYaml: typeof Globals.getGameConfigOverrideYaml === 'function'
                     ? Globals.getGameConfigOverrideYaml()
@@ -51910,6 +52483,7 @@ module.exports = function registerApiRoutes(scope) {
             playerAbilitySelectionPromises.clear();
             playerImageGenerationPromises.clear();
             locationImageGenerationPromises.clear();
+            factionImageGenerationPromises.clear();
             levelUpAbilityPromises.clear();
             shortDescriptionBackfillByClient.clear();
             isProcessingJob = false;
@@ -52099,6 +52673,8 @@ module.exports = function registerApiRoutes(scope) {
             if (typeof Player.register === 'function') {
                 Player.register(currentPlayer);
             }
+            questConfirmationManager.hydratePending(serialized.pendingQuestConfirmations);
+            reconcilePendingQuestOfferChatEntries();
 
             const partyReconciliation = reconcileCurrentPlayerPartyLocationState(currentPlayer);
             if (partyReconciliation.locationEntriesRemoved > 0 || partyReconciliation.membersWithLocationCleared > 0) {
@@ -52142,6 +52718,12 @@ module.exports = function registerApiRoutes(scope) {
             for (const thing of things.values()) {
                 if (thing && thing.imageId && !hasImage(thing.imageId)) {
                     thing.imageId = null;
+                }
+            }
+
+            for (const faction of factions.values()) {
+                if (faction && faction.imageId && !hasImage(faction.imageId)) {
+                    faction.imageId = null;
                 }
             }
 
@@ -54581,6 +55163,20 @@ module.exports = function registerApiRoutes(scope) {
                     break;
                 }
 
+                case 'faction': {
+                    entity = factions.get(normalizedEntityId)
+                        || (typeof Faction?.getById === 'function' ? Faction.getById(normalizedEntityId) : null);
+                    if (!entity) {
+                        return {
+                            status: 404,
+                            error: `Faction with ID '${normalizedEntityId}' not found`
+                        };
+                    }
+                    generator = (options) => generateFactionImage(entity, options);
+                    resolvedType = 'faction';
+                    break;
+                }
+
                 default:
                     return {
                         status: 400,
@@ -55232,8 +55828,16 @@ module.exports = function registerApiRoutes(scope) {
                     }
                     return { entityType, entity, responseKey: entityType };
                 }
+                case 'faction': {
+                    const entity = factions.get(entityId)
+                        || (typeof Faction?.getById === 'function' ? Faction.getById(entityId) : null);
+                    if (!entity) {
+                        throw new Error(`Faction '${entityId}' was not found.`);
+                    }
+                    return { entityType, entity, responseKey: 'faction' };
+                }
                 default:
-                    throw new Error("Entity type must be one of: location, thing, item, scenery, npc, player.");
+                    throw new Error("Entity type must be one of: location, thing, item, scenery, npc, player, faction.");
             }
         }
 
@@ -55265,6 +55869,8 @@ module.exports = function registerApiRoutes(scope) {
                         : (typeof entity.toJSON === 'function' ? entity.toJSON() : entity);
                 } else if (responseKey === 'thing') {
                     entityPayload = typeof entity.toJSON === 'function' ? entity.toJSON() : entity;
+                } else if (responseKey === 'faction') {
+                    entityPayload = serializeFactionForClient(entity);
                 } else {
                     entityPayload = typeof serializeNpcForClient === 'function'
                         ? serializeNpcForClient(entity)
@@ -55410,7 +56016,8 @@ module.exports = function registerApiRoutes(scope) {
                 players,
                 things,
                 gameLocations,
-                gameLocationExits
+                gameLocationExits,
+                factions
             });
             res.setHeader('Content-Disposition', contentDisposition(downloadFilename, { type: 'inline' }));
             return res.sendFile(filepath);
@@ -55488,3 +56095,4 @@ module.exports.resolveThingCurrencyConversion = resolveThingCurrencyConversion;
 module.exports.filterNeedBarChangesForHistory = filterNeedBarChangesForHistory;
 module.exports.validateCraftingPlausibilityOutcome = validateCraftingPlausibilityOutcome;
 module.exports.buildManualQuestCompletionEntries = buildManualQuestCompletionEntries;
+module.exports.updatePlayerPromptGuidance = updatePlayerPromptGuidance;

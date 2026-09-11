@@ -94,7 +94,8 @@ test('SettingInfo persists per-world image prompt generation instructions', () =
     imagePromptInstructionsCharacter: 'Prefer inked portraits.',
     imagePromptInstructionsLocation: 'Favor wide establishing shots.',
     imagePromptInstructionsItem: 'Keep objects isolated on plain backdrops.',
-    imagePromptInstructionsScenery: 'Emphasize environmental storytelling.'
+    imagePromptInstructionsScenery: 'Emphasize environmental storytelling.',
+    imagePromptInstructionsFaction: 'Use two flat heraldic colors.'
   });
 
   const serialized = setting.toJSON();
@@ -102,6 +103,7 @@ test('SettingInfo persists per-world image prompt generation instructions', () =
   assert.equal(serialized.imagePromptInstructionsLocation, 'Favor wide establishing shots.');
   assert.equal(serialized.imagePromptInstructionsItem, 'Keep objects isolated on plain backdrops.');
   assert.equal(serialized.imagePromptInstructionsScenery, 'Emphasize environmental storytelling.');
+  assert.equal(serialized.imagePromptInstructionsFaction, 'Use two flat heraldic colors.');
 
   setting.imagePromptInstructionsItem = 'Use product-photography framing.';
   assert.equal(setting.getPromptVariables().imagePromptInstructionsItem, 'Use product-photography framing.');
@@ -216,6 +218,7 @@ test('settings editor exposes all per-world image prompt generation instruction 
   assert.match(source, /name="imagePromptInstructionsLocation"/);
   assert.match(source, /name="imagePromptInstructionsItem"/);
   assert.match(source, /name="imagePromptInstructionsScenery"/);
+  assert.match(source, /name="imagePromptInstructionsFaction"/);
   assert.match(source, /imagegen\.image_prompt_instructions/);
 });
 

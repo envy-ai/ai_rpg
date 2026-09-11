@@ -6,6 +6,7 @@ const {
     createChatToolRuntime,
     requireExplicitSkillCheckActors
 } = require('../chat_tool_calls.js');
+const { buildSkillCheckOutcomeToolContent } = require('../utils/skill-check-outcome-guidance.js');
 
 const CACHED_CHECK_TOOL_CALL_NOTE = 'You already made this tool call. Do not re-run tool calls for the same checks that you made in earlier drafts.';
 
@@ -311,7 +312,7 @@ test('resolveSkillCheck returns outcome content and action resolution metadata',
     ]);
 
     const toolMessage = capturedMessagesByRound[1].find(message => message.role === 'tool');
-    assert.equal(toolMessage.content, 'major success');
+    assert.equal(toolMessage.content, buildSkillCheckOutcomeToolContent(actionResolution, 'major success'));
 });
 
 test('resolveSkillCheck can request and inject a forced die roll', async () => {
@@ -517,7 +518,7 @@ test('resolveOpposedSkillCheck builds opposed check payloads', async () => {
     });
 
     const toolMessage = capturedMessagesByRound[1].find(message => message.role === 'tool');
-    assert.equal(toolMessage.content, 'barely failed');
+    assert.equal(toolMessage.content, buildSkillCheckOutcomeToolContent(actionResolution, 'barely failed'));
 });
 
 test('resolveOpposedSkillCheck accepts finite circumstance modifiers beyond ten points', async () => {
@@ -648,8 +649,8 @@ test('resolveSkillCheck reuses cached results for repeated same-round checks', a
     assert.deepEqual(result.toolInvocations[1].metadata.actionResolution, actionResolution);
     const toolMessages = capturedMessagesByRound[1].filter(message => message.role === 'tool');
     assert.deepEqual(toolMessages.map(message => message.content), [
-        'success',
-        `success\n\n${CACHED_CHECK_TOOL_CALL_NOTE}`
+        buildSkillCheckOutcomeToolContent(actionResolution, 'success'),
+        `${buildSkillCheckOutcomeToolContent(actionResolution, 'success')}\n\n${CACHED_CHECK_TOOL_CALL_NOTE}`
     ]);
 });
 
@@ -698,7 +699,10 @@ test('resolveSkillCheck cache separates different attributes', async () => {
     assert.equal(result.toolInvocations[1].metadata.cached, false);
     assert.notEqual(result.toolInvocations[0].metadata.cacheKey, result.toolInvocations[1].metadata.cacheKey);
     const toolMessages = capturedMessagesByRound[1].filter(message => message.role === 'tool');
-    assert.deepEqual(toolMessages.map(message => message.content), ['dexterity', 'strength']);
+    assert.deepEqual(toolMessages.map(message => message.content), [
+        buildSkillCheckOutcomeToolContent({ label: 'dexterity', degree: 'success', success: true }, 'dexterity'),
+        buildSkillCheckOutcomeToolContent({ label: 'strength', degree: 'success', success: true }, 'strength')
+    ]);
 });
 
 test('resolveOpposedSkillCheck cache separates different opposing attributes', async () => {
@@ -748,5 +752,8 @@ test('resolveOpposedSkillCheck cache separates different opposing attributes', a
     assert.equal(result.toolInvocations[1].metadata.cached, false);
     assert.notEqual(result.toolInvocations[0].metadata.cacheKey, result.toolInvocations[1].metadata.cacheKey);
     const toolMessages = capturedMessagesByRound[1].filter(message => message.role === 'tool');
-    assert.deepEqual(toolMessages.map(message => message.content), ['wisdom', 'intelligence']);
+    assert.deepEqual(toolMessages.map(message => message.content), [
+        buildSkillCheckOutcomeToolContent({ label: 'wisdom', degree: 'success', success: true }, 'wisdom'),
+        buildSkillCheckOutcomeToolContent({ label: 'intelligence', degree: 'success', success: true }, 'intelligence')
+    ]);
 });

@@ -2,91 +2,61 @@
 
 ## Purpose
 
-`QuestConfirmationManager.js` coordinates the blocking confirmation step for generated quest offers. It owns pending server-side promises keyed by a UUID `confirmationId`, sends a sanitized `quest_confirmation_request` websocket event to the active chat client's `clientId`, and resolves the event pipeline after `/api/quests/confirm` receives an accept or decline response.
+`QuestConfirmationManager.js` owns durable, unresolved quest offers. Quest generation records a complete private quest candidate plus a client-safe preview and immediately returns; it does not wait for a browser response. An offer remains pending until one client explicitly accepts or declines it.
 
-The manager does not persist quests, grant rewards, or edit quest state. `Events.received_quest` generates the quest, asks this manager for a decision, and calls `player.addQuest(quest)` only after acceptance.
+The manager is game-scoped rather than connection-scoped. Disconnecting the browser that triggered an offer does not discard it, and any connected client may resolve it. The first valid decision wins.
 
-## Runtime Wiring
+## Lifecycle
 
-- `server.js` creates one manager instance during startup.
-- `timeoutMs` is read from `config.quests.confirmationTimeoutMs`; missing, non-finite, zero, or negative values disable confirmation timeouts in the server wiring.
-- `Events.initialize(...)` receives `confirmQuestWithPlayer`, which delegates to `questConfirmationManager.requestConfirmation(...)`.
-- The `received_quest` event handler uses the manager only for generated quest offers that do not already match an existing player quest by name. Existing matching quests are refreshed in place by the event handler without a confirmation modal.
-- A quest offer requires `context.stream.clientId`; without an active client id, the event handler throws.
-- Delivery goes through `Globals.emitToClient(clientId, 'quest_confirmation_request', ...)`, so `RealtimeHub` sends the request to every open socket registered under that `clientId`.
+1. `Events.received_quest` generates a plain quest candidate without constructing `Quest`; this avoids registering an unaccepted quest in global quest indexes.
+2. `requestConfirmation(...)` stores the candidate and returns its public record synchronously.
+3. After ordinary turn event/status rows are recorded, `api.js` appends a `type: "quest-offer"` chat entry and links its chat id with `attachChatEntry(...)`. While-you-were-away event checks do the same immediately, filtering by the exact confirmation ids returned by that event pass so an older unlinked offer cannot be parented to the new arrival entry.
+4. All clients receive a global `chat_history_updated` broadcast and render the saved offer inline.
+5. `/api/quests/confirm` calls `resolveConfirmation(...)`. Accepting constructs the real `Quest`, adds it to the saved player, and removes the pending record; declining only removes the pending record.
+6. The API updates the same chat entry to `accepted` or `declined` and broadcasts the change globally.
 
-## Construction
+Existing quests matched by name are still updated in place and do not produce a new offer.
 
-- `new QuestConfirmationManager({ timeoutMs = null } = {})`
-  - Accepts `null`, `undefined`, or `0` as no timeout.
-  - Requires finite, non-negative numeric timeout values.
-  - Initializes `pending` as a `Map` of `confirmationId -> { resolve, reject, timeout, clientId }`.
+## Stored Record
 
-## Instance API
+Pending records contain:
 
-- `requestConfirmation({ clientId, quest, requestId })`:
-  - Trims and validates `clientId`.
-  - Normalizes the quest into a client-safe preview payload.
-  - Creates a UUID `confirmationId`.
-  - Stores the pending promise before emitting to the client.
-  - Emits `quest_confirmation_request` with `{ confirmationId, quest }`; `requestId` is passed through the `Globals.emitToClient` options so the websocket envelope can carry it.
-  - Resolves to `true` or `false` when `resolveConfirmation(...)` runs.
-  - Rejects when the quest payload is missing, the client id is invalid, the request cannot be delivered, or the optional timeout expires.
+- `confirmationId`
+- `playerId`
+- `quest`: the complete serializable candidate, including private fields such as `secretNotes`
+- `preview`: the sanitized display payload
+- `requestId`, `parentId`, `locationId`, and `chatEntryId`
+- `createdAt`
 
-- `resolveConfirmation({ confirmationId, clientId, accepted })`:
-  - Trims and validates `confirmationId` and `clientId`.
-  - Requires an existing pending request for the id.
-  - Requires the response `clientId` to match the original request's `clientId`.
-  - Clears the timeout, resolves the stored promise with `Boolean(accepted)`, removes the pending entry, and returns `{ accepted: Boolean(accepted) }`.
+`getPendingConfirmation(...)` and `getPendingConfirmations()` expose only the public record, replacing the private candidate with `preview`. The preview contains quest name/description/summary/giver, objectives, item/currency/XP rewards, faction reputation, NPC disposition deltas, typed benefits, and narrative reward notes. It does not expose secret notes.
 
-- `rejectAllForClient(clientId, reason = 'Client disconnected')`:
-  - Trims the client id and ignores empty values.
-  - Rejects every pending request for that client with `Error(reason)`.
-  - Clears each pending timeout before deleting the entry.
-  - The current server wiring does not call this helper from `RealtimeHub` socket close events.
+## API
 
-- `rejectAll(reason = 'Quest confirmations cancelled')`:
-  - Rejects every pending confirmation across all clients with `Error(reason)`.
-  - Clears each pending timeout before deleting the entry.
-  - Returns the number of confirmations rejected.
-  - New-game reset uses this to fail loudly and prevent stale quest offers from resolving into the next game.
+- `requestConfirmation({ quest, preview?, playerId, requestId?, parentId?, locationId? })` validates the player and serializable candidate, creates a UUID, stores it, and returns the public record.
+- `attachChatEntry(confirmationId, { chatEntryId, parentId?, locationId? })` links the pending record to its durable chat row.
+- `hasPending()`, `getPendingConfirmation(id)`, and `getPendingConfirmations()` inspect pending state.
+- `resolveConfirmation({ confirmationId, clientId, accepted })` accepts the first boolean decision from any client. A repeated/late answer throws with `code: "QUEST_CONFIRMATION_RESOLVED"`.
+- `serializePending()` returns JSON-safe records for save storage.
+- `hydratePending(records)` strictly validates saved records and referenced players.
+- `rejectAll(reason)` clears runtime records during new-game reset or the pre-load cancellation barrier. The target save's records are hydrated after its players load.
+- `rejectAllForClient()` is intentionally a no-op because offers do not belong to a connection.
 
-## Confirmation Payload
+The legacy `timeoutMs` constructor option is validated for configuration compatibility but does not expire offers. Pending means pending until accept or decline.
 
-`#normalizeQuestPayload(quest)` returns `null` unless `quest` is an object. String fields are trimmed; non-string values become empty strings.
+## Persistence And Recovery
 
-Emitted quest preview fields:
+`Utils.writeSerializedGameState()` writes pending records to `pendingQuestConfirmations.json`; missing files load as an empty array for older saves. After player hydration, `/api/load` hydrates the manager and reconciles every pending record with a pending inline chat entry. The authoritative `/api/chat` pending-offer gate repeats that reconciliation before returning its 409 response, which also repairs runtime records created by an earlier code path that did not append the row. A record with `chatEntryId: null` gets a new row during reconciliation when no matching row already exists. Reconciliation reuses and links an existing matching row, creates only genuinely unlinked rows, and returns the rows it created so callers can broadcast `chat_history_updated`. Duplicate rows, a non-null `chatEntryId` whose row is missing or unrelated, or a pending chat row with no corresponding saved record are treated as corruption and fail loudly.
 
-- `id`
-- `name`
-- `description`
-- `summary`
-- `giver`
-- `objectives`: array of `{ description, optional }` entries with non-empty descriptions.
-- `rewardCurrency`: finite numeric value from `quest.rewardCurrency`, otherwise `0`.
-- `rewardXp`: finite numeric value from `quest.rewardXp`, otherwise `0`.
-- `rewardItems`: legacy strings become `{ name, description: "" }`; object entries preserve a distinct `name` (or legacy `label`) and `description`. Finite quantities are rounded to whole numbers, forced to at least `1`, and omitted when the value is `1`.
-- `rewardNpcDispositions`: array of `{ npcName, dispositions }`, where each disposition includes `{ type, intensity, reason }`; intensity must be a non-zero integer and `reason` is `null` when omitted.
-- `rewardBenefits`: sanitized `{ id, type, targetId, label, description, role }` entries.
-- `rewardNotes`: trimmed non-empty strings.
+## Turn Gate
 
-Fields not emitted by this manager include `secretNotes`, `rewardClaimed`, `paused`, `completed`, full giver objects, and `rewardFactionReputation`. The chat client can render faction reward previews if they are present in a confirmation payload, but the manager's normalized websocket payload does not include faction reputation entries.
+`POST /api/chat` checks the manager before registering or mutating a new turn. Before returning the gate response, it reconciles missing inline rows, globally broadcasts when it created one, and refreshes the public records so every returned offer includes its new `chatEntryId`. If any offer remains pending it returns HTTP 409 with:
 
-## API And UI Flow
+```json
+{
+  "error": "Accept or decline the pending quest offer before taking the next turn.",
+  "code": "QUEST_CONFIRMATION_REQUIRED",
+  "pendingQuestConfirmations": []
+}
+```
 
-- `public/js/chat.js` handles `quest_confirmation_request` in `AIRPGChat.handleQuestConfirmationRequest(...)`.
-- The chat client normalizes the incoming payload again, queues requests per browser tab, and presents one runtime-only modal at a time.
-- The modal renders giver, summary, description, objectives, item/currency/XP rewards, faction rewards if present, NPC disposition rewards, typed party-member rewards, and narrative reward notes.
-- Accept and Decline buttons post to `/api/quests/confirm`; pressing `Escape` submits a decline when the modal is visible and idle.
-- The POST body includes `confirmationId`, the browser's `clientId`, and a decision string of `accept` or `decline`.
-- `/api/quests/confirm` also accepts `accepted` as a boolean and legacy-style `accept` strings.
-- Successful API resolution closes the modal, advances the local confirmation queue, and calls `window.refreshQuestPanel?.()`.
-- API errors leave the modal open and display the error text.
-
-## Error Behavior
-
-- Invalid constructor timeout values throw.
-- Invalid request inputs throw before any websocket emission.
-- A false return from `Globals.emitToClient(...)` rejects the pending promise with `Unable to deliver quest confirmation request to client.`
-- Unknown, already-resolved, or mismatched confirmation responses throw from `resolveConfirmation(...)`; `/api/quests/confirm` translates those errors to `400` JSON responses.
-- Timeout rejection removes the pending entry before rejecting the promise.
+The client performs the same check from loaded chat history for immediate feedback, but the server check is authoritative across tabs and clients.

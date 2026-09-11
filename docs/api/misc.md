@@ -1,5 +1,16 @@
 # Misc & Utility API
 
+## GET /api/log-viewer/files and GET /api/log-viewer/file
+
+Read-only diagnostic logs for `session=logs` (current session) or `session=logs_prev` (previous session).
+
+- `/api/log-viewer/files` returns `{ success: true, files: [{ name, createdAt, size }] }`, ordered by creation date newest first, then filename.
+- `/api/log-viewer/file` additionally requires `name=<encoded filename>` and returns `{ success: true, file: { name, createdAt, size, content } }` with full UTF-8 content.
+- Responses disable caching. Invalid arguments return 400, forbidden file types return 403, missing paths return 404, and other filesystem errors return 500; all errors contain `{ success: false, error, stack }`.
+- Only regular files directly under the two allowed directories are accessible; traversal and symlink access are rejected.
+
+See [LogViewer](../classes/LogViewer.md) for the Tools page, filtering, error modal, and test workflow.
+
 ## GET /api/features/location-image-generation
 Return whether location image generation is enabled. The value is derived from `config.imagegen.enabled`.
 

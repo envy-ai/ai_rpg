@@ -8,13 +8,13 @@ Image jobs use the statuses `queued`, `processing`, `completed`, `failed`, and `
 
 Thing job payloads retain their stored `item` or `scenery` `entityType`. The browser canonicalizes both aliases to its shared `thing` image-host key when caching and applying render progress, so item/scenery placeholders receive realtime spinner/progress overlays.
 
-For OpenAI and NanoGPT engines, final image prompts include the active setting's `baseContextPreamble` before job execution. ComfyUI prompts do not receive that preamble. Character, location, item, and scenery prompt prefixes from the active setting are applied where the generation path supports them.
+For OpenAI and NanoGPT engines, final image prompts include the active setting's `baseContextPreamble` before job execution. ComfyUI prompts do not receive that preamble. Character, location, item, scenery, and faction-emblem prompt prefixes from the active setting are applied where the generation path supports them.
 
 ## POST /api/images/prompt
 Generate the final editable prompt for a known entity without queueing image rendering.
 
 Request:
-- Body: `{ entityType: 'player'|'npc'|'location'|'thing'|'item'|'scenery', entityId: string }`
+- Body: `{ entityType: 'player'|'npc'|'location'|'thing'|'item'|'scenery'|'faction', entityId: string }`
 
 Response:
 - 200: `{ success: true, entityType, entityId, prompt, promptType, generatedPrompt? }`
@@ -22,8 +22,8 @@ Response:
 
 Notes:
 - This endpoint is used by the browser's `Regenerate Image +` context-menu action.
-- Player/NPC, location, item, and scenery prompts run the same LLM prompt-writing templates as normal entity image generation.
-- The returned `prompt` is the final text intended for image rendering. Character, location, item, and scenery image prompt prefixes are already prepended as applicable. For locations, the returned prompt also includes the deterministic base location scene wrapper, such as baseline time and weather guidance from `templates/location-image-prompt.njk`.
+- Player/NPC, location, item, scenery, and faction prompts run the same LLM prompt-writing templates as normal entity image generation.
+- The returned `prompt` is the final text intended for image rendering. Type-specific prefixes are already prepended as applicable. Factions use `prompts/_includes/faction-emblem-prompt.njk`; locations also include the deterministic base location scene wrapper.
 - A successful response stores that same final text on the target entity's persisted `imagePrompt`, even if the user later cancels the edit modal.
 - The endpoint does not clear current image ids, set pending image jobs, or queue rendering. The confirmed edited prompt is sent separately to `POST /api/images/request`.
 - Location exits are intentionally unsupported here because their image path does not use the LLM prompt-writing step.
@@ -32,7 +32,7 @@ Notes:
 Queue, join, or reuse image generation for a known entity.
 
 Request:
-- Body: `{ entityType: 'player'|'npc'|'location'|'exit'|'location-exit'|'location_exit'|'thing'|'item'|'scenery', entityId: string, force?: boolean, clientId?: string, prompt?: string, useExistingPrompt?: boolean }`
+- Body: `{ entityType: 'player'|'npc'|'location'|'exit'|'location-exit'|'location_exit'|'thing'|'item'|'scenery'|'faction', entityId: string, force?: boolean, clientId?: string, prompt?: string, useExistingPrompt?: boolean }`
 
 Response:
 - 200: `{ success, entityType, entityId, imagePrompt, jobId?, job?, imageId?, skipped, reason, message, existingJob }`
@@ -47,16 +47,17 @@ Notes:
 - Duplicate requests for the same player/NPC, location, location exit, thing, or location variant join the active prompt-generation or image-rendering work when possible. A joined request returns `existingJob: true` and includes the active `jobId` when an image job exists.
 - NPC portrait requests without `force` are limited to NPCs at the current player location or in the current player party.
 - Thing image requests can target any known non-null `Thing`; current server eligibility does not require player inventory or current-location ownership.
-- Player/NPC, location, item, and scenery image paths use an LLM prompt-writing step before the image job is queued. Prompt generation retries up to `imagegen.prompt_generation_attempts` times, default `3`; empty final prompts, prompt/context XML, and wrapper text are rejected. Exhausted retries return `skipped: true`, `reason: "image-prompt-failed"`, and no image-rendering job.
+- Player/NPC, location, item, scenery, and faction image paths use an LLM prompt-writing step before the image job is queued. Prompt generation retries up to `imagegen.prompt_generation_attempts` times, default `3`; empty final prompts, prompt/context XML, and wrapper text are rejected. Exhausted retries return `skipped: true`, `reason: "image-prompt-failed"`, and no image-rendering job.
 - When `prompt` is provided, it is treated as a user-confirmed final image prompt and must be a non-empty string. The LLM prompt-writing step is skipped, but the normal entity attachment, dimensions, negative prompt, realtime subscription, and forced-regeneration behavior still apply.
 - `useExistingPrompt: true` reads the target's persisted `imagePrompt`, skips LLM/template prompt generation, and uses that exact value. It cannot be combined with `prompt`; a target with no saved prompt returns `409` rather than falling back to prompt generation.
 - Every successfully generated, deterministic, or user-confirmed final base-entity prompt is stored in `imagePrompt` before the rendering job is queued. Initial entity construction leaves the field blank. Location weather variants remain display-only and do not overwrite the base location prompt.
-- LLM-authored image-prompt requests are debounced and batched unless `imagegen.prompt_batching.enabled` is `false`. The queue waits `imagegen.prompt_batching.delay_ms` after the last compatible request and sends up to `imagegen.prompt_batching.max_items` prompt-writing requests per batch.
+- LLM-authored image-prompt requests are debounced and batched unless `imagegen.prompt_batching.enabled` is `false`. The queue waits `imagegen.prompt_batching.delay_ms` after the last compatible request and sends up to `imagegen.prompt_batching.max_items` prompt-writing requests per batch. Base-context prompts are compatible only when their system prompt and shared pre-instruction context match; a compatible batch includes that context once, retains exactly one internal base-context boundary, and preserves every entity-specific instruction as a separate request.
 - Final ComfyUI rendering is independently controlled by `imagegen.batch_prompts`. When enabled, ordinary queued jobs are grouped by effective workflow plus exact width and height. The workflow receives an ordered `images` array, all jobs share the Comfy prompt id/cancellation, and the server requires one returned image per prompt before attaching each output to its original entity. Location weather variants are excluded because they use source-image uploads and a dedicated img2img workflow.
 - When any effective AI config has `unload_during_image_generation: true`, its real LLM transport attempt strictly calls ComfyUI `/free` with both cleanup flags before contacting the text backend; failure stops that prompt. This includes image-prompt writing and still applies when rendering is disabled through a cleanup-only ComfyUI client. For effective `image_prompt_generation`, prompt-writing requests additionally skip the normal debounce and flush immediately. Rendering waits until every currently queued/in-flight image-prompt request has finished. The server then blocks other text prompts, unloads the exact effective model through llama.cpp router mode, drains all queued ComfyUI renders, and invokes Cache Monitor's `/comfyui-cache-monitor/release_vram` endpoint to preserve the registered RAM-backed cache. If that endpoint fails, it uses full `/free` cleanup and emits a browser warning recommending the custom nodes. It then reloads the model and releases waiting text prompts. Image-prompt requests received while rendering stay queued for the next cycle.
 - With effective `terminate_during_image_generation: true`, the same prompt flush, quiescence, and exclusive text gate apply, but the server terminates the process group associated with its saved local llama.cpp PID instead of calling router unload. After the render queue drains—even when rendering fails—it strictly invokes Cache Monitor's `/comfyui-cache-monitor/release_vram`, immediately executes `local_startup_script_path`, waits for llama.cpp `/health`, and only then releases waiting prompts. The local process is first created during AI RPG startup with the full cleanup-before-script ordering. Router unload and local termination cannot be enabled together.
 - Base location scene prompts are rendered through `templates/location-image-prompt.njk` after the LLM prompt-writing step. The template receives `image.prompt`, the full `location`, `hasLocalWeather`, and `weatherScope`; the default template adds neutral baseline time/weather guidance for the base image.
 - Thing image dimensions use `imagegen.default_settings.image`, with optional overrides from `imagegen.item_settings.image` or `imagegen.scenery_settings.image`. Character image jobs and pre-rendered browser portrait aspect ratios use `imagegen.character_settings.image`, falling back to `imagegen.default_settings.image` when either character dimension is omitted. Location and exit images use their respective configured settings or defaults.
+- Faction emblem jobs use `imagegen.faction_settings.image`, defaulting to `1024 × 1024`. Before storage, every generated emblem is converted to PNG and alpha-masked to the ellipse inscribed by the actual output width and height. Uploads are stored as supplied and are not automatically masked.
 
 ## POST /api/images/location-variant/request
 Queue, join, or reuse the current weather/lighting display variant for a location image.
@@ -76,13 +77,15 @@ Notes:
 - A usable base image is required. Missing base image, missing image metadata/file, or a base image whose metadata source is `location_weather_variant` produces a skipped response.
 - The ComfyUI workflow template comes from the canonical `imagegen.workflow.edit` selection, including its optional `custom_template`. A missing selected template returns a clear template-specific error.
 - Conditions are derived from world time, the location's effective weather exposure, and the containing region's weather. Explicit `hasWeather` wins. For legacy locations with no hint, names ending in `Exterior` resolve to `yes`, while a location or containing region ending in `Interior` resolves to `no`; other legacy locations resolve to `yes`. The response `conditions` includes `variantKey`, lighting fields, weather fields, date/time labels, season, the season's exterior/interior image descriptions, and weather-scope flags.
-- Locations with `generationHints.hasWeather="sheltered"` use regional weather while labeling it as exterior weather in the deterministic edit prompt. Legacy `outside` values normalize to `sheltered` when loaded.
-- Locations with effective weather exposure `no` use the dedicated interior deterministic edit prompt and the active season's `interiorDescription`. It preserves the established room and applies interior lighting, color, textiles, heating/cooling, ventilation, decor, or stored-material changes without inventing trees, visible vegetation, sky, openings, or precipitation.
+- Locations with `generationHints.hasWeather="sheltered"` use regional weather. Legacy `outside` values normalize to `sheltered` when loaded. Without vision, the deterministic edit prompt labels this as exterior weather.
+- Without vision, locations with effective weather exposure `no` use the dedicated interior deterministic edit prompt and the active season's `interiorDescription`. It preserves the established room and applies interior lighting, color, textiles, heating/cooling, ventilation, decor, or stored-material changes without inventing trees, visible vegetation, sky, openings, or precipitation.
 - Base location generation uses scope-specific negative guidance: indoor locations reject outdoor scenes, sky, landscape, trees, exterior vegetation, and indoor precipitation, while non-indoor locations reject enclosed-room/indoor-only results.
-- Cached variants require the same location, source image id, season key, lighting key, effective weather-scope key, and applicable weather key. A cache hit returns `success: true`, `skipped: true`, and `imageId`.
+- Cached variants require the same location, source image id, season key, lighting key, effective weather-scope key, and applicable weather key. Vision variants use separate versioned keys and include regional weather for interiors as well. A cache hit returns `success: true`, `skipped: true`, and `imageId`.
 - `force: true` removes the cached variant for the current conditions, queues a replacement, and leaves the base `location.imageId` unchanged.
 - Variant images are display-only. They are stored on the location's image variant map and do not replace the base location image.
-- The deterministic edit prompt is rendered locally from `templates/location-weather-variant-image-prompt.njk`, where exterior seasonal guidance is labeled `Seasonal appearance`, or `templates/location-weather-variant-interior-image-prompt.njk` for locations with no visible outdoor weather; no LLM prompt-writing call is made for this endpoint.
+- With an enabled dedicated vision configuration or an effective prompt model whose `has_vision` is true, the server renders the base-context `generate-seasonal-image-vision` prompt and attaches the authoritative base location image. Its override/logging label is `generate_seasonal_image_vision`. Its validated `<imageEditingInstructions>` becomes the edit prompt. `N/A` caches reuse of the base image without submitting an image-edit job. Concurrent requests for the same vision variant share the pending prompt; vision generation failures surface as errors.
+- If the base image or game runtime changes while instructions are being generated, the result is skipped with `reason: 'stale-source-image'` and no variant or edit job is created. The vision path uses the common scene-preservation negative prompt; the older interior-specific exclusions apply only to deterministic variants.
+- Without vision, the edit prompt is rendered locally from `templates/location-weather-variant-image-prompt.njk`, where exterior seasonal guidance is labeled `Seasonal appearance`, or `templates/location-weather-variant-interior-image-prompt.njk` for locations with no visible outdoor weather.
 - The location context menu's `Regenerate Seasonal Image` action sends `force: true`, replacing the cached variant for the current season, lighting, and applicable weather while preserving the base image.
 - When a variant job runs, the server logs the final rendered image-edit prompt before rendering/submitting the ComfyUI workflow. The standard Krea 2 Identity Edit v1.2, Flux Klein, and Qwen edit workflows also send the prompt through a Crystools `Show any [Crystools]` node with the `Final Prompt` prefix. Krea editing uploads the source under both the existing `sourceFilename` template field and the standard runner-compatible `input_filename` alias.
 - After saving an edited variant image, the server compares source and edited image dimensions and logs a warning when they differ.
@@ -91,10 +94,10 @@ Notes:
 Upload an image and replace the current image for an entity.
 
 Request:
-- Body: `{ entityType: 'location'|'thing'|'item'|'scenery'|'npc'|'player', entityId: string, imageDataUrl: string }`
+- Body: `{ entityType: 'location'|'thing'|'item'|'scenery'|'npc'|'player'|'faction', entityId: string, imageDataUrl: string }`
 
 Response:
-- 200: `{ success: true, entityType, entityId, imageId, image, location? | thing? | npc? | player?, message }`
+- 200: `{ success: true, entityType, entityId, imageId, image, location? | thing? | npc? | player? | faction?, message }`
 - 400: `{ success: false, error }`
 
 Notes:
@@ -182,7 +185,7 @@ Response:
 Notes:
 - The route resolves saved image metadata first, then scans `public/generated-images/` for `.png`, `.jpg`, `.jpeg`, `.webp`, or `.gif`.
 - Public UI image rendering uses this route for `imageId` references.
-- Browser save actions receive a filesystem-safe descriptive filename such as `Aster Vale.png`, `Moonlit Blade.webp`, or `Exit to Glass Harbor.jpg`. Location weather/lighting variants use the owning location name. Images no longer attached to a known entity fall back to `generated-image-<imageId>.<extension>`.
+- Browser save actions receive a filesystem-safe descriptive filename such as `Aster Vale.png`, `Moonlit Blade.webp`, or `Azure Watch.png`. Location weather/lighting variants use the owning location name. Images no longer attached to a known entity fall back to `generated-image-<imageId>.<extension>`.
 
 ## GET /api/images
 List generated image metadata currently tracked by the server.

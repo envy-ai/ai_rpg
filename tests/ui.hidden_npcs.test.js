@@ -91,3 +91,22 @@ test('location NPC area has a show-hidden eye toggle and distinct hidden styling
     assert.match(scssSource, /\.location-hidden-npcs-toggle/);
     assert.match(chatDocSource, /show hidden/);
 });
+
+test('show-hidden NPC toggle stays enabled without revealing the hidden NPC count', () => {
+    const toggleMarkup = viewSource.match(/<button\b[^>]*\bid="toggleHiddenNpcsButton"[^>]*>/)?.[0];
+    assert.ok(toggleMarkup, 'show-hidden NPC toggle markup should exist');
+    assert.doesNotMatch(toggleMarkup, /\sdisabled(?:\s|=|>)/i);
+
+    const updaterSource = extractFunction(viewSource, 'updateHiddenNpcsToggleButton');
+    assert.match(updaterSource, /^function updateHiddenNpcsToggleButton\(\)/);
+    assert.match(updaterSource, /classList\.toggle\('is-active', locationNpcsShowHidden\)/);
+    assert.match(updaterSource, /setAttribute\('aria-pressed', locationNpcsShowHidden \? 'true' : 'false'\)/);
+    assert.doesNotMatch(
+        updaterSource,
+        /disabled|hiddenCount|\.npcs|hiddenFromPlayer/
+    );
+    assert.doesNotMatch(
+        viewSource,
+        /toggleHiddenNpcsButton\s*\.\s*disabled|toggleHiddenNpcsButton\s*\.\s*(?:setAttribute|toggleAttribute|removeAttribute)\(\s*['"]disabled['"]/
+    );
+});

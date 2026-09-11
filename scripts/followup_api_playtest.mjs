@@ -109,6 +109,7 @@ async function runInteractiveRequest(options, request) {
     let result;
     try {
         result = await apiClient.fetchJson(request.method, request.route, request.body);
+        await realtime.resolvePendingQuestOffers(identifiers.requestId);
     } finally {
         realtime.endRequest(identifiers.requestId);
         await new Promise(resolve => setTimeout(resolve, 100));

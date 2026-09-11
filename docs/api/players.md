@@ -33,6 +33,33 @@ Response:
 Notes:
 - Before serializing the player payload, containers in the current player's inventory with pending `Thing.containerContents` seeds generate those contents through `thing-generator-contents` and clear the pending seed list.
 
+## GET /api/player/prompt-guidance
+
+Return the current player's free-text generation guidance.
+
+Response:
+- 200: `{ success: true, guidance: string, player: NpcProfile }`
+- 404: `{ success: false, error: 'No current player found' }`
+
+Missing guidance in an older save is returned as an empty string.
+
+## PUT /api/player/prompt-guidance
+
+Replace the current player's free-text generation guidance.
+
+Request:
+- Body: `{ guidance: string, clientId?: string }`
+- `guidance` may be blank to clear the setting. It is normalized through `Player.normalizePlayerGuidance(...)`; non-string values are rejected.
+
+Response:
+- 200: `{ success: true, guidance: string, player: NpcProfile, entry: ChatEntry }`
+- 400: missing or non-string `guidance`
+- 404: no current player
+- 409: no loaded game or no active player location
+- 500: the guidance/update-notice commit failed
+
+The route verifies the loaded game, active location, and writable chat-history prerequisites before changing the player. It first persists a `role: "system"`, `type: "player-prompt-guidance"` chat entry containing the latest guidance (or `(blank)` when cleared), then changes the player field; a setter failure removes the just-added notice. The notice carries `metadata.excludeFromBaseContextHistory: true`, and its dedicated type is always excluded from normal, generic/all-entry, scene-summary, and `getHistory` prompt paths. A `chat_history_updated` broadcast refreshes connected clients.
+
 ## PUT /api/player/thing-list-view-preferences
 
 Persist one shared thing-list panel view mode on the current player.

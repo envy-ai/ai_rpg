@@ -21,7 +21,7 @@ Raw text after the command is passed to the prompt as `housekeepingInstructions`
 - Requires `interaction.runHousekeepingPrompt` and throws `Housekeeping execution is unavailable in this command context.` when the helper is absent.
 - Requires an active slash-command `clientId` and throws `Housekeeping slash command requires an active client connection.` when the command is not tied to a browser tab.
 - Trims `interaction.argsText` and passes it to the shared housekeeping runner as `{ instructions }`.
-- The API helper maps `instructions` to the prompt template's `housekeepingInstructions` value and creates a scoped stream emitter for request-user-input, quest confirmation, and XML-derived tool-call debug updates.
+- The API helper maps `instructions` to the prompt template's `housekeepingInstructions` value and creates a scoped stream emitter for request-user-input and XML-derived tool-call debug updates. New quest candidates use the shared durable inline-offer path and global chat refresh.
 - Automatic post-event housekeeping calls do not pass instructions; the runner default keeps `housekeepingInstructions` blank.
 - The manual command bypasses `housekeeping.interval` and does not advance the automatic housekeeping counter.
 - The manual command uses the same ordered multi-turn action/prose/event context as automatic housekeeping. A successful manual run advances `lastHousekeepingTurnId` and `lastHousekeepingTurnTimestamp`, so the next run starts after the newest player turn it examined; when housekeeping has never run, the context is limited to the configured interval. A manually deleted boundary resumes by timestamp with a terminal warning; legacy ID-only boundaries use one bounded recent-turn recovery window.

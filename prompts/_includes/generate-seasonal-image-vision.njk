@@ -1,0 +1,27 @@
+<task>An image depicting the current location has been attached. Your job is to consider this image along with the description of the location, the season, the weather, and the time of day, to write clear, detailed image editing instructions to modify the image so that it depicts the location accurately under the specified conditions.</task>
+
+Location: {{ location.name }}
+Location description:
+<locationDescription>{{ location.description }}</locationDescription>
+
+Season: {{ season.name }}
+Season description:
+<seasonDescription>{{ season.description }}</seasonDescription>
+
+Weather: {{ weather.name }}
+Weather description:
+<weatherDescription>{{ weather.description }}</weatherDescription>
+
+Time of Day: {{ timeOfDay }}
+
+Before your final answer, think out loud about whether this is an interior or exterior location and how that would affect the way the image changes. An interior image with windows might need adjustments to lighting and shadows based on the time of day and weather, while an exterior image would require changes to the environment, foliage, and atmospheric conditions. A room with no windows and artificial lighting (or no lighting at all) may not require any changes at all. Also note that the season descriptions are universal and may need to be taken with a grain of salt depending on the location. For instance, "Winter" in an equatorial desert might not result in any visible change, or may just be subtle changes to lighting. So consider the appropriateness of the season description to the biome and location, and adjust the image editing instructions accordingly. Use your best judgement.
+
+After reasoning out loud in plain text, answer in this format:
+
+<imageEditingInstructions>
+Several paragraphs of detailed instructions for modifying the attached image to accurately reflect the location under the specified season, weather, and time of day.
+</imageEditingInstructions>
+
+or, if no changes are needed, use the following format:
+
+<imageEditingInstructions>N/A</imageEditingInstructions>

@@ -34,6 +34,15 @@ test('container and crafting modals complete item touch drops on their own targe
     assertIncludes(viewSource, 'await assignDraggedItemToCraftingSlot(slotIndex, state.thing.id);');
 });
 
+test('modal item dragging is disabled by narrow viewport rather than touch capability', () => {
+    assertIncludes(viewSource, 'function isNarrowMobileViewport() {');
+    assertIncludes(viewSource, "return window.matchMedia('(max-width: 768px)').matches;");
+    assertIncludes(viewSource, '&& !isNarrowMobileViewport(),');
+    assertIncludes(viewSource, 'if (!isNarrowMobileViewport() || !(event.target instanceof Element)) {');
+    assertNotIncludes(viewSource, '&& !isMobileTooltipContext(),');
+    assertNotIncludes(viewSource, 'if (!isMobileTooltipContext() || !(event.target instanceof Element)) {');
+});
+
 test('NPC party touch dragging uses the same movement threshold gesture', () => {
     assertIncludes(viewSource, 'let partyNpcTouchDragState = null;');
     assertIncludes(viewSource, 'function wireNpcPartyTouchDrag(card, npc, source) {');

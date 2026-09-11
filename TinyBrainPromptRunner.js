@@ -2,6 +2,7 @@ const { randomUUID } = require('crypto');
 const LLMClient = require('./LLMClient.js');
 const {
     parseAllowedCharacterSelection,
+    parseContainerOpenCheckPlan,
     parseExactXmlRoot,
     parseNeedBarCharactersResult,
     parseNarrativeScope,
@@ -11,6 +12,7 @@ const {
     parsePlayerActionDestinationChanges,
     parsePlayerActionExplicitDuration,
     parsePlayerActionDuration,
+    parsePlayerActionTimePassedDuration,
     parsePlayerActionAccompanyingCharacters,
     parsePlayerActionHiddenContests,
     parsePlayerActionHiddenNotes,
@@ -416,6 +418,7 @@ class TinyBrainPromptRunner {
         this.parsers = {
             accept_or_reject: parseAcceptOrReject,
             allowed_character_selection: parseAllowedCharacterSelection,
+            container_open_check_plan: parseContainerOpenCheckPlan,
             exact_xml_root: parseExactXmlRoot,
             need_bar_characters: parseNeedBarCharactersResult,
             narrative_scope: parseNarrativeScope,
@@ -425,6 +428,7 @@ class TinyBrainPromptRunner {
             player_action_destination_changes: parsePlayerActionDestinationChanges,
             player_action_explicit_duration: parsePlayerActionExplicitDuration,
             player_action_duration: parsePlayerActionDuration,
+            player_action_time_passed_duration: parsePlayerActionTimePassedDuration,
             player_action_accompanying_characters: parsePlayerActionAccompanyingCharacters,
             player_action_hidden_contests: parsePlayerActionHiddenContests,
             player_action_hidden_notes: parsePlayerActionHiddenNotes,
