@@ -11,6 +11,7 @@ The region detail payload returned by `GET /api/regions?scope=current`, `GET /ap
 - `parentRegionId` (`string | null`)
 - `parentRegionName` (`string | null`, present only when the parent id resolves)
 - `averageLevel` (`number | null`)
+- `dangerModifier` (unbounded finite integer; missing/null persisted values normalize to `0`)
 - `controllingFactionId` (`string | null`)
 - `isVehicle` (derived from `vehicleInfo !== null`)
 - `vehicleInfo` (`VehicleInfo | null`)
@@ -59,6 +60,7 @@ Request:
   - `shortDescription` (`string | null`, optional; omitted preserves the existing value)
   - `parentRegionId` (`string | null`; omitted is treated as `null`)
   - `averageLevel` (`number | numeric string | null | ""`, optional)
+  - `dangerModifier` (finite integer or null, optional; omitted preserves the current value and null stores `0`)
   - `controllingFactionId` (`string | null`, optional)
   - `secrets` (`string[]`, optional)
   - `isVehicle` (`boolean`, optional)
@@ -75,6 +77,7 @@ Responses:
 Validation and normalization:
 - Parent cycles are rejected, including assigning a region as its own parent.
 - `averageLevel` is cleared by `null` or `""`; otherwise it must be numeric and is stored through `Region.setAverageLevel`, which rounds to a whole number and stores at least `1`.
+- `dangerModifier` is stored without clamping and does not rewrite child location bases. Current-location effective danger is recalculated from the immediate region after an edit.
 - `controllingFactionId` must reference an existing faction id, or be `null`/empty to clear.
 - `secrets` must be an array of strings. Entries are trimmed and empty strings are dropped.
 - Vehicle state is stored as `vehicleInfo`; `isVehicle` is derived from whether `vehicleInfo` exists.
@@ -121,6 +124,6 @@ Realtime:
 
 ## UI and Map Consumers
 
-- The region edit modal loads `GET /api/regions/:id`, saves with `PUT /api/regions/:id`, and sends full core fields plus vehicle, faction, parent, average level, and secrets data.
+- The region edit modal loads `GET /api/regions/:id`, displays and saves the signed danger modifier with `PUT /api/regions/:id`, and sends full core fields plus vehicle, faction, parent, average level, and secrets data.
 - The weather edit modal loads `GET /api/regions/:id`, saves with `PUT /api/regions/:id`, preserves the non-weather region fields from the loaded snapshot, and refreshes the time/weather indicator from the returned `worldTime`.
 - Region and world map routes use region `parentRegionId`, `averageLevel`, `isVehicle`, and `vehicleInfo.icon` when building map summaries, but those map payloads are documented separately in `docs/api/locations.md`.

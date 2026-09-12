@@ -23,6 +23,7 @@ Return ONLY the following fields, in this format:
   <controllingFaction><!-- Full faction name from the list or "None" --></controllingFaction>
   <description><!--1-2 paragraphs of description--></description>
   <relativeLevel><!--integer from -{{ config.location.levelVariation }} to {{ config.location.levelVariation }}, indicating the difficulty compared to the rest of the region--></relativeLevel>
+  <dangerLevel><!--Integer from 1 to 5 for recurring ambient hostile pressure: 1 settled/stable, 5 relentless/overrun. This is not enemy level.--></dangerLevel>
   <numNpcs><!--Integer from 0 to {{ config.location.maxNpcs }}, indicating how many NPCs typically inhabit this location--></numNpcs>
   <numItems><!--Integer from 0 to {{ config.location.maxItems }}, indicating how many items typically can be found in this location--></numItems>
   <numScenery><!--Integer from 2 to {{ config.location.maxScenery }}, indicating how many notable scenery features typically can be found in this location--></numScenery>

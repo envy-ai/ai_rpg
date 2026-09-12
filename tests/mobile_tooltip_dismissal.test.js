@@ -12,6 +12,14 @@ assert.ok(start >= 0 && end > start);
 function setup({ mobile = false, touch = false } = {}) {
     const listeners = new Map();
     const hidden = [];
+    const clearedFactionHoverStates = [];
+    const factionHoverHost = {
+        classList: {
+            remove(className) {
+                clearedFactionHoverStates.push(className);
+            }
+        }
+    };
     let now = 10000;
     const context = vm.createContext({
         Date: { now: () => now },
@@ -23,11 +31,12 @@ function setup({ mobile = false, touch = false } = {}) {
         },
         document: {
             querySelector: () => null,
+            querySelectorAll: selector => selector === '.is-faction-emblem-hovered' ? [factionHoverHost] : [],
             addEventListener: (type, handler, options) => listeners.set(type, { handler, options })
         }
     });
     vm.runInContext(source.slice(start, end), context);
-    return { context, listeners, hidden, advance: ms => { now += ms; } };
+    return { context, listeners, hidden, clearedFactionHoverStates, advance: ms => { now += ms; } };
 }
 
 for (const options of [{ mobile: true }, { touch: true }]) {
@@ -39,6 +48,7 @@ for (const options of [{ mobile: true }, { touch: true }]) {
         // No event cancellation methods: dismissal must not consume the control's action.
         click.handler({});
         assert.deepEqual(fixture.hidden, ['item/text', 'NPC']);
+        assert.deepEqual(fixture.clearedFactionHoverStates, ['is-faction-emblem-hovered']);
         assert.equal(fixture.context.shouldSuppressContextTooltips(), true);
         fixture.advance(1401);
         assert.equal(fixture.context.shouldSuppressContextTooltips(), false);

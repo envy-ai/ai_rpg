@@ -105,6 +105,7 @@ First, given the exits above, brainstorm for 1 paragraph in plain text according
   {% if not stubHasControllingFaction -%}<controllingFaction><!-- Full faction name from the list or "None" --></controllingFaction>{% endif %}
   {% if not stubHasDescription -%}<description><!-- 1-2 paragraphs of description --></description>{% endif %}
   {% if not (stubHasRelativeLevel or stubHasBaseLevel) -%}<relativeLevel><!-- integer from -3 to 3, indicating the difficulty compared to the rest of the region --></relativeLevel>{% endif %}
+  <dangerLevel><!--Integer from 1 to 5 for recurring ambient hostile pressure: 1 settled/stable, 5 relentless/overrun. This is not enemy level.--></dangerLevel>
   {% if stubNumNpcs is none -%}<numNpcs><!-- Integer from 0 to 4, indicating how many NPCs typically inhabit this location --></numNpcs>{% endif %}
   {% if stubNumHostiles is none -%}<numHostiles><!-- Integer from 0 to 4, indicating how many hostile entities (creatures, NPCs, etc) typically inhabit this location --></numHostiles>{% endif %}
   {% if not stubHasWeather -%}<hasWeather><!-- Use "yes" when outdoors and exposed to local weather, "sheltered" when outside weather remains visible from a protected or indoor space, or "no" when no outdoor weather is visible. Never omit this field. --></hasWeather>{% endif %}

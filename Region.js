@@ -28,6 +28,7 @@ class Region {
   #relativeLevel;
   #numImportantNPCs;
   #controllingFactionId;
+  #dangerModifier;
   #vehicleInfo;
   #weather;
   #weatherState;
@@ -43,7 +44,7 @@ class Region {
     return IdGenerator.next('region');
   }
 
-  constructor({ name, description, shortDescription = null, locations = [], locationIds = [], entranceLocationId = null, parentRegionId = null, id = null, statusEffects = [], averageLevel = null, lastVisitedTime = null, randomEvents = [], characterConcepts = [], enemyConcepts = [], secrets = [], numImportantNPCs = null, controllingFactionId = null, vehicleInfo = null, weather = null, weatherState = null } = {}) {
+  constructor({ name, description, shortDescription = null, locations = [], locationIds = [], entranceLocationId = null, parentRegionId = null, id = null, statusEffects = [], averageLevel = null, lastVisitedTime = null, randomEvents = [], characterConcepts = [], enemyConcepts = [], secrets = [], numImportantNPCs = null, controllingFactionId = null, dangerModifier = 0, vehicleInfo = null, weather = null, weatherState = null } = {}) {
     if (!name || typeof name !== 'string') {
       throw new Error('Region name is required and must be a string');
     }
@@ -79,6 +80,7 @@ class Region {
     this.#controllingFactionId = typeof controllingFactionId === 'string' && controllingFactionId.trim()
       ? controllingFactionId.trim()
       : null;
+    this.#dangerModifier = Region.#normalizeDangerModifier(dangerModifier);
     this.#createdAt = new Date().toISOString();
     this.#lastUpdated = this.#createdAt;
     this.#statusEffects = this.#normalizeStatusEffects(statusEffects);
@@ -122,6 +124,14 @@ class Region {
       }
     }
     throw new Error(`${fieldName} must be a boolean.`);
+  }
+
+  static #normalizeDangerModifier(value) {
+    const resolved = value === null || value === undefined ? 0 : value;
+    if (typeof resolved !== 'number' || !Number.isFinite(resolved) || !Number.isInteger(resolved)) {
+      throw new Error('Region dangerModifier must be a finite integer.');
+    }
+    return resolved;
   }
 
   static #normalizeWeatherExposure(value, fieldName) {
@@ -494,6 +504,7 @@ class Region {
       entranceLocationId: data.entranceLocationId || null,
       parentRegionId: data.parentRegionId || null,
       controllingFactionId: data.controllingFactionId || null,
+      dangerModifier: data.dangerModifier ?? 0,
       vehicleInfo: data.vehicleInfo ?? null,
       statusEffects: Array.isArray(data.statusEffects) ? data.statusEffects : [],
       averageLevel: data.averageLevel || null,
@@ -1197,6 +1208,15 @@ class Region {
     return this.#controllingFactionId;
   }
 
+  get dangerModifier() {
+    return this.#dangerModifier;
+  }
+
+  set dangerModifier(value) {
+    this.#dangerModifier = Region.#normalizeDangerModifier(value);
+    this.#lastUpdated = new Date().toISOString();
+  }
+
   set controllingFactionId(value) {
     if (value === null || value === undefined || value === '') {
       if (this.#controllingFactionId !== null) {
@@ -1355,6 +1375,7 @@ class Region {
       entranceLocationId: this.#entranceLocationId,
       parentRegionId: this.#parentRegionId,
       controllingFactionId: this.#controllingFactionId,
+      dangerModifier: this.#dangerModifier,
       isVehicle: this.isVehicle,
       vehicleInfo: this.vehicleInfo,
       createdAt: this.#createdAt,

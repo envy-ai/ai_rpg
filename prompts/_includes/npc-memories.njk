@@ -23,6 +23,8 @@
   <description>{{ currentNpc.description }}</description>
   <class>{{ currentNpc.class | default('Unknown') }}</class>
   <race>{{ currentNpc.race | default('Unknown') }}</race>
+  {% set npcDisposition = currentNpc.disposition | default('', true) | trim %}
+  {% if npcDisposition and npcDisposition | lower != 'n/a' %}<disposition>{{ npcDisposition }}</disposition>{% endif %}
   <personality>
     <type>{{ currentNpc.personality.type | default('Unknown', true) }}</type>
     <traits>{{ currentNpc.personality.traits | default('None', true) }}</traits>

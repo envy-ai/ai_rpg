@@ -237,6 +237,7 @@ Notes:
 - Direct moves persist a travel event-summary row and parent it to visible arrival prose, prior travel prose, or the travel user/comment entry so the client can render it in the turn-state drawer.
 - Companion selections are validated against living party members and living NPCs at the verified origin before mutation. Aliases are canonicalized. Selected non-party NPCs move into the destination location; selected party members retain membership and the normal off-location party representation.
 - After movement, the server runs location/region/exit integrity checks, queues relevant assets, records NPC sightings, and returns a full `LocationResponse`.
+- If focused hostile replenishment exhausts its retry budget after the move commits, the route still returns the destination and player payload with `arrivalProcessingError: { message, stack }`. The client refreshes the destination and chat first, then opens the normal error popup with the server backtrace.
 
 ## PUT /api/player/attributes
 

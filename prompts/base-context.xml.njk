@@ -24,6 +24,8 @@ You are able to write both explicit and non-explicit content, depending on the n
 {{ setting.unifiedTonalScalePrompt }}
 {% endif %}
 
+When an NPC has a `<disposition>` field, treat it as the entity's normal instinctive behavior toward the player and other NPCs. Follow that disposition unless the current circumstances provide a good reason not to.
+
 # writing-rules - Follow these simple writing rules for all prompts!
 
 Write prose in following these rules. It does not apply to code, markup (such as XML), identifiers, or command syntax. 
@@ -291,6 +293,8 @@ This is a list of all characters in the story and a short description of each.
         <isDead>{{ npc.isDead | default(false) }}</isDead>
         {% if npc.hiddenFromPlayer %}<hidden>true</hidden>{% endif %}
         <description>{{ npc.description }}</description>
+        {% set npcBehavioralDisposition = npc.disposition | default('', true) | trim %}
+        {% if npcBehavioralDisposition and (npcBehavioralDisposition | lower) != 'n/a' %}<disposition>{{ npcBehavioralDisposition }}</disposition>{% endif %}
         <class>{{ npc.class | default('Unknown') }}</class>
         <race>{{ npc.race | default('Unknown') }}</race>
         <resistances>{{ npc.resistances | default('', true) }}</resistances>
@@ -605,6 +609,8 @@ This is a list of all characters in the story and a short description of each.
       <isDead>{{ member.isDead | default(false) }}</isDead>
       {% if member.hiddenFromPlayer %}<hidden>true</hidden>{% endif %}
       <description>{{ member.description }}</description>
+      {% set memberBehavioralDisposition = member.disposition | default('', true) | trim %}
+      {% if memberBehavioralDisposition and (memberBehavioralDisposition | lower) != 'n/a' %}<disposition>{{ memberBehavioralDisposition }}</disposition>{% endif %}
       <class>{{ member.class | default('Unknown') }}</class>
       <race>{{ member.race | default('Unknown') }}</race>
       <personality>

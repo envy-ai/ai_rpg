@@ -191,7 +191,6 @@ test('generation prompt completions leave the random integer tool disabled', () 
   const expectedGenerationLabels = [
     'region_generation',
     'location_generation',
-    'npc_generation_single',
     'location_things_generation',
   ];
 
@@ -201,6 +200,17 @@ test('generation prompt completions leave the random integer tool disabled', () 
     );
     assert.match(serverSource, pattern, `${label} should use generation tool loop`);
   }
+
+  assert.match(
+    serverSource,
+    /runNpcGenerationPromptWithParseRetries\([\s\S]{0,800}metadataLabel:\s*'npc_generation_single'/,
+    'single NPC generation should use the structured retry helper',
+  );
+  assert.match(
+    serverSource,
+    /async function runNpcGenerationPromptWithParseRetries\([\s\S]{0,2400}runGenerationPromptCompletion\(/,
+    'the NPC structured retry helper should use the generation completion path',
+  );
 
   assert.match(
     serverSource,

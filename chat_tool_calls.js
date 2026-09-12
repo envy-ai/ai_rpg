@@ -12,6 +12,7 @@ const {
 const MysteryBox = require('./MysteryBox.js');
 const MysteryThread = require('./MysteryThread.js');
 const Faction = require('./Faction.js');
+const { resolveEffectiveLocationDanger } = require('./LocationDanger.js');
 const Tracker = require('./Tracker.js');
 const Utils = require('./Utils.js');
 const { normalizeWeatherExposure } = require('./location_region_utils.js');
@@ -214,6 +215,7 @@ const ADMIN_UPDATE_OBJECT_FIELD_NAMES_BY_TYPE = Object.freeze({
         'description',
         'shortDescription',
         'baseLevel',
+        'dangerLevel',
         'visited',
         'lastVisitedTime',
         'hasGeneratedStubs',
@@ -238,6 +240,7 @@ const ADMIN_UPDATE_OBJECT_FIELD_NAMES_BY_TYPE = Object.freeze({
         'shortDescription',
         'relativeLevel',
         'averageLevel',
+        'dangerModifier',
         'numImportantNPCs',
         'characterConcepts',
         'enemyConcepts',
@@ -257,6 +260,7 @@ const ADMIN_UPDATE_OBJECT_FIELD_NAMES_BY_TYPE = Object.freeze({
         'shortDescription',
         'tags',
         'goals',
+        'violenceLevel',
         'homeRegionName',
         'relations',
         'assets',
@@ -1313,6 +1317,10 @@ const CHAT_TOOL_DEFINITIONS = Object.freeze([
                     aiNotes: {
                         type: 'string',
                         description: 'Optional private AI notes to persist on the NPC.'
+                    },
+                    disposition: {
+                        type: 'string',
+                        description: 'Optional behavioral disposition for a non-sentient NPC, describing its usual instinctive behavior toward the player and other NPCs.'
                     },
                     notes: {
                         type: 'string',
@@ -5891,6 +5899,7 @@ const createChatToolRuntime = ({
         isHostile = null,
         hiddenFromPlayer = null,
         aiNotes = null,
+        disposition = null,
         notes = null,
         ...registeredPlayerFieldInputs
     } = {}) => {
@@ -5956,6 +5965,8 @@ const createChatToolRuntime = ({
         if (raceValue) seed.race = raceValue;
         const aiNotesValue = normalizeOptionalString(aiNotes);
         if (aiNotesValue) seed.aiNotes = aiNotesValue;
+        const dispositionValue = normalizeOptionalString(disposition);
+        if (dispositionValue) seed.disposition = dispositionValue;
 
         const registeredCreateFields = getRegisteredEntityFieldsForRuntime('player', { exposeToCreateTool: true });
         const registeredCreateFieldMap = new Map(registeredCreateFields.map(field => [field.fieldName, field]));
@@ -6993,6 +7004,9 @@ const createChatToolRuntime = ({
             'value',
             'weight',
             'baseLevel',
+            'dangerLevel',
+            'dangerModifier',
+            'violenceLevel',
             'lastVisitedTime',
             'travelTimeMinutes',
             'averageLevel',
@@ -7008,6 +7022,9 @@ const createChatToolRuntime = ({
             'experience',
             'count',
             'baseLevel',
+            'dangerLevel',
+            'dangerModifier',
+            'violenceLevel',
             'lastVisitedTime',
             'travelTimeMinutes',
             'numImportantNPCs',
@@ -7077,6 +7094,25 @@ const createChatToolRuntime = ({
                     { code: 'invalid_arguments' }
                 );
             }
+        }
+
+        if (['dangerLevel', 'dangerModifier', 'violenceLevel'].includes(fieldName)) {
+            const numeric = rawValue === null
+                ? (fieldName === 'dangerModifier' ? 0 : 1)
+                : rawValue;
+            if (typeof numeric !== 'number' || !Number.isFinite(numeric) || !Number.isInteger(numeric)) {
+                throw new ToolVisibleError(
+                    `${functionName} "${fieldName}" must be a finite integer or null.`,
+                    { code: 'invalid_arguments' }
+                );
+            }
+            if (fieldName === 'violenceLevel' && (numeric < 1 || numeric > 5)) {
+                throw new ToolVisibleError(
+                    `${functionName} "violenceLevel" must be an integer from 1 to 5.`,
+                    { code: 'invalid_arguments' }
+                );
+            }
+            return numeric;
         }
 
         if (requiredStringFields.has(fieldName)) {
@@ -7584,6 +7620,12 @@ const createChatToolRuntime = ({
                 normalized[fieldName] = normalizeOptionalUpsertFactionText(rawValue, { functionName, fieldName });
             } else if (fieldName === 'homeRegionName') {
                 normalized.homeRegionName = normalizeUpsertFactionHomeRegionName(rawValue, { functionName, fieldName });
+            } else if (fieldName === 'violenceLevel') {
+                normalized.violenceLevel = normalizeUpdateObjectFieldValue(rawValue, {
+                    functionName,
+                    objectType: 'faction',
+                    fieldName
+                });
             } else if (fieldName === 'tags' || fieldName === 'goals') {
                 normalized[fieldName] = normalizeUpsertFactionStringList(rawValue, { functionName, fieldName });
             } else if (fieldName === 'relations') {
@@ -7954,6 +7996,20 @@ const createChatToolRuntime = ({
             });
         }
         const updatedFields = [];
+        const readStoredFieldValue = (fieldName) => {
+            if (canonicalObjectType === 'thing' && fieldName === 'value') {
+                return target.record?.metadata?.value;
+            }
+            if (canonicalObjectType === 'thing'
+                && target.record?.[fieldName] === undefined
+                && typeof target.record?.getExtensionField === 'function') {
+                return target.record.getExtensionField(fieldName);
+            }
+            return target.record?.[fieldName];
+        };
+        const previousValues = Object.fromEntries(
+            operations.map(operation => [operation.fieldName, readStoredFieldValue(operation.fieldName)])
+        );
         let mutationReceipt = null;
         const supportsAtomicThingMutation = canonicalObjectType === 'thing'
             && typeof Thing === 'function'
@@ -8008,6 +8064,21 @@ const createChatToolRuntime = ({
 
         const objectId = getRecordId(target.record) || target.id;
         const objectName = getRecordName(target.record) || target.name || object;
+        let dangerResult = null;
+        if ((canonicalObjectType === 'location' && updatedFields.includes('dangerLevel'))
+            || (canonicalObjectType === 'region' && updatedFields.includes('dangerModifier'))) {
+            const currentPlayer = getCurrentPlayer();
+            const currentLocation = currentPlayer?.currentLocation
+                ? Location.get(currentPlayer.currentLocation)
+                : null;
+            const affectedLocation = canonicalObjectType === 'location'
+                ? target.record
+                : (currentLocation?.regionId === target.record.id ? currentLocation : null);
+            dangerResult = affectedLocation ? resolveEffectiveLocationDanger(affectedLocation) : null;
+        }
+        const updatedValues = Object.fromEntries(
+            updatedFields.map(fieldName => [fieldName, readStoredFieldValue(fieldName)])
+        );
         const lines = [
             '<updateObjectFieldsResult>',
             '  <status>success</status>',
@@ -8018,6 +8089,9 @@ const createChatToolRuntime = ({
                 ownerType: target.ownerType || null,
                 ownerId: target.ownerId || null,
                 ownerName: target.ownerName || null
+                , previousValues
+                , updatedValues
+                , danger: dangerResult
             }, 1),
             ...renderXmlNode('updatedFields', updatedFields, 1),
             '</updateObjectFieldsResult>'
@@ -8034,9 +8108,11 @@ const createChatToolRuntime = ({
                 ownerId: target.ownerId || null,
                 ownerName: target.ownerName || null,
                 updatedFields,
+                previousValues,
+                danger: dangerResult,
                 ...(mutationReceipt ? { mutationReceipt } : {}),
                 updatedValues: JSON.parse(JSON.stringify({
-                    ...normalizedInputFields,
+                    ...updatedValues,
                     ...(shouldRegenerateShortDescription
                         ? { shortDescription: regeneratedShortDescription }
                         : {})

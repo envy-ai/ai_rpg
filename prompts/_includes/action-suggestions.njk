@@ -1,0 +1,13 @@
+Generate exactly three distinct, plausible actions the current player could attempt immediately.
+Use only information the player currently knows. Do not reveal hidden characters, hidden objects, secrets, private notes, mystery answers, or plot analysis.
+Do not base any recommendation on information that is explicitly hidden from the player, even when the recommendation itself would not directly reveal that information.
+Ground each action in visible characters, items, exits, abilities, and current conditions in the scene.
+Vary the actions meaningfully. Phrase each as one ordinary player-action sentence that describes an attempt, without claiming success.
+Do not use slash commands, chat-prefix commands, questions to the Game Master, or commentary.
+
+Return exactly this XML shape:
+<actionSuggestions>
+  <action>One complete action sentence.</action>
+  <action>One complete action sentence.</action>
+  <action>One complete action sentence.</action>
+</actionSuggestions>

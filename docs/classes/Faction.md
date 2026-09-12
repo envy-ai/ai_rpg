@@ -2,7 +2,7 @@
 
 ## Purpose
 
-`Faction` models an active-game organization. It stores faction identity, goals, tags, assets, inter-faction relations, reputation tiers, and its generated emblem state. Player-specific standing values live on `Player`; `Faction` supplies the faction registry record and tier lookup for those standing values.
+`Faction` models an active-game organization. It stores faction identity, goals, tags, assets, inter-faction relations, reputation tiers, its physical-violence level, and its generated emblem state. Player-specific standing values live on `Player`; `Faction` supplies the faction registry record and tier lookup for those standing values.
 
 Active-game factions are stored in the server-level `factions` map by id and are also registered in `Faction` static indexes for lookup by id and lowercased exact name.
 
@@ -10,6 +10,7 @@ Active-game factions are stored in the server-level `factions` map by id and are
 
 - Identity: `#id`, `#name`.
 - Prompt/UI descriptors: `#description`, `#shortDescription`, `#homeRegionName`.
+- Physical violence: `#violenceLevel`, an integer from `1` through `5` that is kept separate from player standing.
 - Lists: `#tags`, `#goals`.
 - Relations: `#relations`, a `Map<factionId, { status, notes }>` where `status` is `allied`, `neutral`, `hostile`, or `rival`.
 - Assets: `#assets`, an array of asset objects. The model accepts string assets as `{ name }`; HTTP routes require asset objects with names.
@@ -23,13 +24,14 @@ Active-game factions are stored in the server-level `factions` map by id and are
 - `new Faction(options)` requires a non-empty string `name`.
 - Missing `id` values come from `IdGenerator.next('faction')`; provided ids are registered with `IdGenerator.register('faction', id)`.
 - The name `"None"` is reserved for no-faction selections. The constructor and `name` setter reject it unless `allowReservedName: true` is supplied.
-- `fromJSON(data)` hydrates a saved faction through the constructor with `allowReservedName: true`, then restores string `createdAt` and `lastUpdated` values when present.
+- `fromJSON(data)` hydrates a saved faction through the constructor with `allowReservedName: true`, defaults a missing legacy `violenceLevel` to `1`, then restores string `createdAt` and `lastUpdated` values when present.
 - The constructor registers the instance in both static indexes. The server also inserts active-game instances into its `factions` map.
 
 ## Normalization And Validation
 
 - `tags`, `goals`, tier `perks`, and tier `penalties` accept arrays; the model also splits string list values on newlines.
 - `description` and `shortDescription` are `null` or non-empty strings. Empty strings throw through the model setters.
+- `violenceLevel` must be a numeric integer from `1` through `5`. The model rejects strings, fractions, and out-of-range values without coercion or clamping.
 - `homeRegionName` is a free-form region label, not a region id. The setter accepts `null`/`undefined` or a non-empty string; the constructor stores a trimmed string or `null`.
 - Relation maps accept either a `Map` or plain object. Relation keys must be non-empty strings.
 - Relation values require an allowed `status` and non-empty `notes`. Status values are trimmed and lowercased.
@@ -40,8 +42,8 @@ Active-game factions are stored in the server-level `factions` map by id and are
 
 ## Accessors
 
-- Getters: `id`, `name`, `tags`, `goals`, `description`, `shortDescription`, `homeRegionName`, `relations`, `assets`, `reputationTiers`, `imageId`, `imagePrompt`, `createdAt`, `lastUpdated`.
-- Setters: `name`, `tags`, `goals`, `description`, `shortDescription`, `homeRegionName`, `relations`, `assets`, `reputationTiers`, `imageId`, `imagePrompt`.
+- Getters: `id`, `name`, `tags`, `goals`, `description`, `shortDescription`, `violenceLevel`, `homeRegionName`, `relations`, `assets`, `reputationTiers`, `imageId`, `imagePrompt`, `createdAt`, `lastUpdated`.
+- Setters: `name`, `tags`, `goals`, `description`, `shortDescription`, `violenceLevel`, `homeRegionName`, `relations`, `assets`, `reputationTiers`, `imageId`, `imagePrompt`.
 - Array, asset, relation, and tier getters return cloned values or copied maps so callers do not mutate private state by reference.
 - Setters refresh `lastUpdated`.
 
@@ -65,8 +67,8 @@ Active-game factions are stored in the server-level `factions` map by id and are
 
 - `GET /api/factions` returns active-game factions sorted by name plus the current player's faction standings.
 - `POST /api/factions` creates an active-game `Faction`, rejects blank, reserved, or duplicate names, validates relation targets against existing factions, and runs inbound relationship generation from every existing faction toward the created faction when existing factions are present. That prompt is logged through `LLMClient.logPrompt()` with `faction_inbound_relationship_generation`.
-- `POST /api/factions/fill-missing` normalizes a partial active-game faction payload and fills missing required fields with the shared faction autofill prompt. It returns a payload for creation; it does not create the faction.
-- `PUT /api/factions/:id` mutates present fields only. Relation, asset, and tier fields are whole-field replacements.
+- `POST /api/factions/fill-missing` normalizes a partial active-game faction payload and fills missing required fields with the shared faction autofill prompt. It preserves a supplied `violenceLevel`; otherwise strict generation must supply a value from `1` through `5`. It returns a payload for creation; it does not create the faction.
+- `PUT /api/factions/:id` mutates present fields only, including `violenceLevel`. Relation, asset, and tier fields are whole-field replacements.
 - `DELETE /api/factions/:id` removes the faction, deletes relation edges pointing to it, clears matching player `factionId` and player standing entries, clears matching location/region `controllingFactionId` values, and removes the model from static indexes.
 - `PUT /api/player/factions/:id/standing` writes or removes the current player's numeric standing for a valid faction id.
 
@@ -77,21 +79,21 @@ Active-game factions are stored in the server-level `factions` map by id and are
 - `operation` is `create` or `update`.
 - `create` requires `fields.name`, rejects a non-blank top-level `faction`, rejects duplicate names, creates a real `Faction`, and inserts it into the active factions map.
 - `update` resolves `faction` by id or exact name and rejects duplicate renames before mutation.
-- Allowed fields are `name`, `description`, `shortDescription`, `tags`, `goals`, `homeRegionName`, `relations`, `assets`, and `reputationTiers`.
+- Allowed fields are `name`, `description`, `shortDescription`, `tags`, `goals`, `violenceLevel`, `homeRegionName`, `relations`, `assets`, and `reputationTiers`. Null violence resets to `1`; other values must be numeric integers from `1` through `5`.
 - Tool relation entries must reference existing faction ids. Self-relations are rejected on update.
 - Tool relation `status` defaults to `neutral` and `notes` defaults to `No explicit relationship provided.` when omitted.
 - The tool does not run inbound relationship generation; reciprocal relation edges must be supplied explicitly when desired.
 
 ## Settings And Generation
 
-- `SettingInfo.defaultFactions` stores setting-local faction drafts. Drafts are validated by `SettingInfo`, have unique ids/names, reject `"None"`, and keep relation targets inside the draft set.
+- `SettingInfo.defaultFactions` stores setting-local faction drafts. Drafts are validated by `SettingInfo`, have unique ids/names, reject `"None"`, keep relation targets inside the draft set, and persist `violenceLevel` with a legacy default of `1`.
 - `/api/settings/factions/generate` returns draft factions for a world profile. It does not create live factions.
 - `/api/settings/factions/fill-missing` uses the same autofill machinery for one setting-local draft, with sibling drafts as valid relation targets.
-- During game creation, setting drafts are loaded first with `Faction.fromJSON()`, then any remaining target count is generated by the three-stage faction generation flow: core faction data, inter-faction relations, and reputation tiers.
+- During game creation, setting drafts are loaded first with `Faction.fromJSON()`, then any remaining target count is generated by the three-stage faction generation flow: core faction data, inter-faction relations, and reputation tiers. After the complete roster and new player both exist, a separate atomic prompt generates the player's initial standing with every faction; the result is persisted only on `Player`.
 - Combined preconfigured and generated factions must have unique names. Their relation maps are rebuilt so every other active faction has a relation edge; missing or invalid entries become neutral with `No explicit relationship provided.`.
-- Base prompt context includes active faction summaries sorted by name and excludes the reserved `"None"` name.
+- Core and World Profile faction generation require `violenceLevel` from `1` through `5` and return exact validation errors to the prompt retry conversation. Base prompt context includes explicit active faction summaries sorted by name, excludes the reserved `"None"` name, and intentionally omits `violenceLevel`. The rating feeds the private player-standing behavior matrix documented in [LocationDanger.md](LocationDanger.md).
 - Faction image requests render `prompts/_includes/faction-emblem-prompt.njk`, apply the active profile's faction prefix and prompt-writer instructions, and persist the final prompt. The generated file is an ellipse-masked PNG; its default `1024 × 1024` dimensions make that ellipse circular.
-- NPC cards show their faction emblem in the portrait's lower-left corner above need bars. The current location shows its controlling faction emblem in the location image's lower-left corner. A controlled Region Map shows the region's emblem at twice the normal size as a fixed upper-left overlay. Pointer hover and keyboard focus expose the faction name, description, home region, player standing, and goals in the shared formatted tooltip. That tooltip floats a 132px (three-times-standard) emblem beside the wrapping name and description, and clears its divider plus detail rows below the image.
+- NPC cards show their faction emblem in the portrait's lower-left corner above need bars. The current location shows its controlling faction emblem in the location image's lower-left corner. A controlled Region Map shows the region's emblem at twice the normal size as a fixed upper-left overlay. Pointer hover and keyboard focus expose the faction name, description, home region, violence level, player standing, and goals in the shared formatted tooltip. The Factions tab and creation modal edit `violenceLevel` with a 1–5 numeric field. That tooltip floats a 132px (three-times-standard) emblem beside the wrapping name and description, and clears its divider plus detail rows below the image.
 
 ## Event And Quest Effects
 

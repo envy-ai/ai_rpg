@@ -432,6 +432,15 @@ class AIRPGChat {
         this.chatLog = document.getElementById('chatLog');
         this.messageInput = document.getElementById('messageInput');
         this.sendButton = document.getElementById('sendButton');
+        this.suggestActionsButton = document.getElementById('suggestActionsButton');
+        this.actionSuggestionsModal = document.getElementById('actionSuggestionsModal');
+        this.actionSuggestionsBackdrop = document.getElementById('actionSuggestionsBackdrop');
+        this.actionSuggestionsCloseButton = document.getElementById('actionSuggestionsCloseBtn');
+        this.actionSuggestionsCancelButton = document.getElementById('actionSuggestionsCancelBtn');
+        this.actionSuggestionsStatus = document.getElementById('actionSuggestionsStatus');
+        this.actionSuggestionsList = document.getElementById('actionSuggestionsList');
+        this.actionSuggestionsRequest = null;
+        this.actionSuggestionsRequestId = 0;
         this.playerPromptGuidanceButton = document.getElementById('playerPromptGuidanceButton');
         this.playerPromptGuidanceModal = document.getElementById('playerPromptGuidanceModal');
         this.playerPromptGuidanceForm = document.getElementById('playerPromptGuidanceForm');
@@ -2536,7 +2545,8 @@ class AIRPGChat {
             'player-prompt-guidance': 'Player Prompt Guidance',
             'tracker-updates': 'Tracker Updates',
             'relationship-updates': 'Relationship Updates',
-            'container-transfer': 'Container Transfers'
+            'container-transfer': 'Container Transfers',
+            'module-install': 'Module Installations'
         };
         if (labels[normalized]) {
             return labels[normalized];
@@ -7516,6 +7526,13 @@ class AIRPGChat {
 
     bindEvents() {
         this.sendButton.addEventListener('click', () => this.sendMessage());
+        this.suggestActionsButton?.addEventListener('click', () => this.openActionSuggestionsModal());
+        this.actionSuggestionsCloseButton?.addEventListener('click', () => this.closeActionSuggestionsModal());
+        this.actionSuggestionsCancelButton?.addEventListener('click', () => this.closeActionSuggestionsModal());
+        this.actionSuggestionsBackdrop?.addEventListener('click', () => this.closeActionSuggestionsModal());
+        this.actionSuggestionsModal?.addEventListener('click', event => {
+            if (event.target === this.actionSuggestionsModal) this.closeActionSuggestionsModal();
+        });
         if (this.terminalOutputButton) {
             this.terminalOutputButton.addEventListener('click', () => {
                 if (this.isTerminalOutputViewerOpen()) {
@@ -7534,6 +7551,25 @@ class AIRPGChat {
         }
 
         document.addEventListener('keydown', (event) => {
+            if (event.key === 'Escape' && this.actionSuggestionsModal && !this.actionSuggestionsModal.hidden) {
+                event.preventDefault();
+                this.closeActionSuggestionsModal();
+                return;
+            }
+            if (event.key === 'Tab' && this.actionSuggestionsModal && !this.actionSuggestionsModal.hidden) {
+                const focusable = Array.from(this.actionSuggestionsModal.querySelectorAll('button:not([disabled]), [href], input:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'));
+                if (focusable.length) {
+                    const first = focusable[0];
+                    const last = focusable[focusable.length - 1];
+                    if (event.shiftKey && document.activeElement === first) {
+                        event.preventDefault();
+                        last.focus();
+                    } else if (!event.shiftKey && document.activeElement === last) {
+                        event.preventDefault();
+                        first.focus();
+                    }
+                }
+            }
             if (event.key === 'Escape' && this.isTerminalOutputViewerOpen()) {
                 event.preventDefault();
                 this.closeTerminalOutputViewer();
@@ -11189,6 +11225,87 @@ class AIRPGChat {
             }
         }
         return responsePayload;
+    }
+
+    closeActionSuggestionsModal() {
+        this.actionSuggestionsRequestId += 1;
+        this.actionSuggestionsRequest?.abort();
+        this.actionSuggestionsRequest = null;
+        if (this.suggestActionsButton) this.suggestActionsButton.disabled = false;
+        this.actionSuggestionsModal?.setAttribute('hidden', '');
+        this.actionSuggestionsModal?.setAttribute('aria-hidden', 'true');
+        this.actionSuggestionsBackdrop?.setAttribute('hidden', '');
+        this.syncBodyModalOpenClass();
+        this.suggestActionsButton?.focus();
+    }
+
+    async openActionSuggestionsModal() {
+        if (!this.actionSuggestionsModal || this.actionSuggestionsRequest) return;
+        if (!window.__AIRPG_GAME_LOADED__) {
+            this.showChatErrorPopup('Load or start a game before requesting action suggestions.');
+            return;
+        }
+        if (this.sendButton?.disabled) {
+            this.showChatErrorPopup('Wait for the current action to finish before requesting suggestions.');
+            return;
+        }
+        const requestId = ++this.actionSuggestionsRequestId;
+        const controller = new AbortController();
+        this.actionSuggestionsRequest = controller;
+        this.actionSuggestionsList.replaceChildren();
+        this.actionSuggestionsStatus.textContent = 'Generating three suggestions...';
+        this.actionSuggestionsModal.removeAttribute('hidden');
+        this.actionSuggestionsModal.setAttribute('aria-hidden', 'false');
+        this.actionSuggestionsBackdrop.removeAttribute('hidden');
+        document.body.classList.add('modal-open');
+        this.actionSuggestionsCancelButton?.focus();
+        this.suggestActionsButton.disabled = true;
+        try {
+            const response = await fetch('/api/chat/action-suggestions', { method: 'POST', signal: controller.signal });
+            const data = await response.json();
+            if (!response.ok) {
+                const detail = data?.stack ? `${data.error || 'Suggestion generation failed.'}\n\n${data.stack}` : (data?.error || 'Suggestion generation failed.');
+                throw new Error(detail);
+            }
+            if (requestId !== this.actionSuggestionsRequestId || this.actionSuggestionsModal.hidden) return;
+            if (!Array.isArray(data.suggestions) || data.suggestions.length !== 3) {
+                throw new Error('The server returned an invalid action suggestion list.');
+            }
+            const fragment = document.createDocumentFragment();
+            let submitted = false;
+            data.suggestions.forEach(suggestion => {
+                const button = document.createElement('button');
+                button.type = 'button';
+                button.className = 'action-suggestion-button';
+                button.textContent = suggestion;
+                button.addEventListener('click', async () => {
+                    if (submitted || requestId !== this.actionSuggestionsRequestId || this.sendButton?.disabled) return;
+                    submitted = true;
+                    this.actionSuggestionsList.querySelectorAll('button').forEach(choice => { choice.disabled = true; });
+                    this.closeActionSuggestionsModal();
+                    this.messageInput.value = suggestion;
+                    try {
+                        await this.sendMessage();
+                    } catch (error) {
+                        this.showChatErrorPopup(error?.stack || error?.message || 'Failed to submit the suggested action.');
+                    }
+                });
+                fragment.appendChild(button);
+            });
+            this.actionSuggestionsList.replaceChildren(fragment);
+            this.actionSuggestionsStatus.textContent = 'Choose an action:';
+            this.actionSuggestionsList.querySelector('button')?.focus();
+        } catch (error) {
+            if (error?.name !== 'AbortError' && requestId === this.actionSuggestionsRequestId) {
+                this.actionSuggestionsStatus.textContent = 'Could not generate suggestions.';
+                this.showChatErrorPopup(error?.message || 'Could not generate action suggestions.');
+            }
+        } finally {
+            if (requestId === this.actionSuggestionsRequestId) {
+                this.actionSuggestionsRequest = null;
+                this.suggestActionsButton.disabled = false;
+            }
+        }
     }
 
     async sendMessage({ allowEmptyAction = false } = {}) {

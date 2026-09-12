@@ -2,7 +2,7 @@
 
 Routes are registered in `api.js`. Shared shapes are documented in `docs/api/common.md`, especially `LocationResponse`, `LocationDetails`, `LocationExit`, `MapLocationSummary`, and `MapRegionSummary`.
 
-`LocationResponse` is based on `Location.toJSON()` and includes response-only enrichment from `buildLocationResponse(...)`: pending base-image job id, region name/path payloads, enriched vehicle display data, exit destination/stub/visited/vehicle metadata, NPC profiles, and thing JSON. Vehicle exits that should be hidden while a vehicle is in transit are omitted from location and map payloads.
+`LocationResponse` is based on `Location.toJSON()` and includes response-only enrichment from `buildLocationResponse(...)`: `regionDangerModifier`, calculation-only `effectiveDangerLevel`, pending base-image job id, region name/path payloads, enriched vehicle display data, exit destination/stub/visited/vehicle metadata, NPC profiles, and thing JSON. Vehicle exits that should be hidden while a vehicle is in transit are omitted from location and map payloads.
 
 ## GET /api/exits/options
 
@@ -87,6 +87,7 @@ Request:
 - Body:
   - `description` (required string)
   - `level` (required number; stored as a rounded integer with minimum `1`)
+  - `dangerLevel` (optional finite integer with no stored range; explicit null stores `1`)
   - `name` (string or null, optional)
   - `shortDescription` (string or null, optional)
   - `controllingFactionId` (string or null, optional)
@@ -97,7 +98,7 @@ Request:
 
 Responses:
 - 200: `{ success: true, message, location: LocationResponse, imageCleared, worldTime, changes }`
-  - `changes`: `{ name, description, shortDescription, level, vehicle, hasWeather }`
+  - `changes`: `{ name, description, shortDescription, level, dangerLevel, vehicle, hasWeather }`
   - `worldTime` is populated when the weather-exposure hint is modified; otherwise it is `null`.
 - 400: `{ success: false, error }` for validation errors.
 - 404: `{ success: false, error }` when the location does not exist.
@@ -105,6 +106,7 @@ Responses:
 
 Notes:
 - `controllingFactionId` must reference an existing faction id or be `null` to clear.
+- `dangerLevel` defaults to `1` for old saves and persists without clamping. Responses derive `effectiveDangerLevel = clamp(dangerLevel + immediate region dangerModifier, 1, 5)` without changing either stored value. The base, modifier, and effective value appear in location details/edit UI but remain absent from ordinary LLM base context.
 - `hasWeather` is stored canonically as `generationHints.hasWeather`. `"yes"` means weather-exposed, `"sheltered"` means sheltered with exterior weather visible, `"no"` means no visible local weather, and `null` returns to automatic region/weather behavior. Boolean values normalize to `yes`/`no`; legacy `"outside"` input is accepted and normalized to `"sheltered"` for old clients and saves.
 - Name or description edits clear the base `location.imageId` and pending base-image job tracking. Name, description, short description, vehicle, or weather-exposure edits clear cached weather/lighting image variants.
 - Vehicle edits use `isVehicle` and `vehicleInfo` together:
@@ -333,7 +335,7 @@ Responses:
 Notes:
 - `level` is treated as an absolute level and converted to a relative seed level from the target location or region level.
 - The response is sent after the generated NPC progression pass is applied.
-- Generic/scheduled chat prompts can also use the world-mutation `createNpc(...)` chat tool, which delegates to the same single-NPC generation path and supports matching seed fields plus `relativeLevel`, `hiddenFromPlayer`, `aiNotes`, and non-persisted generation `notes`.
+- Generic/scheduled chat prompts can also use the world-mutation `createNpc(...)` chat tool, which delegates to the same single-NPC generation path and supports matching seed fields plus `relativeLevel`, `hiddenFromPlayer`, `aiNotes`, behavioral `disposition`, and non-persisted generation `notes`.
 
 ## POST /api/locations/:id/things
 

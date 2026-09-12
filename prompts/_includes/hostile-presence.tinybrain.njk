@@ -1,0 +1,3 @@
+{% include "_includes/hostile-presence.njk" %}
+
+Before returning XML, count the individuals represented by every <quantity>, verify the total is from 1 through {{ hostilePresenceMaximumCount }}, verify every entry has <isHostile>true</isHostile>, and verify every <npc> has exactly one direct nonblank <disposition>. Return only the corrected <response> XML.

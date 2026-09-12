@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<template>
+  <role>Game Master</role>
+  <description>Generate the player's initial standing with every faction</description>
+
+  <systemPrompt>
+You assign initial faction reputations for a new RPG player. Base each reputation only on the player's class, race, description, and the supplied public faction information. Do not invent prior deeds, secret knowledge, hidden affiliations, or personal history that is not supported by the player description. A neutral first impression is 0. Negative values represent plausible prejudice, distrust, rivalry, or incompatibility. Positive values are appropriate when the supplied class, race, or description plausibly implies membership, affinity, or a favorable reputation.
+
+Return exactly one entry for every supplied faction. Copy every faction id and name exactly. Every reputation must be an integer from {{ minimumReputation }} through {{ maximumReputation }} inclusive.
+  </systemPrompt>
+
+  <generationPrompt>
+Player:
+<player>
+  <class>{{ player.class | escape }}</class>
+  <race>{{ player.race | escape }}</race>
+  <description>{{ player.description | escape }}</description>
+</player>
+
+Public factions:
+<factions>
+{% for faction in factions %}
+  <faction>
+    <id>{{ faction.id | escape }}</id>
+    <name>{{ faction.name | escape }}</name>
+    <shortDescription>{{ faction.shortDescription | escape }}</shortDescription>
+    <description>{{ faction.description | escape }}</description>
+    <homeRegionName>{{ faction.homeRegionName | escape }}</homeRegionName>
+    <tags>
+{% for tag in faction.tags %}
+      <tag>{{ tag | escape }}</tag>
+{% endfor %}
+    </tags>
+    <goals>
+{% for goal in faction.goals %}
+      <goal>{{ goal | escape }}</goal>
+{% endfor %}
+    </goals>
+    <assets>
+{% for asset in faction.assets %}
+      <asset>{{ asset.name | escape }}</asset>
+{% endfor %}
+    </assets>
+  </faction>
+{% endfor %}
+</factions>
+
+Return only XML in this exact structure:
+<initialFactionStandings>
+{% for faction in factions %}
+  <standing>
+    <factionId>{{ faction.id | escape }}</factionId>
+    <factionName>{{ faction.name | escape }}</factionName>
+    <reputation>integer from {{ minimumReputation }} to {{ maximumReputation }}</reputation>
+  </standing>
+{% endfor %}
+</initialFactionStandings>
+  </generationPrompt>
+</template>

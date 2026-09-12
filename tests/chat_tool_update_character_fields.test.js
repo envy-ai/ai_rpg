@@ -167,6 +167,8 @@ function makeLocation(overrides = {}) {
         description: overrides.description || 'Original location description.',
         shortDescription: overrides.shortDescription || '',
         baseLevel: overrides.baseLevel ?? 1,
+        dangerLevel: overrides.dangerLevel ?? 1,
+        regionId: overrides.regionId || 'region-1',
         visited: overrides.visited ?? false,
         lastVisitedTime: overrides.lastVisitedTime ?? null,
         generationHints: {
@@ -220,6 +222,7 @@ function makeRegion(overrides = {}) {
         description: overrides.description || 'Original region description.',
         shortDescription: overrides.shortDescription || '',
         relativeLevel: overrides.relativeLevel ?? 0,
+        dangerModifier: overrides.dangerModifier ?? 0,
         locationIds: overrides.locationIds || ['loc-1'],
         setAverageLevel(value) {
             this.averageLevel = value;
@@ -251,6 +254,7 @@ function makeFaction(overrides = {}) {
         shortDescription: overrides.shortDescription || '',
         tags: Array.isArray(overrides.tags) ? overrides.tags : [],
         goals: Array.isArray(overrides.goals) ? overrides.goals : [],
+        violenceLevel: overrides.violenceLevel ?? 1,
         toJSON() {
             return {
                 id: this.id,
@@ -835,18 +839,21 @@ test('updateObjectFields applies allowed thing, location, region, and faction fi
             assert.equal(thing.metadata.value, 14);
             assert.equal(thing.count, 3);
         }],
-        ['location', location.id, { description: 'A freshly dusted study.', visited: true, baseLevel: 4 }, () => {
+        ['location', location.id, { description: 'A freshly dusted study.', visited: true, baseLevel: 4, dangerLevel: -3 }, () => {
             assert.equal(location.description, 'A freshly dusted study.');
             assert.equal(location.visited, true);
             assert.equal(location.baseLevel, 4);
+            assert.equal(location.dangerLevel, -3);
         }],
-        ['region', region.id, { description: 'A quiet manor district.', relativeLevel: 2 }, () => {
+        ['region', region.id, { description: 'A quiet manor district.', relativeLevel: 2, dangerModifier: 9 }, () => {
             assert.equal(region.description, 'A quiet manor district.');
             assert.equal(region.relativeLevel, 2);
+            assert.equal(region.dangerModifier, 9);
         }],
-        ['faction', faction.id, { description: 'A formal trade guild.', tags: ['merchant'] }, () => {
+        ['faction', faction.id, { description: 'A formal trade guild.', tags: ['merchant'], violenceLevel: 5 }, () => {
             assert.equal(faction.description, 'A formal trade guild.');
             assert.deepEqual(faction.tags, ['merchant']);
+            assert.equal(faction.violenceLevel, 5);
         }]
     ]) {
         const runtime = makeRuntime({
@@ -872,6 +879,55 @@ test('updateObjectFields applies allowed thing, location, region, and faction fi
             shortDescription: `Generated ${objectType} summary.`
         });
     }
+});
+
+test('updateObjectFields applies danger null defaults and rejects malformed danger atomically', async () => {
+    const location = makeLocation({ dangerLevel: 8 });
+    const region = makeRegion({ dangerModifier: -4, locationIds: [location.id] });
+    const faction = makeFaction({ violenceLevel: 4 });
+
+    for (const [objectType, target, fieldName, expected] of [
+        ['location', location, 'dangerLevel', 1],
+        ['region', region, 'dangerModifier', 0],
+        ['faction', faction, 'violenceLevel', 1]
+    ]) {
+        const runtime = makeRuntime({
+            firstResponse: toolResponse({
+                objectType,
+                object: target.id,
+                fields: { [fieldName]: null }
+            }, 'updateObjectFields'),
+            locations: [location],
+            regions: [region],
+            factions: [faction]
+        });
+        const result = await runtime.runChatCompletionWithToolLoop({
+            requestOptions: { messages: [{ role: 'user', content: '@Reset danger.' }] },
+            metadataLabel: `test_update_object_fields_${fieldName}_null`
+        });
+        assert.equal(result.toolInvocations[0].metadata.status, 'success');
+        assert.equal(target[fieldName], expected);
+        assert.equal(result.toolInvocations[0].metadata.previousValues[fieldName], objectType === 'location' ? 8 : (objectType === 'region' ? -4 : 4));
+    }
+
+    location.dangerLevel = 7;
+    const invalidRuntime = makeRuntime({
+        firstResponse: toolResponse({
+            objectType: 'location',
+            object: location.id,
+            fields: { description: 'Must remain unchanged.', dangerLevel: 1.5 }
+        }, 'updateObjectFields'),
+        locations: [location],
+        regions: [region],
+        factions: [faction]
+    });
+    const invalidResult = await invalidRuntime.runChatCompletionWithToolLoop({
+        requestOptions: { messages: [{ role: 'user', content: '@Try invalid danger.' }] },
+        metadataLabel: 'test_update_object_fields_invalid_danger_atomic'
+    });
+    assert.equal(invalidResult.toolInvocations[0].metadata.error, true);
+    assert.equal(location.dangerLevel, 7);
+    assert.equal(location.description, 'Original location description.');
 });
 
 test('updateObjectFields updates location hasWeather canonically and clears image variants', async () => {

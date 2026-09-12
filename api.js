@@ -10,6 +10,7 @@ const Utils = require('./Utils.js');
 const { XMLSerializer } = require('@xmldom/xmldom');
 const Location = require('./Location.js');
 const Region = require('./Region.js');
+const { resolveEffectiveLocationDanger } = require('./LocationDanger.js');
 const VehicleInfo = require('./VehicleInfo.js');
 const Globals = require('./Globals.js');
 const {
@@ -9407,6 +9408,9 @@ module.exports = function registerApiRoutes(scope) {
                         entryCollector
                     });
                 } catch (eventCheckError) {
+                    if (eventCheckError?.eventType === 'danger_level_change') {
+                        throw eventCheckError;
+                    }
                     console.warn(
                         'Failed to apply while-you-were-away event checks:',
                         eventCheckError?.message || eventCheckError
@@ -15655,6 +15659,7 @@ module.exports = function registerApiRoutes(scope) {
             'npc_arrival_departure',
             'needbar_change',
             'alter_location',
+            'danger_level_change',
             'alter_npc'
         ]);
 
@@ -16454,6 +16459,39 @@ module.exports = function registerApiRoutes(scope) {
                                     severity: 'important',
                                     sourceType: 'alter_location',
                                     entityRefs: summaryEntityRef('location', { name: locationName })
+                                });
+                            });
+                            shouldRefresh = true;
+                            break;
+                        case 'danger_level_change':
+                            entries.forEach(entry => {
+                                if (!entry?.targetName && !entry?.target) return;
+                                const targetName = safeSummaryItem(entry.targetName || entry.target, 'the area');
+                                const delta = Number(entry.delta);
+                                const storedBefore = Number(entry.storedBefore);
+                                const storedAfter = Number(entry.storedAfter);
+                                let text = `${targetName} danger ${delta >= 0 ? '+' : ''}${delta}`;
+                                if (Number.isFinite(storedBefore) && Number.isFinite(storedAfter)) {
+                                    text += ` (${storedBefore} → ${storedAfter})`;
+                                }
+                                if (typeof entry.effectiveBefore === 'number'
+                                    && Number.isFinite(entry.effectiveBefore)
+                                    && typeof entry.effectiveAfter === 'number'
+                                    && Number.isFinite(entry.effectiveAfter)) {
+                                    text += `; effective ${entry.effectiveBefore} → ${entry.effectiveAfter}`;
+                                }
+                                if (entry.reason) text += ` - ${String(entry.reason).trim()}`;
+                                add({
+                                    icon: '⚠️',
+                                    text,
+                                    category: 'location_world',
+                                    severity: 'important',
+                                    sourceType: 'danger_level_change',
+                                    entityRefs: summaryEntityRef(entry.targetType, {
+                                        id: entry.targetId || null,
+                                        name: targetName
+                                    }),
+                                    metadata: { dangerLevelChange: entry }
                                 });
                             });
                             shouldRefresh = true;
@@ -23800,6 +23838,7 @@ module.exports = function registerApiRoutes(scope) {
                     description: npc.description || '',
                     class: npc.class || null,
                     race: npc.race || null,
+                    disposition: npc.disposition || null,
                     personality: {
                         type: npc.personalityType || '',
                         traits: npc.personalityTraits || '',
@@ -25901,6 +25940,118 @@ module.exports = function registerApiRoutes(scope) {
             }
         });
 
+        function parseActionSuggestionsResponse(response) {
+            const source = typeof response === 'string' ? response.trim() : '';
+            if (!source) throw new Error('Action suggestions response is empty.');
+            const match = source.match(/<actionSuggestions\b[^>]*>[\s\S]*<\/actionSuggestions>/i);
+            if (!match || match[0].trim() !== source) {
+                throw new Error('Action suggestions must contain exactly one <actionSuggestions> root and no surrounding text.');
+            }
+            const doc = Utils.parseXmlDocumentStrict(source, 'text/xml');
+            const root = doc.documentElement;
+            if (!root || root.tagName !== 'actionSuggestions') {
+                throw new Error('Action suggestions response root must be <actionSuggestions>.');
+            }
+            const children = Array.from(root.childNodes || []).filter(node => node.nodeType === 1);
+            const rootText = Array.from(root.childNodes || [])
+                .filter(node => node.nodeType === 3 || node.nodeType === 4)
+                .map(node => node.nodeValue || '')
+                .join('')
+                .trim();
+            if (rootText) throw new Error('Action suggestions root may contain only <action> elements.');
+            if (children.length !== 3 || children.some(node => node.tagName !== 'action')) {
+                throw new Error('Action suggestions response must contain exactly three direct <action> elements.');
+            }
+            const suggestions = children.map((node, index) => {
+                if (Array.from(node.childNodes || []).some(child => child.nodeType === 1)) {
+                    throw new Error(`Action suggestion ${index + 1} may not contain nested elements.`);
+                }
+                const text = String(node.textContent || '').replace(/\s+/g, ' ').trim();
+                if (!text) throw new Error(`Action suggestion ${index + 1} is blank.`);
+                if (/^(?:\/|\?|#|@@?)/.test(text)) throw new Error(`Action suggestion ${index + 1} uses a chat command prefix.`);
+                if (!/[.!?]$/.test(text)) throw new Error(`Action suggestion ${index + 1} must be one complete sentence.`);
+                const sentences = Array.from(new Intl.Segmenter('en', { granularity: 'sentence' }).segment(text))
+                    .map(entry => entry.segment.trim())
+                    .filter(Boolean);
+                if (sentences.length !== 1) throw new Error(`Action suggestion ${index + 1} must contain exactly one sentence.`);
+                return text;
+            });
+            if (new Set(suggestions.map(text => text.toLocaleLowerCase())).size !== 3) {
+                throw new Error('Action suggestions must be distinct.');
+            }
+            return suggestions;
+        }
+
+        app.post('/api/chat/action-suggestions', async (req, res) => {
+            try {
+                if (gameLoadInProgress) {
+                    return res.status(409).json({ error: 'A game load is in progress; suggestions were not generated.' });
+                }
+                if (!currentPlayer || !Globals.gameLoaded) {
+                    return res.status(409).json({ error: 'Load or start a game before requesting action suggestions.' });
+                }
+                const baseContext = await prepareBasePromptContext();
+                const rendered = promptEnv.render('base-context.xml.njk', {
+                    ...baseContext,
+                    promptType: 'action-suggestions'
+                });
+                const parsedTemplate = parseXMLTemplate(rendered);
+                if (!parsedTemplate?.systemPrompt || !parsedTemplate?.generationPrompt) {
+                    throw new Error('Action suggestions template did not produce prompts.');
+                }
+                const requestOptions = {
+                    messages: [
+                        { role: 'system', content: parsedTemplate.systemPrompt },
+                        { role: 'user', content: parsedTemplate.generationPrompt }
+                    ],
+                    metadataLabel: 'action_suggestions',
+                    expectedXmlRootTag: 'actionSuggestions',
+                    validateXML: false
+                };
+                if (typeof parsedTemplate.temperature === 'number') requestOptions.temperature = parsedTemplate.temperature;
+                let effectiveMessages = requestOptions.messages;
+                const promptAttempt = await runPromptWithParseRetries({
+                    messages: requestOptions.messages,
+                    maxAttempts: resolveConfiguredPromptMaxAttempts(config?.ai, { fallbackMaxAttempts: 3 }),
+                    complete: async ({ messages }) => {
+                        effectiveMessages = messages;
+                        try {
+                            return await LLMClient.chatCompletion({
+                                ...requestOptions,
+                                messages,
+                                preserveBaseContextToolDefinitions: true,
+                                additionalPayload: {}
+                            });
+                        } catch (error) {
+                            LLMClient.logPrompt({
+                                prefix: 'action_suggestions',
+                                metadataLabel: 'action_suggestions',
+                                systemPrompt: parsedTemplate.systemPrompt,
+                                generationPrompt: messages.filter(message => message.role !== 'system').map(message => `${message.role}: ${message.content}`).join('\n\n'),
+                                response: '',
+                                sections: [{ title: 'Transport failure', content: error?.stack || String(error) }]
+                            });
+                            throw error;
+                        }
+                    },
+                    parse: parseActionSuggestionsResponse,
+                    buildRetryInstruction: error => `The previous action-suggestions XML could not be accepted: ${error?.message || error}\nReturn exactly one <actionSuggestions> block containing exactly three distinct direct <action> sentence elements.`,
+                    onAttempt: ({ attempt, maxAttempts, response, error, accepted }) => LLMClient.logPrompt({
+                        prefix: 'action_suggestions',
+                        metadataLabel: 'action_suggestions',
+                        systemPrompt: parsedTemplate.systemPrompt,
+                        generationPrompt: effectiveMessages.filter(message => message.role !== 'system').map(message => `${message.role}: ${message.content}`).join('\n\n'),
+                        response,
+                        sections: [{ title: 'Structured response validation', content: accepted ? `accepted (${attempt}/${maxAttempts})` : `rejected (${attempt}/${maxAttempts}): ${error?.stack || error}` }]
+                    })
+                });
+                return res.json({ suggestions: promptAttempt.value });
+            } catch (error) {
+                console.error('Failed to generate action suggestions:', error);
+                return res.status(500).json({ error: error?.message || 'Failed to generate action suggestions.', stack: error?.stack || '' });
+            }
+        });
+
         // Chat API endpoint
         app.post('/api/chat', async (req, res) => {
             if (gameLoadInProgress) {
@@ -26422,7 +26573,7 @@ module.exports = function registerApiRoutes(scope) {
                 const locationLastVisitedTimeBeforeArrival = typeof Globals.getPlayerArrivalLastVisitedTimeBeforeMove === 'function'
                     ? Globals.getPlayerArrivalLastVisitedTimeBeforeMove(arrivalLocation.id)
                     : undefined;
-                return runWhileYouWereAwayPrompt({
+                const whileAwayResult = await runWhileYouWereAwayPrompt({
                     locationOverride: arrivalLocation,
                     originLocationId: initialPlayerLocationId,
                     locationId: arrivalLocation.id,
@@ -26435,6 +26586,18 @@ module.exports = function registerApiRoutes(scope) {
                     suppressVisibleProse,
                     replacementArrivalEntry
                 });
+                const hostileArrivalResult = await runLocationHostileArrival({
+                    destination: arrivalLocation,
+                    arrivalId: Globals.getPlayerArrivalId(arrivalLocation.id),
+                    wasVisitedBeforeArrival: locationWasVisitedBeforeArrival,
+                    priorLastVisitedTime: locationLastVisitedTimeBeforeArrival,
+                    entryCollector: newChatEntries,
+                    parentEntryId: whileAwayResult?.parentLinkEntry?.id || parentEntryId
+                });
+                if (whileAwayResult && typeof whileAwayResult === 'object') {
+                    whileAwayResult.hostileArrivalResult = hostileArrivalResult;
+                }
+                return whileAwayResult;
             };
 
             const respond = async (payload, statusCode = 200) => {
@@ -33201,6 +33364,9 @@ module.exports = function registerApiRoutes(scope) {
             }
 
             const locationData = location.toJSON();
+            const danger = resolveEffectiveLocationDanger(location);
+            locationData.regionDangerModifier = danger.regionDangerModifier;
+            locationData.effectiveDangerLevel = danger.effectiveDangerLevel;
             locationData.pendingImageJobId = pendingLocationImages.get(location.id) || null;
 
             const resolvedRegionId = location.regionId
@@ -33224,7 +33390,8 @@ module.exports = function registerApiRoutes(scope) {
                         vehicleInfo: regionRecord.vehicleInfo,
                         averageLevel: Number.isFinite(regionRecord.averageLevel)
                             ? Number(regionRecord.averageLevel)
-                            : null
+                            : null,
+                        dangerModifier: regionRecord.dangerModifier
                     };
                     const hierarchy = Array.isArray(regionRecord.parentHierarchy)
                         ? regionRecord.parentHierarchy
@@ -33730,6 +33897,7 @@ module.exports = function registerApiRoutes(scope) {
                 parentRegionId: region.parentRegionId || null,
                 averageLevel: Number.isFinite(region.averageLevel) ? region.averageLevel : null,
                 controllingFactionId: region.controllingFactionId || null,
+                dangerModifier: region.dangerModifier,
                 isVehicle: region.isVehicle,
                 vehicleInfo: region.vehicleInfo,
                 secrets: Array.isArray(region.secrets) ? [...region.secrets] : [],
@@ -33828,6 +33996,7 @@ module.exports = function registerApiRoutes(scope) {
                     parentRegionId: parentRegionIdRaw,
                     averageLevel: averageLevelRaw,
                     controllingFactionId: controllingFactionIdRaw,
+                    dangerModifier: dangerModifierRaw,
                     secrets: secretsRaw,
                     weather: weatherRaw
                 } = body;
@@ -33882,7 +34051,20 @@ module.exports = function registerApiRoutes(scope) {
                 }
 
                 const hasControllingFaction = Object.prototype.hasOwnProperty.call(body, 'controllingFactionId');
+                const hasDangerModifier = Object.prototype.hasOwnProperty.call(body, 'dangerModifier');
                 const hasWeather = Object.prototype.hasOwnProperty.call(body, 'weather');
+                let resolvedDangerModifier = region.dangerModifier;
+                if (hasDangerModifier) {
+                    resolvedDangerModifier = dangerModifierRaw === null ? 0 : dangerModifierRaw;
+                    if (typeof resolvedDangerModifier !== 'number'
+                        || !Number.isFinite(resolvedDangerModifier)
+                        || !Number.isInteger(resolvedDangerModifier)) {
+                        return res.status(400).json({
+                            success: false,
+                            error: 'Region dangerModifier must be a finite integer.'
+                        });
+                    }
+                }
                 let resolvedControllingFactionId = null;
                 if (hasControllingFaction) {
                     try {
@@ -34033,6 +34215,10 @@ module.exports = function registerApiRoutes(scope) {
                     }
                 }
 
+                if (hasDangerModifier) {
+                    region.dangerModifier = resolvedDangerModifier;
+                }
+
                 const worldTime = hasWeather ? buildWorldTimePayload() : null;
                 const parentOptions = buildRegionParentOptions({ excludeId: regionId });
                 const payload = buildRegionApiPayload(region);
@@ -34170,6 +34356,7 @@ module.exports = function registerApiRoutes(scope) {
                 const hasHiddenFromPlayer = Object.prototype.hasOwnProperty.call(body, 'hiddenFromPlayer');
                 const hasImagePrompt = Object.prototype.hasOwnProperty.call(body, 'imagePrompt');
                 const hasRelationships = Object.prototype.hasOwnProperty.call(body, 'relationships');
+                const hasDisposition = Object.prototype.hasOwnProperty.call(body, 'disposition');
                 const {
                     name,
                     description,
@@ -34191,6 +34378,7 @@ module.exports = function registerApiRoutes(scope) {
                     personalityTraits,
                     personalityNotes,
                     aiNotes,
+                    disposition,
                     statusEffects,
                     aliases,
                     imagePrompt,
@@ -34257,6 +34445,13 @@ module.exports = function registerApiRoutes(scope) {
                     return res.status(400).json({
                         success: false,
                         error: 'imagePrompt must be a string.'
+                    });
+                }
+
+                if (hasDisposition && typeof disposition !== 'string') {
+                    return res.status(400).json({
+                        success: false,
+                        error: 'disposition must be a string.'
                     });
                 }
 
@@ -34593,6 +34788,10 @@ module.exports = function registerApiRoutes(scope) {
                     } catch (personalityError) {
                         console.warn(`Failed to set AI notes for NPC ${npcId}:`, personalityError.message);
                     }
+                }
+
+                if (hasDisposition) {
+                    npc.disposition = disposition;
                 }
 
                 if (hasResistances) {
@@ -35722,6 +35921,16 @@ module.exports = function registerApiRoutes(scope) {
                                 ? Globals.getPlayerArrivalLastVisitedTimeBeforeMove(destinationLocation.id)
                                 : undefined
                         });
+                        const hostileArrivalResult = await runLocationHostileArrival({
+                            destination: destinationLocation,
+                            arrivalId: Globals.getPlayerArrivalId(destinationLocation.id),
+                            wasVisitedBeforeArrival: Globals.getPlayerArrivalWasVisitedBeforeMove(destinationLocation.id),
+                            priorLastVisitedTime: Globals.getPlayerArrivalLastVisitedTimeBeforeMove(destinationLocation.id),
+                            parentEntryId: whileYouWereAwayResult?.parentLinkEntry?.id || null
+                        });
+                        if (whileYouWereAwayResult && typeof whileYouWereAwayResult === 'object') {
+                            whileYouWereAwayResult.hostileArrivalResult = hostileArrivalResult;
+                        }
 
                         await runAutomaticHiddenNpcChecksForCurrentPlayer({
                             player: npc,
@@ -36755,6 +36964,16 @@ module.exports = function registerApiRoutes(scope) {
             throw new Error(`${label} must be an array of strings or a newline-delimited string.`);
         };
 
+        const normalizeFactionViolenceLevel = (value) => {
+            if (value === null) {
+                return 1;
+            }
+            if (typeof value !== 'number' || !Number.isInteger(value) || value < 1 || value > 5) {
+                throw new Error('Faction violenceLevel must be an integer from 1 to 5.');
+            }
+            return value;
+        };
+
         const normalizeFactionAssets = (value) => {
             if (value === null || value === undefined) {
                 return [];
@@ -36997,6 +37216,9 @@ module.exports = function registerApiRoutes(scope) {
                 homeRegionName: toText(raw.homeRegionName),
                 shortDescription: toText(raw.shortDescription || ''),
                 description: toText(raw.description || ''),
+                violenceLevel: Object.prototype.hasOwnProperty.call(raw, 'violenceLevel')
+                    ? normalizeFactionViolenceLevel(raw.violenceLevel)
+                    : null,
                 tags: normalizeFactionStringList(raw.tags || [], 'Faction tags'),
                 goals: normalizeFactionStringList(raw.goals || [], 'Faction goals'),
                 assets: normalizeAssetsForAutofill(raw.assets),
@@ -37032,6 +37254,7 @@ module.exports = function registerApiRoutes(scope) {
                     'homeRegionName',
                     'shortDescription',
                     'description',
+                    'violenceLevel',
                     'tags',
                     'goals',
                     'assets',
@@ -37199,6 +37422,13 @@ module.exports = function registerApiRoutes(scope) {
             return {
                 name: getText('name'),
                 homeRegionName: getText('homeRegionName'),
+                violenceLevel: (() => {
+                    const raw = getText('violenceLevel');
+                    if (!/^[1-5]$/.test(raw)) {
+                        throw new Error('AI faction response <violenceLevel> must be an integer from 1 to 5.');
+                    }
+                    return Number(raw);
+                })(),
                 shortDescription: getText('shortDescription'),
                 description: getText('description'),
                 tags: getList('tags', 'tag'),
@@ -37222,6 +37452,7 @@ module.exports = function registerApiRoutes(scope) {
 
             adoptIfMissing('name');
             adoptIfMissing('homeRegionName');
+            adoptIfMissing('violenceLevel');
             adoptIfMissing('shortDescription');
             adoptIfMissing('description');
             adoptIfMissing('tags');
@@ -37666,6 +37897,7 @@ module.exports = function registerApiRoutes(scope) {
                 description: typeof mergedFaction.description === 'string' && mergedFaction.description.trim()
                     ? mergedFaction.description.trim()
                     : null,
+                violenceLevel: normalizeFactionViolenceLevel(mergedFaction.violenceLevel),
                 tags: normalizeFactionStringList(mergedFaction.tags || [], 'Faction tags'),
                 goals: normalizeFactionStringList(mergedFaction.goals || [], 'Faction goals'),
                 assets: normalizeFactionAssets(mergedFaction.assets || []),
@@ -37733,6 +37965,16 @@ module.exports = function registerApiRoutes(scope) {
                         error: 'Request body must include a faction object.'
                     });
                 }
+                if (Object.prototype.hasOwnProperty.call(incomingFaction, 'violenceLevel')) {
+                    try {
+                        normalizeFactionViolenceLevel(incomingFaction.violenceLevel);
+                    } catch (validationError) {
+                        return res.status(400).json({
+                            success: false,
+                            error: validationError.message
+                        });
+                    }
+                }
                 const rawGenerationNotes = req.body?.generationNotes;
                 if (rawGenerationNotes !== undefined && rawGenerationNotes !== null && typeof rawGenerationNotes !== 'string') {
                     return res.status(400).json({
@@ -37781,6 +38023,16 @@ module.exports = function registerApiRoutes(scope) {
                         success: false,
                         error: 'Request body must include a faction object.'
                     });
+                }
+                if (Object.prototype.hasOwnProperty.call(incomingFaction, 'violenceLevel')) {
+                    try {
+                        normalizeFactionViolenceLevel(incomingFaction.violenceLevel);
+                    } catch (validationError) {
+                        return res.status(400).json({
+                            success: false,
+                            error: validationError.message
+                        });
+                    }
                 }
 
                 const rawExistingFactions = req.body?.existingFactions;
@@ -37885,6 +38137,17 @@ module.exports = function registerApiRoutes(scope) {
         app.post('/api/factions', async (req, res) => {
             try {
                 const body = req.body || {};
+                let violenceLevel = 1;
+                if (Object.prototype.hasOwnProperty.call(body, 'violenceLevel')) {
+                    try {
+                        violenceLevel = normalizeFactionViolenceLevel(body.violenceLevel);
+                    } catch (validationError) {
+                        return res.status(400).json({
+                            success: false,
+                            error: validationError.message
+                        });
+                    }
+                }
                 const rawName = typeof body.name === 'string' ? body.name.trim() : '';
                 if (!rawName) {
                     return res.status(400).json({
@@ -37945,6 +38208,7 @@ module.exports = function registerApiRoutes(scope) {
                     goals,
                     description,
                     shortDescription,
+                    violenceLevel,
                     homeRegionName: typeof body.homeRegionName === 'string' ? body.homeRegionName.trim() : null,
                     assets,
                     relations: relations || {},
@@ -38034,6 +38298,16 @@ module.exports = function registerApiRoutes(scope) {
                 }
                 if (Object.prototype.hasOwnProperty.call(body, 'shortDescription')) {
                     updates.shortDescription = normalizeOptionalFactionText(body.shortDescription, 'Faction short description');
+                }
+                if (Object.prototype.hasOwnProperty.call(body, 'violenceLevel')) {
+                    try {
+                        updates.violenceLevel = normalizeFactionViolenceLevel(body.violenceLevel);
+                    } catch (validationError) {
+                        return res.status(400).json({
+                            success: false,
+                            error: validationError.message
+                        });
+                    }
                 }
                 if (Object.prototype.hasOwnProperty.call(body, 'homeRegionName')) {
                     const rawHome = typeof body.homeRegionName === 'string' ? body.homeRegionName.trim() : '';
@@ -38606,6 +38880,7 @@ module.exports = function registerApiRoutes(scope) {
                 const hasDescription = hasOwn.call(body, 'description');
                 const hasShortDescription = hasOwn.call(body, 'shortDescription');
                 const hasLevel = hasOwn.call(body, 'level');
+                const hasDangerLevel = hasOwn.call(body, 'dangerLevel');
                 const hasStatusEffects = hasOwn.call(body, 'statusEffects');
                 const hasControllingFaction = hasOwn.call(body, 'controllingFactionId');
                 const hasWeatherHint = hasOwn.call(body, 'hasWeather');
@@ -38700,6 +38975,20 @@ module.exports = function registerApiRoutes(scope) {
                 }
                 const resolvedLevel = Math.max(1, Math.round(numericLevel));
 
+                let resolvedDangerLevel = location.dangerLevel;
+                if (hasDangerLevel) {
+                    const incomingDangerLevel = body.dangerLevel === null ? 1 : body.dangerLevel;
+                    if (typeof incomingDangerLevel !== 'number'
+                        || !Number.isFinite(incomingDangerLevel)
+                        || !Number.isInteger(incomingDangerLevel)) {
+                        return res.status(400).json({
+                            success: false,
+                            error: 'Danger level must be a finite integer.'
+                        });
+                    }
+                    resolvedDangerLevel = incomingDangerLevel;
+                }
+
                 if (hasStatusEffects) {
                     if (Array.isArray(body.statusEffects)) {
                         try {
@@ -38735,6 +39024,7 @@ module.exports = function registerApiRoutes(scope) {
                 const previousDescription = location.description;
                 const previousShortDescription = location.shortDescription || null;
                 const previousLevel = location.baseLevel;
+                const previousDangerLevel = location.dangerLevel;
                 const previousImageId = location.imageId;
                 const previousImagePrompt = location.imagePrompt;
                 const previousVehicleInfo = JSON.stringify(location.vehicleInfo ?? null);
@@ -38769,6 +39059,12 @@ module.exports = function registerApiRoutes(scope) {
                 if (hasLevel && previousLevel !== resolvedLevel) {
                     location.baseLevel = resolvedLevel;
                     levelChanged = true;
+                }
+
+                let dangerLevelChanged = false;
+                if (hasDangerLevel && previousDangerLevel !== resolvedDangerLevel) {
+                    location.dangerLevel = resolvedDangerLevel;
+                    dangerLevelChanged = true;
                 }
 
                 let vehicleChanged = false;
@@ -38833,6 +39129,7 @@ module.exports = function registerApiRoutes(scope) {
                         shortDescription: shortDescriptionChanged,
                         imagePrompt: imagePromptChanged,
                         level: levelChanged,
+                        dangerLevel: dangerLevelChanged,
                         vehicle: vehicleChanged,
                         hasWeather: hasWeatherChanged
                     }
@@ -42124,6 +42421,25 @@ module.exports = function registerApiRoutes(scope) {
                         ? Globals.getPlayerArrivalLastVisitedTimeBeforeMove(destinationLocation.id)
                         : undefined
                 });
+                let arrivalProcessingError = null;
+                try {
+                    const hostileArrivalResult = await runLocationHostileArrival({
+                        destination: destinationLocation,
+                        arrivalId: Globals.getPlayerArrivalId(destinationLocation.id),
+                        wasVisitedBeforeArrival: Globals.getPlayerArrivalWasVisitedBeforeMove(destinationLocation.id),
+                        priorLastVisitedTime: Globals.getPlayerArrivalLastVisitedTimeBeforeMove(destinationLocation.id),
+                        parentEntryId: whileYouWereAwayResult?.parentLinkEntry?.id || null
+                    });
+                    if (whileYouWereAwayResult && typeof whileYouWereAwayResult === 'object') {
+                        whileYouWereAwayResult.hostileArrivalResult = hostileArrivalResult;
+                    }
+                } catch (arrivalError) {
+                    arrivalProcessingError = {
+                        message: arrivalError?.message || 'Hostile arrival processing failed after travel completed.',
+                        stack: typeof arrivalError?.stack === 'string' ? arrivalError.stack : null
+                    };
+                    console.error('Player travel completed, but hostile arrival processing failed:', arrivalError);
+                }
                 const travelSummaryParentEntry = whileYouWereAwayResult?.visibleEntry
                     || findMostRecentTravelDrawerParentEntry();
                 const travelSummaryParentId = travelSummaryParentEntry?.id || null;
@@ -42191,7 +42507,8 @@ module.exports = function registerApiRoutes(scope) {
                     worldTime: exitTravelTimeAdjustment?.worldTime || buildWorldTimePayload(),
                     timeProgress: exitTravelTimeAdjustment?.timeProgress || null,
                     message: `Moved to ${locationData.name || locationData.id}`,
-                    direction: matchedDirection
+                    direction: matchedDirection,
+                    arrivalProcessingError
                 });
             } catch (error) {
                 console.error('Error moving player:', error);
@@ -46187,7 +46504,8 @@ module.exports = function registerApiRoutes(scope) {
                     actor: resultActor && typeof serializeNpcForClient === 'function'
                         ? serializeNpcForClient(resultActor)
                         : (resultActor && typeof resultActor.getStatus === 'function' ? resultActor.getStatus() : null),
-                    location: resultLocationPayload
+                    location: resultLocationPayload,
+                    chatEntry: result?.chatEntry || null
                 });
             } catch (error) {
                 res.status(400).json({
@@ -51443,6 +51761,12 @@ module.exports = function registerApiRoutes(scope) {
                 }
                 setActiveCurrentPlayer(newPlayer);
                 Globals.syncWorldTimeToPlayer(newPlayer);
+
+                report('new_game:faction_standings', 'Establishing initial faction reputations...');
+                await generateInitialFactionStandings({
+                    player: newPlayer,
+                    factions
+                });
 
                 report('new_game:player_created', `Forged ${resolvedPlayerName}. Generating starting region...`);
 

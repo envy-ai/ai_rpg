@@ -30,10 +30,14 @@ test('recordPlayerArrivalVisitState snapshots pre-move lastVisitedTime', () => {
         };
 
         assert.equal(Globals.recordPlayerArrivalVisitState(destination), true);
+        const arrivalId = Globals.getPlayerArrivalId(destination.id);
+        assert.match(arrivalId, /^[0-9a-f-]{36}$/i);
         destination.lastVisitedTime = 180;
+        Globals.recordPlayerArrivalVisitState(destination);
 
         assert.equal(Globals.getPlayerArrivalWasVisitedBeforeMove(destination.id), true);
         assert.equal(Globals.getPlayerArrivalLastVisitedTimeBeforeMove(destination.id), 120);
+        assert.equal(Globals.getPlayerArrivalId(destination.id), arrivalId);
     } finally {
         Globals.clearPlayerArrivalVisitStates();
     }

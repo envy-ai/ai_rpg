@@ -41,6 +41,17 @@ test('NPC edit modal renders and collects registered Player mod fields', () => {
     assert.match(submit, /Object\.assign\(payload, collectNpcEditModFieldValues\(\)\)/);
 });
 
+test('NPC edit modal renders, populates, and submits behavioral disposition', () => {
+    const viewSource = read('views/index.njk');
+
+    assert.match(viewSource, /id="npcEditDisposition"/);
+    const openModal = extractBlock(viewSource, 'function showNpcEditModal(npc)', 'function closeNpcEditModal');
+    assert.match(openModal, /npcEditDispositionInput\.value\s*=\s*npc\.disposition\s*\?\?\s*''/);
+
+    const submit = extractBlock(viewSource, "npcEditForm.addEventListener('submit'", 'const knownSkillSet');
+    assert.match(submit, /payload\.disposition\s*=\s*npcEditDispositionInput\.value\s*\?\?\s*''/);
+});
+
 test('NPC update route parses and applies registered Player mod fields', () => {
     const apiSource = read('api.js');
     const route = extractBlock(
@@ -52,6 +63,8 @@ test('NPC update route parses and applies registered Player mod fields', () => {
     assert.match(route, /getRegisteredPlayerPayloadFields\(\{ edit: true \}\)/);
     assert.match(route, /extractRegisteredPlayerPayloadFieldValues\(body, registeredPlayerFields\)/);
     assert.match(route, /applyRegisteredPlayerPayloadFieldValues\(npc, modFieldValues\)/);
+    assert.match(route, /hasDisposition/);
+    assert.match(route, /npc\.disposition\s*=\s*disposition/);
     assert.match(route, /res\.status\(400\)\.json\(/);
 });
 

@@ -78,6 +78,8 @@ class Player {
     #personalityTraits;
     #personalityNotes;
     #aiNotes;
+    #disposition = null;
+    #hostileArrivalProvenance = null;
     #playerGuidance = '';
     #resistances;
     #vulnerabilities;
@@ -157,6 +159,20 @@ class Player {
             throw new TypeError('Player guidance must be a string.');
         }
         return value.replace(/\r\n?/g, '\n').trim();
+    }
+
+    static normalizeNpcDisposition(value) {
+        if (value === undefined || value === null) {
+            return null;
+        }
+        if (typeof value !== 'string') {
+            throw new TypeError('NPC disposition must be a string.');
+        }
+        const normalized = value.replace(/\r\n?/g, '\n').trim();
+        if (!normalized) {
+            return null;
+        }
+        return normalized;
     }
 
     static #experienceThreshold = 100;
@@ -2210,6 +2226,8 @@ class Player {
         this.#personalityTraits = Player.#sanitizePersonalityValue(options.personalityTraits ?? personalityOption?.traits);
         this.#personalityNotes = Player.#sanitizePersonalityValue(options.personalityNotes ?? personalityOption?.notes);
         this.#aiNotes = Player.#sanitizePersonalityValue(options.aiNotes ?? personalityOption?.aiNotes);
+        this.#disposition = Player.normalizeNpcDisposition(options.disposition);
+        this.#hostileArrivalProvenance = Player.#normalizeHostileArrivalProvenance(options.hostileArrivalProvenance);
         this.#playerGuidance = Player.normalizePlayerGuidance(options.playerGuidance);
         this.#resistances = typeof options.resistances === 'string'
             ? options.resistances
@@ -4318,6 +4336,38 @@ class Player {
         this.#lastUpdated = new Date().toISOString();
     }
 
+    get disposition() {
+        return this.#disposition;
+    }
+
+    static #normalizeHostileArrivalProvenance(value) {
+        if (value === null || value === undefined) return null;
+        if (!value || typeof value !== 'object' || Array.isArray(value)) {
+            throw new TypeError('hostileArrivalProvenance must be an object or null.');
+        }
+        const arrivalId = typeof value.arrivalId === 'string' ? value.arrivalId.trim() : '';
+        const pendingAttemptId = typeof value.pendingAttemptId === 'string' ? value.pendingAttemptId.trim() : '';
+        const source = typeof value.source === 'string' ? value.source.trim().toLowerCase() : '';
+        if (!arrivalId || !pendingAttemptId || !['wild', 'faction'].includes(source)) {
+            throw new Error('hostileArrivalProvenance requires arrivalId, pendingAttemptId, and a wild or faction source.');
+        }
+        return Object.freeze({ arrivalId, pendingAttemptId, source });
+    }
+
+    get hostileArrivalProvenance() {
+        return this.#hostileArrivalProvenance ? { ...this.#hostileArrivalProvenance } : null;
+    }
+
+    set hostileArrivalProvenance(value) {
+        this.#hostileArrivalProvenance = Player.#normalizeHostileArrivalProvenance(value);
+        this.#lastUpdated = new Date().toISOString();
+    }
+
+    set disposition(value) {
+        this.#disposition = Player.normalizeNpcDisposition(value);
+        this.#lastUpdated = new Date().toISOString();
+    }
+
     get playerGuidance() {
         return this.#playerGuidance;
     }
@@ -6405,6 +6455,8 @@ class Player {
             personalityTraits: this.#personalityTraits,
             personalityNotes: this.#personalityNotes,
             aiNotes: this.#aiNotes,
+            disposition: this.#disposition,
+            hostileArrivalProvenance: this.hostileArrivalProvenance,
             playerGuidance: this.#playerGuidance,
             resistances: this.#resistances,
             vulnerabilities: this.#vulnerabilities,
@@ -6524,6 +6576,7 @@ class Player {
             personalityTraits: this.#personalityTraits,
             personalityNotes: this.#personalityNotes,
             aiNotes: this.#aiNotes,
+            disposition: this.#disposition,
             playerGuidance: this.#playerGuidance,
             resistances: this.#resistances,
             vulnerabilities: this.#vulnerabilities,
@@ -6597,6 +6650,8 @@ class Player {
             personalityTraits: data.personality?.traits ?? data.personalityTraits,
             personalityNotes: data.personality?.notes ?? data.personalityNotes,
             aiNotes: data.aiNotes ?? data.personality?.aiNotes,
+            disposition: data.disposition,
+            hostileArrivalProvenance: data.hostileArrivalProvenance,
             playerGuidance: data.playerGuidance,
             resistances: typeof data.resistances === 'string'
                 ? data.resistances

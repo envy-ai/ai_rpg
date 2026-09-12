@@ -281,7 +281,7 @@ test('updateCharacterFields accepts registered Player fields', async () => {
 
 function buildBaseContextForRender(overrides = {}) {
     return buildBaseRenderContext({
-        config: {},
+        config: { soft_quest_limit: 10 },
         trackers: true,
         currentLocation: {
             name: 'Test Location',
@@ -321,7 +321,7 @@ test('base context renders registered Player field values when registered', () =
 
 function loadParseLocationNpcs(registry) {
     const source = fs.readFileSync(require.resolve('../server.js'), 'utf8');
-    const start = source.indexOf('function parseLocationNpcs');
+    const start = source.indexOf('function parseGeneratedNpcDisposition');
     const end = source.indexOf('\nfunction parseRegionNpcs', start);
     assert.notEqual(start, -1, 'Could not locate parseLocationNpcs');
     assert.notEqual(end, -1, 'Could not locate parseRegionNpcs');
@@ -334,6 +334,7 @@ function loadParseLocationNpcs(registry) {
         Object,
         String,
         console,
+        Player,
         Utils,
         Globals: {
             modExtensionRegistry: registry,
@@ -398,6 +399,7 @@ test('NPC XML parser maps registered Player XML fields onto parsed NPC data', ()
       <name>Mira</name>
       <description>A test NPC.</description>
       <shortDescription>Test NPC</shortDescription>
+      <disposition>N/A</disposition>
       <sexualTraits>switch, romantic, intense - Mira likes mutual challenge.</sexualTraits>
     </npc>
   </npcs>

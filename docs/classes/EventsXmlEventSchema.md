@@ -102,6 +102,22 @@ Omit `origin` when the route is discovered at the current location; include it w
 </newExitDiscovered>
 ```
 
+### `danger_level_change`
+
+Use this only when narrated events establish a meaningful lasting change in recurring environmental danger, such as destroying a nest, sealing a portal, spreading corruption, establishing strong patrols, or a region-wide monster migration. An ordinary hostile appearing or dying does not by itself change the underlying rating. A location target adjusts its stored base; a region target adjusts its one modifier and does not rewrite child locations.
+
+```xml
+<dangerLevelChange>
+  <targetType>location|region</targetType>
+  <target>Exact unambiguous location or region name</target>
+  <direction>increase|decrease</direction>
+  <amount>Positive integer</amount>
+  <reason>Brief established cause</reason>
+</dangerLevelChange>
+```
+
+All five elements are required direct children. Unknown target types/directions, blank fields, and zero, negative, or fractional amounts are parser errors in standard and TinyBrain checks.
+
 ### `alter_location`
 
 Use this when the current location's visual or environmental description changes in a meaningful lasting way while the player remains there. Ephemeral lighting or mood shifts usually do not qualify. This is not for travel from one location to another, and not for item or scenery movement; use `thingMoveWithCharacter`, `thingArrival`, or `thingDeparture` for movement of existing things. If the location name still fits after the alteration, repeat the same name as `newLocationName`.

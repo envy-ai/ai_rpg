@@ -8,14 +8,14 @@
 - Location membership: `#locationBlueprints`, `#locationIds`, `#entranceLocationId`.
 - Hierarchy and ownership: `#parentRegionId`, `#controllingFactionId`.
 - Vehicle data: `#vehicleInfo`, stored as a `VehicleInfo` instance or `null`; `isVehicle` is derived from this field.
-- Gameplay metadata: `#averageLevel`, `#relativeLevel`, `#numImportantNPCs`, `#randomEvents`, `#characterConcepts`, `#enemyConcepts`, `#secrets`.
+- Gameplay metadata: `#averageLevel`, `#relativeLevel`, unbounded integer `#dangerModifier`, `#numImportantNPCs`, `#randomEvents`, `#characterConcepts`, `#enemyConcepts`, `#secrets`.
 - Status and time: `#statusEffects`, `#lastVisitedTime` in world minutes.
 - Weather: `#weather` definitions and `#weatherState` using minute-canonical duration fields.
 - Runtime timestamps: `#createdAt`, `#lastUpdated`.
 
 ## Construction
 - `new Region({...})` requires string `name` and `description`, accepts `shortDescription` as string or `null`, assigns a compact `region_n` id through `IdGenerator` when `id` is omitted, and registers the id with the counter system.
-- Constructor input normalizes location blueprints, `locationIds`, entrance/parent/faction ids, status effects, random events, concepts, secrets, important NPC count, `VehicleInfo`, weather definitions, and weather state.
+- Constructor input normalizes location blueprints, `locationIds`, entrance/parent/faction ids, status effects, random events, concepts, secrets, important NPC count, `VehicleInfo`, weather definitions, and weather state. `dangerModifier` accepts any finite integer, and missing/null values become `0` without changing child locations.
 - Constructed instances are registered in the static id/name indexes. Name lookups are case-insensitive.
 - `fromJSON(data)` reconstructs a region from saved payload fields and rebuilds indexes through the constructor. Save hydration in `Utils.hydrateGameState()` clears the runtime maps/indexes, calls `Region.fromJSON()` for each saved region, and stores successful regions in the active `regions` map. Pending region-entry stubs are persisted separately from `Region` instances.
 
@@ -30,6 +30,7 @@
 - `stubRegionCount` returns the number of registered regions whose `locationIds` array is empty.
 
 ## Accessors
+- `dangerModifier` gets/sets the persisted signed wild-danger modifier. The setter requires a finite integer and does not clamp it.
 - `name`, `description`, and `shortDescription` get/set display text. `name` and `description` reject missing/non-string values; `shortDescription` accepts `null`.
 - `locationBlueprints` returns cloned blueprint records. `locationIds` returns a cloned id array and can be replaced as an array.
 - `entranceLocationId`, `parentRegionId`, and `controllingFactionId` expose linkage fields. `controllingFactionId` rejects non-string values except `null`/empty clear operations.
@@ -44,7 +45,7 @@
 - Relationship helpers: `childRegions`, `siblingRegions`, `parentRegion`, and `parentHierarchy`. `parentHierarchy` throws if a circular parent chain is detected.
 
 ## Instance API
-- `toJSON()` serializes the current region state, including location blueprints, location ids, entrance, parent, controlling faction, vehicle info, status effects, average level, important NPC count, random events, concepts, secrets, weather, and weather state.
+- `toJSON()` serializes the current region state, including location blueprints, location ids, entrance, parent, controlling faction, vehicle info, status effects, average level, danger modifier, important NPC count, random events, concepts, secrets, weather, and weather state.
 - Status effects:
   - `getStatusEffects()` returns cloned effects.
   - `setStatusEffects(effects)` replaces all effects after normalization.
@@ -154,7 +155,8 @@ Region vehicles participate in:
 
 ## API, UI, And Prompt Integration
 - Persistence: `Utils.serializeGameState()` writes `Region.toJSON()` under `gameWorld.regions`. `Utils.hydrateGameState()` reconstructs regions through `fromJSON()` and persists unresolved region-entry stubs in `pendingRegionStubs.json`.
-- Region API: `GET /api/regions/:id` returns a focused edit payload with id, descriptions, parent, average level, controlling faction, vehicle data, secrets, weather, and weather state. `PUT /api/regions/:id` updates those fields, rejects parent cycles, validates faction ids, validates vehicle data through `VehicleInfo`, and resets `weatherState` when weather is assigned. Weather updates include a `worldTime` payload for UI refresh.
+- Region API: `GET /api/regions/:id` returns a focused edit payload with id, descriptions, parent, average level, danger modifier, controlling faction, vehicle data, secrets, weather, and weather state. `PUT /api/regions/:id` accepts an exact unbounded integer modifier (null resets to zero), rejects parent cycles, validates faction ids, validates vehicle data through `VehicleInfo`, and resets `weatherState` when weather is assigned. Weather updates include a `worldTime` payload for UI refresh.
+- `LocationDanger.resolveEffectiveLocationDanger(...)` applies only this immediate owning region's modifier to a location base and clamps the calculation to `1..5`. Direct tools and `danger_level_change` events may change the stored modifier without rewriting child bases. See [LocationDanger.md](LocationDanger.md).
 - Region generation API: `POST /api/regions/generate` calls `generateRegionFromPrompt()`, parses XML with `Region.fromXMLSnippet()`, instantiates location stubs, chooses an entrance, populates important NPCs, and returns `Region.toJSON()` plus created locations.
 - Maps: `/api/map/region` reads `locationIds` to build a regional location graph. `/api/map/world` uses `id`, `name`, `parentRegionId`, `isVehicle`, `vehicleInfo.icon`, `isStub`, `locationIds`, `locationCount`, `averageLevel`, and computed `childRegionIds`.
 - Events: `Events.js` resolves live regions and pending region-entry stubs by id/name/original name for move, exit-discovery, NPC-arrival/departure, and thing-arrival/departure flows. Unknown offscreen destination regions may be represented as pending region stubs through server helpers rather than immediate `Region` instances.

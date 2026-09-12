@@ -123,13 +123,14 @@ Request:
 - Body: `{ thingId, context?, ownerId?, ownerType?, npcId?, locationId?, ...actionFields }`.
 
 Response:
-- 200: `{ success: true, actionId, result, thing, actor?, location? }`
+- 200: `{ success: true, actionId, result, thing, actor?, location?, chatEntry? }`
 - 400/404 with `{ success: false, error }`
 
 Notes:
 - The route looks up the action live from `ModExtensionRegistry` and calls its handler with the Thing, owner actor when resolvable, current player, runtime maps, and request context.
 - Mod handlers are authoritative and should throw explicit errors for invalid owners, incompatible items, duplicate state, or unsupported contexts.
 - The clicked `thingId` remains required for generic routing. Action-specific fields are passed through as `requestBody`; the bundled modules mod uses `baseItemId`, `moduleItemId`, `slotType`, `baseItemSource`, and `moduleItemSource` to install inventory or loose-location modules. Installation splits one singleton from the base stack, module stack, or both when needed, then links only those singleton instances. Removal reads the visible base item's `installedModuleIds` plus the selected `moduleItemId`.
+- The bundled modules action handler appends one visible `module-install` assistant entry after a successful player-initiated `modules:install-module` request, and the generic route returns the handler-provided entry as `chatEntry`. Its form is `Actor installs Module into Base.`. The entry is prompt-free but remains available to normal base-context history. Chat-tool and XML-event module installs do not use this route and do not create this UI-action entry.
 
 ## PUT /api/things/:id
 Update a thing.

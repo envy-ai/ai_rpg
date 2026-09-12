@@ -129,6 +129,7 @@ test('upsertFactionFields creates a persisted Faction instance from field pairs'
                 shortDescription: 'Clockwork regulators.',
                 tags: ['artificers', 'lawful'],
                 goals: ['Control unstable automata.'],
+                violenceLevel: 4,
                 homeRegionName: 'Manor District',
                 assets: [{ name: 'Regulatory Charter', type: 'document' }],
                 reputationTiers: [{ threshold: 10, label: 'Trusted', perks: ['Workshop access'] }]
@@ -143,6 +144,7 @@ test('upsertFactionFields creates a persisted Faction instance from field pairs'
     assert.equal(faction.description, 'Artificers who regulate forbidden clockwork.');
     assert.deepEqual(faction.tags, ['artificers', 'lawful']);
     assert.deepEqual(faction.goals, ['Control unstable automata.']);
+    assert.equal(faction.violenceLevel, 4);
     assert.equal(faction.homeRegionName, 'Manor District');
     assert.equal(result.toolInvocations[0].metadata.status, 'success');
     assert.equal(result.toolInvocations[0].metadata.operation, 'create');
@@ -153,6 +155,7 @@ test('upsertFactionFields creates a persisted Faction instance from field pairs'
         shortDescription: true,
         tags: true,
         goals: true,
+        violenceLevel: true,
         homeRegionName: true,
         assets: true,
         reputationTiers: true
@@ -174,7 +177,8 @@ test('upsertFactionFields updates an existing faction by name', async () => {
             faction: 'The Guild',
             fields: {
                 description: 'A formal trade guild.',
-                tags: ['merchant', 'political']
+                tags: ['merchant', 'political'],
+                violenceLevel: 5
             }
         }
     });
@@ -182,10 +186,29 @@ test('upsertFactionFields updates an existing faction by name', async () => {
     assert.equal(faction.description, 'A formal trade guild.');
     assert.equal(faction.shortDescription, 'Generated faction summary.');
     assert.deepEqual(faction.tags, ['merchant', 'political']);
+    assert.equal(faction.violenceLevel, 5);
     assert.equal(result.toolInvocations[0].metadata.status, 'success');
     assert.equal(result.toolInvocations[0].metadata.operation, 'update');
     assert.equal(result.toolInvocations[0].metadata.factionId, faction.id);
-    assert.deepEqual(result.toolInvocations[0].metadata.updatedFields, ['description', 'tags', 'shortDescription']);
+    assert.deepEqual(result.toolInvocations[0].metadata.updatedFields, ['description', 'tags', 'violenceLevel', 'shortDescription']);
+});
+
+test('upsertFactionFields normalizes null violence and rejects out-of-range updates', async () => {
+    const faction = new Faction({ name: 'Wardens', description: 'Watchers.', violenceLevel: 4 });
+    const factions = new Map([[faction.id, faction]]);
+    const reset = await runTool({
+        factions,
+        args: { operation: 'update', faction: faction.id, fields: { violenceLevel: null } }
+    });
+    assert.equal(reset.toolInvocations[0].metadata.status, 'success');
+    assert.equal(faction.violenceLevel, 1);
+
+    const invalid = await runTool({
+        factions,
+        args: { operation: 'update', faction: faction.id, fields: { violenceLevel: 6 } }
+    });
+    assert.equal(invalid.toolInvocations[0].metadata.error, true);
+    assert.equal(faction.violenceLevel, 1);
 });
 
 test('upsertFactionFields defaults omitted relation fields instead of requiring them', async () => {

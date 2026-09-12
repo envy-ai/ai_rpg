@@ -45,6 +45,8 @@ function loadNpcParsers() {
         },
         players,
         things,
+        getPlayerXmlParserFields: () => [],
+        getPlayerExtensionFieldInputsFromXmlNode: () => ({}),
         parseIntegerFromText(value) {
             const match = String(value ?? '').match(/-?\d+/);
             return match ? Number.parseInt(match[0], 10) : null;
@@ -94,6 +96,7 @@ test('parseLocationNpcs captures starting need levels and applicability', () => 
       <name>Dockhand Pell</name>
       <description>A tired dockhand.</description>
       <aiNotes>Pell warns dockworkers before a storm hits.</aiNotes>
+      <disposition>N/A</disposition>
       <hiddenFromPlayer>true</hiddenFromPlayer>
       <startingNeeds>
         <needBar>
@@ -132,6 +135,7 @@ test('parseLocationNpcs captures starting need levels and applicability', () => 
             deceased: false
         });
         assert.equal(npc.aiNotes, 'Pell warns dockworkers before a storm hits.');
+        assert.equal(npc.disposition, null);
         assert.equal(npc.hiddenFromPlayer, true);
     } finally {
         Globals.config = previousConfig;
@@ -150,6 +154,7 @@ test('parseRegionNpcs captures starting need levels and applicability', () => {
       <name>Archivist Nera</name>
       <location>Archive Hall</location>
       <aiNotes>Nera seals the stacks if fire is mentioned.</aiNotes>
+      <disposition>extremely territorial; warns before attacking</disposition>
       <hiddenFromPlayer>false</hiddenFromPlayer>
       <startingNeeds>
         <needBar>
@@ -177,6 +182,7 @@ test('parseRegionNpcs captures starting need levels and applicability', () => {
             { id: 'focus', percentage: 72 }
         ]);
         assert.equal(npc.aiNotes, 'Nera seals the stacks if fire is mentioned.');
+        assert.equal(npc.disposition, 'extremely territorial; warns before attacking');
         assert.equal(npc.hiddenFromPlayer, false);
     } finally {
         Globals.config = previousConfig;
@@ -194,6 +200,7 @@ test('parseRegionNpcs captures deceased starting health state', () => {
     <npc>
       <name>Corpse-Lantern Warden</name>
       <location>Archive Hall</location>
+      <disposition>N/A</disposition>
       <startingHealthPercentage>deceased</startingHealthPercentage>
     </npc>
   </npcs>
@@ -224,13 +231,16 @@ test('NPC XML quantity defaults to one, strips non-numbers with warning, and cla
     <npc>
       <quantity>4 guards</quantity>
       <name>Meridian Grunt</name>
+      <disposition>N/A</disposition>
     </npc>
     <npc>
       <name>Plain Clerk</name>
+      <disposition>N/A</disposition>
     </npc>
     <npc>
       <quantity>N/A</quantity>
       <name>Confused Scout</name>
+      <disposition>N/A</disposition>
     </npc>
   </npcs>
 </response>`;
@@ -245,6 +255,30 @@ test('NPC XML quantity defaults to one, strips non-numbers with warning, and cla
         assert.equal(warnings.some(line => /quantity.*Confused Scout.*N\/A/i.test(line)), true);
     } finally {
         console.warn = originalWarn;
+        Globals.config = previousConfig;
+    }
+});
+
+test('NPC XML parsers reject missing and blank required disposition fields', () => {
+    const previousConfig = Globals.config;
+    Globals.config = { ...(previousConfig || {}), ...TEST_CONFIG };
+    const { parseLocationNpcs, parseRegionNpcs } = loadNpcParsers();
+    const originalWarn = console.warn;
+    const originalDebug = console.debug;
+    console.warn = () => {};
+    console.debug = () => {};
+    try {
+        assert.throws(
+            () => parseLocationNpcs('<response><npcs><npc><name>Wolf</name></npc></npcs></response>'),
+            /Wolf.*exactly one direct <disposition>.*N\/A/i
+        );
+        assert.throws(
+            () => parseRegionNpcs('<response><npcs><npc><name>Fox</name><disposition>  </disposition></npc></npcs></response>'),
+            /Fox.*blank <disposition>.*N\/A/i
+        );
+    } finally {
+        console.warn = originalWarn;
+        console.debug = originalDebug;
         Globals.config = previousConfig;
     }
 });

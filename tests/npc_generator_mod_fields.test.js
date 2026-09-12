@@ -72,6 +72,20 @@ test('batch NPC generation templates include the player generator fields scaffol
     assert.match(regionTemplate, /include "_includes\/player-generator-fields\.njk"/);
 });
 
+test('every NPC generation schema requests a behavioral disposition', () => {
+    const templates = [
+        read('prompts/location-generator-npcs.xml.njk'),
+        read('prompts/region-generator-important-npcs.njk'),
+        read('prompts/_includes/npc-generator-single.njk')
+    ];
+
+    for (const template of templates) {
+        assert.match(template, /<disposition>/);
+        assert.match(template, /N\/A if sentient/);
+        assert.match(template, /animal-level intelligence or below/);
+    }
+});
+
 test('registered Player fields render into batch NPC generation scaffolds', () => {
     withRegisteredField((registry) => {
         const promptEnv = nunjucks.configure(path.join(rootDir, 'prompts'), {

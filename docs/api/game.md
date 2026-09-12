@@ -36,6 +36,7 @@ Behavior:
 - The reset also clears model static indexes for players, things, locations, quests, regions, factions, mystery boxes/threads, scheduled events, and trackers before generating the new starting region, so absolute world-minute records and stale indexed objects from an old game cannot leak into new-game prompt context.
 - Pending player-input requests and quest confirmations are rejected when a new game starts. Active image jobs receive a runtime-generation id; jobs from an older generation are ignored if they start or finish after the reset instead of mutating the new game.
 - The newly created player is installed as the active `Globals.currentPlayer` before starting-region generation, so prompt context and world-time helpers read the new player's timestamps instead of any previous save's player.
+- After the active faction roster and player exist, a logged structured prompt assigns one initial faction standing per faction before region generation. It uses only the player's class/race/description and public faction identity, enforces the configured integer bounds atomically, and stores the results only in `player.factionStandings`. A zero-faction game skips this prompt.
 - Need-bar prompt sentences are validated in strict mode before existing game state is cleared. Missing active need-bar `sentence` values fail the request.
 - When `clientId` is supplied, realtime status events are emitted during generation. `requestId` is passed through the stream emitter when present.
 - Player defaults come from the active setting, then hardcoded fallbacks.

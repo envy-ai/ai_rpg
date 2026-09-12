@@ -162,6 +162,12 @@ const SettingInfo = require('./SettingInfo.js');
 const Region = require('./Region.js');
 // Import Faction class
 const Faction = require('./Faction.js');
+const {
+    normalizeFactionEntries,
+    resolveInitialFactionStandingBounds,
+    parseInitialFactionStandingsXml,
+    applyInitialFactionStandings
+} = require('./InitialFactionStandings.js');
 const MysteryBox = require('./MysteryBox.js');
 const MysteryThread = require('./MysteryThread.js');
 const Tracker = require('./Tracker.js');
@@ -204,6 +210,17 @@ const { buildModManagerState } = require('./ModManager.js');
 const { initializeLorebookManager, getLorebookManager } = require('./lorebook.js');
 const { loadMergedDefinitionFile, validateDefinitionOverlays } = require('./DefinitionLoader.js');
 const { loadBannedTropes } = require('./BannedTropes.js');
+const {
+    loadLocationDangerDefinition,
+    resolveEffectiveLocationDanger,
+    resolveFactionDangerRating
+} = require('./LocationDanger.js');
+const {
+    HostileArrivalInvalidatedError,
+    LocationHostileArrivalService,
+    assertHostileDraftCapacity,
+    countLivingHostiles
+} = require('./LocationHostileArrivalService.js');
 const {
     buildUnifiedTonalScalePromptForSetting,
     loadUnifiedTonalScaleDefinition
@@ -799,6 +816,9 @@ function reloadConfigAndDefs({
     validateCriticalThresholdFormulas(merged, { formulaEvaluator: FormulaEvaluator });
     const modEnableDiff = diffFrozenEnabledModDirectoryNames(Globals.baseDir || __dirname, { config: merged });
     validateDefinitionOverlays({ baseDir: Globals.baseDir || __dirname });
+    loadLocationDangerDefinition({ baseDir: Globals.baseDir || __dirname });
+    locationHostileArrivalService = null;
+    hostileArrivalHydratedMetadata = null;
     const needBarSentenceWarnings = Player.validateNeedBarPromptSentences({
         onError: needBarSentenceValidationMode
     });
@@ -4353,6 +4373,14 @@ async function validateConfiguration() {
     if (config.show_hidden_notes !== undefined && typeof config.show_hidden_notes !== 'boolean') {
         validationErrors.push('show_hidden_notes must be a boolean when provided');
     }
+    if (config.show_location_danger !== undefined && typeof config.show_location_danger !== 'boolean') {
+        validationErrors.push('show_location_danger must be a boolean when provided');
+    }
+    try {
+        resolveInitialFactionStandingBounds(config);
+    } catch (error) {
+        validationErrors.push(error.message);
+    }
     if (config.hide_hide_checks !== undefined && typeof config.hide_hide_checks !== 'boolean') {
         validationErrors.push('hide_hide_checks must be a boolean when provided');
     }
@@ -5011,6 +5039,8 @@ const locationImageGenerationPromises = new Map(); // Store pre-job location ima
 const factionImageGenerationPromises = new Map(); // Store pre-job emblem generation promises per faction
 const locationWeatherVariantGenerationPromises = new Map(); // Store pre-job seasonal variant promises per location and conditions
 const npcGenerationPromises = new Map(); // Track in-flight NPC generations by normalized explicit name
+let locationHostileArrivalService = null;
+let hostileArrivalHydratedMetadata = null;
 const levelUpAbilityPromises = new Map(); // Track in-flight level-up ability generations per character
 const playerAbilitySelectionPromises = new Map(); // Track in-flight player ability option generation per level
 
@@ -5121,6 +5151,98 @@ async function runGenerationPromptCompletion({
         metadataLabel
     });
     return toolLoopResult.aiResponse;
+}
+
+function formatGenerationPromptMessageForLog(message) {
+    const content = message?.content;
+    if (typeof content === 'string') {
+        return `${message.role}: ${content}`;
+    }
+    if (Array.isArray(content)) {
+        const parts = content.map(part => {
+            if (part?.type === 'text' && typeof part.text === 'string') {
+                return part.text;
+            }
+            return `[${part?.type || 'non-text content'} omitted from prompt log]`;
+        });
+        return `${message?.role || 'user'}: ${parts.join('\n')}`;
+    }
+    return `${message?.role || 'user'}: ${String(content ?? '')}`;
+}
+
+async function runNpcGenerationPromptWithParseRetries({
+    messages,
+    requestOptions = {},
+    metadataLabel,
+    responseRootTag,
+    responseLabel,
+    systemPrompt,
+    parseResponse
+} = {}) {
+    if (!Array.isArray(messages) || !messages.length) {
+        throw new TypeError('NPC generation retry requires prompt messages.');
+    }
+    if (typeof parseResponse !== 'function') {
+        throw new TypeError('NPC generation retry requires a response parser.');
+    }
+    if (typeof metadataLabel !== 'string' || !metadataLabel.trim()) {
+        throw new TypeError('NPC generation retry requires a metadata label.');
+    }
+    if (typeof responseRootTag !== 'string' || !responseRootTag.trim()) {
+        throw new TypeError('NPC generation retry requires a response root tag.');
+    }
+
+    const normalizedResponseLabel = typeof responseLabel === 'string' && responseLabel.trim()
+        ? responseLabel.trim()
+        : 'NPC generation';
+    let effectiveMessages = messages;
+    return runPromptWithParseRetries({
+        messages,
+        maxAttempts: resolveConfiguredPromptMaxAttempts(config?.ai, { fallbackMaxAttempts: 3 }),
+        complete: async ({ messages: completionMessages }) => {
+            effectiveMessages = completionMessages;
+            return runGenerationPromptCompletion({
+                requestOptions: {
+                    ...requestOptions,
+                    messages: completionMessages,
+                    metadataLabel,
+                    expectedXmlRootTag: responseRootTag
+                },
+                metadataLabel
+            });
+        },
+        parse: response => {
+            if (typeof response !== 'string' || !response.trim()) {
+                throw new Error(`${normalizedResponseLabel} returned an empty response.`);
+            }
+            return parseResponse(response);
+        },
+        buildRetryInstruction: error => (
+            `The preceding ${normalizedResponseLabel} XML failed structured validation: ${error?.message || error}\n`
+            + `Return a corrected, complete response as exactly one <${responseRootTag}>...</${responseRootTag}> block. `
+            + 'Every generated <npc> or <hostile> must contain exactly one direct, nonblank <disposition> element. '
+            + 'Use <disposition>N/A</disposition> when the NPC is sentient; otherwise provide a brief behavioral description. '
+            + 'Output XML only.'
+        ),
+        onAttempt: ({ attempt, maxAttempts, response, error, accepted }) => {
+            LLMClient.logPrompt({
+                prefix: metadataLabel,
+                metadataLabel,
+                systemPrompt: systemPrompt || '',
+                generationPrompt: effectiveMessages
+                    .filter(message => message?.role !== 'system')
+                    .map(formatGenerationPromptMessageForLog)
+                    .join('\n\n'),
+                response: response || '',
+                sections: [{
+                    title: 'Structured response validation',
+                    content: accepted
+                        ? `accepted (${attempt}/${maxAttempts})`
+                        : `rejected (${attempt}/${maxAttempts}): ${error?.stack || error}`
+                }]
+            });
+        }
+    });
 }
 
 function generateChatMessageId() {
@@ -6551,6 +6673,7 @@ function serializeNpcForClient(npc, options = {}) {
         personalityTraits: personality?.traits ?? null,
         personalityNotes: personality?.notes ?? null,
         aiNotes: personality?.aiNotes ?? null,
+        disposition: typeof npc.disposition === 'string' ? npc.disposition : null,
         createdAt: npc.createdAt,
         lastUpdated: npc.lastUpdated,
         dispositionsTowardPlayer,
@@ -8673,6 +8796,7 @@ function buildBasePromptContext({
                 skills,
                 personality,
                 aiNotes: personality.aiNotes || '',
+                disposition: npcStatus?.disposition ?? npc.disposition ?? null,
                 needBars,
                 needs,
                 modStatusSections: collectActorModStatusSections(npc),
@@ -8729,6 +8853,7 @@ function buildBasePromptContext({
                 abilities: shouldOmitAbilities ? [] : member.getAbilities(),
                 personality,
                 aiNotes: personality.aiNotes || '',
+                disposition: memberStatus?.disposition ?? member.disposition ?? null,
                 skills,
                 dispositionsTowardsPlayer,
                 needBars,
@@ -18748,6 +18873,12 @@ function normalizeNpcPromptSeed(seed = {}) {
     if (typeof rawAiNotes === 'string') {
         normalized.aiNotes = rawAiNotes;
     }
+    if (Object.prototype.hasOwnProperty.call(seed, 'disposition')) {
+        const disposition = Player.normalizeNpcDisposition(seed.disposition);
+        if (disposition) {
+            normalized.disposition = disposition;
+        }
+    }
     for (const field of getRegisteredPlayerEntityFields({ exposeToCreateTool: true })) {
         if (!field || typeof field.fieldName !== 'string') {
             continue;
@@ -19109,30 +19240,26 @@ async function generateNpcFromEvent({
             { role: 'user', content: userContent }
         ];
 
-        const requestStart = Date.now();
-        const npcResponse = await runGenerationPromptCompletion({
+        const npcGenerationResult = await runNpcGenerationPromptWithParseRetries({
+            messages,
             requestOptions: {
-                messages,
-                metadataLabel: 'npc_generation_single',
-                expectedXmlRootTag: 'npcInfo',
                 multimodal: Boolean(normalizedImageDataUrl)
             },
-            metadataLabel: 'npc_generation_single'
-        });
-
-        if (!npcResponse || !npcResponse.trim()) {
-            throw new Error('Empty NPC generation response');
-        }
-
-        LLMClient.logPrompt({
-            prefix: 'npc_generation_single',
             metadataLabel: 'npc_generation_single',
             systemPrompt: systemPrompt || '',
-            generationPrompt: generationPrompt || '',
-            response: npcResponse || ''
+            responseRootTag: 'npcInfo',
+            responseLabel: 'single NPC generation',
+            parseResponse: response => {
+                const parsed = parseLocationNpcs(response);
+                if (!Array.isArray(parsed?.npcs) || !parsed.npcs.length) {
+                    throw new Error('Single NPC generation response contained no <npc> entry.');
+                }
+                return parsed;
+            }
         });
 
-        const parsedResult = parseLocationNpcs(npcResponse);
+        const npcResponse = npcGenerationResult.response;
+        const parsedResult = npcGenerationResult.value;
         const parsedNpcs = Array.isArray(parsedResult?.npcs) ? parsedResult.npcs : [];
         const generatedMemories = parsedResult?.memories instanceof Map ? parsedResult.memories : new Map();
         let skillAssignments = new Map();
@@ -19178,19 +19305,12 @@ async function generateNpcFromEvent({
 
         await skillPromise;
 
-        let npcData = parsedNpcs && parsedNpcs.length ? parsedNpcs[0] : null;
-        if (npcData) {
-            npcData = { ...normalizeNpcPromptSeed(npcSeed), ...npcData };
-            npcData.name = npcData.name || trimmedName;
-        } else {
-            npcData = {
-                ...normalizeNpcPromptSeed(npcSeed),
-                name: trimmedName,
-                description: npcSeed.description || `${trimmedName} steps into the scene with purpose.`,
-                shortDescription: npcSeed.shortDescription || '',
-                role: npcSeed.role || 'mysterious figure'
-            };
+        const normalizedNpcSeed = normalizeNpcPromptSeed(npcSeed);
+        const npcData = { ...normalizedNpcSeed, ...parsedNpcs[0] };
+        if (normalizedNpcSeed.disposition && !npcData.disposition) {
+            npcData.disposition = normalizedNpcSeed.disposition;
         }
+        npcData.name = npcData.name || trimmedName;
 
         npcData.description = applyNpcNameTemplate(npcData.description, npcData.name);
         npcData.shortDescription = applyNpcNameTemplate(npcData.shortDescription, npcData.name);
@@ -19258,6 +19378,7 @@ async function generateNpcFromEvent({
             personalityTraits: npcData?.personalityTraits || null,
             personalityNotes: npcData?.personalityNotes || null,
             aiNotes: npcData?.aiNotes || null,
+            disposition: npcData?.disposition,
             goals: Array.isArray(npcData?.goals) ? npcData.goals : null,
             needBars: resolveGeneratedNpcStartingNeedBars(npcData?.needBars),
             needBarApplicability: npcData?.needBarApplicability && typeof npcData.needBarApplicability === 'object'
@@ -20541,10 +20662,33 @@ function parseGeneratedNpcBoolean(value, { defaultValue = false } = {}) {
     return defaultValue;
 }
 
+function parseGeneratedNpcDisposition(node, { npcName = '', source = 'NPC generation' } = {}) {
+    const dispositionNodes = Array.from(node?.childNodes || []).filter(child => (
+        child?.nodeType === 1 && child.tagName === 'disposition'
+    ));
+    const npcLabel = npcName ? ` NPC "${npcName}"` : ' NPC';
+    if (dispositionNodes.length !== 1) {
+        throw new Error(
+            `${source}${npcLabel} must contain exactly one direct <disposition> element; `
+            + 'use <disposition>N/A</disposition> if sentient.'
+        );
+    }
+    const rawDisposition = typeof dispositionNodes[0].textContent === 'string'
+        ? dispositionNodes[0].textContent
+        : '';
+    if (!rawDisposition.trim()) {
+        throw new Error(
+            `${source}${npcLabel} has a blank <disposition>; `
+            + 'use N/A if sentient or provide a brief behavioral description if non-sentient.'
+        );
+    }
+    return Player.normalizeNpcDisposition(rawDisposition);
+}
+
 function parseLocationNpcs(xmlContent) {
     const result = { npcs: [], memories: new Map() };
     if (!xmlContent || typeof xmlContent !== 'string') {
-        return result;
+        throw new TypeError('Location NPC generation response must be a non-empty XML string.');
     }
 
     try {
@@ -20630,6 +20774,10 @@ function parseLocationNpcs(xmlContent) {
             const aiNotes = aiNotesNode && typeof aiNotesNode.textContent === 'string'
                 ? aiNotesNode.textContent.trim()
                 : '';
+            const disposition = parseGeneratedNpcDisposition(node, {
+                npcName: name || '',
+                source: 'Location NPC generation'
+            });
             const currencyValue = currencyNode ? parseIntegerFromText(currencyNode.textContent) : null;
 
             let personalityType = null;
@@ -20709,6 +20857,7 @@ function parseLocationNpcs(xmlContent) {
                     personalityTraits,
                     personalityNotes,
                     aiNotes,
+                    disposition,
                     goals,
                     needBars: startingNeeds.needBars,
                     needBarApplicability: startingNeeds.needBarApplicability,
@@ -20721,15 +20870,394 @@ function parseLocationNpcs(xmlContent) {
     } catch (error) {
         console.warn('Failed to parse NPC XML:', error.message);
         console.debug(error);
+        throw error;
     }
 
     return result;
 }
 
+function synchronizeHostileArrivalServiceState() {
+    if (!locationHostileArrivalService) {
+        locationHostileArrivalService = new LocationHostileArrivalService({
+            definition: loadLocationDangerDefinition({ baseDir: Globals.baseDir || __dirname })
+        });
+    }
+    const metadata = Globals.getSaveMetadata?.() || Globals.saveMetadata || {};
+    if (metadata !== hostileArrivalHydratedMetadata) {
+        locationHostileArrivalService.hydrate(metadata.locationHostileArrivalState || {});
+        hostileArrivalHydratedMetadata = metadata;
+    }
+    return locationHostileArrivalService;
+}
+
+function persistHostileArrivalServiceState(service) {
+    const metadata = Globals.getSaveMetadata?.() || Globals.saveMetadata || {};
+    const nextMetadata = {
+        ...metadata,
+        locationHostileArrivalState: service.toJSON()
+    };
+    Globals.setSaveMetadata(nextMetadata);
+    hostileArrivalHydratedMetadata = nextMetadata;
+}
+
+function validateHostilePresenceResponseXml(response, { maximumCount } = {}) {
+    const responseXml = Utils.extractFinalXmlRootBlock(response, 'response');
+    if (!responseXml) throw new Error('Hostile presence response must contain one complete <response> root.');
+    const doc = Utils.parseXmlDocumentStrict(responseXml, 'text/xml');
+    const root = doc.documentElement;
+    if (!root || root.tagName !== 'response') {
+        throw new Error('Hostile presence response root must be <response>.');
+    }
+    const directElements = node => Array.from(node?.childNodes || []).filter(child => child?.nodeType === 1);
+    const directChildren = (node, tagName) => directElements(node).filter(child => child.tagName === tagName);
+    const requireDirect = (node, tagName, label, { allowBlank = false } = {}) => {
+        const matches = directChildren(node, tagName);
+        if (matches.length !== 1) {
+            throw new Error(`${label} must contain exactly one direct <${tagName}> element.`);
+        }
+        if (!allowBlank && !String(matches[0].textContent || '').trim()) {
+            throw new Error(`${label} has a blank <${tagName}> element.`);
+        }
+        return matches[0];
+    };
+    const npcsNode = requireDirect(root, 'npcs', 'Hostile presence <response>', { allowBlank: true });
+    const npcNodes = directChildren(npcsNode, 'npc');
+    if (!npcNodes.length) throw new Error('Hostile presence <npcs> must contain at least one direct <npc>.');
+    if (npcNodes.length > maximumCount) {
+        throw new Error(`Hostile presence response generated ${npcNodes.length} NPCs, above the maximum of ${maximumCount}.`);
+    }
+
+    const scalarFields = [
+        'quantity', 'name', 'description', 'shortDescription', 'role', 'class', 'race', 'gender',
+        'faction', 'isHostile', 'disposition', 'hiddenFromPlayer', 'relativeLevel', 'currency',
+        'healthAttribute', 'startingHealthPercentage', 'resistances', 'vulnerabilities', 'aiNotes'
+    ];
+    for (const [index, npcNode] of npcNodes.entries()) {
+        const label = `Hostile presence NPC ${index + 1}`;
+        const fields = Object.fromEntries(scalarFields.map(tagName => [
+            tagName,
+            requireDirect(npcNode, tagName, label)
+        ]));
+        const quantity = Number(fields.quantity.textContent.trim());
+        if (quantity !== 1) {
+            throw new Error(`${label} <quantity> must be exactly 1; emit one <npc> per individual.`);
+        }
+        if (fields.isHostile.textContent.trim().toLowerCase() !== 'true') {
+            throw new Error(`${label} must contain <isHostile>true</isHostile>.`);
+        }
+        if (!['true', 'false'].includes(fields.hiddenFromPlayer.textContent.trim().toLowerCase())) {
+            throw new Error(`${label} <hiddenFromPlayer> must be true or false.`);
+        }
+        const relativeLevel = Number(fields.relativeLevel.textContent.trim());
+        if (!Number.isInteger(relativeLevel) || relativeLevel < -3 || relativeLevel > 3) {
+            throw new Error(`${label} <relativeLevel> must be an integer from -3 through 3.`);
+        }
+        const currency = Number(fields.currency.textContent.trim());
+        if (!Number.isInteger(currency) || currency < 0) {
+            throw new Error(`${label} <currency> must be a non-negative integer.`);
+        }
+        const startingHealth = Number(fields.startingHealthPercentage.textContent.trim());
+        if (!Number.isInteger(startingHealth) || startingHealth < 1 || startingHealth > 100) {
+            throw new Error(`${label} <startingHealthPercentage> must be an integer from 1 through 100.`);
+        }
+
+        const attributesNode = requireDirect(npcNode, 'attributes', label, { allowBlank: true });
+        for (const attributeName of Object.keys(attributeDefinitionsForPrompt || {})) {
+            const matches = directChildren(attributesNode, 'attribute').filter(node => node.getAttribute('name') === attributeName);
+            if (matches.length !== 1 || !String(matches[0].textContent || '').trim()) {
+                throw new Error(`${label} <attributes> must contain exactly one nonblank <attribute name="${attributeName}">.`);
+            }
+        }
+
+        const startingNeedsNode = requireDirect(npcNode, 'startingNeeds', label, { allowBlank: true });
+        for (const [needIndex, needNode] of directChildren(startingNeedsNode, 'needBar').entries()) {
+            const needLabel = `${label} <needBar> ${needIndex + 1}`;
+            requireDirect(needNode, 'id', needLabel);
+            const applicableNode = requireDirect(needNode, 'isApplicable', needLabel);
+            const applicable = applicableNode.textContent.trim().toLowerCase();
+            if (!['true', 'false'].includes(applicable)) {
+                throw new Error(`${needLabel} <isApplicable> must be true or false.`);
+            }
+            const startingLevelNode = requireDirect(needNode, 'startingLevel', needLabel);
+            const startingLevel = Number(startingLevelNode.textContent.trim());
+            if (!Number.isInteger(startingLevel) || startingLevel < 0 || startingLevel > 100) {
+                throw new Error(`${needLabel} <startingLevel> must be an integer from 0 through 100.`);
+            }
+        }
+
+        const personalityNode = requireDirect(npcNode, 'personality', label);
+        requireDirect(personalityNode, 'type', `${label} <personality>`);
+        requireDirect(personalityNode, 'traits', `${label} <personality>`);
+        const goalsNode = requireDirect(personalityNode, 'goals', `${label} <personality>`);
+        if (!directChildren(goalsNode, 'goal').some(node => String(node.textContent || '').trim())) {
+            throw new Error(`${label} <personality><goals> must contain at least one nonblank <goal>.`);
+        }
+        requireDirect(personalityNode, 'notes', `${label} <personality>`, { allowBlank: true });
+    }
+}
+
+function validateHostilePresenceDrafts(parsed, { maximumCount, source, faction } = {}) {
+    const npcs = Array.isArray(parsed?.npcs) ? parsed.npcs : [];
+    if (!npcs.length) throw new Error('Hostile presence response contained no <npc> entries.');
+    if (npcs.length > maximumCount) {
+        throw new Error(`Hostile presence response generated ${npcs.length} NPCs, above the maximum of ${maximumCount}.`);
+    }
+    const seenNames = new Set();
+    const reservedNames = buildReservedActorNameSet();
+    for (const npc of npcs) {
+        if (npc.quantity !== 1) {
+            throw new Error('Hostile presence NPC <quantity> must be exactly 1; emit one <npc> per individual.');
+        }
+        if (npc.isHostile !== true) {
+            throw new Error(`Hostile presence NPC "${npc.name || 'unnamed'}" must contain <isHostile>true</isHostile>.`);
+        }
+        const key = normalizeActorNameForDuplicateCheck(npc.name);
+        if (!key) throw new Error('Hostile presence NPC requires a non-empty name.');
+        if (seenNames.has(key) || hasNameCollisionWithReservedSet(npc.name, reservedNames)) {
+            throw new Error(`Hostile presence NPC name "${npc.name}" duplicates an existing or generated character.`);
+        }
+        seenNames.add(key);
+        if (source === 'faction') {
+            const resolved = resolveFactionNameToId(npc.faction, {
+                fieldLabel: `Hostile presence faction for "${npc.name}"`
+            });
+            if (!faction?.id || resolved.id !== faction.id) {
+                throw new Error(`Faction hostile presence NPC "${npc.name}" must belong to "${faction?.name || faction?.id}".`);
+            }
+        }
+    }
+    return npcs;
+}
+
+async function generateHostilePresenceDrafts(plan, destination) {
+    const region = destination.region || Region.get(destination.regionId) || null;
+    const faction = plan.source === 'faction' ? Faction.get(plan.pendingAttempt.factionId) : null;
+    if (plan.source === 'faction' && !faction) {
+        throw new HostileArrivalInvalidatedError(
+            `Hostile presence faction "${plan.pendingAttempt.factionId}" no longer exists.`
+        );
+    }
+    const baseContext = await prepareBasePromptContext({ locationOverride: destination });
+    const hostilePresenceAiConfig = LLMClient.resolveEffectiveAiConfiguration(
+        'hostile_presence',
+        Globals.config
+    ).aiConfig;
+    const useTinyBrain = hostilePresenceAiConfig?.tinybrain === true;
+    const templateContext = {
+        ...baseContext,
+        promptType: useTinyBrain ? 'hostile-presence.tinybrain' : 'hostile-presence',
+        hostilePresenceSource: plan.source,
+        hostilePresenceMaximumCount: plan.deficit,
+        hostilePresenceLocation: destination,
+        hostilePresenceRegion: region,
+        hostilePresenceFaction: faction,
+        hostilePresenceEnemyConcepts: [
+            ...(Array.isArray(destination.enemyConcepts) ? destination.enemyConcepts : []),
+            ...(Array.isArray(region?.enemyConcepts) ? region.enemyConcepts : [])
+        ],
+        hostilePresenceExistingNpcs: (destination.npcIds || []).map(id => players.get(id)).filter(Boolean)
+    };
+    const rendered = promptEnv.render('base-context.xml.njk', templateContext);
+    const parsedTemplate = parseXMLTemplate(rendered);
+    if (!parsedTemplate?.systemPrompt || !parsedTemplate?.generationPrompt) {
+        throw new Error('Hostile presence template did not produce system and generation prompts.');
+    }
+    const generation = await runNpcGenerationPromptWithParseRetries({
+        messages: [
+            { role: 'system', content: parsedTemplate.systemPrompt },
+            { role: 'user', content: parsedTemplate.generationPrompt }
+        ],
+        requestOptions: { timeoutScale: Math.max(1, plan.deficit) },
+        metadataLabel: 'hostile_presence',
+        systemPrompt: parsedTemplate.systemPrompt,
+        responseRootTag: 'response',
+        responseLabel: useTinyBrain ? 'TinyBrain hostile presence generation' : 'hostile presence generation',
+        parseResponse: response => {
+            validateHostilePresenceResponseXml(response, { maximumCount: plan.deficit });
+            const parsed = parseLocationNpcs(response);
+            validateHostilePresenceDrafts(parsed, {
+                maximumCount: plan.deficit,
+                source: plan.source,
+                faction
+            });
+            return parsed;
+        }
+    });
+    return generation.value.npcs;
+}
+
+function constructHostilePresenceBatch(plan, drafts, destination) {
+    const region = destination.region || Region.get(destination.regionId) || null;
+    const created = [];
+    try {
+        for (const npcData of drafts) {
+            const factionResolution = resolveFactionNameToId(npcData.faction, {
+                fieldLabel: `Hostile presence faction for "${npcData.name}"`
+            });
+            const attributes = {};
+            for (const attrName of Object.keys(attributeDefinitionsForPrompt)) {
+                attributes[attrName] = mapNpcRatingToValue(
+                    npcData.attributes?.[attrName] ?? npcData.attributes?.[attrName.toLowerCase()]
+                );
+            }
+            const npc = new Player({
+                ...getPlayerExtensionFieldInputsFromSource(
+                    npcData,
+                    getRegisteredPlayerEntityFields(),
+                    `Hostile presence NPC "${npcData.name}" Player field`
+                ),
+                name: npcData.name,
+                description: applyNpcNameTemplate(npcData.description || '', npcData.name),
+                shortDescription: applyNpcNameTemplate(npcData.shortDescription || '', npcData.name),
+                level: 1,
+                location: destination.id,
+                attributes,
+                factionId: factionResolution.id,
+                class: npcData.class || npcData.role || null,
+                race: npcData.race,
+                resistances: npcData.resistances || '',
+                vulnerabilities: npcData.vulnerabilities || '',
+                isNPC: true,
+                hiddenFromPlayer: Boolean(npcData.hiddenFromPlayer),
+                isHostile: true,
+                healthAttribute: npcData.healthAttribute,
+                personalityType: npcData.personalityType || null,
+                personalityTraits: npcData.personalityTraits || null,
+                personalityNotes: npcData.personalityNotes || null,
+                aiNotes: npcData.aiNotes || null,
+                disposition: npcData.disposition,
+                goals: Array.isArray(npcData.goals) ? npcData.goals : null,
+                needBars: resolveGeneratedNpcStartingNeedBars(npcData.needBars),
+                needBarApplicability: npcData.needBarApplicability || null,
+                hostileArrivalProvenance: {
+                    arrivalId: plan.pendingAttempt.arrivalId,
+                    pendingAttemptId: plan.pendingAttempt.id,
+                    source: plan.source
+                }
+            });
+            created.push(npc);
+            const baseLevel = Number.isFinite(destination.baseLevel)
+                ? destination.baseLevel
+                : (Number.isFinite(region?.averageLevel) ? region.averageLevel : (currentPlayer?.level || 1));
+            npc.setLevel(clampLevel(baseLevel + (Number.isFinite(npcData.relativeLevel) ? npcData.relativeLevel : 0), baseLevel));
+            applyGeneratedNpcStartingHealth(npc, npcData.startingHealth || null);
+        }
+        for (const npc of created) {
+            players.set(npc.id, npc);
+            destination.addNpcId(npc.id);
+        }
+        return created;
+    } catch (error) {
+        for (const npc of created) {
+            players.delete(npc.id);
+            destination.removeNpcId?.(npc.id);
+            Player.unregister(npc);
+        }
+        throw error;
+    }
+}
+
+async function runLocationHostileArrival({
+    destination,
+    arrivalId,
+    wasVisitedBeforeArrival,
+    priorLastVisitedTime,
+    entryCollector = null,
+    parentEntryId = null
+} = {}) {
+    const service = synchronizeHostileArrivalServiceState();
+    const arrivalPlayer = currentPlayer;
+    const arrivalSaveInfo = Globals.getCurrentSaveInfo?.() || Globals.currentSaveInfo || null;
+    try {
+        const result = await service.run({
+            arrivalId,
+            destination,
+            wasVisitedBeforeArrival,
+            priorLastVisitedTime,
+            currentWorldMinute: Globals.getTotalWorldMinutes(),
+            player: arrivalPlayer,
+            players,
+            factions
+        }, {
+            persistPending: () => persistHostileArrivalServiceState(service),
+            generateBatch: plan => generateHostilePresenceDrafts(plan, destination),
+            revalidate: (plan, drafts) => {
+                const currentSaveInfo = Globals.getCurrentSaveInfo?.() || Globals.currentSaveInfo || null;
+                if (currentSaveInfo !== arrivalSaveInfo
+                    || currentPlayer !== arrivalPlayer
+                    || players.get(arrivalPlayer?.id) !== arrivalPlayer
+                    || gameLocations.get(destination.id) !== destination) {
+                    throw new HostileArrivalInvalidatedError('Hostile arrival active save or world identity changed before commit.');
+                }
+                if (!arrivalPlayer || arrivalPlayer.currentLocation !== destination.id) {
+                    throw new HostileArrivalInvalidatedError('Hostile arrival destination changed before commit.');
+                }
+                const pending = service.pendingAttempts.get(plan.pendingAttempt.arrivalId);
+                if (!pending || pending.id !== plan.pendingAttempt.id || pending.destinationId !== destination.id) {
+                    throw new HostileArrivalInvalidatedError('Hostile arrival pending-attempt identity changed before commit.');
+                }
+                const hostileCount = countLivingHostiles({ location: destination, player: arrivalPlayer, players });
+                assertHostileDraftCapacity({
+                    destination,
+                    currentHostileCount: hostileCount,
+                    draftCount: drafts.length
+                });
+                const wild = resolveEffectiveLocationDanger(destination);
+                if (wild.locationBaseDanger !== plan.diagnostic.locationBaseDanger
+                    || wild.regionDangerModifier !== plan.diagnostic.regionDangerModifier
+                    || wild.effectiveDangerLevel !== plan.diagnostic.effectiveDangerLevel) {
+                    throw new HostileArrivalInvalidatedError('Hostile arrival danger state changed before commit.');
+                }
+                const currentControllerId = typeof destination.controllingFactionId === 'string'
+                    ? destination.controllingFactionId.trim() || null
+                    : null;
+                if (currentControllerId !== plan.diagnostic.controllingFactionId) {
+                    throw new HostileArrivalInvalidatedError('Hostile arrival territorial control changed before commit.');
+                }
+                if (currentControllerId) {
+                    const faction = Faction.get(currentControllerId);
+                    if (!faction) throw new HostileArrivalInvalidatedError('Hostile arrival controlling faction disappeared before commit.');
+                    const currentFactionDanger = resolveFactionDangerRating({
+                        standing: arrivalPlayer.getFactionStanding(faction.id),
+                        violenceLevel: faction.violenceLevel,
+                        thresholds: service.definition.factionStandingThresholds
+                    });
+                    if (currentFactionDanger.factionRating !== plan.diagnostic.factionRating
+                        || currentFactionDanger.violenceLevel !== plan.diagnostic.violenceLevel
+                        || currentFactionDanger.antagonismBand !== plan.diagnostic.antagonismBand) {
+                        throw new HostileArrivalInvalidatedError('Hostile arrival faction danger state changed before commit.');
+                    }
+                }
+            },
+            commitBatch: (plan, drafts) => constructHostilePresenceBatch(plan, drafts, destination)
+        });
+        if (result.generated.length) {
+            const visible = result.generated.filter(npc => npc.hiddenFromPlayer !== true);
+            const content = visible.length
+                ? `New hostile presence: ${visible.map(npc => npc.name).join(', ')} ${visible.length === 1 ? 'is' : 'are'} now here.`
+                : 'You sense that a new hostile presence may have settled here.';
+            const entry = pushChatEntry({
+                role: 'assistant',
+                type: 'hostile-arrival',
+                content,
+                metadata: {
+                    locationId: destination.id,
+                    arrivalId: result.pendingAttempt.arrivalId,
+                    generatedNpcIds: result.generated.map(npc => npc.id)
+                }
+            }, parentEntryId, destination.id);
+            if (Array.isArray(entryCollector) && entry && !entryCollector.includes(entry)) entryCollector.push(entry);
+        }
+        return result;
+    } finally {
+        persistHostileArrivalServiceState(service);
+    }
+}
+
 function parseRegionNpcs(xmlContent) {
     const result = { npcs: [], memories: new Map() };
     if (!xmlContent || typeof xmlContent !== 'string') {
-        return result;
+        throw new TypeError('Region NPC generation response must be a non-empty XML string.');
     }
 
     try {
@@ -20829,6 +21357,10 @@ function parseRegionNpcs(xmlContent) {
             const aiNotes = aiNotesNode && typeof aiNotesNode.textContent === 'string'
                 ? aiNotesNode.textContent.trim()
                 : '';
+            const disposition = parseGeneratedNpcDisposition(node, {
+                npcName: name || '',
+                source: 'Region NPC generation'
+            });
             const currencyValue = currencyNode ? parseIntegerFromText(currencyNode.textContent) : null;
 
             let personalityType = null;
@@ -20898,6 +21430,7 @@ function parseRegionNpcs(xmlContent) {
                 personalityTraits,
                 personalityNotes,
                 aiNotes,
+                disposition,
                 goals,
                 needBars: startingNeeds.needBars,
                 needBarApplicability: startingNeeds.needBarApplicability,
@@ -20908,6 +21441,8 @@ function parseRegionNpcs(xmlContent) {
         }
     } catch (error) {
         console.warn('Failed to parse region NPC XML:', error.message);
+        console.debug(error);
+        throw error;
     }
 
     return result;
@@ -26338,6 +26873,11 @@ function parseFactionCoreXml(xmlContent) {
         if (!shortDescription) {
             throw new Error(`Faction "${name}" is missing shortDescription.`);
         }
+        const violenceLevelText = getDirectXmlChildText(node, 'violenceLevel');
+        if (!/^[1-5]$/.test(violenceLevelText)) {
+            throw new Error(`Faction "${name}" <violenceLevel> must be an integer from 1 to 5.`);
+        }
+        const violenceLevel = Number(violenceLevelText);
 
         const assetsContainer = getDirectXmlChild(node, 'assets');
         const assetNodes = assetsContainer
@@ -26373,11 +26913,123 @@ function parseFactionCoreXml(xmlContent) {
             homeRegionName: homeRegionName || null,
             description,
             shortDescription,
+            violenceLevel,
             assets
         });
     }
 
     return parsed;
+}
+
+async function generateInitialFactionStandings({ player, factions: factionCollection } = {}) {
+    if (!player) {
+        throw new TypeError('Initial faction standing generation requires a player.');
+    }
+    const factionEntries = normalizeFactionEntries(factionCollection);
+    if (!factionEntries.length) {
+        return {
+            standings: new Map(),
+            applied: {},
+            preserved: typeof player.getFactionStandings === 'function' ? player.getFactionStandings() : {},
+            attempts: 0
+        };
+    }
+    if (!hasConfiguredAiBackend()) {
+        throw new Error('AI configuration missing for initial faction standing generation.');
+    }
+    const { min, max } = resolveInitialFactionStandingBounds(config);
+
+    const publicFactions = factionEntries.map(({ faction }) => ({
+        id: faction.id,
+        name: faction.name,
+        shortDescription: typeof faction.shortDescription === 'string' ? faction.shortDescription : '',
+        description: typeof faction.description === 'string' ? faction.description : '',
+        homeRegionName: typeof faction.homeRegionName === 'string' ? faction.homeRegionName : '',
+        tags: Array.isArray(faction.tags) ? faction.tags : [],
+        goals: Array.isArray(faction.goals) ? faction.goals : [],
+        assets: Array.isArray(faction.assets)
+            ? faction.assets
+                .filter(asset => asset && typeof asset.name === 'string' && asset.name.trim())
+                .map(asset => ({ name: asset.name.trim() }))
+            : []
+    }));
+    const renderedTemplate = promptEnv.render('initial-faction-standings.xml.njk', {
+        player: {
+            class: typeof player.class === 'string' ? player.class : '',
+            race: typeof player.race === 'string' ? player.race : '',
+            description: typeof player.description === 'string' ? player.description : ''
+        },
+        factions: publicFactions,
+        minimumReputation: min,
+        maximumReputation: max
+    });
+    const parsedTemplate = parseXMLTemplate(renderedTemplate);
+    const systemPrompt = typeof parsedTemplate.systemPrompt === 'string' ? parsedTemplate.systemPrompt.trim() : '';
+    const generationPrompt = typeof parsedTemplate.generationPrompt === 'string' ? parsedTemplate.generationPrompt.trim() : '';
+    if (!systemPrompt || !generationPrompt) {
+        throw new Error('Initial faction standing template is missing its system or generation prompt.');
+    }
+
+    const metadataLabel = 'initial_faction_standings_generation';
+    let effectiveMessages = [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: generationPrompt }
+    ];
+    const generation = await runPromptWithParseRetries({
+        messages: effectiveMessages,
+        maxAttempts: resolveConfiguredPromptMaxAttempts(config?.ai, { fallbackMaxAttempts: 3 }),
+        complete: async ({ messages }) => {
+            effectiveMessages = messages;
+            return LLMClient.chatCompletion({
+                messages,
+                metadataLabel,
+                expectedXmlRootTag: 'initialFactionStandings'
+            });
+        },
+        parse: response => parseInitialFactionStandingsXml(response, {
+            factions: factionCollection,
+            min,
+            max
+        }),
+        buildRetryInstruction: error => (
+            `The preceding initial faction standings XML failed structured validation: ${error?.message || error}\n`
+            + 'Return a corrected, complete response as exactly one '
+            + '<initialFactionStandings>...</initialFactionStandings> block. '
+            + `Include each supplied faction exactly once, copy its id and name exactly, and use an integer reputation from ${min} to ${max}. `
+            + 'Output XML only.'
+        ),
+        onAttempt: ({ attempt, maxAttempts, response, error, accepted }) => {
+            LLMClient.logPrompt({
+                prefix: metadataLabel,
+                metadataLabel,
+                systemPrompt,
+                generationPrompt: effectiveMessages
+                    .filter(message => message?.role !== 'system')
+                    .map(formatGenerationPromptMessageForLog)
+                    .join('\n\n'),
+                response: response || '',
+                sections: [{
+                    title: 'Structured response validation',
+                    content: accepted
+                        ? `accepted (${attempt}/${maxAttempts})`
+                        : `rejected (${attempt}/${maxAttempts}): ${error?.stack || error}`
+                }]
+            });
+        }
+    });
+
+    const application = applyInitialFactionStandings({
+        player,
+        factions: factionCollection,
+        standings: generation.value,
+        min,
+        max
+    });
+    return {
+        standings: generation.value,
+        ...application,
+        attempts: generation.attempts
+    };
 }
 
 function parseFactionRelationsXml(xmlContent) {
@@ -27883,6 +28535,7 @@ async function generateFactionsList({ count, settingDescription, generationNotes
             goals: Array.isArray(entry.goals) ? entry.goals.slice() : [],
             description: entry.description || null,
             shortDescription: entry.shortDescription || null,
+            violenceLevel: entry.violenceLevel,
             homeRegionName: entry.homeRegionName || null,
             assets: Array.isArray(entry.assets) ? entry.assets.map(asset => ({ ...asset })) : [],
             relations: {},
@@ -27901,6 +28554,7 @@ async function generateFactionsList({ count, settingDescription, generationNotes
             goals: entry.goals,
             description: entry.description,
             shortDescription: entry.shortDescription,
+            violenceLevel: entry.violenceLevel,
             homeRegionName: entry.homeRegionName,
             assets: entry.assets,
             relations: {},
@@ -28128,29 +28782,26 @@ async function generateLocationNPCs({ location, systemPrompt, generationPrompt, 
         ];
 
         console.log('🧑‍🤝‍🧑 Requesting NPC generation for location', location.id);
-        const npcResponse = await runGenerationPromptCompletion({
+        const npcGenerationResult = await runNpcGenerationPromptWithParseRetries({
+            messages,
             requestOptions: {
-                messages,
-                timeoutScale: npcCountHint,
-                metadataLabel: 'location_npc_generation',
-                expectedXmlRootTag: 'response'
+                timeoutScale: npcCountHint
             },
-            metadataLabel: 'location_npc_generation'
-        });
-
-        if (!npcResponse || !npcResponse.trim()) {
-            throw new Error('Invalid NPC response from AI API');
-        }
-
-        LLMClient.logPrompt({
-            prefix: 'location_npc_generation',
             metadataLabel: 'location_npc_generation',
             systemPrompt: systemPrompt || '',
-            generationPrompt: [generationPrompt, aiResponse, npcPromptWithContext].join('\n\n'),
-            response: npcResponse || ''
+            responseRootTag: 'response',
+            responseLabel: 'location NPC generation',
+            parseResponse: response => {
+                const parsed = parseLocationNpcs(response);
+                if (!Array.isArray(parsed?.npcs) || !parsed.npcs.length) {
+                    throw new Error('Location NPC generation response contained no <npc> or <hostile> entries.');
+                }
+                return parsed;
+            }
         });
 
-        const parsedResult = parseLocationNpcs(npcResponse);
+        const npcResponse = npcGenerationResult.response;
+        const parsedResult = npcGenerationResult.value;
         let npcs = Array.isArray(parsedResult?.npcs) ? parsedResult.npcs : [];
         let npcMemoryMap = parsedResult?.memories instanceof Map ? parsedResult.memories : new Map();
         const locationDuplicateFilter = filterGeneratedNpcsAgainstSameLocationDuplicates({
@@ -28302,6 +28953,7 @@ async function generateLocationNPCs({ location, systemPrompt, generationPrompt, 
                 personalityTraits: npcData.personalityTraits || null,
                 personalityNotes: npcData.personalityNotes || null,
                 aiNotes: npcData.aiNotes || null,
+                disposition: npcData.disposition,
                 goals: Array.isArray(npcData.goals) ? npcData.goals : null,
                 needBars: resolveGeneratedNpcStartingNeedBars(npcData.needBars),
                 needBarApplicability: npcData.needBarApplicability && typeof npcData.needBarApplicability === 'object'
@@ -28562,29 +29214,20 @@ async function generateRegionNPCs({ region, systemPrompt, generationPrompt, aiRe
 
         Globals.updateSpinnerText({ message: `Generating NPCs for region ${region.name || region.id}...` });
         console.log('🏘️ Requesting important NPC generation for region', region.id);
-        const npcResponse = await runGenerationPromptCompletion({
+        const npcGenerationResult = await runNpcGenerationPromptWithParseRetries({
+            messages,
             requestOptions: {
-                messages,
-                timeoutScale: regionLocations.length,
-                metadataLabel: 'region_npc_generation',
-                expectedXmlRootTag: 'response'
+                timeoutScale: regionLocations.length
             },
-            metadataLabel: 'region_npc_generation'
-        });
-
-        if (!npcResponse || !npcResponse.trim()) {
-            throw new Error('Invalid region NPC response from AI API');
-        }
-
-        LLMClient.logPrompt({
-            prefix: 'region_npc_generation',
             metadataLabel: 'region_npc_generation',
             systemPrompt: systemPrompt || '',
-            generationPrompt: [generationPrompt, aiResponse, npcPrompt].join('\n\n'),
-            response: npcResponse || ''
+            responseRootTag: 'response',
+            responseLabel: 'region NPC generation',
+            parseResponse: parseRegionNpcs
         });
 
-        const parsedRegionResult = parseRegionNpcs(npcResponse);
+        const npcResponse = npcGenerationResult.response;
+        const parsedRegionResult = npcGenerationResult.value;
         let parsedNpcs = Array.isArray(parsedRegionResult?.npcs) ? parsedRegionResult.npcs : [];
         let regionNpcMemories = parsedRegionResult?.memories instanceof Map ? parsedRegionResult.memories : new Map();
         const resolveRegionNpcTargetLocation = (npcData) => {
@@ -28775,6 +29418,7 @@ async function generateRegionNPCs({ region, systemPrompt, generationPrompt, aiRe
                 personalityTraits: npcData.personalityTraits || null,
                 personalityNotes: npcData.personalityNotes || null,
                 aiNotes: npcData.aiNotes || null,
+                disposition: npcData.disposition,
                 goals: Array.isArray(npcData.goals) ? npcData.goals : null,
                 needBars: resolveGeneratedNpcStartingNeedBars(npcData.needBars),
                 needBarApplicability: npcData.needBarApplicability && typeof npcData.needBarApplicability === 'object'
@@ -31855,13 +32499,15 @@ async function generateLocationFromPrompt(options = {}) {
                 baseLevelFallback: Number.isFinite(stubBaseLevel) ? stubBaseLevel : baseLevelFallback,
                 relativeLevelBase,
                 regionId: currentRegionContext?.id,
-                requireHasWeather: true
+                requireHasWeather: true,
+                requireDangerLevel: true
             })
             : Location.fromXMLSnippet(aiResponse, {
                 baseLevelFallback,
                 relativeLevelBase,
                 regionId: currentRegionContext?.id,
-                requireHasWeather: true
+                requireHasWeather: true,
+                requireDangerLevel: true
             });
 
         if (!location) {
@@ -34691,6 +35337,7 @@ app.get('/', (req, res) => {
             ? Globals.getSaveMetadata()
             : (Globals.saveMetadata || null),
         vehicleDebugEnabled: cliVehicleDebug,
+        showLocationDanger: config.show_location_danger === true,
         thingImageBadges: modExtensionRegistry.getThingImageBadges(),
         thingContextActions: modExtensionRegistry.getThingContextActions(),
         thingEditFields: modExtensionRegistry.getEntityFields('thing', { exposeToEditModal: true }),
@@ -35323,6 +35970,7 @@ const apiScope = {
     generateSkillsList,
     generateSkillsByNames,
     generateFactionsList,
+    generateInitialFactionStandings,
     generateThingImage,
     generateItemsByNames,
     generateContainerContentsForThing,
@@ -35367,6 +36015,7 @@ const apiScope = {
     findThingByName,
     findRegionByLocationId,
     generateNpcFromEvent,
+    runLocationHostileArrival,
     generateImageId,
     processJobQueue,
     cancelAllImageJobs,
@@ -35442,6 +36091,7 @@ if (modLoadResults.failed.length > 0) {
     console.warn(`⚠️  ${modLoadResults.failed.length} mod(s) failed to load.`);
 }
 validateDefinitionOverlays({ baseDir: Globals.baseDir || __dirname });
+loadLocationDangerDefinition({ baseDir: Globals.baseDir || __dirname });
 Thing.loadRarityDefinitions({ forceReload: true });
 Player.reloadDefinitionCaches({ refreshInstances: false });
 modExtensionRegistry.runStartupValidators({
@@ -35455,6 +36105,7 @@ modExtensionRegistry.runStartupValidators({
 if (typeof module !== 'undefined' && module.exports) {
     module.exports.performGameSave = (...args) => apiScope.performGameSave(...args);
     module.exports.performGameLoad = (...args) => apiScope.performGameLoad(...args);
+    module.exports.generateInitialFactionStandings = generateInitialFactionStandings;
     module.exports.pendingRegionStubs = pendingRegionStubs;
     module.exports.ensureExitConnection = ensureExitConnection;
     module.exports.backfillRegionExitTravelTimes = (...args) => apiScope.backfillRegionExitTravelTimes(...args);

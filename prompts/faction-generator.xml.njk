@@ -10,6 +10,7 @@ You are an AI game designer creating a faction roster for a tabletop-style RPG. 
 - Include 2-4 concise goals.
 - Include 2-4 assets (outposts, trade routes, leaders, resources, or services).
 - Include a shortDescription and a longer description.
+- Include a violenceLevel from 1 to 5 describing willingness to use physical force, independent of morality or friendliness.
 - Do not include faction relations in this stage.
 - Do not include reputation tiers in this stage.
 - Do not name any faction "None".
@@ -37,6 +38,7 @@ Step 2: Output them in XML using this structure. All fields are required.:
       <goal>Goal text.</goal>
     </goals>
     <homeRegion>Optional home region name</homeRegion>
+    <violenceLevel>Integer from 1 (avoids physical force) to 5 (predatory or routinely extreme violence)</violenceLevel>
     <description>A description of the faction: their unique identities, goals, and relationships, etc. ~2 paragraphs.</description>
     <shortDescription>1 sentence summary of the faction.</shortDescription>
     <assets>

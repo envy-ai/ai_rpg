@@ -1,0 +1,23 @@
+faction_standing_thresholds:
+  dislikes_below: 0
+  unfriendly_below: -20
+  hostile_below: -40
+  severe_enemy_below: -60
+  extermination_below: -80
+
+arrival_probability_by_rating:
+  1:
+    half_life: null
+    cap: 0
+  2:
+    half_life: 30 days
+    cap: 0.25
+  3:
+    half_life: 7 days
+    cap: 0.50
+  4:
+    half_life: 2 days
+    cap: 0.67
+  5:
+    half_life: 12 hours
+    cap: 0.80

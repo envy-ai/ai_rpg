@@ -5,6 +5,7 @@ const path = require('path');
 const ModExtensionRegistry = require('../ModExtensionRegistry.js');
 const ModLoader = require('../ModLoader.js');
 const { getChatToolDefinitions } = require('../chat_tool_calls.js');
+const { shouldIncludeEntryInBaseContextHistory } = require('../base_context_history.js');
 
 function createModulesScope(registry, options = {}) {
     const loader = new ModLoader(path.join(__dirname, '..'), { config: { mods: { modules: { enabled: true } } } });
@@ -54,6 +55,7 @@ function actorWith(items) {
     return {
         id: 'actor_1',
         name: 'Tester',
+        currentLocation: 'loc_1',
         inventory: items,
         getInventoryItems() {
             return this.inventory;
@@ -78,6 +80,16 @@ function actorWith(items) {
         },
         withHealthRatioPreserved(mutator) {
             mutator();
+        }
+    };
+}
+
+function moduleActionGlobals(entries = []) {
+    return {
+        appendChatEntry(entry, options = {}) {
+            const stored = { id: `entry_${entries.length + 1}`, ...entry };
+            entries.push({ entry: stored, options });
+            return stored;
         }
     };
 }
@@ -275,6 +287,7 @@ test('module action can install a loose location module into an inventory base i
         [crystal.id, crystal]
     ]);
     const action = registry.getThingContextActionRecord('modules:install-module');
+    const chatEntries = [];
 
     const result = action.handler({
         thing: sword,
@@ -290,7 +303,8 @@ test('module action can install a loose location module into an inventory base i
             slotType: 'core'
         },
         things,
-        locations: new Map([[location.id, location]])
+        locations: new Map([[location.id, location]]),
+        Globals: moduleActionGlobals(chatEntries)
     });
 
     assert.deepEqual(sword.installedModuleIds, [crystal.id]);
@@ -299,6 +313,67 @@ test('module action can install a loose location module into an inventory base i
     assert.equal(location.thingIds.includes(crystal.id), false);
     assert.equal(result.actor, actor);
     assert.equal(result.location, location);
+    assert.equal(chatEntries.length, 1);
+    assert.equal(result.chatEntry, chatEntries[0].entry);
+    assert.equal(result.chatEntry.role, 'assistant');
+    assert.equal(result.chatEntry.type, 'module-install');
+    assert.equal(result.chatEntry.content, 'Tester installs Loose Core Crystal into Socketed Sword.');
+    assert.equal(result.chatEntry.summary, result.chatEntry.content);
+    assert.equal(result.chatEntry.locationId, location.id);
+    assert.equal(result.chatEntry.metadata.actionId, 'modules:install-module');
+    assert.equal(result.chatEntry.metadata.source, 'thing-context-action');
+    assert.equal(result.chatEntry.metadata.actorId, actor.id);
+    assert.equal(result.chatEntry.metadata.baseItemId, sword.id);
+    assert.equal(result.chatEntry.metadata.moduleItemId, crystal.id);
+    assert.equal(result.chatEntry.metadata.excludeFromBaseContextHistory, undefined);
+    assert.equal(shouldIncludeEntryInBaseContextHistory(result.chatEntry, {
+        hasRenderableContent: true
+    }), true);
+});
+
+test('module action validates history storage before mutating an install', () => {
+    const registry = new ModExtensionRegistry();
+    const modulesMod = require('../mods/modules/mod.js');
+    modulesMod.register(createModulesScope(registry));
+
+    const sword = item({
+        id: 'sword_preflight',
+        name: 'Socketed Sword',
+        slot: 'weapon',
+        moduleSlots: [{ type: 'core' }]
+    });
+    const crystal = item({
+        id: 'crystal_preflight',
+        name: 'Core Crystal',
+        moduleType: 'core'
+    });
+    const actor = actorWith([sword, crystal]);
+    const things = new Map([
+        [sword.id, sword],
+        [crystal.id, crystal]
+    ]);
+    const action = registry.getThingContextActionRecord('modules:install-module');
+
+    assert.throws(() => action.handler({
+        thing: sword,
+        actor,
+        currentPlayer: actor,
+        requestBody: {
+            context: 'player-inventory',
+            baseItemId: sword.id,
+            baseItemSource: 'inventory',
+            moduleItemId: crystal.id,
+            moduleItemSource: 'inventory',
+            slotType: 'core'
+        },
+        things,
+        locations: new Map(),
+        Globals: {}
+    }), /requires the chat-entry appender/);
+
+    assert.deepEqual(sword.installedModuleIds, []);
+    assert.equal(crystal.moduleInstalledOnItemId, null);
+    assert.deepEqual(actor.inventory, [sword, crystal]);
 });
 
 test('module action installs one item from a loose location module stack', () => {
@@ -343,7 +418,8 @@ test('module action installs one item from a loose location module stack', () =>
             slotType: 'core'
         },
         things,
-        locations: new Map([[location.id, location]])
+        locations: new Map([[location.id, location]]),
+        Globals: moduleActionGlobals()
     });
 
     const installedModuleId = sword.installedModuleIds[0];
@@ -399,7 +475,8 @@ test('module action registers split base and module instances when both inventor
             slotType: 'core'
         },
         things,
-        locations: new Map()
+        locations: new Map(),
+        Globals: moduleActionGlobals()
     });
 
     const installedBase = things.get(result.metadata.baseItemId);
@@ -458,7 +535,8 @@ test('module action can install an inventory module into a loose location base i
             slotType: 'core'
         },
         things,
-        locations: new Map([[location.id, location]])
+        locations: new Map([[location.id, location]]),
+        Globals: moduleActionGlobals()
     });
 
     assert.deepEqual(sword.installedModuleIds, [crystal.id]);

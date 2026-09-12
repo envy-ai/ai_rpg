@@ -11,6 +11,7 @@ Serialized factions contain:
 - `description`, `shortDescription`: strings or `null`.
 - `tags`, `goals`: string arrays.
 - `homeRegionName`: free-form region label, not a region id.
+- `violenceLevel`: numeric integer from `1` through `5`, describing the faction's predisposition to physical violence independently of player standing. Missing legacy values default to `1`.
 - `relations`: object keyed by target faction id. Each value is `{ status, notes }`, where `status` is `allied`, `neutral`, `hostile`, or `rival`, and `notes` is a non-empty string.
 - `assets`: array of objects with at least `name`; `type` and `description` are optional.
 - `reputationTiers`: array of `{ threshold, label, perks, penalties }`. Thresholds are numeric; tiers are sorted by threshold inside the `Faction` model.
@@ -36,7 +37,7 @@ Behavior:
 Create an active-game faction.
 
 Request:
-- Body: `{ name: string, shortDescription?: string|null, description?: string|null, tags?: string[]|string, goals?: string[]|string, homeRegionName?: string, assets?: Array<{ name: string, type?: string, description?: string }>, relations?: Record<factionId, { status: 'allied'|'neutral'|'hostile'|'rival', notes: string }>, reputationTiers?: Array<{ threshold: number, label?: string, perks?: string[]|string, penalties?: string[]|string }> }`
+- Body: `{ name: string, violenceLevel?: number, shortDescription?: string|null, description?: string|null, tags?: string[]|string, goals?: string[]|string, homeRegionName?: string, assets?: Array<{ name: string, type?: string, description?: string }>, relations?: Record<factionId, { status: 'allied'|'neutral'|'hostile'|'rival', notes: string }>, reputationTiers?: Array<{ threshold: number, label?: string, perks?: string[]|string, penalties?: string[]|string }> }`
 
 Response:
 - 201: `{ success: true, faction: Faction }`
@@ -45,6 +46,7 @@ Response:
 
 Behavior:
 - `name` is required, must be unique case-insensitively, and cannot be `"None"`.
+- `violenceLevel` defaults to `1`; explicit null also stores `1`. Other supplied values must be numeric integers from `1` through `5`; invalid values return `400` and are not clamped.
 - `tags` and `goals` accept arrays or newline/comma-delimited strings.
 - `description` and `shortDescription` may be omitted or `null`; if provided as strings, they must be non-empty after trimming.
 - `assets` must be an array of objects with non-empty `name` values.
@@ -58,7 +60,7 @@ Normalize a partial faction payload and fill missing fields through AI when requ
 
 Request:
 - Body: `{ faction: PartialFaction, generationNotes?: string }`
-- Supported faction fields: `name`, `homeRegionName`, `shortDescription`, `description`, `tags`, `goals`, `assets`, `relations`, `reputationTiers`.
+- Supported faction fields: `name`, `homeRegionName`, `violenceLevel`, `shortDescription`, `description`, `tags`, `goals`, `assets`, `relations`, `reputationTiers`.
 - `relations` is an id-keyed relation object. Targets must be existing active-game faction ids.
 - `generationNotes` is optional free-text guidance forwarded into the autofill prompt.
 
@@ -70,6 +72,7 @@ Response:
 Behavior:
 - Completeness requires `name`, `homeRegionName`, `shortDescription`, `description`, non-empty `tags`, non-empty `goals`, non-empty `assets`, non-empty `reputationTiers`, and a relation with status and notes for each existing faction.
 - If the normalized payload is complete, the route returns it with `raw: null`.
+- A supplied `violenceLevel` is validated and preserved. When it is missing, autofill requires the prompt to generate an integer from `1` through `5`; missing or invalid XML follows the configured exact-error retry path.
 - If any required field or relation is missing, the route renders `prompts/fill-faction-form.xml.njk`, calls the LLM, logs through `LLMClient.logPrompt()`, and merges only missing values.
 - Generated relation entries are resolved from faction names to existing faction ids; matching is case-insensitive and quote-insensitive.
 - AI relation parsing accepts nested relation nodes such as `<factionName>`, `<status>`, `<notes>` and attribute-based relations such as `<relation faction="..." status="...">notes</relation>`.
@@ -83,7 +86,7 @@ Update an active-game faction by id.
 
 Request:
 - Path: `id` (faction id)
-- Body supports: `name`, `shortDescription`, `description`, `tags`, `goals`, `homeRegionName`, `assets`, `relations`, `reputationTiers`
+- Body supports: `name`, `shortDescription`, `description`, `tags`, `goals`, `homeRegionName`, `violenceLevel`, `assets`, `relations`, `reputationTiers`
 
 Response:
 - 200: `{ success: true, faction: Faction }`
@@ -98,6 +101,7 @@ Behavior:
 - `tags` and `goals` accept arrays or newline/comma-delimited strings.
 - `description` and `shortDescription` must be non-empty strings or `null` when present.
 - Blank `homeRegionName` clears the field to `null`.
+- `violenceLevel` accepts null to store `1`; otherwise it must be a numeric integer from `1` through `5`. Invalid values return `400` without changing the faction.
 - `relations` must be keyed by existing faction ids; entries targeting the same faction id as the path parameter are ignored.
 - Relation entries require valid `status` and non-empty `notes`.
 

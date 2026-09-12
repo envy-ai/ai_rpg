@@ -107,6 +107,9 @@
                                     <div class="location-info" id="locationInfo">
                                         <div class="location-details" id="locationDetails">
                                             <span class="location-level" id="locationLevel">Level: ?</span>
+                                            {% if showLocationDanger %}
+                                            <span class="location-danger-level" id="locationDangerLevel">Danger: ?</span>
+                                            {% endif %}
                                         </div>
                                         <button type="button" class="location-npc-add-button location-modify-button" id="modifyLocationButton" disabled>🛠️ Modify Location</button>
                                         <div class="location-hint" id="locationHint">Hover over the location image for a description.</div>
@@ -229,15 +232,6 @@
                                                                 <span>Non-equippable only</span>
                                                             </label>
                                                         </div>
-                                                    </div>
-                                                    <div class="location-item-mobile-action-toggle" id="locationItemMobileActionToggle" role="group" aria-label="Choose what tapping a location item does">
-                                                        <button type="button" class="thing-list-panel__icon-toggle location-item-mobile-action-toggle__button is-active" id="locationItemInspectModeButton" data-location-item-action-mode="inspect" aria-label="Inspect items" aria-pressed="true" title="Inspect items">
-                                                            <img src="/assets/material-icons/misc/zoom_in.svg" class="location-item-mobile-action-toggle__icon" alt="" aria-hidden="true">
-                                                        </button>
-                                                        <button type="button" class="thing-list-panel__icon-toggle location-item-mobile-action-toggle__button" id="locationItemPickupModeButton" data-location-item-action-mode="pickup" aria-label="Pick up items" aria-pressed="false" title="Pick up items">
-                                                            <img src="/assets/material-icons/misc/pick_up.svg" class="location-item-mobile-action-toggle__icon" alt="" aria-hidden="true">
-                                                        </button>
-                                                        <span class="sr-only" id="locationItemMobileActionStatus" aria-live="polite">Tapping an item inspects it.</span>
                                                     </div>
                                                     <div class="location-entity-grid" id="locationItems">
                                                         <div class="location-thing-empty">No notable items present.</div>
@@ -418,6 +412,7 @@
                                     <textarea class="message-input" id="messageInput" placeholder="Type your message here..." rows="2"></textarea>
                                     <div class="send-controls">
                                         <button type="button" class="prefix-help-link" id="prefixHelpLink" aria-haspopup="dialog" aria-expanded="false" aria-controls="prefixHelpModal" aria-label="Show chat prefix help">?</button>
+                                        <button type="button" class="suggest-actions-button" id="suggestActionsButton" aria-haspopup="dialog" aria-controls="actionSuggestionsModal">Suggest actions</button>
                                         <button class="send-button" id="sendButton">Send</button>
                                     </div>
                                 </div>
@@ -868,6 +863,11 @@
                                             <input type="text" id="factionHomeRegion" name="homeRegionName">
                                             <span class="help-text">Optional region name or theme anchor.</span>
                                         </div>
+                                        <div class="form-group">
+                                            <label for="factionViolenceLevel">Violence Level</label>
+                                            <input type="number" id="factionViolenceLevel" name="violenceLevel" min="1" max="5" step="1" required>
+                                            <span class="help-text">Predisposition to use physical violence, from 1 (none) to 5 (highest).</span>
+                                        </div>
                                         <div class="form-group full-width">
                                             <label for="factionShortDescription">Short Description</label>
                                             <textarea id="factionShortDescription" name="shortDescription" rows="2" placeholder="One-sentence summary."></textarea>
@@ -1191,6 +1191,22 @@
         </div>
     </div>
 
+    <div id="actionSuggestionsBackdrop" class="modal-backdrop" hidden></div>
+    <div id="actionSuggestionsModal" class="modal action-suggestions-modal" role="dialog" aria-modal="true" aria-labelledby="actionSuggestionsTitle" aria-describedby="actionSuggestionsDescription" aria-hidden="true" hidden>
+        <div class="modal__dialog">
+            <header class="modal__header">
+                <h2 id="actionSuggestionsTitle">Suggested actions</h2>
+                <button type="button" class="modal__close" id="actionSuggestionsCloseBtn" aria-label="Close suggested actions"><span aria-hidden="true">X</span></button>
+            </header>
+            <div class="modal__body">
+                <p id="actionSuggestionsDescription" class="modal__instruction">Choose one plausible action to submit as your next turn.</p>
+                <div id="actionSuggestionsStatus" class="action-suggestions-status" role="status" aria-live="polite">Generating three suggestions...</div>
+                <div id="actionSuggestionsList" class="action-suggestions-list"></div>
+            </div>
+            <footer class="modal__footer"><div class="button-group"><button type="button" class="btn btn-secondary" id="actionSuggestionsCancelBtn">Cancel</button></div></footer>
+        </div>
+    </div>
+
     <div id="emptyActionConfirmModal" class="modal empty-action-confirm-modal" role="dialog" aria-modal="true" aria-labelledby="emptyActionConfirmTitle" aria-describedby="emptyActionConfirmDescription" aria-hidden="true" hidden>
         <div class="modal__dialog">
             <header class="modal__header">
@@ -1414,6 +1430,11 @@
                     <div class="form-group">
                         <label for="factionCreateHomeRegion">Home Region</label>
                         <input type="text" id="factionCreateHomeRegion" name="homeRegionName" placeholder="Optional">
+                    </div>
+                    <div class="form-group">
+                        <label for="factionCreateViolenceLevel">Violence Level</label>
+                        <input type="number" id="factionCreateViolenceLevel" name="violenceLevel" min="1" max="5" step="1" value="1" required>
+                        <span class="help-text">Predisposition to use physical violence, from 1 (none) to 5 (highest).</span>
                     </div>
                     <div class="form-group">
                         <label for="factionCreateShortDescription">Short Description</label>
@@ -2716,6 +2737,11 @@
                             <label for="npcEditAiNotes">AI Notes</label>
                             <textarea id="npcEditAiNotes" rows="2"></textarea>
                         </div>
+                        <div id="npcEditDispositionField" class="npc-edit-field npc-edit-field--wide">
+                            <label for="npcEditDisposition">Behavioral Disposition</label>
+                            <textarea id="npcEditDisposition" rows="2" placeholder="For non-sentient animals and creatures"></textarea>
+                            <p class="npc-edit-hint">Leave blank for sentient NPCs. This guides the entity's usual instinctive behavior.</p>
+                        </div>
                     </div>
                 </div>
 
@@ -3005,6 +3031,11 @@
                     <label for="locationEditLevel">Level</label>
                     <input type="number" id="locationEditLevel" name="level" min="1" max="99" step="1" required>
                 </div>
+                <div class="location-edit-field">
+                    <label for="locationEditDangerLevel">Danger Level</label>
+                    <input type="number" id="locationEditDangerLevel" name="dangerLevel" step="1" required>
+                    <span class="help-text">Stored ambient danger base. The effective value is this plus the region modifier, clamped to 1–5 for calculations.</span>
+                </div>
                 <div class="location-edit-field" id="locationEditRegionGroup">
                     <label for="locationEditRegion">Region</label>
                     <select id="locationEditRegion" name="regionId"></select>
@@ -3088,6 +3119,10 @@
                 <div class="location-edit-field">
                     <label for="regionEditAverageLevel">Average Level</label>
                     <input type="number" id="regionEditAverageLevel" name="averageLevel" min="1" step="1" required>
+                </div>
+                <div class="location-edit-field">
+                    <label for="regionEditDangerModifier">Danger Modifier</label>
+                    <input type="number" id="regionEditDangerModifier" name="dangerModifier" step="1" required>
                 </div>
                 <div class="location-edit-field">
                     <label for="regionEditFaction">Controlling Faction</label>
@@ -3212,6 +3247,10 @@
 
     <div id="imageLightbox" class="image-lightbox" hidden aria-hidden="true" tabindex="-1">
         <div id="imageLightboxInner" class="image-lightbox__inner" role="dialog" aria-modal="true" aria-label="Image viewer">
+            <button type="button" id="imageLightboxClose" class="image-lightbox__close" aria-label="Close item viewer">
+                <span aria-hidden="true">X</span>
+            </button>
+            <div id="imageLightboxActions" class="image-lightbox__actions" aria-label="Item actions" hidden></div>
             <div id="imageLightboxMedia" class="image-lightbox__media">
                 <img id="imageLightboxImage" class="image-lightbox__image" alt="" src="" loading="lazy">
                 <div id="imageLightboxCaption" class="image-lightbox__caption" hidden></div>
@@ -8759,6 +8798,119 @@
             return moveThingToInventory(thing, { ownerId: npcId, ownerType: 'npc', locationId });
         }
 
+        async function showPutThingInInventoryModal(thing, options = {}, { sourceCard = null, busyButton = null } = {}) {
+            if (!thing?.id) {
+                throw new Error('Missing item information.');
+            }
+
+            const recipientOptions = [];
+            const seenIds = new Set();
+            const pushEntry = (entry, { priority = 2 } = {}) => {
+                if (!entry?.id || !entry?.name) {
+                    return;
+                }
+                const trimmedName = entry.name.trim();
+                if (!trimmedName || seenIds.has(entry.id)) {
+                    return;
+                }
+                seenIds.add(entry.id);
+                recipientOptions.push({ id: entry.id, name: trimmedName, priority });
+            };
+
+            const currentPlayer = window.currentPlayerData?.id && window.currentPlayerData?.name
+                ? { id: window.currentPlayerData.id, name: window.currentPlayerData.name }
+                : null;
+            if (currentPlayer) {
+                pushEntry(currentPlayer, { priority: 0 });
+            }
+            if (window.currentNpcData instanceof Map) {
+                window.currentNpcData.forEach(entry => pushEntry(entry, { priority: 1 }));
+            }
+
+            try {
+                const response = await fetch('/api/players');
+                const data = await response.json().catch(() => ({}));
+                if (response.ok && data?.success && Array.isArray(data.players)) {
+                    data.players
+                        .filter(entry => entry?.id && entry?.name && entry.isNPC)
+                        .forEach(entry => pushEntry(entry, { priority: 2 }));
+                }
+            } catch (fetchError) {
+                console.warn('Failed to fetch NPC list:', fetchError);
+            }
+
+            if (!recipientOptions.length) {
+                throw new Error('No NPCs are available to receive this item.');
+            }
+
+            recipientOptions.sort((a, b) => {
+                if (a.priority !== b.priority) {
+                    return a.priority - b.priority;
+                }
+                return a.name.localeCompare(b.name, undefined, { sensitivity: 'base' });
+            });
+
+            return window.showSearchSelectionModal({
+                title: 'Select Person',
+                filterPlaceholder: 'Filter by name',
+                filterAriaLabel: 'Filter people by name',
+                emptyMessage: 'No NPCs are available to receive this item.',
+                noMatchesMessage: 'No people match that search.',
+                options: recipientOptions.map(entry => ({
+                    id: entry.id,
+                    label: entry.name,
+                    searchText: entry.name
+                })),
+                onSelect: async (entry) => {
+                    if (busyButton) {
+                        busyButton.disabled = true;
+                    }
+                    try {
+                        const sourceLocationId = options.context === 'location'
+                            ? (options.locationId || window.lastRenderedLocation?.id || null)
+                            : null;
+                        const moveResult = await moveThingToNpcInventory(thingDataCache.get(thing.id) || thing, entry.id, {
+                            locationId: sourceLocationId
+                        });
+
+                        if (moveResult?.success) {
+                            if (options.context === 'location' && sourceCard?.parentElement) {
+                                const container = resolveThingCollectionContainer(sourceCard);
+                                sourceCard.remove();
+                                if (container && !container.querySelector('.thing-collection-entry')) {
+                                    const emptyMessage = container.id === 'locationScenery'
+                                        ? 'No notable scenery present.'
+                                        : 'No notable items present.';
+                                    container.innerHTML = `<div class="location-thing-empty">${emptyMessage}</div>`;
+                                }
+                            } else if (options.context === 'npc-inventory') {
+                                const targetOwnerId = moveResult?.owner?.id || null;
+                                if (targetOwnerId === currentNpcInventoryNpcId) {
+                                    const updatedInventory = Array.isArray(moveResult.owner?.inventory) ? moveResult.owner.inventory : [];
+                                    currentNpcInventory = updatedInventory;
+                                    renderNpcInventory(updatedInventory);
+                                } else if (Array.isArray(currentNpcInventory)) {
+                                    currentNpcInventory = currentNpcInventory.filter(item => item?.id !== thing.id);
+                                    renderNpcInventory(currentNpcInventory);
+                                }
+                            } else if (options.context === 'player-inventory') {
+                                await window.refreshInventory?.();
+                            }
+                        }
+                        return moveResult;
+                    } catch (error) {
+                        console.warn('Failed to move item into inventory:', error);
+                        alert(`Failed to move item: ${error?.message || error}`);
+                        throw error;
+                    } finally {
+                        if (busyButton) {
+                            busyButton.disabled = false;
+                        }
+                    }
+                }
+            });
+        }
+
         async function applyThingMutationResult(result, options = {}, { removeThingIds = [] } = {}) {
             const idsToDelete = new Set(
                 (Array.isArray(removeThingIds) ? removeThingIds : [])
@@ -9975,131 +10127,10 @@
                 pickupButton.addEventListener('click', async (event) => {
                     event.stopPropagation();
                     closeThingContextMenu();
-
                     try {
-                        const fetchNpcOptions = async () => {
-                            const options = [];
-                            const seenIds = new Set();
-
-                            const pushEntry = (entry, { priority = 2 } = {}) => {
-                                if (!entry || !entry.id || !entry.name) {
-                                    return;
-                                }
-
-                                const trimmedName = entry.name.trim();
-                                if (!trimmedName || seenIds.has(entry.id)) {
-                                    return;
-                                }
-
-                                seenIds.add(entry.id);
-                                options.push({ id: entry.id, name: trimmedName, priority });
-                            };
-
-                            const currentPlayer = window.currentPlayerData && window.currentPlayerData.id && window.currentPlayerData.name
-                                ? { id: window.currentPlayerData.id, name: window.currentPlayerData.name }
-                                : null;
-
-                            if (currentPlayer) {
-                                pushEntry(currentPlayer, { priority: 0 });
-                            }
-
-                            // Include cached NPCs (player party, etc.)
-                            if (window.currentNpcData instanceof Map) {
-                                window.currentNpcData.forEach(entry => pushEntry(entry, { priority: 1 }));
-                            }
-
-                            try {
-                                const response = await fetch('/api/players');
-                                const data = await response.json().catch(() => ({}));
-                                if (response.ok && data?.success && Array.isArray(data.players)) {
-                                    data.players
-                                        .filter(entry => entry && entry.id && entry.name && entry.isNPC)
-                                        .forEach(entry => {
-                                            const priority = 2;
-                                            pushEntry(entry, { priority });
-                                        });
-                                }
-                            } catch (fetchError) {
-                                console.warn('Failed to fetch NPC list:', fetchError);
-                            }
-
-                            return options;
-                        };
-
-                        const npcOptions = await fetchNpcOptions();
-
-                        if (!npcOptions.length) {
-                            alert('No NPCs are available to receive this item.');
-                            return;
-                        }
-
-                        const sortedNpcList = npcOptions.sort((a, b) => {
-                            if (a.priority !== b.priority) {
-                                return a.priority - b.priority;
-                            }
-                            return a.name.localeCompare(b.name, undefined, { sensitivity: 'base' });
-                        });
-
-                        window.showSearchSelectionModal({
-                            title: 'Select Person',
-                            filterPlaceholder: 'Filter by name',
-                            filterAriaLabel: 'Filter people by name',
-                            emptyMessage: 'No NPCs are available to receive this item.',
-                            noMatchesMessage: 'No people match that search.',
-                            options: sortedNpcList.map(entry => ({
-                                id: entry.id,
-                                label: entry.name,
-                                searchText: entry.name
-                            })),
-                            onSelect: async (entry) => {
-                                let moveResult = null;
-                                try {
-                                    pickupButton.disabled = true;
-                                    const sourceLocationId = options.context === 'location'
-                                        ? (options.locationId || (window.lastRenderedLocation?.id || null))
-                                        : null;
-                                    moveResult = await moveThingToNpcInventory(thingDataCache.get(thing.id) || thing, entry.id, {
-                                        locationId: sourceLocationId
-                                    });
-                                } catch (error) {
-                                    console.warn('Failed to move item into inventory:', error);
-                                    alert(`Failed to move item: ${error?.message || error}`);
-                                    throw error;
-                                } finally {
-                                    pickupButton.disabled = false;
-                                }
-
-                                if (moveResult?.success) {
-                                    if (options.context === 'location' && card && card.parentElement) {
-                                        const container = resolveThingCollectionContainer(card);
-                                        card.remove();
-
-                                        const hasRemainingEntries = container?.querySelector('.thing-collection-entry');
-                                        if (container && !hasRemainingEntries) {
-                                            const emptyMessage = container.id === 'locationScenery'
-                                                ? 'No notable scenery present.'
-                                                : 'No notable items present.';
-                                            container.innerHTML = `<div class="location-thing-empty">${emptyMessage}</div>`;
-                                        }
-                                    } else if (options.context === 'npc-inventory') {
-                                        const targetOwnerId = moveResult?.owner?.id || null;
-                                        if (targetOwnerId === currentNpcInventoryNpcId) {
-                                            const updatedInventory = Array.isArray(moveResult.owner?.inventory) ? moveResult.owner.inventory : [];
-                                            currentNpcInventory = updatedInventory;
-                                            renderNpcInventory(updatedInventory);
-                                        } else if (Array.isArray(currentNpcInventory)) {
-                                            currentNpcInventory = currentNpcInventory.filter(item => item && item.id !== thing.id);
-                                            renderNpcInventory(currentNpcInventory);
-                                        }
-                                    } else if (options.context === 'player-inventory') {
-                                        try {
-                                            await window.refreshInventory?.();
-                                        } catch (inventoryError) {
-                                            console.warn('Failed to refresh player inventory after moving item:', inventoryError);
-                                        }
-                                    }
-                                }
-                            }
+                        await showPutThingInInventoryModal(thingDataCache.get(thing.id) || thing, options, {
+                            sourceCard: card,
+                            busyButton: pickupButton
                         });
                     } catch (error) {
                         console.warn('Failed to prepare NPC selection modal:', error);
@@ -10728,6 +10759,9 @@
                 'No description available.'
             );
             const level = Number(location?.baseLevel);
+            const dangerLevel = Number(location?.effectiveDangerLevel);
+            const dangerBase = Number(location?.dangerLevel);
+            const regionDangerModifier = Number(location?.regionDangerModifier);
             const regionPath = (Array.isArray(location?.regionPath) ? location.regionPath : [])
                 .map(region => normalizeRichTooltipText(region?.name))
                 .filter(Boolean);
@@ -10746,6 +10780,18 @@
                 { label: 'Exits', value: exits.length },
                 { label: 'NPCs', value: visibleNpcs.length }
             ];
+            if (Number.isInteger(dangerLevel) && dangerLevel >= 1 && dangerLevel <= 5) {
+                detailItems.unshift({ label: 'Danger', value: `${dangerLevel}/5` });
+                if (Number.isInteger(dangerBase)) {
+                    detailItems.splice(1, 0, { label: 'Danger Base', value: dangerBase });
+                }
+                if (Number.isInteger(regionDangerModifier)) {
+                    detailItems.splice(2, 0, {
+                        label: 'Region Modifier',
+                        value: regionDangerModifier > 0 ? `+${regionDangerModifier}` : regionDangerModifier
+                    });
+                }
+            }
 
             if (things.length || !Array.isArray(location?.thingIds) || location.thingIds.length === 0) {
                 detailItems.push({ label: 'Items', value: itemCount });
@@ -10832,6 +10878,9 @@
             host.dataset.locationFloatingTooltipBound = 'true';
 
             const showTooltip = (event) => {
+                if (isNarrowMobileViewport() && host.classList.contains('is-faction-emblem-hovered')) {
+                    return;
+                }
                 if (shouldSuppressContextTooltips()) {
                     window.floatingTooltipController?.hide?.();
                     return;
@@ -10857,6 +10906,9 @@
                 window.floatingTooltipController?.move?.(event);
             });
             host.addEventListener('mouseleave', () => {
+                if (isNarrowMobileViewport() && host.classList.contains('is-faction-emblem-hovered')) {
+                    return;
+                }
                 window.floatingTooltipController?.hide?.();
             });
         };
@@ -11157,13 +11209,35 @@
                 if (!src && !detailsHtml) {
                     return null;
                 }
+                const actionSource = options.lightboxActions;
+                const actions = typeof actionSource === 'function'
+                    ? actionSource(thing)
+                    : actionSource;
                 return {
                     src,
                     alt,
-                    detailsHtml
+                    detailsHtml,
+                    actions
                 };
             };
         };
+
+        function createThingLightboxAction(id, label, handler, options = {}) {
+            const normalizedId = typeof id === 'string' ? id.trim() : '';
+            const normalizedLabel = typeof label === 'string' ? label.trim() : '';
+            if (!normalizedId || !normalizedLabel || typeof handler !== 'function') {
+                throw new Error('Thing lightbox actions require id, label, and handler.');
+            }
+            return {
+                id: normalizedId,
+                label: normalizedLabel,
+                handler,
+                disabled: Boolean(options.disabled),
+                disabledReason: options.disabledReason || '',
+                closeBeforeRun: Boolean(options.closeBeforeRun),
+                closeOnSuccess: options.closeOnSuccess !== false
+            };
+        }
 
         const npcEditModal = document.getElementById('npcEditModal');
         const npcInventoryModal = document.getElementById('npcInventoryModal');
@@ -11334,6 +11408,8 @@
         const npcEditPersonalityTraitsInput = document.getElementById('npcEditPersonalityTraits');
         const npcEditPersonalityNotesInput = document.getElementById('npcEditPersonalityNotes');
         const npcEditAiNotesInput = document.getElementById('npcEditAiNotes');
+        const npcEditDispositionField = document.getElementById('npcEditDispositionField');
+        const npcEditDispositionInput = document.getElementById('npcEditDisposition');
         const npcEditNeedBarApplicabilitySection = document.getElementById('npcEditNeedBarApplicabilitySection');
         const npcEditNeedBarApplicabilityList = document.getElementById('npcEditNeedBarApplicabilityList');
         const npcEditAttributesContainer = document.getElementById('npcEditAttributes');
@@ -11499,10 +11575,6 @@
         const locationItemsSortEl = document.getElementById('locationItemsSort');
         const locationItemsSortToggleEl = document.getElementById('locationItemsSortToggle');
         const locationItemsCombineBtn = document.getElementById('locationItemsCombineBtn');
-        const locationItemMobileActionToggle = document.getElementById('locationItemMobileActionToggle');
-        const locationItemInspectModeButton = document.getElementById('locationItemInspectModeButton');
-        const locationItemPickupModeButton = document.getElementById('locationItemPickupModeButton');
-        const locationItemMobileActionStatus = document.getElementById('locationItemMobileActionStatus');
         const thingStackCombinerModal = document.getElementById('thingStackCombinerModal');
         const thingStackCombinerTitle = document.getElementById('thingStackCombinerTitle');
         const thingStackCombinerProgress = document.getElementById('thingStackCombinerProgress');
@@ -11620,6 +11692,7 @@
         const locationEditRelativeLevelGroup = document.getElementById('locationEditRelativeLevelGroup');
         const locationEditRelativeLevelInput = document.getElementById('locationEditRelativeLevel');
         const locationEditLevelInput = document.getElementById('locationEditLevel');
+        const locationEditDangerLevelInput = document.getElementById('locationEditDangerLevel');
         const locationEditRegionGroup = document.getElementById('locationEditRegionGroup');
         const locationEditRegionSelect = document.getElementById('locationEditRegion');
         const locationEditHasWeatherGroup = document.getElementById('locationEditHasWeatherGroup');
@@ -11658,6 +11731,7 @@
         const regionEditShortDescriptionInput = document.getElementById('regionEditShortDescription');
         const regionEditParentSelect = document.getElementById('regionEditParent');
         const regionEditAverageLevelInput = document.getElementById('regionEditAverageLevel');
+        const regionEditDangerModifierInput = document.getElementById('regionEditDangerModifier');
         const regionEditFactionSelect = document.getElementById('regionEditFaction');
         const regionEditIsVehicleInput = document.getElementById('regionEditIsVehicle');
         const regionEditVehicleFieldset = document.getElementById('regionEditVehicleFieldset');
@@ -12351,6 +12425,9 @@
                 return;
             }
 
+            document.querySelectorAll('.is-faction-emblem-hovered').forEach(host => {
+                host.classList.remove('is-faction-emblem-hovered');
+            });
             const parsedDuration = Number(durationMs);
             const safeDuration = Number.isFinite(parsedDuration) ? Math.max(250, parsedDuration) : TOUCH_TOOLTIP_SUPPRESS_MS;
             touchTooltipSuppressUntil = Math.max(touchTooltipSuppressUntil, Date.now() + safeDuration);
@@ -14026,6 +14103,29 @@
             }
         }
 
+        function createModuleWorkbenchLightboxActions(moduleItem) {
+            if (!moduleItem?.id) {
+                throw new Error('Module workbench lightbox action requires an item id.');
+            }
+            const compatibleSlot = findFirstCompatibleModuleWorkbenchSlot(moduleItem);
+            const disabledReason = moduleWorkbenchState.busy
+                ? 'Another module action is already in progress.'
+                : (compatibleSlot ? '' : 'No open compatible slots on this item.');
+            return [createThingLightboxAction('module-install-item', 'Install item', async () => {
+                const currentModule = moduleWorkbenchState.inventoryLookup.get(moduleItem.id)
+                    || thingDataCache.get(moduleItem.id)
+                    || moduleItem;
+                const slot = findFirstCompatibleModuleWorkbenchSlot(currentModule);
+                if (!slot) {
+                    throw new Error(`${currentModule.name || 'This module'} does not fit any open slot on this item.`);
+                }
+                await installModuleFromWorkbench(currentModule, slot.type);
+            }, {
+                disabled: Boolean(disabledReason),
+                disabledReason
+            })];
+        }
+
         function renderModuleWorkbenchInventory() {
             if (!moduleWorkbenchInventoryGrid || !moduleWorkbenchInventoryEmpty) {
                 return;
@@ -14063,6 +14163,7 @@
                         tableConfig,
                         extraClasses: ['module-workbench__module-card'],
                         focusable: true,
+                        lightboxActions: () => createModuleWorkbenchLightboxActions(clone),
                         tooltipOptions: {
                             equipmentOwner: () => moduleWorkbenchState.options?.context === 'npc-inventory'
                                 ? (window.currentNpcData?.get?.(moduleWorkbenchState.options?.npcId || currentNpcInventoryNpcId) || null)
@@ -14407,6 +14508,19 @@
                     applyThingContainerPayload(payload);
                 } catch (error) {
                     console.warn('Failed to refresh container after mod action:', error);
+                }
+            }
+
+            if (result?.chatEntry) {
+                try {
+                    await window.AIRPG_CHAT?.refreshChatHistory?.();
+                } catch (error) {
+                    console.warn('Failed to refresh chat history after mod action:', error);
+                }
+                try {
+                    await window.refreshStoryTools?.({ preserveSelection: true });
+                } catch (error) {
+                    console.warn('Failed to refresh Story Tools after mod action:', error);
                 }
             }
 
@@ -15974,6 +16088,7 @@
                 ? standingTier.label.trim()
                 : 'Unranked';
             const imageId = typeof faction?.imageId === 'string' ? faction.imageId.trim() : '';
+            const violenceLevel = Number(faction?.violenceLevel);
             const details = [];
 
             if (home) {
@@ -15981,6 +16096,14 @@
                     <div class="faction-emblem-tooltip__detail">
                         <span>Home</span>
                         <strong>${escapeHtml(home)}</strong>
+                    </div>
+                `);
+            }
+            if (Number.isInteger(violenceLevel) && violenceLevel >= 1 && violenceLevel <= 5) {
+                details.push(`
+                    <div class="faction-emblem-tooltip__detail">
+                        <span>Violence</span>
+                        <strong>${escapeHtml(`${violenceLevel}/5`)}</strong>
                     </div>
                 `);
             }
@@ -16066,29 +16189,57 @@
                     : 'Faction';
                 emblem.setAttribute('aria-label', `${factionName} faction information`);
 
-                const showTooltip = (event) => {
+                const showTooltip = (event, { explicit = false } = {}) => {
                     setLocationHoverState(true);
                     window.hidePartyTooltip?.();
                     window.floatingTooltipController?.show?.(
                         formatFactionEmblemTooltipHtml(faction, directory.playerStandings),
                         event,
-                        { allowHTML: true }
+                        { allowHTML: true, explicit }
                     );
                 };
 
-                emblem.addEventListener('mouseenter', showTooltip);
+                emblem.addEventListener('mouseenter', event => {
+                    if (!isNarrowMobileViewport()) {
+                        showTooltip(event);
+                    }
+                });
                 emblem.addEventListener('mousemove', (event) => {
                     event.stopPropagation();
+                    if (isNarrowMobileViewport()) {
+                        return;
+                    }
                     window.floatingTooltipController?.move?.(event);
                 });
-                emblem.addEventListener('mouseleave', hideTooltip);
+                emblem.addEventListener('mouseleave', () => {
+                    if (!isNarrowMobileViewport()) {
+                        hideTooltip();
+                    }
+                });
                 emblem.addEventListener('focus', () => {
+                    if (isNarrowMobileViewport()) {
+                        return;
+                    }
                     const rect = emblem.getBoundingClientRect();
                     showTooltip({ clientX: rect.right, clientY: rect.top });
                 });
-                emblem.addEventListener('blur', hideTooltip);
+                emblem.addEventListener('blur', () => {
+                    if (!isNarrowMobileViewport()) {
+                        hideTooltip();
+                    }
+                });
                 emblem.addEventListener('mousedown', event => event.stopPropagation());
-                emblem.addEventListener('click', event => event.stopPropagation());
+                emblem.addEventListener('pointerdown', event => {
+                    if (isNarrowMobileViewport()) {
+                        event.stopPropagation();
+                    }
+                });
+                emblem.addEventListener('click', event => {
+                    event.stopPropagation();
+                    if (isNarrowMobileViewport()) {
+                        showTooltip(event, { explicit: true });
+                    }
+                });
                 emblem.addEventListener('contextmenu', event => event.stopPropagation());
                 emblem.addEventListener('keydown', event => {
                     if (event.key === 'Escape') {
@@ -17439,6 +17590,12 @@
                 npcEditAiNotesInput.value = npc.aiNotes
                     ?? personalityDetails.aiNotes
                     ?? '';
+            }
+            if (npcEditDispositionInput) {
+                npcEditDispositionInput.value = npc.disposition ?? '';
+            }
+            if (npcEditDispositionField) {
+                npcEditDispositionField.hidden = npc.isNPC === false || npc.isPlayer === true;
             }
 
             populateNpcAttributes(npc.attributes || {});
@@ -22374,6 +22531,9 @@
                 if (npcEditAiNotesInput) {
                     payload.aiNotes = npcEditAiNotesInput.value ?? '';
                 }
+                if (npcEditDispositionInput && (!npcEditDispositionField || !npcEditDispositionField.hidden)) {
+                    payload.disposition = npcEditDispositionInput.value ?? '';
+                }
                 if (npcEditAliasesInput) {
                     payload.aliases = npcEditAliasesInput.value
                         .split(/\r?\n/)
@@ -24628,7 +24788,10 @@
             const resolvedViewMode = normalizeThingListViewMode(options.viewMode);
             const slotInfo = getThingSlotInfo(thing);
             const tableConfig = normalizeThingTableConfig(options.tableConfig);
-            const thingLightboxDataProvider = createThingLightboxDataProvider(thing, options.tooltipOptions || {});
+            const thingLightboxDataProvider = createThingLightboxDataProvider(thing, {
+                ...(options.tooltipOptions || {}),
+                lightboxActions: options.lightboxActions
+            });
             const equipped = Boolean(thing?.isEquipped || thing?.equippedSlot);
             const equippableItem = isEquippableItemThing(thing);
 
@@ -25257,6 +25420,26 @@
             return equipToggle;
         }
 
+        function createCharacterInventoryLightboxActions(thing) {
+            if (!thing?.id) {
+                return [];
+            }
+            return [
+                createThingLightboxAction('character-inventory-drop', 'Drop', async () => {
+                    await dropThingToCurrentLocation(thingDataCache.get(thing.id) || thing, {
+                        context: 'npc-inventory',
+                        npcId: currentNpcInventoryNpcId
+                    });
+                }),
+                createThingLightboxAction('character-inventory-give-to', 'Give to...', async () => {
+                    await showPutThingInInventoryModal(thingDataCache.get(thing.id) || thing, {
+                        context: 'npc-inventory',
+                        npcId: currentNpcInventoryNpcId
+                    });
+                }, { closeBeforeRun: true, closeOnSuccess: false })
+            ];
+        }
+
         function renderNpcInventory(items = []) {
             if (!npcInventoryGrid || !npcInventoryEmpty || !npcInventoryCount) {
                 return;
@@ -25294,6 +25477,7 @@
                 buildCard: (item, { viewMode, tableConfig } = {}) => buildThingCollectionEntry(item, {
                     viewMode,
                     tableConfig,
+                    lightboxActions: () => createCharacterInventoryLightboxActions(item),
                     contextMenuOptions: { context: 'npc-inventory', npcId: currentNpcInventoryNpcId },
                     tooltipOptions: {
                         equipmentOwner: () => {
@@ -25786,7 +25970,8 @@
             itemId,
             pendingCopy = false,
             action = 'click',
-            event = null
+            event = null,
+            forceQuantityPrompt = false
         } = {}) {
             if (barterRequestInFlight) {
                 return;
@@ -25809,13 +25994,45 @@
                 offer,
                 maxCount,
                 mode: shouldRemove ? 'remove' : 'add',
-                event
+                event,
+                forcePrompt: forceQuantityPrompt
             });
             if (quantity === null || quantity === undefined) {
                 return;
             }
             applyBarterCartDelta(sourceSide, offer.itemId, quantity, shouldRemove ? 'remove' : 'add');
             renderBarterModal();
+        }
+
+        function createBarterOfferLightboxActions(thing) {
+            const sourceSide = thing?.barterSourceSide;
+            const itemId = thing?.barterOffer?.itemId || thing?.id || '';
+            if ((sourceSide !== 'player' && sourceSide !== 'merchant') || !itemId) {
+                throw new Error('Trade lightbox action requires a valid offer source and item.');
+            }
+            const pendingCopy = Boolean(thing.barterIsPendingCopy);
+            const selectedCount = getBarterCartForSide(sourceSide).get(itemId) || 0;
+            const shouldRemove = pendingCopy || selectedCount > 0;
+            const unavailable = Boolean(thing.barterUnavailable) && !shouldRemove;
+            return [createThingLightboxAction(
+                shouldRemove ? 'barter-remove' : 'barter-add',
+                shouldRemove ? 'Remove from trade' : 'Add to trade',
+                async () => {
+                    await handleBarterOfferInteraction({
+                        sourceSide,
+                        itemId,
+                        pendingCopy,
+                        action: 'click',
+                        forceQuantityPrompt: true
+                    });
+                },
+                {
+                    disabled: unavailable,
+                    disabledReason: unavailable ? (thing.barterOffer?.reason || 'This item is unavailable for trade.') : '',
+                    closeBeforeRun: true,
+                    closeOnSuccess: false
+                }
+            )];
         }
 
         function appendBarterValueBadge(icon, offer) {
@@ -26013,6 +26230,9 @@
                     if (event.target?.closest?.('.entity-context-menu-button, .thing-card-menu-button, button, a, input, select, textarea')) {
                         return;
                     }
+                    if (isNarrowMobileViewport() && event.target?.closest?.('.image-lightbox-trigger')) {
+                        return;
+                    }
                     event.preventDefault();
                     event.stopPropagation();
                     event.stopImmediatePropagation();
@@ -26118,6 +26338,7 @@
                 buildCard: (item, { viewMode, tableConfig } = {}) => buildThingCollectionEntry(item, {
                     viewMode,
                     tableConfig,
+                    lightboxActions: () => createBarterOfferLightboxActions(item),
                     tooltipOptions: {
                         equipmentOwner: () => isPlayerSide ? (window.currentPlayerData || null) : (currentBarterNpc || null)
                     },
@@ -28346,6 +28567,7 @@
                         tableConfig,
                         extraClasses: ['crafting-inventory-card'],
                         focusable: true,
+                        lightboxActions: () => createCraftingItemLightboxActions(clone),
                         decorateCard: ({ card, icon, thing, slotInfo, controlsHost, equipmentControlsHost, viewMode: activeViewMode }) => {
                             if (!thing?.id) {
                                 return;
@@ -28598,6 +28820,33 @@
                 }
             }
             return false;
+        }
+
+        function createCraftingItemLightboxActions(thing) {
+            const thingId = typeof thing?.id === 'string' ? thing.id.trim() : '';
+            if (!thingId) {
+                throw new Error('Crafting lightbox action requires an item id.');
+            }
+
+            let disabledReason = '';
+            if (isItemIdAssignedToAnySlot(thingId)) {
+                disabledReason = 'This item is already assigned to a crafting slot.';
+            } else if (Boolean(thing.isEquipped || thing.equippedSlot)) {
+                disabledReason = `${thing.name || 'This item'} must be unequipped first.`;
+            } else if (isCraftingNonEmptyContainer(thing)) {
+                disabledReason = `${thing.name || 'This container'} must be emptied first.`;
+            } else if (craftingSlotAssignments.size >= currentCraftingSlotCount) {
+                disabledReason = 'No crafting slots are open.';
+            }
+
+            return [createThingLightboxAction('crafting-add-item', 'Add item', async () => {
+                if (!assignItemToFirstAvailableSlot(thingId)) {
+                    throw new Error('The item could not be added to an open crafting slot.');
+                }
+            }, {
+                disabled: Boolean(disabledReason),
+                disabledReason
+            })];
         }
 
         function isItemIdAssignedToAnySlot(thingId) {
@@ -33089,6 +33338,7 @@
         const locationEditDefaultNameLabel = locationEditNameLabel?.textContent || 'Location Name';
         const locationEditDefaultDescriptionLabel = locationEditDescriptionLabel?.textContent || 'Description';
         const locationEditLevelField = locationEditLevelInput?.closest('.location-edit-field') || null;
+        const locationEditDangerLevelField = locationEditDangerLevelInput?.closest('.location-edit-field') || null;
         const locationEditAbsoluteLevelField = locationEditAbsoluteLevel?.closest('.location-edit-field') || null;
         const locationEditStatusSection = locationStatusEffectsList?.closest('.location-edit-section') || null;
 
@@ -33441,6 +33691,7 @@
             }
 
             toggleLocationEditSection(locationEditLevelField, !isStubMode);
+            toggleLocationEditSection(locationEditDangerLevelField, !isStubMode);
             toggleLocationEditSection(locationEditAbsoluteLevelField, !isStubMode);
             toggleLocationEditSection(locationEditStatusSection, !isStubMode);
             toggleLocationEditSection(locationEditShortDescriptionGroup, true);
@@ -33455,6 +33706,13 @@
                 locationEditLevelInput.required = !isStubMode;
                 if (isStubMode) {
                     locationEditLevelInput.value = '';
+                }
+            }
+            if (locationEditDangerLevelInput) {
+                locationEditDangerLevelInput.disabled = isStubMode;
+                locationEditDangerLevelInput.required = !isStubMode;
+                if (isStubMode) {
+                    locationEditDangerLevelInput.value = '';
                 }
             }
             if (locationEditRelativeLevelInput) {
@@ -33546,6 +33804,11 @@
             }
             if (!stubContext && locationEditLevelInput) {
                 locationEditLevelInput.value = numericLevel ?? '';
+            }
+            if (!stubContext && locationEditDangerLevelInput) {
+                locationEditDangerLevelInput.value = Number.isInteger(targetLocation.dangerLevel)
+                    ? targetLocation.dangerLevel
+                    : 1;
             }
             if (!stubContext) {
                 setLocationHasWeatherField(targetLocation);
@@ -33808,6 +34071,13 @@
                 return;
             }
             payload.level = Math.max(1, Math.round(levelValue));
+            const dangerLevelValue = Number(locationEditDangerLevelInput?.value ?? NaN);
+            if (!Number.isInteger(dangerLevelValue)) {
+                setLocationEditStatus('Danger level must be an integer.', 'error');
+                locationEditDangerLevelInput?.focus();
+                return;
+            }
+            payload.dangerLevel = dangerLevelValue;
             payload.hasWeather = collectLocationHasWeatherValue();
 
             const statusEffectsValue = collectLocationStatusEffects();
@@ -34723,6 +34993,11 @@
                         : '';
                     regionEditAverageLevelInput.value = averaged;
                 }
+                if (regionEditDangerModifierInput) {
+                    regionEditDangerModifierInput.value = Number.isInteger(data.region.dangerModifier)
+                        ? data.region.dangerModifier
+                        : 0;
+                }
                 let regionVehicleExitOptions = [];
                 try {
                     regionVehicleExitOptions = await loadVehicleExitOptionsForRegion(data.region.id || regionId, data.region.name || '');
@@ -34828,6 +35103,13 @@
                 regionEditAverageLevelInput.value = normalizedAverageLevel;
             }
 
+            const dangerModifierValue = Number(regionEditDangerModifierInput?.value ?? NaN);
+            if (!Number.isInteger(dangerModifierValue)) {
+                setRegionEditStatus('Danger modifier must be an integer.', 'error');
+                regionEditDangerModifierInput?.focus();
+                return;
+            }
+
             const parentValueRaw = regionEditParentSelect?.value ?? '';
             const vehicleResult = collectVehicleInfoFromEditor(regionVehicleEditor, regionEditVehicleInfoSnapshot);
             if (vehicleResult.error) {
@@ -34841,6 +35123,7 @@
                 shortDescription: (regionEditShortDescriptionInput?.value ?? '').trim(),
                 parentRegionId: parentValueRaw && parentValueRaw.trim() ? parentValueRaw.trim() : null,
                 averageLevel: normalizedAverageLevel,
+                dangerModifier: dangerModifierValue,
                 secrets: collectRegionSecrets(),
                 isVehicle: vehicleResult.isVehicle,
                 vehicleInfo: vehicleResult.vehicleInfo
@@ -36869,41 +37152,6 @@
 
         let draggedLocationThing = null;
         const locationThingDropInFlightIds = new Set();
-        const LOCATION_ITEM_MOBILE_ACTION_MODES = new Set(['inspect', 'pickup']);
-        let locationItemMobileActionMode = 'inspect';
-
-        function setLocationItemMobileActionMode(mode) {
-            if (!LOCATION_ITEM_MOBILE_ACTION_MODES.has(mode)) {
-                throw new Error(`Unsupported mobile location-item action mode "${mode}".`);
-            }
-
-            locationItemMobileActionMode = mode;
-            if (locationItemsPanelEl) {
-                locationItemsPanelEl.dataset.mobileItemActionMode = mode;
-            }
-            [locationItemInspectModeButton, locationItemPickupModeButton].filter(Boolean).forEach(button => {
-                const isActive = button.dataset.locationItemActionMode === mode;
-                button.classList.toggle('is-active', isActive);
-                button.setAttribute('aria-pressed', isActive ? 'true' : 'false');
-            });
-            if (locationItemMobileActionStatus) {
-                locationItemMobileActionStatus.textContent = mode === 'pickup'
-                    ? 'Tapping an item picks it up.'
-                    : 'Tapping an item inspects it.';
-            }
-        }
-
-        if (locationItemMobileActionToggle) {
-            locationItemMobileActionToggle.addEventListener('click', (event) => {
-                const button = event.target.closest('[data-location-item-action-mode]');
-                if (!(button instanceof HTMLButtonElement) || !locationItemMobileActionToggle.contains(button)) {
-                    return;
-                }
-                setLocationItemMobileActionMode(button.dataset.locationItemActionMode || '');
-            });
-        }
-        setLocationItemMobileActionMode('inspect');
-
         const resetThingDragState = (expectedThingId = null) => {
             if (!expectedThingId || draggedLocationThing?.id === expectedThingId) {
                 draggedLocationThing = null;
@@ -37253,47 +37501,32 @@
             });
         }
 
-        function wireMobileLocationItemAction(card, thing, { locationId = null } = {}) {
-            if (!(card instanceof HTMLElement) || !thing?.id) {
-                return;
+        function createLocationItemLightboxActions(thing, { locationId = null } = {}) {
+            if (!thing?.id || normalizeThingTypeForDrag(thing.thingType) !== 'item') {
+                return [];
             }
-
-            card.addEventListener('click', async (event) => {
-                if (!isNarrowMobileViewport() || locationItemMobileActionMode !== 'pickup') {
-                    return;
-                }
-                if (event.target.closest('.entity-context-menu-button, .thing-card-menu-button, .entity-image-badge--action, .thing-action-icon, button, a, input, select, textarea')) {
-                    return;
-                }
-
-                event.preventDefault();
-                event.stopImmediatePropagation();
-                suppressContextTooltipsForTouch();
-
-                const playerId = typeof window.currentPlayerData?.id === 'string'
-                    ? window.currentPlayerData.id.trim()
-                    : '';
-                if (!playerId) {
-                    window.alert('The active player is unavailable, so this item cannot be picked up.');
-                    return;
-                }
-
-                card.classList.add('is-picking-up');
-                await handleGiveThingToOwner({
-                    ownerId: playerId,
-                    ownerType: 'player',
-                    dragState: {
-                        id: thing.id,
-                        locationId,
-                        thingType: normalizeThingTypeForDrag(thing.thingType),
-                        element: card,
-                        thing
+            return [
+                createThingLightboxAction('location-pick-up', 'Pick up', async () => {
+                    const playerId = typeof window.currentPlayerData?.id === 'string'
+                        ? window.currentPlayerData.id.trim()
+                        : '';
+                    if (!playerId) {
+                        throw new Error('The active player is unavailable, so this item cannot be picked up.');
                     }
-                });
-                if (card.isConnected) {
-                    card.classList.remove('is-picking-up');
-                }
-            }, true);
+                    await moveThingToInventory(thingDataCache.get(thing.id) || thing, {
+                        ownerId: playerId,
+                        ownerType: 'player',
+                        locationId
+                    });
+                    document.dispatchEvent(new Event('inventory:updated'));
+                }),
+                createThingLightboxAction('location-give-to', 'Give to...', async () => {
+                    await showPutThingInInventoryModal(thingDataCache.get(thing.id) || thing, {
+                        context: 'location',
+                        locationId
+                    });
+                }, { closeBeforeRun: true, closeOnSuccess: false })
+            ];
         }
 
         window.registerInventoryDropTarget = registerInventoryDropTarget;
@@ -37330,6 +37563,9 @@
             const buildLocationThingCard = (thing, { viewMode } = {}) => buildThingCollectionEntry(thing, {
                 viewMode,
                 contextMenuOptions: { context: 'location', locationId: safeLocation?.id || null },
+                lightboxActions: () => createLocationItemLightboxActions(thing, {
+                    locationId: safeLocation?.id || null
+                }),
                 tooltipOptions: {
                     equipmentOwner: () => window.currentPlayerData || null
                 },
@@ -37352,9 +37588,6 @@
                     card.addEventListener('dragend', () => {
                         card.classList.remove('is-dragging');
                     });
-                    if (normalizeThingTypeForDrag(thing.thingType) === 'item') {
-                        wireMobileLocationItemAction(card, thing, { locationId: safeLocation?.id || null });
-                    }
                     registerThingModuleDropTarget(card, thing, { context: 'location', locationId: safeLocation?.id || null });
                     registerThingContainerDropTarget(card, thing, { locationId: safeLocation?.id || null });
                 }
@@ -37424,6 +37657,39 @@
         window.renderLocationThingCollections = renderLocationThingCollections;
         window.rerenderCurrentLocationThingCollections = rerenderCurrentLocationThingCollections;
 
+        const LOCATION_DANGER_SKULL_COUNT = 4;
+
+        function renderLocationDangerIndicator(element, effectiveDangerLevel) {
+            if (!element) {
+                return;
+            }
+
+            if (!Number.isInteger(effectiveDangerLevel) || effectiveDangerLevel < 1 || effectiveDangerLevel > 5) {
+                element.textContent = 'Danger: ?';
+                element.removeAttribute('aria-label');
+                return;
+            }
+
+            const filledSkullCount = effectiveDangerLevel - 1;
+            const label = document.createElement('span');
+            label.className = 'location-danger-label';
+            label.textContent = 'Danger:';
+
+            const skulls = document.createElement('span');
+            skulls.className = 'location-danger-skulls';
+            skulls.setAttribute('aria-hidden', 'true');
+            for (let index = 0; index < LOCATION_DANGER_SKULL_COUNT; index += 1) {
+                const skull = document.createElement('span');
+                skull.className = 'location-danger-skull';
+                skull.classList.toggle('is-filled', index < filledSkullCount);
+                skull.textContent = '💀';
+                skulls.appendChild(skull);
+            }
+
+            element.replaceChildren(label, skulls);
+            element.setAttribute('aria-label', `Danger: ${effectiveDangerLevel} out of 5`);
+        }
+
         window.updateLocationDisplay = async function(location) {
                 const locationName = document.getElementById('locationName');
                 const locationNameIcon = document.getElementById('locationNameIcon');
@@ -37436,6 +37702,7 @@
                 const locationTooltip = document.getElementById('locationTooltip');
                 const locationHint = document.getElementById('locationHint');
                 const locationLevel = document.getElementById('locationLevel');
+                const locationDangerLevel = document.getElementById('locationDangerLevel');
                 const locationImage = document.getElementById('locationImage');
                 const locationVehiclePip = document.getElementById('locationVehiclePip');
                 const locationVehiclePipImage = document.getElementById('locationVehiclePipImage');
@@ -37875,6 +38142,7 @@
                         }
                     }
                     locationLevel.textContent = `Level: ${location.baseLevel || '?'}`;
+                    renderLocationDangerIndicator(locationDangerLevel, location.effectiveDangerLevel);
                     cacheLocationDetails(location.id, {
                         name: location.name || location.description || location.id,
                         regionName: typeof location.regionName === 'string' ? location.regionName : null,
@@ -38339,6 +38607,7 @@
                         locationHint.textContent = 'Hover over the location image for a description.';
                     }
                     locationLevel.textContent = 'Level: ?';
+                    renderLocationDangerIndicator(locationDangerLevel, null);
                     if (locationImage) {
                         const existingTooltip = locationImage.querySelector('.location-tooltip');
                         locationImage.innerHTML = locationImageGenerationEnabled
@@ -38887,6 +39156,22 @@
                         if (document.querySelector('[data-tab="map"]').classList.contains('active')) {
                             window.loadRegionMap?.();
                         }
+                        if (result.arrivalProcessingError) {
+                            const arrivalMessage = result.arrivalProcessingError.message || 'Arrival processing failed after travel completed.';
+                            const arrivalStack = typeof result.arrivalProcessingError.stack === 'string'
+                                ? result.arrivalProcessingError.stack.trim()
+                                : '';
+                            const popupMessage = [
+                                'Travel completed, but arrival processing failed.',
+                                arrivalMessage,
+                                arrivalStack
+                            ].filter(Boolean).join('\n\n');
+                            if (typeof window.AIRPG_CHAT?.showChatErrorPopup === 'function') {
+                                window.AIRPG_CHAT.showChatErrorPopup(popupMessage);
+                            } else {
+                                window.alert(popupMessage);
+                            }
+                        }
                     } else if (result.error) {
                         if (isLocationRegionMembershipConflictPayload(result)) {
                             hideLocationOverlay();
@@ -39341,11 +39626,11 @@
                     if (!content || !event) {
                         return;
                     }
-                    if (shouldSuppressContextTooltips()) {
+                    const { allowHTML = false, explicit = false } = options;
+                    if (!explicit && shouldSuppressContextTooltips()) {
                         hideTooltip();
                         return;
                     }
-                    const { allowHTML = false } = options;
                     if (allowHTML) {
                         floatingTooltip.innerHTML = content;
                     } else {
@@ -41044,6 +41329,7 @@
             const tierAddButton = document.getElementById('factionTierAddButton');
             const nameInput = document.getElementById('factionName');
             const homeInput = document.getElementById('factionHomeRegion');
+            const violenceLevelInput = document.getElementById('factionViolenceLevel');
             const shortDescriptionInput = document.getElementById('factionShortDescription');
             const descriptionInput = document.getElementById('factionDescription');
             const tagsInput = document.getElementById('factionTags');
@@ -41059,6 +41345,7 @@
             const createCancelButton = document.getElementById('factionCreateCancelBtn');
             const createNameInput = document.getElementById('factionCreateName');
             const createHomeInput = document.getElementById('factionCreateHomeRegion');
+            const createViolenceLevelInput = document.getElementById('factionCreateViolenceLevel');
             const createShortDescriptionInput = document.getElementById('factionCreateShortDescription');
             const createDescriptionInput = document.getElementById('factionCreateDescription');
             const createTagsInput = document.getElementById('factionCreateTags');
@@ -41194,6 +41481,7 @@
                 }
                 if (nameInput) nameInput.value = faction.name || '';
                 if (homeInput) homeInput.value = faction.homeRegionName || '';
+                if (violenceLevelInput) violenceLevelInput.value = Number.isInteger(faction.violenceLevel) ? faction.violenceLevel : 1;
                 if (shortDescriptionInput) shortDescriptionInput.value = faction.shortDescription || '';
                 if (descriptionInput) descriptionInput.value = faction.description || '';
                 if (tagsInput) tagsInput.value = joinList(faction.tags || []);
@@ -41254,6 +41542,15 @@
             const collectRelations = () => collectRelationsFrom(relationsList);
             const collectTiers = () => collectTiersFrom(tiersList);
 
+            const readViolenceLevel = (input) => {
+                const value = Number(input?.value ?? NaN);
+                if (!Number.isInteger(value) || value < 1 || value > 5) {
+                    input?.focus();
+                    throw new Error('Violence level must be an integer from 1 to 5.');
+                }
+                return value;
+            };
+
             const gatherFactionPayload = () => {
                 if (!nameInput || !nameInput.value.trim()) {
                     throw new Error('Faction name is required.');
@@ -41263,6 +41560,7 @@
                 return {
                     name: nameInput.value.trim(),
                     homeRegionName: homeInput ? homeInput.value.trim() : '',
+                    violenceLevel: readViolenceLevel(violenceLevelInput),
                     shortDescription: shortDescription || null,
                     description: description || null,
                     tags: splitList(tagsInput ? tagsInput.value : ''),
@@ -41279,6 +41577,7 @@
                 return {
                     name: createNameInput ? createNameInput.value.trim() : '',
                     homeRegionName: createHomeInput ? createHomeInput.value.trim() : '',
+                    violenceLevel: readViolenceLevel(createViolenceLevelInput),
                     shortDescription: shortDescription || null,
                     description: description || null,
                     tags: splitList(createTagsInput ? createTagsInput.value : ''),

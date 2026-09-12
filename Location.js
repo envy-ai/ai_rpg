@@ -19,6 +19,7 @@ class Location {
   #description;
   #shortDescription;
   #baseLevel;
+  #dangerLevel;
   #exits;
   #visited;
   #favorite;
@@ -52,6 +53,14 @@ class Location {
 
   static #normalizeWeatherExposure(value, fieldName = 'Location generationHints.hasWeather') {
     return LocationRegionUtils.normalizeWeatherExposure(value, fieldName);
+  }
+
+  static #normalizeDangerLevel(value) {
+    const resolved = value === null || value === undefined ? 1 : value;
+    if (typeof resolved !== 'number' || !Number.isFinite(resolved) || !Number.isInteger(resolved)) {
+      throw new Error('Location dangerLevel must be a finite integer.');
+    }
+    return resolved;
   }
 
   static #normalizeStubMetadata(metadata = null) {
@@ -290,11 +299,12 @@ class Location {
    * @param {Object} options - Location configuration
    * @param {string} options.description - Description of the location
    * @param {number} [options.baseLevel=1] - Base level for the location (defaults to 1)
+   * @param {number} [options.dangerLevel=1] - Unbounded stored wild-danger base integer
    * @param {string} [options.id] - Custom ID (if not provided, one will be generated)
    * @param {string} [options.imageId] - Image ID for generated location scene (defaults to null)
    * @param {string} [options.imagePrompt] - Stored final image prompt (defaults to blank)
    */
-  constructor({ description, shortDescription = null, baseLevel = 1, id = null, imageId = null, imagePrompt = '', imageVariants = null, name = null, isStub = false, stubMetadata = null, hasGeneratedStubs = false, statusEffects = [], npcIds = [], thingIds = [], generationHints = null, randomEvents = [], regionId = null, controllingFactionId = null, vehicleInfo = null, checkRegionId = true, visited = false, favorite = false, lastVisitedTime = null, characterConcepts = [], enemyConcepts = [] } = {}) {
+  constructor({ description, shortDescription = null, baseLevel = 1, dangerLevel = 1, id = null, imageId = null, imagePrompt = '', imageVariants = null, name = null, isStub = false, stubMetadata = null, hasGeneratedStubs = false, statusEffects = [], npcIds = [], thingIds = [], generationHints = null, randomEvents = [], regionId = null, controllingFactionId = null, vehicleInfo = null, checkRegionId = true, visited = false, favorite = false, lastVisitedTime = null, characterConcepts = [], enemyConcepts = [] } = {}) {
     const creatingStub = Boolean(isStub);
 
     if (!creatingStub) {
@@ -364,6 +374,7 @@ class Location {
     this.#shortDescription = resolvedShortDescription || null;
     this.#name = name && typeof name === 'string' ? name.trim() : null;
     this.#baseLevel = creatingStub ? (typeof baseLevel === 'number' ? Math.floor(baseLevel) : null) : Math.floor(baseLevel);
+    this.#dangerLevel = Location.#normalizeDangerLevel(dangerLevel);
     this.#exits = new Map(); // Map of direction -> LocationExit
     this.#imageId = imageId;
     this.#imagePrompt = typeof imagePrompt === 'string' ? imagePrompt.trim() : '';
@@ -411,7 +422,8 @@ class Location {
       baseLevelFallback = null,
       relativeLevelBase = null,
       regionId = null,
-      requireHasWeather = false
+      requireHasWeather = false,
+      requireDangerLevel = false
     } = options || {};
 
     //console.log('🔍 Parsing XML snippet (length:', xmlSnippet.length, 'chars)');
@@ -454,7 +466,12 @@ class Location {
         }
 
         // Convert numeric fields to numbers
-        if (child.tagName === 'relativeLevel') {
+        if (child.tagName === 'dangerLevel') {
+          if (!/^[+-]?\d+$/.test(value)) {
+            throw new Error('Generated location <dangerLevel> must be an integer from 1 to 5.');
+          }
+          locationData[child.tagName] = Number(value);
+        } else if (child.tagName === 'relativeLevel') {
           locationData[child.tagName] = parseInt(value, 10);
         } else if (child.tagName === 'numItems' || child.tagName === 'numScenery' || child.tagName === 'numNpcs' || child.tagName === 'numHostiles') {
           locationData[child.tagName] = parseInt(value, 10);
@@ -476,6 +493,14 @@ class Location {
       : [];
     const randomEvents = Location.#normalizeRandomEvents(extractedRandomEvents);
     const randomEventsProvided = Boolean(randomEventsNode);
+    const directDangerNodes = childNodes.filter(child => child?.nodeType === 1 && child.tagName === 'dangerLevel');
+    if (requireDangerLevel && directDangerNodes.length !== 1) {
+      throw new Error('Generated location must contain exactly one direct <dangerLevel>.');
+    }
+    if (directDangerNodes.length > 0
+      && (!Number.isInteger(locationData.dangerLevel) || locationData.dangerLevel < 1 || locationData.dangerLevel > 5)) {
+      throw new Error('Generated location <dangerLevel> must be an integer from 1 to 5.');
+    }
 
     const stubMetadata = existingLocation?.stubMetadata || {};
     const rawStubDescription = typeof stubMetadata.stubDescription === 'string' && stubMetadata.stubDescription.trim()
@@ -650,6 +675,7 @@ class Location {
         description: locationData.description,
         shortDescription: hasShortDescription ? parsedShortDescription : undefined,
         baseLevel: parsedBaseLevel,
+        dangerLevel: locationData.dangerLevel,
         generationHints: {
           numItems: resolveHint(locationData.numItems, existingHints.numItems, stubHints.numItems),
           numScenery: resolveHint(locationData.numScenery, existingHints.numScenery, stubHints.numScenery),
@@ -681,6 +707,9 @@ class Location {
           existingLocation.shortDescription = parsedShortDescription;
         }
         existingLocation.baseLevel = promotionData.baseLevel;
+        if (Number.isInteger(promotionData.dangerLevel)) {
+          existingLocation.dangerLevel = promotionData.dangerLevel;
+        }
       }
 
       if (randomEventsProvided) {
@@ -726,6 +755,7 @@ class Location {
       description: locationData.description,
       shortDescription: hasShortDescription ? parsedShortDescription : null,
       baseLevel,
+      dangerLevel: Number.isInteger(locationData.dangerLevel) ? locationData.dangerLevel : 1,
       name: locationData.name,
       regionId: regionId,
       generationHints: {
@@ -1108,6 +1138,10 @@ class Location {
     return this.#baseLevel;
   }
 
+  get dangerLevel() {
+    return this.#dangerLevel;
+  }
+
   get exits() {
     // Return a copy to prevent external modification
     return new Map(this.#exits);
@@ -1266,6 +1300,11 @@ class Location {
     this.#lastUpdated = new Date();
   }
 
+  set dangerLevel(newLevel) {
+    this.#dangerLevel = Location.#normalizeDangerLevel(newLevel);
+    this.#lastUpdated = new Date();
+  }
+
   set visited(value) {
     this.#visited = Boolean(value);
     this.#lastUpdated = new Date();
@@ -1326,7 +1365,7 @@ class Location {
     this.#hasGeneratedStubs = Boolean(value);
   }
 
-  promoteFromStub({ name, description, shortDescription, baseLevel, imageId, generationHints, randomEvents, npcIds, thingIds } = {}) {
+  promoteFromStub({ name, description, shortDescription, baseLevel, dangerLevel, imageId, generationHints, randomEvents, npcIds, thingIds } = {}) {
     if (typeof description !== 'string') {
       throw new Error('Promoting stub requires a description string');
     }
@@ -1344,6 +1383,9 @@ class Location {
       this.shortDescription = shortDescription.trim();
     }
     this.baseLevel = baseLevel;
+    if (dangerLevel !== undefined) {
+      this.dangerLevel = dangerLevel;
+    }
     if (imageId !== undefined) {
       this.imageId = imageId;
     }
@@ -1470,6 +1512,7 @@ class Location {
       description: this.#description,
       shortDescription: this.#shortDescription,
       baseLevel: this.#baseLevel,
+      dangerLevel: this.#dangerLevel,
       visited: this.#visited,
       favorite: this.#favorite,
       lastVisitedTime: this.#lastVisitedTime,
@@ -1526,6 +1569,7 @@ class Location {
       description: this.#description,
       shortDescription: this.#shortDescription,
       baseLevel: this.#baseLevel,
+      dangerLevel: this.#dangerLevel,
       imageId: this.#imageId,
       imagePrompt: this.#imagePrompt,
       imageVariants: this.imageVariants,

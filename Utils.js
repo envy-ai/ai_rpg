@@ -2305,6 +2305,7 @@ class Utils {
         description: resolvedDescription,
         shortDescription: locationData.shortDescription ?? null,
         baseLevel: locationData.baseLevel ?? null,
+        dangerLevel: locationData.dangerLevel ?? 1,
         id: locationData.id,
         regionId: locationData.regionId ?? null,
         controllingFactionId: locationData.controllingFactionId ?? null,

@@ -554,6 +554,9 @@ quest_checks:
   interval: 5
 factions:
   count: 7
+  starting_reputation:
+    min: -80
+    max: 20
 
 # Optional chat completion sound played by clients on realtime `chat_complete`.
 # Set to null or false to disable.
@@ -678,6 +681,9 @@ max_tool_calls: 8
 
 # When true, player-action <hidden> notes are included in the client-visible chat log.
 show_hidden_notes: false
+
+# When true, show the current location's effective danger as skulls in the Play interface.
+show_location_danger: false
 
 # When true, failed automatic hide/perception checks are stored but omitted from client chat payloads.
 hide_hide_checks: true

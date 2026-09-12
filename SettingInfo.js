@@ -127,6 +127,17 @@ class SettingInfo {
     return parsed;
   }
 
+  static #normalizeFactionViolenceLevel(value, indexLabel = '') {
+    if (value === null || value === undefined || value === '') {
+      return 1;
+    }
+    const parsed = Number(value);
+    if (!Number.isInteger(parsed) || parsed < 1 || parsed > 5) {
+      throw new Error(`defaultFactions${indexLabel}.violenceLevel must be an integer from 1 to 5.`);
+    }
+    return parsed;
+  }
+
   static #normalizeDefaultStartInteger(value, fieldName, fallback, minimum, maximum = null) {
     if (value === null || value === undefined || value === '') {
       return fallback;
@@ -273,6 +284,7 @@ class SettingInfo {
       shortDescription,
       description,
       homeRegionName,
+      violenceLevel: SettingInfo.#normalizeFactionViolenceLevel(value.violenceLevel, indexLabel),
       tags: SettingInfo.#normalizeStringList(value.tags || []),
       goals: SettingInfo.#normalizeStringList(value.goals || []),
       assets: SettingInfo.#normalizeFactionAssets(value.assets, indexLabel),

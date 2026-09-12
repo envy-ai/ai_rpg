@@ -164,7 +164,7 @@ Fields:
 - `factionId` (string | null)
 - `factionStandings` (object map of `factionId -> number`)
 - `personality` (object | null, including `aiNotes` when available)
-- `personalityType`, `personalityTraits`, `personalityNotes`, `aiNotes`
+- `personalityType`, `personalityTraits`, `personalityNotes`, `aiNotes`, `disposition` (nullable non-sentient behavioral guidance)
 - `createdAt`, `lastUpdated`
 - `dispositionsTowardPlayer` (object map)
 - `dispositionDefinitions` (configured disposition range/type definitions) for the current player profile; the quest editor uses these to populate NPC disposition reward type dropdowns.

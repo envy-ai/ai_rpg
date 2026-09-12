@@ -6,6 +6,8 @@ const Player = require("./Player.js");
 const { isActorDispositionHostile } = require("./DispositionHostility.js");
 const Quest = require("./Quest.js");
 const Faction = require("./Faction.js");
+const Region = require("./Region.js");
+const { resolveEffectiveLocationDanger } = require("./LocationDanger.js");
 const LLMClient = require("./LLMClient.js");
 const StatusEffect = require("./StatusEffect.js");
 const VehicleInfo = require("./VehicleInfo.js");
@@ -90,6 +92,7 @@ const TINY_BRAIN_EVENT_TAG_TO_KEY = Object.freeze({
     defeatedEnemy: "defeated_enemy",
     experienceCheck: "experience_check",
     factionReputationChange: "faction_reputation_change",
+    dangerLevelChange: "danger_level_change",
     dispositionCheck: "disposition_check",
     triggeredAbility: "triggered_abilities",
     timePassed: "time_passed",
@@ -186,6 +189,7 @@ const TINY_BRAIN_EVENT_REQUIRED_FIELDS = Object.freeze({
     defeatedEnemy: Object.freeze(["enemyName"]),
     experienceCheck: Object.freeze(["amount", "reason"]),
     factionReputationChange: Object.freeze(["factionName", "direction", "magnitude", "reason"]),
+    dangerLevelChange: Object.freeze(["targetType", "target", "direction", "amount", "reason"]),
     triggeredAbility: Object.freeze(["characterName", "abilityName"]),
     inCombat: Object.freeze(["value"]),
     anyQuestObjectivesCompleted: Object.freeze(["value"]),
@@ -268,6 +272,7 @@ const TINY_BRAIN_EVENT_STAGE_DEFINITIONS = Object.freeze([
             "receivedQuest",
             "experienceCheck",
             "factionReputationChange",
+            "dangerLevelChange",
             "mysteryBoxMention",
         ]),
     }),
@@ -529,6 +534,10 @@ const EVENT_PROMPT_ORDER = [
         {
             key: "faction_reputation_change",
             prompt: `Would the player's reputation with any factions increase or decrease in a significant way (whether due to their own actions or events beyond their control)? If so, respond with "[exact name of faction] → [increased/decreased] [a little/a lot] → [reason in one sentence]". If multiple factions' reputations changed, separate multiple entries with vertical bars. Otherwise, respond N/A. If the reputation change is very minor and doesn't have a meaningful impact on how that faction would treat the player, it may not be necessary to list it here.`,
+        },
+        {
+            key: "danger_level_change",
+            prompt: `Did the story establish a lasting increase or decrease in the inherent danger of a specific known location or across a specific known region? If so, respond with "[location|region] → [exact target name or id] → [increase|decrease] → [positive integer amount] → [one sentence reason]". Separate multiple changes with vertical bars. Otherwise answer N/A. This changes ambient danger only; ordinary arrivals, combat, or temporary threats do not qualify.`,
         },
         {
             key: "dummy_event",
@@ -3667,6 +3676,7 @@ class Events {
             needBarChanges: [],
             dispositionChanges: [],
             factionReputationChanges: [],
+            dangerLevelChanges: [],
             questsAwarded: [],
             pendingQuestOffers: [],
             questRewards: [],
@@ -3696,6 +3706,7 @@ class Events {
         mergeArray("needBarChanges");
         mergeArray("dispositionChanges");
         mergeArray("factionReputationChanges");
+        mergeArray("dangerLevelChanges");
         mergeArray("questsAwarded");
         mergeArray("pendingQuestOffers");
         mergeArray("questCompletionRewards", "questRewards");
@@ -3851,6 +3862,7 @@ class Events {
                 needBarChanges: [],
                 dispositionChanges: [],
                 factionReputationChanges: [],
+                dangerLevelChanges: [],
             });
             this._mergeOutcomeContextIntoAccumulator(outcomeContext, accumulator);
             return outcomeContext;
@@ -4299,6 +4311,7 @@ class Events {
                                 dispositionChanges: followup.dispositionChanges,
                                 factionReputationChanges:
                                     followup.factionReputationChanges,
+                                dangerLevelChanges: followup.dangerLevelChanges,
                                 questsAwarded: followup.questsAwarded,
                                 pendingQuestOffers: followup.pendingQuestOffers,
                                 questCompletionRewards: followup.questRewards,
@@ -4339,6 +4352,7 @@ class Events {
             needBarChanges: accumulator.needBarChanges,
             dispositionChanges: accumulator.dispositionChanges,
             factionReputationChanges: accumulator.factionReputationChanges,
+            dangerLevelChanges: accumulator.dangerLevelChanges,
             npcUpdates: {
                 added: npcState.addedCharacters,
                 departed: npcState.departedCharacters,
@@ -4736,6 +4750,7 @@ class Events {
         let needBarChanges = [];
         let dispositionChanges = [];
         let factionReputationChanges = [];
+        let dangerLevelChanges = [];
         let questsAwarded = [];
         let pendingQuestOffers = [];
         let questRewards = [];
@@ -4756,6 +4771,7 @@ class Events {
                 needBarChanges: [],
                 dispositionChanges: [],
                 factionReputationChanges: [],
+                dangerLevelChanges: [],
                 allowEnvironmentalEffects: Boolean(allowEnvironmentalEffects),
                 isNpcTurn: Boolean(isNpcTurn),
                 suppressMoveEvents: Boolean(suppressMoveEvents),
@@ -4806,6 +4822,12 @@ class Events {
                 outcomeContext.factionReputationChanges.length
             ) {
                 factionReputationChanges = outcomeContext.factionReputationChanges;
+            }
+            if (
+                Array.isArray(outcomeContext?.dangerLevelChanges) &&
+                outcomeContext.dangerLevelChanges.length
+            ) {
+                dangerLevelChanges = outcomeContext.dangerLevelChanges;
             }
             if (
                 Array.isArray(outcomeContext?.questsAwarded) &&
@@ -4999,6 +5021,12 @@ class Events {
                             );
                         }
                         if (
+                            Array.isArray(followup.dangerLevelChanges) &&
+                            followup.dangerLevelChanges.length
+                        ) {
+                            dangerLevelChanges.push(...followup.dangerLevelChanges);
+                        }
+                        if (
                             Array.isArray(followup.questsAwarded) &&
                             followup.questsAwarded.length
                         ) {
@@ -5079,6 +5107,7 @@ class Events {
             needBarChanges,
             dispositionChanges,
             factionReputationChanges,
+            dangerLevelChanges,
             npcUpdates,
             locationRefreshRequested,
             questObjectivesCompleted,
@@ -8388,6 +8417,32 @@ class Events {
                     raw: `${factionName} → ${direction}d ${magnitude} → ${reason}`,
                 };
             }
+            case "dangerLevelChange":
+                {
+                    const required = ["targetType", "target", "direction", "amount", "reason"];
+                    const children = this._getXmlElementChildren(node);
+                    for (const child of children) {
+                        if (!required.some((field) => this._xmlTagNamesMatch(child.tagName, field))) {
+                            throw new Error(`<dangerLevelChange> contains unsupported <${child.tagName}> child.`);
+                        }
+                    }
+                    for (const field of required) {
+                        const matches = children.filter((child) => this._xmlTagNamesMatch(child.tagName, field));
+                        if (matches.length !== 1 || !normalizeString(matches[0].textContent)) {
+                            throw new Error(`<dangerLevelChange> requires exactly one non-empty <${field}> child.`);
+                        }
+                    }
+                }
+                return {
+                    key: "danger_level_change",
+                    raw: this._formatXmlLegacyRawEntry(node, [
+                        "targetType",
+                        "target",
+                        "direction",
+                        "amount",
+                        "reason",
+                    ]),
+                };
             case "dispositionCheck":
                 return {
                     key: "disposition_check",
@@ -9088,6 +9143,10 @@ class Events {
                 console.warn(`Failed to apply ${key} events:`, error.message);
                 // log error trace
                 console.debug(error);
+                if (key === "danger_level_change") {
+                    error.eventType = key;
+                    throw error;
+                }
             }
         }
 
@@ -10638,6 +10697,43 @@ class Events {
                         };
                     })
                     .filter(Boolean),
+            danger_level_change: (raw) =>
+                splitPipeList(raw).map((entry) => {
+                    const [targetTypeRaw, targetRaw, directionRaw, amountRaw, reasonRaw] =
+                        splitArrowParts(entry, 5);
+                    const targetType = normalizeString(targetTypeRaw).toLowerCase();
+                    const target = normalizeString(targetRaw);
+                    const direction = normalizeString(directionRaw).toLowerCase();
+                    const amountText = normalizeString(amountRaw);
+                    const reason = normalizeString(reasonRaw);
+                    if (targetType !== "location" && targetType !== "region") {
+                        throw new Error('danger_level_change targetType must be "location" or "region".');
+                    }
+                    if (!target) {
+                        throw new Error("danger_level_change target is required.");
+                    }
+                    if (direction !== "increase" && direction !== "decrease") {
+                        throw new Error('danger_level_change direction must be "increase" or "decrease".');
+                    }
+                    if (!/^\d+$/.test(amountText)) {
+                        throw new Error("danger_level_change amount must be a positive integer.");
+                    }
+                    const amount = Number(amountText);
+                    if (!Number.isInteger(amount) || amount <= 0) {
+                        throw new Error("danger_level_change amount must be a positive integer.");
+                    }
+                    if (!reason) {
+                        throw new Error("danger_level_change reason is required.");
+                    }
+                    return {
+                        targetType,
+                        target,
+                        direction,
+                        amount,
+                        delta: direction === "increase" ? amount : -amount,
+                        reason,
+                    };
+                }),
             move_location: (raw) => {
                 if (Globals.processedMove) {
                     return [];
@@ -15754,6 +15850,120 @@ class Events {
                 if (appliedEntries.length) {
                     entries.push(...appliedEntries);
                 }
+            },
+            danger_level_change: function (entries = [], context = {}) {
+                if (!Array.isArray(entries) || !entries.length) {
+                    return;
+                }
+
+                const { Location, gameLocations, regions } = this._deps;
+                const uniqueById = (values) => {
+                    const byId = new Map();
+                    for (const value of values) {
+                        if (value?.id) byId.set(value.id, value);
+                    }
+                    return Array.from(byId.values());
+                };
+                const resolveExact = (entry) => {
+                    const query = entry.target;
+                    const collection = entry.targetType === "location"
+                        ? gameLocations
+                        : regions;
+                    const model = entry.targetType === "location" ? Location : Region;
+                    const byId = collection instanceof Map
+                        ? collection.get(query)
+                        : (typeof model?.get === "function" ? model.get(query) : null);
+                    if (byId) return byId;
+
+                    const all = collection instanceof Map
+                        ? Array.from(collection.values())
+                        : (typeof model?.getAll === "function" ? model.getAll() : []);
+                    const lowered = query.toLowerCase();
+                    const matches = uniqueById(all.filter((candidate) => (
+                        typeof candidate?.name === "string"
+                        && candidate.name.trim().toLowerCase() === lowered
+                    )));
+                    if (matches.length === 0) {
+                        throw new Error(`danger_level_change references unknown ${entry.targetType} "${query}".`);
+                    }
+                    if (matches.length > 1) {
+                        throw new Error(
+                            `danger_level_change target "${query}" is ambiguous: ${matches.map((item) => item.id).join(", ")}.`,
+                        );
+                    }
+                    return matches[0];
+                };
+
+                // Resolve and validate every entry before changing any object. Keep a
+                // shadow value per target/field so repeated entries are cumulative
+                // without sacrificing whole-batch prevalidation.
+                const plannedStoredValues = new Map();
+                const planned = entries.map((entry) => {
+                    const target = resolveExact(entry);
+                    const field = entry.targetType === "location" ? "dangerLevel" : "dangerModifier";
+                    const legacyDefault = entry.targetType === "location" ? 1 : 0;
+                    let targetStoredValues = plannedStoredValues.get(target);
+                    if (!targetStoredValues) {
+                        targetStoredValues = new Map();
+                        plannedStoredValues.set(target, targetStoredValues);
+                    }
+                    const storedBefore = targetStoredValues.has(field)
+                        ? targetStoredValues.get(field)
+                        : (target[field] === null || target[field] === undefined
+                            ? legacyDefault
+                            : target[field]);
+                    if (typeof storedBefore !== "number" || !Number.isFinite(storedBefore) || !Number.isInteger(storedBefore)) {
+                        throw new Error(`${entry.targetType} ${field} must be a finite integer before danger_level_change.`);
+                    }
+                    const storedAfter = storedBefore + entry.delta;
+                    if (!Number.isFinite(storedAfter) || !Number.isInteger(storedAfter)) {
+                        throw new Error("danger_level_change result must be a finite integer.");
+                    }
+                    targetStoredValues.set(field, storedAfter);
+                    const effectiveLocation = entry.targetType === "location"
+                        ? target
+                        : this.resolveLocationCandidate(context.location || this.currentPlayer?.currentLocation);
+                    const effectiveApplies = Boolean(
+                        effectiveLocation
+                        && (entry.targetType === "location"
+                            ? effectiveLocation.id === target.id
+                            : effectiveLocation.regionId === target.id)
+                    );
+                    const effectiveBefore = effectiveApplies
+                        ? resolveEffectiveLocationDanger(effectiveLocation).effectiveDangerLevel
+                        : null;
+                    return { entry, target, field, storedBefore, storedAfter, effectiveLocation, effectiveApplies, effectiveBefore };
+                });
+
+                const appliedEntries = [];
+                if (!Array.isArray(context.dangerLevelChanges)) context.dangerLevelChanges = [];
+                for (const item of planned) {
+                    const effectiveBefore = item.effectiveApplies
+                        ? resolveEffectiveLocationDanger(item.effectiveLocation).effectiveDangerLevel
+                        : null;
+                    item.target[item.field] = item.storedAfter;
+                    const effectiveAfter = item.effectiveApplies
+                        ? resolveEffectiveLocationDanger(item.effectiveLocation).effectiveDangerLevel
+                        : null;
+                    const applied = {
+                        targetType: item.entry.targetType,
+                        targetId: item.target.id,
+                        targetName: item.target.name || item.target.id,
+                        direction: item.entry.direction,
+                        amount: item.entry.amount,
+                        delta: item.entry.delta,
+                        reason: item.entry.reason,
+                        storedBefore: item.storedBefore,
+                        storedAfter: item.storedAfter,
+                        effectiveBefore,
+                        effectiveAfter,
+                    };
+                    context.dangerLevelChanges.push(applied);
+                    appliedEntries.push({ ...item.entry, ...applied });
+                }
+                context.locationRefreshRequested = true;
+                entries.length = 0;
+                entries.push(...appliedEntries);
             },
             faction_reputation_change: function (entries = [], context = {}) {
                 if (!Array.isArray(entries) || !entries.length) {

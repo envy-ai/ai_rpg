@@ -356,6 +356,11 @@ Region exits: [comma-separated list of connected regions]{%- endset %}
                                                     <label for="settingsFactionHomeRegion">Home Region</label>
                                                     <input type="text" id="settingsFactionHomeRegion" placeholder="Optional region anchor">
                                                 </div>
+                                                <div class="form-group">
+                                                    <label for="settingsFactionViolenceLevel">Violence Level</label>
+                                                    <input type="number" id="settingsFactionViolenceLevel" min="1" max="5" step="1" value="1">
+                                                    <div class="help-text">Predisposition to use physical violence, from 1 (none) to 5 (highest).</div>
+                                                </div>
                                                 <div class="form-group full-width">
                                                     <label for="settingsFactionShortDescription">Short Description</label>
                                                     <textarea id="settingsFactionShortDescription" rows="2" placeholder="One-sentence summary"></textarea>
@@ -2916,6 +2921,7 @@ Region exits: [comma-separated list of connected regions]{%- endset %}
             const generationNotesInput = document.getElementById('settingsFactionGenerationNotes');
             const nameInput = document.getElementById('settingsFactionName');
             const homeInput = document.getElementById('settingsFactionHomeRegion');
+            const violenceLevelInput = document.getElementById('settingsFactionViolenceLevel');
             const shortDescriptionInput = document.getElementById('settingsFactionShortDescription');
             const descriptionInput = document.getElementById('settingsFactionDescription');
             const tagsInput = document.getElementById('settingsFactionTags');
@@ -2928,7 +2934,7 @@ Region exits: [comma-separated list of connected regions]{%- endset %}
 
             if (!hiddenInput || !countInput || !listEl || !emptyEl || !detailEl || !placeholderEl
                 || !addButton || !deleteButton || !applyButton || !autofillButton || !generateButton
-                || !nameInput || !homeInput || !shortDescriptionInput || !descriptionInput
+                || !nameInput || !homeInput || !violenceLevelInput || !shortDescriptionInput || !descriptionInput
                 || !tagsInput || !goalsInput || !assetsList || !relationsList || !tiersList
                 || !assetAddButton || !tierAddButton || !titleEl || !metaEl || !generationNotesInput) {
                 throw new Error('Settings faction editor is missing required elements.');
@@ -3034,6 +3040,7 @@ Region exits: [comma-separated list of connected regions]{%- endset %}
 
                 nameInput.value = selected.name || '';
                 homeInput.value = selected.homeRegionName || '';
+                violenceLevelInput.value = selected.violenceLevel;
                 shortDescriptionInput.value = selected.shortDescription || '';
                 descriptionInput.value = selected.description || '';
                 tagsInput.value = joinListValue(selected.tags || []);
@@ -3090,9 +3097,15 @@ Region exits: [comma-separated list of connected regions]{%- endset %}
                 }
                 const shortDescription = shortDescriptionInput.value.trim();
                 const description = descriptionInput.value.trim();
+                const violenceLevel = Number(violenceLevelInput.value);
+                if (!Number.isInteger(violenceLevel) || violenceLevel < 1 || violenceLevel > 5) {
+                    violenceLevelInput.focus();
+                    throw new Error('Faction violence level must be an integer from 1 to 5.');
+                }
                 return {
                     name: rawName,
                     homeRegionName: homeInput.value.trim() || null,
+                    violenceLevel,
                     shortDescription: shortDescription || null,
                     description: description || null,
                     tags: splitListValue(tagsInput.value),
@@ -3140,11 +3153,18 @@ Region exits: [comma-separated list of connected regions]{%- endset %}
                         const shortDescription = typeof entry.shortDescription === 'string' ? entry.shortDescription.trim() : '';
                         const description = typeof entry.description === 'string' ? entry.description.trim() : '';
                         const homeRegionName = typeof entry.homeRegionName === 'string' ? entry.homeRegionName.trim() : '';
+                        const violenceLevel = entry.violenceLevel === undefined || entry.violenceLevel === null
+                            ? 1
+                            : Number(entry.violenceLevel);
+                        if (!Number.isInteger(violenceLevel) || violenceLevel < 1 || violenceLevel > 5) {
+                            throw new Error(`Faction ${name || index + 1} has an invalid violence level.`);
+                        }
 
                         return {
                             id,
                             name: name || `Faction ${index + 1}`,
                             homeRegionName: homeRegionName || null,
+                            violenceLevel,
                             shortDescription: shortDescription || null,
                             description: description || null,
                             tags: Array.isArray(entry.tags)
@@ -3175,6 +3195,7 @@ Region exits: [comma-separated list of connected regions]{%- endset %}
                     id: nextFactionId(),
                     name: `Faction ${nextNumber}`,
                     homeRegionName: null,
+                    violenceLevel: 1,
                     shortDescription: null,
                     description: null,
                     tags: [],

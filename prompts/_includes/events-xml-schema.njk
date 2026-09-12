@@ -598,6 +598,20 @@ Use this when the player's reputation with a faction should significantly increa
   <reason>One sentence reason</reason>
 </factionReputationChange>
 ```
+
+### `danger_level_change`
+
+Use this only when the story establishes a lasting change to the inherent danger of one known location or to the ambient danger modifier of one known region. Temporary threats, an ordinary arrival, and a single fight do not qualify. The target must be an exact name or id already present in the supplied world data. The amount is always a positive integer; direction carries the sign. Repeat the element for multiple changes.
+
+```xml
+<dangerLevelChange>
+  <targetType>location|region</targetType>
+  <target>Exact known location or region name or id</target>
+  <direction>increase|decrease</direction>
+  <amount>Positive integer</amount>
+  <reason>One sentence reason</reason>
+</dangerLevelChange>
+```
 {#
 ### `disposition_check`
 

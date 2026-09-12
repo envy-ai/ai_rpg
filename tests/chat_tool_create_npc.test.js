@@ -94,6 +94,7 @@ test('createNpc tool schema exposes NPC seed fields', () => {
     assert.equal(createNpc.parameters.properties.level.type, 'integer');
     assert.equal(createNpc.parameters.properties.isHostile.type, 'boolean');
     assert.equal(createNpc.parameters.properties.hiddenFromPlayer.type, 'boolean');
+    assert.equal(createNpc.parameters.properties.disposition.type, 'string');
 });
 
 test('createNpc forwards seed data to the single NPC generator at the current location', async () => {
@@ -111,6 +112,7 @@ test('createNpc forwards seed data to the single NPC generator at the current lo
             isHostile: false,
             hiddenFromPlayer: true,
             aiNotes: 'Tracks supply debts carefully.',
+            disposition: 'neutral; walks away if bothered, attacks only if attacked',
             notes: 'Tie her to the missing shipment subplot.'
         },
         generateNpcFromEvent: async (args) => {
@@ -147,7 +149,8 @@ test('createNpc forwards seed data to the single NPC generator at the current lo
         currency: 12,
         isHostile: false,
         hiddenFromPlayer: true,
-        aiNotes: 'Tracks supply debts carefully.'
+        aiNotes: 'Tracks supply debts carefully.',
+        disposition: 'neutral; walks away if bothered, attacks only if attacked'
     });
     assert.equal(result.toolInvocations[0].metadata.npcId, 'npc-1');
     assert.equal(result.toolInvocations[0].metadata.finalName, 'Mira Vale');

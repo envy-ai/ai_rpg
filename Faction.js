@@ -7,6 +7,7 @@ class Faction {
   #goals;
   #description;
   #shortDescription;
+  #violenceLevel;
   #homeRegionName;
   #relations;
   #assets;
@@ -46,6 +47,13 @@ class Faction {
       throw new Error(`${label} must be a non-empty string or null.`);
     }
     return trimmed;
+  }
+
+  static #normalizeViolenceLevel(value) {
+    if (typeof value !== 'number' || !Number.isInteger(value) || value < 1 || value > 5) {
+      throw new Error('Faction violenceLevel must be an integer from 1 to 5.');
+    }
+    return value;
   }
 
   static #normalizeRelationEntry(value) {
@@ -171,6 +179,7 @@ class Faction {
     goals = [],
     description = null,
     shortDescription = null,
+    violenceLevel = 1,
     homeRegionName = null,
     relations = null,
     assets = [],
@@ -197,6 +206,7 @@ class Faction {
     this.#goals = Faction.#normalizeStringList(goals);
     this.#description = Faction.#normalizeOptionalText(description, 'Faction description');
     this.#shortDescription = Faction.#normalizeOptionalText(shortDescription, 'Faction short description');
+    this.#violenceLevel = Faction.#normalizeViolenceLevel(violenceLevel);
     this.#homeRegionName = typeof homeRegionName === 'string' ? homeRegionName.trim() : null;
     this.#relations = Faction.#normalizeRelations(relations);
     this.#assets = Faction.#normalizeAssets(assets);
@@ -223,6 +233,7 @@ class Faction {
   get goals() { return [...this.#goals]; }
   get description() { return this.#description; }
   get shortDescription() { return this.#shortDescription; }
+  get violenceLevel() { return this.#violenceLevel; }
   get homeRegionName() { return this.#homeRegionName; }
   get relations() {
     return new Map(
@@ -271,6 +282,11 @@ class Faction {
 
   set shortDescription(value) {
     this.#shortDescription = Faction.#normalizeOptionalText(value, 'Faction short description');
+    this.#lastUpdated = new Date().toISOString();
+  }
+
+  set violenceLevel(value) {
+    this.#violenceLevel = Faction.#normalizeViolenceLevel(value);
     this.#lastUpdated = new Date().toISOString();
   }
 
@@ -387,6 +403,7 @@ class Faction {
       name: this.#name,
       description: this.#description,
       shortDescription: this.#shortDescription,
+      violenceLevel: this.#violenceLevel,
       tags: [...this.#tags],
       goals: [...this.#goals],
       homeRegionName: this.#homeRegionName,
@@ -414,6 +431,7 @@ class Faction {
       goals: data.goals,
       description: data.description ?? null,
       shortDescription: data.shortDescription ?? null,
+      violenceLevel: data.violenceLevel ?? 1,
       homeRegionName: data.homeRegionName,
       relations: data.relations,
       assets: data.assets,

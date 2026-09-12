@@ -1,3 +1,5 @@
+const { randomUUID } = require('crypto');
+
 class Globals {
   static config;
 
@@ -1166,6 +1168,7 @@ class Globals {
       : null;
     if (!Globals._playerArrivalVisitStates.has(locationId)) {
       Globals._playerArrivalVisitStates.set(locationId, {
+        arrivalId: randomUUID(),
         wasVisited: resolvedWasVisited,
         lastVisitedTime
       });
@@ -1174,6 +1177,17 @@ class Globals {
     return typeof recordedState === 'object' && recordedState !== null
       ? recordedState.wasVisited
       : recordedState;
+  }
+
+  static getPlayerArrivalId(locationOrId) {
+    const locationId = typeof locationOrId === 'string'
+      ? locationOrId.trim()
+      : (typeof locationOrId?.id === 'string' ? locationOrId.id.trim() : '');
+    if (!locationId || !Globals._playerArrivalVisitStates.has(locationId)) return undefined;
+    const recordedState = Globals._playerArrivalVisitStates.get(locationId);
+    return typeof recordedState?.arrivalId === 'string' && recordedState.arrivalId.trim()
+      ? recordedState.arrivalId.trim()
+      : undefined;
   }
 
   static getPlayerArrivalWasVisitedBeforeMove(locationOrId) {

@@ -1,0 +1,46 @@
+<task>
+Create a new potential hostile presence at {{ hostilePresenceLocation.name }} after the player arrives. The authoritative primary source is {{ hostilePresenceSource }}. Generate between 1 and {{ hostilePresenceMaximumCount }} individual occupants total. Emit one <npc> per individual and set every <quantity> to 1.
+
+The new occupants must fit the location, region, recent story, and source. {% if hostilePresenceSource == 'faction' %}They must belong to {{ hostilePresenceFaction.name }} and visibly reflect that faction's public identity, goals, tags, or assets.{% else %}Draw primarily from the location or immediate region's enemy concepts and ecology.{% endif %}
+
+Every generated entry must be entirely new and must not duplicate or resurrect any living or dead named character. Set <isHostile>true</isHostile> for population accounting. Their presence does not start combat, force an attack, or override truces and current circumstances. They may be visible, hidden, distant, asleep, entrenched, cautious, or otherwise positioned for the storyteller to interpret.
+
+Return one well-formed <response> containing <npcs>. Do not return zero occupants and do not exceed the maximum. Each <npc> requires exactly one direct nonblank <disposition>: use literal N/A for a sentient NPC, or a concise behavior description for an animal-level creature.
+</task>
+
+<sourceFiction>
+<location>{{ hostilePresenceLocation.name }}: {{ hostilePresenceLocation.description }}</location>
+{% if hostilePresenceRegion %}<region>{{ hostilePresenceRegion.name }}: {{ hostilePresenceRegion.description }}</region>{% endif %}
+{% if hostilePresenceEnemyConcepts and hostilePresenceEnemyConcepts | length %}<enemyConcepts>{% for concept in hostilePresenceEnemyConcepts %}<concept>{{ concept }}</concept>{% endfor %}</enemyConcepts>{% endif %}
+{% if hostilePresenceFaction %}<faction><name>{{ hostilePresenceFaction.name }}</name><description>{{ hostilePresenceFaction.description }}</description><goals>{{ hostilePresenceFaction.goals | default([]) | join('; ') }}</goals><tags>{{ hostilePresenceFaction.tags | default([]) | join(', ') }}</tags><assets>{% for asset in hostilePresenceFaction.assets | default([]) %}<asset><name>{{ asset.name }}</name>{% if asset.type %}<type>{{ asset.type }}</type>{% endif %}{% if asset.description %}<description>{{ asset.description }}</description>{% endif %}</asset>{% endfor %}</assets></faction>{% endif %}
+<existingLocalCharacters>{% for npc in hostilePresenceExistingNpcs %}<character><name>{{ npc.name }}</name><state>{% if npc.isDead %}dead{% else %}living{% endif %}</state></character>{% endfor %}</existingLocalCharacters>
+</sourceFiction>
+
+<response>
+  <npcs>
+    <npc>
+      <quantity>Exactly 1; emit one named <npc> per individual</quantity>
+      <name>Singular full name</name>
+      <description>Three sentence description using %NAME% in place of the name</description>
+      <shortDescription>Ten words or fewer using %NAME%</shortDescription>
+      <role>Role at this location</role>
+      <class>Class, occupation, or creature role</class>
+      <race>Species or ancestry</race>
+      <gender>male, female, none, or other</gender>
+      <faction>{% if hostilePresenceFaction %}{{ hostilePresenceFaction.name }}{% else %}Full known faction name or None{% endif %}</faction>
+      <isHostile>true</isHostile>
+      <disposition>N/A if sentient; otherwise concise instinctive behavior</disposition>
+      <hiddenFromPlayer>true or false</hiddenFromPlayer>
+      <relativeLevel>Integer from -3 through 3</relativeLevel>
+      <currency>Non-negative integer</currency>
+      <attributes>{% for attrName, attrDef in attributeDefinitions %}<attribute name="{{ attrName }}">poor, below average, average, above average, excellent, or legendary</attribute>{% endfor %}</attributes>
+      <healthAttribute>An attribute name or N/A</healthAttribute>
+      <startingHealthPercentage>Integer 1 through 100</startingHealthPercentage>
+      <startingNeeds>{% for need in needBarDefinitions %}<needBar><id>{{ need.id }}</id><isApplicable>true or false</isApplicable><startingLevel>Integer 0 through 100 when applicable</startingLevel></needBar>{% endfor %}</startingNeeds>
+      <personality><type>Short personality type</type><traits>Up to three traits or none</traits><goals><goal>Concrete goal</goal></goals><notes>Optional notes</notes></personality>
+      <resistances>Meaningful resistances or None</resistances>
+      <vulnerabilities>Meaningful vulnerabilities or None</vulnerabilities>
+      <aiNotes>One or two brief action triggers</aiNotes>
+    </npc>
+  </npcs>
+</response>

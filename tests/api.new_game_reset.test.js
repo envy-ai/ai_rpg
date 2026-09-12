@@ -168,6 +168,7 @@ test('new-game runtime state reset clears save-scoped collections and cancels st
     playerAbilitySelectionPromises: new Map([['old-ability', Promise.resolve()]]),
     playerImageGenerationPromises: new Map([['old-player', Promise.resolve()]]),
     locationImageGenerationPromises: new Map([['old-location', Promise.resolve()]]),
+    factionImageGenerationPromises: new Map([['old-faction', Promise.resolve()]]),
     levelUpAbilityPromises: new Map([['old-level', Promise.resolve()]]),
     shortDescriptionBackfillByClient: new Map([['client-1', {}]])
   };

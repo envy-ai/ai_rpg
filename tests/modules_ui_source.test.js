@@ -200,6 +200,34 @@ test('module context action refresh re-renders the open inventory modal for the 
     assert.match(block, /window\.currentPlayerData = cloneActorRecord\(actor\)/);
 });
 
+test('module context action history refreshes Adventure chat and Story Tools', () => {
+    const source = read('views/index.njk');
+    const start = source.indexOf('async function refreshAfterModThingContextAction(result, options = {}, thing = {}) {');
+    const end = source.indexOf('async function executeModThingContextAction(action, thing, options = {}) {', start);
+    assert.notEqual(start, -1, 'expected refreshAfterModThingContextAction');
+    assert.notEqual(end, -1, 'expected executeModThingContextAction boundary');
+    const block = source.slice(start, end);
+
+    assert.match(block, /if \(result\?\.chatEntry\)/);
+    assert.match(block, /window\.AIRPG_CHAT\?\.refreshChatHistory\?\.\(\)/);
+    assert.match(block, /window\.refreshStoryTools\?\.\(\{ preserveSelection: true \}\)/);
+
+    const chatSource = read('public/js/chat.js');
+    assert.match(chatSource, /'module-install': 'Module Installations'/);
+
+    const modSource = read('mods/modules/mod.js');
+    assert.match(modSource, /prepareModuleInstallStoryContext\(\{/);
+    assert.match(modSource, /Globals\.appendChatEntry/);
+    assert.match(modSource, /type: 'module-install'/);
+
+    const apiSource = read('api.js');
+    assert.match(apiSource, /chatEntry: result\?\.chatEntry \|\| null/);
+    const routeStart = apiSource.indexOf("app.post('/api/mod-thing-context-actions/:actionId'");
+    const routeEnd = apiSource.indexOf("app.get('/api/gear-slots'", routeStart);
+    const routeSource = apiSource.slice(routeStart, routeEnd);
+    assert.doesNotMatch(routeSource, /modules:install-module/);
+});
+
 test('items output in full in base context embed mod-contributed detail, and modules mod supplies installed modules', () => {
     const baseContext = read('prompts/base-context.xml.njk');
     const serverSource = read('server.js');

@@ -1060,6 +1060,18 @@
                         </div>
 
                         <div class="form-group">
+                            <label for="faction-starting-reputation-min">Starting Faction Reputation Minimum:</label>
+                            <input type="number" id="faction-starting-reputation-min" name="factions.starting_reputation.min::int" value="{{ config.factions.starting_reputation.min }}" step="1">
+                            <span class="help-text">Lowest reputation the new-game faction-standing prompt may assign</span>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="faction-starting-reputation-max">Starting Faction Reputation Maximum:</label>
+                            <input type="number" id="faction-starting-reputation-max" name="factions.starting_reputation.max::int" value="{{ config.factions.starting_reputation.max }}" step="1">
+                            <span class="help-text">Highest reputation the new-game faction-standing prompt may assign; must be at least the minimum</span>
+                        </div>
+
+                        <div class="form-group">
                             <label for="repetition-buster">Repetition Buster:</label>
                             <div class="checkbox-wrapper">
                                 <input type="hidden" name="repetition_buster::boolean" value="false">
@@ -1084,6 +1096,15 @@
                                 <input type="checkbox" id="show-hidden-notes" name="show_hidden_notes::boolean" value="true" {% if config.show_hidden_notes %}checked{% endif %}>
                             </div>
                             <span class="help-text">Show player-action &lt;hidden&gt; notes in Story Tools full-history view; Adventure chat always filters them</span>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="show-location-danger">Show Location Danger:</label>
+                            <div class="checkbox-wrapper">
+                                <input type="hidden" name="show_location_danger::boolean" value="false">
+                                <input type="checkbox" id="show-location-danger" name="show_location_danger::boolean" value="true" {% if config.show_location_danger == true %}checked{% endif %}>
+                            </div>
+                            <span class="help-text">Show the current location's effective danger as skulls in the Play interface</span>
                         </div>
 
                         <div class="form-group">

@@ -1284,6 +1284,19 @@ factions:
   - If `defaultFactionCount` is unset and the setting has `defaultFactions`, the draft count is used.
   - `factions.count` remains the fallback when the applied setting has neither.
 
+## Initial faction reputation
+
+`factions.starting_reputation` controls the inclusive integer range used when new-game setup generates the player's initial reputation with every active faction.
+
+```yaml
+factions:
+  starting_reputation:
+    min: -80
+    max: 20
+```
+
+Both values must be finite integers, and `min` must be less than or equal to `max`. The defaults permit hostile starting reactions down to `-80` and favorable affinity or implied membership up to `20`. The effective values appear in the generation prompt and are enforced again by its strict parser before the complete standings map is written atomically to the player. This does not add a starting-reputation property to faction records.
+
 ## Chat completion sound
 
 `chat_completion_sound` controls the optional realtime sound cue clients play when `/api/chat` completes.
@@ -1491,6 +1504,16 @@ Rules:
 - Stored chat history keeps hidden-note blocks for future LLM context.
 - When `true`, `/api/chat/history?includeAllEntries=true` keeps hidden tags in the full-history response used by Story Tools.
 - When `false`, hidden blocks are stripped from that full-history response too.
+
+## Location danger indicator
+
+`show_location_danger` controls the player-facing skull indicator beside the current location's level.
+
+```yaml
+show_location_danger: false
+```
+
+The option must be a boolean when present and defaults to `false`. When disabled, the server omits the indicator from the Play page. Encounter calculations, saved danger values, location and region editing, direct tools, events, and developer-facing danger details continue to work. Enabling it renders four skulls for effective danger levels `1` through `5`, with level `1` showing all four at 25% opacity and each later level filling one additional skull.
 
 ## Hidden NPC check visibility
 

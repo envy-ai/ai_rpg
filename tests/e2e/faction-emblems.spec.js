@@ -1,9 +1,139 @@
 const { test, expect } = require('@playwright/test');
+const fs = require('fs');
+const path = require('path');
+
+const indexSource = fs.readFileSync(path.join(__dirname, '..', '..', 'views', 'index.njk'), 'utf8');
+
+function extractFunction(name, nextMarker) {
+    const start = indexSource.indexOf(`function ${name}`);
+    const end = indexSource.indexOf(nextMarker, start);
+    if (start < 0 || end < 0) {
+        throw new Error(`Unable to extract ${name} from views/index.njk.`);
+    }
+    return indexSource.slice(start, end);
+}
+
+const attachFactionEmblemSource = extractFunction('attachFactionEmblem', '        function resetFactionSelect');
+const floatingTooltipControllerSource = extractFunction('initFloatingTooltipController', '        function initQuestPanel');
+const bindLocationTooltipSource = indexSource.slice(
+    indexSource.indexOf('const bindLocationFloatingTooltip = (host, location) => {'),
+    indexSource.indexOf('        const formatThingTooltip =', indexSource.indexOf('const bindLocationFloatingTooltip = (host, location) => {'))
+);
 
 const transparentBluePixel = Buffer.from(
     'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPj/HwADAgH/5ncLrgAAAABJRU5ErkJggg==',
     'base64'
 );
+
+test('narrow faction-emblem click and touch tap use the shared tooltip without activating parent surfaces', async ({ browser }) => {
+    const context = await browser.newContext({
+        hasTouch: true,
+        viewport: { width: 390, height: 844 }
+    });
+    const page = await context.newPage();
+    try {
+    await page.route('**/api/factions', route => route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ success: true, factions: [], playerStandings: {} })
+    }));
+    await page.goto('/');
+
+    await page.evaluate(({ attachSource, bindSource, controllerSource }) => {
+        const buildController = new Function('shouldSuppressContextTooltips', `${controllerSource}; return initFloatingTooltipController;`);
+        buildController(() => window.matchMedia('(max-width: 768px)').matches)();
+
+        const faction = {
+            id: 'faction-mobile-emblem',
+            name: 'Azure Watch',
+            shortDescription: 'Wardens of the eastern roads.',
+            homeRegionName: 'Aster Vale',
+            goals: ['Keep the roads safe'],
+            reputationTiers: [{ threshold: 0, label: 'Neutral' }]
+        };
+        const buildAttach = new Function(
+            'loadFactionOptions',
+            'normalizeFactionId',
+            'formatFactionEmblemTooltipHtml',
+            'renderEntityImage',
+            'isNarrowMobileViewport',
+            `${attachSource}; return attachFactionEmblem;`
+        );
+        window.attachFactionEmblem = buildAttach(
+            async () => ({ map: new Map([[faction.id, faction]]), playerStandings: {} }),
+            value => typeof value === 'string' ? value.trim() : '',
+            current => `<div class="faction-emblem-tooltip"><strong>${current.name}</strong></div>`,
+            async () => ({ imageId: null }),
+            () => window.matchMedia('(max-width: 768px)').matches
+        );
+        window.hidePartyTooltip = () => {};
+        const buildLocationBinder = new Function(
+            'shouldSuppressContextTooltips',
+            'formatLocationTooltipHtml',
+            `${bindSource}; return bindLocationFloatingTooltip;`
+        );
+        window.bindLocationFloatingTooltip = buildLocationBinder(
+            () => window.matchMedia('(max-width: 768px)').matches,
+            () => '<div class="tooltip-entity is-location">Location</div>'
+        );
+
+        const host = document.createElement('div');
+        host.id = 'faction-emblem-mobile-host';
+        host.style.cssText = 'position:fixed;left:80px;top:120px;width:180px;height:180px;z-index:20000';
+        host.dataset.parentActivations = '0';
+        host.addEventListener('click', () => {
+            host.dataset.parentActivations = String(Number(host.dataset.parentActivations) + 1);
+        });
+        document.body.appendChild(host);
+        window.attachFactionEmblem(host, { factionId: faction.id, variant: 'npc' });
+
+        const locationHost = document.createElement('div');
+        locationHost.id = 'faction-emblem-mobile-location-host';
+        locationHost.style.cssText = 'position:fixed;left:80px;top:360px;width:180px;height:180px;z-index:20000';
+        locationHost.dataset.parentActivations = '0';
+        locationHost.addEventListener('click', () => {
+            locationHost.dataset.parentActivations = String(Number(locationHost.dataset.parentActivations) + 1);
+        });
+        document.body.appendChild(locationHost);
+        window.bindLocationFloatingTooltip(locationHost, { name: 'Eastern Gate' });
+        window.attachFactionEmblem(locationHost, { factionId: faction.id, variant: 'location' });
+    }, {
+        attachSource: attachFactionEmblemSource,
+        bindSource: bindLocationTooltipSource,
+        controllerSource: floatingTooltipControllerSource
+    });
+
+    const host = page.locator('#faction-emblem-mobile-host');
+    const emblem = host.locator(':scope > .faction-emblem');
+    const tooltip = page.locator('#inventoryTooltip');
+    await expect(emblem).toBeVisible();
+
+    await emblem.click();
+    await expect(tooltip).toBeVisible();
+    await expect(tooltip).toContainText('Azure Watch');
+    await expect(host).toHaveAttribute('data-parent-activations', '0');
+
+    await page.mouse.click(350, 700);
+    await expect(tooltip).toBeHidden();
+
+    await emblem.tap();
+    await expect(tooltip).toBeVisible();
+    await expect(host).toHaveAttribute('data-parent-activations', '0');
+    const locationHost = page.locator('#faction-emblem-mobile-location-host');
+    await locationHost.locator(':scope > .faction-emblem').tap();
+    await expect(tooltip).toBeVisible();
+    await expect(locationHost).toHaveAttribute('data-parent-activations', '0');
+    await page.screenshot({ path: 'tmp/faction-emblem-mobile-tooltip.png' });
+
+    await page.setViewportSize({ width: 1280, height: 720 });
+    await page.mouse.click(500, 600);
+    await expect(tooltip).toBeHidden();
+    await emblem.hover();
+    await expect(tooltip).toBeVisible();
+    } finally {
+        await context.close();
+    }
+});
 
 test('faction emblems render at the requested image corners with formatted hover details', async ({ page }) => {
     await page.route('**/api/factions', route => route.fulfill({

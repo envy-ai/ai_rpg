@@ -20,7 +20,7 @@ Field normalization:
 - String lists accept arrays in the JSON API. `SettingInfo` also normalizes newline-delimited strings for list fields.
 - `playerStartingLevel` is stored as at least `1`; `defaultStartingCurrency` is stored as at least `0`.
 - `defaultStartMonth` and `defaultStartDay` must be positive integers. `defaultStartTime` must be an integer from `0` through `23`. Missing legacy values default to `1`, `1`, and `9`, respectively.
-- `defaultFactionCount` is `null` or a non-negative integer. `defaultFactions` is an array of faction drafts with unique ids/names; relation targets must reference another draft id and use `allied`, `neutral`, `hostile`, or `rival`.
+- `defaultFactionCount` is `null` or a non-negative integer. `defaultFactions` is an array of faction drafts with unique ids/names; each draft has a numeric integer `violenceLevel` from `1` through `5` (legacy default `1`), and relation targets must reference another draft id and use `allied`, `neutral`, `hostile`, or `rival`.
 - `calendarDefinition` is `null` or a calendar object normalized by `Globals.normalizeCalendarDefinition`: `yearName`, non-empty `months`, non-empty `weekdays`, optional `seasons`, and optional `holidays`. Season records persist distinct `vegetationDescription` and `interiorDescription` image-edit guidance.
 - `unifiedTonalScale` is an object keyed by merged `defs/unified_tonal_scale.yaml` axis ids. Entries are `{ level, comment? }`; `level` must be numeric. Prompt rendering accepts defined levels and generated half-step values such as `3.5`, and requires every axis when any tonal selection is used.
 - `customSlopWords` stores extra slop entries. Single-token entries are checked as words; multi-token entries are checked as ngrams.
@@ -30,6 +30,7 @@ Field normalization:
 UI validation:
 - The World Profiles page loads merged `defs/default_skills.yaml`, `defs/attributes.yaml`, `defs/unified_tonal_scale.yaml`, and registered mod setting metadata.
 - The page requires `hidingAttribute` and `perceptionAttribute` and validates them against merged attribute keys. `hidingSkill` and `perceptionSkill` are optional and must match `defaultExistingSkills` when provided.
+- The setting-scoped faction editor displays and validates `violenceLevel` as an integer from `1` through `5`.
 - Default start month/day selectors follow the profile's structured calendar. Saving rejects a month outside that calendar, a day outside the selected month, or a start hour outside `0` through `23`.
 - Mod setting fields registered with `persist: false`, including preset-apply selectors, update other editor fields but are not stored in `modSettings`.
 
