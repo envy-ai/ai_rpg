@@ -1,5 +1,9 @@
 # Things & Inventory API
 
+## Hidden fields
+
+`POST /api/things` and `PUT /api/things/:id` accept `hiddenFromPlayer` with `discoveryDifficulty`. Hidden requires a canonical label and visible requires null; invalid pairs return HTTP 400. Gameplay mutation endpoints reject unrevealed location Things.
+
 Common payloads: see `docs/api/common.md`.
 
 ## POST /api/things
@@ -127,7 +131,7 @@ Response:
 - 400/404 with `{ success: false, error }`
 
 Notes:
-- The route looks up the action live from `ModExtensionRegistry` and calls its handler with the Thing, owner actor when resolvable, current player, runtime maps, and request context.
+- The route looks up the action live from `ModExtensionRegistry` and calls its handler with the Thing, owner actor when resolvable, current player, runtime maps, and request context. It rejects a hidden clicked Thing before invoking any mod handler; the bundled modules handler also applies the shared visibility gate to separately selected base/module ids.
 - Mod handlers are authoritative and should throw explicit errors for invalid owners, incompatible items, duplicate state, or unsupported contexts.
 - The clicked `thingId` remains required for generic routing. Action-specific fields are passed through as `requestBody`; the bundled modules mod uses `baseItemId`, `moduleItemId`, `slotType`, `baseItemSource`, and `moduleItemSource` to install inventory or loose-location modules. Installation splits one singleton from the base stack, module stack, or both when needed, then links only those singleton instances. Removal reads the visible base item's `installedModuleIds` plus the selected `moduleItemId`.
 - The bundled modules action handler appends one visible `module-install` assistant entry after a successful player-initiated `modules:install-module` request, and the generic route returns the handler-provided entry as `chatEntry`. Its form is `Actor installs Module into Base.`. The entry is prompt-free but remains available to normal base-context history. Chat-tool and XML-event module installs do not use this route and do not create this UI-action entry.

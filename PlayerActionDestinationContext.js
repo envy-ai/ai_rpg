@@ -208,7 +208,7 @@ function resolveExitSummaries(location, locations, regions) {
         throw new TypeError(`Player-action destination "${location?.name || location?.id || 'unknown'}" exits must be a Map or object.`);
     }
 
-    const summaries = entries.map(([rawDirection, exit]) => {
+    const summaries = entries.filter(([, exit]) => exit?.hiddenFromPlayer !== true).map(([rawDirection, exit]) => {
         const direction = optionalTrimmedString(rawDirection);
         if (!direction) {
             throw new Error(`Player-action destination "${location?.name || location?.id || 'unknown'}" has an exit without a direction.`);

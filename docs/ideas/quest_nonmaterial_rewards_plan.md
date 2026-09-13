@@ -91,6 +91,8 @@ Every benefit entry needs a stable id. Persist applied benefit ids on the quest 
 - Recipe and ability unlocks must not create inventory Things. Location knowledge reveals information; fast-travel permission remains a separate flag when discovery alone is insufficient.
 - Plain information without a mechanical registry target belongs in `rewardNotes` or a persisted lore/memory record, not a fake unlock id.
 
+The first planned `knowledge` subtype is the narrower `route` benefit in `docs/superpowers/plans/2026-09-12-quest-hidden-route-knowledge-rewards.md`. It reveals one exact existing directed hidden exit without marking its destination visited or granting fast travel. General location, recipe, ability, lore, and technique knowledge remain unsupported until their own authoritative state exists.
+
 ### `property`
 
 - Use a registered subtype such as `location`, `vehicle`, `workshop`, `business`, or `outpost`, with a canonical entity id and ownership role.

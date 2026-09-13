@@ -581,15 +581,17 @@ player_abilities_per_level: 3
 # DC, outcome margin, and critical threshold formulas use level as the current location's base level.
 formulas:
   character_creation:
-    attribute_pool_formula: "ceil(level * (number_of_attributes / 2))"
-    skill_pool_formula: "level * ceil(number_of_skills / 5)"
-    max_attribute: "infinity"
-    max_skill: "infinity"
+    attribute_pool_formula: ceil(level * (number_of_attributes / 2))
+    skill_pool_formula: >-
+      ceil((level + 1.5) * (number_of_skills / 5)) +
+      attribute.intelligence.bonus * level
+    max_attribute: level + 19
+    max_skill: level + 10
   dc:
     trivial: "0"
     easy: "10 + level"
     medium: "floor(15 + level * 1.1)"
-    hard: "floor(10 + level * 1.2)"
+    hard: "floor(20 + level * 1.2)"
     very_hard: "floor(25 + level * 1.3)"
     legendary: "floor(30 + level * 1.4)"
   outcome_margins:

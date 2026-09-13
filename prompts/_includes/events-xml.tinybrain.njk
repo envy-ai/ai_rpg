@@ -36,6 +36,6 @@ Allowed top-level tags for this checkpoint: {{ stage.allowedTagList }}{% if stag
 
 Return one `<events>...</events>` block with every qualifying event for this checkpoint. If there are none, return exactly `<events><done/></events>`. Output XML only.
 
-{% llmparse('event_xml_stage', tinyBrainEventSectionKind, stage.id, stage.allowedTags, stage.requiredTags, stage.allowRegisteredXmlEvents, eventCheckHiddenNpcNames) %}
+{% llmparse('event_xml_stage', tinyBrainEventSectionKind, stage.id, stage.allowedTags, stage.requiredTags, stage.allowRegisteredXmlEvents, eventCheckHiddenNpcNames, eventCheckHiddenThingTargets, eventCheckHiddenExitTargets) %}
 {% endfor %}
 {% llmresult('event_xml_result') %}

@@ -1,5 +1,9 @@
 # Chat API
 
+## Hidden discovery during travel
+
+Normal travel runs one prompt-free perception check per hidden destination Thing/outgoing exit on first entry. DCs use the shared formula for the stored label at destination `baseLevel`. Failed rows obey `hide_hide_checks`; success requests a refresh. Story-tool teleports bypass this. `createThing`/`createExit` accept the validated pair.
+
 `POST /api/chat/action-suggestions` runs the tool-free `action-suggestions` base-context prompt without advancing time, changing world state, or writing chat history. It returns `{ suggestions: string[3] }` containing exactly three distinct, nonblank, single-sentence immediate player attempts. The cache-compatible base context is retained, and the action-specific instruction tells the model not to base recommendations on information explicitly hidden from the player. Strict XML parsing rejects surrounding text, nested elements, command-prefixed actions, duplicate actions, and any count other than three, then uses the configured structured-prompt retry budget. The same one-shot path is used whether TinyBrain mode is enabled or disabled; no staged family is needed because the result is read-only structured generation. Failures return a clear error and stack.
 
 Entries are sorted by path. Common payloads (ChatEntry, ActionResolution, etc.) are defined in `docs/api/common.md`.

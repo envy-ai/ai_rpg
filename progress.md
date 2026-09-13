@@ -1,3 +1,22 @@
+Original prompt: Plan roadmap candidates 1 (map route inspection) and 4 (quest route/location knowledge rewards).
+
+- Added an implementation-ready map route inspection plan covering explicit reachable/unreachable API semantics, ordered directed steps, shared vehicle/hidden-edge policy, stub and visited eligibility, the existing modal upgrade, server-side travel revalidation, tests, and documentation.
+- Added a linked `knowledge/route` quest-benefit plan that reveals one exact existing directed hidden exit through a shared authoritative helper without marking the destination visited, expanding it, revealing the reverse edge, or granting fast travel.
+- Resolved the absent general known-location state by deliberately limiting the first knowledge slice to route discovery; broader location/recipe/ability/lore knowledge remains unsupported.
+- Updated the roadmap source docs and documentation index, and marked the completed hidden Things/exits plan as implemented.
+- Documentation-only task; no runtime code changed and the server was not restarted.
+
+Original prompt: Implement the hidden Things/exits first-entry discovery plan, including persisted difficulty labels, automatic first-entry checks, standard/TinyBrain reveal events, leakage/interactions gates, show-hidden UI toggles, 90% hidden-row opacity, tests, documentation, and an authorized no-save server restart.
+
+- Audited the plan against the current Thing, LocationExit, arrival-snapshot, NPC-hidden-discovery, routing, event, prompt, API, and UI architecture. No unresolved product decision remains; directed-edge asymmetry, checksum identity, trusted story-tool exceptions, and visit-snapshot timing are explicitly covered by the plan.
+- Implemented the persisted fields, location-only generation, first-entry checks, standard/TinyBrain reveal events, GM-only prompt markers, travel/interaction gates, trusted create/edit APIs/tools, matching eye toggles, exact 0.9 hidden rendering, and durable docs. Focused and affected regression tests are green; final server/browser verification remains.
+- Prompt/parser XML is intentionally strict with no legacy completion/replay allowance: every generated Thing, location/region exit, and connected-region stub requires exactly one `hiddenFromPlayer` plus `discoveryDifficulty`; all replay recordings and XML fixtures encountered were migrated. Only old-save hydration defaults omitted fields.
+- Added central gameplay gates for craft/process/salvage/harvest, consume, location modification, containers/transfers/stack operations, and generic/bundled module actions. Player destination context, shortest paths, and ordinary map payloads omit hidden exits.
+- Final focused syntax/Node matrix passed 14/14 test files. The broad suite passed 427/444; its 17 failures are unchanged unrelated baseline failures (including bridge/environment tests and old UI/quest-guidance assertions), while every hidden-discovery test passed.
+- The required live browser smoke found and fixed missing 0.9 opacity coverage for default grid/table Thing entries. Final Playwright passed 1/1 and verified both eye toggles, default filtering, hidden badges, disabled actions, and computed 0.9 opacity. Visually inspected `tmp/hidden-exits-toggle.png` and `tmp/hidden-things-toggle.png`.
+- Restarted the updated server without a save and verified `/` plus `/api/hello` return HTTP 200.
+- TODO: none for hidden Things/exits first-entry discovery.
+
 Original prompt: Can you create a button that stops ALL PROMPTS (basically ends processing of the turn immediately wherever it is) and then reverts to the latest autosave?
 
 - Follow-up: the live Stop control fired, but cancellation during a router slot-cache restore remained blocked for 86 seconds. Once the restore completed, `LLMClient` returned an empty string for cancellation, which the TinyBrain checkpoint parser treated as malformed output and retried six times. The rollback endpoint consequently timed out while the active chat turn remained alive.

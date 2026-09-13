@@ -7,6 +7,7 @@ const StatusEffectList = require('./status_effect_list.js');
 const { createExtensionFieldAccess } = require('./extension_field_access.js');
 const { loadMergedDefinitionFile } = require('./DefinitionLoader.js');
 const IdGenerator = require('./IdGenerator.js');
+const { validateHiddenDiscoveryPair } = require('./HiddenDiscovery.js');
 
 const thingExtensionFields = createExtensionFieldAccess({ entityType: 'thing', label: 'Thing' });
 
@@ -46,6 +47,8 @@ class Thing {
   #count;
   #extensionFields;
   #registered = false;
+  #hiddenFromPlayer = false;
+  #discoveryDifficulty = null;
   static #booleanFlagMap = Object.freeze({
     isVehicle: 'vehicle',
     isCraftingStation: 'crafting_station',
@@ -588,6 +591,8 @@ class Thing {
     isSalvageable = null,
     isContainer = null,
     requiresCheckToOpen = null,
+    hiddenFromPlayer = false,
+    discoveryDifficulty = null,
     containerContents = [],
     containedThingIds = [],
     flags = new SanitizedStringSet(),
@@ -643,6 +648,11 @@ class Thing {
     this.#shortDescription = normalizedShortDescription ?? metadataShortDescription ?? '';
     this.#createdAt = new Date().toISOString();
     this.#lastUpdated = this.#createdAt;
+    const hiddenDiscovery = validateHiddenDiscoveryPair({ hiddenFromPlayer, discoveryDifficulty }, {
+      targetLabel: `Thing "${this.#name}"`
+    });
+    this.#hiddenFromPlayer = hiddenDiscovery.hiddenFromPlayer;
+    this.#discoveryDifficulty = hiddenDiscovery.discoveryDifficulty;
     this.#statusEffects = this.#normalizeStatusEffects(statusEffects);
     this.#slot = null;
     this.#attributeBonuses = [];
@@ -775,6 +785,24 @@ class Thing {
 
   get count() {
     return this.#count;
+  }
+
+  get hiddenFromPlayer() {
+    return this.#hiddenFromPlayer;
+  }
+
+  get discoveryDifficulty() {
+    return this.#discoveryDifficulty;
+  }
+
+  setHiddenDiscovery({ hiddenFromPlayer, discoveryDifficulty } = {}) {
+    const normalized = validateHiddenDiscoveryPair({ hiddenFromPlayer, discoveryDifficulty }, {
+      targetLabel: `Thing "${this.#name || this.#id || 'unknown'}"`
+    });
+    this.#hiddenFromPlayer = normalized.hiddenFromPlayer;
+    this.#discoveryDifficulty = normalized.discoveryDifficulty;
+    this.#lastUpdated = new Date().toISOString();
+    return this;
   }
 
   get equippedBy() {
@@ -1877,6 +1905,8 @@ class Thing {
     this.#containedThingIds = new Set(candidate.#containedThingIds);
     this.#containerContents = candidate.#containerContents.map(entry => ({ ...entry }));
     this.#flags = new SanitizedStringSet(Array.from(candidate.#flags));
+    this.#hiddenFromPlayer = candidate.#hiddenFromPlayer;
+    this.#discoveryDifficulty = candidate.#discoveryDifficulty;
     this.#extensionFields = JSON.parse(JSON.stringify(candidate.#extensionFields || {}));
     this.#createdAt = preserveCreatedAt ? previousCreatedAt : candidate.#createdAt;
     this.#lastUpdated = new Date().toISOString();
@@ -1927,6 +1957,8 @@ class Thing {
       isSalvageable: normalizeBoolean(this.isSalvageable),
       isContainer: normalizeBoolean(this.isContainer),
       requiresCheckToOpen: normalizeBoolean(this.requiresCheckToOpen),
+      hiddenFromPlayer: this.#hiddenFromPlayer,
+      discoveryDifficulty: this.#discoveryDifficulty,
       containerContents: this.containerContents,
       containedThingIds: Array.from(this.#containedThingIds),
       flags: this.#flags && this.#flags.size ? Array.from(this.#flags) : undefined,
@@ -1994,6 +2026,8 @@ class Thing {
       containerContents: data.containerContents ?? data.metadata?.containerContents ?? [],
       containedThingIds: data.containedThingIds ?? data.metadata?.containedThingIds ?? [],
       flags: Array.isArray(data.flags) ? data.flags : (Array.isArray(data.metadata?.flags) ? data.metadata.flags : []),
+      hiddenFromPlayer: data.hiddenFromPlayer ?? data.metadata?.hiddenFromPlayer ?? false,
+      discoveryDifficulty: data.discoveryDifficulty ?? data.metadata?.discoveryDifficulty ?? null,
       ...booleanFlagOptions,
       ...extensionFieldOptions,
       enrichStatusEffects: false,

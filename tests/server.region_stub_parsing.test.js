@@ -310,10 +310,14 @@ test('parseRegionStubLocations parses per-exit travel times into integer minutes
         <exit>
           <destination>North Gate</destination>
           <travelTime>5 minutes</travelTime>
+          <hiddenFromPlayer>false</hiddenFromPlayer>
+          <discoveryDifficulty></discoveryDifficulty>
         </exit>
         <exit>
           <destination>Clocktower</destination>
           <travelTime>1.5 hours</travelTime>
+          <hiddenFromPlayer>false</hiddenFromPlayer>
+          <discoveryDifficulty></discoveryDifficulty>
         </exit>
       </exits>
     </location>
@@ -326,8 +330,8 @@ test('parseRegionStubLocations parses per-exit travel times into integer minutes
         assert.deepEqual(
             toPlainJson(Array.from(locations[0].exits)),
             [
-                { target: 'North Gate', travelTimeMinutes: 5 },
-                { target: 'Clocktower', travelTimeMinutes: 90 }
+                { target: 'North Gate', hiddenFromPlayer: false, discoveryDifficulty: null, travelTimeMinutes: 5 },
+                { target: 'Clocktower', hiddenFromPlayer: false, discoveryDifficulty: null, travelTimeMinutes: 90 }
             ]
         );
     } finally {
@@ -351,6 +355,8 @@ test('parseRegionStubLocations normalizes explicit zero-minute exits to 1 minute
         <exit>
           <destination>North Gate</destination>
           <travelTime>0 minutes</travelTime>
+          <hiddenFromPlayer>false</hiddenFromPlayer>
+          <discoveryDifficulty></discoveryDifficulty>
         </exit>
       </exits>
     </location>
@@ -363,7 +369,7 @@ test('parseRegionStubLocations normalizes explicit zero-minute exits to 1 minute
         assert.deepEqual(
             toPlainJson(Array.from(locations[0].exits)),
             [
-                { target: 'North Gate', travelTimeMinutes: 1 }
+                { target: 'North Gate', hiddenFromPlayer: false, discoveryDifficulty: null, travelTimeMinutes: 1 }
             ]
         );
     } finally {
@@ -431,6 +437,8 @@ test('parseRegionExitsResponse parses stubRegion travel times into integer minut
       <relativeLevel>2</relativeLevel>
       <relationshipToCurrentRegion>Adjacent</relationshipToCurrentRegion>
       <travelTime>1.5 hours</travelTime>
+      <hiddenFromPlayer>false</hiddenFromPlayer>
+      <discoveryDifficulty></discoveryDifficulty>
     </stubRegion>
   </regionExits>
 </location>`;
@@ -449,6 +457,8 @@ test('parseRegionExitsResponse parses stubRegion travel times into integer minut
                     exitLocation: 'Town Square',
                     exitVehicle: null,
                     controllingFaction: null,
+                    hiddenFromPlayer: false,
+                    discoveryDifficulty: null,
                     travelTimeMinutes: 90
                 }
             ]

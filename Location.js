@@ -1000,6 +1000,9 @@ class Location {
         if (!exit) {
           throw new Error(`Location "${currentLocation.id}" reported an exit direction "${direction}" with no exit object.`);
         }
+        if (exit.hiddenFromPlayer === true) {
+          continue;
+        }
 
         const destinationId = typeof exit.destination === 'string' ? exit.destination.trim() : '';
         if (!destinationId) {
@@ -1556,6 +1559,8 @@ class Location {
         imageId: exit.imageId,
         imagePrompt: exit.imagePrompt,
         isVehicle: Boolean(exit.isVehicle),
+        hiddenFromPlayer: exit.hiddenFromPlayer === true,
+        discoveryDifficulty: exit.discoveryDifficulty ?? null,
         name: exit.name,
         relativeName: exit.relativeName,
         vehicleType: typeof exit.vehicleType === 'string' ? exit.vehicleType : null,

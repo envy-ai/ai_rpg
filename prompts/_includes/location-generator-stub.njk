@@ -34,6 +34,7 @@ The following is the location stub that you're expanding:
 </thisLocationStub>
 {% endif -%}
 
+{% if discoverNewExits -%}
 The location stub you are expanding has the following existing exits.
 <existingExits>
   {% for exit in existingExitDestinations -%}
@@ -42,10 +43,12 @@ The location stub you are expanding has the following existing exits.
     <name>{{ exit.name }}</name>
     <description>{{ exit.description }}</description>
     <travelTime>{{ exit.travelTime }}</travelTime>
+    <isReturnRoute>{{ "yes" if exit.isReturnRoute else "no" }}</isReturnRoute>
     <explored>{{ "yes" if exit.explored else "no" }}</explored>
   </exit>
   {% endfor -%}
 </existingExits>
+{% endif -%}
 
 
 <task>You are an AI assistant that expands partially discovered locations in a fictional world. Using the provided context, fully develop the destination so it seamlessly connects to its origin area. Expand the stubbed destination into a fully realized location that feels like a natural continuation of the origin area. Maintain continuity with the origin's tone, scale, and environmental storytelling.</task>
@@ -117,6 +120,8 @@ First, given the exits above, brainstorm for 1 paragraph in plain text according
       <name><!-- Name of new location or region --></name>
       <description><!-- Concise description of the route or doorway from this location --></description>
       <travelTime><!-- Realistic duration such as "5 minutes", "2 hours", or "1 day" --></travelTime>
+      <hiddenFromPlayer><!-- true only for an optional secret route; false otherwise --></hiddenFromPlayer>
+      <discoveryDifficulty><!-- Required when hidden: Trivial, Easy, Medium, Hard, Very Hard, or Legendary. Blank when visible. --></discoveryDifficulty>
     </exit>
   </newExits>
   {% endif -%}

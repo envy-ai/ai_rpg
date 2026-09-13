@@ -3032,7 +3032,9 @@ p:not(:last-child) {
   -webkit-box-orient: vertical;
 }
 
-.location-npcs summary {
+.location-npcs summary,
+.location-exits summary,
+.location-things > summary {
   padding-right: 34px;
 }
 
@@ -3232,6 +3234,26 @@ p:not(:last-child) {
   display: block;
   width: 22px;
   height: 22px;
+}
+
+.exit-item.is-hidden-from-player,
+.location-entity-card.is-hidden-from-player,
+.thing-collection-entry.is-hidden-from-player {
+  opacity: 0.9;
+}
+
+.hidden-discovery-badge {
+  display: inline-flex;
+  align-items: center;
+  margin-left: 0.35rem;
+  padding: 0.08rem 0.35rem;
+  border: 1px solid rgba(251, 191, 36, 0.65);
+  border-radius: 999px;
+  color: #fde68a;
+  background: rgba(120, 53, 15, 0.62);
+  font-size: 0.68rem;
+  font-weight: 700;
+  line-height: 1.2;
 }
 
 .thing-list-sort-shell {

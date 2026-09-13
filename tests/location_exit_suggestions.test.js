@@ -133,12 +133,16 @@ test('location exit suggestions parse location and region stubs without imposing
                     <name>Goat Bell Ledge</name>
                     <description>A narrow switchback follows old bell posts.</description>
                     <travelTime>15 minutes</travelTime>
+                    <hiddenFromPlayer>false</hiddenFromPlayer>
+                    <discoveryDifficulty></discoveryDifficulty>
                 </exit>
                 <exit>
                     <destinationType>region</destinationType>
                     <name>Cloudbreak Vale</name>
                     <description>A high pass descends into an unseen valley.</description>
                     <travelTime>2 hours</travelTime>
+                    <hiddenFromPlayer>false</hiddenFromPlayer>
+                    <discoveryDifficulty></discoveryDifficulty>
                 </exit>
             </newExits>
         </location>
@@ -149,12 +153,16 @@ test('location exit suggestions parse location and region stubs without imposing
             destinationType: 'location',
             name: 'Goat Bell Ledge',
             description: 'A narrow switchback follows old bell posts.',
+            hiddenFromPlayer: false,
+            discoveryDifficulty: null,
             travelTimeMinutes: 15
         },
         {
             destinationType: 'region',
             name: 'Cloudbreak Vale',
             description: 'A high pass descends into an unseen valley.',
+            hiddenFromPlayer: false,
+            discoveryDifficulty: null,
             travelTimeMinutes: 120
         }
     ]);
@@ -170,12 +178,16 @@ test('location exit suggestions collapse duplicate names that differ only by lea
                     <name>The Goat Bell Ledge</name>
                     <description>A narrow switchback follows old bell posts.</description>
                     <travelTime>15 minutes</travelTime>
+                    <hiddenFromPlayer>false</hiddenFromPlayer>
+                    <discoveryDifficulty></discoveryDifficulty>
                 </exit>
                 <exit>
                     <destinationType>location</destinationType>
                     <name>Goat Bell Ledge</name>
                     <description>The same switchback without its article.</description>
                     <travelTime>15 minutes</travelTime>
+                    <hiddenFromPlayer>false</hiddenFromPlayer>
+                    <discoveryDifficulty></discoveryDifficulty>
                 </exit>
             </newExits>
         </location>
@@ -199,6 +211,8 @@ test('location exit suggestions reject missing decisions and malformed entries',
                         <name>Old Road</name>
                         <description>A weathered road.</description>
                         <travelTime>10 minutes</travelTime>
+                        <hiddenFromPlayer>false</hiddenFromPlayer>
+                        <discoveryDifficulty></discoveryDifficulty>
                     </exit>
                 </newExits>
             </location>
@@ -335,18 +349,24 @@ test('location exit suggestions ignore repeated destination names after validati
                     <name>Old Road</name>
                     <description>A weathered road climbs east.</description>
                     <travelTime>10 minutes</travelTime>
+                    <hiddenFromPlayer>false</hiddenFromPlayer>
+                    <discoveryDifficulty></discoveryDifficulty>
                 </exit>
                 <exit>
                     <destinationType>region</destinationType>
                     <name>  OLD   ROAD </name>
                     <description>A second rendition of the same destination.</description>
                     <travelTime>20 minutes</travelTime>
+                    <hiddenFromPlayer>false</hiddenFromPlayer>
+                    <discoveryDifficulty></discoveryDifficulty>
                 </exit>
                 <exit>
                     <destinationType>region</destinationType>
                     <name>Glass Lowlands</name>
                     <description>A distant basin shines beyond the ridge.</description>
                     <travelTime>3 hours</travelTime>
+                    <hiddenFromPlayer>false</hiddenFromPlayer>
+                    <discoveryDifficulty></discoveryDifficulty>
                 </exit>
             </newExits>
         </location>
@@ -357,12 +377,16 @@ test('location exit suggestions ignore repeated destination names after validati
             destinationType: 'location',
             name: 'Old Road',
             description: 'A weathered road climbs east.',
+            hiddenFromPlayer: false,
+            discoveryDifficulty: null,
             travelTimeMinutes: 10
         },
         {
             destinationType: 'region',
             name: 'Glass Lowlands',
             description: 'A distant basin shines beyond the ridge.',
+            hiddenFromPlayer: false,
+            discoveryDifficulty: null,
             travelTimeMinutes: 180
         }
     ]);
@@ -378,11 +402,15 @@ test('malformed duplicate destination entries still fail parser validation', () 
                         <name>Old Road</name>
                         <description>A weathered road.</description>
                         <travelTime>10 minutes</travelTime>
+                        <hiddenFromPlayer>false</hiddenFromPlayer>
+                        <discoveryDifficulty></discoveryDifficulty>
                     </exit>
                     <exit>
                         <destinationType>location</destinationType>
                         <name>old road</name>
                         <travelTime>10 minutes</travelTime>
+                        <hiddenFromPlayer>false</hiddenFromPlayer>
+                        <discoveryDifficulty></discoveryDifficulty>
                     </exit>
                 </newExits>
             </location>

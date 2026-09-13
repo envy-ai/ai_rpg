@@ -1,5 +1,9 @@
 # Globals
 
+## Arrival visit snapshots and hidden discovery
+
+`recordPlayerArrivalVisitState(...)` captures destination visit state before movement. Automatic Thing/exit checks use `getPlayerArrivalWasVisitedBeforeMove(...)`, not post-move `Location.visited`, and therefore do not reroll on revisits.
+
 ## Purpose
 `Globals.js` is the server-wide runtime state holder. It provides access to active configuration, current player/location/region helpers, save metadata, prompt wiring, realtime emits, slop analysis hooks, mod/runtime reload hooks, and canonical world time.
 

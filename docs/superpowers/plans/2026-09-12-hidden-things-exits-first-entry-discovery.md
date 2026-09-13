@@ -1,10 +1,12 @@
 # Hidden Things and Exits: First-Entry Discovery Plan
 
+**Status:** Implemented. This document preserves the decisions and task boundaries used for the shipped feature. Current behavior is documented in `docs/classes/Thing.md`, `docs/classes/LocationExit.md`, `docs/classes/Events.md`, `docs/api/locations.md`, `docs/api/things.md`, and `docs/ui/chat_interface.md`.
+
 ## Goal
 
 Allow generated location items, scenery, and exits to start hidden. On the player's first entry into a location, resolve one automatic perception check for each hidden target. A success reveals the target; a failure leaves it hidden. Later prose can reveal a still-hidden Thing or exit through explicit XML events.
 
-This plan supersedes the automatic-discovery and mutation details in the archived `2026-05-22-hidden-items-scenery-exits.md` draft. The current implementation baseline is NPC-only visibility, current `ThingMutationService` atomic mutation, staged TinyBrain event extraction, and formula-based DCs.
+This plan superseded the automatic-discovery and mutation details in the archived `2026-05-22-hidden-items-scenery-exits.md` draft. Its implementation extended the prior NPC-only visibility baseline using `ThingMutationService` atomic mutation, staged TinyBrain event extraction, and formula-based DCs.
 
 ## Product Decisions
 
@@ -27,7 +29,7 @@ This plan supersedes the automatic-discovery and mutation details in the archive
 
 ## Known Gotchas and Pre-Implementation Decisions
 
-1. `config.default.yaml` currently defines `medium` as `floor(15 + level * 1.1)` and `hard` as `floor(10 + level * 1.2)`. “Hard” is therefore easier than “Medium” at ordinary location levels. Do not silently change global formulas as part of this feature. Confirm whether to correct the formula separately before accepting monotonic-difficulty tests.
+1. Resolved during planning: the shared defaults now define `medium` as `floor(15 + level * 1.1)` and `hard` as `floor(20 + level * 1.2)`, and `config.yaml` no longer replaces them with constant DCs. Hidden discovery should use these merged shared formulas without a feature-specific DC table. Retain a monotonic-difficulty test at representative supported location levels.
 2. Location exits are directed even when a connection is conceptually bidirectional. Treat hidden state per directed edge. An explicitly generated hidden edge is hidden only from its source side; a synthetic reverse edge defaults visible. If both sides should be hidden, generation must explicitly mark both directed edges. This also prevents a failed discovery roll from trapping the player in a destination whose only return edge was synthesized.
 3. The shared item template serves location contents, inventories, crafting output, container contents, and other generators. Only location-content generation should be invited to create hidden Things. Other scopes must emit visible/null unless an explicit trusted seed requests otherwise.
 4. Thing stack identity must include hidden state. A hidden stack must not auto-merge into an otherwise identical visible stack and thereby leak or erase its visibility. After reveal, normal later merge operations may combine equivalent stacks; reveal itself should not silently rewrite quantities.
@@ -222,10 +224,11 @@ If an event reveals and immediately interacts with a target, the reveal handler 
 
 Mirror the existing hidden-NPC debugging experience without leaking counts:
 
-- add one spoiler-neutral eye control to `Items & Scenery` and one to `Exits`;
+- reuse the existing location-NPC visibility-toggle button's eye icon, accessible labeling, pressed-state behavior, sizing, and styling;
+- place one matching toggle in the upper-right corner of the `Exits` section header and one in the upper-right corner of the combined `Items & Scenery` section header;
 - keep controls enabled even when no hidden target exists;
 - omit hidden targets and exclude them from visible counts by default;
-- when `show hidden` is active, render hidden cards/exit rows translucent with a clear hidden badge;
+- when `show hidden` is active, render hidden Thing cards and exit rows at exactly `opacity: 0.9` with a clear hidden badge; this is display state, not a separate persisted “seen” field;
 - keep hidden Things' gameplay actions disabled and hidden exits' travel buttons disabled until authoritative reveal;
 - expose hidden state and difficulty in the existing Thing and exit editors for trusted manual editing.
 
@@ -266,7 +269,7 @@ Implement styles in `public/css/main.scss` and compile `public/css/main.css` wit
 ### API/UI/security
 
 - Location payloads retain hidden markers; normal UI filters rows/counts.
-- Show-hidden mode styles but cannot interact/travel.
+- Show-hidden mode renders hidden Thing cards and exit rows at `opacity: 0.9`, while interaction and travel remain disabled.
 - Direct HTTP attempts to use a hidden Thing or exit fail explicitly.
 - Map, action suggestions, and shortest known route omit hidden exits.
 - Playwright smoke test covers first-entry failure, later reveal refresh, and successful interaction after reveal.

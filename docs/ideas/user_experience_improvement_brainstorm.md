@@ -510,7 +510,7 @@ Risks:
 
 ### 10. Map route inspection
 
-Status: **Partial / foundation exists.** Region Map, World Map, and Favorites already use `GET /api/player/fast-travel-preview` and `Location.findShortestTravelTimeMinutes(...)` for fast-travel confirmation. The broader inspect-without-travel workflow, route-step display, unknown-segment explanation, and blocked-path messaging remain proposals.
+Status: **Planned / foundation exists.** Region Map, World Map, and Favorites already use `GET /api/player/fast-travel-preview` and `Location.findShortestTravelTimeMinutes(...)` for fast-travel confirmation. The implementation-ready route-inspection work is specified in `docs/superpowers/plans/2026-09-12-map-route-inspection.md`.
 
 Let players click a destination on the region/world map and see known route time, required exits, vehicle status, unexplored stubs, and whether the path is currently blocked.
 

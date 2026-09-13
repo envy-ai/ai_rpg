@@ -51,6 +51,8 @@ test('thing XML parser reads containedItem seeds and promotes non-container cont
     <description>A dented crate with a sealed lid.</description>
     <shortDescription>Dented sealed supply crate</shortDescription>
     <itemOrScenery>scenery</itemOrScenery>
+    <hiddenFromPlayer>false</hiddenFromPlayer>
+    <discoveryDifficulty></discoveryDifficulty>
     <type>crate</type>
     <isContainer>false</isContainer>
     <containerContents>
@@ -90,6 +92,8 @@ test('thing XML parser rejects entries with missing or blank identity prose', as
   <item>
     <description>A nameless generated object.</description>
     <itemOrScenery>item</itemOrScenery>
+    <hiddenFromPlayer>false</hiddenFromPlayer>
+    <discoveryDifficulty></discoveryDifficulty>
   </item>
 </items>`),
             /missing required <name>/
@@ -102,6 +106,8 @@ test('thing XML parser rejects entries with missing or blank identity prose', as
     <name>   </name>
     <description>A generated object with a blank name.</description>
     <itemOrScenery>item</itemOrScenery>
+    <hiddenFromPlayer>false</hiddenFromPlayer>
+    <discoveryDifficulty></discoveryDifficulty>
   </item>
 </items>`),
             /blank <name>/
@@ -114,6 +120,8 @@ test('thing XML parser rejects entries with missing or blank identity prose', as
     <name>Nameless Description Test</name>
     <description>   </description>
     <itemOrScenery>item</itemOrScenery>
+    <hiddenFromPlayer>false</hiddenFromPlayer>
+    <discoveryDifficulty></discoveryDifficulty>
   </item>
 </items>`),
             /missing a non-empty <description>/
@@ -136,6 +144,8 @@ test('thing XML parser treats omitted and empty containerContents as empty', asy
     <description>An empty satchel.</description>
     <shortDescription>Empty canvas satchel</shortDescription>
     <itemOrScenery>item</itemOrScenery>
+    <hiddenFromPlayer>false</hiddenFromPlayer>
+    <discoveryDifficulty></discoveryDifficulty>
     <type>bag</type>
     <isContainer>true</isContainer>
     <containerContents></containerContents>
@@ -145,6 +155,8 @@ test('thing XML parser treats omitted and empty containerContents as empty', asy
     <description>A plain rock.</description>
     <shortDescription>Plain grey rock</shortDescription>
     <itemOrScenery>item</itemOrScenery>
+    <hiddenFromPlayer>false</hiddenFromPlayer>
+    <discoveryDifficulty></discoveryDifficulty>
     <type>junk</type>
   </item>
 </items>`);
@@ -171,6 +183,8 @@ test('thing XML parser ignores empty container content sentinels and zero-count 
     <description>A pouch with a misleading manifest.</description>
     <shortDescription>Mostly empty pouch</shortDescription>
     <itemOrScenery>item</itemOrScenery>
+    <hiddenFromPlayer>false</hiddenFromPlayer>
+    <discoveryDifficulty></discoveryDifficulty>
     <type>pouch</type>
     <isContainer>true</isContainer>
     <containerContents>
@@ -214,6 +228,8 @@ test('thing XML parser reads requiresCheckToOpen for containers', async () => {
     <description>A safe with a stiff dial.</description>
     <shortDescription>Dial-locked metal safe</shortDescription>
     <itemOrScenery>scenery</itemOrScenery>
+    <hiddenFromPlayer>false</hiddenFromPlayer>
+    <discoveryDifficulty></discoveryDifficulty>
     <type>safe</type>
     <isContainer>true</isContainer>
     <requiresCheckToOpen>true</requiresCheckToOpen>
@@ -243,6 +259,8 @@ test('thing XML parser strict mode rejects malformed generated XML', async () =>
     <description>A monumental hearthstone.</description>
     <shortDescription>Monumental market hearthstone</shortDescription>
     <itemOrScenery>scenery</itemOrScenery>
+    <hiddenFromPlayer>false</hiddenFromPlayer>
+    <discoveryDifficulty></discoveryDifficulty>
     <type>monument</type>
     <isSalvageable>false</isSalvable>
   </scenery>
@@ -268,6 +286,8 @@ test('thing XML parser rejects an invalid itemOrScenery value', async () => {
     <description>A record with an invalid structural kind.</description>
     <shortDescription>Invalid test record</shortDescription>
     <itemOrScenery>portable</itemOrScenery>
+    <hiddenFromPlayer>false</hiddenFromPlayer>
+    <discoveryDifficulty></discoveryDifficulty>
     <type>document</type>
   </item>
 </items>`),
@@ -292,6 +312,8 @@ test('thing XML parser rejects output that disagrees with the requested thing ty
     <description>A sealed archive record.</description>
     <shortDescription>Sealed archive record</shortDescription>
     <itemOrScenery>scenery</itemOrScenery>
+    <hiddenFromPlayer>false</hiddenFromPlayer>
+    <discoveryDifficulty></discoveryDifficulty>
     <type>document</type>
   </item>
 </items>`, { expectedThingType: 'item' }),

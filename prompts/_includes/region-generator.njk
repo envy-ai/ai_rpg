@@ -125,6 +125,8 @@ Very important: follow the instructions in &lt;writingStyleNotes&gt; and any ton
         <exit>
           <destination>Exact name of other location in region</destination>
           <travelTime>Travel time with units (minutes and/or hours only), e.g. "1 hour", "30 minutes", "1 hour 30 minutes", "1.5 hours". Travel time should be realistic based on the distance and terrain, with a minimum of 1 minute for tiny adjacent spaces, at least 5 minutes for locations in small towns, at least 15 minutes in large cities, and 30 minutes or even multiple hours in wild terrain. Deviating from this format will cause a validation error.</travelTime>
+          <hiddenFromPlayer><!-- true only for an optional secret route; false otherwise --></hiddenFromPlayer>
+          <discoveryDifficulty><!-- Required when hidden: Trivial, Easy, Medium, Hard, Very Hard, or Legendary. Blank when visible. --></discoveryDifficulty>
         </exit>
         <!-- Repeat <exit> elements as needed; 0-4 per location is typical. -->
       </exits>
@@ -172,6 +174,8 @@ Very important: follow the instructions in &lt;writingStyleNotes&gt; and any ton
           <relationshipToCurrentRegion>always "Within", because it's a building</relationshipToCurrentRegion>
           <exitVehicle>Optional; if the exit has a vehicle that ferries people to and from this destination (could be a taxi, bus, plane, starship, boat, fixed destination teleporter, mine elevator, etc, that is not controlled by the player). It should make sense in the phrase "[exitVehicle] to [exitLocation]".</exitVehicle>
           <travelTime>Travel time with units (minutes and/or hours only), e.g. "1 hour", "30 minutes", "1 hour 30 minutes", "1.5 hours". Travel time should be realistic based on the distance and terrain, with a minimum of 1 minute for tiny adjacent spaces, at least 5 minutes for locations in small towns, at least 15 minutes in large cities, and 30 minutes or even multiple hours in wild terrain</travelTime>
+          <hiddenFromPlayer><!-- true only for an optional secret route; false otherwise --></hiddenFromPlayer>
+          <discoveryDifficulty><!-- Required when hidden: Trivial, Easy, Medium, Hard, Very Hard, or Legendary. Blank when visible. --></discoveryDifficulty>
         </stubRegion>
         <!-- If this location is the exit point to a connected region, list the region name(s) here. Otherwise, omit this element entirely. -->
         <stubRegion type="connectedRegion">
@@ -181,6 +185,8 @@ Very important: follow the instructions in &lt;writingStyleNotes&gt; and any ton
           <relativeLevel>Integer from +1 to +4 relative to the current region</relativeLevel>
           <relationshipToCurrentRegion>Within | Contains | Adjacent</relationshipToCurrentRegion>
           <travelTime>Travel time with units (minutes and/or hours only), e.g. "1 hour", "30 minutes", "1 hour 30 minutes", "1.5 hours". Travel time should be realistic based on the distance and terrain, with a minimum of 1 minute for tiny adjacent spaces, at least 5 minutes for locations in small towns, at least 15 minutes in large cities, and 30 minutes or even multiple hours in wild terrain</travelTime>
+          <hiddenFromPlayer><!-- true only for an optional secret route; false otherwise --></hiddenFromPlayer>
+          <discoveryDifficulty><!-- Required when hidden: Trivial, Easy, Medium, Hard, Very Hard, or Legendary. Blank when visible. --></discoveryDifficulty>
         </stubRegion>
       </regionExits>
     </location>

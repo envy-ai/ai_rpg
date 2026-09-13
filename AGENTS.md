@@ -34,6 +34,7 @@
 - When updating documentation, also update docs/README.md to reflect any changes or new items.
 - The game server (and associated processes) run outside of the sandbox. When restarting it, don't load a save.
 - ASK PERMISSION before restarting the server, as I may be using it and it can cause data loss.
+- Legacy compatibility should never be added for the sole reason of supporting legacy tests. The tests instead should be updated. (Legacy save data still needs to be handled gracefully.)
 
 ## Tinybrain prompts
 

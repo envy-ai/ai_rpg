@@ -32,6 +32,13 @@ function fixtures() {
                     destination: 'gate',
                     description: 'A cobbled lane passes beneath the market arch.',
                     travelTimeMinutes: 15
+                }],
+                ['down', {
+                    destination: 'gate',
+                    description: 'A concealed maintenance tunnel.',
+                    travelTimeMinutes: 5,
+                    hiddenFromPlayer: true,
+                    discoveryDifficulty: 'Hard'
                 }]
             ]),
             visited: true,

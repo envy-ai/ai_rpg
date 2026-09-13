@@ -4,6 +4,8 @@
 <count>{% if thingSeed.count is defined %}{{ thingSeed.count }}{% else %}<!-- Count of how many items are in the stack (can be 1 or more) -->{% endif %}</count>
 <description>{% if thingSeed.description %}{{ thingSeed.description }}{% else %}<!--1-2 sentence description of the item-->{% endif %}</description>
 <itemOrScenery>{% if thingSeed.itemOrScenery %}{{ thingSeed.itemOrScenery }}{% else %}<!--for furniture, workstations, scenery, and things that are too large (or otherwise impossible) to pick up, answer "scenery"; otherwise answer "item"-->{% endif %}</itemOrScenery>
+<hiddenFromPlayer>{% if thingSeed.hiddenFromPlayer is defined %}{{ thingSeed.hiddenFromPlayer }}{% elif allowHiddenDiscovery %}<!--true occasionally for physically present secret content; false otherwise-->{% else %}false{% endif %}</hiddenFromPlayer>
+<discoveryDifficulty>{% if thingSeed.discoveryDifficulty %}{{ thingSeed.discoveryDifficulty }}{% elif allowHiddenDiscovery %}<!--Required when hiddenFromPlayer is true: Trivial, Easy, Medium, Hard, Very Hard, or Legendary. Leave blank when visible.-->{% endif %}</discoveryDifficulty>
 <type>{% if thingSeed.type %}{{ thingSeed.type }}{% else %}<!--Type of item (e.g., weapon, armor, consumable, tool, etc.)-->{% endif %}</type>
 <slot>{% if thingSeed.slot %}{{ thingSeed.slot }}{% else %}<!--Available gear slots: {% for slot in equipmentSlots %}{{ slot }}{% if not loop.last %}, {% endif %}{% endfor %}
     N/A if not equippable -->{% endif %}</slot>

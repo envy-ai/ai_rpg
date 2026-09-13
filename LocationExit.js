@@ -1,5 +1,6 @@
 const Globals = require('./Globals.js');
 const IdGenerator = require('./IdGenerator.js');
+const { validateHiddenDiscoveryPair } = require('./HiddenDiscovery.js');
 
 /**
  * LocationExit class for AI RPG
@@ -21,6 +22,8 @@ class LocationExit {
   #createdAt;
   #lastUpdated;
   #backtrace;
+  #hiddenFromPlayer;
+  #discoveryDifficulty;
 
   // Static private method for generating unique IDs
   static #generateId() {
@@ -60,7 +63,7 @@ class LocationExit {
    * @param {string} [options.imageId] - Image ID for generated exit passage scene (defaults to null)
    * @param {string} [options.imagePrompt] - Stored final image prompt (defaults to blank)
    */
-  constructor({ description = '', destination, destinationRegion = null, travelTimeMinutes = 0, bidirectional = true, id = null, imageId = null, imagePrompt = '', isVehicle = false, vehicleType = null } = {}) {
+  constructor({ description = '', destination, destinationRegion = null, travelTimeMinutes = 0, bidirectional = true, id = null, imageId = null, imagePrompt = '', isVehicle = false, vehicleType = null, hiddenFromPlayer = false, discoveryDifficulty = null } = {}) {
     // Validate required parameters
     if (description !== undefined && typeof description !== 'string') {
       throw new Error('Exit description must be a string when provided');
@@ -109,6 +112,11 @@ class LocationExit {
     this.#createdAt = new Date();
     this.#lastUpdated = this.#createdAt;
     this.#backtrace = LocationExit.#captureBacktrace();
+    const hiddenDiscovery = validateHiddenDiscoveryPair({ hiddenFromPlayer, discoveryDifficulty }, {
+      targetLabel: `LocationExit "${this.#id}"`
+    });
+    this.#hiddenFromPlayer = hiddenDiscovery.hiddenFromPlayer;
+    this.#discoveryDifficulty = hiddenDiscovery.discoveryDifficulty;
   }
 
   // Getters for accessing private fields
@@ -506,6 +514,24 @@ class LocationExit {
     return this.#backtrace;
   }
 
+  get hiddenFromPlayer() {
+    return this.#hiddenFromPlayer;
+  }
+
+  get discoveryDifficulty() {
+    return this.#discoveryDifficulty;
+  }
+
+  setHiddenDiscovery({ hiddenFromPlayer, discoveryDifficulty } = {}) {
+    const normalized = validateHiddenDiscoveryPair({ hiddenFromPlayer, discoveryDifficulty }, {
+      targetLabel: `LocationExit "${this.#id}"`
+    });
+    this.#hiddenFromPlayer = normalized.hiddenFromPlayer;
+    this.#discoveryDifficulty = normalized.discoveryDifficulty;
+    this.#lastUpdated = new Date();
+    return this;
+  }
+
   // Setters for modifying private fields
   set description(newDescription) {
     if (newDescription !== undefined && newDescription !== null && typeof newDescription !== 'string') {
@@ -601,7 +627,7 @@ class LocationExit {
    * @param {string} reverseDescription - Description for the reverse exit
    * @returns {LocationExit|null} - Reverse exit if bidirectional, null otherwise
    */
-  createReverse(reverseDescription, { destination = 'source_location_id' } = {}) {
+  createReverse(reverseDescription, { destination = 'source_location_id', hiddenFromPlayer = false, discoveryDifficulty = null } = {}) {
     if (!this.#bidirectional) {
       return null;
     }
@@ -617,7 +643,9 @@ class LocationExit {
       description: reverseDescription.trim(),
       destination,
       travelTimeMinutes: this.#travelTimeMinutes,
-      bidirectional: true
+      bidirectional: true,
+      hiddenFromPlayer,
+      discoveryDifficulty
     });
   }
 
@@ -631,7 +659,13 @@ class LocationExit {
    * @param {boolean} [updates.bidirectional] - New bidirectional flag
    * @param {string} [updates.imagePrompt] - Stored final image prompt
    */
-  update({ description, destination, destinationRegion, travelTimeMinutes, bidirectional, imagePrompt, isVehicle, vehicleType } = {}) {
+  update({ description, destination, destinationRegion, travelTimeMinutes, bidirectional, imagePrompt, isVehicle, vehicleType, hiddenFromPlayer, discoveryDifficulty } = {}) {
+    if (hiddenFromPlayer !== undefined || discoveryDifficulty !== undefined) {
+      this.setHiddenDiscovery({
+        hiddenFromPlayer: hiddenFromPlayer === undefined ? this.#hiddenFromPlayer : hiddenFromPlayer,
+        discoveryDifficulty: discoveryDifficulty === undefined ? this.#discoveryDifficulty : discoveryDifficulty
+      });
+    }
     if (description !== undefined) {
       this.description = description;
     }
@@ -680,6 +714,8 @@ class LocationExit {
       imagePrompt: this.#imagePrompt,
       isVehicle: this.#isVehicle,
       vehicleType: this.#vehicleType,
+      hiddenFromPlayer: this.#hiddenFromPlayer,
+      discoveryDifficulty: this.#discoveryDifficulty,
       type: this.#bidirectional ? 'two-way' : 'one-way',
       createdAt: this.#createdAt.toISOString(),
       lastUpdated: this.#lastUpdated.toISOString()
@@ -714,7 +750,7 @@ class LocationExit {
    * @param {string} options.description2to1 - Description from location 2 to 1
    * @returns {Object} - Object with exit1to2 and exit2to1 properties
    */
-  static createBidirectionalPair({ location1Id, location2Id, description1to2, description2to1, travelTimeMinutes = 0 }) {
+  static createBidirectionalPair({ location1Id, location2Id, description1to2, description2to1, travelTimeMinutes = 0, hiddenDiscovery1to2 = null, hiddenDiscovery2to1 = null }) {
     if (!location1Id || !location2Id || !description1to2 || !description2to1) {
       throw new Error('All parameters are required for creating bidirectional exit pair');
     }
@@ -723,14 +759,16 @@ class LocationExit {
       description: description1to2,
       destination: location2Id,
       travelTimeMinutes,
-      bidirectional: true
+      bidirectional: true,
+      ...(hiddenDiscovery1to2 || {})
     });
 
     const exit2to1 = new LocationExit({
       description: description2to1,
       destination: location1Id,
       travelTimeMinutes,
-      bidirectional: true
+      bidirectional: true,
+      ...(hiddenDiscovery2to1 || {})
     });
 
     return {
@@ -746,12 +784,14 @@ class LocationExit {
    * @param {string} options.destination - Destination location ID
    * @returns {LocationExit} - One-way exit instance
    */
-  static createOneWay({ description, destination, travelTimeMinutes = 0 }) {
+  static createOneWay({ description, destination, travelTimeMinutes = 0, hiddenFromPlayer = false, discoveryDifficulty = null }) {
     return new LocationExit({
       description,
       destination,
       travelTimeMinutes,
-      bidirectional: false
+      bidirectional: false,
+      hiddenFromPlayer,
+      discoveryDifficulty
     });
   }
 }

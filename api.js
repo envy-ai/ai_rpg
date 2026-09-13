@@ -11,6 +11,12 @@ const { XMLSerializer } = require('@xmldom/xmldom');
 const Location = require('./Location.js');
 const Region = require('./Region.js');
 const { resolveEffectiveLocationDanger } = require('./LocationDanger.js');
+const {
+    validateHiddenDiscoveryPair,
+    assertThingVisibleToPlayerForInteraction,
+    assertExitVisibleToPlayerForTravel,
+    runAutomaticHiddenDiscoveryForFirstEntry
+} = require('./HiddenDiscovery.js');
 const VehicleInfo = require('./VehicleInfo.js');
 const Globals = require('./Globals.js');
 const {
@@ -14277,6 +14283,7 @@ module.exports = function registerApiRoutes(scope) {
             if (!thing) {
                 throw new Error(`Thing with ID '${thingId}' not found for consumption.`);
             }
+            assertThingVisibleToPlayerForInteraction(thing, { action: 'consume' });
 
             const priorCount = Number.isInteger(thing.count) ? thing.count : 1;
             const result = thing.consumeOne({ things });
@@ -20120,6 +20127,45 @@ module.exports = function registerApiRoutes(scope) {
                 requestId
             });
             return checks;
+        }
+
+        async function runAutomaticHiddenWorldDiscoveryForArrival({
+            player = currentPlayer,
+            location = null,
+            wasVisitedBeforeArrival,
+            parentId = null,
+            collector = null,
+            requestId = null
+        } = {}) {
+            if (!(player instanceof Player) || !location) {
+                return { checks: [], revealed: [], locationRefreshRequested: false };
+            }
+            const settings = getHidePerceptionCheckSettings();
+            return runAutomaticHiddenDiscoveryForFirstEntry({
+                player,
+                location,
+                wasVisitedBeforeArrival,
+                perceptionAttribute: settings.perceptionAttribute,
+                perceptionSkill: settings.perceptionSkill,
+                resolveActionOutcome,
+                recordResult: (check) => recordActionOutcomeCheckResultsEntry({
+                    resolution: check.resolution,
+                    actorName: player.name || null,
+                    skillLabel: check.resolution.skill || settings.perceptionSkill || 'Perception',
+                    reason: check.resolution.reason || null,
+                    promptLabel: 'Automatic hidden discovery check',
+                    parentId,
+                    locationId: location.id,
+                    requestId,
+                    hiddenFromClient: config?.hide_hide_checks === true && check.success === false,
+                    metadata: {
+                        automaticHiddenDiscovery: true,
+                        targetType: check.targetType,
+                        targetId: check.targetId,
+                        targetName: check.targetName
+                    }
+                }, collector)
+            });
         }
 
         function loadRandomEventLines(type) {
@@ -26594,6 +26640,17 @@ module.exports = function registerApiRoutes(scope) {
                     entryCollector: newChatEntries,
                     parentEntryId: whileAwayResult?.parentLinkEntry?.id || parentEntryId
                 });
+                const hiddenDiscoveryResult = await runAutomaticHiddenWorldDiscoveryForArrival({
+                    player: currentPlayer,
+                    location: arrivalLocation,
+                    wasVisitedBeforeArrival: locationWasVisitedBeforeArrival,
+                    parentId: whileAwayResult?.parentLinkEntry?.id || parentEntryId,
+                    collector: newChatEntries,
+                    requestId: stream?.requestId || null
+                });
+                if (hiddenDiscoveryResult.locationRefreshRequested) {
+                    responseData.locationRefreshRequested = true;
+                }
                 if (whileAwayResult && typeof whileAwayResult === 'object') {
                     whileAwayResult.hostileArrivalResult = hostileArrivalResult;
                 }
@@ -26785,6 +26842,7 @@ module.exports = function registerApiRoutes(scope) {
                 if (!matchedExit) {
                     throw new Error('Travel exit could not be resolved from the current location.');
                 }
+                assertExitVisibleToPlayerForTravel(matchedExit, { direction });
 
                 if (matchedExit.destination !== normalizedDestinationId) {
                     throw new Error('Travel exit destination does not match the provided destinationId.');
@@ -35939,6 +35997,13 @@ module.exports = function registerApiRoutes(scope) {
                             parentId: whileYouWereAwayResult?.visibleEntry?.id || null,
                             requestId: null
                         });
+                        await runAutomaticHiddenWorldDiscoveryForArrival({
+                            player: npc,
+                            location: destinationLocation,
+                            wasVisitedBeforeArrival: Globals.getPlayerArrivalWasVisitedBeforeMove(destinationLocation.id),
+                            parentId: whileYouWereAwayResult?.visibleEntry?.id || null,
+                            requestId: null
+                        });
                         Player.recordNpcSightingsForCurrentPlayer({
                             player: npc,
                             locationId: destinationLocation.id,
@@ -40326,8 +40391,14 @@ module.exports = function registerApiRoutes(scope) {
                     bidirectional: bidirectionalRaw,
                     imageDataUrl: imageDataUrlRaw,
                     imageDataUrlOriginal: imageDataUrlOriginalRaw,
-                    imagePrompt: imagePromptRaw
+                    imagePrompt: imagePromptRaw,
+                    hiddenFromPlayer = false,
+                    discoveryDifficulty = null
                 } = req.body || {};
+                const hiddenDiscovery = validateHiddenDiscoveryPair(
+                    { hiddenFromPlayer, discoveryDifficulty },
+                    { targetLabel: 'Location exit' }
+                );
                 const hasImagePrompt = Object.prototype.hasOwnProperty.call(req.body || {}, 'imagePrompt');
                 if (hasImagePrompt && typeof imagePromptRaw !== 'string') {
                     return res.status(400).json({
@@ -40848,6 +40919,17 @@ module.exports = function registerApiRoutes(scope) {
                 }
 
                 const refreshedLocation = Location.get(originLocation.id) || originLocation;
+                const hiddenDestinationId = typeof createdInfo?.destinationId === 'string' && createdInfo.destinationId.trim()
+                    ? createdInfo.destinationId.trim()
+                    : (typeof createdInfo?.stubId === 'string' ? createdInfo.stubId.trim() : '');
+                if (!hiddenDestinationId) {
+                    throw new Error('Created exit destination could not be resolved for hidden-state assignment.');
+                }
+                const hiddenExitMatch = findExitOnLocation(refreshedLocation, exit => exit?.destination === hiddenDestinationId);
+                if (!hiddenExitMatch?.exit) {
+                    throw new Error(`Created directed exit to "${hiddenDestinationId}" could not be resolved.`);
+                }
+                hiddenExitMatch.exit.setHiddenDiscovery(hiddenDiscovery);
                 const locationData = buildLocationResponse(refreshedLocation);
 
                 if (!locationData) {
@@ -40900,10 +40982,38 @@ module.exports = function registerApiRoutes(scope) {
                 });
             } catch (error) {
                 console.error('Error creating exit:', error);
-                res.status(500).json({
+                const hiddenDiscoveryValidationError = /hiddenFromPlayer|discoveryDifficulty/.test(error?.message || '');
+                res.status(hiddenDiscoveryValidationError ? 400 : 500).json({
                     success: false,
                     error: error.message || 'Failed to create exit'
                 });
+            }
+        });
+
+        app.put('/api/locations/:id/exits/:exitId', (req, res) => {
+            try {
+                const location = Location.get(String(req.params.id || '').trim());
+                if (!location) return res.status(404).json({ success: false, error: 'Location not found' });
+                const match = findExitOnLocation(location, exit => exit?.id === String(req.params.exitId || '').trim());
+                if (!match?.exit) return res.status(404).json({ success: false, error: 'Exit not found on location' });
+                const payload = req.body || {};
+                const hasHidden = Object.prototype.hasOwnProperty.call(payload, 'hiddenFromPlayer');
+                const hasDifficulty = Object.prototype.hasOwnProperty.call(payload, 'discoveryDifficulty');
+                if (hasHidden || hasDifficulty) {
+                    const pair = validateHiddenDiscoveryPair({
+                        hiddenFromPlayer: hasHidden ? payload.hiddenFromPlayer : match.exit.hiddenFromPlayer,
+                        discoveryDifficulty: hasDifficulty ? payload.discoveryDifficulty : match.exit.discoveryDifficulty
+                    }, { targetLabel: `Location exit "${match.exit.id}"` });
+                    match.exit.setHiddenDiscovery(pair);
+                }
+                const update = {};
+                for (const key of ['description', 'travelTimeMinutes', 'bidirectional', 'imagePrompt', 'isVehicle', 'vehicleType']) {
+                    if (Object.prototype.hasOwnProperty.call(payload, key)) update[key] = payload[key];
+                }
+                if (Object.keys(update).length) match.exit.update(update);
+                return res.json({ success: true, exit: match.exit.toJSON(), location: buildLocationResponse(location) });
+            } catch (error) {
+                return res.status(400).json({ success: false, error: error.message });
             }
         });
 
@@ -42196,6 +42306,11 @@ module.exports = function registerApiRoutes(scope) {
                         error: 'Requested exit not found from the current location.'
                     });
                 }
+                try {
+                    assertExitVisibleToPlayerForTravel(matchedExit, { direction: matchedDirection });
+                } catch (error) {
+                    return res.status(409).json({ success: false, error: error.message });
+                }
 
 	                let destinationLocation = gameLocations.get(matchedExit.destination);
 	                if (!destinationLocation) {
@@ -42485,6 +42600,13 @@ module.exports = function registerApiRoutes(scope) {
                     parentId: travelSummaryParentId,
                     requestId: null
                 });
+                await runAutomaticHiddenWorldDiscoveryForArrival({
+                    player: currentPlayer,
+                    location: destinationLocation,
+                    wasVisitedBeforeArrival: Globals.getPlayerArrivalWasVisitedBeforeMove(destinationLocation.id),
+                    parentId: travelSummaryParentId,
+                    requestId: null
+                });
 
                 const locationData = buildLocationResponse(destinationLocation);
                 if (!locationData) {
@@ -42583,6 +42705,9 @@ module.exports = function registerApiRoutes(scope) {
 
             const exits = availableDirections.map(direction => {
                 const exit = typeof location.getExit === 'function' ? location.getExit(direction) : null;
+                if (exit?.hiddenFromPlayer === true) {
+                    return null;
+                }
                 const destinationRegionId = exit?.destinationRegion || null;
                 const destinationLocation = exit?.destination && gameLocations instanceof Map
                     ? gameLocations.get(exit.destination)
@@ -43037,6 +43162,9 @@ module.exports = function registerApiRoutes(scope) {
                             error: `Selected item '${thingId}' was not found.`
                         });
                     }
+                    assertThingVisibleToPlayerForInteraction(thing, {
+                        action: 'use for crafting, processing, salvage, or harvesting'
+                    });
                     if (isNonEmptyCraftingContainer(thing)) {
                         return res.status(400).json({
                             success: false,
@@ -44550,6 +44678,7 @@ module.exports = function registerApiRoutes(scope) {
                         if (!thing) {
                             throw new Error(`Selected item '${thingId}' was not found.`);
                         }
+                        assertThingVisibleToPlayerForInteraction(thing, { action: 'use to modify a location' });
                         if (typeof currentPlayer.hasInventoryItem !== 'function' || !currentPlayer.hasInventoryItem(thing)) {
                             throw new Error(`${thing.name || thing.id} is not in the current player's inventory.`);
                         }
@@ -45605,6 +45734,8 @@ module.exports = function registerApiRoutes(scope) {
                     count,
                     level,
                     relativeLevel,
+                    hiddenFromPlayer = false,
+                    discoveryDifficulty = null,
                     containerContents,
                     statusEffects
                 } = req.body || {};
@@ -45612,6 +45743,7 @@ module.exports = function registerApiRoutes(scope) {
                 const booleanFlags = extractThingBooleanFlagsFromPayload(req.body || {});
                 const registeredCreateFields = getRegisteredThingPayloadFields({ create: true, edit: true });
                 const registeredCreateFieldPayload = extractRegisteredThingPayloadFieldValues(req.body || {}, registeredCreateFields);
+                const hiddenDiscovery = validateHiddenDiscoveryPair({ hiddenFromPlayer, discoveryDifficulty }, { targetLabel: `Thing "${name || 'new'}"` });
 
                 const thing = new Thing({
                     name,
@@ -45640,6 +45772,7 @@ module.exports = function registerApiRoutes(scope) {
                     count,
                     level,
                     relativeLevel,
+                    ...hiddenDiscovery,
                     containerContents,
                     statusEffects,
                     ...registeredCreateFieldPayload.values,
@@ -46184,7 +46317,9 @@ module.exports = function registerApiRoutes(scope) {
             if (!normalizedId) {
                 return null;
             }
-            return things.get(normalizedId) || Thing.getById(normalizedId) || null;
+            const thing = things.get(normalizedId) || Thing.getById(normalizedId) || null;
+            if (thing) assertThingVisibleToPlayerForInteraction(thing, { action: 'combine' });
+            return thing;
         }
 
         function isItemCombinerCandidateThing(thing) {
@@ -46473,6 +46608,7 @@ module.exports = function registerApiRoutes(scope) {
                         error: `Thing "${thingId}" was not found.`
                     });
                 }
+                assertThingVisibleToPlayerForInteraction(thing, { action: 'use with a module operation' });
 
                 const actor = resolveActorForThingContextAction(req.body || {});
                 const result = await action.handler({
@@ -46595,6 +46731,8 @@ module.exports = function registerApiRoutes(scope) {
                     count,
                     level,
                     relativeLevel,
+                    hiddenFromPlayer,
+                    discoveryDifficulty,
                     containerContents,
                     statusEffects
                 } = req.body || {};
@@ -46716,6 +46854,14 @@ module.exports = function registerApiRoutes(scope) {
                     thing.relativeLevel = relativeLevel;
                 }
 
+                if (hiddenFromPlayer !== undefined || discoveryDifficulty !== undefined) {
+                    const hiddenDiscovery = validateHiddenDiscoveryPair({
+                        hiddenFromPlayer: hiddenFromPlayer !== undefined ? hiddenFromPlayer : thing.hiddenFromPlayer,
+                        discoveryDifficulty: discoveryDifficulty !== undefined ? discoveryDifficulty : thing.discoveryDifficulty
+                    }, { targetLabel: `Thing "${thing.name || thing.id}"` });
+                    thing.setHiddenDiscovery(hiddenDiscovery);
+                }
+
                 applyThingBooleanFlagsToInstance(thing, booleanFlags);
 
                 if (containerContents !== undefined) {
@@ -46779,6 +46925,7 @@ module.exports = function registerApiRoutes(scope) {
                         error: 'Thing not found'
                     });
                 }
+                assertThingVisibleToPlayerForInteraction(sourceThing, { action: 'separate' });
 
                 const sourceThingType = typeof sourceThing.thingType === 'string'
                     ? sourceThing.thingType.trim().toLowerCase()
@@ -47153,6 +47300,7 @@ module.exports = function registerApiRoutes(scope) {
                         error: 'Thing not found'
                     });
                 }
+                assertThingVisibleToPlayerForInteraction(sourceThing, { action: 'split' });
 
                 if (sourceThing.thingType !== 'item') {
                     return res.status(400).json({
@@ -47286,6 +47434,7 @@ module.exports = function registerApiRoutes(scope) {
                         error: 'Thing not found'
                     });
                 }
+                assertThingVisibleToPlayerForInteraction(sourceThing, { action: 'merge' });
 
                 if (sourceThing.thingType !== 'item') {
                     return res.status(400).json({
@@ -47425,6 +47574,7 @@ module.exports = function registerApiRoutes(scope) {
                 error.status = 400;
                 throw error;
             }
+            assertThingVisibleToPlayerForInteraction(container, { action: 'use as a container' });
             return container;
         }
 
@@ -47459,6 +47609,7 @@ module.exports = function registerApiRoutes(scope) {
                 if (!item) {
                     throw createContainerMoveError(`Thing "${thingId}" not found`, 404);
                 }
+                assertThingVisibleToPlayerForInteraction(item, { action: 'move' });
                 return item;
             });
         }
@@ -48579,6 +48730,7 @@ module.exports = function registerApiRoutes(scope) {
                         error: `Thing with ID '${thingId}' not found`
                     });
                 }
+                assertThingVisibleToPlayerForInteraction(thing, { action: 'give' });
 
                 if (thing.thingType && thing.thingType !== 'item') {
                     return res.status(400).json({
@@ -51844,12 +51996,20 @@ module.exports = function registerApiRoutes(scope) {
                 console.log(`🏠 Starting at region entrance: ${entranceLocation.name} (Level ${entranceLocation.baseLevel})`);
 
                 // Place player in starting location
+                Globals.recordPlayerArrivalVisitState(entranceLocation, false);
                 newPlayer.setLocation(entranceLocation.id);
 
                 // Store new player and set as current
                 players.set(newPlayer.id, newPlayer);
                 setActiveCurrentPlayer(newPlayer);
                 Globals.syncWorldTimeToPlayer(currentPlayer);
+
+                await runAutomaticHiddenWorldDiscoveryForArrival({
+                    player: newPlayer,
+                    location: entranceLocation,
+                    wasVisitedBeforeArrival: false,
+                    requestId: null
+                });
 
                 queueNpcAssetsForLocation(entranceLocation);
 

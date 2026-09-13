@@ -231,6 +231,7 @@ This is a list of all characters in the story and a short description of each.
   {% if currentLocation %}
 {% if ignorePromptLevelOmissions %}[[[AI_RPG_INTERNAL_MESSAGE_BOUNDARY_BASE_CONTEXT_SECTION_V1]]]{% endif %}
   <currentLocation>
+    <hiddenDiscoveryRule>Records marked hidden are GM-only facts. Do not mention, imply, use, target, route through, suggest, or count them in player-visible prose until an automatic success or an explicit reveal event establishes discovery.</hiddenDiscoveryRule>
     <name>{{ currentLocation.name }}</name>
     <description>{{ currentLocation.description }}</description>
     <statusEffects>
@@ -245,7 +246,12 @@ This is a list of all characters in the story and a short description of each.
     <exits>
       {% for exit in currentLocation.exits %}
       <exit>
+        <id>{{ exit.id }}</id>
+        <direction>{{ exit.direction }}</direction>
         <destination>{{ exit.name }}</destination>
+        <description>{{ exit.description }}</description>
+        {% if exit.hiddenFromPlayer %}<hidden>true</hidden>
+        <discoveryDifficulty>{{ exit.discoveryDifficulty }}</discoveryDifficulty>{% endif %}
         <travelTime>{{ exit.travelTimeMinutes | default(0, true) }} minutes</travelTime>
         <isVehicle>{{ exit.isVehicle | default(false) }}</isVehicle>
         {% if exit.isVehicle %}<vehicleType>{{ exit.vehicleType | default('', true) }}</vehicleType>{% endif %}
@@ -254,12 +260,17 @@ This is a list of all characters in the story and a short description of each.
     </exits>
     <items>{% if useShortDescriptions -%}
 {%- for item in currentLocation.items -%}
+{% if item.hiddenFromPlayer %}<hiddenThing><id>{{ item.id | default('', true) }}</id><name>{{ item.name }}</name><type>{{ item.thingType }}</type><description>{{ item.description }}</description><discoveryDifficulty>{{ item.discoveryDifficulty }}</discoveryDifficulty><hidden>true</hidden></hiddenThing>{% else %}
 {{ item.name }}: {{ itemQuantityField(item) }}{{ item.rarity | default('common', true) }} level {{ item.level | default(1, true) }} {{ itemValueSummary(item) }} - {{ item.shortDescription | default(item.description, true) }}{% if item.equippedSlot %} (Equipped to {{ item.equippedSlot }}){% endif %}{% if item.isContainer %} (Container{% if item.containerContents and item.containerContents.length %}: contains {{ containerContentsSummary(item.containerContents) }}{% else %}: empty{% endif %}){% endif %}{% if not loop.last %}{{ "\n" }}{% endif %}
+{% endif %}
 {%- endfor -%}
 {%- else %}
       {% for item in currentLocation.items %}
       <item>
+        <id>{{ item.id | default('', true) }}</id>
         <name>{{ item.name }}</name>
+        {% if item.hiddenFromPlayer %}<hidden>true</hidden>
+        <discoveryDifficulty>{{ item.discoveryDifficulty }}</discoveryDifficulty>{% endif %}
         <description>{{ item.description }}</description>
         <isScenery>{{ item.isScenery | default(false) }}</isScenery>
         <isVehicle>{{ item.isVehicle | default(false) }}</isVehicle>
@@ -404,12 +415,17 @@ This is a list of all characters in the story and a short description of each.
     </npcs>
     <itemsInScene>{% if useShortDescriptions -%}
 {%- for item in itemsInScene %}{% if not item.isScenery -%}
+{% if item.hiddenFromPlayer %}<hiddenThing><id>{{ item.id }}</id><name>{{ item.name }}</name><type>{{ item.thingType }}</type><description>{{ item.description }}</description><discoveryDifficulty>{{ item.discoveryDifficulty }}</discoveryDifficulty><hidden>true</hidden></hiddenThing>{% else %}
 {{ item.name }}: {{ itemQuantityField(item) }}{{ item.rarity | default('common', true) }} level {{ item.level | default(1, true) }} {{ itemValueSummary(item) }} - {{ item.shortDescription | default(item.description, true) }}{% if item.equippedSlot %} (Equipped to {{ item.equippedSlot }}){% endif %}{% if not loop.last %}{{ "\n" }}{% endif %}
+{% endif %}
 {%- endif %}{%- endfor -%}
 {%- else %}
       {% for item in itemsInScene %}{% if not item.isScenery %}
       <item>
+        <id>{{ item.id }}</id>
         <name>{{ item.name }}</name>
+        {% if item.hiddenFromPlayer %}<hidden>true</hidden>
+        <discoveryDifficulty>{{ item.discoveryDifficulty }}</discoveryDifficulty>{% endif %}
         <description>{{ item.description }}</description>
         <isScenery>{{ item.isScenery | default(false) }}</isScenery>
         <isVehicle>{{ item.isVehicle | default(false) }}</isVehicle>
@@ -435,12 +451,17 @@ This is a list of all characters in the story and a short description of each.
     {% endif %}</itemsInScene>
     <sceneryList>{% if useShortDescriptions -%}
 {%- for item in itemsInScene %}{% if item.isScenery -%}
+{% if item.hiddenFromPlayer %}<hiddenThing><id>{{ item.id }}</id><name>{{ item.name }}</name><type>{{ item.thingType }}</type><description>{{ item.description }}</description><discoveryDifficulty>{{ item.discoveryDifficulty }}</discoveryDifficulty><hidden>true</hidden></hiddenThing>{% else %}
 {{ item.name }}: {{ itemQuantityField(item) }}{{ item.rarity | default('common', true) }} level {{ item.level | default(1, true) }} {{ itemValueSummary(item) }} - {{ item.shortDescription | default(item.description, true) }}{% if item.equippedSlot %} (Equipped to {{ item.equippedSlot }}){% endif %}{% if item.isContainer %} (Container{% if item.containerContents and item.containerContents.length %}: contains {{ containerContentsSummary(item.containerContents) }}{% else %}: empty{% endif %}){% endif %}{% if not loop.last %}{{ "\n" }}{% endif %}
+{% endif %}
 {%- endif %}{%- endfor -%}
 {%- else %}
       {% for item in itemsInScene %}{% if item.isScenery %}
       <sceneryItem>
+        <id>{{ item.id }}</id>
         <name>{{ item.name }}</name>
+        {% if item.hiddenFromPlayer %}<hidden>true</hidden>
+        <discoveryDifficulty>{{ item.discoveryDifficulty }}</discoveryDifficulty>{% endif %}
         <description>{{ item.description }}</description>
         <isScenery>{{ item.isScenery | default(true) }}</isScenery>
         <isVehicle>{{ item.isVehicle | default(false) }}</isVehicle>

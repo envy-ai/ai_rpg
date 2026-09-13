@@ -1,5 +1,9 @@
 # Events XML Event Schema
 
+## Hidden target reveals
+
+`<revealHiddenThing>` requires `<thingId>`, `<thingName>`, and `<description>`. `<revealHiddenExit>` requires `<exitId>`, `<destinationName>`, and `<description>`. Each pair must match an authoritative target directly owned by the event location; appearance/new-exit tags must not duplicate hidden records.
+
 ## Purpose
 
 This is the informal XML schema for the default single-prompt event pipeline (`event_checks.use_xml: true`). The model reads one chat entry or prose segment and emits an `<events>` block. It is not an XSD document. `Events.js` requires a parseable `<events>...</events>` block and extracts it even when the model wraps the block in markdown fences.

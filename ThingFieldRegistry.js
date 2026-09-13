@@ -26,6 +26,8 @@ const BUILTIN_FIELDS = Object.freeze([
     { fieldName: 'isSalvageable', type: 'boolean', exposeToCreateTool: true, exposeToUpdateTool: true },
     { fieldName: 'isContainer', type: 'boolean', exposeToCreateTool: true, exposeToUpdateTool: true },
     { fieldName: 'requiresCheckToOpen', type: 'boolean', exposeToCreateTool: true, exposeToUpdateTool: true },
+    { fieldName: 'hiddenFromPlayer', type: 'boolean', exposeToCreateTool: true, exposeToUpdateTool: true },
+    { fieldName: 'discoveryDifficulty', type: 'string', exposeToCreateTool: true, exposeToUpdateTool: true },
     { fieldName: 'containerContents', type: 'array', exposeToCreateTool: true, exposeToUpdateTool: true },
     { fieldName: 'containedThingIds', type: 'array', exposeToCreateTool: false, exposeToUpdateTool: false },
     { fieldName: 'attributeBonuses', type: 'array', exposeToCreateTool: true, exposeToUpdateTool: true },

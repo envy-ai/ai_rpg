@@ -1,5 +1,7 @@
 # Play Interface (views/index.njk)
 
+Exits and Items & Scenery mirror the NPC upper-right eye toggle. Hidden rows/cards and counts are omitted by default. Show-hidden mode stays enabled, renders a badge at exactly `opacity: 0.9`, and disables travel/gameplay actions. Editors pair a hidden checkbox with required difficulty.
+
 The main UI is rendered by `views/index.njk` and powered by `public/js/chat.js` plus a large inline script block inside the template.
 
 ## Layout and tabs

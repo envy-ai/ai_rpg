@@ -22,6 +22,7 @@ const { questRewardBenefitRegistry } = require('./QuestRewardBenefitRegistry.js'
 const ThingMutationService = require('./ThingMutationService.js');
 const ThingFieldRegistry = require('./ThingFieldRegistry.js');
 const { buildSkillCheckOutcomeToolContent } = require('./utils/skill-check-outcome-guidance.js');
+const { validateHiddenDiscoveryPair } = require('./HiddenDiscovery.js');
 
 const MORE_INFO_MAX_MATCHES = 50;
 const CACHED_CHECK_TOOL_CALL_NOTE = 'You already made this tool call. Do not re-run tool calls for the same checks that you made in earlier drafts.';
@@ -931,6 +932,15 @@ const CHAT_TOOL_DEFINITIONS = Object.freeze([
                     relativeLevel: {
                         type: 'integer',
                         description: 'Optional relative level hint for created stubs.'
+                    },
+                    hiddenFromPlayer: {
+                        type: 'boolean',
+                        description: 'Whether the source-directed exit begins hidden from the player.'
+                    },
+                    discoveryDifficulty: {
+                        type: ['string', 'null'],
+                        enum: ['Trivial', 'Easy', 'Medium', 'Hard', 'Very Hard', 'Legendary', null],
+                        description: 'Required when hiddenFromPlayer is true; otherwise null.'
                     }
                 },
                 required: ['fromLocation', 'travelTimeMinutes'],
@@ -1127,6 +1137,11 @@ const CHAT_TOOL_DEFINITIONS = Object.freeze([
                     requiresCheckToOpen: {
                         type: 'boolean',
                         description: 'Optional checked-open flag for containers. Set true when the player must describe an opening attempt and pass a skill check before the container inventory is shown.'
+                    },
+                    hiddenFromPlayer: { type: 'boolean', description: 'Whether this location Thing begins hidden.' },
+                    discoveryDifficulty: {
+                        type: ['string', 'null'],
+                        enum: ['Trivial', 'Easy', 'Medium', 'Hard', 'Very Hard', 'Legendary', null]
                     },
                     containerContents: {
                         type: 'array',
@@ -5004,7 +5019,9 @@ const createChatToolRuntime = ({
         toRegion = null,
         description = null,
         vehicleType = null,
-        relativeLevel = null
+        relativeLevel = null,
+        hiddenFromPlayer = false,
+        discoveryDifficulty = null
     } = {}) => {
         const functionName = 'createExit';
         if (!Number.isInteger(travelTimeMinutes) || travelTimeMinutes < 1) {
@@ -5023,6 +5040,7 @@ const createChatToolRuntime = ({
             functionName,
             fieldName: 'relativeLevel'
         });
+        const hiddenDiscovery = validateHiddenDiscoveryPair({ hiddenFromPlayer, discoveryDifficulty }, { targetLabel: 'createExit' });
 
         if (!toLocationQuery && !toRegionQuery) {
             throw new ToolVisibleError(
@@ -5196,6 +5214,17 @@ const createChatToolRuntime = ({
             }
             destinationKind = 'location';
             destinationRegionId = locationRegionId(destinationLocation);
+        }
+
+        if (!duplicateIgnored) {
+            const createdExit = findExistingExitToDestination(originLocation, {
+                destinationLocationId: destinationLocation.id,
+                destinationRegionId: destinationKind === 'region' ? destinationRegionId : null
+            });
+            if (!createdExit?.exit) throw new ToolVisibleError('createExit could not resolve the newly created directed exit.', { code: 'exit_create_failed' });
+            createdExit.exit.setHiddenDiscovery(hiddenDiscovery);
+        } else if (hiddenDiscovery.hiddenFromPlayer) {
+            throw new ToolVisibleError('createExit will not change hidden state on an existing duplicate exit.', { code: 'duplicate_exit' });
         }
 
         const status = duplicateIgnored ? 'unchanged' : 'success';
@@ -5545,6 +5574,8 @@ const createChatToolRuntime = ({
         isSalvageable = null,
         isContainer = null,
         requiresCheckToOpen = null,
+        hiddenFromPlayer = false,
+        discoveryDifficulty = null,
         containerContents = null,
         attributeBonuses = null,
         causeStatusEffectOnTarget = null,
@@ -5666,7 +5697,8 @@ const createChatToolRuntime = ({
 
         const seed = {
             shortDescription: shortDescriptionValue,
-            itemOrScenery: itemOrSceneryValue
+            itemOrScenery: itemOrSceneryValue,
+            ...validateHiddenDiscoveryPair({ hiddenFromPlayer, discoveryDifficulty }, { targetLabel: 'createThing' })
         };
 
         const registeredCreateFields = getRegisteredEntityFieldsForRuntime('thing', { exposeToCreateTool: true });

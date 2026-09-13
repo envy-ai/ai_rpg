@@ -55,6 +55,8 @@ class ModExtensionRegistry {
         'requiresCheckToOpen',
         'containerContents',
         'containedThingIds',
+        'hiddenFromPlayer',
+        'discoveryDifficulty',
         'flags'
     ]);
 
@@ -77,6 +79,8 @@ class ModExtensionRegistry {
         'isSalvageable',
         'isContainer',
         'requiresCheckToOpen',
+        'hiddenFromPlayer',
+        'discoveryDifficulty',
         'containerContents',
         'containedItem',
         'attributeBonuses',

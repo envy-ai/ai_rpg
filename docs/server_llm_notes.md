@@ -1,5 +1,7 @@
 # Server and LLM Flow Notes
 
+Hidden Things/exits remain in GM context with ids, descriptions, canonical difficulty, and structural hidden markers. Instructions prohibit mentioning, targeting, routing through, or counting them before discovery. Only location generation is invited to hide records. Every generated Thing or exit XML record must include both `hiddenFromPlayer` and `discoveryDifficulty` (`false` with a blank difficulty when visible); missing tags and invalid pairs fail during ordinary completion and replay alike. Legacy defaults apply only to old-save hydration. Standard and TinyBrain extraction use explicit reveal tags and authoritative lists.
+
 This document describes the server and LLM runtime as it exists in the codebase. It is organized by responsibility rather than by implementation history.
 
 ## Startup and Runtime Wiring

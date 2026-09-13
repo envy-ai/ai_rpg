@@ -281,6 +281,8 @@ test('thing XML parser maps registered item prompt fields onto first-class parse
     <description>A silver lattice of mnemonic fibers.</description>
     <shortDescription>Silver mnemonic neural lattice</shortDescription>
     <itemOrScenery>item</itemOrScenery>
+    <hiddenFromPlayer>false</hiddenFromPlayer>
+    <discoveryDifficulty></discoveryDifficulty>
     <type>implant</type>
     <slot>N/A</slot>
     <implantSlot>neural</implantSlot>
@@ -323,6 +325,8 @@ test('thing XML parser rejects nested XML emitted for a registered array field',
     <description>A feathered cloak.</description>
     <shortDescription>Gilded harpy-feather cloak</shortDescription>
     <itemOrScenery>item</itemOrScenery>
+    <hiddenFromPlayer>false</hiddenFromPlayer>
+    <discoveryDifficulty></discoveryDifficulty>
     <type>armor</type>
     <moduleSlots><type>crystal</type></moduleSlots>
   </item>
@@ -351,6 +355,8 @@ test('thing XML parser accepts only the registered nested module-slot structure'
     <description>A carbine with two receiver sockets.</description>
     <shortDescription>Two-socket receiver carbine</shortDescription>
     <itemOrScenery>item</itemOrScenery>
+    <hiddenFromPlayer>false</hiddenFromPlayer>
+    <discoveryDifficulty></discoveryDifficulty>
     <type>weapon</type>
     <slot>hand</slot>
     <moduleSlots>
@@ -369,6 +375,8 @@ test('thing XML parser accepts only the registered nested module-slot structure'
   <name>Plain Carbine</name>
   <description>A carbine without module sockets.</description>
   <itemOrScenery>item</itemOrScenery>
+  <hiddenFromPlayer>false</hiddenFromPlayer>
+  <discoveryDifficulty></discoveryDifficulty>
   <type>weapon</type><slot>hand</slot>
   <moduleSlots></moduleSlots>
 </item></items>`);
@@ -379,6 +387,8 @@ test('thing XML parser accepts only the registered nested module-slot structure'
   <name>Malformed Carbine</name>
   <description>A malformed carbine.</description>
   <itemOrScenery>item</itemOrScenery>
+  <hiddenFromPlayer>false</hiddenFromPlayer>
+  <discoveryDifficulty></discoveryDifficulty>
   <type>weapon</type><slot>hand</slot>
   <moduleSlots>[{"type":"mod"}]</moduleSlots>
 </item></items>`), /must contain <moduleSlot> child elements/);
@@ -388,6 +398,8 @@ test('thing XML parser accepts only the registered nested module-slot structure'
   <name>Typeless Carbine</name>
   <description>A malformed carbine.</description>
   <itemOrScenery>item</itemOrScenery>
+  <hiddenFromPlayer>false</hiddenFromPlayer>
+  <discoveryDifficulty></discoveryDifficulty>
   <type>weapon</type><slot>hand</slot>
   <moduleSlots><moduleSlot><label>Upper</label></moduleSlot></moduleSlots>
 </item></items>`), /requires .*<type>/);
@@ -397,6 +409,8 @@ test('thing XML parser accepts only the registered nested module-slot structure'
   <name>Overdescribed Carbine</name>
   <description>A malformed carbine.</description>
   <itemOrScenery>item</itemOrScenery>
+  <hiddenFromPlayer>false</hiddenFromPlayer>
+  <discoveryDifficulty></discoveryDifficulty>
   <type>weapon</type><slot>hand</slot>
   <moduleSlots><moduleSlot><type>mod</type><capacity>2</capacity></moduleSlot></moduleSlots>
 </item></items>`), /unexpected <capacity>/);

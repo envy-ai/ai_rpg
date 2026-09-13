@@ -1,5 +1,9 @@
 # Events
 
+## Hidden Thing and exit reveals
+
+`reveal_hidden_thing` and `reveal_hidden_exit` require exact current-location id/name pairs. They clear hidden state without another roll, are idempotent for an already-visible match, run before dependent item/exit events, and request a location refresh. TinyBrain validates the same authoritative target lists.
+
 ## Purpose
 
 Runs LLM-based event checks on narrative text, parses structured outcomes, and applies those outcomes to the game world (locations, items, NPCs, quests, and status effects). Tracks discovered/altered entities to avoid duplicates.

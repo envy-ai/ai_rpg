@@ -1,5 +1,7 @@
 # Docs Table of Contents
 
+Hidden Thing/exit persistence, strict generated/replayed XML fields, formula-derived first-entry discovery, authoritative standard/TinyBrain reveal events, interaction/travel/map gates, and matching UI eye toggles are documented in [classes/Thing.md](classes/Thing.md), [classes/LocationExit.md](classes/LocationExit.md), [classes/Events.md](classes/Events.md), [api/chat.md](api/chat.md), [api/things.md](api/things.md), [api/locations.md](api/locations.md), [server_llm_notes.md](server_llm_notes.md), and [ui/chat_interface.md](ui/chat_interface.md).
+
 Player-action `until` clock-time durations, including TinyBrain parsing and turn-start clock snapshots, are documented in [api/chat.md](api/chat.md), [classes/Utils.md](classes/Utils.md), [classes/TinyBrainPromptParsers.md](classes/TinyBrainPromptParsers.md), and [classes/PlayerActionTinyBrainResult.md](classes/PlayerActionTinyBrainResult.md).
 
 Authoritative quest-completion notifications, including structured reward lines and split-travel objective summaries, are documented in [api/chat.md](api/chat.md), [api/quests.md](api/quests.md), and [classes/Events.md](classes/Events.md).
@@ -231,7 +233,9 @@ WYWA arrival narration is documented in [api/chat.md](api/chat.md), [api/players
 
 | Doc                                                                                                                          | Use for                                                                                                                |
 | ---------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
-| [superpowers/plans/2026-09-12-hidden-things-exits-first-entry-discovery.md](superpowers/plans/2026-09-12-hidden-things-exits-first-entry-discovery.md) | Current plan for creation-time hidden items, scenery, and directed exits; first-entry automatic perception; later reveal events; interaction gating; and UI treatment. |
+| [superpowers/plans/2026-09-12-hidden-things-exits-first-entry-discovery.md](superpowers/plans/2026-09-12-hidden-things-exits-first-entry-discovery.md) | Implemented creation-time hidden items, scenery, and directed exits; first-entry automatic perception; later reveal events; interaction gating; and UI treatment. |
+| [superpowers/plans/2026-09-12-map-route-inspection.md](superpowers/plans/2026-09-12-map-route-inspection.md) | Planned player-safe route inspection for Region Map, World Map, and Favorites, with explicit reachability, steps, eligibility, and hidden-exit protection. |
+| [superpowers/plans/2026-09-12-quest-hidden-route-knowledge-rewards.md](superpowers/plans/2026-09-12-quest-hidden-route-knowledge-rewards.md) | Planned `knowledge/route` quest reward that reveals one canonical directed hidden exit without granting visits or fast travel. |
 | [superpowers/plans/2026-05-22-hidden-items-scenery-exits.md](superpowers/plans/2026-05-22-hidden-items-scenery-exits.md)     | Archived earlier hidden items/scenery/exits draft; superseded for automatic discovery, events, and current mutation architecture. |
 | [superpowers/plans/2026-05-23-implants-and-mod-hooks.md](superpowers/plans/2026-05-23-implants-and-mod-hooks.md)             | Implant/spell system hooks and mod-owned extension behavior.                                                           |
 | [superpowers/plans/2026-05-23-mod-ui-hooks.md](superpowers/plans/2026-05-23-mod-ui-hooks.md)                                 | Mod UI extension layer, manifest, runtime, slots, panels, and bundled examples.                                        |

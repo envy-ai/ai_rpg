@@ -1,6 +1,7 @@
 const SanitizedStringSet = require("./SanitizedStringSet.js");
 const Utils = require("./Utils.js");
 const Thing = require("./Thing.js");
+const { assertThingVisibleToPlayerForInteraction } = require("./HiddenDiscovery.js");
 const Globals = require("./Globals.js");
 const Player = require("./Player.js");
 const { isActorDispositionHostile } = require("./DispositionHostility.js");
@@ -61,6 +62,8 @@ const TINY_BRAIN_EVENT_TAG_TO_KEY = Object.freeze({
     pickUpItem: "pick_up_item",
     putItemInContainer: "put_item_in_container",
     removeItemFromContainer: "remove_item_from_container",
+    revealHiddenThing: "reveal_hidden_thing",
+    revealHiddenExit: "reveal_hidden_exit",
     revealHiddenNpc: "reveal_hidden_npc",
     hideVisibleNpc: "hide_visible_npc",
     dropItem: "drop_item",
@@ -149,6 +152,8 @@ const TINY_BRAIN_EVENT_REQUIRED_FIELDS = Object.freeze({
     pickUpItem: Object.freeze(["actorName", "fullItemName", "quantity"]),
     putItemInContainer: Object.freeze(["fullItemName", "quantity", "containerName"]),
     removeItemFromContainer: Object.freeze(["fullItemName", "quantity", "containerName"]),
+    revealHiddenThing: Object.freeze(["thingId", "thingName", "description"]),
+    revealHiddenExit: Object.freeze(["exitId", "destinationName", "description"]),
     revealHiddenNpc: Object.freeze(["npcName", "description", "useOpposedCheck"]),
     hideVisibleNpc: Object.freeze(["npcName", "description"]),
     dropItem: Object.freeze(["actorName", "fullItemName", "quantity"]),
@@ -201,8 +206,10 @@ const TINY_BRAIN_EVENT_STAGE_DEFINITIONS = Object.freeze([
         id: "scene",
         label: "scene and location",
         instructions:
-            "Extract lasting scene/location changes, newly discovered exits, first appearances of inanimate things, and arrivals or departures of existing inanimate things.",
+            "Extract authoritative reveals of listed hidden things and exits first, then lasting scene/location changes, newly discovered exits, first appearances of inanimate things, and arrivals or departures of existing inanimate things. Never use an appearance or new-exit tag to duplicate an existing hidden record.",
         tags: Object.freeze([
+            "revealHiddenThing",
+            "revealHiddenExit",
             "newExitDiscovered",
             "alterLocation",
             "itemAppear",
@@ -311,6 +318,14 @@ const EVENT_PROMPT_ORDER = [
         {
             key: "dummy_event",
             prompt: `Did the text reveal, unlock, unblock, or otherwise create a new exit?`,
+        },
+        {
+            key: "reveal_hidden_thing",
+            prompt: `Did the text establish that a currently hidden item or scenery object became visible? If so, answer "[exact thing id] → [exact thing name] → [brief description]". Do not create a duplicate item/scenery event. Otherwise answer N/A.`,
+        },
+        {
+            key: "reveal_hidden_exit",
+            prompt: `Did the text establish that a currently hidden exit became visible? If so, answer "[exact exit id] → [exact destination name] → [brief description]". Do not create a duplicate new-exit event. Otherwise answer N/A.`,
         },
         {
             key: "new_exit_discovered",
@@ -3925,6 +3940,8 @@ class Events {
             eventSequence,
         );
         const eventCheckHiddenNpcNames = this._getEventCheckHiddenNpcNames(location);
+        const eventCheckHiddenThingTargets = this._getEventCheckHiddenThingTargets(location);
+        const eventCheckHiddenExitTargets = this._getEventCheckHiddenExitTargets(location);
         const templateContext = {
             ...baseContext,
             promptType: "events-xml",
@@ -3950,6 +3967,8 @@ class Events {
             tinyBrainAuthoritativeMovementCompanionNames:
                 authoritativeMovementCompanionNames,
             eventCheckHiddenNpcNames,
+            eventCheckHiddenThingTargets,
+            eventCheckHiddenExitTargets,
             omitGameHistory: true,
         };
         if (useTinyBrainEventChecks) {
@@ -3962,6 +3981,8 @@ class Events {
                 hasRegisteredModEvents: Array.isArray(baseContext?.modEventPromptSchemas)
                     && baseContext.modEventPromptSchemas.length > 0,
                 hiddenNpcNames: eventCheckHiddenNpcNames,
+                hiddenThingTargets: eventCheckHiddenThingTargets,
+                hiddenExitTargets: eventCheckHiddenExitTargets,
             });
         }
         const tinyBrain = useTinyBrainEventChecks
@@ -6374,6 +6395,23 @@ class Events {
             });
     }
 
+    static _getEventCheckHiddenThingTargets(location) {
+        return Array.isArray(location?.things)
+            ? location.things.filter((thing) => thing?.hiddenFromPlayer === true).map((thing) => ({
+                id: String(thing.id || "").trim(),
+                name: String(thing.name || "").trim(),
+            })).filter((target) => target.id && target.name)
+            : [];
+    }
+
+    static _getEventCheckHiddenExitTargets(location) {
+        if (!location || typeof location.getAvailableDirections !== "function") return [];
+        return location.getAvailableDirections().map((direction) => location.getExit(direction))
+            .filter((exit) => exit?.hiddenFromPlayer === true)
+            .map((exit) => ({ id: String(exit.id || "").trim(), name: String(exit.name || exit.description || "").trim() }))
+            .filter((target) => target.id && target.name);
+    }
+
     static _buildTinyBrainEventStages({
         eventSectionKind = "current",
         eventMode = "events",
@@ -6382,6 +6420,8 @@ class Events {
         suppressTrackerUpdates = false,
         hasRegisteredModEvents = false,
         hiddenNpcNames = null,
+        hiddenThingTargets = null,
+        hiddenExitTargets = null,
     } = {}) {
         const sectionKind = this._normalizeTinyBrainEventSectionKind(
             eventSectionKind,
@@ -6403,6 +6443,12 @@ class Events {
                 .map((name) => typeof name === "string" ? name.trim() : "")
                 .filter(Boolean)
             : [];
+        const normalizeTargets = (targets, label) => {
+            if (targets !== null && !Array.isArray(targets)) throw new Error(`${label} must be an array or null.`);
+            return Array.isArray(targets) ? targets.filter((target) => target?.id && target?.name) : [];
+        };
+        const normalizedHiddenThingTargets = normalizeTargets(hiddenThingTargets, "Tiny-brain hiddenThingTargets");
+        const normalizedHiddenExitTargets = normalizeTargets(hiddenExitTargets, "Tiny-brain hiddenExitTargets");
         const ignoredKeys = this._normalizeIgnoredEventKeys(ignoredEventKeys);
         const tagIsAllowed = (tagName) => {
             const eventKey = TINY_BRAIN_EVENT_TAG_TO_KEY[tagName];
@@ -6416,6 +6462,8 @@ class Events {
             ) {
                 return false;
             }
+            if (tagName === "revealHiddenThing" && Array.isArray(hiddenThingTargets) && normalizedHiddenThingTargets.length === 0) return false;
+            if (tagName === "revealHiddenExit" && Array.isArray(hiddenExitTargets) && normalizedHiddenExitTargets.length === 0) return false;
             if (tagName === "timePassed" && suppressTimeAdvance) {
                 return false;
             }
@@ -6497,7 +6545,14 @@ class Events {
                             : []),
                     ].join(" "),
                 }
-                : definition;
+                : definition.id === "scene" ? {
+                    ...definition,
+                    instructions: [
+                        definition.instructions,
+                        ...(normalizedHiddenThingTargets.length ? [`Hidden Thing reveal targets (use exact id and name): ${normalizedHiddenThingTargets.map((target) => `${target.id}=${target.name}`).join(", ")}.`] : []),
+                        ...(normalizedHiddenExitTargets.length ? [`Hidden exit reveal targets (use exact id and destination name): ${normalizedHiddenExitTargets.map((target) => `${target.id}=${target.name}`).join(", ")}.`] : []),
+                    ].join(" "),
+                } : definition;
             const stage = makeStage(stageDefinition);
             if (!stage) {
                 continue;
@@ -6585,6 +6640,8 @@ class Events {
         authoritativeMovementCompanionNames = [],
         eventLocation = null,
         hiddenNpcNames = null,
+        hiddenThingTargets = null,
+        hiddenExitTargets = null,
     } = {}) {
         const normalizedSectionKind = this._normalizeTinyBrainEventSectionKind(
             sectionKind,
@@ -6631,6 +6688,14 @@ class Events {
         const authoritativeHiddenNpcNameSet = authoritativeHiddenNpcNames
             ? new Set(authoritativeHiddenNpcNames.map((name) => name.toLowerCase()))
             : null;
+        const buildTargetMap = (targets, label) => {
+            if (targets !== null && !Array.isArray(targets)) throw new Error(`${label} must be an array or null.`);
+            return Array.isArray(targets)
+                ? new Map(targets.map((target) => [String(target?.id || "").trim(), String(target?.name || "").trim()]).filter(([id, name]) => id && name))
+                : null;
+        };
+        const authoritativeHiddenThingMap = buildTargetMap(hiddenThingTargets, `Tiny-brain ${normalizedSectionKind}/${normalizedStageId} hiddenThingTargets`);
+        const authoritativeHiddenExitMap = buildTargetMap(hiddenExitTargets, `Tiny-brain ${normalizedSectionKind}/${normalizedStageId} hiddenExitTargets`);
         const hasDoneTag = /<done\b/i.test(normalized);
         const hasEventsTag = /<events\b/i.test(normalized);
         if (hasDoneTag && !hasEventsTag) {
@@ -6808,6 +6873,20 @@ class Events {
                     throw new Error(
                         `Tiny-brain ${normalizedSectionKind}/${normalizedStageId} NPC "${emittedName}" is not listed as present and hidden at this location. Use <npcFirstAppearance> for a new NPC, <npcArrival> for an NPC arriving here, or <revealHiddenNpc> with an exact listed hidden name. ${availableNames}`,
                     );
+                }
+            }
+            if (tagName === "revealHiddenThing" && authoritativeHiddenThingMap) {
+                const id = this._getXmlDirectChildText(node, "thingId");
+                const name = this._getXmlDirectChildText(node, "thingName");
+                if (authoritativeHiddenThingMap.get(id) !== name) {
+                    throw new Error(`Tiny-brain ${normalizedSectionKind}/${normalizedStageId} hidden Thing id/name does not match an authoritative current-location target.`);
+                }
+            }
+            if (tagName === "revealHiddenExit" && authoritativeHiddenExitMap) {
+                const id = this._getXmlDirectChildText(node, "exitId");
+                const name = this._getXmlDirectChildText(node, "destinationName");
+                if (authoritativeHiddenExitMap.get(id) !== name) {
+                    throw new Error(`Tiny-brain ${normalizedSectionKind}/${normalizedStageId} hidden exit id/name does not match an authoritative current-location target.`);
                 }
             }
             if (!allowedTagSet.has(tagName) && !registeredEvent) {
@@ -7262,6 +7341,8 @@ class Events {
                         requiredTags,
                         allowRegisteredXmlEvents,
                         hiddenNpcNames,
+                        hiddenThingTargets,
+                        hiddenExitTargets,
                     ) => {
                         const acceptedSignatures = Object.values(
                             tinyBrain.renderState.completedCheckpoints || {},
@@ -7294,6 +7375,8 @@ class Events {
                                 templateContext.tinyBrainAuthoritativeMovementCompanionNames,
                             eventLocation,
                             hiddenNpcNames,
+                            hiddenThingTargets,
+                            hiddenExitTargets,
                         });
                     },
                 },
@@ -8109,6 +8192,16 @@ class Events {
                         "quantity",
                         "containerName",
                     ]),
+                };
+            case "revealHiddenThing":
+                return {
+                    key: "reveal_hidden_thing",
+                    raw: this._formatXmlLegacyRawEntry(node, ["thingId", "thingName", "description"]),
+                };
+            case "revealHiddenExit":
+                return {
+                    key: "reveal_hidden_exit",
+                    raw: this._formatXmlLegacyRawEntry(node, ["exitId", "destinationName", "description"]),
                 };
             case "dropItem":
                 return {
@@ -10331,6 +10424,16 @@ class Events {
                         };
                     })
                     .filter(Boolean),
+            reveal_hidden_thing: (raw) =>
+                splitPipeList(raw).map((entry) => {
+                    const [id, name, description] = splitArrowParts(entry, 3);
+                    return id && name && description ? { id: id.trim(), name: name.trim(), description: description.trim() } : null;
+                }).filter(Boolean),
+            reveal_hidden_exit: (raw) =>
+                splitPipeList(raw).map((entry) => {
+                    const [id, destinationName, description] = splitArrowParts(entry, 3);
+                    return id && destinationName && description ? { id: id.trim(), destinationName: destinationName.trim(), description: description.trim() } : null;
+                }).filter(Boolean),
             hide_visible_npc: (raw) =>
                 splitPipeList(raw)
                     .map((entry) => {
@@ -11915,6 +12018,39 @@ class Events {
 
     static _buildHandlers() {
         return {
+            reveal_hidden_thing: async function (entries = [], context = {}) {
+                const location = context.location || Globals.location || null;
+                if (!location || !Array.isArray(location.things)) throw new Error("reveal_hidden_thing requires a current location.");
+                for (const entry of entries) {
+                    const thing = location.things.find((candidate) => candidate?.id === entry?.id);
+                    if (!thing) throw new Error(`reveal_hidden_thing target "${entry?.id || ""}" is not directly owned by the current location.`);
+                    if (thing.name !== entry.name) throw new Error(`reveal_hidden_thing id/name mismatch for "${entry.id}".`);
+                    if (thing.hiddenFromPlayer === true) {
+                        thing.setHiddenDiscovery({ hiddenFromPlayer: false, discoveryDifficulty: null });
+                        context.locationRefreshRequested = true;
+                    }
+                    entry.targetId = thing.id;
+                    entry.targetName = thing.name;
+                    entry.success = true;
+                }
+            },
+            reveal_hidden_exit: async function (entries = [], context = {}) {
+                const location = context.location || Globals.location || null;
+                if (!location || typeof location.getAvailableDirections !== "function") throw new Error("reveal_hidden_exit requires a current location.");
+                for (const entry of entries) {
+                    const exit = location.getAvailableDirections().map((direction) => location.getExit(direction)).find((candidate) => candidate?.id === entry?.id);
+                    if (!exit) throw new Error(`reveal_hidden_exit target "${entry?.id || ""}" is not an outgoing exit of the current location.`);
+                    const destinationName = String(exit.name || exit.description || "").trim();
+                    if (destinationName !== entry.destinationName) throw new Error(`reveal_hidden_exit id/destinationName mismatch for "${entry.id}".`);
+                    if (exit.hiddenFromPlayer === true) {
+                        exit.setHiddenDiscovery({ hiddenFromPlayer: false, discoveryDifficulty: null });
+                        context.locationRefreshRequested = true;
+                    }
+                    entry.targetId = exit.id;
+                    entry.targetName = destinationName;
+                    entry.success = true;
+                }
+            },
             new_exit_discovered: async function (entries = [], context = {}) {
                 await applyExitDiscovery(this, entries, context, {
                     movePlayer: false,
@@ -13075,6 +13211,7 @@ class Events {
                             if (remaining <= 0) {
                                 break;
                             }
+                            assertThingVisibleToPlayerForInteraction(candidate, { action: "consume" });
                             const candidateCount = this._getThingCount(candidate);
                             const amountToConsume = Math.min(candidateCount, remaining);
                             const result = this._consumeThingQuantity(candidate, amountToConsume, {
@@ -13739,6 +13876,7 @@ class Events {
                         { itemName: entry.item, eventKey: "pick_up_item" },
                     );
                     selectedThings.forEach((thing) => {
+                        assertThingVisibleToPlayerForInteraction(thing, { action: "pick up" });
                         actor.addInventoryItem(thing);
                         thing.metadata = { ...(thing.metadata || {}), ownerId: actor.id };
                     });

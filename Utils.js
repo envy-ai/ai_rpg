@@ -2433,7 +2433,9 @@ class Utils {
         imageId: exitData.imageId ?? null,
         imagePrompt: exitData.imagePrompt ?? '',
         isVehicle: Boolean(exitData.isVehicle || exitData.vehicleType),
-        vehicleType: exitData.vehicleType || null
+        vehicleType: exitData.vehicleType || null,
+        hiddenFromPlayer: exitData.hiddenFromPlayer ?? false,
+        discoveryDifficulty: exitData.discoveryDifficulty ?? null
       });
       gameLocationExits.set(id, exit);
     }

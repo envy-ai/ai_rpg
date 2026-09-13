@@ -1,5 +1,9 @@
 # Location, Exit, Stub, and Map API
 
+## Hidden exits and first entry
+
+`POST /api/locations/:id/exits` and `PUT /api/locations/:id/exits/:exitId` accept the paired hidden fields for the source-directed edge. Normal moves reject hidden exits, shortest routes and player-action destination summaries skip them, and ordinary region/world map payloads omit them. First-entry checks use the pre-move visit snapshot; failures persist without rerolls.
+
 Routes are registered in `api.js`. Shared shapes are documented in `docs/api/common.md`, especially `LocationResponse`, `LocationDetails`, `LocationExit`, `MapLocationSummary`, and `MapRegionSummary`.
 
 `LocationResponse` is based on `Location.toJSON()` and includes response-only enrichment from `buildLocationResponse(...)`: `regionDangerModifier`, calculation-only `effectiveDangerLevel`, pending base-image job id, region name/path payloads, enriched vehicle display data, exit destination/stub/visited/vehicle metadata, NPC profiles, and thing JSON. Vehicle exits that should be hidden while a vehicle is in transit are omitted from location and map payloads.

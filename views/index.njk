@@ -114,7 +114,15 @@
                                         <button type="button" class="location-npc-add-button location-modify-button" id="modifyLocationButton" disabled>🛠️ Modify Location</button>
                                         <div class="location-hint" id="locationHint">Hover over the location image for a description.</div>
                                         <details class="location-section location-exits" open>
-                                            <summary>Exits</summary>
+                                            <summary>
+                                                <span>Exits</span>
+                                                <button type="button" class="location-hidden-npcs-toggle" id="toggleHiddenExitsButton" aria-label="show hidden exits" aria-pressed="false" title="show hidden exits">
+                                                    <svg class="location-hidden-npcs-toggle__icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                                                        <path d="M2.06 12.35a1 1 0 0 1 0-.7C3.74 7.51 7.68 4.75 12 4.75s8.26 2.76 9.94 6.9a1 1 0 0 1 0 .7c-1.68 4.14-5.62 6.9-9.94 6.9s-8.26-2.76-9.94-6.9Z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"></path>
+                                                        <circle cx="12" cy="12" r="3.1" fill="none" stroke="currentColor" stroke-width="1.8"></circle>
+                                                    </svg>
+                                                </button>
+                                            </summary>
                                             <div class="location-exits-content" id="locationExits">
                                                 <div class="location-exits-list" id="locationExitsList">
                                                     <div class="no-exits">No exits discovered yet.</div>
@@ -140,7 +148,15 @@
                                         </div>
                                     </details>
                                         <details class="location-section location-things" open>
-                                            <summary>Items &amp; Scenery</summary>
+                                            <summary>
+                                                <span>Items &amp; Scenery</span>
+                                                <button type="button" class="location-hidden-npcs-toggle" id="toggleHiddenThingsButton" aria-label="show hidden items and scenery" aria-pressed="false" title="show hidden items and scenery">
+                                                    <svg class="location-hidden-npcs-toggle__icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                                                        <path d="M2.06 12.35a1 1 0 0 1 0-.7C3.74 7.51 7.68 4.75 12 4.75s8.26 2.76 9.94 6.9a1 1 0 0 1 0 .7c-1.68 4.14-5.62 6.9-9.94 6.9s-8.26-2.76-9.94-6.9Z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"></path>
+                                                        <circle cx="12" cy="12" r="3.1" fill="none" stroke="currentColor" stroke-width="1.8"></circle>
+                                                    </svg>
+                                                </button>
+                                            </summary>
                                             <div class="location-thing-content">
                                                 <div class="location-thing-category thing-list-panel" id="locationSceneryPanel">
                                                     <div class="thing-list-panel__header">
@@ -2590,6 +2606,18 @@
                     <label for="newExitTravelTime">Travel Time</label>
                     <input type="text" id="newExitTravelTime" name="travelTime" maxlength="80" placeholder="e.g. 1m, 1h10m, 2 hours" value="1m">
                 </div>
+                <div class="new-exit-field new-exit-field--checkbox">
+                    <label class="modal-checkbox" for="newExitHiddenFromPlayer">
+                        <input type="checkbox" id="newExitHiddenFromPlayer" name="hiddenFromPlayer">
+                        <span>Hidden from player</span>
+                    </label>
+                </div>
+                <div class="new-exit-field" id="newExitDiscoveryDifficultyGroup" hidden>
+                    <label for="newExitDiscoveryDifficulty">Discovery Difficulty</label>
+                    <select id="newExitDiscoveryDifficulty" name="discoveryDifficulty">
+                        <option value="">Select difficulty</option><option>Trivial</option><option>Easy</option><option>Medium</option><option>Hard</option><option>Very Hard</option><option>Legendary</option>
+                    </select>
+                </div>
                 <div class="new-exit-field" id="newExitImageGroup">
                     <label for="newExitImage">Reference Image (optional)</label>
                     <input type="file" id="newExitImage" name="image" accept="image/*">
@@ -2851,6 +2879,13 @@
                 <div class="npc-edit-section" id="thingEditShortDescriptionGroup">
                     <label for="thingEditShortDescription">Short Description</label>
                     <input id="thingEditShortDescription" type="text" autocomplete="off">
+                </div>
+                <div class="npc-edit-section">
+                    <label class="modal-checkbox" for="thingEditHiddenFromPlayer"><input type="checkbox" id="thingEditHiddenFromPlayer"><span>Hidden from player</span></label>
+                </div>
+                <div class="npc-edit-section" id="thingEditDiscoveryDifficultyGroup" hidden>
+                    <label for="thingEditDiscoveryDifficulty">Discovery Difficulty</label>
+                    <select id="thingEditDiscoveryDifficulty"><option value="">Select difficulty</option><option>Trivial</option><option>Easy</option><option>Medium</option><option>Hard</option><option>Very Hard</option><option>Legendary</option></select>
                 </div>
                 <div class="npc-edit-section" id="thingEditImagePromptGroup">
                     <label for="thingEditImagePrompt">Image Prompt</label>
@@ -10768,11 +10803,11 @@
             const regionLabel = regionPath.join(' › ')
                 || normalizeRichTooltipText(location?.regionName || location?.region?.name);
             const exits = location?.exits && typeof location.exits === 'object'
-                ? Object.values(location.exits).filter(Boolean)
+                ? Object.values(location.exits).filter(exit => exit && exit.hiddenFromPlayer !== true)
                 : [];
             const visibleNpcs = (Array.isArray(location?.npcs) ? location.npcs : [])
                 .filter(npc => npc && (npc.hiddenFromPlayer !== true || npc.isDead === true));
-            const things = Array.isArray(location?.things) ? location.things.filter(Boolean) : [];
+            const things = Array.isArray(location?.things) ? location.things.filter(thing => thing && thing.hiddenFromPlayer !== true) : [];
             const itemCount = things.filter(thing => String(thing?.thingType || thing?.type || '').toLowerCase() !== 'scenery').length;
             const sceneryCount = things.filter(thing => String(thing?.thingType || thing?.type || '').toLowerCase() === 'scenery').length;
             const factionName = resolveRichTooltipFactionName(location?.controllingFactionId);
@@ -11307,6 +11342,9 @@
         const newExitDescriptionInput = document.getElementById('newExitDescription');
         const newExitImagePromptInput = document.getElementById('newExitImagePrompt');
         const newExitTravelTimeInput = document.getElementById('newExitTravelTime');
+        const newExitHiddenFromPlayerInput = document.getElementById('newExitHiddenFromPlayer');
+        const newExitDiscoveryDifficultyGroup = document.getElementById('newExitDiscoveryDifficultyGroup');
+        const newExitDiscoveryDifficultyInput = document.getElementById('newExitDiscoveryDifficulty');
         const newExitImageInput = document.getElementById('newExitImage');
         const newExitVehicleGroup = document.getElementById('newExitVehicleGroup');
         const newExitVehicleInput = document.getElementById('newExitVehicle');
@@ -11888,6 +11926,9 @@
         const thingEditImagePromptGroup = document.getElementById('thingEditImagePromptGroup');
         const thingEditShortDescriptionInput = document.getElementById('thingEditShortDescription');
         const thingEditShortDescriptionGroup = document.getElementById('thingEditShortDescriptionGroup');
+        const thingEditHiddenFromPlayerInput = document.getElementById('thingEditHiddenFromPlayer');
+        const thingEditDiscoveryDifficultyGroup = document.getElementById('thingEditDiscoveryDifficultyGroup');
+        const thingEditDiscoveryDifficultyInput = document.getElementById('thingEditDiscoveryDifficulty');
         const thingEditNotesGroup = document.getElementById('thingEditNotesGroup');
         const thingEditNotesInput = document.getElementById('thingEditNotes');
         const thingOnHitSection = document.getElementById('thingOnHitSection');
@@ -15193,6 +15234,9 @@
             if (thingEditDescriptionInput) {
                 thingEditDescriptionInput.value = thing?.description || '';
             }
+            if (thingEditHiddenFromPlayerInput) thingEditHiddenFromPlayerInput.checked = thing?.hiddenFromPlayer === true;
+            if (thingEditDiscoveryDifficultyInput) thingEditDiscoveryDifficultyInput.value = thing?.discoveryDifficulty || '';
+            if (thingEditDiscoveryDifficultyGroup) thingEditDiscoveryDifficultyGroup.hidden = thing?.hiddenFromPlayer !== true;
             if (thingEditImagePromptInput) {
                 thingEditImagePromptInput.value = mode === 'edit' ? (thing?.imagePrompt || '') : '';
             }
@@ -15946,6 +15990,8 @@
         let locationImageGenerationEnabled = true;
         let lastRenderedLocation = null;
         let locationNpcsShowHidden = false;
+        let locationExitsShowHidden = false;
+        let locationThingsShowHidden = false;
         let currentLocationThingCollections = {
             locationId: null,
             items: [],
@@ -20635,6 +20681,9 @@
                             ? Math.round(relativeLevelValue)
                             : '';
                     }
+                    if (newExitHiddenFromPlayerInput) newExitHiddenFromPlayerInput.checked = exit.hiddenFromPlayer === true;
+                    if (newExitDiscoveryDifficultyInput) newExitDiscoveryDifficultyInput.value = exit.discoveryDifficulty || '';
+                    if (newExitDiscoveryDifficultyGroup) newExitDiscoveryDifficultyGroup.hidden = exit.hiddenFromPlayer !== true;
                 } else if (newExitPreferredRegionId && newExitRegionSelect) {
                     if (Array.from(newExitRegionSelect.options).some(opt => opt.value === newExitPreferredRegionId)) {
                         newExitRegionSelect.value = newExitPreferredRegionId;
@@ -20769,6 +20818,12 @@
                     : '';
 
             const payload = { type };
+            payload.hiddenFromPlayer = Boolean(newExitHiddenFromPlayerInput?.checked);
+            payload.discoveryDifficulty = payload.hiddenFromPlayer ? (newExitDiscoveryDifficultyInput?.value || '') : null;
+            if (payload.hiddenFromPlayer && !payload.discoveryDifficulty) {
+                alert('Select a discovery difficulty for the hidden exit.');
+                return;
+            }
             if (!usingExistingLocation || name) {
                 payload.name = name;
             }
@@ -22400,6 +22455,18 @@
         if (thingEditTypeSelect) {
             thingEditTypeSelect.addEventListener('change', () => updateThingStatusEffectVisibility());
         }
+        if (thingEditHiddenFromPlayerInput) {
+            thingEditHiddenFromPlayerInput.addEventListener('change', () => {
+                if (thingEditDiscoveryDifficultyGroup) thingEditDiscoveryDifficultyGroup.hidden = !thingEditHiddenFromPlayerInput.checked;
+                if (!thingEditHiddenFromPlayerInput.checked && thingEditDiscoveryDifficultyInput) thingEditDiscoveryDifficultyInput.value = '';
+            });
+        }
+        if (newExitHiddenFromPlayerInput) {
+            newExitHiddenFromPlayerInput.addEventListener('change', () => {
+                if (newExitDiscoveryDifficultyGroup) newExitDiscoveryDifficultyGroup.hidden = !newExitHiddenFromPlayerInput.checked;
+                if (!newExitHiddenFromPlayerInput.checked && newExitDiscoveryDifficultyInput) newExitDiscoveryDifficultyInput.value = '';
+            });
+        }
 
         if (npcModalBackdrop) {
             npcModalBackdrop.addEventListener('click', (event) => {
@@ -22810,6 +22877,12 @@
                     if (thingEditRequiresCheckToOpenInput) {
                         seed.requiresCheckToOpen = Boolean(thingEditRequiresCheckToOpenInput.checked);
                     }
+                    seed.hiddenFromPlayer = Boolean(thingEditHiddenFromPlayerInput?.checked);
+                    seed.discoveryDifficulty = seed.hiddenFromPlayer ? (thingEditDiscoveryDifficultyInput?.value || '') : null;
+                    if (seed.hiddenFromPlayer && !seed.discoveryDifficulty) {
+                        updateThingEditStatus('Select a discovery difficulty for the hidden Thing.', 'error');
+                        return;
+                    }
                     let modFieldValues = {};
                     try {
                         modFieldValues = collectThingEditModFieldValues();
@@ -22881,6 +22954,12 @@
                 updateThingEditStatus('');
 
                 const payload = {};
+                payload.hiddenFromPlayer = Boolean(thingEditHiddenFromPlayerInput?.checked);
+                payload.discoveryDifficulty = payload.hiddenFromPlayer ? (thingEditDiscoveryDifficultyInput?.value || '') : null;
+                if (payload.hiddenFromPlayer && !payload.discoveryDifficulty) {
+                    updateThingEditStatus('Select a discovery difficulty for the hidden Thing.', 'error');
+                    return;
+                }
 
                 const trimmedName = thingEditNameInput?.value?.trim();
                 if (trimmedName) {
@@ -30954,6 +31033,8 @@
             const chatSpinnerStatusText = document.getElementById('chatSpinnerStatusText');
             const locationNPCs = document.getElementById('locationNPCs');
             const toggleHiddenNpcsButton = document.getElementById('toggleHiddenNpcsButton');
+            const toggleHiddenExitsButton = document.getElementById('toggleHiddenExitsButton');
+            const toggleHiddenThingsButton = document.getElementById('toggleHiddenThingsButton');
             const locationSceneryPanel = document.getElementById('locationSceneryPanel');
             const locationScenery = document.getElementById('locationScenery');
             const locationSceneryEmpty = document.getElementById('locationSceneryEmpty');
@@ -30990,6 +31071,17 @@
                 toggleHiddenNpcsButton.setAttribute('aria-pressed', locationNpcsShowHidden ? 'true' : 'false');
             }
 
+            function updateHiddenWorldToggles() {
+                if (toggleHiddenExitsButton) {
+                    toggleHiddenExitsButton.classList.toggle('is-active', locationExitsShowHidden);
+                    toggleHiddenExitsButton.setAttribute('aria-pressed', locationExitsShowHidden ? 'true' : 'false');
+                }
+                if (toggleHiddenThingsButton) {
+                    toggleHiddenThingsButton.classList.toggle('is-active', locationThingsShowHidden);
+                    toggleHiddenThingsButton.setAttribute('aria-pressed', locationThingsShowHidden ? 'true' : 'false');
+                }
+            }
+
             if (locationNPCs) {
                 registerPartyDropTarget(locationNPCs, 'dismiss');
             }
@@ -31007,6 +31099,21 @@
                     }
                 });
             }
+            [
+                [toggleHiddenExitsButton, () => { locationExitsShowHidden = !locationExitsShowHidden; }],
+                [toggleHiddenThingsButton, () => { locationThingsShowHidden = !locationThingsShowHidden; }]
+            ].forEach(([button, toggle]) => {
+                if (!button) return;
+                button.addEventListener('click', async (event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    toggle();
+                    updateHiddenWorldToggles();
+                    const locationToRender = lastRenderedLocation || window.lastRenderedLocation || null;
+                    if (locationToRender && typeof window.updateLocationDisplay === 'function') await window.updateLocationDisplay(locationToRender);
+                });
+            });
+            updateHiddenWorldToggles();
             if (locationScenery) {
                 registerThingTypeDropTarget(locationScenery, { targetType: 'scenery' });
             }
@@ -37542,6 +37649,8 @@
                 .map(thing => cloneThingRecord(thing) || { ...thing });
             allItemThings.forEach(cacheThingData);
             const itemThings = allItemThings.filter(thing => !isInstalledModuleThing(thing));
+            const renderedSceneryThings = sceneryThings.filter(thing => thing.hiddenFromPlayer !== true || locationThingsShowHidden);
+            const renderedItemThings = itemThings.filter(thing => thing.hiddenFromPlayer !== true || locationThingsShowHidden);
             const containerContents = Array.isArray(safeLocation?.workbenchContainerContents)
                 ? safeLocation.workbenchContainerContents
                     .filter(thing => thing && thing.thingType !== 'scenery')
@@ -37562,18 +37671,25 @@
 
             const buildLocationThingCard = (thing, { viewMode } = {}) => buildThingCollectionEntry(thing, {
                 viewMode,
-                contextMenuOptions: { context: 'location', locationId: safeLocation?.id || null },
-                lightboxActions: () => createLocationItemLightboxActions(thing, {
-                    locationId: safeLocation?.id || null
-                }),
+                contextMenuOptions: thing.hiddenFromPlayer === true ? null : { context: 'location', locationId: safeLocation?.id || null },
+                lightboxActions: () => thing.hiddenFromPlayer === true ? [] : createLocationItemLightboxActions(thing, { locationId: safeLocation?.id || null }),
                 tooltipOptions: {
                     equipmentOwner: () => window.currentPlayerData || null
                 },
                 decorateCard: ({ card, thing }) => {
+                    if (thing?.hiddenFromPlayer === true) {
+                        card.classList.add('is-hidden-from-player');
+                        card.setAttribute('aria-disabled', 'true');
+                        const badge = document.createElement('span');
+                        badge.className = 'hidden-discovery-badge';
+                        badge.textContent = `Hidden · ${thing.discoveryDifficulty}`;
+                        card.appendChild(badge);
+                    }
                     if (!thing?.id) {
                         return;
                     }
-                    card.draggable = true;
+                    card.draggable = thing.hiddenFromPlayer !== true;
+                    if (thing.hiddenFromPlayer === true) return;
                     card.dataset.thingType = normalizeThingTypeForDrag(thing.thingType);
                     card.addEventListener('dragstart', () => {
                         draggedLocationThing = {
@@ -37594,7 +37710,7 @@
             });
 
             renderThingCollectionPanel({
-                items: sceneryThings,
+                items: renderedSceneryThings,
                 panelKey: 'locationScenery',
                 grid: locationScenery,
                 empty: locationSceneryEmpty,
@@ -37617,7 +37733,7 @@
             });
 
             renderThingCollectionPanel({
-                items: itemThings,
+                items: renderedItemThings,
                 panelKey: 'locationItems',
                 grid: locationItems,
                 empty: locationItemsEmpty,
@@ -38271,7 +38387,9 @@
                         modifyLocationButton.disabled = false;
                     }
                     if (locationExitsList) {
-                        const rawExitEntries = Object.entries(location.exits || {});
+                        updateHiddenWorldToggles();
+                        const rawExitEntries = Object.entries(location.exits || {})
+                            .filter(([, exit]) => exit?.hiddenFromPlayer !== true || locationExitsShowHidden);
                         if (rawExitEntries.length === 0) {
                             locationExitsList.innerHTML = '<div class="no-exits">No exits discovered yet.</div>';
                         } else {
@@ -38323,6 +38441,7 @@
                                     const exitId = typeof exit.id === 'string' && exit.id.trim() ? exit.id.trim() : null;
                                     const container = document.createElement('div');
                                     container.className = 'exit-item';
+                                    container.classList.toggle('is-hidden-from-player', exit.hiddenFromPlayer === true);
                                     container.dataset.direction = key;
                                     if (exitId) {
                                         container.dataset.exitId = exitId;
@@ -38409,6 +38528,7 @@
                                     });
 
                                     travelButton.dataset.destinationId = exit.destination;
+                                    travelButton.disabled = exit.hiddenFromPlayer === true;
                                     const destinationIsStub = Boolean(exit.destinationIsStub);
                                     const destinationIsExplicitlyUnvisited = exit.destinationVisited === false;
                                     const isExplored = !destinationIsStub
@@ -38421,6 +38541,12 @@
                                         originLocationId: location.id
                                     }));
                                     container.appendChild(travelButton);
+                                    if (exit.hiddenFromPlayer === true) {
+                                        const hiddenBadge = document.createElement('span');
+                                        hiddenBadge.className = 'hidden-discovery-badge';
+                                        hiddenBadge.textContent = `Hidden · ${exit.discoveryDifficulty}`;
+                                        container.appendChild(hiddenBadge);
+                                    }
 
                                     if (exitId) {
                                         const friendlyName = destinationName;

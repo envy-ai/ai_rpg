@@ -1,5 +1,9 @@
 # Thing
 
+## Hidden discovery
+
+Location Things persist the atomic pair `hiddenFromPlayer` and `discoveryDifficulty`. Difficulty is one of `Trivial`, `Easy`, `Medium`, `Hard`, `Very Hard`, or `Legendary`; visible Things require null. Generated Thing XML must always include both tags (`false` plus a blank difficulty for visible Things), and omission is a validation error in every generation scope. `setHiddenDiscovery(...)` changes both fields together. Only legacy save hydration defaults missing fields to visible/null; hidden state participates in stack checksums. Player interactions reject hidden Things until discovery.
+
 ## Purpose
 `Thing` represents items and scenery in the game world. It owns the durable object record used by locations, actor inventories, containers, crafting, event checks, prompt generation, saves, and the browser UI.
 

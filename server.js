@@ -8048,10 +8048,15 @@ function buildBasePromptContext({
                 }
             }
             exitSummaries.push({
+                id: locationExit?.id || exitInfo.id || null,
                 name: label || directionKey || 'Unknown Exit',
+                direction: directionKey,
+                description: exitInfo.description || locationExit?.description || '',
                 destinationRegionName,
                 isVehicle: Boolean(exitInfo.isVehicle),
-                vehicleType: typeof exitInfo.vehicleType === 'string' ? exitInfo.vehicleType : null
+                vehicleType: typeof exitInfo.vehicleType === 'string' ? exitInfo.vehicleType : null,
+                hiddenFromPlayer: locationExit?.hiddenFromPlayer === true || exitInfo.hiddenFromPlayer === true,
+                discoveryDifficulty: locationExit?.discoveryDifficulty ?? exitInfo.discoveryDifficulty ?? null
             });
         }
     }
@@ -8441,6 +8446,7 @@ function buildBasePromptContext({
         }
 
         return {
+            id: actualThing?.id || item.id || null,
             name,
             description,
             shortDescription: item.shortDescription || metadata.shortDescription || '',
@@ -8464,6 +8470,8 @@ function buildBasePromptContext({
             value: metadata.value,
             weight: metadata.weight,
             properties: metadata.properties,
+            hiddenFromPlayer: actualThing?.hiddenFromPlayer === true || item.hiddenFromPlayer === true,
+            discoveryDifficulty: actualThing?.discoveryDifficulty ?? item.discoveryDifficulty ?? null,
             modPromptXml
         };
     }
@@ -12724,7 +12732,7 @@ function normalizeRegionLocationName(name) {
     return normalizeDuplicateName(name);
 }
 
-function ensureExitConnection(fromLocation, toLocation, { description, bidirectional = false, destinationRegion, travelTimeMinutes = undefined, updateExistingExitTravelTime = true, isVehicle = undefined, vehicleType = undefined, imagePrompt = undefined } = {}) {
+function ensureExitConnection(fromLocation, toLocation, { description, bidirectional = false, destinationRegion, travelTimeMinutes = undefined, updateExistingExitTravelTime = true, isVehicle = undefined, vehicleType = undefined, imagePrompt = undefined, hiddenFromPlayer = undefined, discoveryDifficulty = undefined } = {}) {
     if (!fromLocation || !toLocation) {
         console.log('🧭 ensureExitConnection aborted: missing from/to location');
         console.trace();
@@ -12811,7 +12819,9 @@ function ensureExitConnection(fromLocation, toLocation, { description, bidirecti
             travelTimeMinutes: travelTimeMinutes !== undefined ? travelTimeMinutes : 0,
             bidirectional: Boolean(bidirectional),
             isVehicle: typeof isVehicle === 'boolean' ? isVehicle : false,
-            vehicleType: vehicleType !== undefined ? vehicleType : null
+            vehicleType: vehicleType !== undefined ? vehicleType : null,
+            hiddenFromPlayer: hiddenFromPlayer === undefined ? false : hiddenFromPlayer,
+            discoveryDifficulty: discoveryDifficulty === undefined ? null : discoveryDifficulty
         });
 
         if (typeof addExit === 'function') {
@@ -12826,6 +12836,12 @@ function ensureExitConnection(fromLocation, toLocation, { description, bidirecti
             );
         }
     } else {
+        if (hiddenFromPlayer !== undefined || discoveryDifficulty !== undefined) {
+            exit.setHiddenDiscovery({
+                hiddenFromPlayer: hiddenFromPlayer === undefined ? exit.hiddenFromPlayer : hiddenFromPlayer,
+                discoveryDifficulty: discoveryDifficulty === undefined ? exit.discoveryDifficulty : discoveryDifficulty
+            });
+        }
         if (description) {
             try {
                 exit.description = description;
@@ -13048,7 +13064,7 @@ function applyStubExpansionOverrides(location, { createOriginExit } = {}) {
     location.stubMetadata = metadata;
 }
 
-async function createLocationFromEvent({ name, originLocation = null, descriptionHint = null, directionHint = null, expandStub = true, targetRegionId = null, travelTimeMinutes = undefined, updateExistingExitTravelTime = true, vehicleType = null, isVehicle = false, relativeLevel = null, imageDataUrl = '', imageDataUrlOriginal = '', createOriginExit = true } = {}) {
+async function createLocationFromEvent({ name, originLocation = null, descriptionHint = null, directionHint = null, expandStub = true, targetRegionId = null, travelTimeMinutes = undefined, updateExistingExitTravelTime = true, vehicleType = null, isVehicle = false, relativeLevel = null, imageDataUrl = '', imageDataUrlOriginal = '', createOriginExit = true, hiddenFromPlayer = false, discoveryDifficulty = null } = {}) {
     const trimmedName = typeof name === 'string' ? name.trim() : '';
     if (!trimmedName) {
         return null;
@@ -13152,7 +13168,9 @@ async function createLocationFromEvent({ name, originLocation = null, descriptio
                     description: descriptionHint || `${existing.name || trimmedName}`,
                     bidirectional: false,
                     travelTimeMinutes,
-                    updateExistingExitTravelTime
+                    updateExistingExitTravelTime,
+                    hiddenFromPlayer,
+                    discoveryDifficulty
                 });
             } else {
                 console.log(`🧭 Skipping exit creation to existing location ${existing.name || existing.id} (already unstubbed).`);
@@ -13220,7 +13238,9 @@ async function createLocationFromEvent({ name, originLocation = null, descriptio
             description: descriptionHint || `${stub.name || trimmedName}`,
             bidirectional: false,
             destinationRegion: destinationRegionForExit,
-            travelTimeMinutes
+            travelTimeMinutes,
+            hiddenFromPlayer,
+            discoveryDifficulty
         };
 
         if (resolvedIsVehicle) {
@@ -13256,7 +13276,7 @@ async function createLocationFromEvent({ name, originLocation = null, descriptio
     return stub;
 }
 
-async function createRegionStubFromEvent({ name, originLocation = null, description = null, parentRegionId = null, travelTimeMinutes = undefined, updateExistingExitTravelTime = true, vehicleType = null, isVehicle = false, relativeLevel = null, imageDataUrl = '', imageDataUrlOriginal = '', createOriginExit = true } = {}) {
+async function createRegionStubFromEvent({ name, originLocation = null, description = null, parentRegionId = null, travelTimeMinutes = undefined, updateExistingExitTravelTime = true, vehicleType = null, isVehicle = false, relativeLevel = null, imageDataUrl = '', imageDataUrlOriginal = '', createOriginExit = true, hiddenFromPlayer = false, discoveryDifficulty = null } = {}) {
     const trimmedName = typeof name === 'string' ? name.trim() : '';
     if (!trimmedName || !originLocation) {
         return null;
@@ -13306,7 +13326,9 @@ async function createRegionStubFromEvent({ name, originLocation = null, descript
             bidirectional: true,
             destinationRegion: destinationRegionId || null,
             travelTimeMinutes,
-            updateExistingExitTravelTime
+            updateExistingExitTravelTime,
+            hiddenFromPlayer,
+            discoveryDifficulty
         };
 
         if (resolvedIsVehicle) {
@@ -13545,7 +13567,9 @@ async function createRegionStubFromEvent({ name, originLocation = null, descript
         description: description || `${regionEntryStub.name || trimmedName}`,
         bidirectional: false,
         destinationRegion: newRegionId,
-        travelTimeMinutes
+        travelTimeMinutes,
+        hiddenFromPlayer,
+        discoveryDifficulty
     };
 
     if (resolvedIsVehicle) {
@@ -13707,6 +13731,8 @@ async function createSuggestedExitStubs(location, suggestions = []) {
                 originLocation: location,
                 description: suggestion.description,
                 travelTimeMinutes: suggestion.travelTimeMinutes,
+                hiddenFromPlayer: suggestion.hiddenFromPlayer,
+                discoveryDifficulty: suggestion.discoveryDifficulty,
                 createOriginExit: true
             });
         } else {
@@ -13717,6 +13743,8 @@ async function createSuggestedExitStubs(location, suggestions = []) {
                 expandStub: false,
                 targetRegionId: location.regionId || null,
                 travelTimeMinutes: suggestion.travelTimeMinutes,
+                hiddenFromPlayer: suggestion.hiddenFromPlayer,
+                discoveryDifficulty: suggestion.discoveryDifficulty,
                 createOriginExit: true
             });
         }
@@ -14138,6 +14166,15 @@ async function expandRegionEntryStub(stubLocation) {
                     },
                     parse: responseText => {
                         const locationDefinitions = parseRegionStubLocations(responseText);
+                        const exitMissingHiddenFields = locationDefinitions
+                            .flatMap(definition => definition?.exits || [])
+                            .find(exit => (
+                                !Object.prototype.hasOwnProperty.call(exit, 'hiddenFromPlayer')
+                                || !Object.prototype.hasOwnProperty.call(exit, 'discoveryDifficulty')
+                            ));
+                        if (exitMissingHiddenFields) {
+                            throw new Error(`Generated region exit "${exitMissingHiddenFields.target || 'unknown'}" is missing hidden-discovery fields.`);
+                        }
                         const missingWeatherScope = locationDefinitions.find(definition => !definition?.hasWeather);
                         if (missingWeatherScope) {
                             throw new Error(`Generated region stub location "${missingWeatherScope.name || 'unknown'}" is missing required <hasWeather>.`);
@@ -14150,9 +14187,30 @@ async function expandRegionEntryStub(stubLocation) {
                             rootTag: 'region',
                             tagName: 'controllingFaction'
                         });
+                        const exitDefinitions = parseRegionExitsResponse(responseText);
+                        const regionExitMissingHiddenFields = exitDefinitions.find(exit => (
+                            !Object.prototype.hasOwnProperty.call(exit, 'hiddenFromPlayer')
+                            || !Object.prototype.hasOwnProperty.call(exit, 'discoveryDifficulty')
+                        ));
+                        if (regionExitMissingHiddenFields) {
+                            throw new Error(`Generated connected-region exit "${regionExitMissingHiddenFields.name || 'unknown'}" is missing hidden-discovery fields.`);
+                        }
+                        for (const definition of locationDefinitions) {
+                            const locationNameKey = normalizeRegionLocationName(definition?.name);
+                            const allDeclaredExits = [
+                                ...(Array.isArray(definition?.exits) ? definition.exits : []),
+                                ...exitDefinitions.filter(exit => normalizeRegionLocationName(exit?.exitLocation) === locationNameKey)
+                            ];
+                            if (
+                                allDeclaredExits.some(exit => exit?.hiddenFromPlayer === true)
+                                && !allDeclaredExits.some(exit => exit?.hiddenFromPlayer !== true)
+                            ) {
+                                throw new Error(`Generated region location "${definition?.name || 'unknown'}" cannot have only hidden exits.`);
+                            }
+                        }
                         return {
                             locationDefinitions,
-                            exitDefinitions: parseRegionExitsResponse(responseText),
+                            exitDefinitions,
                             vehicleDefinitions: parseRegionVehicleDefinitions(responseText),
                             weatherDefinition: parseRegionWeatherResponse(responseText),
                             characterConcepts: extractRegionCharacterConcepts(responseText),
@@ -25633,6 +25691,7 @@ async function renderLocationThingsPrompt(context = {}) {
             rarityDefinitions: Thing.getAllRarityDefinitions(),
             generatedThingRarity,
             thingGeneratorPromptFields: getThingGeneratorPromptFields(),
+            allowHiddenDiscovery: true,
             rarityList: providedRarityList,
             itemCount,
             sceneryCount,
@@ -25660,7 +25719,8 @@ async function parseThingsXml(xmlContent, {
     parseXMLTemplate = null,
     prepareBasePromptContext = null,
     strictXml = false,
-    expectedThingType = null
+    expectedThingType = null,
+    allowHiddenDiscovery = false
 } = {}) {
     try {
         const normalizedExpectedThingType = typeof expectedThingType === 'string'
@@ -25714,6 +25774,53 @@ async function parseThingsXml(xmlContent, {
         const getDirectChildText = (parentNode, tagName) => (
             getDirectChildElement(parentNode, tagName)?.textContent?.trim() || ''
         );
+
+        // Keep this boundary helper local: parser tests intentionally execute
+        // parseThingsXml in isolation from the rest of server.js.
+        const parseHiddenDiscoveryXmlPair = (parentNode, targetLabel) => {
+            const directChildren = Array.from(parentNode?.childNodes || []).filter(child => child?.nodeType === 1);
+            const hiddenNodes = directChildren.filter(child => (child.tagName || child.nodeName || child.localName) === 'hiddenFromPlayer');
+            const difficultyNodes = directChildren.filter(child => (child.tagName || child.nodeName || child.localName) === 'discoveryDifficulty');
+            const hiddenNode = hiddenNodes[0] || null;
+            const difficultyNode = difficultyNodes[0] || null;
+            const hasPair = Boolean(hiddenNode || difficultyNode);
+            if (!hasPair) {
+                throw new Error(`${targetLabel} must contain <hiddenFromPlayer> and <discoveryDifficulty>.`);
+            }
+            if (!hiddenNode || !difficultyNode) {
+                throw new Error(`${targetLabel} must contain both <hiddenFromPlayer> and <discoveryDifficulty>.`);
+            }
+            if (hiddenNodes.length !== 1 || difficultyNodes.length !== 1) {
+                throw new Error(`${targetLabel} must contain exactly one <hiddenFromPlayer> and one <discoveryDifficulty>.`);
+            }
+            const hiddenText = String(hiddenNode.textContent || '').trim().toLowerCase();
+            if (!['true', 'false'].includes(hiddenText)) {
+                throw new Error(`${targetLabel} <hiddenFromPlayer> must be true or false.`);
+            }
+            const hiddenFromPlayer = hiddenText === 'true';
+            const rawDifficulty = String(difficultyNode.textContent || '').trim();
+            const difficultyByKey = new Map([
+                ['trivial', 'Trivial'],
+                ['easy', 'Easy'],
+                ['medium', 'Medium'],
+                ['hard', 'Hard'],
+                ['veryhard', 'Very Hard'],
+                ['legendary', 'Legendary']
+            ]);
+            const discoveryDifficulty = rawDifficulty
+                ? (difficultyByKey.get(rawDifficulty.toLowerCase().replace(/[\s_-]+/g, '')) || null)
+                : null;
+            if (rawDifficulty && !discoveryDifficulty) {
+                throw new Error(`${targetLabel} discoveryDifficulty must be one of: Trivial, Easy, Medium, Hard, Very Hard, Legendary.`);
+            }
+            if (hiddenFromPlayer && !discoveryDifficulty) {
+                throw new Error(`${targetLabel} discoveryDifficulty is required for a hidden target.`);
+            }
+            if (!hiddenFromPlayer && discoveryDifficulty !== null) {
+                throw new Error(`${targetLabel} discoveryDifficulty must be blank when hiddenFromPlayer is false.`);
+            }
+            return { hiddenFromPlayer, discoveryDifficulty };
+        };
 
         const getRegisteredThingXmlParserFields = () => {
             const registry = (typeof Globals !== 'undefined' && Globals?.modExtensionRegistry)
@@ -26151,6 +26258,13 @@ async function parseThingsXml(xmlContent, {
                 const text = getDirectChildText(node, tag).toLowerCase();
                 return text === 'true';
             };
+            const { hiddenFromPlayer, discoveryDifficulty } = parseHiddenDiscoveryXmlPair(
+                node,
+                `Thing "${entryName}"`
+            );
+            if (hiddenFromPlayer && allowHiddenDiscovery !== true) {
+                throw new Error(`Thing "${entryName}" cannot be hidden in this generation scope.`);
+            }
             //console.log('Creating entry for item:', nameNode.textContent.trim());
             const shortDescription = getDirectChildText(node, 'shortDescription');
             if (!shortDescription) {
@@ -26213,6 +26327,8 @@ async function parseThingsXml(xmlContent, {
                 isSalvageable: parseBooleanTag('isSalvageable'),
                 isContainer,
                 requiresCheckToOpen,
+                hiddenFromPlayer,
+                discoveryDifficulty,
                 containerContents,
                 ...registeredFieldValues
             };
@@ -26488,7 +26604,8 @@ async function generateLocationThingsForLocation({ location } = {}) {
                 promptEnv,
                 parseXMLTemplate,
                 prepareBasePromptContext,
-                strictXml: true
+                strictXml: true,
+                allowHiddenDiscovery: true
             });
             if (!generatedItems.length) {
                 throw new Error('Location things generation response contained no item or scenery entries.');
@@ -26609,6 +26726,8 @@ async function generateLocationThingsForLocation({ location } = {}) {
             level: computedLevel,
             relativeLevel,
             containerContents: itemData.containerContents,
+            hiddenFromPlayer: itemData.hiddenFromPlayer,
+            discoveryDifficulty: itemData.discoveryDifficulty,
             metadata: cleanedMetadata,
             ...extensionFieldInputs,
             ...booleanFlags
@@ -32431,7 +32550,15 @@ async function generateLocationFromPrompt(options = {}) {
                     if (!responseText.trim()) {
                         throw new Error('Location generation returned an empty response.');
                     }
-                    return parseLocationExitSuggestions(responseText, { required: true });
+                    const suggestions = parseLocationExitSuggestions(responseText, { required: true });
+                    const missingHiddenFields = suggestions.find(suggestion => (
+                        !Object.prototype.hasOwnProperty.call(suggestion, 'hiddenFromPlayer')
+                        || !Object.prototype.hasOwnProperty.call(suggestion, 'discoveryDifficulty')
+                    ));
+                    if (missingHiddenFields) {
+                        throw new Error(`Generated exit "${missingHiddenFields.name || 'unknown'}" is missing hidden-discovery fields.`);
+                    }
+                    return suggestions;
                 },
                 retainRejectedResponse: false,
                 buildRetryInstruction: error => (
@@ -32439,7 +32566,7 @@ async function generateLocationFromPrompt(options = {}) {
                     + `${error.message}\n`
                     + 'Generate a fresh, complete response as exactly one <location>...</location> block. '
                     + 'Do not copy the rejected document. Include one valid <newExits> decision; it may be empty. '
-                    + 'Every included exit must have exactly one destinationType, name, description, and travelTime. Output XML only.'
+                    + 'Every included exit must have exactly one destinationType, name, description, travelTime, hiddenFromPlayer, and discoveryDifficulty. Output XML only.'
                 ),
                 onAttempt: ({ attempt, maxAttempts, error }) => {
                     if (!error) {
@@ -33247,6 +33374,50 @@ function parseRegionExitsResponse(xmlSnippet) {
         return trimmed || null;
     };
 
+    const parseHiddenDiscoveryXmlPair = (node, targetLabel) => {
+        const directChildren = Array.from(node?.childNodes || []).filter(child => child?.nodeType === 1 && child.tagName);
+        const hiddenNodes = directChildren.filter(child => child.tagName.toLowerCase() === 'hiddenfromplayer');
+        const difficultyNodes = directChildren.filter(child => child.tagName.toLowerCase() === 'discoverydifficulty');
+        const hiddenNode = hiddenNodes[0] || null;
+        const difficultyNode = difficultyNodes[0] || null;
+        if (!hiddenNode && !difficultyNode) {
+            throw new Error(`${targetLabel} must contain <hiddenFromPlayer> and <discoveryDifficulty>.`);
+        }
+        if (!hiddenNode || !difficultyNode) {
+            throw new Error(`${targetLabel} must contain both <hiddenFromPlayer> and <discoveryDifficulty>.`);
+        }
+        if (hiddenNodes.length !== 1 || difficultyNodes.length !== 1) {
+            throw new Error(`${targetLabel} must contain exactly one <hiddenFromPlayer> and one <discoveryDifficulty>.`);
+        }
+        const hiddenText = String(hiddenNode.textContent || '').trim().toLowerCase();
+        if (!['true', 'false'].includes(hiddenText)) {
+            throw new Error(`${targetLabel} <hiddenFromPlayer> must be true or false.`);
+        }
+        const hiddenFromPlayer = hiddenText === 'true';
+        const rawDifficulty = String(difficultyNode.textContent || '').trim();
+        const difficultyByKey = new Map([
+            ['trivial', 'Trivial'],
+            ['easy', 'Easy'],
+            ['medium', 'Medium'],
+            ['hard', 'Hard'],
+            ['veryhard', 'Very Hard'],
+            ['legendary', 'Legendary']
+        ]);
+        const discoveryDifficulty = rawDifficulty
+            ? (difficultyByKey.get(rawDifficulty.toLowerCase().replace(/[\s_-]+/g, '')) || null)
+            : null;
+        if (rawDifficulty && !discoveryDifficulty) {
+            throw new Error(`${targetLabel} discoveryDifficulty must be one of: Trivial, Easy, Medium, Hard, Very Hard, Legendary.`);
+        }
+        if (hiddenFromPlayer && !discoveryDifficulty) {
+            throw new Error(`${targetLabel} discoveryDifficulty is required for a hidden target.`);
+        }
+        if (!hiddenFromPlayer && discoveryDifficulty !== null) {
+            throw new Error(`${targetLabel} discoveryDifficulty must be blank when hiddenFromPlayer is false.`);
+        }
+        return { hiddenFromPlayer, discoveryDifficulty };
+    };
+
     const parseStubRegionExitTravelTimeMinutes = (rawValue, { regionName } = {}) => {
         const text = typeof rawValue === 'string' ? rawValue.trim() : '';
         if (!text) {
@@ -33265,7 +33436,7 @@ function parseRegionExitsResponse(xmlSnippet) {
     const stubRegions = Array.from(doc.getElementsByTagName('stubRegion'));
     const results = [];
 
-    const tryAppend = ({ name, description, relativeLevel, relationship, exitLocation, exitVehicle, controllingFaction, travelTime }) => {
+    const tryAppend = ({ name, description, relativeLevel, relationship, exitLocation, exitVehicle, controllingFaction, travelTime, hiddenDiscovery }) => {
         if (!name) {
             return;
         }
@@ -33278,6 +33449,7 @@ function parseRegionExitsResponse(xmlSnippet) {
             exitLocation,
             exitVehicle: exitVehicle || null,
             controllingFaction: controllingFaction || null,
+            ...(hiddenDiscovery || {}),
             travelTimeMinutes: parseStubRegionExitTravelTimeMinutes(travelTime, { regionName: name })
         });
     };
@@ -33305,8 +33477,9 @@ function parseRegionExitsResponse(xmlSnippet) {
             const exitVehicle = getChildValue(stubNode, 'exitVehicle');
             const controllingFaction = getChildValue(stubNode, 'controllingFaction');
             const travelTime = getChildValue(stubNode, 'travelTime');
+            const hiddenDiscovery = parseHiddenDiscoveryXmlPair(stubNode, `Region exit stub "${name || 'Unnamed Region'}"`);
 
-            tryAppend({ name, description, relativeLevel, relationship, exitLocation, exitVehicle, controllingFaction, travelTime });
+            tryAppend({ name, description, relativeLevel, relationship, exitLocation, exitVehicle, controllingFaction, travelTime, hiddenDiscovery });
         }
     }
 
@@ -33324,8 +33497,9 @@ function parseRegionExitsResponse(xmlSnippet) {
             const exitVehicle = getChildValue(node, 'exitVehicle');
             const controllingFaction = getChildValue(node, 'controllingFaction');
             const travelTime = getChildValue(node, 'travelTime');
+            const hiddenDiscovery = parseHiddenDiscoveryXmlPair(node, `Region exit stub "${name || 'Unnamed Region'}"`);
 
-            tryAppend({ name, description, relativeLevel, relationship, exitLocation, exitVehicle, controllingFaction, travelTime });
+            tryAppend({ name, description, relativeLevel, relationship, exitLocation, exitVehicle, controllingFaction, travelTime, hiddenDiscovery });
         }
     }
 
@@ -33481,6 +33655,52 @@ function parseRegionStubLocations(xmlSnippet) {
         return value || null;
     };
 
+    // Keep this boundary helper local because the parser is also exercised in an
+    // isolated VM without server module imports.
+    const parseHiddenDiscoveryXmlPair = (node, targetLabel) => {
+        const hiddenNodes = getDirectChildrenByTag(node, 'hiddenFromPlayer');
+        const difficultyNodes = getDirectChildrenByTag(node, 'discoveryDifficulty');
+        const hiddenNode = hiddenNodes[0] || null;
+        const difficultyNode = difficultyNodes[0] || null;
+        const hasPair = Boolean(hiddenNode || difficultyNode);
+        if (!hasPair) {
+            throw new Error(`${targetLabel} must contain <hiddenFromPlayer> and <discoveryDifficulty>.`);
+        }
+        if (!hiddenNode || !difficultyNode) {
+            throw new Error(`${targetLabel} must contain both <hiddenFromPlayer> and <discoveryDifficulty>.`);
+        }
+        if (hiddenNodes.length !== 1 || difficultyNodes.length !== 1) {
+            throw new Error(`${targetLabel} must contain exactly one <hiddenFromPlayer> and one <discoveryDifficulty>.`);
+        }
+        const hiddenText = String(hiddenNode.textContent || '').trim().toLowerCase();
+        if (!['true', 'false'].includes(hiddenText)) {
+            throw new Error(`${targetLabel} <hiddenFromPlayer> must be true or false.`);
+        }
+        const hiddenFromPlayer = hiddenText === 'true';
+        const rawDifficulty = String(difficultyNode.textContent || '').trim();
+        const difficultyByKey = new Map([
+            ['trivial', 'Trivial'],
+            ['easy', 'Easy'],
+            ['medium', 'Medium'],
+            ['hard', 'Hard'],
+            ['veryhard', 'Very Hard'],
+            ['legendary', 'Legendary']
+        ]);
+        const discoveryDifficulty = rawDifficulty
+            ? (difficultyByKey.get(rawDifficulty.toLowerCase().replace(/[\s_-]+/g, '')) || null)
+            : null;
+        if (rawDifficulty && !discoveryDifficulty) {
+            throw new Error(`${targetLabel} discoveryDifficulty must be one of: Trivial, Easy, Medium, Hard, Very Hard, Legendary.`);
+        }
+        if (hiddenFromPlayer && !discoveryDifficulty) {
+            throw new Error(`${targetLabel} discoveryDifficulty is required for a hidden target.`);
+        }
+        if (!hiddenFromPlayer && discoveryDifficulty !== null) {
+            throw new Error(`${targetLabel} discoveryDifficulty must be blank when hiddenFromPlayer is false.`);
+        }
+        return { hiddenFromPlayer, discoveryDifficulty };
+    };
+
     const parseExitTravelTimeMinutes = (rawValue, { locationName, targetLabel } = {}) => {
         const text = typeof rawValue === 'string' ? rawValue.trim() : '';
         if (!text) {
@@ -33503,7 +33723,7 @@ function parseRegionStubLocations(xmlSnippet) {
         return normalizeLocationWeatherExposure(value, fieldName);
     };
 
-    return locationNodes.map(node => {
+    const blueprints = locationNodes.map(node => {
         const name = getTagValue(node, 'name');
         const description = getTagValue(node, 'description') || '';
         const shortDescription = getTagValue(node, 'shortDescription');
@@ -33525,8 +33745,13 @@ function parseRegionStubLocations(xmlSnippet) {
                     if (!target) {
                         throw new Error(`Region stub location "${name || 'Unnamed Location'}" has an <exit> without a <destination>.`);
                     }
+                    const hiddenDiscovery = parseHiddenDiscoveryXmlPair(
+                        exitNode,
+                        `Region exit "${name || 'Unnamed Location'}" to "${target}"`
+                    );
                     return {
                         target,
+                        ...(hiddenDiscovery || {}),
                         travelTimeMinutes: parseExitTravelTimeMinutes(travelTimeNode?.textContent, {
                             locationName: name || 'Unnamed Location',
                             targetLabel: target
@@ -33553,6 +33778,12 @@ function parseRegionStubLocations(xmlSnippet) {
             hasWeather
         };
     }).filter(Boolean);
+    for (const blueprint of blueprints) {
+        if (blueprint.exits.length > 0 && blueprint.exits.every(exit => exit.hiddenFromPlayer === true)) {
+            throw new Error(`Region stub location "${blueprint.name}" cannot have only hidden exits; at least one generated exit must be visible.`);
+        }
+    }
+    return blueprints;
 }
 
 function rollbackFailedRegionInstantiation({
@@ -33930,7 +34161,9 @@ async function generateRegionExitStubs({
                 destinationRegion: destinationRegionId,
                 travelTimeMinutes,
                 isVehicle: Boolean(vehicleLabel),
-                vehicleType: vehicleLabel
+                vehicleType: vehicleLabel,
+                hiddenFromPlayer: definition.hiddenFromPlayer,
+                discoveryDifficulty: definition.discoveryDifficulty
             });
             continue;
         }
@@ -34040,7 +34273,9 @@ async function generateRegionExitStubs({
             destinationRegion: newRegionId,
             travelTimeMinutes,
             isVehicle: Boolean(vehicleLabel),
-            vehicleType: vehicleLabel
+            vehicleType: vehicleLabel,
+            hiddenFromPlayer: definition.hiddenFromPlayer,
+            discoveryDifficulty: definition.discoveryDifficulty
         });
 
         pendingRegionStubs.set(newRegionId, {
@@ -34518,7 +34753,9 @@ async function connectExistingRegion({
         destinationRegion: existingRegion.id,
         travelTimeMinutes,
         isVehicle: Boolean(vehicleLabel),
-        vehicleType: vehicleLabel || null
+        vehicleType: vehicleLabel || null,
+        hiddenFromPlayer: definition.hiddenFromPlayer,
+        discoveryDifficulty: definition.discoveryDifficulty
     });
 
     ensureExitConnection(remoteLocation, sourceLocation, {
@@ -34783,7 +35020,7 @@ async function instantiateRegionLocations({
         registerStubAliases(stub, [blueprint.name, ...(Array.isArray(blueprint.aliases) ? blueprint.aliases : [])]);
     }
 
-    const addStubExit = (fromStub, toStub, label, travelTimeMinutes = 0) => {
+    const addStubExit = (fromStub, toStub, label, travelTimeMinutes = 0, hiddenDiscovery = null, explicit = false) => {
         if (!fromStub || !toStub) {
             return;
         }
@@ -34805,6 +35042,9 @@ async function instantiateRegionLocations({
 
         if (existingDir) {
             const existingExit = fromStub.getExit(existingDir);
+            if (existingExit && explicit) {
+                existingExit.setHiddenDiscovery(hiddenDiscovery || { hiddenFromPlayer: false, discoveryDifficulty: null });
+            }
             if (existingExit && !existingExit.description) {
                 try {
                     existingExit.description = `${toStub.name}`;
@@ -34837,7 +35077,8 @@ async function instantiateRegionLocations({
             description: `${toStub.name}`,
             destination: toStub.id,
             travelTimeMinutes,
-            bidirectional: true
+            bidirectional: true,
+            ...(hiddenDiscovery || {})
         });
         fromStub.addExit(directionKey, exit);
     };
@@ -34872,7 +35113,10 @@ async function instantiateRegionLocations({
             }
 
             const forwardDirection = targetLabel;
-            addStubExit(sourceStub, targetStub, forwardDirection, travelTimeMinutes);
+            addStubExit(sourceStub, targetStub, forwardDirection, travelTimeMinutes, {
+                hiddenFromPlayer: exitInfo?.hiddenFromPlayer === true,
+                discoveryDifficulty: exitInfo?.discoveryDifficulty ?? null
+            }, true);
             addStubExit(targetStub, sourceStub, sourceStub.name || sourceStub.id, travelTimeMinutes);
         });
     }

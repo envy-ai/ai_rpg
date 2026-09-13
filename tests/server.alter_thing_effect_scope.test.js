@@ -47,6 +47,8 @@ test('thing XML parser treats omitted and empty status-effect tags as absent eff
   <description>Shoulder armor with redirected echo spores.</description>
   <shortDescription>Echo-spore shoulder armor</shortDescription>
   <itemOrScenery>item</itemOrScenery>
+  <hiddenFromPlayer>false</hiddenFromPlayer>
+  <discoveryDifficulty></discoveryDifficulty>
   <type>armor</type>
   <slot>shoulders</slot>
   <rarity>Rare</rarity>
@@ -75,6 +77,8 @@ test('thing XML parser treats status-effect null sentinels as absent effects', a
   <description>A plain marker.</description>
   <shortDescription>Plain depot marker</shortDescription>
   <itemOrScenery>item</itemOrScenery>
+  <hiddenFromPlayer>false</hiddenFromPlayer>
+  <discoveryDifficulty></discoveryDifficulty>
   <type>marker</type>
   <slot>N/A</slot>
   <rarity>Common</rarity>
@@ -110,6 +114,8 @@ test('thing XML parser parses populated equipper status-effect tags', async () =
   <description>Shoulder armor with redirected echo spores.</description>
   <shortDescription>Echo-spore shoulder armor</shortDescription>
   <itemOrScenery>item</itemOrScenery>
+  <hiddenFromPlayer>false</hiddenFromPlayer>
+  <discoveryDifficulty></discoveryDifficulty>
   <type>armor</type>
   <slot>shoulders</slot>
   <rarity>Rare</rarity>
@@ -145,6 +151,8 @@ test('thing XML parser validates generated status-effect durations before return
   <description>A generated item with an invalid effect duration.</description>
   <shortDescription>Ward with invalid duration</shortDescription>
   <itemOrScenery>item</itemOrScenery>
+  <hiddenFromPlayer>false</hiddenFromPlayer>
+  <discoveryDifficulty></discoveryDifficulty>
   <type>armor</type>
   <slot>body</slot>
   <rarity>Rare</rarity>
@@ -165,6 +173,8 @@ test('thing XML parser validates generated status-effect durations before return
   <description>A generated item with a valid effect duration.</description>
   <shortDescription>Brief protective ward</shortDescription>
   <itemOrScenery>item</itemOrScenery>
+  <hiddenFromPlayer>false</hiddenFromPlayer>
+  <discoveryDifficulty></discoveryDifficulty>
   <type>armor</type>
   <slot>body</slot>
   <rarity>Rare</rarity>

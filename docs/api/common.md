@@ -1,5 +1,7 @@
 # Common Shapes & Conventions
 
+Trusted location payloads retain `hiddenFromPlayer`/`discoveryDifficulty`. Ordinary gameplay rejects hidden Thing interactions and hidden-exit traversal; shortest routes omit hidden exits.
+
 This file collects shared response shapes referenced by multiple endpoints in `api.js`. When a route includes a serialized object, its fields appear here so you do not have to chase helper implementations.
 
 ## Conventions

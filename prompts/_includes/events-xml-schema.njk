@@ -218,6 +218,34 @@ Use this when a character takes one or more items out of a container, such as a 
 </removeItemFromContainer>
 ```
 
+### Hidden Thing and exit reveals
+
+Hidden records are GM-only. Do not mention, imply, use, target, route through, or count one until the checked prose establishes discovery. When it does, reveal the existing record; never duplicate it with `itemAppear`, `sceneryAppear`, or `newExitDiscovered`.
+{% if eventCheckHiddenThingTargets and eventCheckHiddenThingTargets | length %}
+The only hidden Thing reveal targets at this location are:
+{% for target in eventCheckHiddenThingTargets %}- `{{ target.id }}` — `{{ target.name }}`
+{% endfor %}
+```xml
+<revealHiddenThing>
+  <thingId>Exact listed id</thingId>
+  <thingName>Exact listed name</thingName>
+  <description>How the prose established discovery</description>
+</revealHiddenThing>
+```
+{% endif %}
+{% if eventCheckHiddenExitTargets and eventCheckHiddenExitTargets | length %}
+The only hidden exit reveal targets at this location are:
+{% for target in eventCheckHiddenExitTargets %}- `{{ target.id }}` — `{{ target.name }}`
+{% endfor %}
+```xml
+<revealHiddenExit>
+  <exitId>Exact listed id</exitId>
+  <destinationName>Exact listed destination name</destinationName>
+  <description>How the prose established discovery</description>
+</revealHiddenExit>
+```
+{% endif %}
+
 ### Character presence bookkeeping
 
 A character physically present in the checked text but absent from `Characters at location` is not represented at this location in the game data. Do not assume a private mystery note or narrative mention created an NPC record.

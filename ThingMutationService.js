@@ -1,5 +1,6 @@
 const Globals = require('./Globals.js');
 const ThingFieldRegistry = require('./ThingFieldRegistry.js');
+const { validateHiddenDiscoveryPair } = require('./HiddenDiscovery.js');
 
 const cloneJsonish = (value) => {
     if (value === undefined) return undefined;
@@ -130,6 +131,10 @@ class ThingMutationService {
                 `Thing candidate "${candidateLabel}" has invalid thingType ${JSON.stringify(candidate.thingType)}.`
             );
         }
+        validateHiddenDiscoveryPair({
+            hiddenFromPlayer: candidate.hiddenFromPlayer,
+            discoveryDifficulty: candidate.discoveryDifficulty
+        }, { targetLabel: `Thing candidate "${candidateLabel}"` });
         if (
             Array.isArray(candidate.containedThingIds)
             && candidate.containedThingIds.length
